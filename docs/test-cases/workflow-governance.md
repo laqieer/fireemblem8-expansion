@@ -465,3 +465,93 @@ criterion applies.
 
 Rollback is a normal revert of issue #176's dedicated commit; no workflow or
 game behavior needs a compensating change.
+
+## TC-WORKFLOW-GATE-OWNERSHIP-001: Resolve every admitted path to complete validation ownership
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #180](https://github.com/laqieer/fireemblem8-expansion/issues/180).
+- **Supported configuration or artifact:** clean source checkout with Python
+  3, Git, and the committed report-only validation ownership graph.
+- **Prerequisites and clean starting state:** start at the exact repository
+  root with `.github/validation-ownership-graph.json`, its strict schema,
+  reporter, generated-data and tester-case registries, Build workflow,
+  Makefiles, and manual-handoff contract unchanged. No token, ROM, emulator,
+  or remote workflow is required.
+
+### Actions
+
+1. Run
+   `python3 -m unittest discover -s scripts/validation_ownership/tests -p 'test_*.py' -v`.
+2. Run `make validation-ownership-check`.
+3. Use the isolated reporter's `resolve` mode with `--changed` for
+   `src/bm.c`, `include/global.h`, `scripts/check_docs.py`,
+   `src/data/items.json`, `texts/expansion/catalog.en.json`, `config.mk`, and
+   `graphics/titlescreen/title_main_background_1.png`.
+4. Confirm each result identifies one surface, every applicable typed edge,
+   its existing authority, and a plain-language reason. Confirm the graph
+   remains `report-only` with `narrowing_authorized` false.
+5. Inspect the suite's non-destructive fixtures. They remove and redirect
+   every edge family, delete and restore the graph copy, mutate Make/workflow
+   authority, add unknown and overlapping paths, create cycles, duplicate
+   owners, remove dependents, and replace targets with stale identities.
+
+### Expected result
+
+Every Git-tracked path resolves to exactly one complete owner set. The sole
+gitlink is a named fail-closed exclusion whose selection cannot silently
+succeed. Representative runtime/ABI, host-only, generated, localization,
+configuration, and manual A/V paths resolve with no missing or unexpected
+edge families. Generated paths derive from the typed generated-data registry;
+gate commands derive from existing Make targets, workflow jobs/steps, and
+tester cases rather than a duplicate command list.
+
+The canonical JSON report explains each selected gate, reports zero false
+positive and false negative edge-family selections for the frozen probes, and
+records bounded maintenance cost through the issue #176 artifact shape.
+Domain-separated graph, schema, and resolved-edge seals change when semantic
+authority changes. Comparing a prior Git revision invalidates review from
+authoritative edge or target-authority changes, not filenames or commit prose.
+
+### Negative control
+
+Unknown paths or edge types, uncovered or overlapping path patterns, cycles,
+duplicate or ambiguous owners, stale Make/workflow/tester/generated/manual
+targets, missing profiles or negative controls, and every removed or
+redirected edge family fail with the missing contract named. Make and workflow
+authority content changes alter the resolved-edge seal automatically.
+
+A manual visual/audio/UX edge must point to
+`.github/manual-testing-handoff.json` and remains supplementary. Removing any
+deterministic host, adversarial, compile, link, or runtime edge from that
+surface fails; manual handoff cannot replace deterministic evidence.
+
+### Interactions and save compatibility
+
+This capability depends on issue #176's artifact admission/deletion lifecycle,
+strict source boundaries, isolated startup, clean-Git checks, seals, and
+maintenance reporting. It reuses existing Make targets, Build workflow
+structure, the generated-data registry, tester-case registry, and manual
+handoff contract. Issue #181 is parallel and not a dependency. There is no
+feature flag and no gameplay, runtime, save, localization payload, generated
+game data, ABI, ROM/RAM, modern debug/release, or archival behavior change.
+
+The graph does not execute selected gates and cannot skip or narrow validation.
+A later independently accepted issue must prove selection non-inferiority
+before any delivery behavior can consume these explanations.
+
+### Automation
+
+The focused unittest suite owns parsed schema and graph invariants,
+whole-repository coverage, target existence and drift, every edge-family
+mutation, lifecycle deletion/restoration, review invalidation, canonical
+reporting, and unchanged Git state. `make validation-ownership-check` runs the
+same reporter through `/usr/bin/python3 -I`.
+
+### Cleanup and limitations
+
+Scratch fixtures are bounded beneath ignored
+`build/test-artifacts/validation-ownership` and are removed automatically. No
+remote state is read or changed. No manual-only criterion applies.
+
+Rollback is a normal revert of issue #180's dedicated commit; existing broader
+validation behavior is unchanged.

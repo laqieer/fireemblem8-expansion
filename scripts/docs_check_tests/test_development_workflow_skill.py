@@ -2957,6 +2957,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "TC-WORKFLOW-MANUAL-HANDOFF-001",
             "TC-WORKFLOW-STACKED-CI-001",
             "TC-WORKFLOW-PILOT-BASELINE-001",
+            "TC-WORKFLOW-GATE-OWNERSHIP-001",
         ]
         self.assertEqual(
             [],

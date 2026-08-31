@@ -478,7 +478,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/93",
         "https://github.com/laqieer/fireemblem8-expansion/issues/169",
         "https://github.com/laqieer/fireemblem8-expansion/issues/171",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/176"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/176",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/180"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -486,7 +487,8 @@
         "TC-WORKFLOW-CI-WAIT-001",
         "TC-WORKFLOW-MANUAL-HANDOFF-001",
         "TC-WORKFLOW-STACKED-CI-001",
-        "TC-WORKFLOW-PILOT-BASELINE-001"
+        "TC-WORKFLOW-PILOT-BASELINE-001",
+        "TC-WORKFLOW-GATE-OWNERSHIP-001"
       ]
     },
     {
@@ -2253,6 +2255,38 @@
         {
           "command": "python3 scripts/check_docs.py --check",
           "evidence": "scripts/check_docs.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-GATE-OWNERSHIP-001",
+      "title": "Resolve every admitted path to complete validation ownership",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/180"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-gate-ownership-001-resolve-every-admitted-path-to-complete-validation-ownership",
+      "profiles": [
+        "Clean source checkout with Python 3, Git, and the committed report-only ownership graph"
+      ],
+      "purpose": "Prove every Git-tracked repository path has one complete typed validation owner set or one named fail-closed exclusion, with live Make, workflow, tester-case, generated-data, and manual-handoff authority.",
+      "prerequisites": "Start at the exact repository root with the ownership graph, strict schema, reporter, generated-data registry, tester-case registry, Build workflow, Makefiles, and manual-handoff contract unchanged; no token, ROM, emulator, or remote workflow is required.",
+      "actions": "Run the focused ownership suite and validation-ownership-check; resolve representative runtime, ABI, host-only, generated-data, localization, configuration, and manual A/V paths; inspect each explanation and mutate or remove every edge family in isolated fixtures.",
+      "expected_result": "Whole-repository coverage is exact, every representative path reports all applicable evidence owners and reasons, lifecycle and selection measurements are zero-loss, and graph-edge authority changes invalidate prior review evidence.",
+      "negative_control": "Unknown paths and edge types, uncovered or overlapping patterns, cycles, duplicate or ambiguous owners, stale Make/workflow/tester/generated/manual targets, missing dependents, manual-only deterministic ownership, and every mutated or deleted edge family fail closed with the missing contract named.",
+      "interactions": "Depends on issue #176 artifact admission, lifecycle, seals, isolated execution, and maintenance measurement; reuses the existing Make targets, Build workflow, generated-data registry, tester-case registry, and manual-handoff protocol. Issue #181 is parallel. No conflict or authorization exists to skip or narrow validation.",
+      "save_compatibility": "Source-only framework governance; no gameplay, runtime, save, localization payload, generated game data, ABI, ROM/RAM, debug/release, or archival behavior changes.",
+      "cleanup": "Reporter-created test fixtures are bounded beneath ignored build/test-artifacts/validation-ownership and removed automatically; no source or remote state is mutated.",
+      "limitations": "The graph reports additive ownership and review invalidation only. It does not execute selected gates or authorize narrower local or CI validation; a later independent issue must prove non-inferiority before selection can affect delivery.",
+      "automation": [
+        {
+          "command": "python3 -m unittest discover -s scripts/validation_ownership/tests -p 'test_*.py' -v",
+          "evidence": "scripts/validation_ownership/tests/test_reporter.py"
+        },
+        {
+          "command": "make validation-ownership-check",
+          "evidence": "scripts/validation_ownership/reporter.py"
         }
       ]
     },

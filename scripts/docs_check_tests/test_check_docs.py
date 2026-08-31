@@ -1021,6 +1021,14 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 scripts/check_docs.py --check",
                         },
                     },
+                    "TC-WORKFLOW-GATE-OWNERSHIP-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest discover -s "
+                            "scripts/validation_ownership/tests -p 'test_*.py' -v",
+                            "make validation-ownership-check",
+                        },
+                    },
                 },
             },
         }

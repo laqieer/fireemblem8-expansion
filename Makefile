@@ -112,6 +112,12 @@ include localization.mk
 # English-only and never generate or link CJK game-message payloads.
 include game_localization.mk
 
+# Keep the source-only ownership reporter free of dependency discovery and
+# generated build-side effects while GNU Make reads this file.
+ifneq (,$(filter validation-ownership-check,$(MAKECMDGOALS)))
+  NODEP := 1
+endif
+
 #### Files ####
 
 C_SUBDIR = src
@@ -291,6 +297,15 @@ compare:
 	@false
 
 .PHONY: all legacy compare
+
+# Issue #180: report-only validation ownership graph. This target validates
+# complete Git-tracked path coverage and live authority references; it never
+# skips, narrows, or executes the gates named by the graph.
+validation-ownership-check:
+	@/usr/bin/python3 -I scripts/validation_ownership/isolated_launcher.py \
+		check --repository-root "$(CURDIR)" > /dev/null
+
+.PHONY: validation-ownership-check
 
 # Remote completion gates
 #
@@ -754,7 +769,8 @@ codeql-fanalyzer-test:
 
 MAKEDEP = mkdir -p $(DEPS_DIR)/$(dir $*) && $(CPP) $(CPPFLAGS) $< -MM -MG -MT $*.o > $(DEPS_DIR)/$*.d
 
-MAKECMDGOALS_NODEP := clean tag codeql-alerts-test codeql-fanalyzer-test $(MODERN_GOALS) \
+MAKECMDGOALS_NODEP := clean tag codeql-alerts-test codeql-fanalyzer-test \
+	validation-ownership-check $(MODERN_GOALS) \
 	game-localization-validate game-localization-generate \
 	game-localization-check game-localization-test game-localization-budget \
 	game-localization-leakage-audit game-localization-leakage-check \
