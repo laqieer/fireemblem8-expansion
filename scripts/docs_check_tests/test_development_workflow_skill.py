@@ -2030,6 +2030,19 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "must never be a todo or dependency target",
             "`child-implement -> parent-remote`",
             "`child-implement -> parent-merge`",
+            "closed structured check contracts",
+            "never executes a caller-authored command",
+            "Every handoff maps to exactly one relationship",
+            "Every task state",
+            "authoritative GitHub run ID",
+            "immutable numeric GitHub IDs",
+            "strict casefolded logins",
+            "sealed hash chain",
+            "Chain gaps, forks, reordering, tampering",
+            "authoritative evaluation time",
+            "same-evaluation runtime evidence",
+            "complete source handoff document",
+            "reporter revalidates the source document",
             "TC-WORKFLOW-AGENT-HANDOFF-001",
         ):
             with self.subTest(requirement=requirement):
@@ -2045,6 +2058,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "Async watcher state is orthogonal",
             "must never be a todo dependency",
             "terminal failed master run starts fix-forward/revert work",
+            "matching issue, PR, candidate, and lifecycle-derived status",
+            "closed structured non-shell contracts",
+            "sealed prior-handoff chain",
+            "complete source document and input/Git/result/check seals",
+            "authoritative evaluation time and unattended interval",
         ):
             with self.subTest(project_requirement=requirement):
                 self.assertIn(

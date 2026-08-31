@@ -90,6 +90,22 @@ dependency-ready child or independent task. A terminal failed master run
 starts fix-forward/revert work, but cannot retroactively justify idle waiting
 during its earlier pending state.
 
+Each bounded implementation handoff must map to exactly one typed child
+relationship and implementation task with matching issue, PR, candidate, and
+lifecycle-derived status. Bind parent post-merge Build state to its
+authoritative exact-SHA workflow run. Required checks use only closed
+structured non-shell contracts with sealed execution receipts; never execute
+a caller-authored command or trust a passed label without rerunning its safe
+contract.
+
+Rotate owners across documents with the sealed prior-handoff chain, comparing
+immutable numeric GitHub IDs or strict casefolded logins. Reporter v2 consumes
+the complete source document and input/Git/result/check seals, then repeats
+real-worktree validation before metrics; schema v1 stays frozen. Coordinator
+availability records the authoritative evaluation time and unattended
+interval. A disable/takeover plan must cover that interval and include
+same-evaluation runtime evidence that both stop triggers are disabled.
+
 Implementation subagents validate and commit locally but do not push. The
 orchestrator pushes the exact commit under repository-owner context so Build
 does not become `action_required`. If an already-pushed run for that same SHA

@@ -157,17 +157,22 @@ HANDOFF_REJECTION_CODES = {
     "authoritative-run-incomplete",
     "changed-lines-budget-exceeded",
     "code-contract-not-merged",
+    "closed-owner-reused",
     "conflicting-worktree",
     "coordinator-unavailable",
     "dirty-worktree",
     "duplicate-coordinator",
     "duplicate-owner",
     "duplicate-watcher",
+    "duplicate-handoff-code-contract",
     "host-process-action-prohibited",
+    "handoff-task-identity-mismatch",
+    "handoff-task-status-mismatch",
     "implementation-owner-remote-action",
     "incomplete-check",
     "incomplete-evidence",
     "incomplete-lifecycle",
+    "invalid-check-receipt",
     "interrupted-check-not-incomplete",
     "interruption-time-mismatch",
     "missing-commit",
@@ -177,21 +182,25 @@ HANDOFF_REJECTION_CODES = {
     "missing-required-code-contract-edge",
     "missing-parent-post-merge-gate",
     "missing-master-recovery",
+    "missing-handoff-code-contract",
     "oom-worktree-not-preserved",
     "orphan-replacement",
     "owner-lifetime-exceeded",
     "owner-rss-exceeded",
     "protocol-changes-budget-exceeded",
+    "prior-handoff-history-fork",
     "ram-bytes-budget-exceeded",
     "replacement-context-mismatch",
     "replacement-owner-count",
     "replacement-owner-reused",
+    "required-check-failed",
     "result-not-worktree-head",
     "rom-bytes-budget-exceeded",
     "run-without-commit",
     "scope-violation",
     "stale-result",
     "stale-run",
+    "task-status-dependency-mismatch",
     "unquantified-diff",
     "unrelated-branch",
     "watcher-todo-dependency",
@@ -1401,103 +1410,146 @@ def _validate_fixture_root(fixture: dict[str, Any]) -> None:
 
 def validate_implementation_handoffs(
     fixture: dict[str, Any],
-) -> dict[str, dict[str, Any]]:
+    repository_root: Path | None = None,
+) -> dict[str, dict[str, dict[str, Any]]]:
     if fixture["schema_version"] != HANDOFF_FIXTURE_SCHEMA_VERSION:
-        return {}
+        return {"bundles": {}, "handoffs": {}}
+    from scripts.workflow_pilot import agent_handoff
+
     lifecycle_as_of = parse_time(
         fixture["lifecycle_as_of"],
         "fixture.lifecycle_as_of",
     )
-    result: dict[str, dict[str, Any]] = {}
+    bundles: dict[str, dict[str, Any]] = {}
+    handoffs: dict[str, dict[str, Any]] = {}
     owner_ids = []
-    required = (
-        "id",
-        "owner_id",
-        "assigned_at",
-        "closed_at",
-        "outcome",
-        "rejection_codes",
-        "peak_rss_bytes",
-        "coordination_turns",
-        "recovery_minutes",
-    )
     for index, raw in enumerate(fixture["implementation_handoffs"]):
         label = f"implementation_handoffs[{index}]"
-        handoff = expect_object(raw, label)
-        expect_keys(handoff, label, required)
-        handoff_id = expect_string(handoff["id"], f"{label}.id")
-        if handoff_id in result:
-            raise PilotDataError(f"duplicate implementation handoff {handoff_id!r}")
-        owner_id = expect_string(handoff["owner_id"], f"{label}.owner_id")
-        owner_ids.append(owner_id)
-        assigned_at = parse_time(handoff["assigned_at"], f"{label}.assigned_at")
-        closed_at = parse_time(
-            handoff["closed_at"],
-            f"{label}.closed_at",
-            nullable=True,
-        )
-        if assigned_at > lifecycle_as_of:
-            raise PilotDataError(f"{label}.assigned_at follows lifecycle_as_of")
-        if closed_at is not None:
-            if closed_at <= assigned_at:
-                raise PilotDataError(
-                    f"{label}.closed_at must strictly follow assigned_at"
-                )
-            if closed_at > lifecycle_as_of:
-                raise PilotDataError(f"{label}.closed_at follows lifecycle_as_of")
-        outcome = expect_enum(
-            handoff["outcome"],
-            HANDOFF_OUTCOMES,
-            f"{label}.outcome",
-        )
-        rejection_codes = expect_list(
-            handoff["rejection_codes"],
-            f"{label}.rejection_codes",
-        )
-        for code_index, code in enumerate(rejection_codes):
-            expect_enum(
-                code,
-                HANDOFF_REJECTION_CODES,
-                f"{label}.rejection_codes[{code_index}]",
+        try:
+            bundle = agent_handoff.verify_reporter_record(
+                raw,
+                revalidate_git=repository_root is not None,
             )
-        expect_unique(rejection_codes, f"{label}.rejection_codes")
-        expect_int(
-            handoff["peak_rss_bytes"],
-            f"{label}.peak_rss_bytes",
-            0,
-        )
-        expect_int(
-            handoff["coordination_turns"],
-            f"{label}.coordination_turns",
-            0,
-        )
-        expect_int(
-            handoff["recovery_minutes"],
-            f"{label}.recovery_minutes",
-            0,
-        )
-        if outcome == "accepted":
-            if closed_at is None or rejection_codes:
-                raise PilotDataError(
-                    f"{label} accepted outcome requires closure without rejections"
-                )
-        elif outcome == "rejected":
-            if not rejection_codes:
-                raise PilotDataError(
-                    f"{label} rejected outcome requires rejection_codes"
-                )
-        elif outcome == "interrupted":
-            if closed_at is None:
-                raise PilotDataError(
-                    f"{label} interrupted outcome requires closed_at"
-                )
-        elif closed_at is not None:
+        except agent_handoff.HandoffDataError as error:
+            raise PilotDataError(f"{label}: {error}") from error
+        identity = bundle["input_seal"]
+        if identity in bundles:
             raise PilotDataError(
-                f"{label} in_progress outcome cannot have closed_at"
+                f"duplicate implementation handoff bundle {identity!r}"
             )
-        result[handoff_id] = handoff
+        bundles[identity] = bundle
+        for handoff_index, handoff in enumerate(bundle["result"]["handoffs"]):
+            handoff_label = f"{label}.result.handoffs[{handoff_index}]"
+            expect_keys(
+                handoff,
+                handoff_label,
+                (
+                    "id",
+                    "owner_id",
+                    "issue",
+                    "pull_request",
+                    "assigned_at",
+                    "closed_at",
+                    "state",
+                    "outcome",
+                    "result_sha",
+                    "changed_lines",
+                    "changed_paths",
+                    "commit_message_sha256",
+                    "stale_response",
+                    "lifetime_seconds",
+                    "peak_rss_bytes",
+                    "coordination_turns",
+                    "recovery_minutes",
+                    "rejection_codes",
+                ),
+            )
+            handoff_id = expect_string(handoff["id"], f"{handoff_label}.id")
+            if handoff_id in handoffs:
+                raise PilotDataError(
+                    f"duplicate implementation handoff {handoff_id!r}"
+                )
+            owner_id = expect_string(
+                handoff["owner_id"],
+                f"{handoff_label}.owner_id",
+            )
+            owner_ids.append(owner_id)
+            assigned_at = parse_time(
+                handoff["assigned_at"],
+                f"{handoff_label}.assigned_at",
+            )
+            closed_at = parse_time(
+                handoff["closed_at"],
+                f"{handoff_label}.closed_at",
+                nullable=True,
+            )
+            if assigned_at > lifecycle_as_of:
+                raise PilotDataError(
+                    f"{handoff_label}.assigned_at follows lifecycle_as_of"
+                )
+            if closed_at is not None:
+                if closed_at <= assigned_at:
+                    raise PilotDataError(
+                        f"{handoff_label}.closed_at must strictly follow assigned_at"
+                    )
+                if closed_at > lifecycle_as_of:
+                    raise PilotDataError(
+                        f"{handoff_label}.closed_at follows lifecycle_as_of"
+                    )
+            outcome = expect_enum(
+                handoff["outcome"],
+                HANDOFF_OUTCOMES,
+                f"{handoff_label}.outcome",
+            )
+            rejection_codes = expect_list(
+                handoff["rejection_codes"],
+                f"{handoff_label}.rejection_codes",
+            )
+            for code_index, code in enumerate(rejection_codes):
+                expect_enum(
+                    code,
+                    HANDOFF_REJECTION_CODES,
+                    f"{handoff_label}.rejection_codes[{code_index}]",
+                )
+            expect_unique(rejection_codes, f"{handoff_label}.rejection_codes")
+            expect_bool(
+                handoff["stale_response"],
+                f"{handoff_label}.stale_response",
+            )
+            for field in (
+                "lifetime_seconds",
+                "peak_rss_bytes",
+                "coordination_turns",
+                "recovery_minutes",
+            ):
+                expect_int(
+                    handoff[field],
+                    f"{handoff_label}.{field}",
+                    0,
+                )
+            if outcome == "accepted":
+                if closed_at is None or rejection_codes:
+                    raise PilotDataError(
+                        f"{handoff_label} accepted outcome requires closure "
+                        "without rejections"
+                    )
+            elif outcome == "rejected":
+                if not rejection_codes:
+                    raise PilotDataError(
+                        f"{handoff_label} rejected outcome requires rejection_codes"
+                    )
+            elif outcome == "interrupted":
+                if closed_at is None:
+                    raise PilotDataError(
+                        f"{handoff_label} interrupted outcome requires closed_at"
+                    )
+            elif closed_at is not None:
+                raise PilotDataError(
+                    f"{handoff_label} in_progress outcome cannot have closed_at"
+                )
+            handoffs[handoff_id] = handoff
     expect_unique(owner_ids, "implementation handoff owner IDs")
-    return result
+    return {"bundles": bundles, "handoffs": handoffs}
 
 
 def validate_pull_requests(fixture: dict[str, Any]) -> dict[int, dict[str, Any]]:
@@ -2655,7 +2707,8 @@ def validate_fixture(fixture: Any) -> dict[str, Any]:
         "events": events,
         "artifacts": artifacts,
         "edges": edges,
-        "implementation_handoffs": implementation_handoffs,
+        "implementation_handoff_bundles": implementation_handoffs["bundles"],
+        "implementation_handoffs": implementation_handoffs["handoffs"],
     }
 
 
@@ -3952,8 +4005,7 @@ def cohort_identity_seal(data: dict[str, Any]) -> str:
     }
     if data["fixture"]["schema_version"] == HANDOFF_FIXTURE_SCHEMA_VERSION:
         cohort["implementation_handoffs"] = _sealed_records(
-            data["implementation_handoffs"],
-            ("rejection_codes",),
+            data["implementation_handoff_bundles"],
         )
     return hashlib.sha256(
         IDENTITY_SEAL_DOMAIN + normalized_json(cohort)
@@ -4099,6 +4151,15 @@ def build_report(
         repository_root,
         data,
     )
+    if data["fixture"]["schema_version"] == HANDOFF_FIXTURE_SCHEMA_VERSION:
+        implementation_handoffs = validate_implementation_handoffs(
+            data["fixture"],
+            repository_root,
+        )
+        data["implementation_handoff_bundles"] = implementation_handoffs[
+            "bundles"
+        ]
+        data["implementation_handoffs"] = implementation_handoffs["handoffs"]
     decisions = validate_decisions(raw_decisions, data, repository_root)
     workflow_sample(data)
     classifications = report_classifications(data)

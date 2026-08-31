@@ -584,6 +584,14 @@ result commit, direct parent, diff, changed paths, line count, commit
 message, and clean/conflict state; do not persist a second mutable copy of
 those derivable facts.
 
+Required checks use closed structured check contracts and sealed receipts
+bound to the check ID, exact argv, assigned parent, candidate SHA, worktree
+identity, execution timestamps, exit code, and output digest. The validator
+re-executes only the allowlisted non-shell command and compares the receipt.
+It never executes a caller-authored command. A passed label cannot make
+literal `false`, a failed safe check, or a stale/wrong-command/SHA/worktree
+receipt pass.
+
 Dependency edges have explicit semantics. A child issue with a
 `code_contract` dependency becomes implementation-ready when the parent
 `merge` task is `done` and the target tree contains that contract. Never point
@@ -593,6 +601,16 @@ dependencies for finishing the parent itself: the parent's completion,
 closure, and remote completion each remain blocked by its own post-merge
 Build. A direct async watcher is orthogonal execution state and must never be
 a todo or dependency target.
+
+Every handoff maps to exactly one relationship and one implementation task
+with the same handoff, issue, PR, candidate, and lifecycle-derived status.
+Missing, duplicate, or relabeled relationships/tasks reject. Every task state,
+including `done`, `in_progress`, and `blocked`, is checked against typed
+dependencies and its closed status reason. The parent's post-merge Build task
+is bound to one authoritative GitHub run ID, target SHA, status, and
+conclusion. An incomplete or failed run keeps parent completion, closure,
+remote completion, and delivery eligibility blocked without blocking a child
+whose merged code contract is already present.
 
 Therefore a merged parent with a healthy exact-master Build still in progress
 does not block dependency-ready child implementation; continue that work
@@ -614,6 +632,14 @@ implementation owner fail closed. A committed handoff closes that owner; a
 later review cycle receives a fresh owner and handoff rather than reviving the
 closed reasoning process.
 
+Owner and remote-actor comparisons use immutable numeric GitHub IDs when both
+are available, otherwise strict casefolded logins, including bot suffixes.
+Each new document carries the prior closed handoffs as a sealed hash chain
+covering sequence, previous seal, handoff, owner, lifecycle, issue, PR,
+candidate, input, Git, and result identities. Chain gaps, forks, reordering,
+tampering, or reuse of a closed owner in the same delivery lifecycle reject;
+this receipt chain is not a second mutable status ledger.
+
 There is exactly one delivery coordinator and at most one direct watcher for
 an exact run identity. A watcher timeout or process error is transport
 evidence, not the workflow conclusion: query the authoritative GitHub Actions
@@ -627,6 +653,17 @@ OOM or kill unrelated host processes. Before unattended delivery, an
 always-on coordinator is required unless an explicit time-bounded plan
 disables autostop and stop-on-disconnect or transfers coordination to an
 always-on host; otherwise fail closed before relying on the local coordinator.
+The availability record uses an authoritative evaluation time and pending
+unattended interval. The plan must cover both and carry same-evaluation runtime
+evidence that both stop triggers are disabled; an expired or merely asserted
+plan remains unavailable.
+
+Workflow-pilot reporter schema v2 carries the complete source handoff document
+plus its input, Git, check-receipt, and result seals. Before metrics, the
+reporter revalidates the source document against its exact real worktree and
+requires byte-identical normalized results. A hand-authored accepted row
+without that source/Git/result authority rejects. Frozen baseline schema v1
+remains unchanged.
 
 The indexed source-only regression is
 [`TC-WORKFLOW-AGENT-HANDOFF-001`](../../../docs/test-cases/workflow-governance.md#tc-workflow-agent-handoff-001-validate-bounded-exact-sha-agent-handoffs).

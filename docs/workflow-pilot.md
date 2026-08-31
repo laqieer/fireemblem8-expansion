@@ -470,9 +470,19 @@ assigned SHA, the current branch/worktree match the assignment, the worktree
 is clean and conflict-free, every changed path and budget is allowed, the
 required Copilot trailer is the final unique trailer, and all named checks and
 acceptance evidence passed. The output has domain-separated normalized input
-and result seals. A committed handoff closes that bounded owner; another
+Git, and result seals. A committed handoff closes that bounded owner; another
 review cycle must use a new owner identity and new handoff rather than
 continuing the closed process.
+
+Each required check names a closed contract rather than shell text. The
+current `git-diff-check` contract derives exact argv from the trusted Git
+executable, worktree, assigned parent, and candidate. Structured execution
+uses no shell and returns a receipt containing check/receipt IDs, argv,
+parent/candidate SHAs, worktree identity, start/completion times, exit code,
+output digest, and receipt seal. Validation re-executes that exact allowlisted
+command and compares its result. Unknown contracts or a caller `command`
+field fail schema validation; passed prose/evidence cannot rescue literal
+`false`, a nonzero safe check, or a stale/wrong-command/SHA/worktree receipt.
 
 The validator mechanically rejects repeated-parent/stale results, result/HEAD
 drift, missing or non-direct commits, wrong parent/worktree/branch, unrelated
@@ -482,6 +492,17 @@ and prohibited remote actions by an implementation owner. The implementation
 owner never pushes, opens or updates a PR, comments, creates a remote ref,
 dispatches CI, or merges; those remain coordinator actions under the existing
 trusted owner boundary.
+
+Actor equality uses immutable numeric GitHub database IDs when both records
+have them, otherwise a strict casefolded login. `Owner-1` and `owner-1`, or
+case variants of a `[bot]` suffix, therefore cannot bypass owner boundaries.
+Every later document supplies the prior closed handoffs as a domain-separated
+hash chain. Each receipt seals its contiguous sequence, previous receipt,
+handoff, canonical owner inputs, `handed_off` lifecycle, issue, PR, candidate,
+closure, input, Git, and result identities. The validator rejects gaps, forks,
+reordering, field/seal tampering, non-ancestral relevant candidates, and a
+closed owner reused in the same issue/PR lifecycle. This is immutable receipt
+history, not a second editable status ledger.
 
 ### Typed delivery dependencies
 
@@ -505,6 +526,14 @@ pending, the child is blocked by `parent-merge`. A graph that instead records
 merge edge and wrong code-contract edge, and reports the exact edge that must
 replace it.
 
+Every source handoff must have exactly one relationship and one implementation
+task with matching handoff ID, issue, PR, candidate SHA, and lifecycle-derived
+status. Missing/duplicate/relabelled relationships or tasks reject. Dependency
+validation applies to every task status, not only pending tasks: `done` or
+`in_progress` cannot have a non-done prerequisite, and blocked tasks carry a
+closed dependency, workflow-failure, or owner-interruption reason which must
+match their role and handoff.
+
 An in-progress master watcher is reported as `orthogonal_to_todos: true` and
 does not alter the ready set. A dependency that names its watcher ID rejects.
 If the authoritative run later completes with failure, the post-merge Build
@@ -513,6 +542,11 @@ terminal transition does not change the fact that dependency-ready work
 should have proceeded during the earlier healthy pending interval. Regardless
 of child readiness, the parent completion, closure, and remote-completion
 tasks retain direct `delivery_gate` edges to the parent's post-merge Build.
+That Build task names an exact target SHA and binds to one
+`github-actions-api` run with the same SHA/status/conclusion plus one direct
+watcher. Active and failed runs keep parent delivery eligibility false and
+prevent those parent tasks from becoming done. A successful terminal run is
+the only Build state that opens that parent gate.
 
 ### Coordinator, watcher, and recovery contract
 
@@ -539,14 +573,25 @@ An `always_on` coordinator has neither autostop nor stop-on-disconnect risk.
 A local coordinator with either risk needs an explicit time-bounded
 `disable_triggers` or `always_on_takeover` plan. A hibernating/disconnecting
 local coordinator without that plan is unavailable, and trusted push fails
-closed before unattended delivery begins.
+closed before unattended delivery begins. Availability includes an
+authoritative `coordinator-runtime` evaluation timestamp and the end of the
+pending unattended interval. Any plan must cover both the interval and
+observed handoff activity. Its evidence is bound to that same evaluation and
+must show both autostop and stop-on-disconnect disabled. Thus a January plan
+evaluated on 2026-08-31, an ineffective disable attempt, or a prose-only claim
+remains unavailable.
 
 ### Reporter extension and compatibility
 
 The unchanged frozen issue #176 baseline remains strict fixture/report schema
 version 1 and rejects a handoff field. Version 2 is an additive operational
 fixture schema that requires normalized `implementation_handoffs` records from
-the validator. The same reporter then seals those identities and reports
+the validator. Each record contains the complete source document, source
+handoff identities, and matching input/Git/result seals. The reporter verifies
+every check receipt and seal, reruns full handoff validation against the
+document's exact worktree, and requires byte-identical normalized results
+before metrics. A hand-authored accepted row without its document, Git
+authority, receipts, or seals rejects. The same reporter then reports
 accepted/rejected/interrupted/in-progress counts, stale responses, maximum
 owner lifetime/RSS, coordination turns, and recovery minutes. Stale responses
 derive from closed rejection codes, and lifetime derives from assignment,

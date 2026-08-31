@@ -486,12 +486,18 @@ game behavior needs a compensating change.
    branch, changes only allowlisted paths within the numeric line budget, ends
    in the exact Copilot trailer, supplies every acceptance/check/budget
    evidence ID, and uses zero ROM/RAM plus one admitted protocol change.
+   Confirm required checks use the closed non-shell contract and a sealed
+   receipt bound to exact argv, check ID, parent/candidate, worktree,
+   timestamps, exit code, and output digest.
 3. Exercise the repeated-parent/stale, wrong-parent, unrelated-branch, dirty,
    incomplete, missing-evidence, missing-trailer, out-of-scope, line-budget,
    ROM-budget, RAM-budget, protocol-budget, lifetime, and RSS fixtures.
 4. Exercise reused-owner and duplicate-watcher fixtures. Add an
    implementation-owner push observation and confirm it rejects while the
    unchanged trusted owner push rule remains outside implementation ownership.
+   Repeat with login case, `[bot]` suffix case, and immutable numeric-ID
+   aliases. Seal two prior handoffs and reject owner reuse, a gap, fork,
+   reorder, changed identity, or broken receipt seal.
 5. Reconcile a direct watcher timeout with an authoritative successful
    `github-actions-api` run. Then use an authoritative failed run plus a
    watcher process error and confirm delivery remains failed.
@@ -502,7 +508,10 @@ game behavior needs a compensating change.
    same issue/parent/branch/worktree context.
 7. Exercise the local coordinator with autostop and stop-on-disconnect enabled
    but no availability plan. Confirm trusted push fails before unattended
-   delivery relies on that coordinator.
+   delivery relies on that coordinator. At a 2026-08-31 evaluation, reject a
+   January expiry and an ineffective `disable_triggers` receipt; accept only
+   same-evaluation runtime evidence showing both triggers disabled through the
+   complete unattended interval.
 8. Parse the typed delivery graph. Confirm a merged parent makes child
    implementation ready while its exact-master Build is in progress and
    remote completion is pending; an unmerged parent blocks the child; a
@@ -510,12 +519,17 @@ game behavior needs a compensating change.
    master failure requires active fix-forward/revert without rewriting the
    prior pending result; `child-implement -> parent-remote` rejects and names
    `child-implement -> parent-merge`; and parent completion, closure, and
-   remote completion retain their own post-merge-Build edges.
-9. Exercise reporter fixture schema version 2 with successful and stale
-   normalized handoffs. Confirm identity sealing and accepted/rejected,
+   remote completion retain their own post-merge-Build edges. Bind every
+   handoff to one exact child relationship/task and bind the parent Build task
+   to one authoritative run SHA/status/conclusion. Reject issue `999`, blocked
+   or done status relabels, and missing/duplicate relationships/tasks.
+9. Exercise reporter fixture schema version 2 with complete successful and
+   stale source handoff bundles. Confirm document/Git/input/result/check
+   revalidation, identity sealing, and accepted/rejected,
    stale-response, lifetime, RSS, coordination-turn, and recovery-minute
-   metrics. Confirm the frozen version 1 baseline still rejects the extension
-   field and retains its exact expected schema.
+   metrics. Reject a hand-authored accepted row or any source/result/receipt
+   seal drift. Confirm the frozen version 1 baseline still rejects the
+   extension field and retains its exact expected schema.
 10. Run
    `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`,
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`,
@@ -527,7 +541,11 @@ Only the exact clean one-commit descendant reaches `trusted_push_eligible`.
 Assignment sent, received, progressing, committed, and handed-off remain
 distinct timestamped states. A committed result closes its implementation
 owner. Later work requires a fresh handoff and owner. The normalized input
-and result seals are deterministic.
+Git, and result seals are deterministic. Required checks execute only a closed
+structured contract; passed labels do not replace its exact receipt or rerun.
+The actual safe pass fixture succeeds, while the safe trailing-whitespace
+failure plus literal `false`, stale/wrong-command/SHA/worktree/timestamp
+receipts reject.
 
 The watcher timeout records process failure while preserving authoritative CI
 success. The true failed run records authoritative failure and cannot become
@@ -535,6 +553,10 @@ delivery-eligible. The OOM fixture preserves exact worktree evidence, records
 one incomplete check and recovery cost, creates exactly one replacement
 assignment, and performs no destructive process action. The hibernated local
 coordinator is unavailable without a time-bounded disable/takeover plan.
+The plan is accepted only with current runtime evidence covering the pending
+unattended interval. Casefolded logins, bot aliases, and numeric IDs cannot
+reuse closed owners or hide implementation-owner remote actions. Prior closed
+handoffs remain a sealed contiguous chain rather than a mutable ledger.
 
 The typed dependency graph reports `child-implement` ready as soon as
 `parent-merge` is done, independently of a healthy running master watcher and
@@ -543,12 +565,18 @@ child. Terminal master failure activates `fix_forward_revert`, but does not
 retroactively make the earlier pending watcher a valid reason to idle.
 Completion, closure, and remote completion for the parent remain blocked by
 its own post-merge Build.
+Each handoff has exactly one issue/PR/candidate/status-matched relationship and
+implementation task. All task statuses obey their dependencies. The parent
+Build task's exact SHA, status, and conclusion come from its authoritative run;
+active or failed state keeps parent delivery ineligible while leaving an
+already merged child contract implementation-ready.
 
 The issue #176 reporter consumes version 2 normalized handoff evidence and
 reports failures, stale responses, maximum owner lifetime and RSS,
 coordination turns, and recovery cost. Its frozen version 1 baseline, expected
 values, seals, lifecycle, trusted-push, and centralized-watcher contracts are
-unchanged.
+unchanged. Version 2 accepts no hand-authored aggregate: it repeats complete
+source worktree and receipt validation before computing those metrics.
 
 ### Negative control
 
@@ -564,7 +592,10 @@ closed. Watcher process success cannot replace a nonterminal or failed
 authoritative run, and a watcher timeout cannot turn authoritative success
 into failure. A code/contract edge to parent remote completion, missing parent
 merge edge, watcher-as-todo dependency, missing parent post-merge gate, or
-terminal failure without active fix-forward/revert also rejects.
+terminal failure without active fix-forward/revert also rejects. Issue/task/
+status relabeling, arbitrary commands, forged or stale check receipts,
+hand-authored reporter rows, owner-history chain mutation, actor aliases, and
+expired or ineffective availability evidence reject independently.
 
 ### Interactions and save compatibility
 
@@ -579,7 +610,8 @@ lane. No feature flag, migration, or manual criterion applies.
 `python3 -m unittest scripts.workflow_pilot.tests.test_agent_handoff -v`
 creates bounded temporary repositories below `build/test-artifacts/`, derives
 real ancestry/branch/diff/worktree/trailer facts with the issue #176 clean Git
-boundary, and exercises every fixture listed above. The complete
+boundary, executes only the closed safe check runner, verifies receipts, and
+exercises every fixture listed above. The complete
 `scripts/workflow_pilot/tests` discovery reruns the frozen issue #176 reporter
 regressions. Parsed task/dependency/watcher fixtures compute readiness and
 required edges rather than asserting policy wording. The workflow-governance
