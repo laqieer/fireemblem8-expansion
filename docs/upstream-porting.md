@@ -276,6 +276,11 @@ stay absent, output is never replayed, arbitrary output volume cannot alter a
 successful exit, no output sink exists, and only fixed trusted status text plus
 a numeric exit classification reaches the workflow log. Other writable roots
 and regular files retain tmpfs/ulimit bounds.
+Before `/sys` masking, the exact owned cgroup must be bound read-only under
+root-only mode-`0700` `/mnt/supervisor`. The candidate must not traverse it or
+inherit an FD; the wrapper must use that surviving view to require itself as
+the sole post-build member while host kill/removal retains the actual cgroup
+path.
 `summary` must retain
 `always()`, its reliably evaluated dynamic summary name, the classifier plus exact ordered
 worker/publisher needs, Ubuntu/five-minute context, exact classifier/result

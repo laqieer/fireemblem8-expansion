@@ -20,6 +20,7 @@ from scripts.modernize import patch_release
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
+PATCH_RELEASE_CASE = ROOT / "docs" / "test-cases" / "patch-release.md"
 ARTIFACT_FILENAMES = (
     "README.txt",
     "fireemblem8-expansion-all-locales-all-features-aapcs.bps",
@@ -255,6 +256,35 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "builder-dev /dev" not in isolated_step
         or "builder-shm /dev/shm" not in isolated_step
         or "hidepid=2 /proc" not in isolated_step
+        or "/usr/bin/mkdir -m 0700 /mnt/supervisor\n" not in isolated_step
+        or "/usr/bin/mkdir -m 0700 /mnt/supervisor/cgroup"
+        not in isolated_step
+        or 'test "$(/usr/bin/stat -c %u /mnt/supervisor)" = 0'
+        not in isolated_step
+        or 'test "$(/usr/bin/stat -c %a /mnt/supervisor)" = 700'
+        not in isolated_step
+        or '/usr/bin/mount --bind "$cgroup_path" /mnt/supervisor/cgroup'
+        not in isolated_step
+        or (
+            "/usr/bin/mount -o remount,bind,ro,nosuid,nodev,noexec \\\n"
+            "          /mnt/supervisor/cgroup"
+        )
+        not in isolated_step
+        or "supervisor_cgroup=/mnt/supervisor/cgroup" not in isolated_step
+        or 'stat -Lc %d:%i "$supervisor_cgroup/cgroup.procs"'
+        not in isolated_step
+        or "for option in ro nosuid nodev noexec; do" not in isolated_step
+        or 'test ! -r /mnt/supervisor' not in isolated_step
+        or 'test ! -w /mnt/supervisor' not in isolated_step
+        or 'test ! -x /mnt/supervisor' not in isolated_step
+        or 'test ! -r /mnt/supervisor/cgroup/cgroup.procs'
+        not in isolated_step
+        or '"$supervisor_cgroup/cgroup.procs"' not in isolated_step
+        or (
+            'cgroup_members="$(LC_ALL=C /usr/bin/sort -n \\\n'
+            '          "$cgroup_path/cgroup.procs")"'
+        )
+        in isolated_step
         or "/usr/share/dbus-1/system-services" not in isolated_step
         or "/run/dbus/system_bus_socket" not in isolated_step
         or "/run/docker.sock" not in isolated_step
@@ -547,6 +577,25 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("/usr/bin/mount --make-rprivate /", self.patch_job)
         self.assertIn("/usr/bin/mount -o remount,bind,ro /", self.patch_job)
         self.assertIn("runner temp is outside the masked host tree", self.patch_job)
+        self.assertIn(
+            '/usr/bin/mount --bind "$cgroup_path" /mnt/supervisor/cgroup',
+            self.patch_job,
+        )
+        self.assertIn("supervisor_cgroup=/mnt/supervisor/cgroup", self.patch_job)
+        self.assertIn('test ! -r /mnt/supervisor', self.patch_job)
+        supervisor_bind = self.patch_job.index(
+            '/usr/bin/mount --bind "$cgroup_path" /mnt/supervisor/cgroup'
+        )
+        sys_mask = self.patch_job.index(
+            "unmount_if_mounted /sys",
+            supervisor_bind,
+        )
+        membership = self.patch_job.index(
+            'cgroup_members="$(LC_ALL=C /usr/bin/sort -n',
+            sys_mask,
+        )
+        self.assertLess(supervisor_bind, sys_mask)
+        self.assertLess(sys_mask, membership)
         self.assertIn("for hidden in /home/runner /root /var /run /sys; do", self.patch_job)
         self.assertIn("/run/dbus/system_bus_socket", self.patch_job)
         self.assertIn("/run/docker.sock", self.patch_job)
@@ -790,6 +839,31 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "        exec < /dev/null > /mnt/source/candidate-output.log 2>&1",
             1,
         )
+        missing_supervisor_bind = self.text.replace(
+            '        /usr/bin/mount --bind "$cgroup_path" '
+            "/mnt/supervisor/cgroup",
+            "        true",
+            1,
+        )
+        weak_supervisor_permissions = self.text.replace(
+            "        /usr/bin/mkdir -m 0700 /mnt/supervisor",
+            "        /usr/bin/mkdir -m 0755 /mnt/supervisor",
+            1,
+        )
+        hidden_sys_membership = self.text.replace(
+            'cgroup_members="$(LC_ALL=C /usr/bin/sort -n \\\n'
+            '          "$supervisor_cgroup/cgroup.procs")"',
+            'cgroup_members="$(LC_ALL=C /usr/bin/sort -n \\\n'
+            '          "$cgroup_path/cgroup.procs")"',
+            1,
+        )
+        exposed_supervisor_to_candidate = self.text.replace(
+            "        test ! -r /mnt/supervisor\n"
+            "        test ! -w /mnt/supervisor\n"
+            "        test ! -x /mnt/supervisor",
+            "        true",
+            1,
+        )
         leaked_github_output = self.text.replace(
             "/usr/bin/env -i HOME=/mnt/home",
             '/usr/bin/env -i GITHUB_OUTPUT="$GITHUB_OUTPUT" HOME=/mnt/home',
@@ -954,6 +1028,10 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             ("unbounded-source", unbounded_source),
             ("removed-file-limit", removed_file_limit),
             ("candidate-output-regular-file", candidate_output_regular_file),
+            ("missing-supervisor-bind", missing_supervisor_bind),
+            ("weak-supervisor-permissions", weak_supervisor_permissions),
+            ("hidden-sys-membership", hidden_sys_membership),
+            ("candidate-can-access-supervisor", exposed_supervisor_to_candidate),
             ("leaked-github-output", leaked_github_output),
             ("leaked-step-summary", leaked_step_summary),
             ("writable-host-root", writable_host_root),
@@ -1375,6 +1453,62 @@ exec /usr/bin/python3 -c \
             self.assertEqual(inherited_path.read_bytes(), b"")
             for path in command_files.values():
                 self.assertEqual(path.read_bytes(), b"")
+
+    def test_supervisor_membership_view_allows_only_wrapper_pid(self):
+        full_script = named_step_run_script(
+            self.text,
+            "Build candidate in isolated namespace and stage public inputs",
+        )
+        start = full_script.index(
+            'cgroup_members="$(LC_ALL=C /usr/bin/sort -n'
+        )
+        end_marker = 'test "$cgroup_members" = "$$"'
+        end = full_script.index(end_marker, start) + len(end_marker)
+        membership_check = full_script[start:end]
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="supervisor-cgroup-view-",
+            dir=artifact_root,
+        ) as temporary:
+            supervisor = Path(temporary) / "supervisor"
+            supervisor.mkdir(mode=0o700)
+            (supervisor / "cgroup.procs").write_text("", encoding="ascii")
+
+            def run(extra_pid):
+                setup = (
+                    'supervisor_cgroup="$1"\n'
+                    'printf \'%s\\n\' "$$" > '
+                    '"$supervisor_cgroup/cgroup.procs"\n'
+                )
+                if extra_pid is not None:
+                    setup += (
+                        f"printf '%s\\n' {extra_pid} >> "
+                        '"$supervisor_cgroup/cgroup.procs"\n'
+                    )
+                return subprocess.run(
+                    ["/bin/bash", "-c", setup + membership_check, "--", str(supervisor)],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+
+            self.assertEqual(run(None).returncode, 0)
+            self.assertNotEqual(run(999999).returncode, 0)
+
+    def test_patch_release_docs_publish_no_internal_rom_artifact(self):
+        text = PATCH_RELEASE_CASE.read_text(encoding="utf-8")
+        self.assertIn(
+            "target ROM remains only in the publisher-local isolated handoff "
+            "and private\nstaging",
+            text,
+        )
+        self.assertIn(
+            "Actions uploads only BPS/manifest/README with 30-day retention",
+            text,
+        )
+        self.assertIn("there\nis no internal or final ROM artifact", text)
+        self.assertNotIn("one-day internal Actions artifact", text)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)

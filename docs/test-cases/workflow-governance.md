@@ -389,6 +389,11 @@ next step uses absolute isolated Python from an empty runtime CWD/environment;
 no candidate command runs while the base exists. Cleanup traps delete the base
 on success/failure, cleanup is verified, and only the patch artifact reaches
 upload.
+Before `/sys` is masked, the exact owned cgroup is bound read-only below a
+root-only `0700` `/mnt/supervisor`; the candidate cannot traverse it. The
+wrapper reads that supervisor view after `/sys` is masked and permits handoff
+only when its own PID is the sole member. Host-side kill/removal still uses the
+actual cgroup path.
 All repository/candidate-controlled commands finish before private download.
 Cleanup is verified before upload.
 After that cleanup, an adjacent final check revalidates exactly regular,

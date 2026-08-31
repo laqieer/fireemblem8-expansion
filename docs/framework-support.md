@@ -83,6 +83,11 @@ wheelhouse, and candidate checkout before private download. No complete target
 ROM enters an Actions artifact, cache, release, or log. The three-file patch
 producer is staged from that exact validated after commit with no whole-file
 source hash pins.
+Before `/sys` is masked, the exact owned cgroup is bound read-only below a
+root-only `0700` `/mnt/supervisor`; the candidate cannot traverse it. The
+wrapper reads that supervisor view after `/sys` is masked and permits handoff
+only when its own PID is the sole member. Host-side kill/removal still uses the
+actual cgroup path.
 Unavailable mount/cgroup features fail closed, and cleanup sends no UID-wide
 signal.
 Before candidate code starts, the wrapper closes inherited file descriptors

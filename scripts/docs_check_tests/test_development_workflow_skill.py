@@ -1035,6 +1035,10 @@ def classifier_bootstrap_contract_violations(text):
             "Arbitrary output volume cannot",
             "tmpfs/ulimit bounds",
             "no output sink exists",
+            "root-only 0700 /mnt/supervisor",
+            "candidate cannot traverse it",
+            "after /sys is masked",
+            "sole member",
             "builder user, tree, wheelhouse, and candidate checkout",
             "unpredictable",
             "mode-restricted",
@@ -3662,6 +3666,12 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 r"stdin/stdout/stderr\s+permanently\s+to\s+private\s+"
                 r"`/dev/null`",
                 "stdin/stdout/stderr to a bounded regular sink",
+            ),
+            (
+                "drop-supervisor-cgroup-view",
+                "publisher-secret-boundary",
+                r"root-only\s+`0700`\s+`/mnt/supervisor`",
+                "candidate-visible supervisor path",
             ),
             (
                 "allow-unexpected-handoff",

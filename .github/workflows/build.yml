@@ -1147,6 +1147,25 @@ jobs:
           builder-work /mnt
         /usr/bin/mkdir -m 0755 /mnt/control /mnt/export /mnt/handoff \
           /mnt/home /mnt/source /mnt/tmp /mnt/wheelhouse
+        /usr/bin/mkdir -m 0700 /mnt/supervisor
+        /usr/bin/mkdir -m 0700 /mnt/supervisor/cgroup
+        test "$(/usr/bin/stat -c %u /mnt/supervisor)" = 0
+        test "$(/usr/bin/stat -c %a /mnt/supervisor)" = 700
+        test "$(/usr/bin/stat -c %u "$cgroup_path")" = 0
+        /usr/bin/mount --bind "$cgroup_path" /mnt/supervisor/cgroup
+        /usr/bin/mount -o remount,bind,ro,nosuid,nodev,noexec \
+          /mnt/supervisor/cgroup
+        supervisor_cgroup=/mnt/supervisor/cgroup
+        test "$(/usr/bin/stat -Lc %d:%i "$cgroup_path/cgroup.procs")" = \
+          "$(/usr/bin/stat -Lc %d:%i "$supervisor_cgroup/cgroup.procs")"
+        supervisor_options="$(/usr/bin/findmnt -n -o OPTIONS \
+          --target "$supervisor_cgroup")"
+        for option in ro nosuid nodev noexec; do
+          case ",$supervisor_options," in
+            *,"$option",*) ;;
+            *) exit 125 ;;
+          esac
+        done
         /usr/bin/mount -t tmpfs \
           -o nosuid,nodev,mode=0755,size=6g builder-source /mnt/source
         /bin/cp -a -- "$builder_root/source/." /mnt/source/
@@ -1231,7 +1250,7 @@ jobs:
           exit "$candidate_status"
         fi
         cgroup_members="$(LC_ALL=C /usr/bin/sort -n \
-          "$cgroup_path/cgroup.procs")"
+          "$supervisor_cgroup/cgroup.procs")"
         test "$cgroup_members" = "$$"
         handoff_names="$(/usr/bin/find /mnt/handoff -mindepth 1 \
           -maxdepth 1 -printf '%f\n' | LC_ALL=C /usr/bin/sort)"
@@ -1283,6 +1302,10 @@ jobs:
         test ! -w "$WHEELHOUSE"
         test ! -w "$HOST_RUNNER_TEMP"
         test ! -w /mnt/export
+        test ! -r /mnt/supervisor
+        test ! -w /mnt/supervisor
+        test ! -x /mnt/supervisor
+        test ! -r /mnt/supervisor/cgroup/cgroup.procs
         for writable_path in "$GITHUB_WORKSPACE" "$HOME" "$RUNNER_TEMP" \
           "$HANDOFF"
         do

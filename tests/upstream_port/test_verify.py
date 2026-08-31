@@ -1469,6 +1469,13 @@ class VerifyCliCwdTests(unittest.TestCase):
                 ),
                 (
                         "patch-release",
+                        "supervisor-cgroup-view",
+                        '        /usr/bin/mount --bind "$cgroup_path" '
+                        "/mnt/supervisor/cgroup",
+                        "        true",
+                ),
+                (
+                        "patch-release",
                         "action",
                         verify_mod._UPLOAD_USES,
                         "actions/upload-artifact@" + "0" * 40,

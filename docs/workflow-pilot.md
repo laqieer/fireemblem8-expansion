@@ -256,6 +256,11 @@ owned cgroup, then admits only the expected regular, nonsymlink, single-link
 outputs fail. It removes the builder user, tree, wheelhouse, and candidate
 checkout. No complete target ROM enters an Actions artifact, cache, release,
 or log.
+Before `/sys` is masked, the exact owned cgroup is bound read-only below a
+root-only `0700` `/mnt/supervisor`; the candidate cannot traverse it. The
+wrapper reads that supervisor view after `/sys` is masked and permits handoff
+only when its own PID is the sole member. Host-side kill/removal still uses the
+actual cgroup path.
 Unavailable mount/cgroup features fail closed, and cleanup sends no UID-wide
 signal.
 Before candidate code starts, the wrapper closes inherited file descriptors

@@ -1621,6 +1621,30 @@ def _parse_step(block, job_name, index):
             not in {token for command in values["run"] for token in command}
             or "hidepid=2"
             not in " ".join(token for command in values["run"] for token in command)
+            or ("/usr/bin/mkdir", "-m", "0700", "/mnt/supervisor")
+            not in values["run"]
+            or (
+                "/usr/bin/mount",
+                "--bind",
+                "$cgroup_path",
+                "/mnt/supervisor/cgroup",
+            )
+            not in values["run"]
+            or "supervisor_cgroup=/mnt/supervisor/cgroup"
+            not in {token for command in values["run"] for token in command}
+            or ("test", "!", "-r", "/mnt/supervisor") not in values["run"]
+            or not any(
+                command
+                and command[0].startswith("cgroup_members=")
+                and "$supervisor_cgroup/cgroup.procs" in command[0]
+                for command in values["run"]
+            )
+            or any(
+                command
+                and command[0].startswith("cgroup_members=")
+                and "$cgroup_path/cgroup.procs" in command[0]
+                for command in values["run"]
+            )
             or "/sys/fs/cgroup/cgroup.controllers"
             not in {token for command in values["run"] for token in command}
             or "$builder_cgroup/cgroup.kill"

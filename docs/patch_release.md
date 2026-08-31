@@ -70,6 +70,12 @@ against the after SHA, copies only those public inputs into runner-owned `0400`
 staging, and removes the builder user, tree, wheelhouse, and candidate
 checkout. Missing mount/cgroup-v2 capabilities fail before candidate execution;
 cleanup never uses `pkill`, `killall`, or a UID-wide signal.
+Before hiding `/sys`, the wrapper bind-mounts only the exact owned cgroup
+read-only under root-owned mode-`0700` `/mnt/supervisor`. The candidate cannot
+traverse or receive an FD for that path. After candidate exit, the wrapper
+reads membership there and exports the ROM only when the wrapper PID is the
+sole member; the host continues to use the actual cgroup path for kill and
+removal.
 
 Before candidate code starts, its PID-1 wrapper redirects inherited standard
 input/output/error permanently to private `/dev/null` and closes every

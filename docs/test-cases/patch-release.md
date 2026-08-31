@@ -3,9 +3,9 @@
 These procedures cover issue [#49](https://github.com/laqieer/fireemblem8-expansion/issues/49)'s
 transient BPS-only Actions artifact and the equivalent source profile. They
 never distribute, commit, cache, or request publication of a private base. The
-non-secret build job may transfer one exact target ROM plus metadata in a
-one-day internal Actions artifact to the fresh publisher; the final retained
-artifact remains BPS/manifest/README only.
+target ROM remains only in the publisher-local isolated handoff and private
+staging. Actions uploads only BPS/manifest/README with 30-day retention; there
+is no internal or final ROM artifact.
 
 ## TC-CI-PATCH-049-001: Validate and write a trusted BPS artifact locally
 
@@ -159,6 +159,10 @@ helpers, or forks. ROM-sized output is discarded and never replayed; arbitrary
 output volume cannot fail an otherwise successful build. No output sink exists.
 Fixed trusted text and a numeric exit classification preserve build failure
 without exposing candidate bytes.
+The wrapper binds the exact owned cgroup read-only under root-only mode-`0700`
+`/mnt/supervisor` before masking `/sys`. Candidate access is denied; the
+post-build check remains readable and rejects any member beyond the wrapper PID
+before ROM handoff.
 
 ### Negative control
 
