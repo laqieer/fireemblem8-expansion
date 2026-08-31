@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "contracts": [
+    {
+      "id": "banim-scaninc-inputs",
+      "expression": "$(shell $(SCANINC) -I include -I \"\" $*.s)",
+      "tool": "tools/scaninc/scaninc.cpp",
+      "input_files": [
+        "tools/scaninc/Makefile"
+      ],
+      "input_variables": [
+        "SCANINC"
+      ],
+      "automatic_inputs": [
+        "$*.s"
+      ],
+      "resolved_value": null,
+      "owning_evidence_ids": [
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-item-cap-resolution",
+      "expression": "$(shell FE8_ITEM_ID_CAP=$(GENERATED_DATA_ITEM_CAP_SHELL_ARG) $(PYTHON) -c \"import scripts.generated_data.idspace as i; print('0x%02X' % i.resolve_item_id_cap())\" 2>/dev/null)",
+      "tool": "scripts/generated_data/idspace.py",
+      "input_files": [
+        "config.mk"
+      ],
+      "input_variables": [
+        "FE8_ITEM_ID_CAP",
+        "GENERATED_DATA_ITEM_CAP_SHELL_ARG",
+        "PYTHON"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "0xCD",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.consumer-generated",
+        "owner.drift-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "banim-compressing-linker-inputs",
+      "expression": "$(shell ./scripts/arm_compressing_linker.py -t linker_script_banim.txt -m)",
+      "tool": "scripts/arm_compressing_linker.py",
+      "input_files": [
+        "linker_script_banim.txt"
+      ],
+      "input_variables": [],
+      "automatic_inputs": [],
+      "resolved_value": null,
+      "owning_evidence_ids": [
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    }
+  ],
+  "seal": "cf4836a14f78b83e0fba259dbc23ab549049b0ccfd9f3932fc91d2b584f7796b"
+}

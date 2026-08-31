@@ -42,6 +42,7 @@ class OwnershipGraphTests(unittest.TestCase):
                 reporter.BUILD_WORKFLOW_PATH.as_posix(),
                 reporter.GRAPH_PATH.as_posix(),
                 reporter.PROBE_ORACLE_PATH.as_posix(),
+                reporter.MAKE_DYNAMIC_PATH.as_posix(),
             )
         }
         cls.scratch = reporter.prepare_validation_scratch(ROOT)
@@ -72,6 +73,17 @@ class OwnershipGraphTests(unittest.TestCase):
             ).stdout.decode("utf-8").split("\0")
             if path
         ]
+        changed.extend(
+            path
+            for path in subprocess.run(
+                ["git", "ls-files", "--others", "--exclude-standard", "-z"],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+            ).stdout.decode("utf-8").split("\0")
+            if path
+        )
+        changed = list(dict.fromkeys(changed))
         for relative in changed:
             source = ROOT / relative
             if source.is_file() and not source.is_symlink():
@@ -699,6 +711,92 @@ class OwnershipGraphTests(unittest.TestCase):
                 parse(immediate, "flavor"),
             )
 
+            immediate_old = (
+                "BASE = old\n"
+                "OBJECT := $(BASE)\n"
+                "BASE = new\n"
+                "all:\n\t@printf '%s\\n' '$(OBJECT)'\n"
+            )
+            immediate_later_change = immediate_old.replace(
+                "BASE = new", "BASE = later"
+            )
+            immediate_earlier_change = immediate_old.replace(
+                "BASE = old", "BASE = earlier"
+            )
+            self.assertEqual(run(immediate_old, "all").stdout, "old\n")
+            self.assertEqual(run(immediate_later_change, "all").stdout, "old\n")
+            self.assertEqual(
+                parse(immediate_old, "all"),
+                parse(immediate_later_change, "all"),
+            )
+            self.assertNotEqual(
+                run(immediate_old, "all").stdout,
+                run(immediate_earlier_change, "all").stdout,
+            )
+            self.assertNotEqual(
+                parse(immediate_old, "all"),
+                parse(immediate_earlier_change, "all"),
+            )
+            immediate_posix = immediate_old.replace(
+                "OBJECT :=", "OBJECT ::="
+            )
+            self.assertEqual(
+                run(immediate_old, "all").stdout,
+                run(immediate_posix, "all").stdout,
+            )
+            self.assertNotEqual(
+                parse(immediate_old, "all"),
+                parse(immediate_posix, "all"),
+            )
+
+            recursive_old = immediate_old.replace("OBJECT :=", "OBJECT =")
+            recursive_later_change = immediate_later_change.replace(
+                "OBJECT :=", "OBJECT ="
+            )
+            self.assertNotEqual(
+                run(recursive_old, "all").stdout,
+                run(recursive_later_change, "all").stdout,
+            )
+            self.assertNotEqual(
+                parse(recursive_old, "all"),
+                parse(recursive_later_change, "all"),
+            )
+
+            target_immediate = (
+                "BASE = old\n"
+                "all: OBJECT := $(BASE)\n"
+                "BASE = new\n"
+                "all:\n\t@printf '%s\\n' '$(OBJECT)'\n"
+            )
+            target_later_change = target_immediate.replace(
+                "BASE = new", "BASE = later"
+            )
+            self.assertEqual(run(target_immediate, "all").stdout, "old\n")
+            self.assertEqual(run(target_later_change, "all").stdout, "old\n")
+            self.assertEqual(
+                parse(target_immediate, "all"),
+                parse(target_later_change, "all"),
+            )
+
+            conditional_old = (
+                "BASE = old\n"
+                "ifeq ($(BASE),old)\n"
+                "OBJECT := enabled\n"
+                "else\n"
+                "OBJECT := disabled\n"
+                "endif\n"
+                "all:\n\t@printf '%s\\n' '$(OBJECT)'\n"
+            )
+            conditional_new = conditional_old.replace(
+                "BASE = old", "BASE = new"
+            )
+            self.assertEqual(run(conditional_old, "all").stdout, "enabled\n")
+            self.assertEqual(run(conditional_new, "all").stdout, "disabled\n")
+            self.assertNotEqual(
+                parse(conditional_old, "all"),
+                parse(conditional_new, "all"),
+            )
+
             prerequisites_a = (
                 "first second:\n\t@:\n"
                 "ordered: first second\n\t@printf '%s\\n' '$<'\n"
@@ -860,22 +958,22 @@ class OwnershipGraphTests(unittest.TestCase):
                 "all: $(shell touch shell-must-not-run)\n\t@true\n",
                 encoding="ascii",
             )
-            authority = reporter._parse_make_authorities(loader, {"all"})["all"]
-            self.assertIn(
-                "unsupported dynamic Make prerequisite function 'shell'",
-                authority["unknown_dynamic_prerequisites"][0]["reason"],
-            )
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "unregistered dynamic prerequisite.*function 'shell'",
+            ):
+                reporter._parse_make_authorities(loader, {"all"})
             self.assertFalse(outside.exists())
 
             makefile.write_text(
                 "A = $(B)\nB = $(A)\nall: $(A)\n\t@true\n",
                 encoding="ascii",
             )
-            authority = reporter._parse_make_authorities(loader, {"all"})["all"]
-            self.assertIn(
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
                 "cyclic dynamic Make prerequisite variables",
-                authority["unknown_dynamic_prerequisites"][0]["reason"],
-            )
+            ):
+                reporter._parse_make_authorities(loader, {"all"})
 
             expander = reporter.SafeMakeExpander(
                 loader,
@@ -885,6 +983,7 @@ class OwnershipGraphTests(unittest.TestCase):
                             "operator": ":=",
                             "value": "one two three",
                             "context": (),
+                            "_sequence": 0,
                         }
                     ]
                 },
@@ -892,6 +991,92 @@ class OwnershipGraphTests(unittest.TestCase):
             expander.MAX_WORDS = 2
             with self.assertRaisesRegex(reporter.OwnershipError, "word bound"):
                 expander.expand("$(WORDS)")
+            expander.MAX_WORDS = reporter.SafeMakeExpander.MAX_WORDS
+            expander.MAX_VARIANTS = 2
+            with self.assertRaisesRegex(reporter.OwnershipError, "variant bound"):
+                expander._bounded(("one", "two", "three"), "fixture")
+
+            expression = "value"
+            for _ in range(64):
+                expression = "$(strip " + expression + ")"
+            self.assertEqual(expander.expand(expression), ["value"])
+            expression = "$(strip " + expression + ")"
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "expression exceeds depth bound",
+            ):
+                expander.expand(expression)
+
+    def test_live_linker_dynamics_are_registered_and_complete(self):
+        entries, loader, graph, schema = self.fixture_authority()
+        model = reporter.validate_graph(graph, schema, loader, entries)
+        target = next(
+            node["authority"]["target"]
+            for node in graph["nodes"]
+            if node["id"] == "owner.link-modern"
+        )
+        authority = reporter._parse_make_authorities(
+            loader,
+            {target},
+            require_dynamic_contracts=True,
+        )[target]
+        self.assertEqual(authority["unknown_dynamic_prerequisites"], [])
+        self.assertEqual(
+            {item["id"] for item in authority["dynamic_dependencies"]},
+            {
+                "banim-compressing-linker-inputs",
+                "banim-scaninc-inputs",
+                "generated-item-cap-resolution",
+            },
+        )
+        self.assertEqual(
+            model["authorities"]["owner.link-modern"]["fingerprint"],
+            reporter._sha256(
+                b"validation-ownership-make-target-v1\0",
+                {"target": target, "record": authority},
+            ),
+        )
+
+    def test_dynamic_input_change_invalidates_exact_owners(self):
+        entries, _, graph, schema = self.fixture_authority()
+        input_path = self.fixture_root / "linker_script_banim.txt"
+        original = input_path.read_bytes()
+        base_loader = reporter.AuthorityLoader(
+            self.fixture_root,
+            entries,
+            "HEAD",
+        )
+        prior_graph = reporter._prior_graph(base_loader)
+        self.assertIsNotNone(prior_graph)
+        try:
+            input_path.write_bytes(original + b"\nFIXTURE_DYNAMIC_INPUT\n")
+            loader = reporter.AuthorityLoader(self.fixture_root, entries)
+            model = reporter.validate_graph(graph, schema, loader, entries)
+            self.assertEqual(
+                reporter._authority_changed_edges(
+                    graph,
+                    prior_graph,
+                    model,
+                    loader,
+                    base_loader,
+                ),
+                {
+                    "configuration.link",
+                    "configuration.target",
+                    "generated-schema.link",
+                    "generated-schema.target",
+                    "generated.link",
+                    "generated.target",
+                    "localization.consumer",
+                    "localization.link",
+                    "localization.negative",
+                    "manual.link",
+                    "runtime.link",
+                    "runtime.target",
+                },
+            )
+        finally:
+            input_path.write_bytes(original)
 
     def test_recursive_make_authority_rejects_untracked_include(self):
         with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:

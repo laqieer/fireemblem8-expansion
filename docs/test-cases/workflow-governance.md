@@ -542,10 +542,21 @@ to aggregate parents; a real `expansion-modern-budget-check` child mutation
 invalidates only the edges owned by `expansion-modern-linker-check`. Nested
 variables and the closed pure prerequisite-function subset resolve concrete
 objects before pattern matching; unsupported dynamics, cycles, and expansion
-bounds are rejected or sealed as explicit unknowns without executing shell
-functions. C, data, and assembly pattern recipe mutations propagate through
+bounds reject without executing shell functions. Registered shell-derived
+dependencies bind exact expressions, tracked tools/inputs/variables, and
+owners through the separate sealed dynamic registry. C, data, and assembly
+pattern recipe mutations propagate through
 `expansion-modern-all` to its exact compile-owner edges and every real
 link/runtime aggregate that consumes the same objects.
+
+Immediate and recursive assignment fixtures compare GNU Make with the
+authority parser: later base-variable changes preserve earlier `:=`/`::=`
+values but affect deferred `=` values, while ordered append, target-specific,
+and conditional cases retain declaration-time behavior. Independent
+expression/function and variable recursion depth, word, and variant bounds
+reject their first over-limit input. The live linker closure must report zero
+unowned dynamic prerequisites; removing a registration or changing a bound
+tool/input invalidates the exact consuming evidence.
 
 Exact current/base Git mode and provenance is mandatory. Symlinks, synthetic
 gitlinks under owned prefixes, untracked/ignored/nonexistent changed paths,

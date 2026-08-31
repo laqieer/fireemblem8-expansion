@@ -1053,6 +1053,10 @@
         },
         {
           "kind": "exact",
+          "path": ".github/validation-ownership-make-dynamics.json"
+        },
+        {
+          "kind": "exact",
           "path": ".github/workflow-pilot-decisions.json"
         }
       ],

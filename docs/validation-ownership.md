@@ -23,6 +23,10 @@ Issue #181 is parallel and does not consume or authorize this graph.
 - [`scripts/validation_ownership/probe-oracle.json`](../scripts/validation_ownership/probe-oracle.json)
   is the independent sealed probe oracle. Expected surfaces and edge families
   never come from the graph being measured.
+- [`.github/validation-ownership-make-dynamics.json`](../.github/validation-ownership-make-dynamics.json)
+  is the sealed allowlist for reachable shell-derived Make dependencies. Each
+  expression binds tracked tools, input files/variables, automatic inputs,
+  optional nonexecuting resolved values, and exact evidence owners.
 - [`scripts/validation_ownership/reporter.py`](../scripts/validation_ownership/reporter.py)
   enumerates tracked paths through trusted Git, resolves live authorities,
   emits canonical JSON, and verifies that execution did not change Git state.
@@ -182,6 +186,20 @@ prerequisite, or generated-rule change
 therefore changes every aggregate authority that consumes it while unrelated
 targets remain stable. Target cycles emit a deterministic cycle record rather
 than recursing or silently dropping an edge.
+
+Global assignment evaluation preserves one parse sequence. `:=` and `::=`
+expand against then-current values; recursive `=` remains deferred; `?=`,
+`+=`, target-specific assignments, flavors, and conditionals follow GNU Make
+timing. A later `BASE` reassignment therefore cannot change an earlier
+`OBJECT := $(BASE)`, while it does affect `OBJECT = $(BASE)`. GNU Make fixtures
+pin global, target-specific, append, and conditional variants.
+
+Reachable unregistered dynamic prerequisites reject. The live linker authority
+has zero unowned dynamics: its `scaninc`, generated item-cap, and
+banim-linker shell expressions are represented by the separate registry and
+never executed. Contract tool/input/variable changes flow only to Make
+evidence that consumes the contract. Variable recursion and expression
+nesting have independent limits of 64, with separate word and variant bounds.
 
 Domain-separated seals cover the strict schema, probe oracle, complete graph, and resolved
 edges plus live evidence-authority fingerprints. Make authority derives from
