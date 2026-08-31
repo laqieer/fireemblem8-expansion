@@ -151,8 +151,9 @@ path, invokes only that staged tool through absolute isolated Python while the
 base exists, removes it on success/failure, verifies cleanup, revalidates the
 BPS/manifest/README allowlist immediately before upload, and uploads only that
 patch artifact.
-Before candidate code, inherited descriptors above 2 close, stdin becomes
-private `/dev/null`, and stdout/stderr permanently target that same null device.
+Before candidate code, a trusted child launcher closes inherited descriptors
+above 2, while stdin becomes private `/dev/null` and stdout/stderr permanently
+target that same null device.
 The candidate receives no GitHub workflow command-file paths and cannot recover
 the Actions log through proc FDs, `/dev/stdout`, console/kmsg, `tee`, xtrace,
 helpers, or forks. ROM-sized output is discarded and never replayed; arbitrary
@@ -192,8 +193,9 @@ archival-lane behavior changes.
   and namespaces, read-only host/private-filesystem probes, exact cgroup-v2 and
   process teardown, socket/daemon/cgroup-escape adversaries, two-file handoff
   rejection controls, unpredictable private path, cleanup-before-upload, late
-  artifact revalidation, null/no-replay candidate output adversaries, and
-  profile/verifier requirements.
+  artifact revalidation, null/no-replay candidate output adversaries, the old
+  Bash-FD-255/memfd exit-125 reproducer, inherited pipe/memfd/socket closure in
+  the child launcher, and profile/verifier requirements.
 
 ### Cleanup and limitations
 

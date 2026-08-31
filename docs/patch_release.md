@@ -78,8 +78,10 @@ sole member; the host continues to use the actual cgroup path for kill and
 removal.
 
 Before candidate code starts, its PID-1 wrapper redirects inherited standard
-input/output/error permanently to private `/dev/null` and closes every
-inherited descriptor above 2. Thus
+input/output/error permanently to private `/dev/null`. A trusted isolated
+Python child launcher closes every inherited descriptor above 2, loads the
+root-owned candidate script into Bash `-c` argv, and then executes `setpriv`.
+Thus
 `/proc/*/fd`, `/dev/stdout`, `tee`, shell xtrace, forks, and helper/logger pipes
 can reach only the null device, never the Actions log. `/dev/console` and `/dev/kmsg`
 are absent. `GITHUB_STEP_SUMMARY`, `GITHUB_OUTPUT`, `GITHUB_ENV`, and

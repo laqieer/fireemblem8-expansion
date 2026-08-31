@@ -9,6 +9,7 @@ import os
 import re
 import resource
 import shlex
+import socket
 import subprocess
 import tempfile
 import threading
@@ -216,12 +217,20 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "--no-new-privs" not in isolated_step
         or "--bounding-set=-all" not in isolated_step
         or "/usr/bin/env -i" not in isolated_step
-        or "GITHUB_ENV=\"$GITHUB_ENV\"" in isolated_step
-        or "BASH_ENV=\"$BASH_ENV\"" in isolated_step
-        or "GITHUB_OUTPUT=\"$GITHUB_OUTPUT\"" in isolated_step
-        or "GITHUB_PATH=\"$GITHUB_PATH\"" in isolated_step
-        or "GITHUB_STEP_SUMMARY=\"$GITHUB_STEP_SUMMARY\"" in isolated_step
-        or isolated_step.count("\n        close_inherited_fds\n") != 2
+        or '"GITHUB_ENV": os.environ' in isolated_step
+        or '"BASH_ENV": os.environ' in isolated_step
+        or '"GITHUB_OUTPUT": os.environ' in isolated_step
+        or '"GITHUB_PATH": os.environ' in isolated_step
+        or '"GITHUB_STEP_SUMMARY": os.environ' in isolated_step
+        or "close_inherited_fds" in isolated_step
+        or "/proc/$$/fd" in isolated_step
+        or "candidate-launcher.py" not in isolated_step
+        or 'getattr(os, "close_range", None)' not in isolated_step
+        or "os.closerange(3, MAX_FD)" not in isolated_step
+        or "os.execve(candidate_argv[0], candidate_argv, candidate_env)"
+        not in isolated_step
+        or "MAX_FD = 1_048_576" not in isolated_step
+        or "raise SystemExit(125 if bad else 0)" not in isolated_step
         or isolated_step.count('exec < /dev/null > /dev/null 2>&1') != 2
         or '< /dev/null > /dev/null 2>&1 &' not in isolated_step
         or "builder-capture" in isolated_step
@@ -608,7 +617,15 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertIn('test -z "$(builder_cgroup_pids)"', self.patch_job)
         self.assertIn('test ! -e "$builder_cgroup"', self.patch_job)
         self.assertNotRegex(self.patch_job, r"/bin/kill[^\n]*[\"']?\$pid")
-        self.assertIn("close_inherited_fds", self.patch_job)
+        self.assertNotIn("close_inherited_fds", self.patch_job)
+        self.assertNotIn("/proc/$$/fd", self.patch_job)
+        self.assertIn("candidate-launcher.py", self.patch_job)
+        self.assertIn('getattr(os, "close_range", None)', self.patch_job)
+        self.assertIn("os.closerange(3, MAX_FD)", self.patch_job)
+        self.assertIn(
+            "os.execve(candidate_argv[0], candidate_argv, candidate_env)",
+            self.patch_job,
+        )
         self.assertEqual(
             self.patch_job.count('exec < /dev/null > /dev/null 2>&1'),
             2,
@@ -804,13 +821,15 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         leaked_github_env = self.text.replace(
-            "/usr/bin/env -i HOME=/mnt/home",
-            '/usr/bin/env -i GITHUB_ENV="$GITHUB_ENV" HOME=/mnt/home',
+            '            "GITHUB_WORKSPACE": "/mnt/source",',
+            '            "GITHUB_ENV": os.environ["GITHUB_ENV"],\n'
+            '            "GITHUB_WORKSPACE": "/mnt/source",',
             1,
         )
         leaked_bash_env = self.text.replace(
-            "/usr/bin/env -i HOME=/mnt/home",
-            '/usr/bin/env -i BASH_ENV="$BASH_ENV" HOME=/mnt/home',
+            '            "GITHUB_WORKSPACE": "/mnt/source",',
+            '            "BASH_ENV": os.environ["BASH_ENV"],\n'
+            '            "GITHUB_WORKSPACE": "/mnt/source",',
             1,
         )
         inherited_actions_log = self.text.replace(
@@ -818,9 +837,9 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "          &",
             1,
         )
-        retained_inherited_fds = self.text.replace(
-            "\n        close_inherited_fds\n",
-            "\n        true\n",
+        disabled_child_fd_close = self.text.replace(
+            "                os.closerange(3, MAX_FD)",
+            "                pass",
         )
         unbounded_source = self.text.replace(
             "size=6g builder-source /mnt/source",
@@ -865,13 +884,15 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         leaked_github_output = self.text.replace(
-            "/usr/bin/env -i HOME=/mnt/home",
-            '/usr/bin/env -i GITHUB_OUTPUT="$GITHUB_OUTPUT" HOME=/mnt/home',
+            '            "GITHUB_WORKSPACE": "/mnt/source",',
+            '            "GITHUB_OUTPUT": os.environ["GITHUB_OUTPUT"],\n'
+            '            "GITHUB_WORKSPACE": "/mnt/source",',
             1,
         )
         leaked_step_summary = self.text.replace(
-            "/usr/bin/env -i HOME=/mnt/home",
-            '/usr/bin/env -i GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" HOME=/mnt/home',
+            '            "GITHUB_WORKSPACE": "/mnt/source",',
+            '            "GITHUB_STEP_SUMMARY": os.environ["GITHUB_STEP_SUMMARY"],\n'
+            '            "GITHUB_WORKSPACE": "/mnt/source",',
             1,
         )
         writable_host_root = self.text.replace(
@@ -1024,7 +1045,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             ("leaked-github-env", leaked_github_env),
             ("leaked-bash-env", leaked_bash_env),
             ("inherited-actions-log", inherited_actions_log),
-            ("retained-inherited-fds", retained_inherited_fds),
+            ("disabled-child-fd-close", disabled_child_fd_close),
             ("unbounded-source", unbounded_source),
             ("removed-file-limit", removed_file_limit),
             ("candidate-output-regular-file", candidate_output_regular_file),
@@ -1454,6 +1475,131 @@ exec /usr/bin/python3 -c \
             for path in command_files.values():
                 self.assertEqual(path.read_bytes(), b"")
 
+    def test_child_launcher_closes_bash_memfd_pipe_and_socket_fds(self):
+        isolated_step = next(
+            step
+            for step in patch_release_step_blocks(self.text)
+            if "Build candidate in isolated namespace and stage public inputs"
+            in step
+        )
+        launcher_match = re.search(
+            r"(?ms)<<'CANDIDATE_LAUNCHER'\n"
+            r"(?P<body>.*?)^        CANDIDATE_LAUNCHER$",
+            isolated_step,
+        )
+        self.assertIsNotNone(launcher_match)
+        launcher_source = "\n".join(
+            line[8:] if line.startswith("        ") else line
+            for line in launcher_match.group("body").splitlines()
+        )
+        rootless_launcher = launcher_source.replace(
+            '    "--clear-groups",',
+            '    "--keep-groups",',
+            1,
+        )
+        self.assertNotEqual(rootless_launcher, launcher_source)
+
+        old_script = r'''
+old_close() {
+  for fd_path in /proc/$$/fd/*; do
+    fd="${fd_path##*/}"
+    case "$fd" in
+      0|1|2) ;;
+      ''|*[!0-9]*) exit 125 ;;
+      *) eval "exec ${fd}>&-" 2>/dev/null || true ;;
+    esac
+  done
+  for fd_path in /proc/$$/fd/*; do
+    case "${fd_path##*/}" in
+      0|1|2) ;;
+      *) exit 125 ;;
+    esac
+  done
+}
+old_close
+exit 37
+'''
+        old_memfd = os.memfd_create("old-bash-fd-closer", 0)
+        try:
+            os.write(old_memfd, old_script.encode("ascii"))
+            os.lseek(old_memfd, 0, os.SEEK_SET)
+            old_result = subprocess.run(
+                ["/bin/bash", f"/proc/self/fd/{old_memfd}"],
+                pass_fds=(old_memfd,),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            self.assertEqual(old_result.returncode, 125)
+        finally:
+            os.close(old_memfd)
+
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="candidate-child-launcher-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            launcher = sandbox / "candidate-launcher.py"
+            launcher.write_text(rootless_launcher, encoding="ascii")
+            launcher.chmod(0o400)
+            candidate = sandbox / "candidate-build.sh"
+            candidate.write_text(
+                "/usr/bin/python3 -I -S -c "
+                "'import errno,fcntl; bad=[]; "
+                "exec(\"for fd in range(3, 1024):\\n try: "
+                "fcntl.fcntl(fd, fcntl.F_GETFD)\\n except OSError as error:"
+                "\\n  if error.errno != errno.EBADF: raise\\n else: "
+                "bad.append(fd)\"); raise SystemExit(125 if bad else 0)'\n"
+                "exit 37\n",
+                encoding="ascii",
+            )
+            candidate.chmod(0o555)
+
+            pipe_read, pipe_write = os.pipe()
+            inherited_memfd = os.memfd_create("candidate-inherited", 0)
+            socket_left, socket_right = socket.socketpair()
+            inherited_fds = (
+                pipe_read,
+                pipe_write,
+                inherited_memfd,
+                socket_left.fileno(),
+                socket_right.fileno(),
+            )
+            for fd in inherited_fds:
+                os.set_inheritable(fd, True)
+            try:
+                result = subprocess.run(
+                    [
+                        "/usr/bin/unshare",
+                        "--user",
+                        "--map-root-user",
+                        "--fork",
+                        "/usr/bin/python3",
+                        "-I",
+                        "-S",
+                        str(launcher),
+                        "0",
+                        "0",
+                        str(candidate),
+                        "/home/runner/work/_temp",
+                    ],
+                    pass_fds=inherited_fds,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 37)
+            finally:
+                os.close(pipe_read)
+                os.close(pipe_write)
+                os.close(inherited_memfd)
+                socket_left.close()
+                socket_right.close()
+
     def test_supervisor_membership_view_allows_only_wrapper_pid(self):
         full_script = named_step_run_script(
             self.text,
@@ -1800,6 +1946,22 @@ exec /usr/bin/python3 -c \
                     capture_output=True,
                 )
                 self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        launcher_match = re.search(
+            r"(?ms)<<'CANDIDATE_LAUNCHER'\n"
+            r"(?P<body>.*?)^        CANDIDATE_LAUNCHER$",
+            isolated_step,
+        )
+        self.assertIsNotNone(launcher_match)
+        launcher_source = "\n".join(
+            line[8:] if line.startswith("        ") else line
+            for line in launcher_match.group("body").splitlines()
+        )
+        compile(
+            launcher_source,
+            "<candidate-launcher>",
+            "exec",
+        )
 
 
 if __name__ == "__main__":

@@ -271,7 +271,9 @@ mode-restricted private download; immediate absolute isolated patch creation,
 guaranteed base cleanup, cleanup verification, post-cleanup BPS/manifest/README
 revalidation, and the exact patch-only upload mapping remain mandatory.
 Candidate stdin/stdout/stderr must permanently target private `/dev/null`, and
-inherited descriptors above 2 must close. GitHub workflow command-file paths
+an isolated trusted child launcher must close inherited descriptors above 2
+before executing `setpriv` with the candidate script held in Bash `-c` argv.
+GitHub workflow command-file paths
 stay absent, output is never replayed, arbitrary output volume cannot alter a
 successful exit, no output sink exists, and only fixed trusted status text plus
 a numeric exit classification reaches the workflow log. Other writable roots

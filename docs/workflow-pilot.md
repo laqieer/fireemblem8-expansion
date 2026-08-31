@@ -263,7 +263,7 @@ only when its own PID is the sole member. Host-side kill/removal still uses the
 actual cgroup path.
 Unavailable mount/cgroup features fail closed, and cleanup sends no UID-wide
 signal.
-Before candidate code starts, the wrapper closes inherited file descriptors
+Before candidate code starts, a trusted child launcher closes inherited file descriptors
 above 2, redirects stdin/stdout/stderr permanently to private `/dev/null`, and
 passes no GitHub workflow command-file paths.
 Candidate output is never replayed, logged, or uploaded; the trusted host emits

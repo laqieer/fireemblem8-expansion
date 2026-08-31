@@ -1112,26 +1112,10 @@ jobs:
         builder_root="$4"
         host_runner_temp="$5"
         candidate_script="$6"
-        host_uid="$7"
-        host_gid="$8"
+        candidate_launcher="$7"
+        host_uid="$8"
+        host_gid="$9"
         exec < /dev/null > /dev/null 2>&1
-        close_inherited_fds() {
-          for fd_path in /proc/$$/fd/*; do
-            fd="${fd_path##*/}"
-            case "$fd" in
-              0|1|2) ;;
-              ''|*[!0-9]*) exit 125 ;;
-              *) eval "exec ${fd}>&-" 2>/dev/null || true ;;
-            esac
-          done
-          for fd_path in /proc/$$/fd/*; do
-            case "${fd_path##*/}" in
-              0|1|2) ;;
-              *) exit 125 ;;
-            esac
-          done
-        }
-        close_inherited_fds
         printf '%s\n' "$$" > "$cgroup_path/cgroup.procs"
         /usr/bin/grep -Fqx "$$" "$cgroup_path/cgroup.procs"
         cd /
@@ -1183,6 +1167,8 @@ jobs:
           /mnt/wheelhouse
         /usr/bin/install -m 0555 "$candidate_script" \
           /mnt/control/candidate-build.sh
+        /usr/bin/install -m 0444 "$candidate_launcher" \
+          /mnt/control/candidate-launcher.py
         /usr/bin/chown -R "$builder_uid:$builder_gid" \
           /mnt/handoff /mnt/home /mnt/source /mnt/tmp
         /usr/bin/mount --bind /mnt/control /mnt/control
@@ -1227,23 +1213,15 @@ jobs:
         /usr/bin/mount -o remount,ro,nosuid /dev
         /usr/bin/mount -o remount,ro,nosuid,nodev,noexec,hidepid=2 /proc
         exec < /dev/null > /dev/null 2>&1
-        close_inherited_fds
         ulimit -c 0
         ulimit -f 131072
         ulimit -n 128
         ulimit -u 512
         ulimit -v 8388608
         set +e
-        /usr/bin/setpriv --reuid="$builder_uid" \
-          --regid="$builder_gid" --clear-groups --no-new-privs \
-          --bounding-set=-all --inh-caps=-all --ambient-caps=-all \
-          /usr/bin/env -i HOME=/mnt/home GITHUB_WORKSPACE=/mnt/source \
-          HOST_RUNNER_TEMP="$host_runner_temp" LC_ALL=C \
-          PATH=/usr/bin:/bin PIP_CONFIG_FILE=/dev/null \
-          RUNNER_TEMP=/mnt/tmp TMPDIR=/mnt/tmp \
-          WHEELHOUSE=/mnt/wheelhouse HANDOFF=/mnt/handoff \
-          /bin/bash --noprofile --norc -euo pipefail \
-          /mnt/control/candidate-build.sh
+        /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py \
+          "$builder_uid" "$builder_gid" \
+          /mnt/control/candidate-build.sh "$host_runner_temp"
         candidate_status="$?"
         set -e
         if [ "$candidate_status" -ne 0 ]; then
@@ -1283,6 +1261,7 @@ jobs:
         #!/bin/bash
         set -euo pipefail
         umask 077
+        /usr/bin/python3 -I -S -c 'import errno,fcntl; bad=[]; exec("for fd in range(3, 1024):\n try: fcntl.fcntl(fd, fcntl.F_GETFD)\n except OSError as error:\n  if error.errno != errno.EBADF: raise\n else: bad.append(fd)"); raise SystemExit(125 if bad else 0)'
         test -z "${BASH_ENV-}"
         test -z "${BASH_XTRACEFD-}"
         test -z "${ENV-}"
@@ -1347,8 +1326,90 @@ jobs:
           build/expansion-modern-all-locales-all-features/release/aapcs/generated/expansion_build_metadata.json \
           "$HANDOFF/metadata.json"
         CANDIDATE_BUILD
+        /usr/bin/tee "$BUILDER_ROOT/control/candidate-launcher.py" \
+          > /dev/null <<'CANDIDATE_LAUNCHER'
+        import os
+        import stat
+        import sys
+
+        MAX_FD = 1_048_576
+
+        if len(sys.argv) != 5:
+            raise SystemExit(125)
+        uid, gid, script_path, host_runner_temp = sys.argv[1:]
+        if not uid.isascii() or not uid.isdecimal():
+            raise SystemExit(125)
+        if not gid.isascii() or not gid.isdecimal():
+            raise SystemExit(125)
+        if not host_runner_temp.startswith("/home/runner/"):
+            raise SystemExit(125)
+
+        script_stat = os.lstat(script_path)
+        if not stat.S_ISREG(script_stat.st_mode):
+            raise SystemExit(125)
+        if script_stat.st_uid != 0 or script_stat.st_nlink != 1:
+            raise SystemExit(125)
+        if stat.S_IMODE(script_stat.st_mode) != 0o555:
+            raise SystemExit(125)
+        with open(script_path, "rb") as script_file:
+            script_bytes = script_file.read(65537)
+        if not script_bytes or len(script_bytes) > 65536:
+            raise SystemExit(125)
+        try:
+            script = script_bytes.decode("ascii")
+        except UnicodeDecodeError:
+            raise SystemExit(125)
+
+        candidate_argv = [
+            "/usr/bin/setpriv",
+            f"--reuid={uid}",
+            f"--regid={gid}",
+            "--clear-groups",
+            "--no-new-privs",
+            "--bounding-set=-all",
+            "--inh-caps=-all",
+            "--ambient-caps=-all",
+            "/bin/bash",
+            "--noprofile",
+            "--norc",
+            "-euo",
+            "pipefail",
+            "-c",
+            script,
+            "candidate-build",
+        ]
+        candidate_env = {
+            "GITHUB_WORKSPACE": "/mnt/source",
+            "HANDOFF": "/mnt/handoff",
+            "HOME": "/mnt/home",
+            "HOST_RUNNER_TEMP": host_runner_temp,
+            "LC_ALL": "C",
+            "PATH": "/usr/bin:/bin",
+            "PIP_CONFIG_FILE": "/dev/null",
+            "RUNNER_TEMP": "/mnt/tmp",
+            "TMPDIR": "/mnt/tmp",
+            "WHEELHOUSE": "/mnt/wheelhouse",
+        }
+
+        close_range = getattr(os, "close_range", None)
+        try:
+            if close_range is not None:
+                close_range(3, MAX_FD - 1)
+            elif hasattr(os, "closerange"):
+                os.closerange(3, MAX_FD)
+            else:
+                raise OSError("no safe descriptor closer")
+        except OSError:
+            raise SystemExit(125)
+
+        try:
+            os.execve(candidate_argv[0], candidate_argv, candidate_env)
+        except OSError:
+            raise SystemExit(126)
+        CANDIDATE_LAUNCHER
         /bin/chmod 0500 "$BUILDER_ROOT/control/builder-isolation.sh"
         /bin/chmod 0400 "$BUILDER_ROOT/control/candidate-build.sh"
+        /bin/chmod 0400 "$BUILDER_ROOT/control/candidate-launcher.py"
         /usr/bin/sudo /bin/chown -R "$builder_uid:$builder_gid" \
           "$BUILDER_ROOT/wheelhouse"
         /usr/bin/sudo /usr/bin/unshare --fork --kill-child=KILL \
@@ -1388,6 +1449,7 @@ jobs:
           "$builder_cgroup" "$builder_uid" "$builder_gid" \
           "$BUILDER_ROOT" "$RUNNER_TEMP" \
           "$BUILDER_ROOT/control/candidate-build.sh" \
+          "$BUILDER_ROOT/control/candidate-launcher.py" \
           "$host_uid" "$host_gid" \
           < /dev/null > /dev/null 2>&1 &
         builder_supervisor_pid="$!"

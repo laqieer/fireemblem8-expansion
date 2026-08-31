@@ -1650,7 +1650,19 @@ def _parse_step(block, job_name, index):
             or "$builder_cgroup/cgroup.kill"
             not in {token for command in values["run"] for token in command}
             or "close_inherited_fds()"
-            not in {token for command in values["run"] for token in command}
+            in {token for command in values["run"] for token in command}
+            or "/proc/$$/fd"
+            in " ".join(token for command in values["run"] for token in command)
+            or "candidate-launcher.py"
+            not in " ".join(token for command in values["run"] for token in command)
+            or "os.closerange(3,"
+            not in " ".join(token for command in values["run"] for token in command)
+            or "os.execve(candidate_argv[0],"
+            not in " ".join(token for command in values["run"] for token in command)
+            or "MAX_FD = 1_048_576"
+            not in " ".join(token for command in values["run"] for token in command)
+            or "fcntl.F_GETFD"
+            not in " ".join(token for command in values["run"] for token in command)
             or values["run"].count(
                 ("exec", "<", "/dev/null", ">", "/dev/null", "2>&1")
             )
