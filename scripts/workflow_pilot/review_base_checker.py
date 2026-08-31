@@ -4,14 +4,14 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import hashlib
 import json
 import re
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable
+from typing import Any
 
 
 SCHEMA_VERSION = 2
@@ -26,51 +26,6 @@ FAMILY_MEMBERS = {
     "lifecycle": ("entries", "preservation", "resets", "terminals"),
     "resource": ("enabled", "disabled"),
     "wire": ("producers", "consumers", "validators", "replay", "stale-bindings"),
-}
-BEHAVIOR_ROWS = (
-    "actor-permission-bounds",
-    "authority-causality",
-    "remote-review-metrics",
-    "round-lifecycle",
-    "sibling-family-expansion",
-)
-EVIDENCE_CLASSES = ("positive", "adversarial", "default", "runtime")
-BEHAVIOR_ASSERTION_IDS = {
-    row: {
-        evidence_class: f"registry:behavior:{row}:{evidence_class}:v2"
-        for evidence_class in EVIDENCE_CLASSES
-    }
-    for row in BEHAVIOR_ROWS
-}
-MEMBER_OUTCOME_REGISTRY = {
-    "action": {
-        "actions": "affected-fixed",
-        "items": "verified-unaffected",
-        "targets": "verified-unaffected",
-    },
-    "generated": {
-        "owners": "affected-fixed",
-        "outputs": "verified-unaffected",
-        "consumers": "verified-unaffected",
-        "drift-checks": "verified-unaffected",
-    },
-    "lifecycle": {
-        "entries": "affected-fixed",
-        "preservation": "verified-unaffected",
-        "resets": "verified-unaffected",
-        "terminals": "verified-unaffected",
-    },
-    "resource": {
-        "enabled": "affected-fixed",
-        "disabled": "verified-unaffected",
-    },
-    "wire": {
-        "producers": "affected-fixed",
-        "consumers": "verified-unaffected",
-        "validators": "verified-unaffected",
-        "replay": "verified-unaffected",
-        "stale-bindings": "verified-unaffected",
-    },
 }
 CHECKER_ARGV = (
     "/usr/bin/python3",
@@ -422,291 +377,6 @@ def _validate_report(
     }
 
 
-def _assert_actor_permission_bounds(data: dict[str, Any]) -> dict[str, Any]:
-    report = data["original_pre_review"]
-    limits = data["limits"]
-    if report["permissions"] != ["contents:read"]:
-        raise CheckError("pre-review permissions are not read-only")
-    if report["actions"] != list(ACTION_SEQUENCE):
-        raise CheckError("pre-review action sequence is not exact")
-    if len(report["reviewed_files"]) > limits["max_reviewed_files"]:
-        raise CheckError("reviewed files exceed configured bound")
-    return {"permissions": report["permissions"], "actions": report["actions"]}
-
-
-def _assert_authority_causality(data: dict[str, Any]) -> dict[str, Any]:
-    if data["base_sha"] == data["candidate_sha"] or not data["changes"]:
-        raise CheckError("current head authority is incomplete")
-    if data["original_pre_review"]["candidate_sha"] != data[
-        "original_pre_review_head"
-    ]:
-        raise CheckError("original pre-review head binding is stale")
-    return {
-        "base_sha": data["base_sha"],
-        "head_sha": data["candidate_sha"],
-        "change_count": len(data["changes"]),
-    }
-
-
-def _assert_remote_review_metrics(data: dict[str, Any]) -> dict[str, Any]:
-    review = data["review_context"]
-    if (
-        review["round"] != data["review_round"]
-        or review["candidate_sha"] != data["candidate_sha"]
-    ):
-        raise CheckError("remote review does not bind current assertion round/head")
-    return {
-        "round": review["round"],
-        "head": review["candidate_sha"],
-        "outcome": review["outcome"],
-    }
-
-
-def _assert_round_lifecycle(data: dict[str, Any]) -> dict[str, Any]:
-    rounds = data["all_remote_reviews"]
-    if [review["round"] for review in rounds] != list(range(1, len(rounds) + 1)):
-        raise CheckError("remote rounds are not consecutive")
-    if data["review_round"] > len(rounds):
-        raise CheckError("assertion review round is absent")
-    return {"rounds": len(rounds), "current_round": data["review_round"]}
-
-
-def _assert_sibling_family_expansion(data: dict[str, Any]) -> dict[str, Any]:
-    for request in data["assertion_requests"]:
-        assertion_id = request["assertion_id"]
-        if assertion_id.startswith("registry:sibling:"):
-            _parse_member_assertion(assertion_id)
-    return {"request_count": len(data["assertion_requests"])}
-
-
-ROW_ASSERTIONS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
-    "actor-permission-bounds": _assert_actor_permission_bounds,
-    "authority-causality": _assert_authority_causality,
-    "remote-review-metrics": _assert_remote_review_metrics,
-    "round-lifecycle": _assert_round_lifecycle,
-    "sibling-family-expansion": _assert_sibling_family_expansion,
-}
-
-
-def _parse_behavior_assertion(assertion_id: str) -> tuple[str, str]:
-    parts = assertion_id.split(":")
-    if (
-        len(parts) != 5
-        or parts[0:2] != ["registry", "behavior"]
-        or parts[2] not in BEHAVIOR_ROWS
-        or parts[3] not in EVIDENCE_CLASSES
-        or parts[4] != "v2"
-        or assertion_id != BEHAVIOR_ASSERTION_IDS[parts[2]][parts[3]]
-    ):
-        raise CheckError(f"assertion {assertion_id!r} is not in the closed registry")
-    return parts[2], parts[3]
-
-
-def _parse_member_assertion(
-    assertion_id: str,
-) -> tuple[str, str, str, str | None]:
-    parts = assertion_id.split(":")
-    reason = None
-    if len(parts) == 7 and parts[-1] == "v2":
-        _, kind, family, member, disposition, reason, _ = parts
-    elif len(parts) == 6 and parts[-1] == "v2":
-        _, kind, family, member, disposition, _ = parts
-    else:
-        raise CheckError("member assertion identity is malformed")
-    if kind != "sibling" or family not in FAMILY_MEMBERS:
-        raise CheckError("member assertion is outside the closed registry")
-    if member not in FAMILY_MEMBERS[family]:
-        raise CheckError("member assertion names the wrong family member")
-    registered = MEMBER_OUTCOME_REGISTRY[family][member]
-    if disposition == "not-applicable":
-        if (
-            family,
-            member,
-            reason,
-        ) != ("resource", "disabled", "feature-disabled-by-contract"):
-            raise CheckError("not-applicable reason is not explicitly registered")
-    elif disposition != registered or reason is not None:
-        raise CheckError("member disposition is not registered")
-    return family, member, disposition, reason
-
-
-def _mutate_for_rejection(row: str, data: dict[str, Any]) -> dict[str, Any]:
-    mutated = copy.deepcopy(data)
-    if row == "actor-permission-bounds":
-        mutated["original_pre_review"]["permissions"] = ["contents:write"]
-    elif row == "authority-causality":
-        mutated["changes"] = []
-    elif row == "remote-review-metrics":
-        mutated["review_context"]["candidate_sha"] = "f" * 40
-    elif row == "round-lifecycle":
-        mutated["all_remote_reviews"][0]["round"] = 2
-    else:
-        mutated["assertion_requests"].append(
-            {"assertion_id": "registry:sibling:unknown:member:bad:v2"}
-        )
-    return mutated
-
-
-def _execute_behavior_assertion(
-    data: dict[str, Any], assertion_id: str
-) -> tuple[str, str | None, dict[str, Any], dict[str, Any]]:
-    row, evidence_class = _parse_behavior_assertion(assertion_id)
-    assertion = ROW_ASSERTIONS[row]
-    if evidence_class == "adversarial":
-        mutated = _mutate_for_rejection(row, data)
-        try:
-            assertion(mutated)
-        except CheckError as error:
-            inputs = {"negative_case": row, "mutation_observed": str(error)}
-            output = {"rejection_observed": True, "row_id": row}
-        else:
-            raise CheckError("adversarial assertion did not observe rejection")
-        callable_name = f"_adversarial_{row.replace('-', '_')}"
-    else:
-        output = assertion(data)
-        if evidence_class == "positive":
-            inputs = {
-                "repository": data["repository"],
-                "pull_request": data["pull_request"],
-                "head": data["candidate_sha"],
-            }
-        elif evidence_class == "default":
-            inputs = {
-                "trust_mode": data["trust_mode"],
-                "pre_review_required": data["pre_review_required"],
-                "original_pre_review_head": data["original_pre_review_head"],
-            }
-        else:
-            inputs = {
-                "review_round": data["review_round"],
-                "head": data["candidate_sha"],
-                "changes": data["changes"],
-            }
-        callable_name = (
-            f"_{evidence_class}_{row.replace('-', '_')}"
-        )
-    return callable_name, None, inputs, output
-
-
-def _member_observation(
-    family: str, member: str, data: dict[str, Any]
-) -> dict[str, Any]:
-    stable = {
-        ("action", "items"): list(FAMILY_MEMBERS["action"]),
-        ("action", "targets"): "exact-reviewed-head",
-        ("generated", "outputs"): "canonical-registry-result",
-        ("generated", "consumers"): data["repository"],
-        ("generated", "drift-checks"): data["base_sha"],
-        ("lifecycle", "preservation"): data["original_pre_review_head"],
-        ("lifecycle", "resets"): [3, 6],
-        ("lifecycle", "terminals"): sorted({"changes-requested", "clean"}),
-        ("resource", "disabled"): "fail-closed",
-        ("wire", "consumers"): data["repository"],
-        ("wire", "validators"): data["schema_version"],
-        ("wire", "replay"): data["original_receipt_sha256"],
-        ("wire", "stale-bindings"): data["base_sha"],
-    }
-    affected = {
-        ("action", "actions"): data["original_pre_review"]["actions"],
-        ("generated", "owners"): sorted(FAMILY_MEMBERS),
-        ("lifecycle", "entries"): [
-            review["round"] for review in data["all_remote_reviews"]
-        ],
-        ("resource", "enabled"): data["pre_review_required"],
-        ("wire", "producers"): (
-            data["all_remote_reviews"][data["review_round"] - 2]["finding_ids"]
-            if data["review_round"] > 1
-            else [
-                finding["id"]
-                for finding in data["original_pre_review"]["findings"]
-            ]
-        ),
-    }
-    if (family, member) in affected:
-        before = None
-        after = affected[(family, member)]
-    else:
-        before = stable[(family, member)]
-        after = stable[(family, member)]
-    return {
-        "family": family,
-        "member": member,
-        "before": before,
-        "after": after,
-    }
-
-
-def _execute_member_assertion(
-    data: dict[str, Any], assertion_id: str, finding_id: str | None
-) -> tuple[str, str, dict[str, Any], dict[str, Any]]:
-    family, member, disposition, reason = _parse_member_assertion(assertion_id)
-    finding_id = expect_string(finding_id, "member assertion finding ID")
-    if data["review_round"] == 1:
-        finding_records = {
-            finding["id"]: finding
-            for finding in data["original_pre_review"]["findings"]
-        }
-        expected_findings = set(finding_records)
-    else:
-        finding_records = {
-            finding["node_id"]: finding
-            for finding in data["remote_findings"]
-        }
-        expected_findings = set(
-            data["all_remote_reviews"][data["review_round"] - 2][
-                "finding_ids"
-            ]
-        )
-    if finding_id not in expected_findings:
-        raise CheckError("member assertion finding is outside its exact round")
-    if (
-        finding_id in finding_records
-        and finding_records[finding_id]["family"] != family
-    ):
-        raise CheckError("member assertion family does not match finding")
-    inputs = _member_observation(family, member, data)
-    inputs["finding_id"] = finding_id
-    if disposition == "affected-fixed":
-        if not data["changes"]:
-            raise CheckError("affected-fixed has no exact-head change evidence")
-        try:
-            if not inputs["before"]:
-                raise CheckError("member-specific before probe rejected")
-        except CheckError as error:
-            before_rejection = str(error)
-        else:
-            raise CheckError("member-specific before probe unexpectedly passed")
-        if not inputs["after"]:
-            raise CheckError("member-specific after probe did not pass")
-        output = {
-            "before_rejected": True,
-            "before_rejection": before_rejection,
-            "after_passed": True,
-            "member": member,
-        }
-        callable_name = f"_affected_fixed_{family}_{member.replace('-', '_')}"
-    elif disposition == "verified-unaffected":
-        if inputs["before"] != inputs["after"]:
-            raise CheckError("member-specific nonimpact comparison changed")
-        fingerprint = hashlib.sha256(normalized_json(inputs)).hexdigest()
-        output = {
-            "member_nonimpact_sha256": fingerprint,
-            "member": member,
-        }
-        callable_name = (
-            f"_verified_unaffected_{family}_{member.replace('-', '_')}"
-        )
-    else:
-        if data["trust_mode"] != "introduction":
-            raise CheckError("not-applicable reason contract does not hold")
-        output = {
-            "not_applicable_reason": reason,
-            "member": member,
-        }
-        callable_name = "_not_applicable_resource_disabled"
-    return callable_name, disposition, inputs, output
-
-
 def _result_id(
     data: dict[str, Any], assertion_id: str, finding_id: str | None
 ) -> str:
@@ -733,6 +403,14 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
             "original_pre_review_head",
             "original_changes",
             "original_receipt_sha256",
+            "assertion_program_path",
+            "assertion_program_blob_oid",
+            "assertion_program_argv",
+            "finding_origin_sha",
+            "finding_origin_tree",
+            "origin_root",
+            "head_root",
+            "assertion_input_artifacts",
             "candidate_sha",
             "candidate_tree",
             "head_sha",
@@ -773,6 +451,56 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         raise CheckError(
             "checker input.original_receipt_sha256 must be SHA-256"
         )
+    assertion_program_path = Path(
+        expect_string(
+            data["assertion_program_path"],
+            "checker input.assertion_program_path",
+        )
+    )
+    if (
+        assertion_program_path.name != "review_assertions.py"
+        or not assertion_program_path.is_file()
+        or assertion_program_path.is_symlink()
+    ):
+        raise CheckError("checker assertion program path is unavailable")
+    assertion_program_blob_oid = expect_sha(
+        data["assertion_program_blob_oid"],
+        "checker input.assertion_program_blob_oid",
+    )
+    assertion_program_argv = expect_list(
+        data["assertion_program_argv"],
+        "checker input.assertion_program_argv",
+    )
+    if assertion_program_argv != [
+        "/usr/bin/python3",
+        "-I",
+        "review_assertions.py",
+        "--stdin",
+    ]:
+        raise CheckError("checker assertion program argv is not fixed")
+    finding_origin_sha = expect_sha(
+        data["finding_origin_sha"], "checker input.finding_origin_sha"
+    )
+    finding_origin_tree = expect_sha(
+        data["finding_origin_tree"], "checker input.finding_origin_tree"
+    )
+    origin_root = Path(
+        expect_string(data["origin_root"], "checker input.origin_root")
+    )
+    head_root = Path(
+        expect_string(data["head_root"], "checker input.head_root")
+    )
+    if (
+        not origin_root.is_dir()
+        or not head_root.is_dir()
+        or origin_root.is_symlink()
+        or head_root.is_symlink()
+    ):
+        raise CheckError("checker assertion tree roots are unavailable")
+    assertion_input_artifacts = expect_list(
+        data["assertion_input_artifacts"],
+        "checker input.assertion_input_artifacts",
+    )
     candidate_sha = expect_sha(data["candidate_sha"], "checker input.candidate_sha")
     expect_sha(data["candidate_tree"], "checker input.candidate_tree")
     head_sha = expect_sha(data["head_sha"], "checker input.head_sha")
@@ -886,6 +614,14 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         "original_pre_review_head": original_pre_review_head,
         "original_changes": original_changes,
         "original_receipt_sha256": original_receipt_sha256,
+        "assertion_program_path": assertion_program_path,
+        "assertion_program_blob_oid": assertion_program_blob_oid,
+        "assertion_program_argv": assertion_program_argv,
+        "finding_origin_sha": finding_origin_sha,
+        "finding_origin_tree": finding_origin_tree,
+        "origin_root": origin_root,
+        "head_root": head_root,
+        "assertion_input_artifacts": assertion_input_artifacts,
         "candidate_sha": candidate_sha,
         "head_sha": head_sha,
         "review_round": review_round,
@@ -919,20 +655,99 @@ def execute_registry(raw_input: Any) -> dict[str, Any]:
         if finding_id is not None:
             finding_id = expect_string(finding_id, f"{label}.finding_id")
         if assertion_id.startswith("registry:sibling:"):
-            callable_name, disposition, inputs, output = (
-                _execute_member_assertion(
-                    data, assertion_id, finding_id
-                )
-            )
+            if finding_id is None:
+                raise CheckError("member assertion requires a finding ID")
+            program_request = {
+                "assertion_id": assertion_id,
+                "finding_id": finding_id,
+                "origin_root": str(data["origin_root"]),
+                "head_root": str(data["head_root"]),
+            }
+            disposition = assertion_id.split(":")[4]
         else:
             if finding_id is not None:
                 raise CheckError("behavior assertion cannot reference a finding")
-            callable_name, disposition, inputs, output = (
-                _execute_behavior_assertion(data, assertion_id)
+            program_request = {
+                "assertion_id": assertion_id,
+                "evidence": {
+                    "repository": data["repository"],
+                    "pull_request": data["pull_request"],
+                    "base_sha": data["base_sha"],
+                    "head_sha": data["candidate_sha"],
+                    "changes": data["changes"],
+                    "review_head": data["review_context"]["candidate_sha"],
+                    "review_outcome": data["review_context"]["outcome"],
+                    "rounds": [
+                        review["round"] for review in data["all_remote_reviews"]
+                    ],
+                    "registered_assertions": [
+                        item["assertion_id"]
+                        for item in data["assertion_requests"]
+                    ],
+                    "permissions": data["original_pre_review"]["permissions"],
+                    "trust_mode": data["trust_mode"],
+                    "review_round": data["review_round"],
+                },
+            }
+            disposition = None
+        program_input = normalized_json(program_request)
+        command = (
+            "/usr/bin/python3",
+            "-I",
+            str(data["assertion_program_path"]),
+            "--stdin",
+        )
+        environment = {
+            "HOME": str(data["assertion_program_path"].parent),
+            "LC_ALL": "C",
+            "PATH": "/usr/bin:/bin",
+            "PYTHONHASHSEED": "0",
+        }
+        completed = subprocess.run(
+            command,
+            cwd=data["assertion_program_path"].parent,
+            env=environment,
+            input=program_input,
+            check=False,
+            capture_output=True,
+            timeout=30,
+        )
+        if completed.returncode != 0:
+            detail = completed.stderr.decode(
+                "utf-8", errors="replace"
+            ).strip()
+            raise CheckError(
+                f"base assertion program rejected {assertion_id!r}: {detail}"
             )
+        try:
+            program_result = expect_object(
+                json.loads(
+                    completed.stdout.decode("utf-8"),
+                    object_pairs_hook=object_no_duplicates,
+                ),
+                "assertion program output",
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise CheckError("assertion program output is invalid") from error
+        if normalized_json(program_result) != completed.stdout:
+            raise CheckError("assertion program output is not canonical")
+        expect_keys(
+            program_result,
+            "assertion program output",
+            ("schema_version", "assertion_id", "status", "output"),
+        )
+        if (
+            program_result["schema_version"] != 1
+            or program_result["assertion_id"] != assertion_id
+            or program_result["status"] != "pass"
+        ):
+            raise CheckError("assertion program output contradicts request")
+        output = expect_object(
+            program_result["output"], "assertion program semantic output"
+        )
         result_id = _result_id(data, assertion_id, finding_id)
         inputs_sha256 = hashlib.sha256(
-            normalized_json(inputs)
+            program_input
         ).hexdigest()
         output_sha256 = hashlib.sha256(normalized_json(output)).hexdigest()
         result_ids.append(result_id)
@@ -942,7 +757,17 @@ def execute_registry(raw_input: Any) -> dict[str, Any]:
                 "assertion_id": assertion_id,
                 "check_id": assertion_id,
                 "claimed_disposition": disposition,
-                "callable": callable_name,
+                "program_path": "scripts/workflow_pilot/review_assertions.py",
+                "program_blob_oid": data["assertion_program_blob_oid"],
+                "program_argv": data["assertion_program_argv"],
+                "program_case": expect_string(
+                    output.get("program_case"),
+                    "assertion program output.program_case",
+                ),
+                "program_exit_code": completed.returncode,
+                "program_stdout_sha256": hashlib.sha256(
+                    completed.stdout
+                ).hexdigest(),
                 "command_id": command_id,
                 "input_sha256": input_sha256,
                 "inputs_sha256": inputs_sha256,

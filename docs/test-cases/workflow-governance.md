@@ -515,6 +515,11 @@ game behavior needs a compensating change.
    member/class inputs, implementation, observable output/status, exact
    base/head, full diff, review round, and HMAC receipt. Swap
    member/family/outcome/assertion/result identities and require failure.
+   Replace the candidate registry/program and confirm the checker still
+   extracts exact-base `review_assertions.py` with fixed isolated argv. Verify
+   the child has no credentials or proxy/PYTHONPATH injection and receipts
+   bind both tree OIDs, member artifact blobs, exit/status, canonical stdout
+   digest, and semantic output.
 7. Sign canonical pre-review bytes with a test-only external key. Verify exact
    repository/PR/base/head, epoch, purpose, expiry, nonce, and atomic replay.
    Keep `LOCAL-` findings in that immutable receipt, separately collect later

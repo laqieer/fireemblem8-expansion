@@ -1,7 +1,14 @@
 import copy
+import json
+import os
+import shutil
 import unittest
+from pathlib import Path
 
-from scripts.workflow_pilot import review_base_checker
+from scripts.workflow_pilot import reporter, review_base_checker
+
+
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def modified_change(path, old, new):
@@ -117,12 +124,75 @@ def valid_input():
 
 
 class ReviewBaseCheckerTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.root = (
+            ROOT
+            / "build"
+            / "test-artifacts"
+            / f"base-assertion-program-{os.getpid()}"
+        )
+        cls.origin = cls.root / "origin"
+        cls.head = cls.root / "head"
+        cls.origin.mkdir(parents=True)
+        cls.head.mkdir(parents=True)
+        program = ROOT / "scripts/workflow_pilot/review_assertions.py"
+        cls.program = cls.root / "review_assertions.py"
+        cls.program.write_bytes(program.read_bytes())
+        subjects = ROOT / "scripts/workflow_pilot/assertion_subjects"
+        shutil.copytree(
+            subjects,
+            cls.origin / "scripts/workflow_pilot/assertion_subjects",
+        )
+        shutil.copytree(
+            subjects,
+            cls.head / "scripts/workflow_pilot/assertion_subjects",
+        )
+        origin_subject = (
+            cls.origin
+            / "scripts/workflow_pilot/assertion_subjects/action_actions.json"
+        )
+        data = json.loads(origin_subject.read_text(encoding="utf-8"))
+        data["payload"]["actions"] = [
+            "emit-local-report",
+            "read-candidate",
+        ]
+        origin_subject.write_bytes(reporter.normalized_json(data))
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.root)
+
+    def prepare(self, data):
+        data = copy.deepcopy(data)
+        data.update(
+            {
+                "assertion_program_path": str(self.program),
+                "assertion_program_blob_oid": "8" * 40,
+                "assertion_program_argv": [
+                    "/usr/bin/python3",
+                    "-I",
+                    "review_assertions.py",
+                    "--stdin",
+                ],
+                "finding_origin_sha": "a" * 40,
+                "finding_origin_tree": "7" * 40,
+                "origin_root": str(self.origin),
+                "head_root": str(self.head),
+                "assertion_input_artifacts": [],
+            }
+        )
+        return data
+
+    def execute(self, data):
+        return review_base_checker.execute_registry(self.prepare(data))
+
     def assert_rejected(self, data, message):
         with self.assertRaisesRegex(review_base_checker.CheckError, message):
-            review_base_checker.execute_registry(data)
+            self.execute(data)
 
     def test_closed_registry_derives_inputs_and_observes_real_rejection(self):
-        result = review_base_checker.execute_registry(valid_input())
+        result = self.execute(valid_input())
         self.assertEqual(result["registry_version"], 1)
         self.assertEqual(len(result["results"]), 3)
         adversarial = next(
@@ -131,6 +201,13 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             if ":adversarial:" in item["assertion_id"]
         )
         self.assertTrue(adversarial["output"]["rejection_observed"])
+        affected = next(
+            item
+            for item in result["results"]
+            if item["claimed_disposition"] == "affected-fixed"
+        )
+        self.assertEqual(affected["output"]["origin_status"], "fail")
+        self.assertEqual(affected["output"]["head_status"], "pass")
         for item in result["results"]:
             self.assertEqual(item["status"], "pass")
             self.assertRegex(item["inputs_sha256"], r"^[0-9a-f]{64}$")
@@ -159,7 +236,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 "finding_id": None,
             }
         ]
-        result = review_base_checker.execute_registry(data)
+        result = self.execute(data)
         self.assertEqual(result["results"][0]["candidate_sha"], "e" * 40)
         self.assertEqual(
             data["original_pre_review"]["candidate_sha"], "c" * 40
@@ -171,21 +248,21 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         request["assertion_id"] = (
             "registry:sibling:action:items:affected-fixed:v2"
         )
-        self.assert_rejected(data, "disposition is not registered")
+        self.assert_rejected(data, "origin assertion unexpectedly passed")
 
         data = valid_input()
         request = data["assertion_requests"][2]
         request["assertion_id"] = (
             "registry:sibling:wire:actions:affected-fixed:v2"
         )
-        self.assert_rejected(data, "wrong family member")
+        self.assert_rejected(data, "member is absent from registry")
 
         data = valid_input()
         request = data["assertion_requests"][2]
         request["assertion_id"] = (
             "registry:sibling:resource:disabled:not-applicable:wrong:v2"
         )
-        self.assert_rejected(data, "reason is not explicitly registered")
+        self.assert_rejected(data, "reason is not registered")
 
     def test_registered_not_applicable_requires_exact_reason_context(self):
         data = valid_input()
@@ -202,11 +279,37 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             "family": "resource",
             "created_at": "2026-08-31T04:00:30Z",
         }
-        result = review_base_checker.execute_registry(data)
+        result = self.execute(data)
         output = result["results"][2]["output"]
         self.assertEqual(
-            output["not_applicable_reason"], "feature-disabled-by-contract"
+            output["reason"], "feature-disabled-by-contract"
         )
+
+    def test_verified_unaffected_executes_both_member_specific_trees(self):
+        data = valid_input()
+        data["assertion_requests"][2] = {
+            "assertion_id": (
+                "registry:sibling:action:items:verified-unaffected:v2"
+            ),
+            "finding_id": "LOCAL-ACTION-1",
+        }
+        result = self.execute(data)
+        output = result["results"][2]["output"]
+        self.assertEqual(output["origin_status"], "pass")
+        self.assertEqual(output["head_status"], "pass")
+
+        subject_path = (
+            self.head
+            / "scripts/workflow_pilot/assertion_subjects/action_items.json"
+        )
+        original = subject_path.read_bytes()
+        subject = json.loads(original)
+        subject["payload"]["items"] = ["different", "semantic-output"]
+        subject_path.write_bytes(reporter.normalized_json(subject))
+        try:
+            self.assert_rejected(data, "semantic outputs are not equivalent")
+        finally:
+            subject_path.write_bytes(original)
 
     def test_stale_round_head_and_fabricated_result_fields_fail(self):
         data = valid_input()
@@ -221,7 +324,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         data["assertion_requests"][0]["assertion_id"] = (
             "registry:behavior:actor-permission-bounds:positive:v1"
         )
-        self.assert_rejected(data, "closed registry")
+        self.assert_rejected(data, "absent from exact-base registry")
 
     def test_status_coverage_and_original_report_are_exact(self):
         data = valid_input()

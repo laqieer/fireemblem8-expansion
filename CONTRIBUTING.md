@@ -100,8 +100,11 @@ assertions. The original pre-review receipt remains bound to first-reviewed
 head A; every B/C remediation head has separate chronological Git coverage,
 execution receipt, and remote review evidence. Candidates reference
 member-specific registry assertion IDs only and cannot choose one arbitrary
-file as unrelated evidence. Only exact top-level green approval or legacy
-exact clean text is clean. `pushedDate` never reconstructs head history.
+file as unrelated evidence. The checker runs the exact-base assertion program
+with fixed isolated argv over read-only finding-origin/remediation artifacts
+and binds program/input/output identities in each receipt. Only exact
+top-level green approval or legacy exact clean text is clean. `pushedDate`
+never reconstructs head history.
 
 Both PR and master Build runs execute `host-tests`, `build`,
 `extended-host-tests`, `legacy`, and the seconds-only fail-closed `summary` in

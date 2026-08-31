@@ -68,36 +68,19 @@ BEHAVIOR_ASSERTION_IDS = {
     for row in REQUIRED_BEHAVIOR_ROWS
 }
 MEMBER_OUTCOME_REGISTRY = {
-    "action": {
-        "actions": "affected-fixed",
-        "items": "verified-unaffected",
-        "targets": "verified-unaffected",
-    },
-    "generated": {
-        "owners": "affected-fixed",
-        "outputs": "verified-unaffected",
-        "consumers": "verified-unaffected",
-        "drift-checks": "verified-unaffected",
-    },
-    "lifecycle": {
-        "entries": "affected-fixed",
-        "preservation": "verified-unaffected",
-        "resets": "verified-unaffected",
-        "terminals": "verified-unaffected",
-    },
-    "resource": {
-        "enabled": "affected-fixed",
-        "disabled": "verified-unaffected",
-    },
-    "wire": {
-        "producers": "affected-fixed",
-        "consumers": "verified-unaffected",
-        "validators": "verified-unaffected",
-        "replay": "verified-unaffected",
-        "stale-bindings": "verified-unaffected",
-    },
+    family: {
+        member: {"affected-fixed", "verified-unaffected"}
+        for member in members
+    }
+    for family, members in FAMILY_MEMBERS.items()
 }
 RESULT_SOURCE_PATH = "scripts/workflow_pilot/tests/test_review_family.py"
+ASSERTION_PROGRAM_PATH = "scripts/workflow_pilot/review_assertions.py"
+ASSERTION_SUBJECT_PATHS = tuple(
+    f"scripts/workflow_pilot/assertion_subjects/{family}_{member.replace('-', '_')}.json"
+    for family, members in FAMILY_MEMBERS.items()
+    for member in members
+)
 COPILOT_ACTOR = "copilot-pull-request-reviewer"
 COPILOT_APPROVAL_MARKER = "### 🟢 Approval recommended"
 COPILOT_CHANGES_MARKER = "### 🟡 Changes recommended"
@@ -701,7 +684,7 @@ def _validate_sweeps(value: Any) -> list[dict[str, Any]]:
                 and disposition == "not-applicable"
             )
             if (
-                disposition != registered
+                disposition not in registered
                 and not explicitly_permitted_not_applicable
             ):
                 raise reporter.PilotDataError(
@@ -1318,7 +1301,12 @@ def _validate_result_manifest(value: Any) -> dict[str, dict[str, Any]]:
                 "assertion_id",
                 "check_id",
                 "claimed_disposition",
-                "callable",
+                "program_path",
+                "program_blob_oid",
+                "program_argv",
+                "program_case",
+                "program_exit_code",
+                "program_stdout_sha256",
                 "command_id",
                 "input_sha256",
                 "inputs_sha256",
@@ -1362,8 +1350,24 @@ def _validate_result_manifest(value: Any) -> dict[str, dict[str, Any]]:
                 result["check_id"], f"{label}.check_id"
             ),
             "claimed_disposition": result["claimed_disposition"],
-            "callable": reporter.expect_string(
-                result["callable"], f"{label}.callable"
+            "program_path": _validate_path(
+                result["program_path"], f"{label}.program_path"
+            ),
+            "program_blob_oid": reporter.expect_sha(
+                result["program_blob_oid"], f"{label}.program_blob_oid"
+            ),
+            "program_argv": _expect_string_list(
+                result["program_argv"], f"{label}.program_argv"
+            ),
+            "program_case": reporter.expect_string(
+                result["program_case"], f"{label}.program_case"
+            ),
+            "program_exit_code": reporter.expect_int(
+                result["program_exit_code"], f"{label}.program_exit_code", 0
+            ),
+            "program_stdout_sha256": reporter.expect_string(
+                result["program_stdout_sha256"],
+                f"{label}.program_stdout_sha256",
             ),
             "command_id": command_id,
             "input_sha256": input_sha,
@@ -1383,6 +1387,25 @@ def _validate_result_manifest(value: Any) -> dict[str, dict[str, Any]]:
                 result["status"], {"pass"}, f"{label}.status"
             ),
         }
+        if (
+            result["program_path"]
+            != "scripts/workflow_pilot/review_assertions.py"
+            or result["program_argv"]
+            != [
+                "/usr/bin/python3",
+                "-I",
+                "review_assertions.py",
+                "--stdin",
+            ]
+            or result["program_exit_code"] != 0
+            or reporter.SHA256_RE.fullmatch(
+                result["program_stdout_sha256"]
+            )
+            is None
+        ):
+            raise reporter.PilotDataError(
+                f"{label} assertion program identity is invalid"
+            )
         if hashlib.sha256(reporter.normalized_json(output)).hexdigest() != output_sha:
             raise reporter.PilotDataError(
                 f"{label}.output does not match output_sha256"
@@ -1412,6 +1435,12 @@ def _validate_execution_receipts(value: Any) -> list[dict[str, Any]]:
             "checker_path",
             "checker_blob_oid",
             "argv",
+            "assertion_program_path",
+            "assertion_program_blob_oid",
+            "assertion_program_argv",
+            "finding_origin_sha",
+            "finding_origin_tree",
+            "assertion_input_artifacts",
             "changed_files",
             "changes",
             "remote_finding_ids",
@@ -1524,6 +1553,30 @@ def _validate_execution_receipts(value: Any) -> list[dict[str, Any]]:
                     receipt["checker_blob_oid"], f"{label}.checker_blob_oid"
                 ),
                 "argv": _expect_string_list(receipt["argv"], f"{label}.argv"),
+                "assertion_program_path": _validate_path(
+                    receipt["assertion_program_path"],
+                    f"{label}.assertion_program_path",
+                ),
+                "assertion_program_blob_oid": reporter.expect_sha(
+                    receipt["assertion_program_blob_oid"],
+                    f"{label}.assertion_program_blob_oid",
+                ),
+                "assertion_program_argv": _expect_string_list(
+                    receipt["assertion_program_argv"],
+                    f"{label}.assertion_program_argv",
+                ),
+                "finding_origin_sha": reporter.expect_sha(
+                    receipt["finding_origin_sha"],
+                    f"{label}.finding_origin_sha",
+                ),
+                "finding_origin_tree": reporter.expect_sha(
+                    receipt["finding_origin_tree"],
+                    f"{label}.finding_origin_tree",
+                ),
+                "assertion_input_artifacts": reporter.expect_list(
+                    receipt["assertion_input_artifacts"],
+                    f"{label}.assertion_input_artifacts",
+                ),
                 "changed_files": _expect_string_list(
                     receipt["changed_files"], f"{label}.changed_files"
                 ),
@@ -2115,6 +2168,11 @@ def _validate_execution(
         "rev-parse",
         f"{contract['base_sha']}:scripts/workflow_pilot/review_base_checker.py",
     ).decode("ascii").strip()
+    actual_assertion_program_blob = reporter.run_git(
+        authority["root"],
+        "rev-parse",
+        f"{contract['base_sha']}:{ASSERTION_PROGRAM_PATH}",
+    ).decode("ascii").strip()
     expected_results = {}
     receipt_result_ids = set()
     seals = []
@@ -2137,6 +2195,32 @@ def _validate_execution(
         target_tree = reporter.run_git(
             authority["root"], "rev-parse", f"{target_head}^{{tree}}"
         ).decode("ascii").strip()
+        finding_origin_sha = (
+            contract["base_sha"]
+            if round_number == 1
+            else reviews[round_number - 2]["candidate_sha"]
+        )
+        finding_origin_tree = reporter.run_git(
+            authority["root"],
+            "rev-parse",
+            f"{finding_origin_sha}^{{tree}}",
+        ).decode("ascii").strip()
+        assertion_input_artifacts = [
+            {
+                "path": path,
+                "origin_blob_oid": reporter.run_git(
+                    authority["root"],
+                    "rev-parse",
+                    f"{finding_origin_sha}:{path}",
+                ).decode("ascii").strip(),
+                "head_blob_oid": reporter.run_git(
+                    authority["root"],
+                    "rev-parse",
+                    f"{target_head}:{path}",
+                ).decode("ascii").strip(),
+            }
+            for path in ASSERTION_SUBJECT_PATHS
+        ]
         if (
             receipt["base_sha"] != contract["base_sha"]
             or receipt["original_pre_review_head"]
@@ -2150,7 +2234,8 @@ def _validate_execution(
             or not receipt["post_clean"]
         ):
             raise reporter.PilotDataError(
-                "execution receipt does not bind exact review round/head"
+                f"execution receipt round {round_number} does not bind "
+                "exact review round/head"
             )
         if original_receipt_sha is None:
             original_receipt_sha = receipt["original_receipt_sha256"]
@@ -2198,6 +2283,20 @@ def _validate_execution(
                 "--input",
                 "checker-input.json",
             ]
+            or receipt["assertion_program_path"] != ASSERTION_PROGRAM_PATH
+            or receipt["assertion_program_blob_oid"]
+            != actual_assertion_program_blob
+            or receipt["assertion_program_argv"]
+            != [
+                "/usr/bin/python3",
+                "-I",
+                "review_assertions.py",
+                "--stdin",
+            ]
+            or receipt["finding_origin_sha"] != finding_origin_sha
+            or receipt["finding_origin_tree"] != finding_origin_tree
+            or receipt["assertion_input_artifacts"]
+            != assertion_input_artifacts
             or sorted(receipt["changed_files"]) != target_files
             or receipt["changes"] != target_changes
             or sorted(receipt["remote_finding_ids"])
@@ -2258,6 +2357,7 @@ def _validate_execution(
         if (
             result["assertion_id"] != expected["assertion_id"]
             or result["check_id"] != expected["assertion_id"]
+            or result["program_blob_oid"] != actual_assertion_program_blob
             or result["base_sha"] != contract["base_sha"]
             or result["candidate_sha"] != expected["candidate_sha"]
             or result["review_round"] != expected["review_round"]

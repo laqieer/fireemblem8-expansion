@@ -23,6 +23,7 @@ from typing import Any, Callable
 GH = "/usr/bin/gh"
 GIT = "/usr/bin/git"
 BASE_CHECKER_PATH = "scripts/workflow_pilot/review_base_checker.py"
+ASSERTION_PROGRAM_PATH = "scripts/workflow_pilot/review_assertions.py"
 TRUSTED_GATE_PATH = "scripts/workflow_pilot/trusted_review_gate.py"
 TRUSTED_REQUIRED_PATHS = {
     "scripts/workflow_pilot/__init__.py",
@@ -30,6 +31,7 @@ TRUSTED_REQUIRED_PATHS = {
     "scripts/workflow_pilot/reporter.py",
     "scripts/workflow_pilot/review_family.py",
     BASE_CHECKER_PATH,
+    ASSERTION_PROGRAM_PATH,
 }
 BASE_CHECKER_ARGV = (
     "/usr/bin/python3",
@@ -37,6 +39,23 @@ BASE_CHECKER_ARGV = (
     "review_base_checker.py",
     "--input",
     "checker-input.json",
+)
+ASSERTION_PROGRAM_ARGV = (
+    "/usr/bin/python3",
+    "-I",
+    "review_assertions.py",
+    "--stdin",
+)
+ASSERTION_SUBJECT_PATHS = tuple(
+    f"scripts/workflow_pilot/assertion_subjects/{family}_{member.replace('-', '_')}.json"
+    for family, members in {
+        "action": ("actions", "items", "targets"),
+        "generated": ("owners", "outputs", "consumers", "drift-checks"),
+        "lifecycle": ("entries", "preservation", "resets", "terminals"),
+        "resource": ("enabled", "disabled"),
+        "wire": ("producers", "consumers", "validators", "replay", "stale-bindings"),
+    }.items()
+    for member in members
 )
 RECEIPT_DOMAIN = b"workflow-review-authenticated-envelope-v2\0"
 EXECUTION_RECEIPT_DOMAIN = b"workflow-review-execution-receipt-v2\0"
@@ -558,7 +577,12 @@ def _git_text(repository_root: Path, *arguments: str) -> str:
 
 
 def _base_contains_gate(repository_root: Path, base_sha: str) -> bool:
-    for path in (TRUSTED_GATE_PATH, BASE_CHECKER_PATH):
+    for path in (
+        TRUSTED_GATE_PATH,
+        BASE_CHECKER_PATH,
+        ASSERTION_PROGRAM_PATH,
+        *ASSERTION_SUBJECT_PATHS,
+    ):
         try:
             reporter.run_git(repository_root, "cat-file", "-e", f"{base_sha}:{path}")
         except reporter.PilotDataError:
@@ -607,6 +631,20 @@ def run_base_pinned_checker(
     candidate_tree = _git_text(root, "rev-parse", f"{candidate_sha}^{{tree}}")
     checker_blob = _git_text(root, "rev-parse", f"{base_sha}:{BASE_CHECKER_PATH}")
     checker_source = reporter.run_git(root, "show", f"{base_sha}:{BASE_CHECKER_PATH}")
+    assertion_program_blob = _git_text(
+        root, "rev-parse", f"{base_sha}:{ASSERTION_PROGRAM_PATH}"
+    )
+    assertion_program_source = reporter.run_git(
+        root, "show", f"{base_sha}:{ASSERTION_PROGRAM_PATH}"
+    )
+    finding_origin_sha = (
+        base_sha
+        if review_round == 1
+        else all_remote_reviews[review_round - 2]["candidate_sha"]
+    )
+    finding_origin_tree = _git_text(
+        root, "rev-parse", f"{finding_origin_sha}^{{tree}}"
+    )
     changes = review_family.derive_change_records(root, base_sha, candidate_sha)
     original_changes = review_family.derive_change_records(
         root, base_sha, contract["original_pre_review_head"]
@@ -671,11 +709,67 @@ def run_base_pinned_checker(
         raise reporter.PilotDataError("base checker sandbox already exists")
     sandbox.mkdir(mode=0o700)
     checker_path = sandbox / "review_base_checker.py"
+    assertion_program_path = sandbox / "review_assertions.py"
     input_path = sandbox / "checker-input.json"
+    origin_root = sandbox / "origin"
+    head_root = sandbox / "head"
+    origin_root.mkdir()
+    head_root.mkdir()
+    assertion_input_artifacts = []
+    for relative in ASSERTION_SUBJECT_PATHS:
+        origin_bytes = reporter.run_git(
+            root, "show", f"{finding_origin_sha}:{relative}"
+        )
+        head_bytes = reporter.run_git(root, "show", f"{candidate_sha}:{relative}")
+        origin_target = origin_root / relative
+        head_target = head_root / relative
+        origin_target.parent.mkdir(parents=True, exist_ok=True)
+        head_target.parent.mkdir(parents=True, exist_ok=True)
+        origin_target.write_bytes(origin_bytes)
+        head_target.write_bytes(head_bytes)
+        origin_target.chmod(0o444)
+        head_target.chmod(0o444)
+        assertion_input_artifacts.append(
+            {
+                "path": relative,
+                "origin_blob_oid": _git_text(
+                    root,
+                    "rev-parse",
+                    f"{finding_origin_sha}:{relative}",
+                ),
+                "head_blob_oid": _git_text(
+                    root, "rev-parse", f"{candidate_sha}:{relative}"
+                ),
+            }
+        )
     checker_path.write_bytes(checker_source)
+    assertion_program_path.write_bytes(assertion_program_source)
+    checker_input["assertion_program_path"] = str(assertion_program_path)
+    checker_input["assertion_program_blob_oid"] = assertion_program_blob
+    checker_input["assertion_program_argv"] = list(ASSERTION_PROGRAM_ARGV)
+    checker_input["finding_origin_sha"] = finding_origin_sha
+    checker_input["finding_origin_tree"] = finding_origin_tree
+    checker_input["origin_root"] = str(origin_root)
+    checker_input["head_root"] = str(head_root)
+    checker_input["assertion_input_artifacts"] = assertion_input_artifacts
+    checker_input_bytes = reporter.normalized_json(checker_input)
     input_path.write_bytes(checker_input_bytes)
     checker_path.chmod(0o444)
+    assertion_program_path.chmod(0o444)
     input_path.chmod(0o444)
+    for directory in sorted(
+        {
+            path
+            for root_path in (origin_root, head_root)
+            for target in root_path.rglob("*")
+            for path in ([target] if target.is_dir() else [])
+        },
+        key=lambda path: len(path.parts),
+        reverse=True,
+    ):
+        directory.chmod(0o555)
+    origin_root.chmod(0o555)
+    head_root.chmod(0o555)
     sandbox.chmod(0o555)
     command = (
         "/usr/bin/python3",
@@ -704,11 +798,25 @@ def run_base_pinned_checker(
         post_status = reporter.run_git(root, "status", "--porcelain")
         read_only = (
             checker_path.stat().st_mode & 0o222 == 0
+            and assertion_program_path.stat().st_mode & 0o222 == 0
             and input_path.stat().st_mode & 0o222 == 0
             and sandbox.stat().st_mode & 0o222 == 0
+            and all(
+                path.stat().st_mode & 0o222 == 0
+                for root_path in (origin_root, head_root)
+                for path in (root_path, *root_path.rglob("*"))
+            )
         )
     finally:
         sandbox.chmod(0o700)
+        for root_path in (origin_root, head_root):
+            for directory in sorted(
+                (path for path in root_path.rglob("*") if path.is_dir()),
+                key=lambda path: len(path.parts),
+                reverse=True,
+            ):
+                directory.chmod(0o700)
+            root_path.chmod(0o700)
         shutil.rmtree(sandbox)
     output = completed.stdout + b"\0stderr\0" + completed.stderr
     parsed_output = None
@@ -765,6 +873,12 @@ def run_base_pinned_checker(
         "checker_path": BASE_CHECKER_PATH,
         "checker_blob_oid": checker_blob,
         "argv": list(BASE_CHECKER_ARGV),
+        "assertion_program_path": ASSERTION_PROGRAM_PATH,
+        "assertion_program_blob_oid": assertion_program_blob,
+        "assertion_program_argv": list(ASSERTION_PROGRAM_ARGV),
+        "finding_origin_sha": finding_origin_sha,
+        "finding_origin_tree": finding_origin_tree,
+        "assertion_input_artifacts": assertion_input_artifacts,
         "changed_files": changed_files,
         "changes": changes,
         "remote_finding_ids": sorted(remote_finding_ids),

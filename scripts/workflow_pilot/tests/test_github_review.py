@@ -123,11 +123,14 @@ class TrustedGitHubGateTests(unittest.TestCase):
             "origin",
             "https://github.com/laqieer/fireemblem8-expansion.git",
         )
-        checker_path = cls.repo / trusted_review_gate.BASE_CHECKER_PATH
-        checker_path.parent.mkdir(parents=True)
-        checker_path.write_bytes(
-            (ROOT / trusted_review_gate.BASE_CHECKER_PATH).read_bytes()
-        )
+        for relative in (
+            trusted_review_gate.BASE_CHECKER_PATH,
+            trusted_review_gate.ASSERTION_PROGRAM_PATH,
+            *trusted_review_gate.ASSERTION_SUBJECT_PATHS,
+        ):
+            target = cls.repo / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes((ROOT / relative).read_bytes())
         (cls.repo / ".gitignore").write_text("build/\n", encoding="utf-8")
         (cls.repo / "changed.txt").write_text("base\n", encoding="utf-8")
         git(cls.repo, "add", ".")
@@ -142,7 +145,10 @@ class TrustedGitHubGateTests(unittest.TestCase):
         git(cls.trusted, "init", "-q")
         git(cls.trusted, "config", "user.email", "test@example.com")
         git(cls.trusted, "config", "user.name", "Trusted Base Test")
-        for relative in trusted_review_gate.TRUSTED_REQUIRED_PATHS:
+        for relative in (
+            *trusted_review_gate.TRUSTED_REQUIRED_PATHS,
+            *trusted_review_gate.ASSERTION_SUBJECT_PATHS,
+        ):
             target = cls.trusted / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes((ROOT / relative).read_bytes())
@@ -198,6 +204,21 @@ class TrustedGitHubGateTests(unittest.TestCase):
         self.assertNotIn("sys.path.insert(0, str(candidate_root))", source)
         self.assertNotIn("--installation-mode", source)
         self.assertNotIn("WORKFLOW_REVIEW_EXTERNAL_INSTALLATION_ID", source)
+        checker_source = (
+            ROOT / trusted_review_gate.BASE_CHECKER_PATH
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("def _member_observation", checker_source)
+        self.assertNotIn('"callable"', checker_source)
+        assertion_source = (
+            ROOT / trusted_review_gate.ASSERTION_PROGRAM_PATH
+        ).read_text(encoding="utf-8")
+        for forbidden_import in (
+            "import socket",
+            "import subprocess",
+            "import urllib",
+            "import requests",
+        ):
+            self.assertNotIn(forbidden_import, assertion_source)
         with self.assertRaisesRegex(
             RuntimeError, "candidate checkout cannot be"
         ):
@@ -252,6 +273,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 "scripts/workflow_pilot/reporter.py",
                 "scripts/workflow_pilot/review_family.py",
                 "scripts/workflow_pilot/review_base_checker.py",
+                "scripts/workflow_pilot/review_assertions.py",
             },
         )
         clean = self.run_trusted_startup()
@@ -521,6 +543,18 @@ class TrustedGitHubGateTests(unittest.TestCase):
         self.assertEqual(receipt["base_sha"], self.base_sha)
         self.assertEqual(receipt["candidate_sha"], self.candidate_sha)
         self.assertEqual(receipt["changed_files"], ["changed.txt"])
+        expected_program_blob = git(
+            self.repo,
+            "rev-parse",
+            f"{self.base_sha}:{trusted_review_gate.ASSERTION_PROGRAM_PATH}",
+        ).stdout.decode().strip()
+        self.assertEqual(
+            receipt["assertion_program_blob_oid"], expected_program_blob
+        )
+        self.assertEqual(
+            receipt["assertion_program_argv"],
+            list(trusted_review_gate.ASSERTION_PROGRAM_ARGV),
+        )
         self.assertEqual(
             len(receipt["assertion_results"]),
             len(review_family.REQUIRED_BEHAVIOR_ROWS)
@@ -529,7 +563,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
         self.assertEqual(
             len(
                 {
-                    result["callable"]
+                    result["program_case"]
                     for result in receipt["assertion_results"]
                 }
             ),
@@ -540,6 +574,13 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 result["output"].get("rejection_observed")
                 for result in receipt["assertion_results"]
                 if ":adversarial:" in result["assertion_id"]
+            )
+        )
+        self.assertTrue(
+            all(
+                result["program_blob_oid"] == expected_program_blob
+                and result["program_exit_code"] == 0
+                for result in receipt["assertion_results"]
             )
         )
         self.assertEqual(
@@ -661,7 +702,10 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 "origin",
                 "https://github.com/laqieer/fireemblem8-expansion.git",
             )
-            for relative in trusted_review_gate.TRUSTED_REQUIRED_PATHS:
+            for relative in (
+                *trusted_review_gate.TRUSTED_REQUIRED_PATHS,
+                *trusted_review_gate.ASSERTION_SUBJECT_PATHS,
+            ):
                 target = repository / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes((ROOT / relative).read_bytes())
@@ -704,8 +748,45 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 "2026-08-31T03:20:00Z",
                 "2026-08-31T03:22:00Z",
             )
+            affected_sequence = (
+                ("action", "actions"),
+                ("generated", "owners"),
+                ("lifecycle", "entries"),
+                ("resource", "enabled"),
+                ("wire", "producers"),
+                ("action", "items"),
+            )
+
+            def set_subject_health(family, member, healthy):
+                path = (
+                    repository
+                    / "scripts/workflow_pilot/assertion_subjects"
+                    / f"{family}_{member.replace('-', '_')}.json"
+                )
+                subject = json.loads(
+                    (
+                        ROOT
+                        / "scripts/workflow_pilot/assertion_subjects"
+                        / f"{family}_{member.replace('-', '_')}.json"
+                    ).read_text(encoding="utf-8")
+                )
+                if not healthy:
+                    field = next(iter(subject["payload"]))
+                    subject["payload"][field] = None
+                path.write_bytes(reporter.normalized_json(subject))
+
             heads = []
             for index, timestamp in enumerate(commit_times, 1):
+                if index > 1:
+                    previous_family, previous_member = affected_sequence[
+                        index - 2
+                    ]
+                    set_subject_health(
+                        previous_family, previous_member, True
+                    )
+                if index <= len(affected_sequence):
+                    family, member = affected_sequence[index - 1]
+                    set_subject_health(family, member, False)
                 (repository / "feature.txt").write_text(
                     f"head-{index}\n", encoding="utf-8"
                 )
@@ -718,20 +799,51 @@ class TrustedGitHubGateTests(unittest.TestCase):
             contract["original_pre_review_head"] = heads[0]
             contract["candidate_sha"] = heads[-1]
             contract["trust_mode"] = "base-pinned"
-            source_sweep = copy.deepcopy(contract["family_sweeps"][0])
+            source_sweeps = {}
+            for sweep in contract["family_sweeps"]:
+                members = {item["member"] for item in sweep["siblings"]}
+                family = next(
+                    family
+                    for family, registered in review_family.FAMILY_MEMBERS.items()
+                    if members == set(registered)
+                )
+                source_sweeps[family] = sweep
             contract["family_sweeps"] = []
-            for round_number in range(1, 7):
-                sweep = copy.deepcopy(source_sweep)
+            for round_number, (family, affected_member) in enumerate(
+                affected_sequence, 1
+            ):
+                sweep = copy.deepcopy(source_sweeps[family])
                 sweep["finding_id"] = f"FINDING_MULTI_{round_number}"
+                for sibling in sweep["siblings"]:
+                    outcome = (
+                        "affected-fixed"
+                        if sibling["member"] == affected_member
+                        else "verified-unaffected"
+                    )
+                    sibling["result"] = outcome
+                    sibling["assertion_id"] = (
+                        review_family.member_assertion_id(
+                            family, sibling["member"], outcome
+                        )
+                    )
                 contract["family_sweeps"].append(sweep)
 
+            original_changes = review_family.derive_change_records(
+                repository, base, heads[0]
+            )
+            original_files = sorted(
+                {
+                    path
+                    for change in original_changes
+                    for path in (change["old_path"], change["new_path"])
+                    if path is not None
+                }
+            )
             report = review_report(
                 base,
                 heads[0],
-                ["feature.txt"],
-                review_family.derive_change_records(
-                    repository, base, heads[0]
-                ),
+                original_files,
+                original_changes,
             )
             payload = self.adapter()
             pr = payload["data"]["repository"]["pullRequest"]
@@ -973,7 +1085,8 @@ class TrustedGitHubGateTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(
                 reporter.PilotDataError,
-                "exact held round/head and next head|current exact",
+                "exact held round/head and next head|current exact|"
+                "round 7 does not bind exact",
             ):
                 trusted_review_gate._run_trusted_gate(
                     raw_contract=contract,

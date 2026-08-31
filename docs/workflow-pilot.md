@@ -348,24 +348,39 @@ Positive/default/runtime checks execute distinct row-specific probes.
 Adversarial checks construct a row-specific invalid input, execute it, and
 require an observed rejection.
 
-Each `affected-fixed` member assertion executes a member-specific negative
-before-probe and positive after-probe. Each `verified-unaffected` assertion
-compares a member-specific invariant; one arbitrary unchanged file cannot
-certify several unrelated members. `not-applicable` is accepted only for the
-explicit `resource/disabled/feature-disabled-by-contract` assertion and only
-when that reason's registry predicate holds. Swapping a member, family,
-disposition, assertion ID, or reason fails before result creation.
+The registry and executable live in exact-base
+`scripts/workflow_pilot/review_assertions.py`; the checker invokes its base
+blob with fixed `/usr/bin/python3 -I review_assertions.py --stdin` argv.
+Each member has a distinct fixed JSON subject under `assertion_subjects/`.
+The trusted launcher materializes those allowlisted inputs from the exact
+finding-origin and remediation Git trees in read-only roots. Candidate
+registry/program additions or edits are never executed, and the child receives
+a closed environment without GitHub/HMAC credentials, proxy/PYTHONPATH
+injection, network-capable candidate programs, or inherited startup hooks.
+
+Each `affected-fixed` assertion executes the fixed member program against the
+origin artifact and requires failing semantics, then executes it against the
+remediation artifact and requires passing semantics. Each
+`verified-unaffected` assertion runs against both exact trees and requires
+passing equivalent member-specific semantic output; one arbitrary unchanged
+file cannot certify unrelated members. `not-applicable` is accepted only for
+the explicit `resource/disabled/feature-disabled-by-contract` predicate, which
+must execute and establish false. Swapping a member, family, disposition,
+assertion ID, or reason fails before result creation.
+One finding may legitimately reference several affected member assertions;
+each must independently observe its own origin failure and remediation pass.
 
 For every remote review round, including each remediation head B/C, the
 trusted gate derives exact base-to-head status/blob coverage, executes the
 round's behavior assertions and the previous round's finding remediations, and
 issues a distinct HMAC execution receipt. It binds review round, exact head,
-checker blob/argv, original A receipt digest/head, tree/diff, GitHub finding
-IDs, derived input/output digests, callable, status, and chronological
-execution time. The result ID is derived from head, round, assertion, and
-finding; it cannot replay across rounds. The final clean remote review must be
-on the current exact head, and every earlier round/head receipt must still be
-present and valid.
+checker blob/argv, assertion-program path/base blob/fixed argv, original A
+receipt digest/head, origin/head tree OIDs, every member input blob, GitHub
+finding IDs, program exit/status, canonical stdout and semantic-output
+digests, and chronological execution time. The result ID is derived from head,
+round, assertion, and finding; it cannot replay across rounds. The final clean
+remote review must be on the current exact head, and every earlier round/head
+receipt must still be present and valid.
 
 The Git-derived diff is a closed status-aware record set. Added files bind
 head mode/blob and base absence; deleted files bind base mode/blob and head

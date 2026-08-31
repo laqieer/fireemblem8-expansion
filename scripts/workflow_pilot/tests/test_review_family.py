@@ -159,7 +159,17 @@ class ReviewFamilyContractTests(unittest.TestCase):
                 "assertion_id": "candidate:pass",
                 "check_id": "candidate:pass",
                 "claimed_disposition": None,
-                "callable": "candidate",
+                "program_path": "scripts/workflow_pilot/review_assertions.py",
+                "program_blob_oid": "e" * 40,
+                "program_argv": [
+                    "/usr/bin/python3",
+                    "-I",
+                    "review_assertions.py",
+                    "--stdin",
+                ],
+                "program_case": "candidate/self-auth",
+                "program_exit_code": 0,
+                "program_stdout_sha256": "f" * 64,
                 "command_id": "a" * 64,
                 "input_sha256": "b" * 64,
                 "inputs_sha256": "c" * 64,
@@ -195,7 +205,22 @@ class ReviewFamilyContractTests(unittest.TestCase):
         contract["family_sweeps"][0]["siblings"][1]["result"] = (
             "affected-fixed"
         )
-        self.assert_rejected(contract, evidence, "not registered")
+        self.assert_rejected(contract, evidence, "member-specific")
+
+        contract, _ = fixture()
+        second = contract["family_sweeps"][0]["siblings"][1]
+        second["result"] = "affected-fixed"
+        second["assertion_id"] = (
+            "registry:sibling:action:items:affected-fixed:v2"
+        )
+        validated = review_family.validate_contract(contract)
+        self.assertEqual(
+            [
+                sibling["result"]
+                for sibling in validated["family_sweeps"][0]["siblings"]
+            ].count("affected-fixed"),
+            2,
+        )
 
         contract, evidence = fixture()
         disabled = contract["family_sweeps"][3]["siblings"][1]

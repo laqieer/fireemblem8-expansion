@@ -601,6 +601,17 @@ shared arbitrary file; `not-applicable` requires the one explicitly registered
 member/reason predicate. A valid finding expands to every member of exactly
 one closed sibling family:
 
+Execute exact-base `review_assertions.py` with fixed isolated `--stdin` argv
+over registry-fixed, read-only member artifacts materialized from the exact
+finding-origin and remediation Git trees. Give the child a closed environment
+with no credentials, proxy/PYTHONPATH injection, network-capable candidate
+program, or inherited startup hooks. Bind program base blob/argv, both tree
+OIDs, artifact blobs, exit/status, canonical stdout digest, and semantic output
+to the receipt. Candidate-added registry/program code, arbitrary shared files,
+nonexistent callable names, and self-authored success output are not evidence.
+Allow multiple affected siblings only when each referenced assertion
+independently fails on the finding-origin tree and passes on remediation.
+
 - actions, items, and targets;
 - lifecycle entries, preservation, resets, and terminals;
 - wire producers, consumers, validators, replay, and stale bindings;
