@@ -32,6 +32,7 @@ class EventDecision:
     reason: str
     run_expensive: bool
     expected_head: str
+    full_fallback: bool
     head_valid: bool
     identity_valid: bool
 
@@ -53,6 +54,7 @@ def _full(
     expected_head: str,
     expected_base: str = "",
     *,
+    full_fallback: bool = False,
     head_valid: bool | None = None,
     identity_valid: bool = True,
 ) -> EventDecision:
@@ -62,6 +64,7 @@ def _full(
         reason=reason,
         run_expensive=True,
         expected_head=expected_head,
+        full_fallback=full_fallback,
         head_valid=bool(expected_head) if head_valid is None else head_valid,
         identity_valid=identity_valid,
     )
@@ -128,6 +131,7 @@ def _pull_request_identity(
             reason,
             expected_head,
             expected_base,
+            full_fallback=head_valid and missing_base,
             head_valid=head_valid,
             identity_valid=False,
         )
@@ -136,6 +140,7 @@ def _pull_request_identity(
             "pull-request-identity-mismatch",
             expected_head,
             expected_base,
+            full_fallback=head_valid,
             head_valid=head_valid,
             identity_valid=False,
         )
@@ -220,6 +225,7 @@ def classify_event(
                     reason="body-title-only-edit",
                     run_expensive=False,
                     expected_head=pr_head_sha,
+                    full_fallback=False,
                     head_valid=True,
                     identity_valid=True,
                 )
@@ -337,6 +343,7 @@ def write_github_output(path: Path, decision: EventDecision) -> None:
         "classification": decision.classification,
         "expected_base": decision.expected_base,
         "expected_head": decision.expected_head,
+        "full_fallback": "true" if decision.full_fallback else "false",
         "head_valid": "true" if decision.head_valid else "false",
         "identity_valid": "true" if decision.identity_valid else "false",
         "reason": decision.reason,

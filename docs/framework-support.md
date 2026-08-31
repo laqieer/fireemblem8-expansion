@@ -31,15 +31,17 @@ router plus distinct running `metadata-classifier` and `metadata-summary`
 contexts; skipped worker names are non-semantic and inadmissible as candidate
 evidence. Base, mixed, unknown/incomplete,
 opened, synchronize, and reopened events with complete identity fail closed to
-the complete graph. Missing base with valid PR head also runs the four workers
-at that head and fails normal summary; missing head runs none. A classifier
+the complete graph. Any missing, malformed, or incoherent base ref/SHA with a
+valid exact PR head also runs the four workers at that head and fails normal
+summary; a valid base SHA may be retained only for diagnostics. Missing,
+malformed, stale, or spoofed head identity runs none. A classifier
 failure with a nonempty PR event head runs
 all four workers at that exact raw head and then fails summary. A master-push
 classifier failure does the same at nonempty raw `github.sha` and audits the
 master-only publisher before failing; without an event-specific fallback SHA,
 it starts no worker or publisher. The classifier bootstrap may use the trusted
-default branch when PR base identity is missing; worker checkouts never use a
-merge/default fallback.
+default branch when PR base identity is missing or unusable; worker checkouts
+never use a merge/default fallback.
 The same Build jobs rerun on `master`; only the
 technically used patch publisher is master-only. Arch and macOS support is
 exercised by the same script logic but is not re-run in CI; treat regressions

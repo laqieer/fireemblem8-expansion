@@ -57,13 +57,8 @@ WORKER_CONDITION = (
     "needs.event-classifier.outputs.expected_head == "
     "github.event.pull_request.head.sha && "
     "github.event.pull_request.head.sha != '' && "
-    "((needs.event-classifier.outputs.identity_valid == 'true' && "
-    "needs.event-classifier.outputs.expected_base == "
-    "github.event.pull_request.base.sha && "
-    "github.event.pull_request.base.sha != '') || "
-    "(needs.event-classifier.outputs.identity_valid == 'false' && "
-    "needs.event-classifier.outputs.expected_base == '' && "
-    "github.event.pull_request.base.sha == ''))) || "
+    "(needs.event-classifier.outputs.identity_valid == 'true' || "
+    "needs.event-classifier.outputs.full_fallback == 'true')) || "
     "(github.event_name == 'push' && "
     "needs.event-classifier.outputs.identity_valid == 'true' && "
     "needs.event-classifier.outputs.expected_head == github.event.after && "
@@ -362,8 +357,7 @@ def _triggered_jobs(text: str, event: dict) -> set[str]:
         and decision.classification == "full"
         and decision.head_valid
         and not decision.identity_valid
-        and decision.expected_base == ""
-        and pr_base_sha == ""
+        and decision.full_fallback
     )
     if (
         not decision.run_expensive
@@ -807,6 +801,7 @@ def _classifier_contract_errors(job: str) -> list[str]:
         "      classification: ${{ steps.classify.outputs.classification }}",
         "      expected_base: ${{ steps.classify.outputs.expected_base }}",
         "      expected_head: ${{ steps.classify.outputs.expected_head }}",
+        "      full_fallback: ${{ steps.classify.outputs.full_fallback }}",
         "      head_valid: ${{ steps.classify.outputs.head_valid }}",
         "      identity_valid: ${{ steps.classify.outputs.identity_valid }}",
         "      reason: ${{ steps.classify.outputs.reason }}",
@@ -819,6 +814,8 @@ def _classifier_contract_errors(job: str) -> list[str]:
         "github.event.repository.default_branch))) || "
         "(github.event_name == 'push' && github.event.after) || '' }}",
         "      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}",
+        "      PR_BASE_REF: ${{ github.event.pull_request.base.ref }}",
+        "      PR_BASE_REF_JSON: ${{ toJSON(github.event.pull_request.base.ref) }}",
         "      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}",
         "      PUSH_SHA: ${{ github.event.after }}",
         "      RAW_PUSH_SHA: ${{ github.sha }}",
@@ -841,6 +838,7 @@ def _classifier_contract_errors(job: str) -> list[str]:
         '            echo "reason=classifier-bootstrap"',
         '            echo "expected_base=$expected_base"',
         '            echo "expected_head=$expected_head"',
+        '            echo "full_fallback=$full_fallback"',
         '            echo "head_valid=$head_valid"',
         '            echo "identity_valid=$identity_valid"',
         '            echo "run_expensive=true"',
@@ -913,6 +911,7 @@ def _classifier_contract_errors(job: str) -> list[str]:
             "else",
             'expected_base=""',
             'expected_head=""',
+            "full_fallback=false",
             "head_valid=false",
             "identity_valid=false",
             'if [[ "$GITHUB_EVENT_NAME" = "pull_request" ]]; then',
@@ -923,8 +922,11 @@ def _classifier_contract_errors(job: str) -> list[str]:
             'expected_head="$PR_HEAD_SHA"',
             "head_valid=true",
             "fi",
-            'if [[ -n "$expected_base" && -n "$expected_head" ]]; then',
+            'if [[ -n "$expected_base" && -n "$expected_head" && \\',
+            '-n "$PR_BASE_REF" && "$PR_BASE_REF_JSON" = \\"*\\" ]]; then',
             "identity_valid=true",
+            'elif [[ "$head_valid" = true ]]; then',
+            "full_fallback=true",
             "fi",
             'elif [[ "$GITHUB_EVENT_NAME" = "push" && \\',
             '"$GITHUB_REF" = "refs/heads/master" && \\',
@@ -939,6 +941,7 @@ def _classifier_contract_errors(job: str) -> list[str]:
             'echo "reason=classifier-bootstrap"',
             'echo "expected_base=$expected_base"',
             'echo "expected_head=$expected_head"',
+            'echo "full_fallback=$full_fallback"',
             'echo "head_valid=$head_valid"',
             'echo "identity_valid=$identity_valid"',
             'echo "run_expensive=true"',
@@ -959,8 +962,12 @@ def _mode_contract_errors(job: str) -> list[str]:
         "'metadata-only' && 'metadata-classifier' || 'event-classifier' }}",
         "    if: always()",
         "    needs: [event-router]",
+        "      full_fallback: ${{ needs.event-router.outputs.full_fallback }}",
         "      head_valid: ${{ needs.event-router.outputs.head_valid }}",
+        "      FULL_FALLBACK: ${{ needs.event-router.outputs.full_fallback }}",
         "      ROUTER_RESULT: ${{ needs.event-router.result }}",
+        '        case "$FULL_FALLBACK" in',
+        '          echo "full fallback mode is not authoritative" >&2',
         "    - name: Verify authoritative Build event mode",
     )
     errors = [
@@ -1182,10 +1189,12 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     if (
         '[ "$HEAD_VALID" = "true" ]' not in summary
         or '[ "$IDENTITY_VALID" = "false" ]' not in summary
-        or "missing-base Build worker did not succeed" not in summary
+        or '[ "$FULL_FALLBACK" = "true" ]' not in summary
+        or "incomplete-base Build worker did not succeed" not in summary
+        or "incomplete-base PR unexpectedly ran publisher" not in summary
         or "lacks authoritative PR base identity" not in summary
     ):
-        errors.append("summary must audit missing-base exact-head workers")
+        errors.append("summary must audit incomplete-base exact-head workers")
     if (
         'if [ "$IDENTITY_VALID" != "true" ] || [ -z "$PR_HEAD_SHA" ]' not in summary
         or 'if [ "$IDENTITY_VALID" != "true" ] || [ -z "$PUSH_SHA" ]' not in summary
@@ -2384,6 +2393,39 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             {"event-router", "event-classifier", "summary"},
         )
 
+    def test_incomplete_base_fixtures_run_exact_head_full_fallback(self):
+        fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
+        template = next(
+            case
+            for case in fixture["cases"]
+            if case["id"] == "body-only-merge-sha-ignored"
+        )
+        for incomplete in fixture["incomplete_base_cases"]:
+            with self.subTest(case=incomplete["id"]):
+                case = json.loads(json.dumps(template))
+                case["payload"]["pull_request"]["base"] = incomplete["base"]
+                case["runner"]["pr_base_sha"] = incomplete["runner_base_sha"]
+                self.assertEqual(
+                    _triggered_jobs(self.text, case),
+                    CANDIDATE_FULL_JOBS,
+                )
+                decision = event_classifier.classify_event(
+                    case["event_name"],
+                    case["payload"],
+                    github_ref=case["runner"]["github_ref"],
+                    github_sha=case["runner"]["github_sha"],
+                    pr_base_sha=case["runner"]["pr_base_sha"],
+                    pr_head_sha=case["runner"]["pr_head_sha"],
+                    push_sha=case["runner"]["push_sha"],
+                )
+                self.assertTrue(decision.head_valid)
+                self.assertTrue(decision.full_fallback)
+                self.assertFalse(decision.identity_valid)
+                self.assertEqual(
+                    decision.expected_head,
+                    case["runner"]["pr_head_sha"],
+                )
+
     def test_metadata_check_contexts_cannot_replace_candidate_contexts(self):
         jobs = _job_blocks(self.text)
         for job_name in COMBINED_WORKERS:
@@ -3555,6 +3597,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "CLASSIFIED_BUILD_SHA": "1" * 40,
             "CLASSIFIER_RESULT": "success",
             "EXTENDED_HOST_TESTS_RESULT": "success",
+            "FULL_FALLBACK": "false",
             "GITHUB_EVENT_NAME": "pull_request",
             "GITHUB_REF": "refs/pull/177/merge",
             "HEAD_VALID": "true",
@@ -3599,6 +3642,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         missing_base = {
             **full,
             "CLASSIFIED_BASE_SHA": "",
+            "FULL_FALLBACK": "true",
             "IDENTITY_VALID": "false",
             "PR_BASE_SHA": "",
         }
@@ -3620,7 +3664,17 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     "BUILD_RESULT": "skipped",
                 },
                 1,
-                "missing-base Build worker did not succeed",
+                "incomplete-base Build worker did not succeed",
+            ),
+            (
+                "malformed-base-with-diagnostic-sha",
+                {
+                    **full,
+                    "FULL_FALLBACK": "true",
+                    "IDENTITY_VALID": "false",
+                },
+                1,
+                "lacks authoritative PR base identity",
             ),
             ("stale-head", {**full, "CLASSIFIED_BUILD_SHA": "9" * 40}, 1, None),
             ("stale-base", {**full, "CLASSIFIED_BASE_SHA": "9" * 40}, 1, None),
@@ -3756,6 +3810,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "metadata",
                 {
                     "CLASSIFICATION": "metadata-only",
+                    "FULL_FALLBACK": "false",
                     "HEAD_VALID": "true",
                     "IDENTITY_VALID": "true",
                     "ROUTER_RESULT": "success",
@@ -3767,6 +3822,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "full",
                 {
                     "CLASSIFICATION": "full",
+                    "FULL_FALLBACK": "false",
                     "HEAD_VALID": "true",
                     "IDENTITY_VALID": "true",
                     "ROUTER_RESULT": "success",
@@ -3778,6 +3834,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "missing-base-full",
                 {
                     "CLASSIFICATION": "full",
+                    "FULL_FALLBACK": "true",
                     "HEAD_VALID": "true",
                     "IDENTITY_VALID": "false",
                     "ROUTER_RESULT": "success",
@@ -3789,6 +3846,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "failed-router",
                 {
                     "CLASSIFICATION": "",
+                    "FULL_FALLBACK": "",
                     "HEAD_VALID": "",
                     "IDENTITY_VALID": "",
                     "ROUTER_RESULT": "failure",
@@ -3800,10 +3858,47 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "invalid-metadata",
                 {
                     "CLASSIFICATION": "metadata-only",
+                    "FULL_FALLBACK": "false",
                     "HEAD_VALID": "true",
                     "IDENTITY_VALID": "false",
                     "ROUTER_RESULT": "success",
                     "RUN_EXPENSIVE": "false",
+                },
+                1,
+            ),
+            (
+                "metadata-full-fallback",
+                {
+                    "CLASSIFICATION": "metadata-only",
+                    "FULL_FALLBACK": "true",
+                    "HEAD_VALID": "true",
+                    "IDENTITY_VALID": "false",
+                    "ROUTER_RESULT": "success",
+                    "RUN_EXPENSIVE": "false",
+                },
+                1,
+            ),
+            (
+                "fallback-with-valid-identity",
+                {
+                    "CLASSIFICATION": "full",
+                    "FULL_FALLBACK": "true",
+                    "HEAD_VALID": "true",
+                    "IDENTITY_VALID": "true",
+                    "ROUTER_RESULT": "success",
+                    "RUN_EXPENSIVE": "true",
+                },
+                1,
+            ),
+            (
+                "fallback-with-invalid-head",
+                {
+                    "CLASSIFICATION": "full",
+                    "FULL_FALLBACK": "true",
+                    "HEAD_VALID": "false",
+                    "IDENTITY_VALID": "false",
+                    "ROUTER_RESULT": "success",
+                    "RUN_EXPENSIVE": "true",
                 },
                 1,
             ),
@@ -3820,7 +3915,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 )
                 self.assertEqual(completed.returncode, expected, completed.stderr)
 
-    def test_classifier_bootstrap_preserves_missing_pr_identity(self):
+    def test_classifier_bootstrap_preserves_incomplete_pr_identity(self):
         classifier_steps = _step_blocks(_job_blocks(self.text)["event-router"])
         script = _literal_run_script(classifier_steps[2])
         artifact_root = ROOT / "build" / "test-artifacts"
@@ -3833,43 +3928,64 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             cases = (
                 (
                     "full-pr", "pull_request", "refs/pull/177/merge",
-                    "2" * 40, "1" * 40, "", "a" * 40,
-                    "1" * 40, "true", "true",
+                    "2" * 40, "master", '"master"', "1" * 40, "", "a" * 40,
+                    "2" * 40, "1" * 40, "true", "true", "false",
                 ),
                 (
-                    "missing-base", "pull_request", "refs/pull/177/merge",
-                    "", "1" * 40, "", "a" * 40,
-                    "1" * 40, "true", "false",
+                    "missing-base-sha", "pull_request", "refs/pull/177/merge",
+                    "", "master", '"master"', "1" * 40, "", "a" * 40,
+                    "", "1" * 40, "true", "false", "true",
+                ),
+                (
+                    "missing-base-ref", "pull_request", "refs/pull/177/merge",
+                    "2" * 40, "", "null", "1" * 40, "", "a" * 40,
+                    "2" * 40, "1" * 40, "true", "false", "true",
+                ),
+                (
+                    "empty-base-ref", "pull_request", "refs/pull/177/merge",
+                    "2" * 40, "", '""', "1" * 40, "", "a" * 40,
+                    "2" * 40, "1" * 40, "true", "false", "true",
+                ),
+                (
+                    "malformed-base-ref", "pull_request", "refs/pull/177/merge",
+                    "2" * 40, "7", "7", "1" * 40, "", "a" * 40,
+                    "2" * 40, "1" * 40, "true", "false", "true",
+                ),
+                (
+                    "malformed-base-sha", "pull_request", "refs/pull/177/merge",
+                    "7", "master", '"master"', "1" * 40, "", "a" * 40,
+                    "", "1" * 40, "true", "false", "true",
                 ),
                 (
                     "missing-head", "pull_request", "refs/pull/177/merge",
-                    "2" * 40, "", "", "a" * 40,
-                    "", "false", "false",
+                    "2" * 40, "master", '"master"', "", "", "a" * 40,
+                    "2" * 40, "", "false", "false", "false",
                 ),
                 (
                     "push", "push", "refs/heads/master",
-                    "", "", "3" * 40, "3" * 40,
-                    "3" * 40, "true", "true",
+                    "", "", "null", "", "3" * 40, "3" * 40,
+                    "", "3" * 40, "true", "true", "false",
                 ),
                 (
                     "push-mismatch", "push", "refs/heads/master",
-                    "", "", "3" * 40, "4" * 40,
-                    "", "false", "false",
+                    "", "", "null", "", "3" * 40, "4" * 40,
+                    "", "", "false", "false", "false",
                 ),
                 (
                     "push-missing", "push", "refs/heads/master",
-                    "", "", "", "3" * 40,
-                    "", "false", "false",
+                    "", "", "null", "", "", "3" * 40,
+                    "", "", "false", "false", "false",
                 ),
                 (
                     "push-nonmaster", "push", "refs/heads/other",
-                    "", "", "3" * 40, "3" * 40,
-                    "", "false", "false",
+                    "", "", "null", "", "3" * 40, "3" * 40,
+                    "", "", "false", "false", "false",
                 ),
             )
             for (
-                name, event_name, ref, base, head, push_sha, raw_push_sha,
-                expected_head, head_valid, identity_valid,
+                name, event_name, ref, base, base_ref, base_ref_json, head,
+                push_sha, raw_push_sha, expected_base, expected_head, head_valid,
+                identity_valid, full_fallback,
             ) in cases:
                 with self.subTest(name=name):
                     output = sandbox / f"{name}.out"
@@ -3884,6 +4000,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                             "GITHUB_REF": ref,
                             "GITHUB_SHA": raw_push_sha,
                             "PR_BASE_SHA": base,
+                            "PR_BASE_REF": base_ref,
+                            "PR_BASE_REF_JSON": base_ref_json,
                             "PR_HEAD_SHA": head,
                             "PUSH_SHA": push_sha,
                             "RAW_PUSH_SHA": raw_push_sha,
@@ -3897,10 +4015,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         line.split("=", 1)
                         for line in output.read_text(encoding="ascii").splitlines()
                     )
-                    self.assertEqual(values["expected_base"], base)
+                    self.assertEqual(values["expected_base"], expected_base)
                     self.assertEqual(values["expected_head"], expected_head)
                     self.assertEqual(values["head_valid"], head_valid)
                     self.assertEqual(values["identity_valid"], identity_valid)
+                    self.assertEqual(values["full_fallback"], full_fallback)
                     self.assertEqual(values["run_expensive"], "true")
                     if event_name == "pull_request":
                         self.assertNotEqual(values["expected_head"], raw_push_sha)

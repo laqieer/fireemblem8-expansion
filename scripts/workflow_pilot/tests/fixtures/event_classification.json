@@ -848,6 +848,60 @@
       }
     }
   ],
+  "incomplete_base_cases": [
+    {
+      "base": {
+        "sha": "2222222222222222222222222222222222222222"
+      },
+      "expected_base": "2222222222222222222222222222222222222222",
+      "id": "missing-base-ref",
+      "runner_base_sha": "2222222222222222222222222222222222222222"
+    },
+    {
+      "base": {
+        "ref": "",
+        "sha": "2222222222222222222222222222222222222222"
+      },
+      "expected_base": "2222222222222222222222222222222222222222",
+      "id": "empty-base-ref",
+      "runner_base_sha": "2222222222222222222222222222222222222222"
+    },
+    {
+      "base": {
+        "ref": 7,
+        "sha": "2222222222222222222222222222222222222222"
+      },
+      "expected_base": "2222222222222222222222222222222222222222",
+      "id": "malformed-base-ref",
+      "runner_base_sha": "2222222222222222222222222222222222222222"
+    },
+    {
+      "base": {
+        "ref": "master"
+      },
+      "expected_base": "",
+      "id": "missing-base-sha",
+      "runner_base_sha": ""
+    },
+    {
+      "base": {
+        "ref": "master",
+        "sha": 7
+      },
+      "expected_base": "",
+      "id": "malformed-base-sha",
+      "runner_base_sha": "7"
+    },
+    {
+      "base": {
+        "ref": "master",
+        "sha": "3333333333333333333333333333333333333333"
+      },
+      "expected_base": "2222222222222222222222222222222222222222",
+      "id": "mismatched-base-sha",
+      "runner_base_sha": "2222222222222222222222222222222222222222"
+    }
+  ],
   "infrastructure_jobs": [
     "event-router"
   ],

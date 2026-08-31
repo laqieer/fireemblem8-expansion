@@ -222,10 +222,15 @@ Each combined job contains only its classifier dependency and fail-closed
 condition, `runs-on: ubuntu-latest`,
 `timeout-minutes: 60`, its exact allowlisted environment, and `steps`.
 Classifier authority uses direct PR-base or push identities, with a
-trusted-default-branch failure bootstrap only when PR base identity is absent;
+trusted-default-branch failure bootstrap only when PR base identity is absent
+or unusable;
 neither classifier nor worker can substitute the pull-request merge
-`github.sha`. Workers accept only a complete, current classifier head/base
-pair and check out that exact nonempty head during normal classification.
+`github.sha`. Workers accept either a complete current classifier head/base
+pair or the explicit fail-closed state for a valid exact PR head with an
+incomplete/malformed/incoherent base, and check out only that exact nonempty
+head during normal classification. The latter state audits all four workers
+and then fails summary; a valid base SHA may remain diagnostic data but cannot
+authorize a checkout.
 After classifier failure only, a PR with a nonempty direct event head runs the
 same four workers at that raw exact head. A guarded master-push failure uses
 only nonempty raw `github.sha`, runs those workers plus the publisher, and

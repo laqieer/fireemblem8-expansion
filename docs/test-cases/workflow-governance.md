@@ -266,7 +266,8 @@ availability or grant credentials.
    `python3 -m unittest tests.upstream_port.test_verify -v`.
 4. Inspect the parsed body-only, title-only, body-and-title, base-only,
    base-plus-body, unknown-field, incomplete-change, `opened`, `synchronize`,
-   `reopened`, missing-base, missing-head, missing-both, stacked-base,
+   `reopened`, missing/empty/malformed/mismatched base components, missing-head,
+   missing-both, stacked-base,
    merge-`github.sha`, and `master`-push cases. Confirm every fixture provides
    separate PR base/head and push identity, GitHub-shaped payload, exact
    classifier result, exact selected job set, exact head/base, and expected
@@ -313,8 +314,12 @@ push SHA. Malformed/duplicate/non-finite JSON or another classifier failure
 with a nonempty authoritative PR head runs all four workers at that exact raw
 head, then summary still fails to expose the classifier defect. A classifier
 failure on a master push with nonempty raw `github.sha` runs all four workers
-and the publisher at that exact push SHA, then summary still fails. Missing PR
-head or push SHA starts no combined worker/publisher and fails summary.
+and the publisher at that exact push SHA, then summary still fails. Any
+missing, empty, malformed, or event-mismatched base ref/SHA with a valid exact
+PR head runs all four workers at that head and fails normal summary; a
+syntactically valid direct base SHA may remain diagnostic output but is never
+checkout authority. Missing, malformed, stale, or spoofed PR head or missing
+push SHA starts no combined worker/publisher and fails summary.
 Missing/stale successful output cannot select a fallback ref.
 An accepted base retarget requires valid, differing previous/current ref and
 SHA pairs; ref-only, SHA-only, same, missing, extra, or spoofed transition
@@ -325,7 +330,8 @@ without the new classifier uses the explicit strict bootstrap. The current
 workflow has no `workflow_dispatch`, so the fixture and topology test assert
 that no final-dispatch job selection exists to preserve.
 The classifier bootstrap may use the trusted default branch when PR base
-identity is missing; worker checkouts never use a merge/default fallback.
+identity is missing or unusable; worker checkouts never use a merge/default
+fallback.
 
 ### Negative control
 
@@ -334,6 +340,8 @@ The preserved parsed pre-fix workflow fixture selects `host-tests`, `build`,
 despite its unchanged head SHA. The focused suites also reject metadata
 suppression for same-value/spoofed/missing-current/extra-key/nested metadata
 records, invalid title/body values, malformed `changes`, missing PR identity,
+valid-head events with malformed or mismatched base components that skip
+workers or produce a successful summary,
 duplicate JSON keys, `NaN`/positive or negative `Infinity`, positive/negative
 exponent overflow, nonzero-to-zero underflow, huge exponents, an unused
 overflow field on metadata-only input, oversized event

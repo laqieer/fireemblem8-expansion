@@ -116,7 +116,8 @@ when that base/push identity exists before invoking the closed
 base predates the classifier takes an explicit bootstrap full-build path, so
 introducing or reverting the seam cannot silently suppress evidence.
 The classifier bootstrap may use the trusted default branch when PR base
-identity is missing; worker checkouts never use a merge/default fallback.
+identity is missing or unusable; worker checkouts never use a merge/default
+fallback.
 
 Check contexts are mode-separated. `event-router` is common setup only. Full
 candidate runs expose `event-classifier`, `host-tests`, `build`,
@@ -182,16 +183,21 @@ summary. A classifier failure with no PR/push fallback SHA or another
 unsupported result starts no worker/publisher and fails summary. Missing
 identity or stale outputs from a successful classifier cannot select a
 fallback worker. Each normal worker runs only when the classifier has a
-valid full-build decision whose head and base still equal the direct event
-identities. On a metadata-only edit, `summary` succeeds only
+valid full-build decision and an exact event head. Complete identity or an
+explicit valid-head `full_fallback` decision is also required. On a
+metadata-only edit, `summary` succeeds only
 when classification succeeded, the classified head still equals the event
 head, the classified base still equals the event base, suppression is exactly
 false, and all four worker conclusions are exactly `skipped`. On a full event,
-normal workers check out the classifier's exact nonempty head output. A
-missing base with a valid PR head sets `head_valid=true` and
-`identity_valid=false`; all four workers run at that exact head, then normal
-`summary` audits them and fails because full base identity is unavailable.
-Missing head runs no worker and fails. Failure
+normal workers check out the classifier's exact nonempty head output. Any
+missing, empty, malformed, or event-mismatched base ref/SHA with a valid exact
+PR head sets `head_valid=true`, `identity_valid=false`, and
+`full_fallback=true`. All four workers run at that exact head, then normal
+`summary` audits them and fails because full base identity is unavailable or
+incoherent. A syntactically valid direct base SHA remains in
+`expected_base` for diagnostics even when another base component is invalid;
+it never becomes checkout authority. A missing, malformed, stale, or spoofed
+head sets no full fallback, runs no worker, and fails. Failure
 fallback workers check out only the raw nonempty PR head or guarded master-push
 `github.sha`. Both paths retain revision verification, commands, and
 environments. Summary now joins the publisher as well: PR and metadata paths

@@ -116,13 +116,8 @@ _WORKER_CONDITION = (
     "needs.event-classifier.outputs.expected_head == "
     "github.event.pull_request.head.sha && "
     "github.event.pull_request.head.sha != '' && "
-    "((needs.event-classifier.outputs.identity_valid == 'true' && "
-    "needs.event-classifier.outputs.expected_base == "
-    "github.event.pull_request.base.sha && "
-    "github.event.pull_request.base.sha != '') || "
-    "(needs.event-classifier.outputs.identity_valid == 'false' && "
-    "needs.event-classifier.outputs.expected_base == '' && "
-    "github.event.pull_request.base.sha == ''))) || "
+    "(needs.event-classifier.outputs.identity_valid == 'true' || "
+    "needs.event-classifier.outputs.full_fallback == 'true')) || "
     "(github.event_name == 'push' && "
     "needs.event-classifier.outputs.identity_valid == 'true' && "
     "needs.event-classifier.outputs.expected_head == github.event.after && "
@@ -184,6 +179,7 @@ _CLASSIFIER_COMMANDS = (
     ("else",),
     ("expected_base=",),
     ("expected_head=",),
+    ("full_fallback=false",),
     ("head_valid=false",),
     ("identity_valid=false",),
     ("if", "[[", "$GITHUB_EVENT_NAME", "=", "pull_request", "]];", "then"),
@@ -218,10 +214,19 @@ _CLASSIFIER_COMMANDS = (
         "&&",
         "-n",
         "$expected_head",
+        "&&",
+        "-n",
+        "$PR_BASE_REF",
+        "&&",
+        "$PR_BASE_REF_JSON",
+        "=",
+        '"*"',
         "]];",
         "then",
     ),
     ("identity_valid=true",),
+    ("elif", "[[", "$head_valid", "=", "true", "]];", "then"),
+    ("full_fallback=true",),
     ("fi",),
     (
         "elif",
@@ -253,6 +258,7 @@ _CLASSIFIER_COMMANDS = (
     ("echo", "reason=classifier-bootstrap"),
     ("echo", "expected_base=$expected_base"),
     ("echo", "expected_head=$expected_head"),
+    ("echo", "full_fallback=$full_fallback"),
     ("echo", "head_valid=$head_valid"),
     ("echo", "identity_valid=$identity_valid"),
     ("echo", "run_expensive=true"),
@@ -276,6 +282,18 @@ _MODE_COMMANDS = (
         ";;",
     ),
     ("esac",),
+    ("case", "$FULL_FALLBACK", "in"),
+    ("true|false)", ";;"),
+    (
+        "*)",
+        "echo",
+        "Build event router returned invalid full fallback",
+        ">&2;",
+        "exit",
+        "1",
+        ";;",
+    ),
+    ("esac",),
     ("case", "$IDENTITY_VALID", "in"),
     ("true|false)", ";;"),
     (
@@ -291,6 +309,12 @@ _MODE_COMMANDS = (
     ("if", "[", "$CLASSIFICATION", "=", "metadata-only", "];", "then"),
     (
         "if",
+        "[",
+        "$FULL_FALLBACK",
+        "!=",
+        "false",
+        "]",
+        "||",
         "[",
         "$HEAD_VALID",
         "!=",
@@ -333,12 +357,39 @@ _MODE_COMMANDS = (
     ("echo", "full Build event mode is not authoritative", ">&2"),
     ("exit", "1"),
     ("fi",),
+    (
+        "if",
+        "[",
+        "$FULL_FALLBACK",
+        "=",
+        "true",
+        "]",
+        "&&",
+        "{",
+        "[",
+        "$HEAD_VALID",
+        "!=",
+        "true",
+        "]",
+        "||",
+        "[",
+        "$IDENTITY_VALID",
+        "!=",
+        "false",
+        "];",
+        "};",
+        "then",
+    ),
+    ("echo", "full fallback mode is not authoritative", ">&2"),
+    ("exit", "1"),
+    ("fi",),
 )
 _EXPECTED_JOB_OUTPUTS = {
     "event-router": (
         ("classification", "${{ steps.classify.outputs.classification }}"),
         ("expected_base", "${{ steps.classify.outputs.expected_base }}"),
         ("expected_head", "${{ steps.classify.outputs.expected_head }}"),
+        ("full_fallback", "${{ steps.classify.outputs.full_fallback }}"),
         ("head_valid", "${{ steps.classify.outputs.head_valid }}"),
         ("identity_valid", "${{ steps.classify.outputs.identity_valid }}"),
         ("reason", "${{ steps.classify.outputs.reason }}"),
@@ -348,6 +399,7 @@ _EXPECTED_JOB_OUTPUTS = {
         ("classification", "${{ needs.event-router.outputs.classification }}"),
         ("expected_base", "${{ needs.event-router.outputs.expected_base }}"),
         ("expected_head", "${{ needs.event-router.outputs.expected_head }}"),
+        ("full_fallback", "${{ needs.event-router.outputs.full_fallback }}"),
         ("head_valid", "${{ needs.event-router.outputs.head_valid }}"),
         ("identity_valid", "${{ needs.event-router.outputs.identity_valid }}"),
         ("reason", "${{ needs.event-router.outputs.reason }}"),
@@ -359,6 +411,8 @@ _EXPECTED_JOB_ENV = {
         ("CLASSIFIER_EXPECTED_SHA", _CLASSIFIER_EXPECTED_SHA_EXPRESSION),
         ("CLASSIFIER_REF", _CLASSIFIER_REF_EXPRESSION),
         ("DEFAULT_BRANCH", "${{ github.event.repository.default_branch }}"),
+        ("PR_BASE_REF", "${{ github.event.pull_request.base.ref }}"),
+        ("PR_BASE_REF_JSON", "${{ toJSON(github.event.pull_request.base.ref) }}"),
         ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
         ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
         ("PUSH_SHA", "${{ github.event.after }}"),
@@ -366,6 +420,7 @@ _EXPECTED_JOB_ENV = {
     ),
     "event-classifier": (
         ("CLASSIFICATION", "${{ needs.event-router.outputs.classification }}"),
+        ("FULL_FALLBACK", "${{ needs.event-router.outputs.full_fallback }}"),
         ("HEAD_VALID", "${{ needs.event-router.outputs.head_valid }}"),
         ("IDENTITY_VALID", "${{ needs.event-router.outputs.identity_valid }}"),
         ("ROUTER_RESULT", "${{ needs.event-router.result }}"),
@@ -398,6 +453,7 @@ _EXPECTED_JOB_ENV = {
         ),
         ("CLASSIFIER_RESULT", "${{ needs.event-classifier.result }}"),
         ("EXTENDED_HOST_TESTS_RESULT", "${{ needs.extended-host-tests.result }}"),
+        ("FULL_FALLBACK", "${{ needs.event-classifier.outputs.full_fallback }}"),
         ("HEAD_VALID", "${{ needs.event-classifier.outputs.head_valid }}"),
         ("HOST_TESTS_RESULT", "${{ needs.host-tests.result }}"),
         ("IDENTITY_VALID", "${{ needs.event-classifier.outputs.identity_valid }}"),

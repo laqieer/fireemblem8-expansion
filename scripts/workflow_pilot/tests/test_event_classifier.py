@@ -42,6 +42,11 @@ def _expected_decision(case: dict) -> dict:
     expected.pop("jobs")
     expected.pop("summary_success")
     expected["head_valid"] = bool(expected["expected_head"])
+    expected["full_fallback"] = (
+        case["event_name"] == "pull_request"
+        and expected["head_valid"]
+        and not expected["identity_valid"]
+    )
     return expected
 
 
@@ -114,6 +119,10 @@ class EventClassifierFixtureTests(unittest.TestCase):
                 decision = _decision(case)
                 self.assertFalse(decision.identity_valid)
                 self.assertEqual(
+                    decision.full_fallback,
+                    decision.head_valid,
+                )
+                self.assertEqual(
                     decision.head_valid,
                     bool(decision.expected_head),
                 )
@@ -183,6 +192,8 @@ class EventClassifierFixtureTests(unittest.TestCase):
                             f"classification={expected['classification']}",
                             f"expected_base={expected['expected_base']}",
                             f"expected_head={expected['expected_head']}",
+                            "full_fallback="
+                            + ("true" if expected["full_fallback"] else "false"),
                             "head_valid="
                             + ("true" if expected["head_valid"] else "false"),
                             "identity_valid="
@@ -420,6 +431,34 @@ class EventClassifierFixtureTests(unittest.TestCase):
             cases["mixed-base-and-body"]["runner"]["pr_head_sha"],
         )
 
+    def test_valid_head_enables_full_fallback_for_every_invalid_base_shape(self):
+        fixture = _load_fixture()
+        template = next(
+            case
+            for case in fixture["cases"]
+            if case["id"] == "body-only-merge-sha-ignored"
+        )
+        for incomplete in fixture["incomplete_base_cases"]:
+            with self.subTest(case=incomplete["id"]):
+                case = copy.deepcopy(template)
+                case["payload"]["pull_request"]["base"] = incomplete["base"]
+                case["runner"]["pr_base_sha"] = incomplete["runner_base_sha"]
+                decision = _decision(case)
+                self.assertEqual(decision.classification, "full")
+                self.assertTrue(decision.run_expensive)
+                self.assertTrue(decision.head_valid)
+                self.assertTrue(decision.full_fallback)
+                self.assertFalse(decision.identity_valid)
+                self.assertEqual(
+                    decision.expected_head,
+                    case["runner"]["pr_head_sha"],
+                )
+                self.assertEqual(
+                    decision.expected_base,
+                    incomplete["expected_base"],
+                )
+                self.assertNotEqual(decision.classification, "metadata-only")
+
     def test_identity_mismatch_and_unknown_event_fail_closed(self):
         case = copy.deepcopy(_load_fixture()["cases"][0])
         case["runner"]["pr_head_sha"] = "9" * 40
@@ -434,6 +473,7 @@ class EventClassifierFixtureTests(unittest.TestCase):
             push_sha="",
         )
         self.assertFalse(mismatch.identity_valid)
+        self.assertFalse(mismatch.full_fallback)
         self.assertEqual(mismatch.reason, "pull-request-identity-mismatch")
         self.assertFalse(unknown.identity_valid)
         self.assertEqual(unknown.reason, "unknown-event")

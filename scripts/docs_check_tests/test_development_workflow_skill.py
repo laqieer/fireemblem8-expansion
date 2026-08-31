@@ -3014,7 +3014,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
     def test_classifier_bootstrap_and_worker_fallback_are_distinct_in_docs(self):
         contract = (
             "classifier bootstrap may use the trusted default branch when PR "
-            "base identity is missing; worker checkouts never use a "
+            "base identity is missing or unusable; worker checkouts never use a "
             "merge/default fallback"
         )
         for path in (
