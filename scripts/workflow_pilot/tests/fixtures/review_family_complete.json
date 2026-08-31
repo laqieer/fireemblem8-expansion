@@ -3,6 +3,7 @@
   "repository": "laqieer/fireemblem8-expansion",
   "pull_request": 179,
   "base_sha": "853cff1eb7bdb3ecce46f780473e81be73e24315",
+  "original_pre_review_head": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
   "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
   "trust_mode": "introduction",
   "implementer_actor_id": "ACTOR_IMPLEMENTER_001",
@@ -26,87 +27,47 @@
   "behavior_rows": [
     {
       "id": "actor-permission-bounds",
-      "evidence_result_ids": {
-        "positive": [
-          "result-actor-permission-bounds-positive"
-        ],
-        "adversarial": [
-          "result-actor-permission-bounds-adversarial"
-        ],
-        "default": [
-          "result-actor-permission-bounds-default"
-        ],
-        "runtime": [
-          "result-actor-permission-bounds-runtime"
-        ]
+      "assertions": {
+        "positive": "registry:behavior:actor-permission-bounds:positive:v2",
+        "adversarial": "registry:behavior:actor-permission-bounds:adversarial:v2",
+        "default": "registry:behavior:actor-permission-bounds:default:v2",
+        "runtime": "registry:behavior:actor-permission-bounds:runtime:v2"
       }
     },
     {
       "id": "authority-causality",
-      "evidence_result_ids": {
-        "positive": [
-          "result-authority-causality-positive"
-        ],
-        "adversarial": [
-          "result-authority-causality-adversarial"
-        ],
-        "default": [
-          "result-authority-causality-default"
-        ],
-        "runtime": [
-          "result-authority-causality-runtime"
-        ]
+      "assertions": {
+        "positive": "registry:behavior:authority-causality:positive:v2",
+        "adversarial": "registry:behavior:authority-causality:adversarial:v2",
+        "default": "registry:behavior:authority-causality:default:v2",
+        "runtime": "registry:behavior:authority-causality:runtime:v2"
       }
     },
     {
       "id": "remote-review-metrics",
-      "evidence_result_ids": {
-        "positive": [
-          "result-remote-review-metrics-positive"
-        ],
-        "adversarial": [
-          "result-remote-review-metrics-adversarial"
-        ],
-        "default": [
-          "result-remote-review-metrics-default"
-        ],
-        "runtime": [
-          "result-remote-review-metrics-runtime"
-        ]
+      "assertions": {
+        "positive": "registry:behavior:remote-review-metrics:positive:v2",
+        "adversarial": "registry:behavior:remote-review-metrics:adversarial:v2",
+        "default": "registry:behavior:remote-review-metrics:default:v2",
+        "runtime": "registry:behavior:remote-review-metrics:runtime:v2"
       }
     },
     {
       "id": "round-lifecycle",
-      "evidence_result_ids": {
-        "positive": [
-          "result-round-lifecycle-positive"
-        ],
-        "adversarial": [
-          "result-round-lifecycle-adversarial"
-        ],
-        "default": [
-          "result-round-lifecycle-default"
-        ],
-        "runtime": [
-          "result-round-lifecycle-runtime"
-        ]
+      "assertions": {
+        "positive": "registry:behavior:round-lifecycle:positive:v2",
+        "adversarial": "registry:behavior:round-lifecycle:adversarial:v2",
+        "default": "registry:behavior:round-lifecycle:default:v2",
+        "runtime": "registry:behavior:round-lifecycle:runtime:v2"
       }
     },
     {
       "id": "sibling-family-expansion",
-      "evidence_result_ids": {
-        "positive": [
-          "result-sibling-family-expansion-positive"
-        ],
-        "adversarial": [
-          "result-sibling-family-expansion-adversarial"
-        ],
-        "default": [
-          "result-sibling-family-expansion-default"
-        ],
-        "runtime": [
-          "result-sibling-family-expansion-runtime"
-        ]
+      "assertions": {
+        "positive": "registry:behavior:sibling-family-expansion:positive:v2",
+        "adversarial": "registry:behavior:sibling-family-expansion:adversarial:v2",
+        "default": "registry:behavior:sibling-family-expansion:default:v2",
+        "runtime": "registry:behavior:sibling-family-expansion:runtime:v2"
       }
     }
   ],
@@ -117,32 +78,17 @@
         {
           "member": "actions",
           "result": "affected-fixed",
-          "evidence_result_ids": [
-            "result-sibling-FINDING_ACTION_001-actions"
-          ],
-          "assertion_inputs": {
-            "changed_paths": [".github/skills/development-workflow/SKILL.md"]
-          }
+          "assertion_id": "registry:sibling:action:actions:affected-fixed:v2"
         },
         {
           "member": "items",
           "result": "verified-unaffected",
-          "evidence_result_ids": [
-            "result-sibling-FINDING_ACTION_001-items"
-          ],
-          "assertion_inputs": {
-            "unchanged_paths": ["Makefile"]
-          }
+          "assertion_id": "registry:sibling:action:items:verified-unaffected:v2"
         },
         {
           "member": "targets",
           "result": "verified-unaffected",
-          "evidence_result_ids": [
-            "result-sibling-FINDING_ACTION_001-targets"
-          ],
-          "assertion_inputs": {
-            "unchanged_paths": ["Makefile"]
-          }
+          "assertion_id": "registry:sibling:action:targets:verified-unaffected:v2"
         }
       ]
     },
@@ -152,42 +98,22 @@
         {
           "member": "owners",
           "result": "affected-fixed",
-          "evidence_result_ids": [
-            "result-sibling-FINDING_GENERATED_001-owners"
-          ],
-          "assertion_inputs": {
-            "changed_paths": ["docs/test-cases/registry.json"]
-          }
+          "assertion_id": "registry:sibling:generated:owners:affected-fixed:v2"
         },
         {
           "member": "outputs",
           "result": "verified-unaffected",
-          "evidence_result_ids": [
-            "result-sibling-FINDING_GENERATED_001-outputs"
-          ],
-          "assertion_inputs": {
-            "unchanged_paths": ["Makefile"]
-          }
+          "assertion_id": "registry:sibling:generated:outputs:verified-unaffected:v2"
         },
         {
           "member": "consumers",
           "result": "verified-unaffected",
-          "evidence_result_ids": [
-            "result-sibling-FINDING_GENERATED_001-consumers"
-          ],
-          "assertion_inputs": {
-            "unchanged_paths": ["Makefile"]
-          }
+          "assertion_id": "registry:sibling:generated:consumers:verified-unaffected:v2"
         },
         {
           "member": "drift-checks",
           "result": "verified-unaffected",
-          "evidence_result_ids": [
-            "result-sibling-FINDING_GENERATED_001-drift-checks"
-          ],
-          "assertion_inputs": {
-            "unchanged_paths": ["Makefile"]
-          }
+          "assertion_id": "registry:sibling:generated:drift-checks:verified-unaffected:v2"
         }
       ]
     },
@@ -197,42 +123,22 @@
         {
           "member": "entries",
           "result": "affected-fixed",
-          "evidence_result_ids": [
-            "result-sibling-FINDING_LIFECYCLE_001-entries"
-          ],
-          "assertion_inputs": {
-            "changed_paths": ["scripts/workflow_pilot/review_family.py"]
-          }
+          "assertion_id": "registry:sibling:lifecycle:entries:affected-fixed:v2"
         },
         {
           "member": "preservation",
           "result": "verified-unaffected",
-          "evidence_result_ids": [
-            "result-sibling-FINDING_LIFECYCLE_001-preservation"
-          ],
-          "assertion_inputs": {
-            "unchanged_paths": ["Makefile"]
-          }
+          "assertion_id": "registry:sibling:lifecycle:preservation:verified-unaffected:v2"
         },
         {
           "member": "resets",
           "result": "verified-unaffected",
-          "evidence_result_ids": [
-            "result-sibling-FINDING_LIFECYCLE_001-resets"
-          ],
-          "assertion_inputs": {
-            "unchanged_paths": ["Makefile"]
-          }
+          "assertion_id": "registry:sibling:lifecycle:resets:verified-unaffected:v2"
         },
         {
           "member": "terminals",
           "result": "verified-unaffected",
-          "evidence_result_ids": [
-            "result-sibling-FINDING_LIFECYCLE_001-terminals"
-          ],
-          "assertion_inputs": {
-            "unchanged_paths": ["Makefile"]
-          }
+          "assertion_id": "registry:sibling:lifecycle:terminals:verified-unaffected:v2"
         }
       ]
     },
@@ -242,22 +148,12 @@
         {
           "member": "enabled",
           "result": "affected-fixed",
-          "evidence_result_ids": [
-            "result-sibling-FINDING_RESOURCE_001-enabled"
-          ],
-          "assertion_inputs": {
-            "changed_paths": [".github/copilot-instructions.md"]
-          }
+          "assertion_id": "registry:sibling:resource:enabled:affected-fixed:v2"
         },
         {
           "member": "disabled",
           "result": "verified-unaffected",
-          "evidence_result_ids": [
-            "result-sibling-FINDING_RESOURCE_001-disabled"
-          ],
-          "assertion_inputs": {
-            "unchanged_paths": ["Makefile"]
-          }
+          "assertion_id": "registry:sibling:resource:disabled:verified-unaffected:v2"
         }
       ]
     },
@@ -267,52 +163,27 @@
         {
           "member": "producers",
           "result": "affected-fixed",
-          "evidence_result_ids": [
-            "result-sibling-FINDING_WIRE_001-producers"
-          ],
-          "assertion_inputs": {
-            "changed_paths": ["scripts/workflow_pilot/review_family.py"]
-          }
+          "assertion_id": "registry:sibling:wire:producers:affected-fixed:v2"
         },
         {
           "member": "consumers",
           "result": "verified-unaffected",
-          "evidence_result_ids": [
-            "result-sibling-FINDING_WIRE_001-consumers"
-          ],
-          "assertion_inputs": {
-            "unchanged_paths": ["Makefile"]
-          }
+          "assertion_id": "registry:sibling:wire:consumers:verified-unaffected:v2"
         },
         {
           "member": "validators",
           "result": "verified-unaffected",
-          "evidence_result_ids": [
-            "result-sibling-FINDING_WIRE_001-validators"
-          ],
-          "assertion_inputs": {
-            "unchanged_paths": ["Makefile"]
-          }
+          "assertion_id": "registry:sibling:wire:validators:verified-unaffected:v2"
         },
         {
           "member": "replay",
           "result": "verified-unaffected",
-          "evidence_result_ids": [
-            "result-sibling-FINDING_WIRE_001-replay"
-          ],
-          "assertion_inputs": {
-            "unchanged_paths": ["Makefile"]
-          }
+          "assertion_id": "registry:sibling:wire:replay:verified-unaffected:v2"
         },
         {
           "member": "stale-bindings",
           "result": "verified-unaffected",
-          "evidence_result_ids": [
-            "result-sibling-FINDING_WIRE_001-stale-bindings"
-          ],
-          "assertion_inputs": {
-            "unchanged_paths": ["Makefile"]
-          }
+          "assertion_id": "registry:sibling:wire:stale-bindings:verified-unaffected:v2"
         }
       ]
     }

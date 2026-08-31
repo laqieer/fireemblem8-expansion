@@ -511,10 +511,10 @@ game behavior needs a compensating change.
 6. Create an independent two-commit repository under
    `build/test-artifacts/`, place the checker in its actual base, and run the
    extracted base blob with fixed `/usr/bin/python3 -I` argv. Verify each
-   registry result binds assertion ID, class/outcome-specific check ID, claimed
-   disposition, callable, command/input/output identities, pass status, exact
-   base/head, full diff, and HMAC receipt. Fabricate all outcome fields and
-   require failure.
+   registry result binds its candidate-referenced assertion ID to base-derived
+   member/class inputs, implementation, observable output/status, exact
+   base/head, full diff, review round, and HMAC receipt. Swap
+   member/family/outcome/assertion/result identities and require failure.
 7. Sign canonical pre-review bytes with a test-only external key. Verify exact
    repository/PR/base/head, epoch, purpose, expiry, nonce, and atomic replay.
    Keep `LOCAL-` findings in that immutable receipt, separately collect later
@@ -522,9 +522,11 @@ game behavior needs a compensating change.
    re-signing after remote review.
 8. Confirm the complete fixture retains all action, lifecycle, wire,
    generated, and resource family members and configured file, finding,
-   duration, sibling, and handoff bounds. Require `affected-fixed` to name
-   exact changed status/blob records and `verified-unaffected` to name equal
-   base/head blobs; unsupported `not-applicable` rejects.
+   duration, sibling, and handoff bounds. Confirm candidates provide assertion
+   IDs only. Require `affected-fixed` to execute a member-specific failing
+   before-probe and passing after-probe; require `verified-unaffected` to
+   compare a member-specific invariant rather than one shared file; permit
+   `not-applicable` only for its explicit member/reason registry entry.
 9. Parse the captured clean PR #183 body and accept its first-line exact
    `### 🟢 Approval recommended` marker. Reject or classify non-clean exact
    yellow/blue markers, unknown/empty bodies, nested or conflicting green
@@ -546,26 +548,33 @@ game behavior needs a compensating change.
     unknown status, malformed similarity, and mode surprise. Confirm the
     issue #179 deletion of `isolated_review_gate.py` carries its base blob and
     has no head path/blob.
+13. Run the integrated gate over heads A through G. Keep one immutable
+    pre-review receipt bound to A and issued before remote round 1. Give every
+    remote round/head separate exact Git coverage and an execution receipt,
+    and remediate each prior round's findings on the next head. Confirm the
+    round-3 and round-6 dispositions authorize their next exact heads, G has
+    the final clean review, all seven receipt seals are distinct, stale
+    round/head evidence fails, and replaying A's nonce fails.
 
 ### Expected result
 
 Candidate/offline inputs validate structure but cannot authorize delivery.
 Introducing mode fails closed against the real base. A later base-pinned gate
-can authorize only from the exact clean trusted base with fresh local-review
-receipt, two matching live snapshots,
-closed base-owned assertion results, clean exact-head Copilot review, and no
-unresolved thread or held head.
+can authorize only from the exact clean trusted base with two matching live
+snapshots, one preserved original A receipt, every chronological round/head
+receipt, member-specific base-owned assertion results, clean current-head
+Copilot review, and no unresolved thread or held head.
 
 ### Negative control
 
 The suite rejects candidate credentials/import authority, public signing or
 external-installation helpers, dirty or object-mismatched trusted imports,
 ancestor-base substitution, bootstrap self-attestation, invalid Actor
-selection, base/head mismatch, fabricated outcome/class results,
-missing/failed registry results, unsupported dispositions, incorrect
-status/blob coverage, local/remote finding overlap, backdating, exceeded
-bounds, incomplete pages, spoofed clean bodies, global identity collisions,
-undisposed fast-forward heads, actor overlap, and disposition replay.
+selection, base/head mismatch, re-signing A for B/C, stale/missing/replayed
+round receipts, fabricated outcome/class results, shared-file member evidence,
+unsupported dispositions, incorrect status/blob coverage, local/remote
+finding overlap, backdating, exceeded bounds, incomplete pages, spoofed clean
+bodies, global identity collisions, undisposed heads, and actor overlap.
 
 ### Interactions and save compatibility
 

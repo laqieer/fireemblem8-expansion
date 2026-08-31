@@ -273,8 +273,12 @@ base checkout:
   --expected-base <authoritative-pr-base-oid> \
   --expected-candidate <authoritative-pr-head-oid> \
   --contract <candidate-contract.json> \
-  --review-receipt <independent-pre-review-receipt.json>
+  --pre-review-state <new-or-preserved>
 ```
+
+`new` additionally supplies
+`--review-receipt <independent-pre-review-receipt.json>`. `preserved` rejects
+that argument and loads the accepted bytes only from the trusted replay store.
 
 Before importing a package initializer or reading credentials, the launcher
 requires empty porcelain-v2 status including tracked, index, and untracked
@@ -306,12 +310,20 @@ that contains both trusted files.
 ### Independent and remote chronology
 
 The independent pre-review is signed once before remote review. Its HMAC
-envelope binds repository, PR, exact base, exact head, issued/expiry times,
-nonce, key ID, epoch, purpose, and immutable payload. Its findings use the
-`LOCAL-` namespace and carry their family and creation time inside that
-receipt. Configured duration, file, finding, sibling, and handoff bounds apply
-to the actual records. The gate rejects a receipt issued before report
-completion or issued/re-signed at or after the first remote review.
+envelope binds repository, PR, exact base, `original_pre_review_head` A,
+issued/expiry times, nonce, key ID, epoch, purpose, and immutable payload. Its
+findings use the `LOCAL-` namespace and carry family and creation time inside
+that receipt. The current candidate is a separate identity and may advance to
+B, C, and later remediation heads without changing or re-signing A's receipt.
+The first remote review must occur while the original receipt is valid; later
+gate evaluation may occur after its expiry because it verifies immutable
+historical chronology rather than pretending the receipt was issued for the
+current head. Replaying its nonce as another pre-review still fails.
+The first trusted evaluation uses `new` and atomically stores the exact
+receipt under its repository/PR/base/A scope. Later B/C evaluations use
+`preserved`; they require byte equality with that trusted stored receipt and
+do not consume or re-sign it. A second `new` receipt, including a different
+nonce over the same scope, is rejected.
 
 Later GitHub review IDs and inline finding node IDs are collected and
 validated separately after they exist. They never replace, backdate, or
@@ -328,22 +340,32 @@ case-normalized uniqueness check.
 
 ### Base-owned executable evidence
 
-Candidate result IDs and `verified-unaffected` claims are requests, not
-evidence. The exact base supplies `review_base_checker.py`, whose closed
-registry executes the five behavior rows for positive, adversarial, default,
-and runtime classes plus each exact sibling assertion. Every result binds its
-closed assertion ID, class/outcome-specific check ID, claimed disposition,
-concrete input and output digests, callable, fixed command identity, passing
-status, checker-input digest, exact base, and exact head. Positive checks bind
-exact scope, adversarial checks execute a fabricated-result negative control,
-default checks bind trigger mode/local findings, and runtime checks bind exact
-change records and remote finding IDs. `affected-fixed` requires named
-status/blob records from the exact diff. `verified-unaffected` requires named
-paths whose mode and blob are identical in base and head. `not-applicable`
-has no generic assertion and is rejected. The HMAC execution receipt
-also binds checker blob/argv, base/candidate trees, Git-derived diff, remote
-finding IDs, report digest, timestamps, output digest, and pre/post clean
-state. Fabricated, swapped, failed, stale, or candidate-only results fail.
+Candidates supply only closed assertion IDs. They cannot supply result IDs,
+paths, inputs, outputs, command names, or success records. The exact base
+registry maps every behavior row/class and family/member/disposition to one
+allowlisted implementation and derives inputs from exact Git/GitHub evidence.
+Positive/default/runtime checks execute distinct row-specific probes.
+Adversarial checks construct a row-specific invalid input, execute it, and
+require an observed rejection.
+
+Each `affected-fixed` member assertion executes a member-specific negative
+before-probe and positive after-probe. Each `verified-unaffected` assertion
+compares a member-specific invariant; one arbitrary unchanged file cannot
+certify several unrelated members. `not-applicable` is accepted only for the
+explicit `resource/disabled/feature-disabled-by-contract` assertion and only
+when that reason's registry predicate holds. Swapping a member, family,
+disposition, assertion ID, or reason fails before result creation.
+
+For every remote review round, including each remediation head B/C, the
+trusted gate derives exact base-to-head status/blob coverage, executes the
+round's behavior assertions and the previous round's finding remediations, and
+issues a distinct HMAC execution receipt. It binds review round, exact head,
+checker blob/argv, original A receipt digest/head, tree/diff, GitHub finding
+IDs, derived input/output digests, callable, status, and chronological
+execution time. The result ID is derived from head, round, assertion, and
+finding; it cannot replay across rounds. The final clean remote review must be
+on the current exact head, and every earlier round/head receipt must still be
+present and valid.
 
 The Git-derived diff is a closed status-aware record set. Added files bind
 head mode/blob and base absence; deleted files bind base mode/blob and head
@@ -375,9 +397,12 @@ independently without inferring ref movement from commit timestamps.
 
 The trusted gate recollects head, base, reviews, bodies, inline findings,
 threads, force-push events, actors, and dispositions immediately before its
-decision. Only matching snapshots, a fresh replay-consumed pre-review receipt,
-passing base-owned assertions, no unresolved hold/thread, and a clean remote
-Copilot review on the exact current head can authorize merge or trusted push.
+decision. The integrated A-finding → B-finding → C progression retains A's
+receipt, binds separate round/head assertions, and continues through
+independent round-3 and round-6 dispositions. Only matching snapshots, one
+replay-consumed original receipt, all chronological execution receipts, no
+unresolved hold/thread, and a clean remote Copilot review on the current exact
+head can authorize merge or trusted push.
 The importable core and every offline fixture always deny those authorities.
 
 ### Metric and lifecycle integration

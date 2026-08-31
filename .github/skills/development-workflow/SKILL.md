@@ -589,16 +589,17 @@ return `merge_allowed` because its actual base lacks the trusted checker.
 The executable review-family contract has one exact frozen behavior-row
 inventory. It maps each row to its production predicate and producer, executor
 and consumer, representation, stale-state revalidation, host validation, and
-positive, adversarial, default, and runtime result IDs. Candidate result IDs
-and `verified-unaffected` claims are not evidence. The exact base executes a
-closed assertion registry; each passing result binds its class/outcome check,
-claimed disposition, command/callable, concrete input/output digests,
-assertion identity, exact base/head, and HMAC receipt. Positive, adversarial,
-default, and runtime checks use distinct inputs and checks.
-`affected-fixed` requires exact changed status/blob records;
-`verified-unaffected` requires equal base/head mode and blob for named paths;
-unsupported `not-applicable` rejects. A valid finding expands to every member
-of exactly one closed sibling family:
+positive, adversarial, default, and runtime assertion IDs. Candidate artifacts
+reference assertion IDs only. They never choose result IDs, paths, inputs,
+outputs, callables, or pass status. The exact base closed assertion registry maps each
+row/class and family/member/disposition to one implementation, derives inputs
+from exact Git/GitHub evidence, and binds observable output plus status in the
+HMAC receipt. Adversarial probes must execute a rejected mutation.
+`affected-fixed` runs a member-specific before-failure/after-pass probe;
+`verified-unaffected` compares a member-specific nonimpact invariant, never a
+shared arbitrary file; `not-applicable` requires the one explicitly registered
+member/reason predicate. A valid finding expands to every member of exactly
+one closed sibling family:
 
 - actions, items, and targets;
 - lifecycle entries, preservation, resets, and terminals;
@@ -617,9 +618,16 @@ remote reviewers, and finding authors; repository ownership never overrides
 an overlap. After disposition, a later sixth round can independently hold.
 
 Keep immutable pre-review findings in the `LOCAL-` namespace and inside the
-pre-review receipt. Enforce configured file, duration, finding, sibling, and
-handoff bounds there. Collect later GitHub finding IDs separately after they
-exist; never backdate or re-sign the pre-review receipt. Actor selections use
+pre-review receipt. Bind that receipt to `original_pre_review_head` A and issue
+it before remote round 1. Preserve it unchanged while current remediation
+heads advance through B/C; never require or re-sign it for those heads.
+Consume it once as `new`; later evaluations use only the byte-identical
+trusted-store `preserved` record. Reject a second new nonce for the same scope.
+Every remote round/head requires separate exact Git coverage, a chronological
+base-owned execution receipt, and its GitHub review evidence. Result IDs derive
+from round/head/assertion/finding and cannot replay. Enforce configured file,
+duration, finding, sibling, and handoff bounds. Collect later GitHub finding
+IDs separately after they exist. Actor selections use
 valid Node fragments, `Commit.pushedDate` is nullable and never head authority,
 and normal ref advancement is not reconstructed from commit timestamps.
 Require globally unique node identities and semantic body parsing: only exact

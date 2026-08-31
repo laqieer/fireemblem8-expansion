@@ -96,9 +96,12 @@ fail-closed `introduction` mode because its actual base lacks the checker.
 Later PRs require exact `baseRefOid`/`headRefOid`, status-aware base/head blob
 records, an immutable local-finding receipt issued before remote review,
 separately collected GitHub findings, and class/outcome-specific base-owned
-assertions. Only exact top-level green approval or legacy exact clean text is
-clean. `pushedDate` never reconstructs head history. Offline fixtures never
-authorize delivery.
+assertions. The original pre-review receipt remains bound to first-reviewed
+head A; every B/C remediation head has separate chronological Git coverage,
+execution receipt, and remote review evidence. Candidates reference
+member-specific registry assertion IDs only and cannot choose one arbitrary
+file as unrelated evidence. Only exact top-level green approval or legacy
+exact clean text is clean. `pushedDate` never reconstructs head history.
 
 Both PR and master Build runs execute `host-tests`, `build`,
 `extended-host-tests`, `legacy`, and the seconds-only fail-closed `summary` in

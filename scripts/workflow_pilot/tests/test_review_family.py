@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 import os
 import shutil
@@ -146,9 +147,9 @@ class ReviewFamilyContractTests(unittest.TestCase):
 
     def test_candidate_result_ids_cannot_select_executable_evidence(self):
         contract, evidence = fixture("default")
-        contract["behavior_rows"][0]["evidence_result_ids"]["positive"] = [
+        contract["behavior_rows"][0]["assertions"]["positive"] = (
             "candidate-claims-pass"
-        ]
+        )
         self.assert_rejected(contract, evidence, "closed base assertion")
 
         contract, evidence = fixture("default")
@@ -162,57 +163,48 @@ class ReviewFamilyContractTests(unittest.TestCase):
                 "command_id": "a" * 64,
                 "input_sha256": "b" * 64,
                 "inputs_sha256": "c" * 64,
+                "output": {"candidate": "claims-pass"},
                 "output_sha256": "d" * 64,
                 "base_sha": BASE,
                 "candidate_sha": CANDIDATE,
+                "review_round": 1,
                 "status": "pass",
             }
         ]
+        evidence["result_manifest"][0]["output_sha256"] = hashlib.sha256(
+            reporter.normalized_json(
+                evidence["result_manifest"][0]["output"]
+            )
+        ).hexdigest()
         self.assert_rejected(contract, evidence, "no trusted execution receipt")
 
-    def test_outcome_requests_bind_concrete_changed_or_unchanged_inputs(self):
+    def test_candidate_can_only_reference_member_specific_registry_ids(self):
         contract, evidence = fixture()
-        validated = review_family.validate_contract(contract)
-        requests = review_family.build_assertion_requests(
-            validated, evidence, ROOT
-        )
-        sibling_requests = [
-            request
-            for request in requests
-            if request["assertion_id"].startswith("sibling:")
-        ]
-        self.assertTrue(
-            any(
-                request["claimed_disposition"] == "affected-fixed"
-                and request["inputs"]["change_evidence"]
-                for request in sibling_requests
-            )
-        )
-        self.assertTrue(
-            any(
-                request["claimed_disposition"] == "verified-unaffected"
-                and request["inputs"]["unchanged_evidence"]
-                for request in sibling_requests
-            )
-        )
+        review_family.validate_contract(contract)
+        serialized = json.dumps(contract)
+        self.assertNotIn("changed_paths", serialized)
+        self.assertNotIn("unchanged_paths", serialized)
+        self.assertNotIn("Makefile", serialized)
 
-        contract["family_sweeps"][0]["siblings"][0]["result"] = (
-            "not-applicable"
+        contract["family_sweeps"][0]["siblings"][1]["assertion_id"] = (
+            "registry:sibling:action:targets:verified-unaffected:v2"
         )
-        contract["family_sweeps"][0]["siblings"][0]["assertion_inputs"] = {}
-        self.assert_rejected(contract, evidence, "unsupported")
+        self.assert_rejected(contract, evidence, "member-specific")
 
         contract, evidence = fixture()
-        contract["family_sweeps"][0]["siblings"][1][
-            "assertion_inputs"
-        ]["unchanged_paths"] = ["docs/workflow-pilot.md"]
-        validated = review_family.validate_contract(contract)
-        with self.assertRaisesRegex(
-            reporter.PilotDataError, "lacks unchanged blob evidence"
-        ):
-            review_family.build_assertion_requests(
-                validated, evidence, ROOT
-            )
+        contract["family_sweeps"][0]["siblings"][1]["result"] = (
+            "affected-fixed"
+        )
+        self.assert_rejected(contract, evidence, "not registered")
+
+        contract, evidence = fixture()
+        disabled = contract["family_sweeps"][3]["siblings"][1]
+        disabled["result"] = "not-applicable"
+        disabled["assertion_id"] = (
+            "registry:sibling:resource:disabled:not-applicable:"
+            "feature-disabled-by-contract:v2"
+        )
+        review_family.validate_contract(contract)
 
     def test_local_pre_review_findings_are_distinct_and_not_backdated(self):
         contract, evidence = fixture()
@@ -230,10 +222,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
         ]
         sweep = copy.deepcopy(contract["family_sweeps"][0])
         sweep["finding_id"] = "LOCAL-ACTION-1"
-        for sibling in sweep["siblings"]:
-            sibling["evidence_result_ids"] = [
-                f"result-sibling-LOCAL-ACTION-1-{sibling['member']}"
-            ]
         contract["family_sweeps"].append(sweep)
         report = self.report(contract, evidence)
         self.assertEqual(report["findings"]["pre_review_count"], 1)

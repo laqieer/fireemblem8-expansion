@@ -112,7 +112,12 @@ to that base and reject tracked/index/untracked changes; no environment string
 attests an external install. The introducing PR fails closed because its base
 lacks that checker. Bind exact `baseRefOid`/`headRefOid`, `LOCAL-` findings,
 and status-aware A/D/M/R/C base/head blobs. Distinct class/outcome checks must
-prove affected or unchanged paths; unsupported outcomes reject. Only exact
+come from the base registry; candidates reference assertion IDs only and
+cannot choose paths/results/inputs. Require member-specific before-fail/
+after-pass or nonimpact probes and only explicitly registered not-applicable
+reasons. Preserve one receipt bound to original pre-review head A while B/C
+heads each receive separate chronological Git coverage, assertion receipt,
+and remote review evidence. Only exact
 top-level green approval (or legacy exact clean text) is clean; yellow, blue,
 unknown, nested, inline, unresolved, or `CHANGES_REQUESTED` shapes are not.
 Never use nullable `pushedDate` to reconstruct head history. Dispositions bind

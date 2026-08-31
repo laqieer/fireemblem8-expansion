@@ -8,6 +8,7 @@ import os
 import shutil
 import subprocess
 import unittest
+from itertools import count
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -169,6 +170,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
         )
         contract = reporter.load_json(path)
         contract["base_sha"] = base
+        contract["original_pre_review_head"] = candidate
         contract["candidate_sha"] = candidate
         return contract
 
@@ -300,7 +302,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 CANDIDATE,
                 review_report(),
                 envelope,
-                None,
+                [],
                 adapter=StaticAdapter(self.adapter()),
                 clock=lambda: datetime(
                     2026, 8, 31, 3, 13, tzinfo=timezone.utc
@@ -327,7 +329,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 CANDIDATE,
                 review_report(),
                 envelope,
-                None,
+                [],
                 adapter=StaticAdapter(payload),
             )
 
@@ -347,7 +349,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 CANDIDATE,
                 review_report(),
                 envelope,
-                None,
+                [],
                 adapter=StaticAdapter(payload),
             )
 
@@ -380,11 +382,48 @@ class TrustedGitHubGateTests(unittest.TestCase):
         )
         self.assertEqual(verified, payload)
         self.assertEqual(envelope["base_sha"], BASE)
+        preserved_payload, _ = (
+            trusted_review_gate._verify_signed_receipt_bytes(
+                receipt,
+                repository="laqieer/fireemblem8-expansion",
+                pull_request=179,
+                base_sha=BASE,
+                candidate_sha=CANDIDATE,
+                trusted_key_id=KEY_ID,
+                trusted_key_epoch=KEY_EPOCH,
+                trusted_key=KEY,
+                current_time=now + timedelta(days=1),
+                replay_store=self.replay,
+                consume_nonce=False,
+                require_current_time=False,
+                require_preserved=True,
+            )
+        )
+        self.assertEqual(preserved_payload, payload)
         with self.assertRaisesRegex(
             reporter.PilotDataError, "already consumed"
         ):
             trusted_review_gate._verify_signed_receipt_bytes(
                 receipt,
+                repository="laqieer/fireemblem8-expansion",
+                pull_request=179,
+                base_sha=BASE,
+                candidate_sha=CANDIDATE,
+                trusted_key_id=KEY_ID,
+                trusted_key_epoch=KEY_EPOCH,
+                trusted_key=KEY,
+                current_time=now,
+                replay_store=self.replay,
+                consume_nonce=True,
+            )
+        resigned = signed_receipt(
+            payload, nonce="different-nonce-0002"
+        )
+        with self.assertRaisesRegex(
+            reporter.PilotDataError, "re-signed"
+        ):
+            trusted_review_gate._verify_signed_receipt_bytes(
+                resigned,
                 repository="laqieer/fireemblem8-expansion",
                 pull_request=179,
                 base_sha=BASE,
@@ -435,10 +474,27 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 self.repo, self.base_sha, self.candidate_sha
             ),
         )
+        remote_review = {
+            "id": 1001,
+            "node_id": "REMOTE_SYNTHETIC_1",
+            "round": 1,
+            "reviewer_actor_id": "COPILOT",
+            "candidate_sha": self.candidate_sha,
+            "submitted_at": "2026-08-31T04:02:00Z",
+            "state": "COMMENTED",
+            "body": "### 🟢 Approval recommended",
+            "body_classification": "clean-approval",
+            "body_has_findings": False,
+            "outcome": "clean",
+            "finding_ids": [],
+        }
+        evidence = {
+            "remote_reviews": [remote_review],
+            "findings": [],
+            "pre_review_findings": [],
+        }
         requests = review_family.build_assertion_requests(
-            contract,
-            {"findings": [], "pre_review_findings": []},
-            self.repo,
+            contract, evidence, self.candidate_sha, 1
         )
         times = iter(
             (
@@ -450,8 +506,13 @@ class TrustedGitHubGateTests(unittest.TestCase):
             self.repo,
             contract=contract,
             candidate_sha=self.candidate_sha,
+            review_round=1,
+            review_context=remote_review,
+            all_remote_reviews=[remote_review],
+            remote_findings=[],
             remote_finding_ids=[],
-            review_report_bytes=reporter.normalized_json(report),
+            original_review_report_bytes=reporter.normalized_json(report),
+            original_receipt_sha256="9" * 64,
             assertion_requests=requests,
             trusted_key=KEY,
             clock=lambda: next(times),
@@ -466,16 +527,20 @@ class TrustedGitHubGateTests(unittest.TestCase):
             * len(review_family.EVIDENCE_CLASSES),
         )
         self.assertEqual(
-            {
-                result["callable"]
+            len(
+                {
+                    result["callable"]
+                    for result in receipt["assertion_results"]
+                }
+            ),
+            len(receipt["assertion_results"]),
+        )
+        self.assertTrue(
+            all(
+                result["output"].get("rejection_observed")
                 for result in receipt["assertion_results"]
-            },
-            {
-                "_execute_positive_assertion",
-                "_execute_adversarial_assertion",
-                "_execute_default_assertion",
-                "_execute_runtime_assertion",
-            },
+                if ":adversarial:" in result["assertion_id"]
+            )
         )
         self.assertEqual(
             receipt["seal"],
@@ -495,18 +560,40 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 self.repo, self.base_sha, self.candidate_sha
             ),
         )
+        remote_review = {
+            "id": 1001,
+            "node_id": "REMOTE_SYNTHETIC_1",
+            "round": 1,
+            "reviewer_actor_id": "COPILOT",
+            "candidate_sha": self.candidate_sha,
+            "submitted_at": "2026-08-31T04:02:00Z",
+            "state": "COMMENTED",
+            "body": "### 🟢 Approval recommended",
+            "body_classification": "clean-approval",
+            "body_has_findings": False,
+            "outcome": "clean",
+            "finding_ids": [],
+        }
+        evidence = {
+            "remote_reviews": [remote_review],
+            "findings": [],
+            "pre_review_findings": [],
+        }
         requests = review_family.build_assertion_requests(
-            contract,
-            {"findings": [], "pre_review_findings": []},
-            self.repo,
+            contract, evidence, self.candidate_sha, 1
         )
-        requests[0]["id"] = "candidate-fabricated-pass"
+        requests[0]["assertion_id"] = "candidate-fabricated-pass"
         receipt = trusted_review_gate.run_base_pinned_checker(
             self.repo,
             contract=contract,
             candidate_sha=self.candidate_sha,
+            review_round=1,
+            review_context=remote_review,
+            all_remote_reviews=[remote_review],
+            remote_findings=[],
             remote_finding_ids=[],
-            review_report_bytes=reporter.normalized_json(report),
+            original_review_report_bytes=reporter.normalized_json(report),
+            original_receipt_sha256="9" * 64,
             assertion_requests=requests,
             trusted_key=KEY,
         )
@@ -523,12 +610,17 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     self.repo,
                     contract=contract,
                     candidate_sha=self.candidate_sha,
+                    review_round=1,
+                    review_context=remote_review,
+                    all_remote_reviews=[remote_review],
+                    remote_findings=[],
                     remote_finding_ids=[],
-                    review_report_bytes=reporter.normalized_json(report),
+                    original_review_report_bytes=reporter.normalized_json(
+                        report
+                    ),
+                    original_receipt_sha256="9" * 64,
                     assertion_requests=review_family.build_assertion_requests(
-                        contract,
-                        {"findings": [], "pre_review_findings": []},
-                        self.repo,
+                        contract, evidence, self.candidate_sha, 1
                     ),
                     trusted_key=KEY,
                 )
@@ -549,6 +641,378 @@ class TrustedGitHubGateTests(unittest.TestCase):
         )
         self.assertFalse(result["gates"]["trusted_push_allowed"])
         self.assertFalse(result["gates"]["merge_allowed"])
+
+    def test_integrated_multi_head_lifecycle_preserves_original_receipt(self):
+        repository = (
+            ROOT
+            / "build"
+            / "test-artifacts"
+            / f"multi-head-review-{os.getpid()}"
+        )
+        repository.mkdir()
+        try:
+            git(repository, "init", "-q")
+            git(repository, "config", "user.email", "test@example.com")
+            git(repository, "config", "user.name", "Multi Head Test")
+            git(
+                repository,
+                "remote",
+                "add",
+                "origin",
+                "https://github.com/laqieer/fireemblem8-expansion.git",
+            )
+            for relative in trusted_review_gate.TRUSTED_REQUIRED_PATHS:
+                target = repository / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes((ROOT / relative).read_bytes())
+            (repository / ".gitignore").write_text(
+                "build/\n", encoding="utf-8"
+            )
+            (repository / "feature.txt").write_text("base\n", encoding="utf-8")
+
+            def commit(message, timestamp):
+                environment = reporter.git_environment(offline=True)
+                environment.update(
+                    {
+                        "GIT_AUTHOR_DATE": timestamp,
+                        "GIT_COMMITTER_DATE": timestamp,
+                    }
+                )
+                subprocess.run(
+                    reporter.git_command(repository, "add", "-A"),
+                    env=environment,
+                    check=True,
+                    capture_output=True,
+                )
+                subprocess.run(
+                    reporter.git_command(
+                        repository, "commit", "-q", "-m", message
+                    ),
+                    env=environment,
+                    check=True,
+                    capture_output=True,
+                )
+                return git(repository, "rev-parse", "HEAD").stdout.decode().strip()
+
+            base = commit("trusted base", "2026-08-31T03:00:00Z")
+            commit_times = (
+                "2026-08-31T03:01:00Z",
+                "2026-08-31T03:12:00Z",
+                "2026-08-31T03:14:00Z",
+                "2026-08-31T03:16:00Z",
+                "2026-08-31T03:18:00Z",
+                "2026-08-31T03:20:00Z",
+                "2026-08-31T03:22:00Z",
+            )
+            heads = []
+            for index, timestamp in enumerate(commit_times, 1):
+                (repository / "feature.txt").write_text(
+                    f"head-{index}\n", encoding="utf-8"
+                )
+                heads.append(commit(f"head {index}", timestamp))
+
+            contract = reporter.load_json(
+                FIXTURES / "review_family_complete.json"
+            )
+            contract["base_sha"] = base
+            contract["original_pre_review_head"] = heads[0]
+            contract["candidate_sha"] = heads[-1]
+            contract["trust_mode"] = "base-pinned"
+            source_sweep = copy.deepcopy(contract["family_sweeps"][0])
+            contract["family_sweeps"] = []
+            for round_number in range(1, 7):
+                sweep = copy.deepcopy(source_sweep)
+                sweep["finding_id"] = f"FINDING_MULTI_{round_number}"
+                contract["family_sweeps"].append(sweep)
+
+            report = review_report(
+                base,
+                heads[0],
+                ["feature.txt"],
+                review_family.derive_change_records(
+                    repository, base, heads[0]
+                ),
+            )
+            payload = self.adapter()
+            pr = payload["data"]["repository"]["pullRequest"]
+            pr["createdAt"] = "2026-08-31T03:05:00Z"
+            pr["baseRefOid"] = base
+            pr["headRefOid"] = heads[-1]
+            pr["commits"]["nodes"] = [
+                {
+                    "commit": {
+                        "id": f"COMMIT_MULTI_{index}",
+                        "oid": head,
+                        "pushedDate": None,
+                        "committedDate": commit_times[index - 1],
+                    }
+                }
+                for index, head in enumerate(heads, 1)
+            ]
+            reviews = []
+            threads = []
+            review_times = (
+                "2026-08-31T03:11:00Z",
+                "2026-08-31T03:13:00Z",
+                "2026-08-31T03:15:00Z",
+                "2026-08-31T03:17:00Z",
+                "2026-08-31T03:19:00Z",
+                "2026-08-31T03:21:00Z",
+                "2026-08-31T03:23:00Z",
+            )
+            for round_number, (head, submitted_at) in enumerate(
+                zip(heads, review_times), 1
+            ):
+                finding_id = (
+                    f"FINDING_MULTI_{round_number}"
+                    if round_number <= 6
+                    else None
+                )
+                comments = (
+                    [
+                        {
+                            "id": finding_id,
+                            "createdAt": iso(
+                                datetime.fromisoformat(
+                                    submitted_at.replace("Z", "+00:00")
+                                )
+                                - timedelta(seconds=30)
+                            ),
+                            "body": "member-specific finding",
+                            "author": {
+                                "id": "ACTOR_COPILOT_001",
+                                "login": (
+                                    "copilot-pull-request-reviewer[bot]"
+                                ),
+                            },
+                        }
+                    ]
+                    if finding_id
+                    else []
+                )
+                reviews.append(
+                    {
+                        "id": f"REMOTE_MULTI_{round_number}",
+                        "databaseId": 5000 + round_number,
+                        "state": "COMMENTED",
+                        "submittedAt": submitted_at,
+                        "body": (
+                            "### 🟡 Changes recommended"
+                            if finding_id
+                            else "### 🟢 Approval recommended"
+                        ),
+                        "commit": {"oid": head},
+                        "author": {
+                            "id": "ACTOR_COPILOT_001",
+                            "login": "copilot-pull-request-reviewer[bot]",
+                        },
+                        "comments": {
+                            "pageInfo": {"hasNextPage": False},
+                            "nodes": comments,
+                        },
+                    }
+                )
+                if finding_id:
+                    threads.append(
+                        {
+                            "id": f"THREAD_MULTI_{round_number}",
+                            "isResolved": True,
+                            "comments": {
+                                "pageInfo": {"hasNextPage": False},
+                                "nodes": [
+                                    {
+                                        "id": finding_id,
+                                        "createdAt": comments[0]["createdAt"],
+                                        "author": comments[0]["author"],
+                                        "pullRequestReview": {
+                                            "id": f"REMOTE_MULTI_{round_number}"
+                                        },
+                                    }
+                                ],
+                            },
+                        }
+                    )
+            pr["reviews"]["nodes"] = reviews
+            pr["reviewThreads"]["nodes"] = threads
+            pr["comments"]["nodes"] = [
+                {
+                    "id": "DISPOSITION_MULTI_3",
+                    "createdAt": "2026-08-31T03:15:30Z",
+                    "body": (
+                        "workflow-review-family-disposition:v2 "
+                        + json.dumps(
+                            {
+                                "held_round": 3,
+                                "held_head_sha": heads[2],
+                                "authorized_next_head_sha": heads[3],
+                                "action": "redesign",
+                            },
+                            separators=(",", ":"),
+                        )
+                    ),
+                    "author": {
+                        "id": "ACTOR_COORDINATOR_001",
+                        "login": "independent-coordinator",
+                    },
+                },
+                {
+                    "id": "DISPOSITION_MULTI_6",
+                    "createdAt": "2026-08-31T03:21:30Z",
+                    "body": (
+                        "workflow-review-family-disposition:v2 "
+                        + json.dumps(
+                            {
+                                "held_round": 6,
+                                "held_head_sha": heads[5],
+                                "authorized_next_head_sha": heads[6],
+                                "action": "redesign",
+                            },
+                            separators=(",", ":"),
+                        )
+                    ),
+                    "author": {
+                        "id": "ACTOR_COORDINATOR_001",
+                        "login": "independent-coordinator",
+                    },
+                },
+            ]
+            receipt = signed_receipt(
+                reporter.normalized_json(report),
+                base=base,
+                candidate=heads[0],
+                nonce="multi-head-receipt-0001",
+            )
+            envelope = json.loads(receipt)
+            collected = json.loads(
+                trusted_review_gate.collect_live_evidence_bytes(
+                    contract,
+                    repository,
+                    heads[-1],
+                    report,
+                    envelope,
+                    [],
+                    adapter=StaticAdapter(payload),
+                    clock=lambda: datetime(
+                        2026, 8, 31, 3, 24, tzinfo=timezone.utc
+                    ),
+                )
+            )
+            self.assertEqual(
+                collected["original_pre_review_head"], heads[0]
+            )
+            self.assertEqual(collected["candidate"]["sha"], heads[-1])
+            self.assertEqual(
+                collected["pre_reviews"][0]["candidate_sha"], heads[0]
+            )
+
+            ticks = count()
+
+            def clock():
+                return datetime(
+                    2026, 8, 31, 3, 24, tzinfo=timezone.utc
+                ) + timedelta(seconds=next(ticks))
+
+            result = trusted_review_gate._run_trusted_gate(
+                raw_contract=contract,
+                repository_root=repository,
+                expected_candidate=heads[-1],
+                expected_base=base,
+                review_receipt_bytes=receipt,
+                replay_store=self.replay,
+                trusted_key_id=KEY_ID,
+                trusted_key_epoch=KEY_EPOCH,
+                trusted_key=KEY,
+                current_time=datetime(
+                    2026, 8, 31, 4, 0, tzinfo=timezone.utc
+                ),
+                adapter=StaticAdapter(payload),
+                clock=clock,
+            )
+            self.assertEqual(
+                result["identity"]["original_pre_review_head"], heads[0]
+            )
+            self.assertEqual(result["identity"]["candidate_sha"], heads[-1])
+            self.assertEqual(
+                result["architecture_hold"]["consumed_disposition_ids"],
+                ["DISPOSITION_MULTI_3", "DISPOSITION_MULTI_6"],
+            )
+            self.assertEqual(
+                len(result["provenance"]["execution_receipt_seals"]), 7
+            )
+            self.assertTrue(result["gates"]["merge_allowed"])
+            preserved_result = trusted_review_gate._run_trusted_gate(
+                raw_contract=contract,
+                repository_root=repository,
+                expected_candidate=heads[-1],
+                expected_base=base,
+                review_receipt_bytes=receipt,
+                replay_store=self.replay,
+                trusted_key_id=KEY_ID,
+                trusted_key_epoch=KEY_EPOCH,
+                trusted_key=KEY,
+                current_time=datetime(
+                    2026, 9, 1, 4, 0, tzinfo=timezone.utc
+                ),
+                pre_review_state="preserved",
+                adapter=StaticAdapter(payload),
+                clock=clock,
+            )
+            self.assertTrue(preserved_result["gates"]["merge_allowed"])
+
+            stale_payload = copy.deepcopy(payload)
+            stale_payload["data"]["repository"]["pullRequest"]["reviews"][
+                "nodes"
+            ][-1]["commit"]["oid"] = heads[-2]
+            stale_store = repository / "build" / "stale-replay"
+            stale_store.mkdir(parents=True)
+            stale_receipt = signed_receipt(
+                reporter.normalized_json(report),
+                base=base,
+                candidate=heads[0],
+                nonce="multi-head-stale-0002",
+            )
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "exact held round/head and next head|current exact",
+            ):
+                trusted_review_gate._run_trusted_gate(
+                    raw_contract=contract,
+                    repository_root=repository,
+                    expected_candidate=heads[-1],
+                    expected_base=base,
+                    review_receipt_bytes=stale_receipt,
+                    replay_store=stale_store,
+                    trusted_key_id=KEY_ID,
+                    trusted_key_epoch=KEY_EPOCH,
+                    trusted_key=KEY,
+                    current_time=datetime(
+                        2026, 8, 31, 4, 0, tzinfo=timezone.utc
+                    ),
+                    adapter=StaticAdapter(stale_payload),
+                    clock=clock,
+                )
+
+            with self.assertRaisesRegex(
+                reporter.PilotDataError, "already consumed"
+            ):
+                trusted_review_gate._run_trusted_gate(
+                    raw_contract=contract,
+                    repository_root=repository,
+                    expected_candidate=heads[-1],
+                    expected_base=base,
+                    review_receipt_bytes=receipt,
+                    replay_store=self.replay,
+                    trusted_key_id=KEY_ID,
+                    trusted_key_epoch=KEY_EPOCH,
+                    trusted_key=KEY,
+                    current_time=datetime(
+                        2026, 8, 31, 4, 1, tzinfo=timezone.utc
+                    ),
+                    adapter=StaticAdapter(payload),
+                    clock=clock,
+                )
+        finally:
+            shutil.rmtree(repository)
 
     def test_fixture_query_shape_matches_actor_fragment_response(self):
         payload = self.adapter()

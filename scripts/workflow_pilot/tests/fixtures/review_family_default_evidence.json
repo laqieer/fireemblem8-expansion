@@ -9,6 +9,8 @@
   "candidate": {
     "sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45"
   },
+  "original_pre_review_head": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
+  "original_receipt_sha256": "9999999999999999999999999999999999999999999999999999999999999999",
   "pull_request": {
     "number": 179,
     "node_id": "PR_ISSUE_179_SYNTHETIC",

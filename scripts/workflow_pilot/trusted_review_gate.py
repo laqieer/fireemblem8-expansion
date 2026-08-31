@@ -137,6 +137,57 @@ def _format_time(value: datetime) -> str:
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _receipt_scope(
+    repository: str,
+    pull_request: int,
+    base_sha: str,
+    original_pre_review_head: str,
+    key_id: str,
+    key_epoch: int,
+) -> dict[str, Any]:
+    return {
+        "repository": repository,
+        "pull_request": pull_request,
+        "base_sha": base_sha,
+        "candidate_sha": original_pre_review_head,
+        "key_id": key_id,
+        "key_epoch": key_epoch,
+        "purpose": RECEIPT_PURPOSE,
+    }
+
+
+def _preserved_receipt_bytes(
+    replay_store: Path,
+    *,
+    repository: str,
+    pull_request: int,
+    base_sha: str,
+    original_pre_review_head: str,
+    key_id: str,
+    key_epoch: int,
+) -> bytes:
+    scope = _receipt_scope(
+        repository,
+        pull_request,
+        base_sha,
+        original_pre_review_head,
+        key_id,
+        key_epoch,
+    )
+    scope_id = hashlib.sha256(reporter.normalized_json(scope)).hexdigest()
+    path = replay_store.resolve() / f"original-{scope_id}"
+    if path.is_symlink():
+        raise reporter.PilotDataError(
+            "preserved original pre-review is unavailable"
+        )
+    try:
+        return path.read_bytes()
+    except OSError as error:
+        raise reporter.PilotDataError(
+            "preserved original pre-review is unavailable"
+        ) from error
+
+
 def _minimal_git(root: Path, *arguments: str) -> bytes:
     environment = {
         "HOME": str(root),
@@ -335,6 +386,8 @@ def _verify_signed_receipt_bytes(
     current_time: datetime,
     replay_store: Path | None,
     consume_nonce: bool,
+    require_current_time: bool = True,
+    require_preserved: bool = False,
 ) -> tuple[bytes, dict[str, Any]]:
     _expect_bound_modules()
     if not isinstance(receipt_bytes, bytes):
@@ -374,15 +427,14 @@ def _verify_signed_receipt_bytes(
         raise reporter.PilotDataError(
             "authenticated pre-review receipt.schema_version must be 2"
         )
-    scope = {
-        "repository": repository,
-        "pull_request": pull_request,
-        "base_sha": base_sha,
-        "candidate_sha": candidate_sha,
-        "key_id": trusted_key_id,
-        "key_epoch": trusted_key_epoch,
-        "purpose": RECEIPT_PURPOSE,
-    }
+    scope = _receipt_scope(
+        repository,
+        pull_request,
+        base_sha,
+        candidate_sha,
+        trusted_key_id,
+        trusted_key_epoch,
+    )
     for field, expected in scope.items():
         if envelope[field] != expected:
             raise reporter.PilotDataError(
@@ -407,7 +459,9 @@ def _verify_signed_receipt_bytes(
         raise reporter.PilotDataError(
             "authenticated pre-review lifetime exceeds maximum"
         )
-    if current_time < issued or current_time >= expires:
+    if require_current_time and (
+        current_time < issued or current_time >= expires
+    ):
         raise reporter.PilotDataError(
             "authenticated pre-review receipt is stale or not yet valid"
         )
@@ -438,7 +492,11 @@ def _verify_signed_receipt_bytes(
         raise reporter.PilotDataError(
             "authenticated pre-review payload is not canonical base64"
         )
-    if consume_nonce:
+    if consume_nonce and require_preserved:
+        raise reporter.PilotDataError(
+            "pre-review cannot be consumed and preserved simultaneously"
+        )
+    if consume_nonce or require_preserved:
         if replay_store is None or replay_store.is_symlink():
             raise reporter.PilotDataError(
                 "authenticated pre-review requires external replay authority"
@@ -448,26 +506,41 @@ def _verify_signed_receipt_bytes(
             raise reporter.PilotDataError(
                 "authenticated pre-review replay store is unavailable"
             )
-        replay_id = hashlib.sha256(
-            reporter.normalized_json({**scope, "nonce": nonce})
+        scope_id = hashlib.sha256(
+            reporter.normalized_json(scope)
         ).hexdigest()
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         if hasattr(os, "O_NOFOLLOW"):
             flags |= os.O_NOFOLLOW
-        try:
-            descriptor = os.open(replay_store / replay_id, flags, 0o600)
-        except FileExistsError as error:
-            raise reporter.PilotDataError(
-                "authenticated pre-review nonce was already consumed"
-            ) from error
-        try:
-            os.write(
-                descriptor,
-                hashlib.sha256(receipt_bytes).hexdigest().encode("ascii"),
-            )
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
+        receipt_path = replay_store / f"original-{scope_id}"
+        if consume_nonce:
+            try:
+                descriptor = os.open(receipt_path, flags, 0o600)
+            except FileExistsError as error:
+                raise reporter.PilotDataError(
+                    "authenticated original pre-review was already consumed "
+                    "or re-signed"
+                ) from error
+            try:
+                os.write(descriptor, receipt_bytes)
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        else:
+            if receipt_path.is_symlink():
+                raise reporter.PilotDataError(
+                    "preserved original pre-review is unavailable"
+                )
+            try:
+                preserved = receipt_path.read_bytes()
+            except OSError as error:
+                raise reporter.PilotDataError(
+                    "preserved original pre-review is unavailable"
+                ) from error
+            if not hmac.compare_digest(preserved, receipt_bytes):
+                raise reporter.PilotDataError(
+                    "preserved original pre-review bytes changed"
+                )
     return payload, envelope
 
 
@@ -498,8 +571,13 @@ def run_base_pinned_checker(
     *,
     contract: dict[str, Any],
     candidate_sha: str,
+    review_round: int,
+    review_context: dict[str, Any],
+    all_remote_reviews: list[dict[str, Any]],
+    remote_findings: list[dict[str, Any]],
     remote_finding_ids: list[str],
-    review_report_bytes: bytes,
+    original_review_report_bytes: bytes,
+    original_receipt_sha256: str,
     assertion_requests: list[dict[str, Any]],
     trusted_key: bytes,
     clock: Callable[[], datetime] = _utc_now,
@@ -507,10 +585,10 @@ def run_base_pinned_checker(
     """Execute only the checker blob at the exact authoritative PR base."""
     root = reporter.validate_repository_root(repository_root)
     base_sha = contract["base_sha"]
-    head = _git_text(root, "rev-parse", "--verify", "HEAD^{commit}")
-    if head != candidate_sha:
+    current_head = _git_text(root, "rev-parse", "--verify", "HEAD^{commit}")
+    if current_head != contract["candidate_sha"]:
         raise reporter.PilotDataError(
-            "base checker candidate does not match actual Git HEAD"
+            "base checker checkout does not match current PR head"
         )
     pre_status = reporter.run_git(root, "status", "--porcelain")
     if pre_status:
@@ -518,11 +596,21 @@ def run_base_pinned_checker(
             "base checker requires a clean candidate worktree"
         )
     reporter.run_git(root, "merge-base", "--is-ancestor", base_sha, candidate_sha)
+    reporter.run_git(
+        root,
+        "merge-base",
+        "--is-ancestor",
+        contract["original_pre_review_head"],
+        current_head,
+    )
     base_tree = _git_text(root, "rev-parse", f"{base_sha}^{{tree}}")
     candidate_tree = _git_text(root, "rev-parse", f"{candidate_sha}^{{tree}}")
     checker_blob = _git_text(root, "rev-parse", f"{base_sha}:{BASE_CHECKER_PATH}")
     checker_source = reporter.run_git(root, "show", f"{base_sha}:{BASE_CHECKER_PATH}")
     changes = review_family.derive_change_records(root, base_sha, candidate_sha)
+    original_changes = review_family.derive_change_records(
+        root, base_sha, contract["original_pre_review_head"]
+    )
     changed_files = sorted(
         {
             path
@@ -536,7 +624,8 @@ def run_base_pinned_checker(
     try:
         review_report = reporter.expect_object(
             reporter.parse_json(
-                review_report_bytes.decode("utf-8"), "independent pre-review report"
+                original_review_report_bytes.decode("utf-8"),
+                "independent pre-review report",
             ),
             "independent pre-review report",
         )
@@ -550,16 +639,23 @@ def run_base_pinned_checker(
         "pull_request": contract["pull_request"],
         "base_sha": base_sha,
         "base_tree": base_tree,
+        "original_pre_review_head": contract["original_pre_review_head"],
+        "original_changes": original_changes,
+        "original_receipt_sha256": original_receipt_sha256,
         "candidate_sha": candidate_sha,
         "candidate_tree": candidate_tree,
-        "head_sha": head,
+        "head_sha": candidate_sha,
+        "review_round": review_round,
+        "review_context": review_context,
+        "all_remote_reviews": all_remote_reviews,
+        "remote_findings": remote_findings,
         "trust_mode": contract["trust_mode"],
         "pre_review_required": contract["pre_review_required"],
         "changed_files": changed_files,
         "changes": changes,
         "remote_finding_ids": sorted(remote_finding_ids),
         "limits": contract["limits"],
-        "review_report": review_report,
+        "original_pre_review": review_report,
         "assertion_requests": assertion_requests,
     }
     checker_input_bytes = reporter.normalized_json(checker_input)
@@ -657,10 +753,13 @@ def run_base_pinned_checker(
                 "base checker result does not bind its exact immutable input"
             )
     raw = {
-        "id": f"BASE-CHECK:{base_sha}:{candidate_sha}",
+        "id": f"BASE-CHECK:{base_sha}:{candidate_sha}:ROUND:{review_round}",
         "check_id": "base-pinned-independent-review",
         "base_sha": base_sha,
         "base_tree": base_tree,
+        "original_pre_review_head": contract["original_pre_review_head"],
+        "original_receipt_sha256": original_receipt_sha256,
+        "review_round": review_round,
         "candidate_sha": candidate_sha,
         "candidate_tree": candidate_tree,
         "checker_path": BASE_CHECKER_PATH,
@@ -669,7 +768,9 @@ def run_base_pinned_checker(
         "changed_files": changed_files,
         "changes": changes,
         "remote_finding_ids": sorted(remote_finding_ids),
-        "review_report_sha256": hashlib.sha256(review_report_bytes).hexdigest(),
+        "review_report_sha256": hashlib.sha256(
+            original_review_report_bytes
+        ).hexdigest(),
         "checker_input_sha256": hashlib.sha256(checker_input_bytes).hexdigest(),
         "assertion_results": parsed_output["results"] if parsed_output else [],
         "read_only": read_only,
@@ -814,7 +915,7 @@ def collect_live_evidence_bytes(
     expected_candidate: str,
     review_report: dict[str, Any],
     receipt_envelope: dict[str, Any],
-    execution_receipt: dict[str, Any] | None,
+    execution_receipts: list[dict[str, Any]],
     *,
     adapter: GhApiAdapter | None = None,
     clock: Callable[[], datetime] = _utc_now,
@@ -869,6 +970,10 @@ def collect_live_evidence_bytes(
     if head != expected_candidate or head != contract["candidate_sha"]:
         raise reporter.PilotDataError(
             "authoritative PR head does not equal the exact candidate"
+        )
+    if review_report["candidate_sha"] != contract["original_pre_review_head"]:
+        raise reporter.PilotDataError(
+            "immutable pre-review does not bind original first-reviewed head"
         )
     author = _actor(pr["author"], "user", "GitHub pull-request author")
     owner = _actor(repository["owner"], "user", "GitHub repository owner")
@@ -1083,7 +1188,7 @@ def collect_live_evidence_bytes(
         {
             "id": finding["id"],
             "review_id": review_report["report_id"],
-            "candidate_sha": head,
+            "candidate_sha": contract["original_pre_review_head"],
             "created_at": finding["created_at"],
             "author_actor_id": review_report["reviewer_actor_id"],
             "family": finding["family"],
@@ -1103,7 +1208,7 @@ def collect_live_evidence_bytes(
             {
                 "id": review_report["report_id"],
                 "owner_actor_id": review_report["reviewer_actor_id"],
-                "candidate_sha": head,
+                "candidate_sha": contract["original_pre_review_head"],
                 "started_at": review_report["started_at"],
                 "completed_at": review_report["completed_at"],
                 "receipt_issued_at": receipt_envelope["issued_at"],
@@ -1131,6 +1236,10 @@ def collect_live_evidence_bytes(
         "source": {"kind": "live-gh-api", "complete": True},
         "captured_at": _format_time(clock()),
         "candidate": {"sha": head},
+        "original_pre_review_head": contract["original_pre_review_head"],
+        "original_receipt_sha256": hashlib.sha256(
+            reporter.normalized_json(receipt_envelope)
+        ).hexdigest(),
         "pull_request": {
             "number": pr["number"],
             "node_id": pr["id"],
@@ -1148,10 +1257,12 @@ def collect_live_evidence_bytes(
         "candidate_advances": [],
         "force_push_events": force_push_events,
         "architecture_dispositions": dispositions,
-        "execution_receipts": [execution_receipt] if execution_receipt else [],
-        "result_manifest": (
-            execution_receipt["assertion_results"] if execution_receipt else []
-        ),
+        "execution_receipts": execution_receipts,
+        "result_manifest": [
+            result
+            for receipt in execution_receipts
+            for result in receipt["assertion_results"]
+        ],
     }
     return reporter.normalized_json(raw_evidence)
 
@@ -1185,6 +1296,7 @@ def _bootstrap_result(contract: dict[str, Any], base_sha: str, head_sha: str):
             "repository": contract["repository"],
             "pull_request": contract["pull_request"],
             "base_sha": base_sha,
+            "original_pre_review_head": contract["original_pre_review_head"],
             "candidate_sha": head_sha,
         },
         "bootstrap": {
@@ -1224,10 +1336,13 @@ def _run_trusted_gate(
     trusted_key_epoch: int,
     trusted_key: bytes,
     current_time: datetime,
+    pre_review_state: str = "new",
     adapter: GhApiAdapter | None = None,
     clock: Callable[[], datetime] = _utc_now,
 ) -> dict[str, Any]:
     contract = review_family.validate_contract(raw_contract)
+    if pre_review_state not in {"new", "preserved"}:
+        raise reporter.PilotDataError("pre-review state is not supported")
     if contract["base_sha"] != expected_base:
         raise reporter.PilotDataError(
             "contract base does not equal externally authoritative PR base"
@@ -1237,13 +1352,14 @@ def _run_trusted_gate(
         repository=contract["repository"],
         pull_request=contract["pull_request"],
         base_sha=expected_base,
-        candidate_sha=expected_candidate,
+        candidate_sha=contract["original_pre_review_head"],
         trusted_key_id=trusted_key_id,
         trusted_key_epoch=trusted_key_epoch,
         trusted_key=trusted_key,
         current_time=current_time,
         replay_store=None,
         consume_nonce=False,
+        require_current_time=False,
     )
     review_report = reporter.expect_object(
         reporter.parse_json(
@@ -1257,7 +1373,7 @@ def _run_trusted_gate(
         expected_candidate,
         review_report,
         envelope,
-        None,
+        [],
         adapter=adapter,
         clock=clock,
     )
@@ -1275,7 +1391,10 @@ def _run_trusted_gate(
         review_report["completed_at"], "independent pre-review completed_at"
     )
     issued = reporter.parse_time(envelope["issued_at"], "pre-review receipt issued_at")
-    assert completed is not None and issued is not None
+    expires = reporter.parse_time(
+        envelope["expires_at"], "pre-review receipt expires_at"
+    )
+    assert completed is not None and issued is not None and expires is not None
     if issued < completed:
         raise reporter.PilotDataError(
             "pre-review receipt was backdated before report completion"
@@ -1286,51 +1405,64 @@ def _run_trusted_gate(
             "first remote review submitted_at",
         )
         assert first_remote is not None
-        if issued >= first_remote:
+        if issued >= first_remote or expires <= first_remote:
             raise reporter.PilotDataError(
-                "pre-review receipt was issued or re-signed after remote review"
+                "pre-review receipt was not valid before first remote review"
             )
     consumed_report, consumed_envelope = _verify_signed_receipt_bytes(
         review_receipt_bytes,
         repository=contract["repository"],
         pull_request=contract["pull_request"],
         base_sha=expected_base,
-        candidate_sha=expected_candidate,
+        candidate_sha=contract["original_pre_review_head"],
         trusted_key_id=trusted_key_id,
         trusted_key_epoch=trusted_key_epoch,
         trusted_key=trusted_key,
         current_time=current_time,
         replay_store=replay_store,
-        consume_nonce=True,
+        consume_nonce=pre_review_state == "new",
+        require_current_time=False,
+        require_preserved=pre_review_state == "preserved",
     )
     if consumed_report != report_bytes or consumed_envelope != envelope:
         raise reporter.PilotDataError("pre-review receipt changed during consumption")
-    assertion_requests = review_family.build_assertion_requests(
-        contract, first_evidence, repository_root
-    )
-    remote_ids = [finding["node_id"] for finding in first_evidence["findings"]]
-    execution_receipt = run_base_pinned_checker(
-        repository_root,
-        contract=contract,
-        candidate_sha=expected_candidate,
-        remote_finding_ids=remote_ids,
-        review_report_bytes=report_bytes,
-        assertion_requests=assertion_requests,
-        trusted_key=trusted_key,
-        clock=clock,
-    )
-    if not hmac.compare_digest(
-        execution_receipt["seal"],
-        _execution_receipt_seal(execution_receipt, trusted_key),
-    ):
-        raise reporter.PilotDataError("execution receipt HMAC is invalid")
+    original_receipt_sha256 = hashlib.sha256(review_receipt_bytes).hexdigest()
+    execution_receipts = []
+    for review in first_evidence["remote_reviews"]:
+        assertion_requests = review_family.build_assertion_requests(
+            contract,
+            first_evidence,
+            review["candidate_sha"],
+            review["round"],
+        )
+        receipt = run_base_pinned_checker(
+            repository_root,
+            contract=contract,
+            candidate_sha=review["candidate_sha"],
+            review_round=review["round"],
+            review_context=review,
+            all_remote_reviews=first_evidence["remote_reviews"],
+            remote_findings=first_evidence["findings"],
+            remote_finding_ids=review["finding_ids"],
+            original_review_report_bytes=report_bytes,
+            original_receipt_sha256=original_receipt_sha256,
+            assertion_requests=assertion_requests,
+            trusted_key=trusted_key,
+            clock=clock,
+        )
+        if not hmac.compare_digest(
+            receipt["seal"],
+            _execution_receipt_seal(receipt, trusted_key),
+        ):
+            raise reporter.PilotDataError("execution receipt HMAC is invalid")
+        execution_receipts.append(receipt)
     second_evidence = collect_live_evidence_bytes(
         raw_contract,
         repository_root,
         expected_candidate,
         review_report,
         envelope,
-        execution_receipt,
+        execution_receipts,
         adapter=adapter,
         clock=clock,
     )
@@ -1353,7 +1485,9 @@ def _run_trusted_gate(
         "authenticated_receipt": True,
         "base_pinned_checker": True,
         "executable_evidence_trusted": True,
-        "execution_receipt_seals": [execution_receipt["seal"]],
+        "execution_receipt_seals": [
+            receipt["seal"] for receipt in execution_receipts
+        ],
     }
     result["gates"] = {
         **result["gates"],
@@ -1373,7 +1507,12 @@ def parse_args(argv: list[str] | None = None) -> Any:
     parser.add_argument("--expected-base", required=True)
     parser.add_argument("--expected-candidate", required=True)
     parser.add_argument("--contract", type=Path, required=True)
-    parser.add_argument("--review-receipt", type=Path, required=True)
+    parser.add_argument("--review-receipt", type=Path)
+    parser.add_argument(
+        "--pre-review-state",
+        choices=("new", "preserved"),
+        default="new",
+    )
     return parser.parse_args(argv)
 
 
@@ -1406,17 +1545,50 @@ def main(argv: list[str] | None = None) -> int:
             raise reporter.PilotDataError(
                 "receipt key epoch must be an integer"
             ) from error
+        raw_contract = reporter.load_json(args.contract)
+        if args.pre_review_state == "new":
+            if args.review_receipt is None:
+                raise reporter.PilotDataError(
+                    "new pre-review state requires receipt bytes"
+                )
+            review_receipt_bytes = args.review_receipt.read_bytes()
+        else:
+            if args.review_receipt is not None:
+                raise reporter.PilotDataError(
+                    "preserved pre-review state must load trusted stored bytes"
+                )
+            review_receipt_bytes = _preserved_receipt_bytes(
+                Path(replay_store),
+                repository=reporter.expect_string(
+                    raw_contract.get("repository"), "contract.repository"
+                ),
+                pull_request=reporter.expect_int(
+                    raw_contract.get("pull_request"),
+                    "contract.pull_request",
+                    1,
+                ),
+                base_sha=reporter.expect_sha(
+                    raw_contract.get("base_sha"), "contract.base_sha"
+                ),
+                original_pre_review_head=reporter.expect_sha(
+                    raw_contract.get("original_pre_review_head"),
+                    "contract.original_pre_review_head",
+                ),
+                key_id=key_id,
+                key_epoch=key_epoch,
+            )
         result = _run_trusted_gate(
-            raw_contract=reporter.load_json(args.contract),
+            raw_contract=raw_contract,
             repository_root=args.candidate_root,
             expected_candidate=args.expected_candidate,
             expected_base=args.expected_base,
-            review_receipt_bytes=args.review_receipt.read_bytes(),
+            review_receipt_bytes=review_receipt_bytes,
             replay_store=Path(replay_store),
             trusted_key_id=key_id,
             trusted_key_epoch=key_epoch,
             trusted_key=key.encode("utf-8"),
             current_time=_utc_now(),
+            pre_review_state=args.pre_review_state,
         )
     except (OSError, reporter.PilotDataError) as error:
         print(f"trusted review gate error: {error}", file=sys.stderr)

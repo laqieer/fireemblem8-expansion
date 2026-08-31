@@ -60,6 +60,43 @@ BEHAVIOR_ROW_SPECS = {
     },
 }
 REQUIRED_BEHAVIOR_ROWS = tuple(sorted(BEHAVIOR_ROW_SPECS))
+BEHAVIOR_ASSERTION_IDS = {
+    row: {
+        evidence_class: f"registry:behavior:{row}:{evidence_class}:v2"
+        for evidence_class in EVIDENCE_CLASSES
+    }
+    for row in REQUIRED_BEHAVIOR_ROWS
+}
+MEMBER_OUTCOME_REGISTRY = {
+    "action": {
+        "actions": "affected-fixed",
+        "items": "verified-unaffected",
+        "targets": "verified-unaffected",
+    },
+    "generated": {
+        "owners": "affected-fixed",
+        "outputs": "verified-unaffected",
+        "consumers": "verified-unaffected",
+        "drift-checks": "verified-unaffected",
+    },
+    "lifecycle": {
+        "entries": "affected-fixed",
+        "preservation": "verified-unaffected",
+        "resets": "verified-unaffected",
+        "terminals": "verified-unaffected",
+    },
+    "resource": {
+        "enabled": "affected-fixed",
+        "disabled": "verified-unaffected",
+    },
+    "wire": {
+        "producers": "affected-fixed",
+        "consumers": "verified-unaffected",
+        "validators": "verified-unaffected",
+        "replay": "verified-unaffected",
+        "stale-bindings": "verified-unaffected",
+    },
+}
 RESULT_SOURCE_PATH = "scripts/workflow_pilot/tests/test_review_family.py"
 COPILOT_ACTOR = "copilot-pull-request-reviewer"
 COPILOT_APPROVAL_MARKER = "### 🟢 Approval recommended"
@@ -552,12 +589,17 @@ def _validate_limits(value: Any) -> dict[str, int]:
     return result
 
 
-def _expected_behavior_result(row_id: str, evidence_class: str) -> str:
-    return f"result-{row_id}-{evidence_class}"
-
-
-def _expected_sibling_result(finding_id: str, member: str) -> str:
-    return f"result-sibling-{finding_id}-{member}"
+def member_assertion_id(family: str, member: str, disposition: str) -> str:
+    if (
+        family == "resource"
+        and member == "disabled"
+        and disposition == "not-applicable"
+    ):
+        return (
+            "registry:sibling:resource:disabled:not-applicable:"
+            "feature-disabled-by-contract:v2"
+        )
+    return f"registry:sibling:{family}:{member}:{disposition}:v2"
 
 
 def _validate_behavior_rows(value: Any) -> list[dict[str, Any]]:
@@ -567,31 +609,31 @@ def _validate_behavior_rows(value: Any) -> list[dict[str, Any]]:
     for index, raw in enumerate(rows):
         label = f"contract.behavior_rows[{index}]"
         row = reporter.expect_object(raw, label)
-        reporter.expect_keys(row, label, ("id", "evidence_result_ids"))
+        reporter.expect_keys(row, label, ("id", "assertions"))
         row_id = reporter.expect_enum(
             row["id"], set(REQUIRED_BEHAVIOR_ROWS), f"{label}.id"
         )
         row_ids.append(row_id)
-        evidence = reporter.expect_object(
-            row["evidence_result_ids"], f"{label}.evidence_result_ids"
+        assertions = reporter.expect_object(
+            row["assertions"], f"{label}.assertions"
         )
         reporter.expect_keys(
-            evidence, f"{label}.evidence_result_ids", EVIDENCE_CLASSES
+            assertions, f"{label}.assertions", EVIDENCE_CLASSES
         )
-        result_ids = {}
+        normalized_assertions = {}
         for evidence_class in EVIDENCE_CLASSES:
-            values = _expect_string_list(
-                evidence[evidence_class],
-                f"{label}.evidence_result_ids.{evidence_class}",
+            assertion_id = reporter.expect_string(
+                assertions[evidence_class],
+                f"{label}.assertions.{evidence_class}",
             )
-            expected = [_expected_behavior_result(row_id, evidence_class)]
-            if values != expected:
+            expected = BEHAVIOR_ASSERTION_IDS[row_id][evidence_class]
+            if assertion_id != expected:
                 raise reporter.PilotDataError(
                     f"{label}.{evidence_class} does not name the closed "
-                    "base assertion result"
+                    "base assertion"
                 )
-            result_ids[evidence_class] = values
-        normalized.append({"id": row_id, "evidence_result_ids": result_ids})
+            normalized_assertions[evidence_class] = assertion_id
+        normalized.append({"id": row_id, "assertions": normalized_assertions})
     reporter.expect_unique(row_ids, "contract.behavior_rows identities")
     if set(row_ids) != set(REQUIRED_BEHAVIOR_ROWS):
         raise reporter.PilotDataError(
@@ -643,82 +685,45 @@ def _validate_sweeps(value: Any) -> list[dict[str, Any]]:
                 (
                     "member",
                     "result",
-                    "evidence_result_ids",
-                    "assertion_inputs",
+                    "assertion_id",
                 ),
             )
             member = reporter.expect_enum(
                 sibling["member"], set(FAMILY_MEMBERS[family]), f"{sibling_label}.member"
             )
-            result_ids = _expect_string_list(
-                sibling["evidence_result_ids"],
-                f"{sibling_label}.evidence_result_ids",
-            )
-            expected = [_expected_sibling_result(finding_id, member)]
-            if result_ids != expected:
-                raise reporter.PilotDataError(
-                    f"{sibling_label} does not name the closed base assertion result"
-                )
             disposition = reporter.expect_enum(
                 sibling["result"], SWEEP_RESULTS, f"{sibling_label}.result"
             )
-            assertion_inputs = reporter.expect_object(
-                sibling["assertion_inputs"],
-                f"{sibling_label}.assertion_inputs",
+            registered = MEMBER_OUTCOME_REGISTRY[family][member]
+            explicitly_permitted_not_applicable = (
+                family == "resource"
+                and member == "disabled"
+                and disposition == "not-applicable"
             )
-            if disposition == "affected-fixed":
-                reporter.expect_keys(
-                    assertion_inputs,
-                    f"{sibling_label}.assertion_inputs",
-                    ("changed_paths",),
-                )
-                assertion_inputs = {
-                    "changed_paths": [
-                        _validate_path(
-                            path,
-                            f"{sibling_label}.assertion_inputs.changed_paths"
-                            f"[{path_index}]",
-                        )
-                        for path_index, path in enumerate(
-                            _expect_string_list(
-                                assertion_inputs["changed_paths"],
-                                f"{sibling_label}.assertion_inputs.changed_paths",
-                            )
-                        )
-                    ]
-                }
-            elif disposition == "verified-unaffected":
-                reporter.expect_keys(
-                    assertion_inputs,
-                    f"{sibling_label}.assertion_inputs",
-                    ("unchanged_paths",),
-                )
-                assertion_inputs = {
-                    "unchanged_paths": [
-                        _validate_path(
-                            path,
-                            f"{sibling_label}.assertion_inputs.unchanged_paths"
-                            f"[{path_index}]",
-                        )
-                        for path_index, path in enumerate(
-                            _expect_string_list(
-                                assertion_inputs["unchanged_paths"],
-                                f"{sibling_label}.assertion_inputs.unchanged_paths",
-                            )
-                        )
-                    ]
-                }
-            else:
+            if (
+                disposition != registered
+                and not explicitly_permitted_not_applicable
+            ):
                 raise reporter.PilotDataError(
-                    f"{sibling_label} not-applicable has no base-owned "
-                    "assertion and is unsupported"
+                    f"{sibling_label} disposition is not registered for "
+                    f"{family}/{member}"
+                )
+            assertion_id = reporter.expect_string(
+                sibling["assertion_id"], f"{sibling_label}.assertion_id"
+            )
+            expected_assertion = member_assertion_id(
+                family, member, disposition
+            )
+            if assertion_id != expected_assertion:
+                raise reporter.PilotDataError(
+                    f"{sibling_label} does not name its member-specific "
+                    "base assertion"
                 )
             normalized_siblings.append(
                 {
                     "member": member,
                     "result": disposition,
-                    "evidence_result_ids": result_ids,
-                    "assertion_inputs": assertion_inputs,
+                    "assertion_id": assertion_id,
                 }
             )
         normalized.append(
@@ -744,6 +749,7 @@ def validate_contract(raw_contract: Any) -> dict[str, Any]:
             "repository",
             "pull_request",
             "base_sha",
+            "original_pre_review_head",
             "candidate_sha",
             "trust_mode",
             "implementer_actor_id",
@@ -764,6 +770,10 @@ def validate_contract(raw_contract: Any) -> dict[str, Any]:
     candidate_sha = reporter.expect_sha(
         contract["candidate_sha"], "contract.candidate_sha"
     )
+    original_pre_review_head = reporter.expect_sha(
+        contract["original_pre_review_head"],
+        "contract.original_pre_review_head",
+    )
     if base_sha == candidate_sha:
         raise reporter.PilotDataError(
             "contract base and candidate must be distinct"
@@ -777,6 +787,7 @@ def validate_contract(raw_contract: Any) -> dict[str, Any]:
             contract["pull_request"], "contract.pull_request", 1
         ),
         "base_sha": base_sha,
+        "original_pre_review_head": original_pre_review_head,
         "candidate_sha": candidate_sha,
         "trust_mode": reporter.expect_enum(
             contract["trust_mode"],
@@ -801,146 +812,75 @@ def finding_family_map(contract: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def assertion_result_id(
+    candidate_sha: str,
+    review_round: int,
+    assertion_id: str,
+    finding_id: str | None,
+) -> str:
+    identity = {
+        "candidate_sha": candidate_sha,
+        "review_round": review_round,
+        "assertion_id": assertion_id,
+        "finding_id": finding_id,
+    }
+    return "result-" + hashlib.sha256(
+        reporter.normalized_json(identity)
+    ).hexdigest()
+
+
 def build_assertion_requests(
     contract: dict[str, Any],
     evidence: dict[str, Any],
-    repository_root: Path,
+    target_head: str,
+    review_round: int,
 ) -> list[dict[str, Any]]:
-    """Derive the only assertion requests accepted by the base registry."""
-    changes = derive_change_records(
-        repository_root, contract["base_sha"], contract["candidate_sha"]
-    )
-    changes_sha256 = hashlib.sha256(
-        reporter.normalized_json(changes)
-    ).hexdigest()
-    remote_finding_ids = sorted(
-        finding["node_id"] for finding in evidence.get("findings", [])
-    )
-    local_finding_count = len(evidence.get("pre_review_findings", []))
+    """Derive assertion identities for one exact reviewed round and head."""
+    reviews = {
+        review["round"]: review for review in evidence.get("remote_reviews", [])
+    }
+    review = reviews.get(review_round)
+    if review is None or review["candidate_sha"] != target_head:
+        raise reporter.PilotDataError(
+            "assertion round does not match its exact reviewed head"
+        )
     requests = []
     for row in contract["behavior_rows"]:
         for evidence_class in EVIDENCE_CLASSES:
-            result_id = row["evidence_result_ids"][evidence_class][0]
-            if evidence_class == "positive":
-                inputs = {
-                    "row_id": row["id"],
-                    "repository": contract["repository"],
-                    "pull_request": contract["pull_request"],
-                    "base_sha": contract["base_sha"],
-                    "head_sha": contract["candidate_sha"],
-                }
-            elif evidence_class == "adversarial":
-                inputs = {
-                    "row_id": row["id"],
-                    "negative_control": "fabricated-result-id",
-                    "fabricated_result_id": "candidate-fabricated-pass",
-                }
-            elif evidence_class == "default":
-                inputs = {
-                    "row_id": row["id"],
-                    "trust_mode": contract["trust_mode"],
-                    "pre_review_required": contract["pre_review_required"],
-                    "local_finding_count": local_finding_count,
-                }
-            else:
-                inputs = {
-                    "row_id": row["id"],
-                    "changes_sha256": changes_sha256,
-                    "remote_finding_ids": remote_finding_ids,
-                }
             requests.append(
                 {
-                    "id": result_id,
-                    "assertion_id": f"{row['id']}:{evidence_class}",
-                    "check_id": (
-                        f"behavior:{row['id']}:{evidence_class}:v1"
-                    ),
-                    "claimed_disposition": None,
-                    "inputs": inputs,
+                    "assertion_id": row["assertions"][evidence_class],
+                    "finding_id": None,
                 }
             )
+    if review_round == 1:
+        round_finding_ids = {
+            finding["id"] for finding in evidence.get("pre_review_findings", [])
+        }
+    else:
+        round_finding_ids = set(reviews[review_round - 1]["finding_ids"])
     for sweep in contract["family_sweeps"]:
-        for sibling in sweep["siblings"]:
-            disposition = sibling["result"]
-            configured_inputs = sibling["assertion_inputs"]
-            if disposition == "affected-fixed":
-                changed_paths = configured_inputs["changed_paths"]
-                change_evidence = [
-                    change
-                    for change in changes
-                    if any(
-                        path in {change["old_path"], change["new_path"]}
-                        for path in changed_paths
-                    )
-                ]
-                if any(
-                    not any(
-                        path in {change["old_path"], change["new_path"]}
-                        for change in changes
-                    )
-                    for path in changed_paths
-                ):
-                    raise reporter.PilotDataError(
-                        f"sibling {sweep['finding_id']!r}/"
-                        f"{sibling['member']!r} lacks exact changed-path evidence"
-                    )
-                inputs = {
-                    "finding_id": sweep["finding_id"],
-                    "family": sweep["family"],
-                    "member": sibling["member"],
-                    "changed_paths": changed_paths,
-                    "change_evidence": change_evidence,
-                }
-            elif disposition == "verified-unaffected":
-                unchanged_evidence = []
-                for path in configured_inputs["unchanged_paths"]:
-                    base_identity = _tree_blob(
-                        repository_root, contract["base_sha"], path
-                    )
-                    head_identity = _tree_blob(
-                        repository_root, contract["candidate_sha"], path
-                    )
-                    if base_identity is None or base_identity != head_identity:
-                        raise reporter.PilotDataError(
-                            f"sibling {sweep['finding_id']!r}/"
-                            f"{sibling['member']!r} lacks unchanged blob evidence"
-                        )
-                    unchanged_evidence.append(
-                        {
-                            "path": path,
-                            "base_mode": base_identity["mode"],
-                            "base_blob_oid": base_identity["blob_oid"],
-                            "head_mode": head_identity["mode"],
-                            "head_blob_oid": head_identity["blob_oid"],
-                        }
-                    )
-                inputs = {
-                    "finding_id": sweep["finding_id"],
-                    "family": sweep["family"],
-                    "member": sibling["member"],
-                    "unchanged_evidence": unchanged_evidence,
-                }
-            else:
-                raise reporter.PilotDataError(
-                    "not-applicable is unsupported by the base registry"
-                )
-            requests.append(
-                {
-                    "id": sibling["evidence_result_ids"][0],
-                    "assertion_id": (
-                        f"sibling:{sweep['family']}:{sibling['member']}"
-                    ),
-                    "check_id": (
-                        f"sibling:{sweep['family']}:{sibling['member']}:"
-                        f"{disposition}:v1"
-                    ),
-                    "claimed_disposition": disposition,
-                    "inputs": inputs,
-                }
-            )
-    ids = [request["id"] for request in requests]
-    reporter.expect_unique(ids, "derived assertion result IDs")
-    return sorted(requests, key=lambda request: request["id"])
+        finding_id = sweep["finding_id"]
+        if finding_id not in round_finding_ids:
+            continue
+        requests.extend(
+            {
+                "assertion_id": sibling["assertion_id"],
+                "finding_id": finding_id,
+            }
+            for sibling in sweep["siblings"]
+        )
+    assertion_keys = [
+        (request["assertion_id"], request["finding_id"]) for request in requests
+    ]
+    reporter.expect_unique(assertion_keys, "derived assertion requests")
+    return sorted(
+        requests,
+        key=lambda request: (
+            request["assertion_id"],
+            request["finding_id"] or "",
+        ),
+    )
 
 
 def _validate_actors(value: Any) -> dict[str, dict[str, str]]:
@@ -1382,9 +1322,11 @@ def _validate_result_manifest(value: Any) -> dict[str, dict[str, Any]]:
                 "command_id",
                 "input_sha256",
                 "inputs_sha256",
+                "output",
                 "output_sha256",
                 "base_sha",
                 "candidate_sha",
+                "review_round",
                 "status",
             ),
         )
@@ -1401,6 +1343,7 @@ def _validate_result_manifest(value: Any) -> dict[str, dict[str, Any]]:
         output_sha = reporter.expect_string(
             result["output_sha256"], f"{label}.output_sha256"
         )
+        output = reporter.expect_object(result["output"], f"{label}.output")
         if (
             reporter.SHA256_RE.fullmatch(command_id) is None
             or reporter.SHA256_RE.fullmatch(input_sha) is None
@@ -1425,6 +1368,7 @@ def _validate_result_manifest(value: Any) -> dict[str, dict[str, Any]]:
             "command_id": command_id,
             "input_sha256": input_sha,
             "inputs_sha256": inputs_sha,
+            "output": output,
             "output_sha256": output_sha,
             "base_sha": reporter.expect_sha(
                 result["base_sha"], f"{label}.base_sha"
@@ -1432,10 +1376,17 @@ def _validate_result_manifest(value: Any) -> dict[str, dict[str, Any]]:
             "candidate_sha": reporter.expect_sha(
                 result["candidate_sha"], f"{label}.candidate_sha"
             ),
+            "review_round": reporter.expect_int(
+                result["review_round"], f"{label}.review_round", 1
+            ),
             "status": reporter.expect_enum(
                 result["status"], {"pass"}, f"{label}.status"
             ),
         }
+        if hashlib.sha256(reporter.normalized_json(output)).hexdigest() != output_sha:
+            raise reporter.PilotDataError(
+                f"{label}.output does not match output_sha256"
+            )
     return results
 
 
@@ -1453,6 +1404,9 @@ def _validate_execution_receipts(value: Any) -> list[dict[str, Any]]:
             "check_id",
             "base_sha",
             "base_tree",
+            "original_pre_review_head",
+            "original_receipt_sha256",
+            "review_round",
             "candidate_sha",
             "candidate_tree",
             "checker_path",
@@ -1489,6 +1443,10 @@ def _validate_execution_receipts(value: Any) -> list[dict[str, Any]]:
             ),
             "output_sha256": reporter.expect_string(
                 receipt["output_sha256"], f"{label}.output_sha256"
+            ),
+            "original_receipt_sha256": reporter.expect_string(
+                receipt["original_receipt_sha256"],
+                f"{label}.original_receipt_sha256",
             ),
         }
         if any(
@@ -1541,6 +1499,17 @@ def _validate_execution_receipts(value: Any) -> list[dict[str, Any]]:
                 ),
                 "base_tree": reporter.expect_sha(
                     receipt["base_tree"], f"{label}.base_tree"
+                ),
+                "original_pre_review_head": reporter.expect_sha(
+                    receipt["original_pre_review_head"],
+                    f"{label}.original_pre_review_head",
+                ),
+                "original_receipt_sha256": reporter.expect_string(
+                    receipt["original_receipt_sha256"],
+                    f"{label}.original_receipt_sha256",
+                ),
+                "review_round": reporter.expect_int(
+                    receipt["review_round"], f"{label}.review_round", 1
                 ),
                 "candidate_sha": reporter.expect_sha(
                     receipt["candidate_sha"], f"{label}.candidate_sha"
@@ -1600,6 +1569,8 @@ def validate_evidence(raw_evidence: Any) -> dict[str, Any]:
             "source",
             "captured_at",
             "candidate",
+            "original_pre_review_head",
+            "original_receipt_sha256",
             "pull_request",
             "result_source_path",
             "actors",
@@ -1657,6 +1628,14 @@ def validate_evidence(raw_evidence: Any) -> dict[str, Any]:
         raise reporter.PilotDataError(
             "evidence result source is unrelated to the frozen inventory"
         )
+    original_receipt_sha256 = reporter.expect_string(
+        evidence["original_receipt_sha256"],
+        "evidence.original_receipt_sha256",
+    )
+    if reporter.SHA256_RE.fullmatch(original_receipt_sha256) is None:
+        raise reporter.PilotDataError(
+            "evidence.original_receipt_sha256 must be SHA-256"
+        )
     return {
         "raw": evidence,
         "repository": reporter.expect_string(
@@ -1670,6 +1649,11 @@ def validate_evidence(raw_evidence: Any) -> dict[str, Any]:
                 candidate["sha"], "evidence.candidate.sha"
             )
         },
+        "original_pre_review_head": reporter.expect_sha(
+            evidence["original_pre_review_head"],
+            "evidence.original_pre_review_head",
+        ),
+        "original_receipt_sha256": original_receipt_sha256,
         "pull_request": {
             "number": reporter.expect_int(
                 pull_request["number"], "evidence.pull_request.number", 1
@@ -1734,6 +1718,13 @@ def _repository_authority(
             "contract/evidence candidate does not match actual Git HEAD"
         )
     if (
+        evidence["original_pre_review_head"]
+        != contract["original_pre_review_head"]
+    ):
+        raise reporter.PilotDataError(
+            "evidence original pre-review head does not match contract"
+        )
+    if (
         evidence["pull_request"]["base_sha"] != contract["base_sha"]
     ):
         raise reporter.PilotDataError(
@@ -1742,6 +1733,21 @@ def _repository_authority(
     reporter.run_git(
         root, "merge-base", "--is-ancestor", contract["base_sha"], head
     )
+    reporter.run_git(
+        root,
+        "merge-base",
+        "--is-ancestor",
+        contract["original_pre_review_head"],
+        head,
+    )
+    for review in evidence["remote_reviews"]:
+        reporter.run_git(
+            root,
+            "merge-base",
+            "--is-ancestor",
+            review["candidate_sha"],
+            head,
+        )
     remote = reporter.run_git(
         root, "config", "--get", "remote.origin.url"
     ).decode("utf-8").strip()
@@ -1751,6 +1757,7 @@ def _repository_authority(
         )
     shas = {
         contract["base_sha"],
+        contract["original_pre_review_head"],
         head,
         *(review["candidate_sha"] for review in evidence["pre_reviews"]),
         *(review["candidate_sha"] for review in evidence["remote_reviews"]),
@@ -1773,6 +1780,9 @@ def _repository_authority(
     }
     commits = reporter._load_git_commit_objects(root, shas)
     changes = derive_change_records(root, contract["base_sha"], head)
+    original_changes = derive_change_records(
+        root, contract["base_sha"], contract["original_pre_review_head"]
+    )
     changed_files = sorted(
         {
             path
@@ -1782,13 +1792,21 @@ def _repository_authority(
         }
     )
     for review in evidence["pre_reviews"]:
-        if sorted(review["reviewed_files"]) != changed_files:
+        original_files = sorted(
+            {
+                path
+                for change in original_changes
+                for path in (change["old_path"], change["new_path"])
+                if path is not None
+            }
+        )
+        if sorted(review["reviewed_files"]) != original_files:
             raise reporter.PilotDataError(
-                "pre-review does not cover the exact base-to-head changed files"
+                "pre-review does not cover exact original first-reviewed head"
             )
-        if review["reviewed_changes"] != changes:
+        if review["reviewed_changes"] != original_changes:
             raise reporter.PilotDataError(
-                "pre-review status/blob evidence does not match exact Git diff"
+                "pre-review status/blob evidence does not match original head"
             )
     tree = reporter.run_git(
         root, "rev-parse", f"{head}^{{tree}}"
@@ -1800,6 +1818,7 @@ def _repository_authority(
         "commits": commits,
         "changed_files": changed_files,
         "changes": changes,
+        "original_changes": original_changes,
     }
 
 
@@ -2083,27 +2102,11 @@ def _validate_execution(
                 "candidate result IDs have no trusted execution receipt"
             )
         return []
-    if len(receipts) != 1:
+    reviews = evidence["remote_reviews"]
+    if len(receipts) != len(reviews):
         raise reporter.PilotDataError(
-            "trusted assertion registry requires exactly one receipt"
+            "every remote review round/head requires one execution receipt"
         )
-    receipt = receipts[0]
-    if (
-        receipt["base_sha"] != contract["base_sha"]
-        or receipt["candidate_sha"] != authority["head"]
-        or receipt["result"] != "pass"
-        or receipt["exit_code"] != 0
-        or not receipt["read_only"]
-        or not receipt["pre_clean"]
-        or not receipt["post_clean"]
-    ):
-        raise reporter.PilotDataError(
-            "assertion receipt lacks an exact-base current-head passing result"
-        )
-    if receipt["_started"] < authority["commits"][authority["head"]]["committed_at"]:
-        raise reporter.PilotDataError("assertion receipt predates candidate")
-    if receipt["_completed"] > evidence["captured"]:
-        raise reporter.PilotDataError("assertion receipt follows capture")
     actual_base_tree = reporter.run_git(
         authority["root"], "rev-parse", f"{contract['base_sha']}^{{tree}}"
     ).decode("ascii").strip()
@@ -2112,63 +2115,161 @@ def _validate_execution(
         "rev-parse",
         f"{contract['base_sha']}:scripts/workflow_pilot/review_base_checker.py",
     ).decode("ascii").strip()
-    if (
-        receipt["base_tree"] != actual_base_tree
-        or receipt["candidate_tree"] != authority["tree"]
-        or receipt["checker_path"]
-        != "scripts/workflow_pilot/review_base_checker.py"
-        or receipt["checker_blob_oid"] != actual_checker_blob
-        or receipt["argv"]
-        != [
-            "/usr/bin/python3",
-            "-I",
-            "review_base_checker.py",
-            "--input",
-            "checker-input.json",
-        ]
-        or sorted(receipt["changed_files"]) != authority["changed_files"]
-        or receipt["changes"] != authority["changes"]
-        or sorted(receipt["remote_finding_ids"]) != sorted(evidence["findings"])
-    ):
-        raise reporter.PilotDataError(
-            "assertion receipt does not match base/head/checker/diff/remote findings"
+    expected_results = {}
+    receipt_result_ids = set()
+    seals = []
+    previous_completed = None
+    original_receipt_sha = None
+    for review, receipt in zip(reviews, receipts):
+        round_number = review["round"]
+        target_head = review["candidate_sha"]
+        target_changes = derive_change_records(
+            authority["root"], contract["base_sha"], target_head
         )
-    expected_requests = {
-        request["id"]: request
-        for request in build_assertion_requests(
-            contract, evidence["raw"], authority["root"]
+        target_files = sorted(
+            {
+                path
+                for change in target_changes
+                for path in (change["old_path"], change["new_path"])
+                if path is not None
+            }
         )
-    }
-    if set(manifest) != set(expected_requests):
+        target_tree = reporter.run_git(
+            authority["root"], "rev-parse", f"{target_head}^{{tree}}"
+        ).decode("ascii").strip()
+        if (
+            receipt["base_sha"] != contract["base_sha"]
+            or receipt["original_pre_review_head"]
+            != contract["original_pre_review_head"]
+            or receipt["review_round"] != round_number
+            or receipt["candidate_sha"] != target_head
+            or receipt["result"] != "pass"
+            or receipt["exit_code"] != 0
+            or not receipt["read_only"]
+            or not receipt["pre_clean"]
+            or not receipt["post_clean"]
+        ):
+            raise reporter.PilotDataError(
+                "execution receipt does not bind exact review round/head"
+            )
+        if original_receipt_sha is None:
+            original_receipt_sha = receipt["original_receipt_sha256"]
+        elif receipt["original_receipt_sha256"] != original_receipt_sha:
+            raise reporter.PilotDataError(
+                "execution receipts do not preserve one original pre-review"
+            )
+        if receipt["original_receipt_sha256"] != evidence[
+            "original_receipt_sha256"
+        ]:
+            raise reporter.PilotDataError(
+                "execution receipt does not bind preserved pre-review receipt"
+            )
+        if receipt["_started"] < authority["commits"][target_head]["committed_at"]:
+            raise reporter.PilotDataError(
+                f"execution receipt round {round_number} predates its head"
+            )
+        if receipt["_started"] < review["_submitted"]:
+            raise reporter.PilotDataError(
+                f"execution receipt round {round_number} predates remote review"
+            )
+        if receipt["_completed"] > evidence["captured"]:
+            raise reporter.PilotDataError(
+                f"execution receipt round {round_number} follows capture"
+            )
+        if (
+            previous_completed is not None
+            and receipt["_completed"] <= previous_completed
+        ):
+            raise reporter.PilotDataError(
+                "execution receipts are not chronologically ordered by round"
+            )
+        previous_completed = receipt["_completed"]
+        if (
+            receipt["base_tree"] != actual_base_tree
+            or receipt["candidate_tree"] != target_tree
+            or receipt["checker_path"]
+            != "scripts/workflow_pilot/review_base_checker.py"
+            or receipt["checker_blob_oid"] != actual_checker_blob
+            or receipt["argv"]
+            != [
+                "/usr/bin/python3",
+                "-I",
+                "review_base_checker.py",
+                "--input",
+                "checker-input.json",
+            ]
+            or sorted(receipt["changed_files"]) != target_files
+            or receipt["changes"] != target_changes
+            or sorted(receipt["remote_finding_ids"])
+            != sorted(review["finding_ids"])
+        ):
+            raise reporter.PilotDataError(
+                "execution receipt does not match exact round Git/GitHub evidence"
+            )
+        requests = build_assertion_requests(
+            contract, evidence["raw"], target_head, round_number
+        )
+        for request in requests:
+            result_id = assertion_result_id(
+                target_head,
+                round_number,
+                request["assertion_id"],
+                request["finding_id"],
+            )
+            expected_results[result_id] = {
+                **request,
+                "candidate_sha": target_head,
+                "review_round": round_number,
+                "checker_input_sha256": receipt["checker_input_sha256"],
+            }
+        current_ids = {
+            result["id"] for result in receipt["assertion_results"]
+        }
+        expected_current = {
+            result_id
+            for result_id, expected in expected_results.items()
+            if expected["review_round"] == round_number
+        }
+        if current_ids != expected_current:
+            raise reporter.PilotDataError(
+                f"round {round_number} registry results are missing or fabricated"
+            )
+        if receipt_result_ids & current_ids:
+            raise reporter.PilotDataError(
+                "execution result IDs replay across rounds"
+            )
+        receipt_result_ids.update(current_ids)
+        seals.append(receipt["seal"])
+    if set(manifest) != set(expected_results):
         raise reporter.PilotDataError(
             "trusted registry results do not exactly cover derived assertions"
         )
-    if {
-        result["id"] for result in receipt["assertion_results"]
-    } != set(manifest):
+    if receipt_result_ids != set(manifest):
         raise reporter.PilotDataError(
             "receipt assertion results do not match evidence manifest"
         )
     for result_id, result in manifest.items():
-        request = expected_requests[result_id]
+        expected = expected_results[result_id]
+        expected_disposition = (
+            expected["assertion_id"].split(":")[4]
+            if expected["assertion_id"].startswith("registry:sibling:")
+            else None
+        )
         if (
-            result["assertion_id"] != request["assertion_id"]
-            or result["check_id"] != request["check_id"]
-            or result["claimed_disposition"]
-            != request["claimed_disposition"]
+            result["assertion_id"] != expected["assertion_id"]
+            or result["check_id"] != expected["assertion_id"]
             or result["base_sha"] != contract["base_sha"]
-            or result["candidate_sha"] != authority["head"]
+            or result["candidate_sha"] != expected["candidate_sha"]
+            or result["review_round"] != expected["review_round"]
+            or result["claimed_disposition"] != expected_disposition
             or result["status"] != "pass"
-            or result["input_sha256"] != receipt["checker_input_sha256"]
-            or result["inputs_sha256"]
-            != hashlib.sha256(
-                reporter.normalized_json(request["inputs"])
-            ).hexdigest()
+            or result["input_sha256"]
+            != expected["checker_input_sha256"]
         ):
             raise reporter.PilotDataError(
                 f"result {result_id!r} is fabricated or bound to another assertion"
             )
-    return [receipt["seal"]]
+    return seals
 
 
 def _consume_disposition(
@@ -2363,6 +2464,7 @@ def build_report(
             "pull_request": contract["pull_request"],
             "pull_request_node_id": evidence["pull_request"]["node_id"],
             "base_sha": contract["base_sha"],
+            "original_pre_review_head": contract["original_pre_review_head"],
             "candidate_sha": authority["head"],
             "candidate_tree_oid": authority["tree"],
         },
@@ -2393,7 +2495,7 @@ def build_report(
             {
                 "id": row["id"],
                 **BEHAVIOR_ROW_SPECS[row["id"]],
-                "evidence_result_ids": row["evidence_result_ids"],
+                "assertions": row["assertions"],
             }
             for row in contract["behavior_rows"]
         ],
