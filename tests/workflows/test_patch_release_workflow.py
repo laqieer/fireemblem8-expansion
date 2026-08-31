@@ -1492,12 +1492,20 @@ exec /usr/bin/python3 -c \
             line[8:] if line.startswith("        ") else line
             for line in launcher_match.group("body").splitlines()
         )
-        rootless_launcher = launcher_source.replace(
-            '    "--clear-groups",',
-            '    "--keep-groups",',
-            1,
+        rootless_launcher, replacement_count = re.subn(
+            r'(?ms)^candidate_argv = \[\n.*?^    "/bin/bash",',
+            'candidate_argv = [\n    "/bin/bash",',
+            launcher_source,
+            count=1,
         )
-        self.assertNotEqual(rootless_launcher, launcher_source)
+        self.assertEqual(replacement_count, 1)
+        rootless_launcher, replacement_count = re.subn(
+            r"script_stat\.st_uid != 0",
+            "script_stat.st_uid != os.getuid()",
+            rootless_launcher,
+            count=1,
+        )
+        self.assertEqual(replacement_count, 1)
 
         old_script = r'''
 old_close() {
@@ -1573,16 +1581,12 @@ exit 37
             try:
                 result = subprocess.run(
                     [
-                        "/usr/bin/unshare",
-                        "--user",
-                        "--map-root-user",
-                        "--fork",
                         "/usr/bin/python3",
                         "-I",
                         "-S",
                         str(launcher),
-                        "0",
-                        "0",
+                        str(os.getuid()),
+                        str(os.getgid()),
                         str(candidate),
                         "/home/runner/work/_temp",
                     ],
