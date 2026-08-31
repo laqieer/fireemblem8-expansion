@@ -564,6 +564,42 @@ def oracle_evidence_location_violations(text):
     ]
 
 
+def classifier_bootstrap_contract_violations(text):
+    scan_policy_markdown(text)
+    normalized = normalize_policy(text)
+    violations = []
+    bootstrap = normalize_policy(
+        "classifier bootstrap may use the trusted default branch when PR "
+        "base identity is missing or unusable"
+    )
+    incomplete_base = (
+        r"missing (?:empty )?malformed or "
+        r"(?:incoherent|event mismatched) base ref sha with a valid exact "
+        r"pr head"
+    )
+    exact_head_workers = re.compile(
+        incomplete_base
+        + r" .*?(?:all four workers|the four workers) .*?"
+        r"(?:that exact head|that head)"
+    )
+    failed_summary = re.compile(
+        incomplete_base
+        + r" .*?(?:fails normal summary|normal summary audits them and fails)"
+    )
+    no_worker_fallback = normalize_policy(
+        "worker checkouts never use a merge/default fallback"
+    )
+    if bootstrap not in normalized:
+        violations.append("trusted-default-bootstrap")
+    if exact_head_workers.search(normalized) is None:
+        violations.append("incomplete-base-exact-head-workers")
+    if failed_summary.search(normalized) is None:
+        violations.append("incomplete-base-summary-failure")
+    if no_worker_fallback not in normalized:
+        violations.append("worker-merge-default-fallback")
+    return violations
+
+
 def assert_normalized_policy(test_case, surface, text, concepts, forbidden=()):
     normalized = normalize_policy(text)
 
@@ -3012,10 +3048,40 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     )
 
     def test_classifier_bootstrap_and_worker_fallback_are_distinct_in_docs(self):
-        contract = (
-            "classifier bootstrap may use the trusted default branch when PR "
-            "base identity is missing or unusable; worker checkouts never use a "
-            "merge/default fallback"
+        mutations = (
+            (
+                "reverse-bootstrap-authority",
+                "trusted-default-bootstrap",
+                r"classifier bootstrap may use the trusted\s+default branch "
+                r"when PR base\s+identity is missing or unusable",
+                "classifier bootstrap must fail when PR base identity is unusable",
+            ),
+            (
+                "remove-incomplete-base-path",
+                "incomplete-base-exact-head-workers",
+                r"missing,\s+(?:empty,\s+)?malformed,\s+or\s+"
+                r"(?:incoherent|event-mismatched)\s+base ref/SHA",
+                "complete and coherent base ref/SHA",
+            ),
+            (
+                "replace-exact-head",
+                "incomplete-base-exact-head-workers",
+                r"valid exact\s+PR head",
+                "pull-request merge ref",
+            ),
+            (
+                "reverse-summary-failure",
+                "incomplete-base-summary-failure",
+                r"(?:fails normal\s+summary|normal\s+`summary`\s+audits them "
+                r"and fails)",
+                "normal summary succeeds",
+            ),
+            (
+                "allow-worker-fallback",
+                "worker-merge-default-fallback",
+                r"worker checkouts\s+never use a merge/default\s+fallback",
+                "worker checkouts may use a merge/default fallback",
+            ),
         )
         for path in (
             FRAMEWORK_SUPPORT_PATH,
@@ -3024,17 +3090,19 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         ):
             text = path.read_text(encoding="utf-8")
             with self.subTest(path=path):
-                scan_policy_markdown(text)
-                self.assertIn(
-                    normalize_policy(contract),
-                    normalize_policy(text),
+                self.assertEqual(
+                    classifier_bootstrap_contract_violations(text),
+                    [],
                 )
-                changed = text.replace("worker checkouts never", "workers may")
-                self.assertNotEqual(changed, text)
-                self.assertNotIn(
-                normalize_policy(contract),
-                normalize_policy(changed),
-                )
+            for name, expected_violation, pattern, replacement in mutations:
+                with self.subTest(path=path, mutation=name):
+                    changed, count = re.subn(pattern, replacement, text, count=1)
+                    self.assertEqual(count, 1)
+                    self.assertNotEqual(changed, text)
+                    self.assertIn(
+                        expected_violation,
+                        classifier_bootstrap_contract_violations(changed),
+                    )
 
     def test_tester_facing_case_contract_is_integrated(self):
         _, skill = read_skill()
