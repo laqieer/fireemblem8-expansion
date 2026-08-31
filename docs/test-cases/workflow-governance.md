@@ -471,13 +471,13 @@ game behavior needs a compensating change.
 - **Feature / originating issue:** `workflow-governance` /
   [issue #179](https://github.com/laqieer/fireemblem8-expansion/issues/179).
 - **Supported configuration or artifact:** clean source checkout with Python
-  3, Git, the issue #176 workflow-pilot reporter, and candidate-pinned
-  contract/evidence/expected fixtures; no GitHub token, live PR, workflow, ROM,
-  or emulator is required.
+  3, Git, the issue #176 workflow-pilot reporter, candidate-pinned offline
+  transform fixtures, and a mocked live GraphQL adapter; no GitHub token, live
+  PR, workflow, ROM, or emulator is required.
 - **Prerequisites and clean starting state:** start at the repository root
   with `scripts/workflow_pilot/review_family.py`,
   `review_family_complete.json`, `review_family_complete_evidence.json`,
-  `review_family_complete_expected.json`, and their default counterparts
+  their default counterparts, and `review_family_github_adapter.json`
   unchanged. The fixture candidate
   `a8768e4f467c36f8bec60ee823d7d1735d3fcd45` must exist locally.
 
@@ -486,62 +486,71 @@ game behavior needs a compensating change.
 1. Run
    `python3 -m unittest scripts.workflow_pilot.tests.test_review_family -v`.
 2. Run the module twice with explicit `--repository-root`,
-   `--expected-candidate`, `--contract`, `--evidence`, and `--expected` over a
+   `--expected-candidate`, `--contract`, and offline `--evidence` over a
    detached local checkout whose actual `HEAD` is the fixture candidate.
-   Compare its canonical JSON bytes and both expected seals.
-3. Inspect the complete evidence snapshot's immutable PR, actor, review,
+   Compare its canonical JSON bytes and confirm it cannot authorize push or
+   merge.
+3. Mock the production `gh api graphql` adapter with the committed bounded
+   response, execute the real allowlisted positive check, and confirm the
+   private live collector capability authorizes the current clean candidate.
+   Execute the real negative-control command and confirm its receipt fails.
+   Authenticate a receipt with an external test HMAC trust root, then tamper it
+   and require signature failure.
+4. Inspect the complete evidence snapshot's immutable PR, actor, review,
    finding, action, full-SHA, tree/blob, and timestamp identities. Confirm the
    complete contract's one accepted synthetic finding in each
    action, lifecycle, wire, generated, and resource family. Confirm all exact
    siblings and manifest-backed result IDs appear in the global and
    first-round handoffs.
-4. Mutate actual/expected head, origin-bound candidate/tree/blob, expected
-   seals/identity paths, review/finding/action timestamps, actor case/bot
-   aliases, ownership, permission/action, frozen behavior rows, result
-   association, family/member/result/outcome, and every numeric limit. Require
-   each mutation to fail after recomputing the expected seal where needed to
-   reach the semantic validator.
-5. Supply 55 finding IDs against `max_findings_per_review: 10`; exceed the
+5. Mutate actual/live head, origin-bound candidate/tree/source, collector
+   completeness/pagination, review/finding/action timestamps, actor case/bot
+   aliases, ownership, permission/action order, frozen behavior rows, result
+   and execution-receipt association, family/member/result/outcome, and every
+   numeric limit. Reuse one review node as a finding node and require global
+   collision failure. Prove an old `a876...` result cannot support the later
+   `1a6...` candidate.
+6. Supply 55 finding IDs against `max_findings_per_review: 10`; exceed the
    reviewed-file, duration, sibling-per-finding, and sibling-per-handoff
    maxima; and use boolean, negative, zero, or above-cap limits. Require
    failure.
-6. Add six consecutive change-request rounds with dispositions for rounds 3
+7. Add six consecutive change-request rounds with dispositions for rounds 3
    and 6. Confirm both holds lift independently, then remove, reuse, reorder,
    future-date, or change the SHA of each event and require failure. Confirm a
    current third round without disposition remains a push-blocking hold.
-7. Inspect the default fixture's current zero-finding remote Copilot review.
+   Insert a candidate advance between a held review and its disposition and
+   require failure.
+8. Inspect the default fixture's current zero-finding remote Copilot review.
    Remove it and then make it stale; confirm merge remains blocked while the
    remote-review-required gate remains true.
 
 ### Expected result
 
-The complete fixture validates against a real Git head/tree/object database,
-two independent domain-separated expected seals, one normalized disjoint
-read-only pre-review owner, five finding families, 18 evidenced siblings, and
-a bounded first-round handoff. The default fixture allocates no local reviewer
-but still requires and recognizes a clean remote Copilot review on actual
-`HEAD`. The exact five-row behavior inventory maps production, execution,
-representation, stale-state, host, and positive/adversarial/default/runtime
-result identities.
+The complete offline fixture validates transformation semantics against a real
+Git head/tree/object database but cannot authorize delivery. The mocked
+read-only live collector or externally authenticated receipt supplies the
+non-authorable trust capability; a real current-candidate execution receipt
+supplies behavior authority. The exact five-row behavior inventory maps
+production, execution, representation, stale-state, host, and
+positive/adversarial/default/runtime result identities to the closed check.
 
 ### Negative control
 
-The suite rejects a self-asserted/stale head, repository, tree, blob, reviewer,
-outcome, action, order, or timestamp; expected-seal/identity drift; nonexistent
-or unrelated evidence; one omitted family sibling; unknown family/member/
-result/action/state; actor case or bot-suffix aliases; duplicate or overlapping
-owner/finding coverage; any edit, push, comment, review-request, CI-dispatch,
-or merge action; boolean/negative/unbounded or exceeded limits; an incomplete
-behavior inventory; semantic result reassociation with wording unchanged; a
-finding without an exact sweep; an absent/stale current remote review; and a
-missing, reused, out-of-order, future, or wrong-SHA architecture disposition.
+The suite rejects an offline fixture claiming authority; stale live head,
+repository, source, reviewer, outcome, action, order, unresolved state, or
+timestamp; incomplete API pages; invalid receipt HMAC/result/seal/check/SHA;
+nonexistent or unrelated evidence; one omitted family sibling; unknown
+family/member/result/action/state; cross-domain node collisions; actor case or
+bot-suffix aliases; duplicate/overlapping ownership; duplicate/reversed/
+interleaved actions; exceeded limits; semantic result reassociation; an old
+candidate result; absent/stale remote review; premature push; and invalid
+architecture disposition.
 
 ### Interactions and save compatibility
 
-The contract depends on issue #176's hardened Git authority, strict
-JSON/full-SHA and expected-seal patterns, risk/threshold enums, canonical
-representation, lifecycle discipline, and metric namespace. Issue #181 depends
-on this contract. It conflicts with self-asserted or stale evidence,
+The contract depends on issue #176's hardened Git authority, strict JSON/full-
+SHA patterns, risk/threshold enums, canonical representation, lifecycle
+discipline, and metric namespace. Issue #181 depends on this contract. It
+conflicts with self-asserted or stale evidence,
 overlapping review agents, incomplete sibling/result coverage, exceeded
 bounds, and narrow patching through an unresolved architecture hold. Remote
 Copilot review, candidate Build, and post-merge Build remain mandatory. There
@@ -552,8 +561,9 @@ debug/release, or archival impact.
 
 `python3 -m unittest scripts.workflow_pilot.tests.test_review_family -v`
 executes the production evaluator with positive, adversarial, default, stale,
-authority/seal, semantic-association, bound, multi-hold round-progression,
-permission, normalized ownership, and metric-binding reproducers.
+live-collector/adapter, HMAC receipt, real executable pass/fail,
+semantic-association, global node, bound, no-push, multi-hold progression,
+action-order, normalized ownership, and metric-binding reproducers.
 
 `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
 checks that the production review/merge policy retains the bounded read-only
@@ -566,10 +576,9 @@ ownership and automation paths.
 ### Cleanup and limitations
 
 The focused suite automatically removes its ignored detached authority
-worktree. The contract emits local canonical JSON and changes no remote state.
-A real delivery captures canonical GitHub evidence independently before
-running the offline validator; the fixture does not replace that capture or
-grant remote authority. No manual-only criterion applies.
+worktree. The collector uses only read-only `gh api graphql`; checks and
+receipts remain local and no mode changes remote state. Offline fixtures never
+grant delivery authority. No manual-only criterion applies.
 
 Rollback is a normal revert of issue #179. The issue #176 baseline values and
 existing Build, Copilot review, merge, and post-merge gates remain unchanged.

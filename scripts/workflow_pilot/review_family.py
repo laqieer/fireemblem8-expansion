@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
+import os
 import re
 import sys
 from collections import defaultdict
@@ -15,7 +15,7 @@ from typing import Any, Iterable
 from scripts.workflow_pilot import reporter
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 FAMILY_MEMBERS = {
     "action": ("actions", "items", "targets"),
     "generated": ("owners", "outputs", "consumers", "drift-checks"),
@@ -126,29 +126,12 @@ BEHAVIOR_ROW_SPECS = {
 }
 REQUIRED_BEHAVIOR_ROWS = tuple(sorted(BEHAVIOR_ROW_SPECS))
 RESULT_SOURCE_PATH = "scripts/workflow_pilot/tests/test_review_family.py"
-EXPECTED_FACT_PATHS = frozenset(
-    {
-        "actors.ids",
-        "architecture_dispositions.ids",
-        "findings.ids",
-        "identity.candidate_sha",
-        "identity.pull_request",
-        "identity.pull_request_node_id",
-        "identity.repository",
-        "pre_review_actions.ids",
-        "pre_reviews.ids",
-        "remote_reviews.ids",
-        "remote_reviews.numeric_ids",
-        "results.ids",
-    }
-)
+REGISTERED_RESULT_CHECK_IDS = {"review-family-suite"}
 COPILOT_ACTOR = "copilot-pull-request-reviewer"
 ACTOR_LOGIN_RE = re.compile(
     r"^@?[A-Za-z0-9](?:[A-Za-z0-9_-]{0,98}[A-Za-z0-9])?(?:\[bot\])?$"
 )
 ACTOR_BOT_SUFFIX_RE = re.compile(r"(?:\[bot\]|[-_]bot)$", re.IGNORECASE)
-CONTRACT_SEAL_DOMAIN = b"workflow-review-family-contract-v2\0"
-EVIDENCE_SEAL_DOMAIN = b"workflow-review-family-github-evidence-v2\0"
 
 
 def _expect_string_list(
@@ -652,6 +635,175 @@ def _validate_finding_records(value: Any) -> dict[str, dict[str, Any]]:
     return findings
 
 
+def _validate_thread_records(value: Any) -> list[dict[str, Any]]:
+    records = reporter.expect_list(value, "evidence.threads")
+    result = []
+    thread_ids = []
+    finding_ids = []
+    for index, raw in enumerate(records):
+        label = f"evidence.threads[{index}]"
+        thread = reporter.expect_object(raw, label)
+        reporter.expect_keys(
+            thread, label, ("node_id", "finding_id", "is_resolved")
+        )
+        node_id = reporter.expect_string(
+            thread["node_id"], f"{label}.node_id"
+        )
+        finding_id = reporter.expect_string(
+            thread["finding_id"], f"{label}.finding_id"
+        )
+        thread_ids.append(node_id)
+        finding_ids.append(finding_id)
+        result.append(
+            {
+                "node_id": node_id,
+                "finding_id": finding_id,
+                "is_resolved": reporter.expect_bool(
+                    thread["is_resolved"], f"{label}.is_resolved"
+                ),
+            }
+        )
+    reporter.expect_unique(thread_ids, "evidence thread node IDs")
+    reporter.expect_unique(finding_ids, "evidence thread finding IDs")
+    return result
+
+
+def _validate_candidate_advances(value: Any) -> list[dict[str, Any]]:
+    records = reporter.expect_list(value, "evidence.candidate_advances")
+    if not records:
+        raise reporter.PilotDataError(
+            "evidence.candidate_advances must not be empty"
+        )
+    result = []
+    node_ids = []
+    previous = None
+    for index, raw in enumerate(records):
+        label = f"evidence.candidate_advances[{index}]"
+        advance = reporter.expect_object(raw, label)
+        reporter.expect_keys(
+            advance,
+            label,
+            ("node_id", "candidate_sha", "pushed_at", "kind"),
+        )
+        node_id = reporter.expect_string(
+            advance["node_id"], f"{label}.node_id"
+        )
+        pushed_at, pushed = _expect_time(
+            advance["pushed_at"], f"{label}.pushed_at"
+        )
+        if previous is not None and pushed <= previous:
+            raise reporter.PilotDataError(
+                "candidate advances are not strictly chronological"
+            )
+        previous = pushed
+        node_ids.append(node_id)
+        result.append(
+            {
+                "node_id": node_id,
+                "candidate_sha": reporter.expect_sha(
+                    advance["candidate_sha"], f"{label}.candidate_sha"
+                ),
+                "pushed_at": pushed_at,
+                "kind": reporter.expect_enum(
+                    advance["kind"],
+                    {"commit-push", "force-push", "synchronize"},
+                    f"{label}.kind",
+                ),
+            }
+        )
+    reporter.expect_unique(node_ids, "candidate advance node IDs")
+    return result
+
+
+def _validate_execution_receipts(value: Any) -> list[dict[str, Any]]:
+    from scripts.workflow_pilot import github_review
+
+    records = reporter.expect_list(value, "evidence.execution_receipts")
+    result = []
+    receipt_ids = []
+    seals = []
+    for index, raw in enumerate(records):
+        label = f"evidence.execution_receipts[{index}]"
+        receipt = reporter.expect_object(raw, label)
+        reporter.expect_keys(
+            receipt,
+            label,
+            (
+                "id",
+                "check_id",
+                "candidate_sha",
+                "started_at",
+                "completed_at",
+                "exit_code",
+                "result",
+                "output_sha256",
+                "seal",
+            ),
+        )
+        receipt_id = reporter.expect_string(receipt["id"], f"{label}.id")
+        check_id = reporter.expect_enum(
+            receipt["check_id"],
+            set(github_review.REGISTERED_CHECK_COMMANDS),
+            f"{label}.check_id",
+        )
+        started_at, started = _expect_time(
+            receipt["started_at"], f"{label}.started_at"
+        )
+        completed_at, completed = _expect_time(
+            receipt["completed_at"], f"{label}.completed_at"
+        )
+        if completed < started:
+            raise reporter.PilotDataError(
+                f"{label} completed before it started"
+            )
+        exit_code = reporter.expect_int(
+            receipt["exit_code"], f"{label}.exit_code", 0
+        )
+        result_value = reporter.expect_enum(
+            receipt["result"], {"fail", "pass"}, f"{label}.result"
+        )
+        if (exit_code == 0) != (result_value == "pass"):
+            raise reporter.PilotDataError(
+                f"{label} exit code contradicts result"
+            )
+        output_sha256 = reporter.expect_string(
+            receipt["output_sha256"], f"{label}.output_sha256"
+        )
+        seal = reporter.expect_string(receipt["seal"], f"{label}.seal")
+        if reporter.SHA256_RE.fullmatch(output_sha256) is None:
+            raise reporter.PilotDataError(
+                f"{label}.output_sha256 must be a lowercase SHA-256"
+            )
+        if reporter.SHA256_RE.fullmatch(seal) is None:
+            raise reporter.PilotDataError(
+                f"{label}.seal must be a lowercase SHA-256"
+            )
+        if seal != github_review.receipt_seal(receipt):
+            raise reporter.PilotDataError(
+                f"{label} does not match its execution seal"
+            )
+        receipt_ids.append(receipt_id)
+        seals.append(seal)
+        result.append(
+            {
+                "id": receipt_id,
+                "check_id": check_id,
+                "candidate_sha": reporter.expect_sha(
+                    receipt["candidate_sha"], f"{label}.candidate_sha"
+                ),
+                "started_at": started_at,
+                "completed_at": completed_at,
+                "exit_code": exit_code,
+                "result": result_value,
+                "output_sha256": output_sha256,
+                "seal": seal,
+            }
+        )
+    reporter.expect_unique(receipt_ids, "execution receipt IDs")
+    reporter.expect_unique(seals, "execution receipt seals")
+    return result
+
+
 def _validate_disposition_records(value: Any) -> list[dict[str, Any]]:
     records = reporter.expect_list(
         value, "evidence.architecture_dispositions"
@@ -667,7 +819,7 @@ def _validate_disposition_records(value: Any) -> list[dict[str, Any]]:
             event,
             label,
             (
-                "id",
+                "node_id",
                 "held_round",
                 "candidate_sha",
                 "actor_id",
@@ -675,7 +827,9 @@ def _validate_disposition_records(value: Any) -> list[dict[str, Any]]:
                 "occurred_at",
             ),
         )
-        event_id = reporter.expect_string(event["id"], f"{label}.id")
+        event_id = reporter.expect_string(
+            event["node_id"], f"{label}.node_id"
+        )
         held_round = reporter.expect_int(
             event["held_round"], f"{label}.held_round", 3
         )
@@ -687,7 +841,7 @@ def _validate_disposition_records(value: Any) -> list[dict[str, Any]]:
         event_times.append(occurred)
         result.append(
             {
-                "id": event_id,
+                "node_id": event_id,
                 "held_round": held_round,
                 "candidate_sha": reporter.expect_sha(
                     event["candidate_sha"], f"{label}.candidate_sha"
@@ -703,7 +857,9 @@ def _validate_disposition_records(value: Any) -> list[dict[str, Any]]:
                 "occurred_at": occurred_at,
             }
         )
-    reporter.expect_unique(event_ids, "architecture disposition IDs")
+    reporter.expect_unique(
+        event_ids, "architecture disposition node IDs"
+    )
     reporter.expect_unique(held_rounds, "architecture disposition held rounds")
     if (
         event_times != sorted(event_times)
@@ -789,7 +945,10 @@ def validate_evidence(raw_evidence: Any) -> dict[str, Any]:
             "pre_reviews",
             "remote_reviews",
             "findings",
+            "threads",
+            "candidate_advances",
             "architecture_dispositions",
+            "execution_receipts",
             "result_manifest",
         ),
     )
@@ -807,7 +966,11 @@ def validate_evidence(raw_evidence: Any) -> dict[str, Any]:
     reporter.expect_keys(
         source, "evidence.source", ("kind", "complete")
     )
-    if source["kind"] != "github-and-local-review-snapshot":
+    if source["kind"] not in {
+        "authenticated-receipt",
+        "live-gh-api",
+        "offline-transform-fixture",
+    }:
         raise reporter.PilotDataError(
             "evidence.source.kind is not the canonical review snapshot"
         )
@@ -866,135 +1029,20 @@ def validate_evidence(raw_evidence: Any) -> dict[str, Any]:
             evidence["remote_reviews"]
         ),
         "findings": _validate_finding_records(evidence["findings"]),
+        "threads": _validate_thread_records(evidence["threads"]),
+        "candidate_advances": _validate_candidate_advances(
+            evidence["candidate_advances"]
+        ),
         "architecture_dispositions": _validate_disposition_records(
             evidence["architecture_dispositions"]
+        ),
+        "execution_receipts": _validate_execution_receipts(
+            evidence["execution_receipts"]
         ),
         "result_manifest": _validate_result_manifest(
             evidence["result_manifest"]
         ),
     }
-
-
-def contract_semantics_seal(raw_contract: Any) -> str:
-    return hashlib.sha256(
-        CONTRACT_SEAL_DOMAIN + reporter.normalized_json(raw_contract)
-    ).hexdigest()
-
-
-def evidence_semantics_seal(raw_evidence: Any) -> str:
-    return hashlib.sha256(
-        EVIDENCE_SEAL_DOMAIN + reporter.normalized_json(raw_evidence)
-    ).hexdigest()
-
-
-def expected_fact_paths(
-    contract: dict[str, Any],
-    evidence: dict[str, Any],
-) -> dict[str, Any]:
-    return {
-        "actors.ids": sorted(evidence["actors"]),
-        "architecture_dispositions.ids": [
-            event["id"] for event in evidence["architecture_dispositions"]
-        ],
-        "findings.ids": sorted(evidence["findings"]),
-        "identity.candidate_sha": contract["candidate_sha"],
-        "identity.pull_request": contract["pull_request"],
-        "identity.pull_request_node_id": evidence["pull_request"]["node_id"],
-        "identity.repository": contract["repository"],
-        "pre_review_actions.ids": sorted(
-            action["id"]
-            for review in evidence["pre_reviews"]
-            for action in review["actions"]
-        ),
-        "pre_reviews.ids": [
-            review["id"] for review in evidence["pre_reviews"]
-        ],
-        "remote_reviews.ids": [
-            review["node_id"] for review in evidence["remote_reviews"]
-        ],
-        "remote_reviews.numeric_ids": [
-            review["id"] for review in evidence["remote_reviews"]
-        ],
-        "results.ids": sorted(evidence["result_manifest"]),
-    }
-
-
-def expected_facts(
-    raw_contract: Any,
-    raw_evidence: Any,
-) -> dict[str, Any]:
-    contract = validate_contract(raw_contract)
-    evidence = validate_evidence(raw_evidence)
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "contract_seal": contract_semantics_seal(raw_contract),
-        "evidence_seal": evidence_semantics_seal(raw_evidence),
-        "paths": expected_fact_paths(contract, evidence),
-    }
-
-
-def validate_expected(
-    raw_expected: Any,
-    raw_contract: Any,
-    raw_evidence: Any,
-    contract: dict[str, Any],
-    evidence: dict[str, Any],
-) -> dict[str, Any]:
-    expected = reporter.expect_object(raw_expected, "expected")
-    reporter.expect_keys(
-        expected,
-        "expected",
-        ("schema_version", "contract_seal", "evidence_seal", "paths"),
-    )
-    version = reporter.expect_int(
-        expected["schema_version"], "expected.schema_version", 1
-    )
-    if version != SCHEMA_VERSION:
-        raise reporter.PilotDataError(
-            f"expected.schema_version must be {SCHEMA_VERSION}"
-        )
-    contract_seal = reporter.expect_string(
-        expected["contract_seal"], "expected.contract_seal"
-    )
-    evidence_seal = reporter.expect_string(
-        expected["evidence_seal"], "expected.evidence_seal"
-    )
-    if reporter.SHA256_RE.fullmatch(contract_seal) is None:
-        raise reporter.PilotDataError(
-            "expected.contract_seal must be a lowercase SHA-256"
-        )
-    if reporter.SHA256_RE.fullmatch(evidence_seal) is None:
-        raise reporter.PilotDataError(
-            "expected.evidence_seal must be a lowercase SHA-256"
-        )
-    actual_contract_seal = contract_semantics_seal(raw_contract)
-    actual_evidence_seal = evidence_semantics_seal(raw_evidence)
-    if contract_seal != actual_contract_seal:
-        raise reporter.PilotDataError(
-            "contract does not match its independently expected seal"
-        )
-    if evidence_seal != actual_evidence_seal:
-        raise reporter.PilotDataError(
-            "GitHub evidence does not match its independently expected seal"
-        )
-    paths = reporter.expect_object(expected["paths"], "expected.paths")
-    if set(paths) != EXPECTED_FACT_PATHS:
-        raise reporter.PilotDataError(
-            "expected.paths does not exactly cover identity facts "
-            f"(missing={sorted(EXPECTED_FACT_PATHS - set(paths))}, "
-            f"extra={sorted(set(paths) - EXPECTED_FACT_PATHS)})"
-        )
-    actual_paths = expected_fact_paths(contract, evidence)
-    for path in sorted(EXPECTED_FACT_PATHS):
-        if paths[path] != actual_paths[path]:
-            raise reporter.PilotDataError(
-                f"expected fact {path!r} does not match validated evidence"
-            )
-    return {
-        "contract_seal": contract_seal,
-        "evidence_seal": evidence_seal,
-    }
-
 
 def _candidate_blob_oid(
     repository_root: Path,
@@ -1028,6 +1076,109 @@ def _candidate_blob_oid(
             f"candidate evidence path {path!r} is not an exact source blob"
         )
     return oid
+
+
+def _validate_global_node_identities(evidence: dict[str, Any]) -> None:
+    identities = []
+
+    def add(domain: str, value: str) -> None:
+        normalized = reporter.expect_string(
+            value, f"{domain} node identity"
+        ).strip().casefold()
+        identities.append((normalized, domain, value))
+
+    for actor_id in evidence["actors"]:
+        add("actor", actor_id)
+    add("pull-request", evidence["pull_request"]["node_id"])
+    for review in evidence["pre_reviews"]:
+        add("pre-review", review["id"])
+        for action in review["actions"]:
+            add("pre-review-action", action["id"])
+    for review in evidence["remote_reviews"]:
+        add("remote-review", review["node_id"])
+    for finding_id in evidence["findings"]:
+        add("review-finding", finding_id)
+    for thread in evidence["threads"]:
+        add("review-thread", thread["node_id"])
+    for advance in evidence["candidate_advances"]:
+        add("candidate-advance", advance["node_id"])
+    for event in evidence["architecture_dispositions"]:
+        add("architecture-disposition", event["node_id"])
+
+    by_identity: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for normalized, domain, original in identities:
+        by_identity[normalized].append((domain, original))
+    collisions = {
+        identity: records
+        for identity, records in by_identity.items()
+        if len(records) > 1
+    }
+    if collisions:
+        raise reporter.PilotDataError(
+            "global GitHub node identity collision: "
+            + ", ".join(
+                f"{identity}={records}"
+                for identity, records in sorted(collisions.items())
+            )
+        )
+
+
+def _validate_threads(
+    evidence: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    threads = {thread["finding_id"]: thread for thread in evidence["threads"]}
+    if set(threads) != set(evidence["findings"]):
+        raise reporter.PilotDataError(
+            "review threads do not exactly cover finding node IDs "
+            f"(missing={sorted(set(evidence['findings']) - set(threads))}, "
+            f"extra={sorted(set(threads) - set(evidence['findings']))})"
+        )
+    return threads
+
+
+def _validate_candidate_advance_causality(
+    contract: dict[str, Any],
+    evidence: dict[str, Any],
+    authority: dict[str, Any],
+) -> None:
+    advances = evidence["candidate_advances"]
+    if advances[-1]["candidate_sha"] != authority["head"]:
+        raise reporter.PilotDataError(
+            "candidate advance history does not terminate at actual Git HEAD"
+        )
+    observed_candidates = {
+        review["candidate_sha"] for review in evidence["pre_reviews"]
+    }
+    observed_candidates.update(
+        review["candidate_sha"] for review in evidence["remote_reviews"]
+    )
+    observed_candidates.update(
+        finding["candidate_sha"]
+        for finding in evidence["findings"].values()
+    )
+    observed_candidates.add(contract["candidate_sha"])
+    advanced_candidates = {
+        advance["candidate_sha"] for advance in advances
+    }
+    if not observed_candidates <= advanced_candidates:
+        raise reporter.PilotDataError(
+            "candidate advance history omits reviewed candidates "
+            f"{sorted(observed_candidates - advanced_candidates)}"
+        )
+    for advance in advances:
+        pushed = reporter.parse_time(
+            advance["pushed_at"],
+            f"candidate advance {advance['node_id']}.pushed_at",
+        )
+        assert pushed is not None
+        committed = authority["commits"][advance["candidate_sha"]][
+            "committed_at"
+        ]
+        if pushed < committed or pushed > evidence["captured"]:
+            raise reporter.PilotDataError(
+                f"candidate advance {advance['node_id']} violates "
+                "commit/capture causality"
+            )
 
 
 def validate_repository_authority(
@@ -1077,6 +1228,14 @@ def validate_repository_authority(
         *(
             event["candidate_sha"]
             for event in evidence["architecture_dispositions"]
+        ),
+        *(
+            advance["candidate_sha"]
+            for advance in evidence["candidate_advances"]
+        ),
+        *(
+            receipt["candidate_sha"]
+            for receipt in evidence["execution_receipts"]
         ),
         *(
             result["candidate_sha"]
@@ -1197,11 +1356,10 @@ def _validate_review_causality(
                 "adversarial pre-review permissions must be read-only"
             )
         action_kinds = [action["kind"] for action in review["actions"]]
-        if set(action_kinds) != set(READ_ONLY_ACTIONS) or len(action_kinds) != len(
-            READ_ONLY_ACTIONS
-        ):
+        if action_kinds != list(READ_ONLY_ACTIONS):
             raise reporter.PilotDataError(
-                "adversarial pre-review actions must be the exact read/report pair"
+                "adversarial pre-review actions must be ordered exactly "
+                "read-candidate then emit-local-report"
             )
         limits = contract["limits"]
         if len(review["reviewed_files"]) > limits["max_reviewed_files"]:
@@ -1405,7 +1563,12 @@ def _validate_findings_and_sweeps(
                         f"result {result_id!r} is unrelated to "
                         f"{family}/{member}/{finding['candidate_sha']}"
                     )
-            normalized_siblings.append(sibling)
+            normalized_siblings.append(
+                {
+                    **sibling,
+                    "registered_check_id": "review-family-suite",
+                }
+            )
         sweeps[finding_id] = {
             "finding_id": finding_id,
             "candidate_sha": finding["candidate_sha"],
@@ -1471,6 +1634,7 @@ def _validate_behavior_evidence(
             {
                 "id": row_id,
                 **BEHAVIOR_ROW_SPECS[row_id],
+                "registered_check_id": "review-family-suite",
                 "evidence_result_ids": row["evidence_result_ids"],
             }
         )
@@ -1480,6 +1644,65 @@ def _validate_behavior_evidence(
             f"(unused={sorted(set(evidence['result_manifest']) - referenced_results)})"
         )
     return sorted(rows, key=lambda row: row["id"])
+
+
+def _validate_executable_results(
+    contract: dict[str, Any],
+    evidence: dict[str, Any],
+    trusted_receipt_seals: frozenset[str],
+    authority: dict[str, Any],
+) -> tuple[bool, list[str]]:
+    receipts_by_check: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for receipt in evidence["execution_receipts"]:
+        receipts_by_check[receipt["check_id"]].append(receipt)
+    required_checks = set(REGISTERED_RESULT_CHECK_IDS)
+    accepted_receipts = []
+    for check_id in sorted(required_checks):
+        receipts = receipts_by_check.get(check_id, [])
+        if len(receipts) != 1:
+            raise reporter.PilotDataError(
+                f"result check {check_id!r} must have exactly one execution receipt"
+            )
+        receipt = receipts[0]
+        if (
+            receipt["candidate_sha"] != contract["candidate_sha"]
+            or receipt["result"] != "pass"
+            or receipt["exit_code"] != 0
+        ):
+            raise reporter.PilotDataError(
+                f"result check {check_id!r} lacks a passing current-candidate receipt"
+            )
+        completed = reporter.parse_time(
+            receipt["completed_at"],
+            f"execution receipt {receipt['id']}.completed_at",
+        )
+        assert completed is not None
+        started = reporter.parse_time(
+            receipt["started_at"],
+            f"execution receipt {receipt['id']}.started_at",
+        )
+        assert started is not None
+        committed = authority["commits"][receipt["candidate_sha"]][
+            "committed_at"
+        ]
+        if started < committed:
+            raise reporter.PilotDataError(
+                f"execution receipt {receipt['id']} predates its candidate"
+            )
+        if completed > evidence["captured"]:
+            raise reporter.PilotDataError(
+                f"execution receipt {receipt['id']} follows evidence capture"
+            )
+        accepted_receipts.append(receipt["seal"])
+    extra_checks = set(receipts_by_check) - required_checks
+    if extra_checks:
+        raise reporter.PilotDataError(
+            f"execution receipts contain unrelated checks {sorted(extra_checks)}"
+        )
+    trusted = bool(accepted_receipts) and all(
+        seal in trusted_receipt_seals for seal in accepted_receipts
+    )
+    return trusted, accepted_receipts
 
 
 def _consume_disposition(
@@ -1497,13 +1720,14 @@ def _consume_disposition(
         raise reporter.PilotDataError(
             "architecture disposition does not match the exact held round/SHA"
         )
-    _require_actor(event["actor_id"], actors, f"disposition {event['id']}")
+    event_id = event["node_id"]
+    _require_actor(event["actor_id"], actors, f"disposition {event_id}")
     if event["actor_id"] == pre_owner_id:
         raise reporter.PilotDataError(
             "read-only pre-review owner cannot dispose architecture holds"
         )
     occurred = reporter.parse_time(
-        event["occurred_at"], f"disposition {event['id']}.occurred_at"
+        event["occurred_at"], f"disposition {event_id}.occurred_at"
     )
     held_at = reporter.parse_time(
         hold["submitted_at"], f"held review {hold['round']}.submitted_at"
@@ -1512,6 +1736,21 @@ def _consume_disposition(
     if occurred <= held_at:
         raise reporter.PilotDataError(
             "architecture disposition does not follow its held review"
+        )
+    premature_pushes = [
+        advance["node_id"]
+        for advance in evidence["candidate_advances"]
+        if held_at
+        < reporter.parse_time(
+            advance["pushed_at"],
+            f"candidate advance {advance['node_id']}.pushed_at",
+        )
+        < occurred
+    ]
+    if premature_pushes:
+        raise reporter.PilotDataError(
+            "candidate push occurred before required architecture disposition: "
+            + ", ".join(premature_pushes)
         )
     if next_review is not None:
         next_at = reporter.parse_time(
@@ -1557,7 +1796,7 @@ def _progress_rounds(
                 evidence["actors"],
                 pre_owner_id,
             )
-            consumed.append(event["id"])
+            consumed.append(event["node_id"])
             disposition_index += 1
             pending_hold = None
             consecutive = 0
@@ -1606,9 +1845,29 @@ def _progress_rounds(
             evidence["actors"],
             pre_owner_id,
         )
-        consumed.append(event["id"])
+        consumed.append(event["node_id"])
         disposition_index += 1
         pending_hold = None
+    if pending_hold is not None:
+        held_at = reporter.parse_time(
+            pending_hold["submitted_at"],
+            f"held review {pending_hold['round']}.submitted_at",
+        )
+        assert held_at is not None
+        premature = [
+            advance["node_id"]
+            for advance in evidence["candidate_advances"]
+            if reporter.parse_time(
+                advance["pushed_at"],
+                f"candidate advance {advance['node_id']}.pushed_at",
+            )
+            > held_at
+        ]
+        if premature:
+            raise reporter.PilotDataError(
+                "candidate push occurred while architecture hold was unresolved: "
+                + ", ".join(premature)
+            )
     if disposition_index != len(dispositions):
         raise reporter.PilotDataError(
             "architecture disposition is extra, reused, or not causal"
@@ -1649,45 +1908,78 @@ def _validate_global_timestamps(
             )
     for event in evidence["architecture_dispositions"]:
         occurred = reporter.parse_time(
-            event["occurred_at"], f"disposition {event['id']}.occurred_at"
+            event["occurred_at"],
+            f"disposition {event['node_id']}.occurred_at",
         )
         assert occurred is not None
         if occurred > captured:
             raise reporter.PilotDataError(
-                f"architecture disposition {event['id']} follows evidence capture"
+                f"architecture disposition {event['node_id']} "
+                "follows evidence capture"
+            )
+    for advance in evidence["candidate_advances"]:
+        pushed = reporter.parse_time(
+            advance["pushed_at"],
+            f"candidate advance {advance['node_id']}.pushed_at",
+        )
+        assert pushed is not None
+        if pushed > captured:
+            raise reporter.PilotDataError(
+                f"candidate advance {advance['node_id']} follows evidence capture"
             )
 
 
 def build_report(
     raw_contract: Any,
-    raw_evidence: Any,
-    raw_expected: Any,
+    evidence_input: Any,
     repository_root: Path,
     expected_candidate: str,
 ) -> dict[str, Any]:
-    """Validate independently sealed evidence against the actual Git candidate."""
+    """Validate live-capability or offline transform evidence against Git."""
+    from scripts.workflow_pilot import github_review
+
+    raw_evidence, live_trusted, trusted_receipt_seals = (
+        github_review.unwrap_evidence(evidence_input)
+    )
     contract = validate_contract(raw_contract)
     evidence = validate_evidence(raw_evidence)
-    expected = validate_expected(
-        raw_expected,
-        raw_contract,
-        raw_evidence,
-        contract,
-        evidence,
-    )
+    if (
+        evidence["source"]["kind"]
+        in {"authenticated-receipt", "live-gh-api"}
+        and not live_trusted
+    ):
+        raise reporter.PilotDataError(
+            "authoritative evidence lacks collector/receipt trust capability"
+        )
+    if (
+        live_trusted
+        and evidence["source"]["kind"]
+        not in {"authenticated-receipt", "live-gh-api"}
+    ):
+        raise reporter.PilotDataError(
+            "collector trust capability cannot authenticate offline evidence"
+        )
     authority = validate_repository_authority(
         repository_root,
         expected_candidate,
         contract,
         evidence,
     )
+    _validate_global_node_identities(evidence)
     _validate_global_timestamps(evidence)
+    threads = _validate_threads(evidence)
+    _validate_candidate_advance_causality(contract, evidence, authority)
     actors = _validate_review_causality(contract, evidence, authority)
     sweeps, family_counts, referenced_results = _validate_findings_and_sweeps(
         contract, evidence
     )
     behavior_rows = _validate_behavior_evidence(
         contract, evidence, referenced_results
+    )
+    executable_trusted, execution_receipt_seals = (
+        _validate_executable_results(
+            contract, evidence, trusted_receipt_seals, authority
+        )
     )
     handoffs, architecture_hold, consumed_dispositions = _progress_rounds(
         contract, evidence, sweeps
@@ -1705,6 +1997,10 @@ def build_report(
         and latest_review["outcome"] == "clean"
         and not latest_review["finding_ids"]
     )
+    unresolved_findings = sum(
+        not thread["is_resolved"] for thread in threads.values()
+    )
+    delivery_trusted = live_trusted and executable_trusted
     return {
         "schema_version": SCHEMA_VERSION,
         "identity": {
@@ -1714,7 +2010,19 @@ def build_report(
             "candidate_sha": authority["head"],
             "candidate_tree_oid": authority["tree_oid"],
         },
-        "seals": expected,
+        "provenance": {
+            "source": evidence["source"]["kind"],
+            "authoritative": live_trusted,
+            "live_authoritative": bool(
+                live_trusted and evidence["source"]["kind"] == "live-gh-api"
+            ),
+            "authenticated_receipt": bool(
+                live_trusted
+                and evidence["source"]["kind"] == "authenticated-receipt"
+            ),
+            "executable_evidence_trusted": executable_trusted,
+            "execution_receipt_seals": execution_receipt_seals,
+        },
         "trigger": {
             **contract["trigger"],
             "adversarial_pre_review_required": contract["pre_review_required"],
@@ -1736,6 +2044,7 @@ def build_report(
         },
         "findings": {
             "count": len(evidence["findings"]),
+            "current_unresolved": unresolved_findings,
             "by_family": family_counts,
             "handoffs": [sweeps[finding_id] for finding_id in sorted(sweeps)],
         },
@@ -1754,12 +2063,20 @@ def build_report(
             "consumed_disposition_ids": consumed_dispositions,
         },
         "gates": {
-            "push_allowed": architecture_hold is None,
+            "push_allowed": bool(
+                delivery_trusted and architecture_hold is None
+            ),
+            "trusted_push_allowed": bool(
+                delivery_trusted and architecture_hold is None
+            ),
             "remote_copilot_review_required": True,
             "current_candidate_reviewed": current_candidate_reviewed,
             "current_candidate_clean": current_candidate_clean,
             "merge_allowed": bool(
-                current_candidate_clean and architecture_hold is None
+                delivery_trusted
+                and current_candidate_clean
+                and unresolved_findings == 0
+                and architecture_hold is None
             ),
         },
         "metric_bindings": {
@@ -1779,18 +2096,50 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--repository-root", type=Path, required=True)
     parser.add_argument("--expected-candidate", required=True)
     parser.add_argument("--contract", type=Path, required=True)
-    parser.add_argument("--evidence", type=Path, required=True)
-    parser.add_argument("--expected", type=Path, required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--live", action="store_true")
+    source.add_argument("--evidence", type=Path)
+    source.add_argument("--receipt", type=Path)
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
+        from scripts.workflow_pilot import github_review
+
+        contract = reporter.load_json(args.contract)
+        if args.live:
+            receipt = github_review.run_registered_check(
+                args.repository_root,
+                args.expected_candidate,
+                "review-family-suite",
+            )
+            evidence = github_review.collect_live_evidence(
+                contract,
+                args.repository_root,
+                args.expected_candidate,
+                [receipt],
+            )
+        elif args.receipt is not None:
+            key_id = os.environ.get("WORKFLOW_REVIEW_RECEIPT_KEY_ID")
+            key = os.environ.get("WORKFLOW_REVIEW_RECEIPT_HMAC_KEY")
+            if not key_id or not key:
+                raise reporter.PilotDataError(
+                    "authenticated receipt requires external "
+                    "WORKFLOW_REVIEW_RECEIPT_KEY_ID and "
+                    "WORKFLOW_REVIEW_RECEIPT_HMAC_KEY"
+                )
+            evidence = github_review.authenticate_evidence_receipt(
+                reporter.load_json(args.receipt),
+                key_id,
+                key.encode("utf-8"),
+            )
+        else:
+            evidence = reporter.load_json(args.evidence)
         report = build_report(
-            reporter.load_json(args.contract),
-            reporter.load_json(args.evidence),
-            reporter.load_json(args.expected),
+            contract,
+            evidence,
             args.repository_root,
             args.expected_candidate,
         )

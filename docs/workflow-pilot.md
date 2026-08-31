@@ -256,8 +256,7 @@ python3 -m scripts.workflow_pilot.review_family \
   --repository-root <exact-candidate-checkout> \
   --expected-candidate <full-head-sha> \
   --contract <candidate-contract.json> \
-  --evidence <canonical-github-evidence.json> \
-  --expected <independent-expected-facts.json>
+  --live
 ```
 
 The module reuses `PilotDataError`, strict JSON loading, full-SHA validation,
@@ -270,14 +269,24 @@ tree ID, reviewed paths, evidence paths, and blob IDs are re-derived from Git.
 A contract or snapshot claiming an invented or stale candidate cannot make
 itself authoritative.
 
-The separate canonical evidence snapshot records immutable PR/review/finding/
-actor/action/disposition IDs, full candidate SHAs, and RFC 3339 UTC
-timestamps. A third input stores the exact identity paths plus independent
-domain-separated SHA-256 seals of the contract and evidence, following the
-issue #176 expected-facts pattern. Unknown/missing paths or simultaneous
-contract/evidence mutation without the independent expected facts fails.
-There is no network access or remote mutation. The committed complete/default
-fixtures are pinned to historical candidate
+Production `--live` uses a closed read-only `/usr/bin/gh api graphql` adapter
+at validation time. It obtains the PR node/current head/author, bounded complete
+commit and force-push history, Copilot review and finding nodes, review threads
+and unresolved state, actor IDs/logins, outcomes, timestamps, repository
+permission, and typed disposition comments. Any paginated remainder fails
+instead of silently truncating authority. The collector returns a private
+in-process trust capability that contract JSON cannot construct. An alternative
+immutable receipt is accepted only after HMAC-SHA-256 authentication with the
+external `WORKFLOW_REVIEW_RECEIPT_KEY_ID` and
+`WORKFLOW_REVIEW_RECEIPT_HMAC_KEY` trust root; the key and trusted ID never
+come from the contract or receipt.
+
+`--evidence <fixture.json>` is explicitly an offline transformation mode. Even
+a fully coherent fixture with a clean remote review always reports
+`authoritative: false`, `trusted_push_allowed: false`, and
+`merge_allowed: false`. Recomputable expected JSON files are not provenance and
+are not consumed. There is no remote mutation in any mode. The committed
+complete/default adapter and transform fixtures are pinned to historical candidate
 `a8768e4f467c36f8bec60ee823d7d1735d3fcd45`; tests create a bounded detached
 local authority worktree at that commit. These are deterministic inputs, not a
 mutable delivery ledger or self-reported current GitHub state.
@@ -297,17 +306,22 @@ owned by the module:
 | `remote-review-metrics` | Current clean Copilot review and #176 metric bindings |
 
 Missing, duplicate, or invented rows fail. Each positive, adversarial, default,
-and runtime result ID must resolve through the sealed result manifest to an
-existing blob in the candidate tree and to the same row, evidence class,
-candidate SHA, family/member (when applicable), and closed assertion ID.
-Unused or reused results fail. Swapping two IDs while retaining all descriptive
-wording therefore fails semantically.
+and runtime result ID resolves to the closed `review-family-suite` check,
+candidate SHA, same row, evidence class, family/member (when applicable), and
+closed assertion ID. The allowlisted runner requires a clean exact-head
+worktree and executes fixed argv with isolated environment; it records check
+ID, candidate, start/end, exit/result, output digest, and a domain-separated
+receipt seal. Only live-collector receipts or an externally authenticated
+receipt can authorize delivery. Missing, failed, wrong-check, stale-SHA, or
+wrong-result receipts fail. Unused/reused results and swapped IDs with unchanged
+wording fail semantically. The old `a876...` result cannot prove a later
+`1a6...` authority-causality row.
 
 | Required mapping | Producer / consumer contract |
 | --- | --- |
 | Production predicate and producer | Closed module row specification plus sealed Git/GitHub evidence |
 | Executor and consumer | Authority/family/round validator to trusted delivery coordinator |
-| Representation | Candidate contract, canonical evidence snapshot, expected seals, canonical report |
+| Representation | Candidate contract, live collection or authenticated receipt, execution receipts, canonical report |
 | Stale-state revalidation | Actual HEAD, commit ancestry/time, tree/blob membership, event/review/finding SHAs |
 | Host validation | Authority, seal, actor, bound, family, lifecycle, and metric reproducers |
 | Positive / adversarial / default / runtime evidence | Exact result IDs with candidate blob and semantic row/assertion association |
@@ -319,12 +333,13 @@ separate from the implementer receives bounded files, minutes, findings, and
 sibling results. Actor logins are case-normalized and remove `[bot]`, `-bot`,
 and `_bot` aliases before role comparison; duplicate normalized actors or
 overlap with any remote reviewer fail even when raw IDs or spelling differ.
-Its only permission is `contents:read`; its only actions are reading the exact
-candidate and emitting the local report. Every action has an immutable ID and
-time inside the authoritative start/completion interval. Edit, push, comment,
-review request, CI dispatch, and merge actions fail. A second, duplicate, or
-overlapping owner also fails. A low-risk/non-large default contract allocates
-no pre-review owner.
+Its only permission is `contents:read`; its action sequence is exactly one
+`read-candidate` followed by one later `emit-local-report`. Every action has a
+globally unique immutable node ID and time inside the authoritative
+start/completion interval. Duplicates, reversal, same-time reporting, or an
+interleaved action fail, as do edit, push, comment, review request, CI dispatch,
+and merge. A second, duplicate, or overlapping owner also fails. A
+low-risk/non-large default contract allocates no pre-review owner.
 
 The five exact positive integer limits are maximum duration, findings per
 review, reviewed files, siblings per finding, and siblings per handoff.
@@ -367,6 +382,14 @@ review. Each event is consumed exactly once. A missing disposition blocks a
 later round; duplicate/reused, out-of-order, mismatched, or future events fail.
 After a valid disposition the consecutive counter restarts, so rounds 3 and 6
 can independently hold and lift in one evidence history.
+
+The collector's bounded commit/force-push history must terminate at the live
+PR head and cover every reviewed candidate. Each push has a globally unique
+node ID, SHA, kind, and GitHub push time. A push after a held review and before
+its required disposition is a hard failure, even if a later disposition or
+review exists. PR, actor, review, finding, thread, push, local review/action,
+and disposition node IDs share one case-normalized global uniqueness domain;
+a review and finding cannot reuse the same node ID.
 
 `remote_copilot_review_required` is always true. A zero-finding local
 pre-review, no accepted finding, or an architecture disposition cannot satisfy

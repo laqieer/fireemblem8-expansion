@@ -1,8 +1,8 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "repository": "laqieer/fireemblem8-expansion",
   "source": {
-    "kind": "github-and-local-review-snapshot",
+    "kind": "offline-transform-fixture",
     "complete": true
   },
   "captured_at": "2026-08-31T03:13:00Z",
@@ -87,7 +87,35 @@
     {"node_id": "FINDING_RESOURCE_001", "review_id": "REMOTE_REVIEW_001", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "created_at": "2026-08-31T03:11:04Z", "family": "resource"},
     {"node_id": "FINDING_WIRE_001", "review_id": "REMOTE_REVIEW_001", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "created_at": "2026-08-31T03:11:05Z", "family": "wire"}
   ],
+  "threads": [
+    {"node_id": "THREAD_ACTION_001", "finding_id": "FINDING_ACTION_001", "is_resolved": false},
+    {"node_id": "THREAD_GENERATED_001", "finding_id": "FINDING_GENERATED_001", "is_resolved": false},
+    {"node_id": "THREAD_LIFECYCLE_001", "finding_id": "FINDING_LIFECYCLE_001", "is_resolved": false},
+    {"node_id": "THREAD_RESOURCE_001", "finding_id": "FINDING_RESOURCE_001", "is_resolved": false},
+    {"node_id": "THREAD_WIRE_001", "finding_id": "FINDING_WIRE_001", "is_resolved": false}
+  ],
+  "candidate_advances": [
+    {
+      "node_id": "ADVANCE_001",
+      "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
+      "pushed_at": "2026-08-31T03:08:05Z",
+      "kind": "commit-push"
+    }
+  ],
   "architecture_dispositions": [],
+  "execution_receipts": [
+    {
+      "id": "CHECK:review-family-suite:a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
+      "check_id": "review-family-suite",
+      "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
+      "started_at": "2026-08-31T03:10:10Z",
+      "completed_at": "2026-08-31T03:10:20Z",
+      "exit_code": 0,
+      "result": "pass",
+      "output_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "seal": "a95cf7a050adcf9aac8d4af376640805b7fa76832c23b9b5ed83c2303ea0d761"
+    }
+  ],
   "result_manifest": [
     {"id": "result-actor-permission-bounds-positive", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "actor-permission-bounds", "evidence_class": "positive", "family": null, "member": null, "assertion_id": "actor-permission-bounds:positive"},
     {"id": "result-actor-permission-bounds-adversarial", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "actor-permission-bounds", "evidence_class": "adversarial", "family": null, "member": null, "assertion_id": "actor-permission-bounds:adversarial"},

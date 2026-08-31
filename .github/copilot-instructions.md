@@ -106,11 +106,14 @@ bounded family handoffs; a third consecutive change-request round blocks
 another push on an architecture/decomposition hold until one ordered
 timestamped disposition consumes the exact round/SHA; later progression can
 hold again. Bind the contract to actual Git `HEAD`/tree/blobs plus independently
-expected seals over canonical GitHub actor/action/review/finding/disposition
-evidence. Normalize actor aliases, enforce all declared maxima against observed
-counts/duration, and reject unrelated result IDs. Remote Copilot review remains
-mandatory for the current exact candidate even after a zero-finding local
-review.
+trusted read-only live GitHub collection or an externally authenticated
+immutable receipt; offline fixtures cannot authorize delivery. Require passing
+same-candidate receipts from the closed check runner, exact read-then-report
+action order, global node-ID uniqueness, complete candidate-advance history,
+and no push before a held round's disposition. Normalize actor aliases, enforce
+all declared maxima against observed counts/duration, and reject unrelated
+result IDs. Remote Copilot review remains mandatory for the current exact
+candidate even after a zero-finding local review.
 
 CI waiting must not occupy a reasoning subagent. The orchestrator that
 dispatches a workflow records its exact SHA and run ID, then returns

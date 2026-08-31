@@ -1,0 +1,80 @@
+{
+  "data": {
+    "viewer": {
+      "id": "ACTOR_COLLECTOR_001",
+      "login": "fresh-collector"
+    },
+    "repository": {
+      "viewerPermission": "READ",
+      "pullRequest": {
+        "id": "PR_LIVE_179",
+        "number": 179,
+        "createdAt": "2026-08-31T03:35:00Z",
+        "headRefOid": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
+        "author": {
+          "id": "ACTOR_IMPLEMENTER_001",
+          "login": "implementation-agent"
+        },
+        "commits": {
+          "pageInfo": {
+            "hasNextPage": false
+          },
+          "nodes": [
+            {
+              "commit": {
+                "id": "ADVANCE_LIVE_001",
+                "oid": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
+                "pushedDate": "2026-08-31T03:35:10Z",
+                "committedDate": "2026-08-31T03:08:04Z"
+              }
+            }
+          ]
+        },
+        "timelineItems": {
+          "pageInfo": {
+            "hasNextPage": false
+          },
+          "nodes": []
+        },
+        "reviews": {
+          "pageInfo": {
+            "hasNextPage": false
+          },
+          "nodes": [
+            {
+              "id": "REMOTE_REVIEW_LIVE_001",
+              "databaseId": 3001,
+              "state": "COMMENTED",
+              "submittedAt": "2026-08-31T03:37:00Z",
+              "commit": {
+                "oid": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45"
+              },
+              "author": {
+                "id": "ACTOR_COPILOT_001",
+                "login": "copilot-pull-request-reviewer[bot]"
+              },
+              "comments": {
+                "pageInfo": {
+                  "hasNextPage": false
+                },
+                "nodes": []
+              }
+            }
+          ]
+        },
+        "reviewThreads": {
+          "pageInfo": {
+            "hasNextPage": false
+          },
+          "nodes": []
+        },
+        "comments": {
+          "pageInfo": {
+            "hasNextPage": false
+          },
+          "nodes": []
+        }
+      }
+    }
+  }
+}
