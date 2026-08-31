@@ -264,15 +264,6 @@ def _resolve_repository_root(repository_root):
         raise ValueError(
             f"gate repository must be the exact Git top level {target_root!r}"
         )
-    workspace = os.environ.get("GITHUB_WORKSPACE")
-    if workspace is None:
-        return target_root
-    workspace_root = _git_top_level(os.path.abspath(workspace))
-    if workspace_root != target_root:
-        raise ValueError(
-            "GITHUB_WORKSPACE and the target root identify different Git "
-            "repositories"
-        )
     return target_root
 
 

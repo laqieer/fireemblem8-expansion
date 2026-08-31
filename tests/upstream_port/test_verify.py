@@ -760,7 +760,7 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
                     os.path.join(REPO_ROOT, "tests")
                 )
 
-    def test_workspace_and_target_must_identify_the_same_checkout(self):
+    def test_ambient_workspace_does_not_override_explicit_target(self):
         with (
             mock.patch.dict(
                 os.environ,
@@ -770,11 +770,13 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
             mock.patch.object(
                 verify_mod,
                 "_git_top_level",
-                side_effect=[REPO_ROOT, "/different/repository"],
+                return_value=REPO_ROOT,
             ),
-            self.assertRaisesRegex(ValueError, "different Git repositories"),
         ):
-            verify_mod._resolve_repository_root(REPO_ROOT)
+            self.assertEqual(
+                verify_mod._resolve_repository_root(REPO_ROOT),
+                REPO_ROOT,
+            )
 
     def test_baseline_gate_expands_workspace_and_redirects_without_a_shell(self):
         seen = []

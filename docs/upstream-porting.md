@@ -194,12 +194,14 @@ run at one resolved target repository root. Launch the source-tree module from
 this source repository root. Implicit selection targets that source checkout;
 `--repo <target-root>` may select another checkout while the module still
 launches from its source root. Nested/external module discovery is not an
-installed or supported interface. In CI, `GITHUB_WORKSPACE` must resolve to
-the selected target. That one root is both the subprocess working directory
-and the pilot baseline's `--repository-root`; there is no per-step
-working-directory override. Before either a dry run or execution, the source
-tool parses the target checkout's Build workflow as bounded UTF-8 data without
-importing or executing target Python. The four reviewed worker jobs must have
+installed or supported interface. Local verification ignores ambient
+`GITHUB_WORKSPACE` and expands the mirrored workspace argument to the selected
+target; the committed CI workflow passes its runner workspace directly. That
+selected root is both the subprocess working directory and the pilot
+baseline's `--repository-root`; there is no per-step working-directory
+override. Before either a dry run or execution, the source tool parses the
+target checkout's Build workflow as bounded UTF-8 data without importing or
+executing target Python. The four reviewed worker jobs must have
 the exact same complete ordered step sequences as the source: step count,
 unique required names, setup-versus-gate role, action and immutable SHA, run
 argv, `env`/`with` mappings, direct fields, and no working-directory override.
