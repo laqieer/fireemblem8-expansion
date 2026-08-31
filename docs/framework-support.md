@@ -43,6 +43,13 @@ validated event-specific fallback SHA, it starts no worker or publisher. The
 classifier bootstrap may use the trusted
 default branch when PR base identity is missing or unusable; worker checkouts
 never use a merge/default fallback.
+Base refs are bounded to 1024 UTF-8 bytes and must satisfy full
+`git check-ref-format refs/heads/<base.ref>` semantics; `--branch` shorthand
+is not used, and lone `@` is rejected. Python applies the equivalent grammar
+without a subprocess, while trusted bootstrap quotes the full ref to system
+Git and never checks it out. Invalid base refs are incomplete identity: a
+valid exact head runs all four workers and fails summary; an invalid head runs
+none.
 Trusted event setup accepts identity only as an exact lowercase 40-hex SHA. A
 PR also requires its numeric event number and exact
 `refs/pull/<number>/merge` ref; a push requires `refs/heads/master` and equal

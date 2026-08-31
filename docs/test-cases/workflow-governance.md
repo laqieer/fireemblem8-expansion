@@ -325,6 +325,12 @@ Missing/stale successful output cannot select a fallback ref.
 An accepted base retarget requires valid, differing previous/current ref and
 SHA pairs; ref-only, SHA-only, same, missing, extra, or spoofed transition
 records remain full fail-closed edits and never metadata suppression.
+Base refs are bounded to 1024 UTF-8 bytes and must satisfy full
+`git check-ref-format refs/heads/<base.ref>` semantics; `--branch` shorthand
+is not used, and lone `@` is rejected. Python applies the equivalent grammar
+without a subprocess; the trusted bootstrap quotes the full ref to system Git
+and never checks it out. Invalid base refs are incomplete identity: a valid
+exact head runs all four workers and fails summary; an invalid head runs none.
 The classifier executes from the verified current PR base SHA; a missing base
 uses the trusted default branch only to report invalid identity, while a base
 without the new classifier uses the explicit strict bootstrap. The current
@@ -355,6 +361,8 @@ The preserved parsed pre-fix workflow fixture selects `host-tests`, `build`,
 despite its unchanged head SHA. The focused suites also reject metadata
 suppression for same-value/spoofed/missing-current/extra-key/nested metadata
 records, invalid title/body values, malformed `changes`, missing PR identity,
+body/title metadata with whitespace, control, forbidden-character, dot,
+slash, `.lock`, `@{`, lone-`@`, or oversized base refs,
 valid-head events with malformed or mismatched base components that skip
 workers or produce a successful summary,
 duplicate JSON keys, `NaN`/positive or negative `Infinity`, positive/negative

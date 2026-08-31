@@ -622,6 +622,12 @@ def classifier_bootstrap_contract_violations(text):
             "canonical successful event-identity context",
             "missing, failed, skipped, renamed, duplicate, or unknown",
         ),
+        "base-ref-git-grammar": (
+            "1024 UTF-8 bytes",
+            "git check-ref-format refs/heads/<base.ref>",
+            "--branch shorthand",
+            "lone @",
+        ),
     }
     if bootstrap not in normalized:
         violations.append("trusted-default-bootstrap")
@@ -3165,6 +3171,18 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "candidate-common-identity",
                 r"canonical successful\s+`event-identity`\s+context",
                 "optional event-identity context",
+            ),
+            (
+                "remove-base-ref-bound",
+                "base-ref-git-grammar",
+                r"bounded to 1024 UTF-8 bytes",
+                "accepted at any size",
+            ),
+            (
+                "replace-full-ref-oracle",
+                "base-ref-git-grammar",
+                r"`git check-ref-format refs/heads/<base\.ref>`",
+                "`git check-ref-format --branch <base.ref>`",
             ),
         )
         for path in (

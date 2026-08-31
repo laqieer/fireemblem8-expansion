@@ -1,4 +1,172 @@
 {
+  "base_ref_validation_cases": [
+    {
+      "accepted": true,
+      "id": "simple",
+      "ref": "master"
+    },
+    {
+      "accepted": true,
+      "id": "slash-dash",
+      "ref": "topic/feature-name"
+    },
+    {
+      "accepted": true,
+      "id": "dots",
+      "ref": "release/v1.2"
+    },
+    {
+      "accepted": true,
+      "id": "component-trailing-dot",
+      "ref": "topic./feature"
+    },
+    {
+      "accepted": true,
+      "id": "leading-dash",
+      "ref": "-topic"
+    },
+    {
+      "accepted": true,
+      "id": "at-component",
+      "ref": "topic/@"
+    },
+    {
+      "accepted": true,
+      "id": "double-quote",
+      "ref": "topic\"name"
+    },
+    {
+      "accepted": true,
+      "id": "semicolon",
+      "ref": "topic;name"
+    },
+    {
+      "accepted": true,
+      "id": "dollar",
+      "ref": "topic$name"
+    },
+    {
+      "accepted": true,
+      "id": "parentheses",
+      "ref": "topic(name)"
+    },
+    {
+      "accepted": false,
+      "id": "empty",
+      "ref": ""
+    },
+    {
+      "accepted": false,
+      "id": "whitespace-only",
+      "ref": " "
+    },
+    {
+      "accepted": false,
+      "id": "embedded-space",
+      "ref": "bad ref"
+    },
+    {
+      "accepted": false,
+      "id": "control",
+      "ref": "bad\u0001ref"
+    },
+    {
+      "accepted": false,
+      "id": "delete",
+      "ref": "bad\u007fref"
+    },
+    {
+      "accepted": false,
+      "id": "tilde",
+      "ref": "bad~ref"
+    },
+    {
+      "accepted": false,
+      "id": "caret",
+      "ref": "bad^ref"
+    },
+    {
+      "accepted": false,
+      "id": "colon",
+      "ref": "bad:ref"
+    },
+    {
+      "accepted": false,
+      "id": "question",
+      "ref": "bad?ref"
+    },
+    {
+      "accepted": false,
+      "id": "asterisk",
+      "ref": "bad*ref"
+    },
+    {
+      "accepted": false,
+      "id": "open-bracket",
+      "ref": "bad[ref"
+    },
+    {
+      "accepted": false,
+      "id": "backslash",
+      "ref": "bad\\ref"
+    },
+    {
+      "accepted": false,
+      "id": "double-dot",
+      "ref": "topic..name"
+    },
+    {
+      "accepted": false,
+      "id": "at-open-brace",
+      "ref": "topic@{name"
+    },
+    {
+      "accepted": false,
+      "id": "leading-slash",
+      "ref": "/topic"
+    },
+    {
+      "accepted": false,
+      "id": "trailing-slash",
+      "ref": "topic/"
+    },
+    {
+      "accepted": false,
+      "id": "repeated-slash",
+      "ref": "topic//name"
+    },
+    {
+      "accepted": false,
+      "id": "leading-dot-component",
+      "ref": ".topic"
+    },
+    {
+      "accepted": false,
+      "id": "nested-leading-dot-component",
+      "ref": "topic/.name"
+    },
+    {
+      "accepted": false,
+      "id": "trailing-dot",
+      "ref": "topic."
+    },
+    {
+      "accepted": false,
+      "id": "lock-component",
+      "ref": "topic.lock/name"
+    },
+    {
+      "accepted": false,
+      "id": "nested-lock-component",
+      "ref": "topic/name.lock"
+    },
+    {
+      "accepted": false,
+      "git_accepts_full_ref": true,
+      "id": "lone-at-safety-override",
+      "ref": "@"
+    }
+  ],
   "classifier_failure_cases": [
     {
       "classifier_result": "failure",

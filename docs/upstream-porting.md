@@ -237,6 +237,12 @@ incomplete/malformed/incoherent base, and check out only that exact validated
 head during normal classification. The latter state audits all four workers
 and then fails summary; a valid base SHA may remain diagnostic data but cannot
 authorize a checkout.
+Base refs are bounded to 1024 UTF-8 bytes. Python applies grammar equivalent to
+full `git check-ref-format refs/heads/<base.ref>` without a subprocess; the
+trusted bootstrap invokes `/usr/bin/git check-ref-format` with the quoted full
+ref, no `--branch` shorthand, explicit lone-`@` rejection, and no ref checkout.
+Invalid refs retain a validated head only for the incomplete-base worker path
+whose summary fails.
 After classifier failure only, trusted event setup permits fallback solely for
 an exact lowercase 40-hex SHA. PR fallback additionally requires its numeric
 event number and exact `refs/pull/<number>/merge` event ref; push fallback requires

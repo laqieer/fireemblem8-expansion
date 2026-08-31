@@ -16,6 +16,7 @@ from typing import Any
 
 
 MAX_EVENT_BYTES = 1024 * 1024
+MAX_BRANCH_REF_BYTES = 1024
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 METADATA_FIELDS = frozenset({"body", "title"})
 FULL_PR_ACTIONS = frozenset({"opened", "reopened", "synchronize"})
@@ -47,6 +48,38 @@ class EventDecision:
 
 def _is_sha(value: object) -> bool:
     return isinstance(value, str) and SHA_RE.fullmatch(value) is not None
+
+
+def _is_git_branch_ref(value: object) -> bool:
+    if not isinstance(value, str) or not value or value == "@":
+        return False
+    try:
+        if len(value.encode("utf-8")) > MAX_BRANCH_REF_BYTES:
+            return False
+    except UnicodeEncodeError:
+        return False
+    if (
+        value.startswith("/")
+        or value.endswith("/")
+        or value.endswith(".")
+        or "//" in value
+        or ".." in value
+        or "@{" in value
+    ):
+        return False
+    if any(
+        ord(character) < 0x20
+        or ord(character) == 0x7F
+        or character in " ~^:?*[\\"
+        for character in value
+    ):
+        return False
+    return all(
+        component
+        and not component.startswith(".")
+        and not component.endswith(".lock")
+        for component in value.split("/")
+    )
 
 
 def _full(
@@ -110,14 +143,14 @@ def _pull_request_identity(
     base = pull_request.get("base")
     payload_head = head.get("sha") if isinstance(head, dict) else None
     payload_base = base.get("sha") if isinstance(base, dict) else None
+    payload_base_ref = base.get("ref") if isinstance(base, dict) else None
     missing_head = not expected_head or not _is_sha(payload_head)
     head_valid = bool(expected_head) and payload_head == expected_head
     missing_base = (
         not expected_base
         or not _is_sha(payload_base)
         or not isinstance(base, dict)
-        or not isinstance(base.get("ref"), str)
-        or not base["ref"]
+        or not _is_git_branch_ref(payload_base_ref)
     )
     if missing_head or missing_base:
         reason = (
@@ -164,11 +197,9 @@ def _valid_base_change(value: object, pull_request: dict[str, Any]) -> bool:
     current_ref = pull_request["base"]["ref"]
     current_sha = pull_request["base"]["sha"]
     return (
-        isinstance(previous_ref, str)
-        and bool(previous_ref)
+        _is_git_branch_ref(previous_ref)
         and _is_sha(previous_sha)
-        and isinstance(current_ref, str)
-        and bool(current_ref)
+        and _is_git_branch_ref(current_ref)
         and _is_sha(current_sha)
         and previous_ref != current_ref
         and previous_sha != current_sha

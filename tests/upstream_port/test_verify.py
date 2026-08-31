@@ -1134,6 +1134,11 @@ class VerifyCliCwdTests(unittest.TestCase):
                 '            echo "run_expensive=false"',
                 1,
             ),
+            original.replace(
+                '/usr/bin/git check-ref-format "refs/heads/$PR_BASE_REF"',
+                'test -n "$PR_BASE_REF"',
+                1,
+            ),
         )
         for changed in mutations:
             with self.subTest(mutation=changed[:180]):

@@ -77,6 +77,70 @@ def _launcher_command(case: dict, event_path: Path, output_path: Path) -> list[s
 
 
 class EventClassifierFixtureTests(unittest.TestCase):
+    def test_base_refs_match_git_full_ref_oracle_with_safety_bounds(self):
+        for case in _load_fixture()["base_ref_validation_cases"]:
+            with self.subTest(case=case["id"]):
+                oracle = subprocess.run(
+                    [
+                        "/usr/bin/git",
+                        "check-ref-format",
+                        f"refs/heads/{case['ref']}",
+                    ],
+                    check=False,
+                    capture_output=True,
+                ).returncode == 0
+                if case.get("git_accepts_full_ref"):
+                    self.assertTrue(oracle)
+                    self.assertFalse(case["accepted"])
+                else:
+                    self.assertEqual(oracle, case["accepted"])
+                self.assertEqual(
+                    event_classifier._is_git_branch_ref(case["ref"]),
+                    case["accepted"],
+                )
+
+        at_limit = "a" * event_classifier.MAX_BRANCH_REF_BYTES
+        over_limit = at_limit + "a"
+        self.assertTrue(event_classifier._is_git_branch_ref(at_limit))
+        self.assertFalse(event_classifier._is_git_branch_ref(over_limit))
+        self.assertFalse(event_classifier._is_git_branch_ref("\ud800"))
+
+    def test_body_and_title_metadata_require_valid_base_refs(self):
+        fixture = _load_fixture()
+        templates = {
+            field: next(
+                case
+                for case in fixture["cases"]
+                if case["id"] == case_id
+            )
+            for field, case_id in (
+                ("body", "body-only-merge-sha-ignored"),
+                ("title", "title-only"),
+            )
+        }
+        for ref_case in fixture["base_ref_validation_cases"]:
+            for field, template in templates.items():
+                with self.subTest(case=ref_case["id"], field=field):
+                    case = copy.deepcopy(template)
+                    case["payload"]["pull_request"]["base"]["ref"] = ref_case["ref"]
+                    decision = _decision(case)
+                    if ref_case["accepted"]:
+                        self.assertEqual(decision.classification, "metadata-only")
+                        self.assertTrue(decision.identity_valid)
+                    else:
+                        self.assertEqual(decision.classification, "full")
+                        self.assertEqual(
+                            decision.reason,
+                            "missing-pull-request-base",
+                        )
+                        self.assertTrue(decision.head_valid)
+                        self.assertTrue(decision.full_fallback)
+                        self.assertFalse(decision.identity_valid)
+                        self.assertEqual(
+                            decision.expected_head,
+                            case["runner"]["pr_head_sha"],
+                        )
+
     def test_all_fixture_decisions_are_exact_and_deterministic(self):
         fixture = _load_fixture()
         self.assertEqual(fixture["schema_version"], 3)
@@ -402,6 +466,10 @@ class EventClassifierFixtureTests(unittest.TestCase):
         malformed_sha = copy.deepcopy(base_edit)
         malformed_sha["payload"]["changes"]["base"]["sha"]["from"] = "short"
         mutations.append(malformed_sha)
+
+        malformed_ref = copy.deepcopy(base_edit)
+        malformed_ref["payload"]["changes"]["base"]["ref"]["from"] = "bad ref"
+        mutations.append(malformed_ref)
 
         extra_key = copy.deepcopy(base_edit)
         extra_key["payload"]["changes"]["base"]["current"] = {}

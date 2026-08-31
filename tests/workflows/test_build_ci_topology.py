@@ -942,6 +942,7 @@ def _classifier_contract_errors(job: str) -> list[str]:
         '            echo "head_valid=$head_valid"',
         '            echo "identity_valid=$identity_valid"',
         '            echo "run_expensive=true"',
+        '/usr/bin/git check-ref-format "refs/heads/$PR_BASE_REF"',
     )
     errors = [
         f"event-router lacks required closed contract: {item}"
@@ -1007,12 +1008,21 @@ def _classifier_contract_errors(job: str) -> list[str]:
             '--pr-base-sha "$PR_BASE_SHA" --pr-head-sha "$PR_HEAD_SHA" \\',
             '--push-sha "$PUSH_SHA" --output "$GITHUB_OUTPUT"',
             "else",
+            "base_ref_valid=false",
             'expected_base=""',
             'expected_head=""',
             "full_fallback=false",
             "head_valid=false",
             "identity_valid=false",
             'if [[ "$GITHUB_EVENT_NAME" = "pull_request" ]]; then',
+            "LC_ALL=C",
+            "export LC_ALL",
+            'if [[ "$PR_BASE_REF" != "@" && "$PR_BASE_REF_JSON" = \\"*\\" && \\',
+            "${#PR_BASE_REF} -le 1024 ]] && \\",
+            '/usr/bin/git check-ref-format "refs/heads/$PR_BASE_REF" \\',
+            "> /dev/null 2>&1; then",
+            "base_ref_valid=true",
+            "fi",
             'if [[ "$PR_BASE_SHA" =~ ^[0-9a-f]{40}$ && \\',
             '"$PR_BASE_SHA_JSON" = "\\"$PR_BASE_SHA\\"" ]]; then',
             'expected_base="$PR_BASE_SHA"',
@@ -1023,7 +1033,7 @@ def _classifier_contract_errors(job: str) -> list[str]:
             "head_valid=true",
             "fi",
             'if [[ -n "$expected_base" && -n "$expected_head" && \\',
-            '-n "$PR_BASE_REF" && "$PR_BASE_REF_JSON" = \\"*\\" ]]; then',
+            '"$base_ref_valid" = true ]]; then',
             "identity_valid=true",
             'elif [[ "$head_valid" = true ]]; then',
             "full_fallback=true",
@@ -2549,6 +2559,53 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     case["runner"]["pr_head_sha"],
                 )
 
+    def test_metadata_base_ref_fixtures_use_git_branch_validation(self):
+        fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
+        templates = {
+            field: next(
+                case
+                for case in fixture["cases"]
+                if case["id"] == case_id
+            )
+            for field, case_id in (
+                ("body", "body-only-merge-sha-ignored"),
+                ("title", "title-only"),
+            )
+        }
+        metadata_jobs = {
+            "event-identity",
+            "event-router",
+            "event-classifier",
+            "summary",
+        }
+        for ref_case in fixture["base_ref_validation_cases"]:
+            for field, template in templates.items():
+                with self.subTest(case=ref_case["id"], field=field):
+                    case = json.loads(json.dumps(template))
+                    case["payload"]["pull_request"]["base"]["ref"] = ref_case["ref"]
+                    self.assertEqual(
+                        _triggered_jobs(self.text, case),
+                        metadata_jobs
+                        if ref_case["accepted"]
+                        else CANDIDATE_FULL_JOBS,
+                    )
+                    decision = event_classifier.classify_event(
+                        case["event_name"],
+                        case["payload"],
+                        github_ref=case["runner"]["github_ref"],
+                        github_sha=case["runner"]["github_sha"],
+                        pr_base_sha=case["runner"]["pr_base_sha"],
+                        pr_head_sha=case["runner"]["pr_head_sha"],
+                        push_sha=case["runner"]["push_sha"],
+                    )
+                    self.assertEqual(
+                        decision.classification,
+                        "metadata-only" if ref_case["accepted"] else "full",
+                    )
+                    if not ref_case["accepted"]:
+                        self.assertTrue(decision.full_fallback)
+                        self.assertFalse(decision.identity_valid)
+
     def test_metadata_check_contexts_cannot_replace_candidate_contexts(self):
         jobs = _job_blocks(self.text)
         for job_name in COMBINED_WORKERS:
@@ -2951,6 +3008,16 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             self.text.replace(
                 '            echo "run_expensive=true"',
                 '            echo "run_expensive=false"',
+                1,
+            ),
+            self.text.replace(
+                '/usr/bin/git check-ref-format "refs/heads/$PR_BASE_REF"',
+                'test -n "$PR_BASE_REF"',
+                1,
+            ),
+            self.text.replace(
+                "${#PR_BASE_REF} -le 1024",
+                "${#PR_BASE_REF} -ge 0",
                 1,
             ),
             self.text.replace(
@@ -4422,6 +4489,32 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     "2" * 40, "1" * 40, "true", "false", "true",
                 ),
                 (
+                    "space-base-ref", "pull_request", "refs/pull/177/merge",
+                    "2" * 40, " ", '" "', "1" * 40, "", "a" * 40,
+                    "2" * 40, "1" * 40, "true", "false", "true",
+                ),
+                (
+                    "embedded-space-base-ref", "pull_request", "refs/pull/177/merge",
+                    "2" * 40, "bad ref", '"bad ref"', "1" * 40, "", "a" * 40,
+                    "2" * 40, "1" * 40, "true", "false", "true",
+                ),
+                (
+                    "double-dot-base-ref", "pull_request", "refs/pull/177/merge",
+                    "2" * 40, "topic..name", '"topic..name"', "1" * 40, "", "a" * 40,
+                    "2" * 40, "1" * 40, "true", "false", "true",
+                ),
+                (
+                    "dot-component-base-ref", "pull_request", "refs/pull/177/merge",
+                    "2" * 40, "topic/.name", '"topic/.name"', "1" * 40, "", "a" * 40,
+                    "2" * 40, "1" * 40, "true", "false", "true",
+                ),
+                (
+                    "valid-slash-base-ref", "pull_request", "refs/pull/177/merge",
+                    "2" * 40, "topic/feature-name", '"topic/feature-name"',
+                    "1" * 40, "", "a" * 40,
+                    "2" * 40, "1" * 40, "true", "true", "false",
+                ),
+                (
                     "malformed-base-sha", "pull_request", "refs/pull/177/merge",
                     "7", "master", '"master"', "1" * 40, "", "a" * 40,
                     "", "1" * 40, "true", "false", "true",
@@ -4501,6 +4594,65 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     self.assertEqual(values["run_expensive"], "true")
                     if event_name == "pull_request":
                         self.assertNotEqual(values["expected_head"], raw_push_sha)
+
+    def test_classifier_bootstrap_base_refs_match_parsed_fixture(self):
+        classifier_steps = _step_blocks(_job_blocks(self.text)["event-router"])
+        script = _literal_run_script(classifier_steps[2])
+        fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
+        ref_cases = list(fixture["base_ref_validation_cases"]) + [
+            {
+                "accepted": False,
+                "id": "over-safety-bound",
+                "ref": "a" * (event_classifier.MAX_BRANCH_REF_BYTES + 1),
+            }
+        ]
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="workflow-bootstrap-base-ref-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            for ref_case in ref_cases:
+                with self.subTest(case=ref_case["id"]):
+                    output = sandbox / f"{ref_case['id']}.out"
+                    completed = subprocess.run(
+                        ["/bin/bash", "-c", script],
+                        cwd=sandbox,
+                        env={
+                            **os.environ,
+                            "GITHUB_EVENT_NAME": "pull_request",
+                            "GITHUB_EVENT_PATH": str(sandbox / "unused.json"),
+                            "GITHUB_OUTPUT": str(output),
+                            "GITHUB_REF": "refs/pull/177/merge",
+                            "GITHUB_SHA": "a" * 40,
+                            "PR_BASE_REF": ref_case["ref"],
+                            "PR_BASE_REF_JSON": json.dumps(ref_case["ref"]),
+                            "PR_BASE_SHA": "2" * 40,
+                            "PR_BASE_SHA_JSON": json.dumps("2" * 40),
+                            "PR_HEAD_SHA": "1" * 40,
+                            "PUSH_SHA": "",
+                            "VALIDATED_FALLBACK_KIND": "pull_request",
+                            "VALIDATED_FALLBACK_SHA": "1" * 40,
+                        },
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    values = dict(
+                        line.split("=", 1)
+                        for line in output.read_text(encoding="ascii").splitlines()
+                    )
+                    self.assertEqual(
+                        values["identity_valid"],
+                        "true" if ref_case["accepted"] else "false",
+                    )
+                    self.assertEqual(
+                        values["full_fallback"],
+                        "false" if ref_case["accepted"] else "true",
+                    )
+                    self.assertEqual(values["expected_head"], "1" * 40)
 
     def test_comment_text_is_not_treated_as_run_block_evidence(self):
         changed = self.text.replace(

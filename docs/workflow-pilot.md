@@ -175,6 +175,19 @@ the previous base identifies the transition only and is never checked out.
 Missing, ref-only, SHA-only, same, extra, or spoofed records remain full
 fail-closed edits rather than metadata suppression.
 
+Base refs are bounded to 1024 UTF-8 bytes and must satisfy full
+`git check-ref-format refs/heads/<base.ref>` semantics; `--branch` shorthand
+is never used, and lone `@` is rejected explicitly. The Python classifier
+enforces the equivalent grammar without executing a subprocess. The trusted
+pre-classifier bootstrap passes the quoted full ref to
+`/usr/bin/git check-ref-format` and never checks out that ref.
+Empty/whitespace, control or
+DEL, space, `~`, `^`, `:`, `?`, `*`, `[`, backslash, `..`, `@{`,
+leading/trailing/repeated slash, leading-dot or `.lock` components, and a
+trailing dot are invalid. Git-valid slash, dash, and dot forms remain valid.
+An invalid base ref is incomplete base identity: a validated head runs all
+four workers at that exact head and summary fails; an invalid head runs none.
+
 Base-only edits, mixed edits, unknown fields, incomplete change records,
 unknown actions, `opened`, `synchronize`, `reopened`, and `master` pushes with
 complete identity select the complete required graph. A classifier
