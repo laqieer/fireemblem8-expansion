@@ -79,6 +79,17 @@ dependent todos for commit, push, CI, and issue closure at the start of such a
 task. Memory is advisory context; these executable gates are the completion
 authority.
 
+Delivery dependencies are typed. A child issue's `code_contract`
+implementation dependency is satisfied when the parent merge is done and the
+target tree contains the contract; it must not depend on the parent's
+post-merge Build, evidence/closure, or remote-completion task. Those remain
+`delivery_gate` dependencies for completing and closing the parent itself.
+Async watcher state is orthogonal and must never be a todo dependency. While a
+healthy exact-master watcher is pending, immediately continue every
+dependency-ready child or independent task. A terminal failed master run
+starts fix-forward/revert work, but cannot retroactively justify idle waiting
+during its earlier pending state.
+
 Implementation subagents validate and commit locally but do not push. The
 orchestrator pushes the exact commit under repository-owner context so Build
 does not become `action_required`. If an already-pushed run for that same SHA

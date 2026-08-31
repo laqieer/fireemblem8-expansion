@@ -2025,10 +2025,32 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "SIGKILL/OOM",
             "exactly one different bounded replacement owner",
             "stop-on-disconnect",
+            "`code_contract` dependency",
+            "parent `merge` task is `done`",
+            "must never be a todo or dependency target",
+            "`child-implement -> parent-remote`",
+            "`child-implement -> parent-merge`",
             "TC-WORKFLOW-AGENT-HANDOFF-001",
         ):
             with self.subTest(requirement=requirement):
                 self.assertIn(normalize_policy(requirement), normalize_policy(skill))
+
+        project_instructions = COPILOT_INSTRUCTIONS_PATH.read_text(
+            encoding="utf-8"
+        )
+        for requirement in (
+            "Delivery dependencies are typed",
+            "parent merge is done",
+            "must not depend on the parent's post-merge Build",
+            "Async watcher state is orthogonal",
+            "must never be a todo dependency",
+            "terminal failed master run starts fix-forward/revert work",
+        ):
+            with self.subTest(project_requirement=requirement):
+                self.assertIn(
+                    normalize_policy(requirement),
+                    normalize_policy(project_instructions),
+                )
 
         governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
         case = "\n".join(

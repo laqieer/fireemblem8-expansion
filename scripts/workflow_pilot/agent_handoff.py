@@ -65,6 +65,24 @@ RUN_CONCLUSIONS = {
     "skipped",
     "success",
 }
+DELIVERY_TASK_PHASES = {
+    "closure",
+    "completion",
+    "fix_forward_revert",
+    "implementation",
+    "merge",
+    "post_merge_build",
+    "remote_completion",
+}
+DELIVERY_TASK_STATUSES = {
+    "blocked",
+    "done",
+    "in_progress",
+    "not_required",
+    "pending",
+}
+DELIVERY_DEPENDENCY_TYPES = {"code_contract", "delivery_gate"}
+DELIVERY_WATCHER_STATES = {"completed", "error", "running", "timeout"}
 INPUT_SEAL_DOMAIN = b"workflow-pilot-agent-handoff-input-v1\0"
 RESULT_SEAL_DOMAIN = b"workflow-pilot-agent-handoff-result-v1\0"
 
@@ -751,6 +769,387 @@ def _status_paths(status: str) -> set[str]:
     return paths
 
 
+def evaluate_delivery_graph(raw: Any) -> dict[str, Any]:
+    graph = expect_object(raw, "delivery_graph")
+    expect_keys(
+        graph,
+        "delivery_graph",
+        ("relationships", "tasks", "dependencies", "watchers"),
+    )
+
+    tasks: dict[str, dict[str, Any]] = {}
+    tasks_by_issue_phase: dict[tuple[int, str], dict[str, Any]] = {}
+    for index, raw_task in enumerate(expect_list(graph["tasks"], "delivery_graph.tasks")):
+        label = f"delivery_graph.tasks[{index}]"
+        task = expect_object(raw_task, label)
+        expect_keys(task, label, ("id", "issue", "phase", "status"))
+        task_id = expect_string(task["id"], f"{label}.id")
+        if task_id in tasks:
+            raise HandoffDataError(f"duplicate delivery task {task_id!r}")
+        issue = expect_int(task["issue"], f"{label}.issue", 1)
+        phase = expect_enum(
+            task["phase"],
+            DELIVERY_TASK_PHASES,
+            f"{label}.phase",
+        )
+        expect_enum(
+            task["status"],
+            DELIVERY_TASK_STATUSES,
+            f"{label}.status",
+        )
+        identity = (issue, phase)
+        if identity in tasks_by_issue_phase:
+            raise HandoffDataError(
+                f"delivery issue {issue} repeats phase {phase!r}"
+            )
+        tasks[task_id] = task
+        tasks_by_issue_phase[identity] = task
+
+    relationships = []
+    relationship_identities = []
+    for index, raw_relationship in enumerate(
+        expect_list(graph["relationships"], "delivery_graph.relationships")
+    ):
+        label = f"delivery_graph.relationships[{index}]"
+        relationship = expect_object(raw_relationship, label)
+        expect_keys(
+            relationship,
+            label,
+            ("child_issue", "parent_issue", "type"),
+        )
+        child_issue = expect_int(
+            relationship["child_issue"],
+            f"{label}.child_issue",
+            1,
+        )
+        parent_issue = expect_int(
+            relationship["parent_issue"],
+            f"{label}.parent_issue",
+            1,
+        )
+        if child_issue == parent_issue:
+            raise HandoffDataError(f"{label} cannot be self-referential")
+        relationship_type = expect_enum(
+            relationship["type"],
+            {"code_contract"},
+            f"{label}.type",
+        )
+        relationship_identities.append(
+            (child_issue, parent_issue, relationship_type)
+        )
+        relationships.append(relationship)
+    if not relationships:
+        raise HandoffDataError(
+            "delivery_graph.relationships must name a code/contract dependency"
+        )
+    expect_unique(
+        relationship_identities,
+        "delivery_graph.relationships",
+    )
+
+    watchers: dict[str, dict[str, Any]] = {}
+    watcher_tasks = set()
+    for index, raw_watcher in enumerate(
+        expect_list(graph["watchers"], "delivery_graph.watchers")
+    ):
+        label = f"delivery_graph.watchers[{index}]"
+        watcher = expect_object(raw_watcher, label)
+        expect_keys(
+            watcher,
+            label,
+            (
+                "id",
+                "run_task",
+                "process_state",
+                "authoritative_status",
+                "conclusion",
+            ),
+        )
+        watcher_id = expect_string(watcher["id"], f"{label}.id")
+        if watcher_id in watchers:
+            raise HandoffDataError(
+                f"duplicate delivery watcher {watcher_id!r}"
+            )
+        run_task = expect_string(watcher["run_task"], f"{label}.run_task")
+        task = tasks.get(run_task)
+        if task is None or task["phase"] != "post_merge_build":
+            raise HandoffDataError(
+                f"{label}.run_task must identify a post_merge_build task"
+            )
+        if run_task in watcher_tasks:
+            raise HandoffDataError(
+                f"post-merge task {run_task!r} has duplicate delivery watchers"
+            )
+        watcher_tasks.add(run_task)
+        expect_enum(
+            watcher["process_state"],
+            DELIVERY_WATCHER_STATES,
+            f"{label}.process_state",
+        )
+        authoritative_status = expect_enum(
+            watcher["authoritative_status"],
+            RUN_STATUSES,
+            f"{label}.authoritative_status",
+        )
+        if authoritative_status == "completed":
+            expect_enum(
+                watcher["conclusion"],
+                RUN_CONCLUSIONS,
+                f"{label}.conclusion",
+            )
+        elif watcher["conclusion"] is not None:
+            raise HandoffDataError(
+                f"{label} active authoritative status requires null conclusion"
+            )
+        watchers[watcher_id] = watcher
+
+    rejection_codes = set()
+    dependencies = []
+    dependency_identities = []
+    watcher_ids = set(watchers)
+    for index, raw_dependency in enumerate(
+        expect_list(graph["dependencies"], "delivery_graph.dependencies")
+    ):
+        label = f"delivery_graph.dependencies[{index}]"
+        dependency = expect_object(raw_dependency, label)
+        expect_keys(dependency, label, ("task", "depends_on", "type"))
+        task_id = expect_string(dependency["task"], f"{label}.task")
+        depends_on = expect_string(
+            dependency["depends_on"],
+            f"{label}.depends_on",
+        )
+        dependency_type = expect_enum(
+            dependency["type"],
+            DELIVERY_DEPENDENCY_TYPES,
+            f"{label}.type",
+        )
+        identity = (task_id, depends_on, dependency_type)
+        dependency_identities.append(identity)
+        if task_id in watcher_ids or depends_on in watcher_ids:
+            rejection_codes.add("watcher-todo-dependency")
+            continue
+        if task_id not in tasks:
+            raise HandoffDataError(
+                f"{label}.task references unknown delivery task {task_id!r}"
+            )
+        if depends_on not in tasks:
+            raise HandoffDataError(
+                f"{label}.depends_on references unknown delivery task "
+                f"{depends_on!r}"
+            )
+        if task_id == depends_on:
+            raise HandoffDataError(f"{label} cannot be self-referential")
+        dependencies.append(dependency)
+    expect_unique(dependency_identities, "delivery_graph.dependencies")
+
+    dependency_tuples = {
+        (item["task"], item["depends_on"], item["type"])
+        for item in dependencies
+    }
+    required_edges = []
+    relationship_reports = []
+    child_task_ids = set()
+    for relationship in relationships:
+        child_issue = relationship["child_issue"]
+        parent_issue = relationship["parent_issue"]
+        child_task = tasks_by_issue_phase.get((child_issue, "implementation"))
+        parent_merge = tasks_by_issue_phase.get((parent_issue, "merge"))
+        if child_task is None:
+            raise HandoffDataError(
+                f"child issue {child_issue} has no implementation task"
+            )
+        if parent_merge is None:
+            raise HandoffDataError(
+                f"parent issue {parent_issue} has no merge task"
+            )
+        child_task_ids.add(child_task["id"])
+        required_edge = {
+            "task": child_task["id"],
+            "depends_on": parent_merge["id"],
+            "type": "code_contract",
+        }
+        required_edges.append(required_edge)
+        expected_tuple = (
+            required_edge["task"],
+            required_edge["depends_on"],
+            required_edge["type"],
+        )
+        expected_present = expected_tuple in dependency_tuples
+        if not expected_present:
+            rejection_codes.add("missing-required-code-contract-edge")
+
+        wrong_edges = []
+        for dependency in dependencies:
+            if dependency["task"] != child_task["id"]:
+                continue
+            dependency_task = tasks[dependency["depends_on"]]
+            if dependency_task["issue"] != parent_issue:
+                continue
+            if (
+                dependency["depends_on"] != parent_merge["id"]
+                or dependency["type"] != "code_contract"
+            ):
+                wrong_edges.append(dependency)
+        if wrong_edges:
+            rejection_codes.add("wrong-code-contract-edge")
+
+        relationship_reports.append(
+            {
+                "child_issue": child_issue,
+                "parent_issue": parent_issue,
+                "type": "code_contract",
+                "required_edge": required_edge,
+                "parent_merge_status": parent_merge["status"],
+                "implementation_ready": (
+                    parent_merge["status"] == "done"
+                    and expected_present
+                    and not wrong_edges
+                ),
+            }
+        )
+
+    parent_issues = sorted(
+        {relationship["parent_issue"] for relationship in relationships}
+    )
+    recovery_reports = []
+    for parent_issue in parent_issues:
+        post_merge_build = tasks_by_issue_phase.get(
+            (parent_issue, "post_merge_build")
+        )
+        if post_merge_build is None:
+            raise HandoffDataError(
+                f"parent issue {parent_issue} has no post_merge_build task"
+            )
+        for phase in ("completion", "closure", "remote_completion"):
+            task = tasks_by_issue_phase.get((parent_issue, phase))
+            if task is None:
+                raise HandoffDataError(
+                    f"parent issue {parent_issue} has no {phase} task"
+                )
+            required_edge = (
+                task["id"],
+                post_merge_build["id"],
+                "delivery_gate",
+            )
+            required_edges.append(
+                {
+                    "task": required_edge[0],
+                    "depends_on": required_edge[1],
+                    "type": required_edge[2],
+                }
+            )
+            if required_edge not in dependency_tuples:
+                rejection_codes.add("missing-parent-post-merge-gate")
+
+        task_watchers = [
+            watcher
+            for watcher in watchers.values()
+            if watcher["run_task"] == post_merge_build["id"]
+        ]
+        if post_merge_build["status"] == "in_progress" and len(task_watchers) != 1:
+            rejection_codes.add("missing-or-duplicate-watcher")
+        failed_terminal = any(
+            watcher["authoritative_status"] == "completed"
+            and watcher["conclusion"] != "success"
+            for watcher in task_watchers
+        )
+        successful_terminal = any(
+            watcher["authoritative_status"] == "completed"
+            and watcher["conclusion"] == "success"
+            for watcher in task_watchers
+        )
+        active = any(
+            watcher["authoritative_status"] in {"in_progress", "queued"}
+            for watcher in task_watchers
+        )
+        if successful_terminal and post_merge_build["status"] != "done":
+            rejection_codes.add("watcher-run-mismatch")
+        if failed_terminal and post_merge_build["status"] != "blocked":
+            rejection_codes.add("watcher-run-mismatch")
+        if active and post_merge_build["status"] == "done":
+            rejection_codes.add("watcher-run-mismatch")
+
+        recovery = tasks_by_issue_phase.get(
+            (parent_issue, "fix_forward_revert")
+        )
+        if recovery is None:
+            raise HandoffDataError(
+                f"parent issue {parent_issue} has no fix_forward_revert task"
+            )
+        if failed_terminal and recovery["status"] != "in_progress":
+            rejection_codes.add("missing-master-recovery")
+        recovery_reports.append(
+            {
+                "parent_issue": parent_issue,
+                "required": failed_terminal,
+                "task": recovery["id"],
+                "status": recovery["status"],
+            }
+        )
+
+    dependencies_by_task: dict[str, list[dict[str, Any]]] = {
+        task_id: [] for task_id in tasks
+    }
+    for dependency in dependencies:
+        dependencies_by_task[dependency["task"]].append(dependency)
+
+    ready_tasks = []
+    blocked_tasks = []
+    for task_id, task in sorted(tasks.items()):
+        if task["status"] != "pending":
+            continue
+        blockers = sorted(
+            dependency["depends_on"]
+            for dependency in dependencies_by_task[task_id]
+            if tasks[dependency["depends_on"]]["status"] != "done"
+        )
+        relationship_ready = all(
+            item["implementation_ready"]
+            for item in relationship_reports
+            if item["required_edge"]["task"] == task_id
+        )
+        if task_id in child_task_ids and not relationship_ready:
+            parent_merge_blockers = [
+                item["required_edge"]["depends_on"]
+                for item in relationship_reports
+                if item["required_edge"]["task"] == task_id
+                and item["parent_merge_status"] != "done"
+            ]
+            blockers.extend(parent_merge_blockers)
+        blockers = sorted(set(blockers))
+        if blockers:
+            blocked_tasks.append({"id": task_id, "blocked_by": blockers})
+        elif task_id in child_task_ids and not relationship_ready:
+            blocked_tasks.append(
+                {
+                    "id": task_id,
+                    "blocked_by": ["invalid-code-contract-edge"],
+                }
+            )
+        else:
+            ready_tasks.append(task_id)
+
+    return {
+        "relationships": relationship_reports,
+        "required_edges": required_edges,
+        "ready_tasks": ready_tasks,
+        "blocked_tasks": blocked_tasks,
+        "watchers": [
+            {
+                "id": watcher["id"],
+                "run_task": watcher["run_task"],
+                "process_state": watcher["process_state"],
+                "authoritative_status": watcher["authoritative_status"],
+                "conclusion": watcher["conclusion"],
+                "orthogonal_to_todos": True,
+            }
+            for watcher in watchers.values()
+        ],
+        "master_recovery": recovery_reports,
+        "rejection_codes": sorted(rejection_codes),
+    }
+
+
 def _empty_handoff_result(handoff: dict[str, Any]) -> dict[str, Any]:
     states = handoff["_states"]
     lifetime_seconds = 0
@@ -804,6 +1203,7 @@ def validate_document(raw: Any, repository_root: Path) -> dict[str, Any]:
         (
             "schema_version",
             "repository",
+            "delivery_graph",
             "coordinators",
             "handoffs",
             "workflow_runs",
@@ -850,6 +1250,7 @@ def validate_document(raw: Any, repository_root: Path) -> dict[str, Any]:
     runs = _parse_runs(document["workflow_runs"])
     watchers = _parse_watchers(document["watchers"])
     remote_actions = _parse_remote_actions(document["remote_actions"])
+    delivery_graph = evaluate_delivery_graph(document["delivery_graph"])
 
     global_rejections = set()
     handoff_rejections = {handoff["id"]: set() for handoff in handoffs}
@@ -858,6 +1259,16 @@ def validate_document(raw: Any, repository_root: Path) -> dict[str, Any]:
         global_rejections.add(code)
         if handoff_id is not None:
             handoff_rejections[handoff_id].add(code)
+
+    for code in delivery_graph["rejection_codes"]:
+        for handoff in handoffs:
+            reject(code, handoff["id"])
+    for relationship in delivery_graph["relationships"]:
+        if relationship["parent_merge_status"] == "done":
+            continue
+        for handoff in handoffs:
+            if handoff["issue"] == relationship["child_issue"]:
+                reject("code-contract-not-merged", handoff["id"])
 
     if len(coordinators) != 1:
         for handoff in handoffs:
@@ -1233,6 +1644,7 @@ def validate_document(raw: Any, repository_root: Path) -> dict[str, Any]:
         "schema_version": SCHEMA_VERSION,
         "repository": repository,
         "coordinator_id": coordinator_id,
+        "delivery_graph": delivery_graph,
         "handoffs": [results[handoff["id"]] for handoff in handoffs],
         "watchers": watcher_results,
         "summary": {

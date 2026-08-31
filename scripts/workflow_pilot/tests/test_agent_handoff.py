@@ -139,10 +139,111 @@ def evidence(status="passed"):
     ]
 
 
+def delivery_graph(
+    *,
+    merge_status="done",
+    build_status="in_progress",
+    remote_status="pending",
+    watcher_process="running",
+    watcher_status="in_progress",
+    watcher_conclusion=None,
+    recovery_status="not_required",
+):
+    return {
+        "relationships": [
+            {
+                "child_issue": 178,
+                "parent_issue": 176,
+                "type": "code_contract",
+            }
+        ],
+        "tasks": [
+            {
+                "id": "parent-merge",
+                "issue": 176,
+                "phase": "merge",
+                "status": merge_status,
+            },
+            {
+                "id": "parent-post-merge-build",
+                "issue": 176,
+                "phase": "post_merge_build",
+                "status": build_status,
+            },
+            {
+                "id": "parent-completion",
+                "issue": 176,
+                "phase": "completion",
+                "status": "pending",
+            },
+            {
+                "id": "parent-closure",
+                "issue": 176,
+                "phase": "closure",
+                "status": "pending",
+            },
+            {
+                "id": "parent-remote",
+                "issue": 176,
+                "phase": "remote_completion",
+                "status": remote_status,
+            },
+            {
+                "id": "parent-recovery",
+                "issue": 176,
+                "phase": "fix_forward_revert",
+                "status": recovery_status,
+            },
+            {
+                "id": "child-implement",
+                "issue": 178,
+                "phase": "implementation",
+                "status": "pending",
+            },
+        ],
+        "dependencies": [
+            {
+                "task": "child-implement",
+                "depends_on": "parent-merge",
+                "type": "code_contract",
+            },
+            {
+                "task": "parent-completion",
+                "depends_on": "parent-post-merge-build",
+                "type": "delivery_gate",
+            },
+            {
+                "task": "parent-closure",
+                "depends_on": "parent-post-merge-build",
+                "type": "delivery_gate",
+            },
+            {
+                "task": "parent-remote",
+                "depends_on": "parent-post-merge-build",
+                "type": "delivery_gate",
+            },
+        ],
+        "watchers": (
+            []
+            if watcher_process is None
+            else [
+                {
+                    "id": "parent-master-watcher",
+                    "run_task": "parent-post-merge-build",
+                    "process_state": watcher_process,
+                    "authoritative_status": watcher_status,
+                    "conclusion": watcher_conclusion,
+                }
+            ]
+        ),
+    }
+
+
 def handoff_document(repository_root, parent_sha, result_sha):
     return {
         "schema_version": 1,
         "repository": "example/workflow",
+        "delivery_graph": delivery_graph(),
         "coordinators": [
             {
                 "id": "coordinator-1",
@@ -247,6 +348,175 @@ def add_run(document, result_sha, conclusion="success", process_result="success"
     ]
 
 
+class DeliveryDependencyGraphTests(unittest.TestCase):
+    def test_parent_merge_unblocks_child_before_parent_remote_completion(self):
+        report = agent_handoff.evaluate_delivery_graph(delivery_graph())
+
+        self.assertEqual(report["rejection_codes"], [])
+        self.assertIn("child-implement", report["ready_tasks"])
+        self.assertEqual(
+            report["relationships"][0],
+            {
+                "child_issue": 178,
+                "parent_issue": 176,
+                "type": "code_contract",
+                "required_edge": {
+                    "task": "child-implement",
+                    "depends_on": "parent-merge",
+                    "type": "code_contract",
+                },
+                "parent_merge_status": "done",
+                "implementation_ready": True,
+            },
+        )
+        blocked = {
+            item["id"]: item["blocked_by"] for item in report["blocked_tasks"]
+        }
+        self.assertEqual(
+            blocked["parent-remote"],
+            ["parent-post-merge-build"],
+        )
+
+    def test_pending_parent_merge_blocks_child_implementation(self):
+        graph = delivery_graph(
+            merge_status="pending",
+            build_status="pending",
+            watcher_process=None,
+        )
+        report = agent_handoff.evaluate_delivery_graph(graph)
+
+        self.assertNotIn("child-implement", report["ready_tasks"])
+        self.assertIn(
+            {
+                "id": "child-implement",
+                "blocked_by": ["parent-merge"],
+            },
+            report["blocked_tasks"],
+        )
+        self.assertFalse(report["relationships"][0]["implementation_ready"])
+
+    def test_healthy_pending_master_watcher_is_not_a_todo_dependency(self):
+        report = agent_handoff.evaluate_delivery_graph(delivery_graph())
+
+        self.assertIn("child-implement", report["ready_tasks"])
+        self.assertEqual(
+            report["watchers"],
+            [
+                {
+                    "id": "parent-master-watcher",
+                    "run_task": "parent-post-merge-build",
+                    "process_state": "running",
+                    "authoritative_status": "in_progress",
+                    "conclusion": None,
+                    "orthogonal_to_todos": True,
+                }
+            ],
+        )
+
+        invalid = delivery_graph()
+        invalid["dependencies"].append(
+            {
+                "task": "child-implement",
+                "depends_on": "parent-master-watcher",
+                "type": "delivery_gate",
+            }
+        )
+        invalid_report = agent_handoff.evaluate_delivery_graph(invalid)
+        self.assertIn(
+            "watcher-todo-dependency",
+            invalid_report["rejection_codes"],
+        )
+
+    def test_terminal_failed_master_requires_recovery_without_rewriting_history(self):
+        pending_report = agent_handoff.evaluate_delivery_graph(delivery_graph())
+        failed = delivery_graph(
+            build_status="blocked",
+            watcher_process="error",
+            watcher_status="completed",
+            watcher_conclusion="failure",
+            recovery_status="in_progress",
+        )
+        failed_report = agent_handoff.evaluate_delivery_graph(failed)
+
+        self.assertIn("child-implement", pending_report["ready_tasks"])
+        self.assertIn("child-implement", failed_report["ready_tasks"])
+        self.assertEqual(
+            failed_report["master_recovery"],
+            [
+                {
+                    "parent_issue": 176,
+                    "required": True,
+                    "task": "parent-recovery",
+                    "status": "in_progress",
+                }
+            ],
+        )
+        self.assertNotIn(
+            "missing-master-recovery",
+            failed_report["rejection_codes"],
+        )
+
+    def test_code_contract_edge_to_parent_remote_rejects_and_names_merge_edge(self):
+        graph = delivery_graph()
+        graph["dependencies"][0] = {
+            "task": "child-implement",
+            "depends_on": "parent-remote",
+            "type": "code_contract",
+        }
+        report = agent_handoff.evaluate_delivery_graph(graph)
+
+        self.assertIn(
+            "missing-required-code-contract-edge",
+            report["rejection_codes"],
+        )
+        self.assertIn(
+            "wrong-code-contract-edge",
+            report["rejection_codes"],
+        )
+        self.assertIn(
+            {
+                "task": "child-implement",
+                "depends_on": "parent-merge",
+                "type": "code_contract",
+            },
+            report["required_edges"],
+        )
+        self.assertNotIn("child-implement", report["ready_tasks"])
+
+    def test_parent_completion_closure_and_remote_keep_post_merge_gate(self):
+        report = agent_handoff.evaluate_delivery_graph(delivery_graph())
+        required = {
+            (item["task"], item["depends_on"], item["type"])
+            for item in report["required_edges"]
+        }
+        for task_id in (
+            "parent-completion",
+            "parent-closure",
+            "parent-remote",
+        ):
+            with self.subTest(task=task_id):
+                self.assertIn(
+                    (
+                        task_id,
+                        "parent-post-merge-build",
+                        "delivery_gate",
+                    ),
+                    required,
+                )
+
+        invalid = delivery_graph()
+        invalid["dependencies"] = [
+            item
+            for item in invalid["dependencies"]
+            if item["task"] != "parent-closure"
+        ]
+        invalid_report = agent_handoff.evaluate_delivery_graph(invalid)
+        self.assertIn(
+            "missing-parent-post-merge-gate",
+            invalid_report["rejection_codes"],
+        )
+
+
 class ExactHandoffTests(unittest.TestCase):
     def test_exact_clean_strict_descendant_is_accepted(self):
         with handoff_repository() as (root, _base, parent, result):
@@ -262,6 +532,22 @@ class ExactHandoffTests(unittest.TestCase):
         self.assertEqual(report["handoffs"][0]["changed_lines"], 2)
         self.assertRegex(report["input_seal"], r"^[0-9a-f]{64}$")
         self.assertRegex(report["result_seal"], r"^[0-9a-f]{64}$")
+
+    def test_unmerged_parent_contract_blocks_full_handoff(self):
+        with handoff_repository() as (root, _base, parent, result):
+            document = handoff_document(root, parent, result)
+            document["delivery_graph"] = delivery_graph(
+                merge_status="pending",
+                build_status="pending",
+                watcher_process=None,
+            )
+            report = agent_handoff.validate_document(document, root)
+
+        self.assertFalse(report["summary"]["trusted_push_eligible"])
+        self.assertIn(
+            "code-contract-not-merged",
+            report["handoffs"][0]["rejection_codes"],
+        )
 
     def test_cli_emits_canonical_result_and_fails_closed(self):
         with (

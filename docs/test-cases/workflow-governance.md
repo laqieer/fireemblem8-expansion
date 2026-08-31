@@ -503,12 +503,20 @@ game behavior needs a compensating change.
 7. Exercise the local coordinator with autostop and stop-on-disconnect enabled
    but no availability plan. Confirm trusted push fails before unattended
    delivery relies on that coordinator.
-8. Exercise reporter fixture schema version 2 with successful and stale
+8. Parse the typed delivery graph. Confirm a merged parent makes child
+   implementation ready while its exact-master Build is in progress and
+   remote completion is pending; an unmerged parent blocks the child; a
+   healthy pending watcher never appears in todo dependencies; terminal
+   master failure requires active fix-forward/revert without rewriting the
+   prior pending result; `child-implement -> parent-remote` rejects and names
+   `child-implement -> parent-merge`; and parent completion, closure, and
+   remote completion retain their own post-merge-Build edges.
+9. Exercise reporter fixture schema version 2 with successful and stale
    normalized handoffs. Confirm identity sealing and accepted/rejected,
    stale-response, lifetime, RSS, coordination-turn, and recovery-minute
    metrics. Confirm the frozen version 1 baseline still rejects the extension
    field and retains its exact expected schema.
-9. Run
+10. Run
    `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`,
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`,
    and `python3 scripts/check_docs.py --check`.
@@ -528,6 +536,14 @@ one incomplete check and recovery cost, creates exactly one replacement
 assignment, and performs no destructive process action. The hibernated local
 coordinator is unavailable without a time-bounded disable/takeover plan.
 
+The typed dependency graph reports `child-implement` ready as soon as
+`parent-merge` is done, independently of a healthy running master watcher and
+pending parent completion/closure/remote tasks. An unmerged parent blocks the
+child. Terminal master failure activates `fix_forward_revert`, but does not
+retroactively make the earlier pending watcher a valid reason to idle.
+Completion, closure, and remote completion for the parent remain blocked by
+its own post-merge Build.
+
 The issue #176 reporter consumes version 2 normalized handoff evidence and
 reports failures, stale responses, maximum owner lifetime and RSS,
 coordination turns, and recovery cost. Its frozen version 1 baseline, expected
@@ -546,7 +562,9 @@ interrupted test, host-process action, unavailable local coordinator, unknown
 field/enum/rejection, duplicate JSON key, and incoherent reporter record fails
 closed. Watcher process success cannot replace a nonterminal or failed
 authoritative run, and a watcher timeout cannot turn authoritative success
-into failure.
+into failure. A code/contract edge to parent remote completion, missing parent
+merge edge, watcher-as-todo dependency, missing parent post-merge gate, or
+terminal failure without active fix-forward/revert also rejects.
 
 ### Interactions and save compatibility
 
@@ -563,8 +581,10 @@ creates bounded temporary repositories below `build/test-artifacts/`, derives
 real ancestry/branch/diff/worktree/trailer facts with the issue #176 clean Git
 boundary, and exercises every fixture listed above. The complete
 `scripts/workflow_pilot/tests` discovery reruns the frozen issue #176 reporter
-regressions. The workflow-governance and docs checks validate this indexed
-procedure and preserve the trusted-push and centralized-watcher policy.
+regressions. Parsed task/dependency/watcher fixtures compute readiness and
+required edges rather than asserting policy wording. The workflow-governance
+and docs checks validate this indexed procedure and preserve the trusted-push
+and centralized-watcher policy.
 
 ### Cleanup and limitations
 

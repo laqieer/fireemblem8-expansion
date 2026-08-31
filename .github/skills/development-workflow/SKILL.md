@@ -584,6 +584,25 @@ result commit, direct parent, diff, changed paths, line count, commit
 message, and clean/conflict state; do not persist a second mutable copy of
 those derivable facts.
 
+Dependency edges have explicit semantics. A child issue with a
+`code_contract` dependency becomes implementation-ready when the parent
+`merge` task is `done` and the target tree contains that contract. Never point
+the child implementation task at the parent's post-merge Build, completion,
+evidence/closure, or remote-completion task. Those are `delivery_gate`
+dependencies for finishing the parent itself: the parent's completion,
+closure, and remote completion each remain blocked by its own post-merge
+Build. A direct async watcher is orthogonal execution state and must never be
+a todo or dependency target.
+
+Therefore a merged parent with a healthy exact-master Build still in progress
+does not block dependency-ready child implementation; continue that work
+concurrently. A parent whose merge is still pending blocks the child. If the
+master run later becomes terminal-failed, enter immediate fix-forward/revert
+state, but do not reinterpret the earlier healthy pending interval as a reason
+the coordinator should have idled. The machine-readable delivery graph rejects
+`child-implement -> parent-remote` for a declared `code_contract` relationship
+and identifies `child-implement -> parent-merge` as the required edge.
+
 `assignment_sent`, `assignment_received`, `progressing`, `committed`, and
 `handed_off` are separate timestamped states. Only one clean result commit
 whose sole direct parent is the assigned SHA, whose final trailer is the

@@ -483,6 +483,37 @@ owner never pushes, opens or updates a PR, comments, creates a remote ref,
 dispatches CI, or merges; those remain coordinator actions under the existing
 trusted owner boundary.
 
+### Typed delivery dependencies
+
+The handoff's `delivery_graph` separates authored relationship semantics from
+normalized task and watcher facts:
+
+- `code_contract` is the only parent/child implementation relationship. Its
+  required edge is `child-implement -> parent-merge`.
+- `delivery_gate` links the parent's own completion, closure, and remote
+  completion to `parent-post-merge-build`.
+- task phases and states are normalized Git/GitHub/orchestration facts.
+  Watchers are separate records and cannot appear on either side of a todo
+  dependency.
+
+The evaluator derives pending-task readiness only from typed task edges. When
+the parent merge is `done`, the target tree contains the required contract, so
+child implementation is ready even while the healthy exact-master Build is
+`in_progress` and parent remote completion is pending. When parent merge is
+pending, the child is blocked by `parent-merge`. A graph that instead records
+`child-implement -> parent-remote` rejects with both the missing required
+merge edge and wrong code-contract edge, and reports the exact edge that must
+replace it.
+
+An in-progress master watcher is reported as `orthogonal_to_todos: true` and
+does not alter the ready set. A dependency that names its watcher ID rejects.
+If the authoritative run later completes with failure, the post-merge Build
+task becomes blocked and `fix_forward_revert` must be in progress. That
+terminal transition does not change the fact that dependency-ready work
+should have proceeded during the earlier healthy pending interval. Regardless
+of child readiness, the parent completion, closure, and remote-completion
+tasks retain direct `delivery_gate` edges to the parent's post-merge Build.
+
 ### Coordinator, watcher, and recovery contract
 
 One document admits exactly one coordinator. Each included exact run has one
