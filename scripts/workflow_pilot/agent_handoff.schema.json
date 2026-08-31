@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/laqieer/fireemblem8-expansion/blob/master/scripts/workflow_pilot/agent_handoff.schema.json",
   "title": "Workflow pilot agent handoff",
-  "protocol_version": 2,
+  "protocol_version": 3,
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -124,6 +124,7 @@
         "object_id",
         "anchor_ref",
         "anchor_object_id",
+        "history_events",
         "schema_version",
         "repository",
         "issue",
@@ -131,6 +132,9 @@
         "handoff_sequence",
         "head_seal",
         "pr_binding",
+        "signer",
+        "ruleset_id",
+        "publication_attestation",
         "event",
         "previous_object_id",
         "observation"
@@ -145,6 +149,7 @@
         "handoff_id",
         "owner_id",
         "owner_database_id",
+        "handoff_kind",
         "replaces_handoff_id",
         "issue",
         "pull_request",
@@ -154,10 +159,13 @@
         "candidate_sha",
         "lifecycle_state",
         "interruption_snapshot",
+        "assigned_at",
         "closed_at",
         "input_seal",
         "git_seal",
         "result_seal",
+        "operation_nonce",
+        "assignment",
         "seal"
       ]
     },
@@ -170,6 +178,7 @@
         "pull_request",
         "owner_id",
         "owner_database_id",
+        "handoff_kind",
         "replaces_handoff_id",
         "assigned_parent_sha",
         "expected_branch",
@@ -186,7 +195,8 @@
         "evidence",
         "check_receipts",
         "result",
-        "interruption"
+        "interruption",
+        "recovery_resolution"
       ],
       "properties": {
         "id": {
@@ -211,6 +221,13 @@
         "owner_database_id": {
           "type": "integer",
           "minimum": 1
+        },
+        "handoff_kind": {
+          "enum": [
+            "root",
+            "oom_replacement",
+            "review_successor"
+          ]
         },
         "replaces_handoff_id": {
           "type": [
@@ -284,6 +301,9 @@
             "object",
             "null"
           ]
+        },
+        "recovery_resolution": {
+          "type": "array"
         }
       }
     },
@@ -297,16 +317,18 @@
         "collector_login",
         "collector_database_id",
         "issued_at",
+        "operation",
         "authority_protection",
+        "pull_request_observation",
         "availability",
         "remote_coverage",
         "runtime_telemetry",
         "resource_receipts",
-        "seal"
+        "signature"
       ],
       "properties": {
         "schema_version": {
-          "const": 1
+          "const": 2
         },
         "repository": {
           "type": "string",
@@ -327,8 +349,17 @@
         "issued_at": {
           "$ref": "#/$defs/time"
         },
+        "operation": {
+          "type": "object"
+        },
         "authority_protection": {
           "type": "object"
+        },
+        "pull_request_observation": {
+          "type": [
+            "object",
+            "null"
+          ]
         },
         "availability": {
           "type": "object"
@@ -342,8 +373,9 @@
         "resource_receipts": {
           "type": "array"
         },
-        "seal": {
-          "$ref": "#/$defs/sha256"
+        "signature": {
+          "type": "string",
+          "minLength": 1
         }
       }
     }

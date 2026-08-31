@@ -639,8 +639,10 @@ trusted owner push. Repeated-parent/stale results, wrong parents or branches,
 dirty/conflicting worktrees, missing commits/trailers/evidence, scope or
 budget violations, and any push/PR/comment/dispatch/ref/merge action by the
 implementation owner fail closed. A committed handoff closes that owner; a
-second root cannot be introduced. Only an interrupted current owner can
-receive the single causally linked replacement described below.
+second root cannot be introduced. A closed committed handoff may have one
+causally later, nonoverlapping `review_successor` with a fresh owner and the
+closed result as assigned parent. An interrupted current owner may instead
+have one `oom_replacement`.
 
 Owner, coordinator, and remote-actor comparisons require immutable numeric
 GitHub IDs resolved authoritatively before validation. Missing IDs, one login
@@ -648,20 +650,28 @@ mapped to multiple IDs, or one ID mapped to multiple logins reject.
 Each new document carries the prior closed handoffs as a sealed hash chain
 covering sequence, previous seal, handoff, replacement edge, owner, lifecycle,
 issue, optional PR binding, candidate, interruption snapshot, input, Git, and
-result identities. Exactly one root handoff exists per issue authority. Only
-an interrupted current owner may have one causally later replacement; two
-roots, branches, gaps, replay, or owner reuse across PR binding reject.
+result identities. Exactly one root exists and successors form one linear
+chain. Two active successors, overlap, wrong causal parent, branches, gaps,
+replay, or owner reuse across PR binding reject.
 
 Create one stable issue-scoped protected branch under
 `refs/heads/workflow-pilot/authority/` before any PR exists. PR creation
-appends one immutable binding record containing actual PR number, base, head,
-time, and authorized numeric actor; it never creates a new namespace or
-genesis. A second independently protected branch under
+appends the exact externally signed GitHub PR API response: repository ID/full
+name, actual PR number, base/head branches and OIDs, head repository,
+creation/observation times, and authorized numeric actor. It never creates a
+new namespace or genesis. A second independently protected branch under
 `refs/heads/workflow-pilot/authority-anchor/` binds every authority head and
-sequence. Both branches deny force pushes and deletion. Every new commit has
-the observed head as its sole direct parent and is published only by a normal
-fast-forward push. The planner never emits a force-capable command.
-Unverified ruleset/protection or actor authority fails closed.
+sequence. One preflighted normal `git push --atomic` publishes both
+direct-parent commits or neither. Separate/split pushes, stale coordinator
+plans, and origins without atomic capability reject. The planner never emits
+a force-capable command.
+
+The terminal coordinator attestation includes the normalized live GitHub
+ruleset API response. It must name the authority's ruleset ID, active branch
+enforcement, the exact two included refs and no excludes, restricted updates,
+non-fast-forwards, and deletion, plus exactly the expected numeric bypass
+actors with no additional bypass. Unrelated or incomplete rulesets fail
+closed.
 
 Every read is a bounded before/fetch/after transaction over both protected
 branches. It fetches exact objects without moving local refs or `FETCH_HEAD`,
@@ -678,19 +688,22 @@ evidence, not the workflow conclusion: query the authoritative GitHub Actions
 run once and preserve its exact success, failure, or active state. Duplicate
 owners, coordinators, or watchers reject.
 
-The trusted coordinator collector seals one complete receipt for repository
-and actor numeric IDs, observation interval, GitHub timeline, Actions runs,
-refs, audit-log availability, normalized remote events, process/network
-policy, runtime telemetry, resources, protection, and availability. A source
-event omitted from normalized coverage rejects. If any GitHub source cannot
-provide complete coverage, every implementation process must instead be
-credentialless and network-denied for its entire lifecycle. Caller-authored
-remote-action arrays or digests have no authority.
+The trusted coordinator collector is an isolated external asymmetric signer;
+its private key is absent from the implementation namespace and only its
+public verification material is pinned in protected authority history.
+Same-UID HMAC keys, candidate digests, and filesystem permission modes provide
+no trust. One single-use nonce operation terminates the implementation
+process, performs final GitHub timeline/Actions/ref/audit collection through
+the exact eligibility instant, then signs the complete assignment, dependency
+graph, handoffs, successors, metrics, PR/ruleset observations, runs, watchers,
+and coverage. Any mutation or event after coverage invalidates eligibility.
+Incomplete GitHub coverage requires a credentialless, network-denied process.
 
-After evidenced SIGKILL/OOM, the coordinator seals exact status, dirty paths,
-and preserved paths into the interrupted history receipt, marks every check
-incomplete, and records recovery telemetry. A later completed replacement can
-validate from that immutable snapshot after the old worktree is clean. Never
+After evidenced SIGKILL/OOM, protected authority history stores content-bearing
+bytes, path/mode/hash identities, exact status, and the full original
+assignment/scope/criteria/checks/budgets. A later completed replacement must
+restore every preserved change or carry a trusted explicit resolution mapping;
+committing an unrelated file does not recover the interrupted work. Never
 simulate OOM or kill unrelated processes. Coordinator availability is also
 sealed: its observation must be fresh at validation, precede assignment, and
 cover the full unattended interval with both stop triggers disabled.
@@ -702,12 +715,15 @@ equal, predated, or multiple replacements reject.
 
 Workflow-pilot reporter schema v2 carries the complete source handoff document
 plus its input, Git, check, coordinator, and result seals. Before metrics, the
-reporter revalidates the source document and aggregates only verified values:
-line usage from Git, protocol changes from the parsed versioned schema,
-ROM/RAM from closed build/map/resource receipts, and RSS/lifetime/coordination/
-recovery from coordinator telemetry. Unaffected surfaces derive zero. A
-hand-authored claim cannot change these values. Frozen reporter baseline
-schema v1 remains unchanged; the handoff protocol is specified by
+reporter verifies the original asymmetric attestation and proves the original
+authority/anchor OIDs remain ancestors of current protected heads. Historical
+metrics do not require the old worktree HEAD or live-receipt freshness, so
+sequential successors remain aggregatable. Line usage comes from Git;
+protocol changes from the parsed schema; RSS/lifetime/coordination/recovery
+from telemetry. Only exact proven host-only paths derive zero ROM/RAM. Every
+other tracked input, including linker scripts, Makefiles, assets, config,
+fonts, text, and generated data, requires closed build/map/resource evidence.
+Frozen reporter baseline schema v1 remains unchanged; the protocol is specified by
 `scripts/workflow_pilot/agent_handoff.schema.json`.
 
 The indexed source-only regression is

@@ -501,9 +501,10 @@ game behavior needs a compensating change.
    incomplete, missing-evidence, missing-trailer, out-of-scope, line-budget,
    lifetime, and RSS fixtures. Confirm script-only diffs derive zero ROM, RAM,
    and protocol usage. Then change a resource path and require a closed
-   build/map/resource receipt; change the parsed handoff schema and require a
-   monotonic protocol version. Tampering any telemetry/resource claim without
-   its coordinator seal must reject.
+   build/map/resource receipt. Prove `ldscript.txt`, Makefiles, assets,
+   configuration, fonts, text, generated data, and every unclassified input
+   cannot derive zero. Change the parsed schema and require a monotonic
+   protocol version. Tampering telemetry/resource claims must reject.
 4. Exercise reused-owner and duplicate-watcher fixtures. Add an
    implementation-owner push, comment, review-request, and CI-dispatch event
    in separate trusted sources and confirm each rejects. Remove each from the
@@ -512,18 +513,20 @@ game behavior needs a compensating change.
    With separate local-bare owner and implementation roles, protect the stable
    issue authority and independent anchor branches against deletion and
    non-fast-forward updates. Bootstrap before a PR, append a handoff, then
-   append the immutable actual PR/base/head binding without changing the
-   namespace or handoff history. Reject rebinding, same-owner reuse, stale
-   expected head/sequence, rollback, replay, and authority A-to-B-to-A against
-   the anchor. Confirm generated plans contain only normal fast-forward pushes.
+   append only an externally signed GitHub PR API response with exact
+   repository/base/head/OIDs/times/actor. Reject invented fields, rebinding,
+   same-owner reuse, stale state, rollback, replay, and ABA. Confirm one
+   preflighted `git push --atomic` publishes both refs; split/two-coordinator
+   plans and servers without atomic capability reject without partial state.
 5. Reconcile a direct watcher timeout with an authoritative successful
    `github-actions-api` run. Then use an authoritative failed run plus a
    watcher process error and confirm delivery remains failed.
 6. Exercise the SIGKILL/OOM fixture. Confirm kernel evidence names signal 9,
-   the interrupted check remains incomplete, and the coordinator seals exact
-   status, dirty paths, preserved paths, and recovery telemetry into history.
-   Clean the old worktree, complete one causally linked replacement, and
-   confirm it becomes eligible from that immutable snapshot. Confirm sent-only,
+   the interrupted check remains incomplete, and protected authority stores
+   content bytes plus path/mode/hash/status and the complete original
+   assignment contract. Clean the old worktree and commit the restored
+   `recovery.py` itself. Prove each preserved change is restored or explicitly
+   resolved; unrelated commits and tampered/lost content reject. Confirm sent-only,
    sent/received, and sent/received/progressing prefixes report `in_progress`
    without trusted/delivery eligibility. Equal, predated, and multiple
    replacement assignments reject.
@@ -531,6 +534,10 @@ game behavior needs a compensating change.
    post-assignment observations, expired coverage, and either enabled stop
    trigger. Accept only a fresh observation made before assignment and valid
    through the validation/lifecycle cutoff and unattended interval.
+   Confirm no HMAC/private key exists in the implementation namespace and
+   permission modes grant no trust. Mutating scope, graph, handoffs/successors,
+   metrics, PR/ruleset data, runs, watchers, or coverage invalidates the
+   external asymmetric attestation.
 8. Parse the typed delivery graph. Confirm a merged parent makes child
    implementation ready while its exact-master Build is in progress and
    remote completion is pending; an unmerged parent blocks the child; a
@@ -542,13 +549,12 @@ game behavior needs a compensating change.
    handoff to one exact child relationship/task and bind the parent Build task
    to one authoritative run SHA/status/conclusion. Reject issue `999`, blocked
    or done status relabels, and missing/duplicate relationships/tasks.
-9. Exercise reporter fixture schema version 2 with complete successful and
-   stale source handoff bundles. Confirm document/Git/input/result/check
-   revalidation, identity sealing, and accepted/rejected,
+9. Exercise reporter fixture schema version 2 with sequential root and
+   review-successor bundles. Confirm original asymmetric attestation plus
+   authority/anchor ancestry, accepted/rejected,
    stale-response, lifetime, RSS, coordination-turn, and recovery-minute
-   metrics. Reject a hand-authored accepted row or any source/result/receipt
-   seal drift. Confirm the frozen version 1 baseline still rejects the
-   extension field and retains its exact expected schema.
+   metrics without requiring old HEAD or live freshness. Reject hand-authored,
+   tampered, and nonancestor rows. Confirm frozen version 1 stays exact.
 10. Run
    `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`,
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`,
@@ -557,11 +563,13 @@ game behavior needs a compensating change.
 ### Expected result
 
 Only the exact clean one-commit descendant with a parent-trusted checker,
-fresh coordinator receipt, complete remote coverage, and protected monotonic
+terminal external asymmetric attestation, complete through-eligibility
+coverage, exact live ruleset/PR responses, and atomically protected monotonic
 authority reaches `trusted_push_eligible`.
 Assignment sent, received, progressing, committed, and handed-off remain
 distinct timestamped states. A committed result closes its implementation
-owner. Later work requires a fresh handoff and owner. The normalized input
+owner. Later review fixes use a linear, nonoverlapping `review_successor`; OOM
+uses a distinct `oom_replacement`. The normalized input
 Git, and result seals are deterministic. Required checks execute only a closed
 structured contract; passed labels do not replace its exact receipt or rerun.
 The actual safe pass fixture succeeds, while the safe trailing-whitespace
@@ -572,14 +580,15 @@ change that outcome.
 The watcher timeout records process failure while preserving authoritative CI
 success. The true failed run records authoritative failure and cannot become
 delivery-eligible. The OOM fixture persists a sealed interruption snapshot and
-lets a later clean completed replacement validate without preserving live
-dirt. Exactly one issue root and one causally linked replacement are allowed.
+lets a later clean completed replacement validate only after content-bearing
+bytes/modes are restored or explicitly resolved. Exactly one issue root and
+one causal successor chain are allowed.
 All actor identities are numeric and authoritative.
 
 The issue-scoped authority exists before PR creation. Its immutable binding
 retains no-PR history and rejects owner reuse after binding. Authority and
-anchor branches advance only through direct-parent normal pushes under
-verified protection. A stable read requires equal authority/anchor OIDs around
+anchor branches advance in one atomic direct-parent push under an exact signed
+live ruleset response. A stable read requires equal authority/anchor OIDs around
 fetch and at the final eligibility check; rollback, replay, ABA, stale state,
 and unverified protection reject. The coordinator receipt's event-source
 union detects omitted push/comment/review/dispatch events. Incomplete GitHub
@@ -601,12 +610,14 @@ already merged child contract implementation-ready.
 The issue #176 reporter consumes version 2 normalized handoff evidence and
 reports failures, stale responses, maximum owner lifetime and RSS,
 coordination turns, and recovery cost only from coordinator telemetry. Git
-derives line usage, parsed schema derives protocol changes, and closed
-build/map/resource receipts derive ROM/RAM; unaffected surfaces are zero. Its
+derives line usage, parsed schema derives protocol changes, and only exact
+proven host-only paths derive zero ROM/RAM; all other tracked inputs require
+closed dependency-bound build/map/resource evidence. Its
 frozen version 1 baseline, expected
 values, seals, lifecycle, trusted-push, and centralized-watcher contracts are
-unchanged. Version 2 accepts no hand-authored aggregate: it repeats complete
-source worktree and receipt validation before computing those metrics.
+unchanged. Historical version 2 accepts no hand-authored aggregate: it verifies
+the original signature and current protected ancestry without consulting the
+old worktree HEAD.
 
 ### Negative control
 
@@ -626,7 +637,11 @@ terminal failure without active fix-forward/revert also rejects. Issue/task/
 status relabeling, arbitrary commands, forged or stale check receipts,
 hand-authored reporter rows, owner-history chain mutation, missing/mixed actor
 IDs, omitted remote events, incomplete source coverage, claim tampering,
-future/stale availability, and unverified branch protection reject
+future/stale availability, local HMAC/self-attestation, post-coverage events,
+allowed-scope/run/watcher mutation, unrelated ruleset IDs, wrong patterns,
+unexpected bypass actors, invented PR observations, split/non-atomic
+publication, overlapping review successors, lost recovery bytes, zero-impact
+linker claims, nonancestor history, and unverified protection reject
 independently. A missing/reset canonical authority or anchor branch, hostile
 Git config or local attributes,
 incomplete-prefix rejection, and equal/predated/multiple OOM replacement also

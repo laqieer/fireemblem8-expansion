@@ -99,19 +99,23 @@ a caller-authored command or trust a passed label without rerunning its safe
 contract.
 
 Use immutable numeric GitHub IDs for every owner, coordinator, and remote
-event. One root owner exists for each issue authority; only an interrupted
-current owner may receive one causally linked replacement. Reporter v2
-consumes the complete source document and input/Git/result/check/coordinator
-seals, then aggregates only Git-derived lines, parsed schema changes, closed
-build/map/resource values, and coordinator runtime telemetry.
+event. One root owner exists for each issue authority. A closed commit may
+have one nonoverlapping `review_successor`; an interrupted current owner may
+have one `oom_replacement`. Both edges are linear, causal, fresh-owner
+transitions. Reporter v2 separates live eligibility from historical metrics:
+it verifies the original asymmetric attestation and authority/anchor ancestry
+without requiring the old worktree HEAD or a fresh live receipt.
 
 Create the issue-scoped protected authority branch before a PR exists and
 never rename or reset it at PR creation. Bind the eventual PR by appending an
-immutable record with its number, base, head, time, and authorized numeric
-actor. Every authority and independent anchor update is a normal
-fast-forward: each commit directly parents the observed head and advances a
-monotonic sequence. Branch rules must reject force pushes and deletion for
-both branches; unverified ruleset or actor authority fails closed. Bounded
+immutable, externally signed GitHub PR API response containing repository,
+number, base/head branches and OIDs, head repository, creation/observation
+times, and coordinator numeric ID. Every authority and independent anchor
+update is one normal `git push --atomic` transaction after atomic-capability
+preflight; both commits directly parent the observed pair. Split or stale
+plans reject. A terminal signed GitHub ruleset API response must prove active
+exact-branch targeting, restricted updates/non-fast-forwards/deletion, and
+only the expected numeric bypass actors. Bounded
 remote-OID-before/fetch/remote-OID-after reads and a final dual-ref
 observation check reject replay, rollback, and ABA.
 
@@ -123,14 +127,22 @@ checker pins whitespace/config behavior and disables external diff, textconv,
 local attributes, and ambient configuration bypasses.
 
 Remote-action, availability, resource, OOM snapshot, RSS, lifetime,
-coordination-turn, and recovery evidence comes only from a fresh
-coordinator-sealed receipt. The receipt covers repository and actor numeric
-IDs, the full observation interval, timeline/run/ref/audit sources, and
-process/network policy. Incomplete GitHub coverage requires a credentialless,
-network-denied implementation process; otherwise reject. Availability must be
-observed before assignment, remain fresh at validation, and cover the full
-unattended interval. A sealed interruption snapshot remains valid after a
-clean replacement recovers the worktree.
+coordination-turn, dependency graph, handoff, run, and watcher evidence comes
+only from an asymmetric attestation signed by an isolated external service
+whose private key is absent from the implementation namespace. Local HMACs
+and permission modes establish no trust. The single-use operation terminates
+the implementation process, performs final timeline/run/ref/audit collection
+through the eligibility instant, and signs the complete immutable document;
+there is no post-receipt mutation window. Incomplete GitHub coverage requires
+a credentialless, network-denied process.
+
+OOM history stores content-bearing file bytes, modes, hashes, original
+assignment/scope/criteria/checks/budgets, and status in the protected
+authority event. A completed replacement must restore every preserved change
+or carry an attested explicit resolution mapping. Only exact proven host-tool
+paths derive zero resource impact; linker scripts, Makefiles, assets, configs,
+fonts, text, generated data, and every unclassified tracked input require a
+closed build/map/resource receipt.
 Sent/received/progressing prefixes remain non-eligible replacement progress,
 and the replacement assignment must be strictly later than interruption.
 
