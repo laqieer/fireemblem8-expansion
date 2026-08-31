@@ -1252,6 +1252,7 @@ class VerifyCliCwdTests(unittest.TestCase):
             )
 
             for job_name in verify_mod._COMBINED_JOBS:
+                timeout = "90" if job_name == "build" else "60"
                 job_mutations = {
                     "self-hosted": self.replace_in_job(
                         original,
@@ -1262,14 +1263,14 @@ class VerifyCliCwdTests(unittest.TestCase):
                     "container": self.replace_in_job(
                         original,
                         job_name,
-                        "    timeout-minutes: 60",
-                        "    timeout-minutes: 60\n"
+                        f"    timeout-minutes: {timeout}",
+                        f"    timeout-minutes: {timeout}\n"
                         "    container: ubuntu:latest",
                     ),
                     "timeout": self.replace_in_job(
                         original,
                         job_name,
-                        "    timeout-minutes: 60",
+                        f"    timeout-minutes: {timeout}",
                         "    timeout-minutes: 1",
                     ),
                     "job-env": self.replace_in_job(
@@ -1312,9 +1313,9 @@ class VerifyCliCwdTests(unittest.TestCase):
                     "duplicate-key": self.replace_in_job(
                         original,
                         job_name,
-                        "    timeout-minutes: 60",
-                        "    timeout-minutes: 60\n"
-                        "    timeout-minutes: 60",
+                        f"    timeout-minutes: {timeout}",
+                        f"    timeout-minutes: {timeout}\n"
+                        f"    timeout-minutes: {timeout}",
                     ),
                     "reordered-keys": self.replace_in_job(
                         self.replace_in_job(
@@ -1324,11 +1325,11 @@ class VerifyCliCwdTests(unittest.TestCase):
                             "    __RUNS_ON__",
                         ),
                         job_name,
-                        "    timeout-minutes: 60",
+                        f"    timeout-minutes: {timeout}",
                         "    runs-on: ubuntu-latest",
                     ).replace(
                         "    __RUNS_ON__",
-                        "    timeout-minutes: 60",
+                        f"    timeout-minutes: {timeout}",
                         1,
                     ),
                 }

@@ -222,7 +222,9 @@ absent. The identity validator, router, and mode-classifier contain only their
 reviewed names, runner, timeout, outputs, environment,
 dependencies/conditions, and steps. Each combined job contains only its
 identity/classifier dependencies and fail-closed condition, `runs-on: ubuntu-latest`,
-`timeout-minutes: 60`, its exact allowlisted environment, and `steps`.
+its exact allowlisted environment, and `steps`. The comprehensive `build` job
+has `timeout-minutes: 90`; `host-tests`, `extended-host-tests`, and `legacy`
+remain 60 minutes, while identity/router/classifier and summary remain 5.
 Classifier authority uses direct PR-base or push identities, with a
 trusted-default-branch failure bootstrap only when PR base identity is absent
 or unusable;
@@ -283,6 +285,11 @@ root-only mode-`0700` `/mnt/supervisor`. The candidate must not traverse it or
 inherit an FD; the wrapper must use that surviving view to require itself as
 the sole post-build member while host kill/removal retains the actual cgroup
 path.
+The larger `build` ceiling covers observed shared-runner compile variance
+without removing or weakening a gate. The delivery coordinator still uses
+`timeout 90m gh run watch <run-id> --interval 30 --exit-status`; because that
+watch may expire near the job ceiling, it queries the exact run status once and
+re-arms one watcher once only when the run is still nonterminal.
 `summary` must retain
 `always()`, its reliably evaluated dynamic summary name, the classifier plus exact ordered
 worker/publisher needs, Ubuntu/five-minute context, exact classifier/result

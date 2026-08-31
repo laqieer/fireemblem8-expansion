@@ -410,14 +410,22 @@ controls therefore cannot replace either executable or authority root.
 At job scope, router and mode-classifier have separate closed setup mappings.
 Every combined worker has a closed direct mapping: classifier dependency and
 fail-closed condition,
-`runs-on: ubuntu-latest`, `timeout-minutes: 60`, its reviewed environment, and
-`steps`. Host, modern, extended-host, and legacy therefore reject
+`runs-on: ubuntu-latest`, its reviewed environment, and `steps`. The
+comprehensive `build` worker has `timeout-minutes: 90`; `host-tests`,
+`extended-host-tests`, and `legacy` remain 60 minutes, while all setup jobs and
+summary remain 5. Host, modern, extended-host, and legacy therefore reject
 containers, services, matrices/strategies, job permissions/defaults,
 other dependencies, conditions/advisory mode, deployment environments, concurrency,
 reusable-job `uses`/secrets, custom shell context, unknown fields, duplicate
 keys, reordered keys, and complex key aliases. Patch publication and summary
 retain separate closed contracts, including coherent push identity,
 worker/publisher audit, and dynamic full/metadata summary name.
+
+The 90-minute build ceiling covers observed shared-runner compile variance
+without changing any Build content. The coordinator's
+`timeout 90m gh run watch <run-id> --interval 30 --exit-status` can expire near
+that ceiling; after one exact status query, it re-arms one watcher once only if
+the run remains nonterminal.
 
 Before the command succeeds, it creates a bounded mutable artifact sandbox
 under the checkout's ignored `build/test-artifacts/` directory and copies only

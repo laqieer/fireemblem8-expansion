@@ -790,11 +790,12 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
         if indent != 4 or line.startswith("    -"):
             continue
         direct_lines.append(line)
+    expected_timeout = 90 if job_name == "build" else 60
     expected_direct = [
         f"    {WORKER_NEEDS}",
         f"    if: {WORKER_CONDITION}",
         "    runs-on: ubuntu-latest",
-        "    timeout-minutes: 60",
+        f"    timeout-minutes: {expected_timeout}",
         "    env:",
         "    steps:",
     ]
@@ -1206,6 +1207,29 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         errors.append("the retired standalone CI workflow must be deleted")
 
     jobs = _job_blocks(text)
+    expected_timeouts = {
+        "event-identity": 5,
+        "event-router": 5,
+        "event-classifier": 5,
+        "host-tests": 60,
+        "build": 90,
+        "extended-host-tests": 60,
+        "legacy": 60,
+        "patch-release": 60,
+        "summary": 5,
+    }
+    for job_name, timeout in expected_timeouts.items():
+        if job_name not in jobs:
+            continue
+        matches = re.findall(
+            r"^    timeout-minutes: ([0-9]+)$",
+            jobs[job_name],
+            re.MULTILINE,
+        )
+        if matches != [str(timeout)]:
+            errors.append(
+                f"{job_name} timeout-minutes must be exactly {timeout}"
+            )
     expected_jobs = {
         "event-identity",
         "event-router",
@@ -3141,6 +3165,43 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     )
                 )
 
+    def test_parsed_job_timeout_map_is_exact_and_closed(self):
+        expected = {
+            "event-identity": 5,
+            "event-router": 5,
+            "event-classifier": 5,
+            "host-tests": 60,
+            "build": 90,
+            "extended-host-tests": 60,
+            "legacy": 60,
+            "patch-release": 60,
+            "summary": 5,
+        }
+        jobs = _job_blocks(self.text)
+        actual = {}
+        for job_name in expected:
+            matches = re.findall(
+                r"^    timeout-minutes: ([0-9]+)$",
+                jobs[job_name],
+                re.MULTILINE,
+            )
+            self.assertEqual(matches, [str(expected[job_name])], job_name)
+            actual[job_name] = int(matches[0])
+        self.assertEqual(actual, expected)
+
+        for job_name, timeout in expected.items():
+            replacement = 60 if timeout == 90 else 90 if timeout == 60 else 60
+            with self.subTest(job=job_name, replacement=replacement):
+                job = jobs[job_name]
+                changed_job = job.replace(
+                    f"    timeout-minutes: {timeout}",
+                    f"    timeout-minutes: {replacement}",
+                    1,
+                )
+                self.assertNotEqual(changed_job, job)
+                changed = self.text.replace(job, changed_job, 1)
+                self.assertTrue(_errors(changed, False))
+
     def test_combined_workers_reject_spaced_reviewed_job_keys(self):
         for job_name in COMBINED_WORKERS:
             with self.subTest(job=job_name):
@@ -3156,15 +3217,15 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 )
 
     def test_reviewed_job_key_aliases_fail_closed(self):
-        allowed = {
-            "needs": "[event-identity, event-classifier]",
-            "if": WORKER_CONDITION,
-            "runs-on": "ubuntu-latest",
-            "timeout-minutes": "60",
-            "env": "",
-            "steps": "",
-        }
         for job_name in COMBINED_WORKERS:
+            allowed = {
+                "needs": "[event-identity, event-classifier]",
+                "if": WORKER_CONDITION,
+                "runs-on": "ubuntu-latest",
+                "timeout-minutes": "90" if job_name == "build" else "60",
+                "env": "",
+                "steps": "",
+            }
             for field, value in allowed.items():
                 escaped = f'"\\u{ord(field[0]):04x}{field[1:]}"'
                 suffix = f" {value}" if value else ""
@@ -3269,6 +3330,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "shell": "untrusted-shell {0}",
         }
         for job_name in COMBINED_WORKERS:
+            timeout = "90" if job_name == "build" else "60"
             for field, value in execution_fields.items():
                 with self.subTest(job=job_name, field=field):
                     changed = self.text.replace(
@@ -3286,7 +3348,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
             for allowed_line in (
                 "    runs-on: ubuntu-latest",
-                "    timeout-minutes: 60",
+                f"    timeout-minutes: {timeout}",
                 "    env:",
                 "    steps:",
             ):
@@ -3313,11 +3375,15 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     1,
                 )
                 .replace(
-                    "    timeout-minutes: 60",
+                    f"    timeout-minutes: {timeout}",
                     "    runs-on: ubuntu-latest",
                     1,
                 )
-                .replace("    __RUNS_ON__", "    timeout-minutes: 60", 1)
+                .replace(
+                    "    __RUNS_ON__",
+                    f"    timeout-minutes: {timeout}",
+                    1,
+                )
             )
             with self.subTest(job=job_name, reordered=True):
                 changed = self.text.replace(job, reordered, 1)
@@ -3330,7 +3396,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
             for original, replacement in (
                 ("    runs-on: ubuntu-latest", "    runs-on: self-hosted"),
-                ("    timeout-minutes: 60", "    timeout-minutes: 59"),
+                (
+                    f"    timeout-minutes: {timeout}",
+                    f"    timeout-minutes: {int(timeout) - 1}",
+                ),
             ):
                 with self.subTest(job=job_name, replacement=replacement):
                     job = _job_blocks(self.text)[job_name]

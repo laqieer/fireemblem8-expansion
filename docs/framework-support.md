@@ -97,6 +97,13 @@ Candidate output is never replayed, logged, or uploaded; the trusted host emits
 only fixed status text with a numeric exit classification. Arbitrary output
 volume cannot change an otherwise successful build. All other writable roots
 and regular files retain tmpfs/ulimit bounds; no output sink exists.
+The comprehensive `build` job alone has a 90-minute ceiling for observed
+shared-runner compile variance. Host, extended-host, legacy, and patch
+publication remain 60 minutes; identity/router/classifier and summary remain
+5. No Build content or required gate changes. A coordinator running
+`timeout 90m gh run watch <run-id> --interval 30 --exit-status` may reach its
+own limit near the job ceiling; it queries that exact run once and re-arms one
+watcher once only if the run is still nonterminal.
 The base is then downloaded to an unpredictable mode-restricted path and only
 absolute isolated Python from an empty runtime CWD/environment may consume the
 staged producer, target, and base. The base is deleted on success/failure,
