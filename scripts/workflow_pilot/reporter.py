@@ -21,6 +21,7 @@ from typing import Any, Iterable
 
 
 SCHEMA_VERSION = 1
+HANDOFF_FIXTURE_SCHEMA_VERSION = 2
 GIT = "/usr/bin/git"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -149,6 +150,51 @@ PR_OPEN_PHASE_EVENT_TYPES = {
 POST_MERGE_EVENT_TYPES = {
     "broken_master",
     "escaped_defect",
+}
+HANDOFF_OUTCOMES = {"accepted", "in_progress", "interrupted", "rejected"}
+HANDOFF_REJECTION_CODES = {
+    "authoritative-run-failed",
+    "authoritative-run-incomplete",
+    "changed-lines-budget-exceeded",
+    "conflicting-worktree",
+    "coordinator-unavailable",
+    "dirty-worktree",
+    "duplicate-coordinator",
+    "duplicate-owner",
+    "duplicate-watcher",
+    "host-process-action-prohibited",
+    "implementation-owner-remote-action",
+    "incomplete-check",
+    "incomplete-evidence",
+    "incomplete-lifecycle",
+    "interrupted-check-not-incomplete",
+    "interruption-time-mismatch",
+    "missing-commit",
+    "missing-copilot-trailer",
+    "missing-evidence",
+    "missing-or-duplicate-watcher",
+    "oom-worktree-not-preserved",
+    "orphan-replacement",
+    "owner-lifetime-exceeded",
+    "owner-rss-exceeded",
+    "protocol-changes-budget-exceeded",
+    "ram-bytes-budget-exceeded",
+    "replacement-context-mismatch",
+    "replacement-owner-count",
+    "replacement-owner-reused",
+    "result-not-worktree-head",
+    "rom-bytes-budget-exceeded",
+    "run-without-commit",
+    "scope-violation",
+    "stale-result",
+    "stale-run",
+    "unquantified-diff",
+    "unrelated-branch",
+    "watcher-authority-stale",
+    "watcher-owner-mismatch",
+    "watcher-run-mismatch",
+    "wrong-parent",
+    "wrong-worktree",
 }
 DELETION_TRIGGER_TYPES = {
     "artifact_checkpoint",
@@ -1265,40 +1311,46 @@ def validate_override_git_provenance(
 
 
 def _validate_fixture_root(fixture: dict[str, Any]) -> None:
-    expect_keys(
-        fixture,
-        "fixture",
-        (
-            "schema_version",
-            "repository",
-            "base_sha",
-            "captured_at",
-            "lifecycle_as_of",
-            "window",
-            "default_branch",
-            "workflow_sample_size",
-            "build_workflow",
-            "spotlight_pr",
-            "pull_requests",
-            "issues",
-            "reviews",
-            "review_findings",
-            "review_thread_event_source",
-            "review_thread_events",
-            "workflow_runs",
-            "commits",
-            "events",
-            "artifacts",
-            "dependency_edges",
-        ),
-    )
     schema_version = expect_int(
-        fixture["schema_version"],
+        fixture.get("schema_version"),
         "fixture.schema_version",
         1,
     )
-    if schema_version != SCHEMA_VERSION:
-        raise PilotDataError(f"fixture schema_version must be {SCHEMA_VERSION}")
+    if schema_version not in {SCHEMA_VERSION, HANDOFF_FIXTURE_SCHEMA_VERSION}:
+        raise PilotDataError(
+            "fixture schema_version must be "
+            f"{SCHEMA_VERSION} or {HANDOFF_FIXTURE_SCHEMA_VERSION}"
+        )
+    required = (
+        "schema_version",
+        "repository",
+        "base_sha",
+        "captured_at",
+        "lifecycle_as_of",
+        "window",
+        "default_branch",
+        "workflow_sample_size",
+        "build_workflow",
+        "spotlight_pr",
+        "pull_requests",
+        "issues",
+        "reviews",
+        "review_findings",
+        "review_thread_event_source",
+        "review_thread_events",
+        "workflow_runs",
+        "commits",
+        "events",
+        "artifacts",
+        "dependency_edges",
+    )
+    if schema_version == HANDOFF_FIXTURE_SCHEMA_VERSION:
+        required += ("implementation_handoffs",)
+    expect_keys(
+        fixture,
+        "fixture",
+        required,
+    )
     expect_string(fixture["repository"], "fixture.repository")
     expect_sha(fixture["base_sha"], "fixture.base_sha")
     captured = parse_time(fixture["captured_at"], "fixture.captured_at")
@@ -1334,6 +1386,112 @@ def _validate_fixture_root(fixture: dict[str, Any]) -> None:
         "dependency_edges",
     ):
         expect_list(fixture[field], f"fixture.{field}")
+    if schema_version == HANDOFF_FIXTURE_SCHEMA_VERSION:
+        expect_list(
+            fixture["implementation_handoffs"],
+            "fixture.implementation_handoffs",
+        )
+
+
+def validate_implementation_handoffs(
+    fixture: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    if fixture["schema_version"] != HANDOFF_FIXTURE_SCHEMA_VERSION:
+        return {}
+    lifecycle_as_of = parse_time(
+        fixture["lifecycle_as_of"],
+        "fixture.lifecycle_as_of",
+    )
+    result: dict[str, dict[str, Any]] = {}
+    owner_ids = []
+    required = (
+        "id",
+        "owner_id",
+        "assigned_at",
+        "closed_at",
+        "outcome",
+        "rejection_codes",
+        "peak_rss_bytes",
+        "coordination_turns",
+        "recovery_minutes",
+    )
+    for index, raw in enumerate(fixture["implementation_handoffs"]):
+        label = f"implementation_handoffs[{index}]"
+        handoff = expect_object(raw, label)
+        expect_keys(handoff, label, required)
+        handoff_id = expect_string(handoff["id"], f"{label}.id")
+        if handoff_id in result:
+            raise PilotDataError(f"duplicate implementation handoff {handoff_id!r}")
+        owner_id = expect_string(handoff["owner_id"], f"{label}.owner_id")
+        owner_ids.append(owner_id)
+        assigned_at = parse_time(handoff["assigned_at"], f"{label}.assigned_at")
+        closed_at = parse_time(
+            handoff["closed_at"],
+            f"{label}.closed_at",
+            nullable=True,
+        )
+        if assigned_at > lifecycle_as_of:
+            raise PilotDataError(f"{label}.assigned_at follows lifecycle_as_of")
+        if closed_at is not None:
+            if closed_at <= assigned_at:
+                raise PilotDataError(
+                    f"{label}.closed_at must strictly follow assigned_at"
+                )
+            if closed_at > lifecycle_as_of:
+                raise PilotDataError(f"{label}.closed_at follows lifecycle_as_of")
+        outcome = expect_enum(
+            handoff["outcome"],
+            HANDOFF_OUTCOMES,
+            f"{label}.outcome",
+        )
+        rejection_codes = expect_list(
+            handoff["rejection_codes"],
+            f"{label}.rejection_codes",
+        )
+        for code_index, code in enumerate(rejection_codes):
+            expect_enum(
+                code,
+                HANDOFF_REJECTION_CODES,
+                f"{label}.rejection_codes[{code_index}]",
+            )
+        expect_unique(rejection_codes, f"{label}.rejection_codes")
+        expect_int(
+            handoff["peak_rss_bytes"],
+            f"{label}.peak_rss_bytes",
+            0,
+        )
+        expect_int(
+            handoff["coordination_turns"],
+            f"{label}.coordination_turns",
+            0,
+        )
+        expect_int(
+            handoff["recovery_minutes"],
+            f"{label}.recovery_minutes",
+            0,
+        )
+        if outcome == "accepted":
+            if closed_at is None or rejection_codes:
+                raise PilotDataError(
+                    f"{label} accepted outcome requires closure without rejections"
+                )
+        elif outcome == "rejected":
+            if not rejection_codes:
+                raise PilotDataError(
+                    f"{label} rejected outcome requires rejection_codes"
+                )
+        elif outcome == "interrupted":
+            if closed_at is None:
+                raise PilotDataError(
+                    f"{label} interrupted outcome requires closed_at"
+                )
+        elif closed_at is not None:
+            raise PilotDataError(
+                f"{label} in_progress outcome cannot have closed_at"
+            )
+        result[handoff_id] = handoff
+    expect_unique(owner_ids, "implementation handoff owner IDs")
+    return result
 
 
 def validate_pull_requests(fixture: dict[str, Any]) -> dict[int, dict[str, Any]]:
@@ -2464,6 +2622,7 @@ def validate_fixture(fixture: Any) -> dict[str, Any]:
     events = validate_events(fixture, pull_requests)
     artifacts = validate_artifacts(fixture)
     edges = validate_edges(fixture)
+    implementation_handoffs = validate_implementation_handoffs(fixture)
     cross_validate_fixture(
         fixture,
         pull_requests,
@@ -2490,6 +2649,7 @@ def validate_fixture(fixture: Any) -> dict[str, Any]:
         "events": events,
         "artifacts": artifacts,
         "edges": edges,
+        "implementation_handoffs": implementation_handoffs,
     }
 
 
@@ -3554,6 +3714,61 @@ def report_efficiency(data: dict[str, Any]) -> dict[str, int]:
     }
 
 
+def report_implementation_handoffs(data: dict[str, Any]) -> dict[str, int]:
+    handoffs = list(data["implementation_handoffs"].values())
+    lifecycle_as_of = parse_time(
+        data["fixture"]["lifecycle_as_of"],
+        "fixture.lifecycle_as_of",
+    )
+    lifetimes = []
+    for item in handoffs:
+        assigned_at = parse_time(
+            item["assigned_at"],
+            f"implementation handoff {item['id']}.assigned_at",
+        )
+        closed_at = parse_time(
+            item["closed_at"],
+            f"implementation handoff {item['id']}.closed_at",
+            nullable=True,
+        )
+        elapsed = duration_seconds(
+            assigned_at,
+            closed_at or lifecycle_as_of,
+            f"implementation handoff {item['id']} lifetime",
+        )
+        if elapsed != elapsed.to_integral_value():
+            raise PilotDataError(
+                f"implementation handoff {item['id']!r} lifetime "
+                "must resolve to whole seconds"
+            )
+        lifetimes.append(int(elapsed))
+    return {
+        "records": len(handoffs),
+        "accepted": sum(item["outcome"] == "accepted" for item in handoffs),
+        "rejected": sum(item["outcome"] == "rejected" for item in handoffs),
+        "interrupted": sum(
+            item["outcome"] == "interrupted" for item in handoffs
+        ),
+        "in_progress": sum(
+            item["outcome"] == "in_progress" for item in handoffs
+        ),
+        "stale_responses": sum(
+            "stale-result" in item["rejection_codes"] for item in handoffs
+        ),
+        "max_lifetime_seconds": max(lifetimes, default=0),
+        "max_peak_rss_bytes": max(
+            (item["peak_rss_bytes"] for item in handoffs),
+            default=0,
+        ),
+        "coordination_turns": sum(
+            item["coordination_turns"] for item in handoffs
+        ),
+        "recovery_minutes": sum(
+            item["recovery_minutes"] for item in handoffs
+        ),
+    }
+
+
 def report_classifications(data: dict[str, Any]) -> list[dict[str, Any]]:
     runs_by_pr: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for run in data["runs"].values():
@@ -3729,6 +3944,11 @@ def cohort_identity_seal(data: dict[str, Any]) -> str:
         },
         "workflow_runs": _sealed_records(data["runs"]),
     }
+    if data["fixture"]["schema_version"] == HANDOFF_FIXTURE_SCHEMA_VERSION:
+        cohort["implementation_handoffs"] = _sealed_records(
+            data["implementation_handoffs"],
+            ("rejection_codes",),
+        )
     return hashlib.sha256(
         IDENTITY_SEAL_DOMAIN + normalized_json(cohort)
     ).hexdigest()
@@ -3888,8 +4108,26 @@ def build_report(
         ),
         "artifacts": report_artifacts(data, decisions),
     }
+    if data["fixture"]["schema_version"] == HANDOFF_FIXTURE_SCHEMA_VERSION:
+        computed["implementation_handoffs"] = report_implementation_handoffs(
+            data
+        )
+    identities = {
+        "pull_requests": sorted(data["pull_requests"]),
+        "issues": sorted(data["issues"]),
+        "reviews": sorted(data["reviews"]),
+        "findings": sorted(data["findings"]),
+        "review_thread_deliveries": sorted(data["review_thread_events"]),
+        "workflow_runs": sorted(data["runs"]),
+        "commits": sorted(data["commits"]),
+        "seal": cohort_identity_seal(data),
+    }
+    if data["fixture"]["schema_version"] == HANDOFF_FIXTURE_SCHEMA_VERSION:
+        identities["implementation_handoffs"] = sorted(
+            data["implementation_handoffs"]
+        )
     return {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": data["fixture"]["schema_version"],
         "snapshot": {
             "repository": data["fixture"]["repository"],
             "base_sha": data["fixture"]["base_sha"],
@@ -3897,16 +4135,7 @@ def build_report(
             "lifecycle_as_of": data["fixture"]["lifecycle_as_of"],
             "window": data["fixture"]["window"],
         },
-        "identities": {
-            "pull_requests": sorted(data["pull_requests"]),
-            "issues": sorted(data["issues"]),
-            "reviews": sorted(data["reviews"]),
-            "findings": sorted(data["findings"]),
-            "review_thread_deliveries": sorted(data["review_thread_events"]),
-            "workflow_runs": sorted(data["runs"]),
-            "commits": sorted(data["commits"]),
-            "seal": cohort_identity_seal(data),
-        },
+        "identities": identities,
         "decisions": {
             "seal": decision_semantics_seal(data, decisions),
         },
@@ -3975,7 +4204,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--decisions", type=Path, required=True)
-    parser.add_argument("--expected", type=Path, required=True)
+    parser.add_argument(
+        "--expected",
+        type=Path,
+        help=(
+            "required frozen expected values for schema version 1; version 2 "
+            "operational handoff fixtures are sealed and reported directly"
+        ),
+    )
     parser.add_argument(
         "--repository-root",
         type=Path,
@@ -4000,15 +4236,24 @@ def main(argv: list[str] | None = None) -> int:
         fixture = load_json(args.fixture)
         decisions = load_json(args.decisions)
         report = build_report(fixture, decisions, repository_root)
-        check_expected(report, load_json(args.expected))
-        validate_executable_deletion_proofs(
-            repository_root,
-            args.fixture,
-            args.decisions,
-            args.expected,
-            fixture,
-            decisions,
-        )
+        if fixture.get("schema_version") == SCHEMA_VERSION:
+            if args.expected is None:
+                raise PilotDataError(
+                    "--expected is required for frozen schema version 1"
+                )
+            check_expected(report, load_json(args.expected))
+            validate_executable_deletion_proofs(
+                repository_root,
+                args.fixture,
+                args.decisions,
+                args.expected,
+                fixture,
+                decisions,
+            )
+        elif args.expected is not None:
+            raise PilotDataError(
+                "--expected is reserved for frozen schema version 1"
+            )
     except PilotDataError as error:
         print(f"workflow-pilot: {error}", file=sys.stderr)
         return 2

@@ -416,3 +416,129 @@ Rollback is a normal revert of the dedicated issue #176 commit. Because no
 delivery behavior or final gate changes here, existing CI, review, merge,
 runtime, save, localization, generated-data, and archival behavior remains in
 place throughout rollback.
+
+## Bounded exact-SHA implementation handoffs
+
+Issue [#178](https://github.com/laqieer/fireemblem8-expansion/issues/178)
+extends the issue #176 lifecycle and sealing seam with a bounded implementation
+handoff. It is an accepted **framework capability: bounded delivery
+coordination**. It changes who may own an implementation step and how the
+result is admitted to trusted push; it does not change trusted-push ownership,
+the final candidate/master gates, game code, or any build profile.
+
+Validate a temporary immutable handoff document against its one allowed real
+worktree:
+
+```bash
+python3 -m scripts.workflow_pilot.agent_handoff \
+  --fixture build/test-artifacts/agent-handoff.json \
+  --worktree /absolute/path/to/the/exact/worktree
+```
+
+The document is per-assignment input and evidence, not a live ledger or a
+manually synchronized Git snapshot. The coordinator may preserve it with
+delivery evidence, while Git remains authoritative for the checkout root,
+origin, branch, `HEAD`, direct parent, commit message/trailer, changed paths,
+numeric line count, and clean/conflict state. GitHub Actions response fixtures
+remain authoritative for run status and conclusion. Only non-derivable
+assignment decisions are authored: scope, acceptance/evidence names, budgets,
+owner bounds, prohibited actions, availability plan, and watcher ownership.
+Duplicate JSON keys, unknown fields/enums, booleans in integer fields, and
+unquantified binary line changes fail before a success-shaped result.
+
+### Assignment and result contract
+
+Each handoff carries:
+
+- issue and optional pre-existing PR identity;
+- unique handoff and implementation-owner identities;
+- exact assigned parent SHA, branch, absolute worktree, and repository-relative
+  file/directory allowlist;
+- finding IDs, itemized acceptance criteria, required focused-check commands,
+  and the evidence IDs that discharge each item;
+- maximum changed lines, ROM bytes, RAM bytes, and protocol changes;
+- maximum owner lifetime and peak RSS plus observed coordination turns;
+- the exact prohibited implementation-owner actions: push, remote-ref
+  creation, PR creation/update, comment, CI dispatch, and merge; and
+- timestamped lifecycle, evidence, optional commit result, or evidenced
+  interruption/recovery link.
+
+`assignment_sent`, `assignment_received`, `progressing`, `committed`, and
+`handed_off` are distinct, unique, strictly ordered states. A result is
+accepted only when `HEAD` is one new commit whose sole direct parent is the
+assigned SHA, the current branch/worktree match the assignment, the worktree
+is clean and conflict-free, every changed path and budget is allowed, the
+required Copilot trailer is the final unique trailer, and all named checks and
+acceptance evidence passed. The output has domain-separated normalized input
+and result seals. A committed handoff closes that bounded owner; another
+review cycle must use a new owner identity and new handoff rather than
+continuing the closed process.
+
+The validator mechanically rejects repeated-parent/stale results, result/HEAD
+drift, missing or non-direct commits, wrong parent/worktree/branch, unrelated
+paths, dirty or conflicted state, missing trailer, missing/failed/incomplete
+evidence, line/ROM/RAM/protocol excess, lifetime/RSS excess, reused owners,
+and prohibited remote actions by an implementation owner. The implementation
+owner never pushes, opens or updates a PR, comments, creates a remote ref,
+dispatches CI, or merges; those remain coordinator actions under the existing
+trusted owner boundary.
+
+### Coordinator, watcher, and recovery contract
+
+One document admits exactly one coordinator. Each included exact run has one
+direct-shell watcher owned by that coordinator, bound to both run ID and head
+SHA. Duplicate watchers reject. A timeout or watcher process error is not
+treated as a workflow conclusion: the validator reconciles it with one
+authoritative `github-actions-api` observation. An authoritative successful
+run remains successful after a watcher timeout; an authoritative failure
+remains failed even when the watcher itself errored; an active run remains
+incomplete. The fixture path performs no GitHub mutation.
+
+An interrupted owner has the exact `assignment_sent` ->
+`assignment_received` -> `progressing` -> `interrupted` sequence. SIGKILL/OOM
+recovery requires signal 9, nonempty kernel evidence, named interrupted checks
+whose evidence is explicitly incomplete, a dirty but conflict-free allowed
+worktree containing every preserved path, zero host-process actions, recovery
+cost, and exactly one differently identified replacement handoff with the same
+issue, parent, branch, and worktree. Tests create only ordinary temporary Git
+repositories and fixture text; they do not exhaust memory, signal a process,
+or kill any host process.
+
+An `always_on` coordinator has neither autostop nor stop-on-disconnect risk.
+A local coordinator with either risk needs an explicit time-bounded
+`disable_triggers` or `always_on_takeover` plan. A hibernating/disconnecting
+local coordinator without that plan is unavailable, and trusted push fails
+closed before unattended delivery begins.
+
+### Reporter extension and compatibility
+
+The unchanged frozen issue #176 baseline remains strict fixture/report schema
+version 1 and rejects a handoff field. Version 2 is an additive operational
+fixture schema that requires normalized `implementation_handoffs` records from
+the validator. The same reporter then seals those identities and reports
+accepted/rejected/interrupted/in-progress counts, stale responses, maximum
+owner lifetime/RSS, coordination turns, and recovery minutes. Stale responses
+derive from closed rejection codes, and lifetime derives from assignment,
+closure, and `lifecycle_as_of` timestamps. Unknown rejection codes, duplicate
+owners, invalid closure states, or records beyond `lifecycle_as_of` fail
+closed. This adds no mutable decision record and does not alter version 1
+expected paths, values, or seals.
+Run a version 2 operational fixture without the version 1-only `--expected`
+argument:
+
+```bash
+python3 -m scripts.workflow_pilot.reporter \
+  --repository-root . \
+  --fixture build/test-artifacts/workflow-pilot-operational.json \
+  --decisions .github/workflow-pilot-decisions.json
+```
+
+Conversely, omitting `--expected` from a version 1 baseline run fails, so the
+new mode cannot bypass the frozen baseline comparison or executable lifecycle
+proof.
+
+Dependency: issue #176. Dependent: issue #181. Conflicts: none. Modern debug,
+modern release, save, generated data, localization, ROM, RAM, gameplay, and
+archival impact are all none; no feature flag or migration applies. Rollback
+is a normal revert of issue #178 while the issue #176 baseline and existing
+trusted-push/centralized-watcher rules remain in force.

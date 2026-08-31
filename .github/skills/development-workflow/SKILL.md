@@ -565,6 +565,53 @@ No human code review or approval is required. A CODEOWNERS request is advisory
 unless an external GitHub ruleset enforces it; this workflow does not add such
 a gate.
 
+### Bounded exact-SHA implementation handoffs
+
+Before assigning implementation work, the coordinator creates one immutable
+handoff document for that bounded owner and validates the returned document
+with:
+
+```bash
+python3 -m scripts.workflow_pilot.agent_handoff \
+  --fixture <path> --worktree <exact-worktree>
+```
+
+The assignment records the issue/PR, exact parent SHA, expected branch and
+worktree, allowed path scope, finding IDs, acceptance criteria, focused
+checks, line/ROM/RAM/protocol budgets, owner lifetime/RSS bounds, and the
+complete prohibited remote-action set. Git supplies the worktree, branch,
+result commit, direct parent, diff, changed paths, line count, commit
+message, and clean/conflict state; do not persist a second mutable copy of
+those derivable facts.
+
+`assignment_sent`, `assignment_received`, `progressing`, `committed`, and
+`handed_off` are separate timestamped states. Only one clean result commit
+whose sole direct parent is the assigned SHA, whose final trailer is the
+required Copilot trailer, and whose named evidence and budgets pass may enter
+trusted owner push. Repeated-parent/stale results, wrong parents or branches,
+dirty/conflicting worktrees, missing commits/trailers/evidence, scope or
+budget violations, and any push/PR/comment/dispatch/ref/merge action by the
+implementation owner fail closed. A committed handoff closes that owner; a
+later review cycle receives a fresh owner and handoff rather than reviving the
+closed reasoning process.
+
+There is exactly one delivery coordinator and at most one direct watcher for
+an exact run identity. A watcher timeout or process error is transport
+evidence, not the workflow conclusion: query the authoritative GitHub Actions
+run once and preserve its exact success, failure, or active state. Duplicate
+owners, coordinators, or watchers reject.
+
+After evidenced SIGKILL/OOM, preserve and inspect the exact worktree, mark
+every interrupted check incomplete, record kernel evidence and recovery cost,
+and assign exactly one different bounded replacement owner. Never simulate
+OOM or kill unrelated host processes. Before unattended delivery, an
+always-on coordinator is required unless an explicit time-bounded plan
+disables autostop and stop-on-disconnect or transfers coordination to an
+always-on host; otherwise fail closed before relying on the local coordinator.
+
+The indexed source-only regression is
+[`TC-WORKFLOW-AGENT-HANDOFF-001`](../../../docs/test-cases/workflow-governance.md#tc-workflow-agent-handoff-001-validate-bounded-exact-sha-agent-handoffs).
+
 ### Trusted push ownership
 
 Implementation subagents validate and commit locally but do not push. The

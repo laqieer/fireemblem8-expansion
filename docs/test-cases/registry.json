@@ -478,7 +478,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/93",
         "https://github.com/laqieer/fireemblem8-expansion/issues/169",
         "https://github.com/laqieer/fireemblem8-expansion/issues/171",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/176"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/176",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/178"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -486,7 +487,8 @@
         "TC-WORKFLOW-CI-WAIT-001",
         "TC-WORKFLOW-MANUAL-HANDOFF-001",
         "TC-WORKFLOW-STACKED-CI-001",
-        "TC-WORKFLOW-PILOT-BASELINE-001"
+        "TC-WORKFLOW-PILOT-BASELINE-001",
+        "TC-WORKFLOW-AGENT-HANDOFF-001"
       ]
     },
     {
@@ -2249,6 +2251,46 @@
         {
           "command": "python3 -m unittest discover -s tests/workflows -p 'test_*.py' -v",
           "evidence": "tests/workflows/test_build_ci_topology.py"
+        },
+        {
+          "command": "python3 scripts/check_docs.py --check",
+          "evidence": "scripts/check_docs.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-AGENT-HANDOFF-001",
+      "title": "Validate bounded exact-SHA agent handoffs",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/178"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-agent-handoff-001-validate-bounded-exact-sha-agent-handoffs",
+      "profiles": [
+        "Clean source checkout with Python 3, Git, immutable handoff fixtures, and no live GitHub workflow"
+      ],
+      "purpose": "Prove exact-parent clean implementation handoffs, bounded owner rotation, centralized exact-run watcher reconciliation, non-destructive OOM recovery, fail-closed coordinator availability, and additive issue #176 reporting.",
+      "prerequisites": "Start at the exact Git repository root with the issue #176 reporter, agent-handoff module, workflow-governance case, and registry unchanged; no token, ROM, emulator, or game build is required.",
+      "actions": "Run the focused handoff suite and complete workflow-pilot discovery; inspect successful/stale/wrong-parent/dirty/incomplete/over-budget/duplicate-owner/duplicate-watcher/watcher-timeout/failed-run/OOM/hibernation fixtures and the versioned reporter extension.",
+      "expected_result": "Only a clean direct descendant with the exact parent, branch, scope, trailer, named evidence, and budgets reaches trusted push; watcher process errors defer to authoritative run state; OOM preserves one exact worktree and assigns one replacement; unavailable local coordination fails closed.",
+      "negative_control": "Repeated or wrong SHAs, unrelated branch/worktree, dirty/conflicted state, missing commit/trailer/evidence, scope/resource/lifetime/RSS excess, duplicate ownership/watching, implementation-owner remote action, false watcher success, destructive or ambiguous recovery, unavailable coordination, and malformed reporter records reject.",
+      "interactions": "Depends on #176; dependent #181; conflicts none with trusted owner push, centralized direct watchers, final exact-head gates, game runtime, save, generated data, localization, ROM/RAM content, or archival behavior.",
+      "save_compatibility": "Source-only delivery coordination; no save field, epoch, migration, generated game data, localization, ROM/RAM, modern debug/release, gameplay, or archival impact.",
+      "cleanup": "Temporary Git repositories below build/test-artifacts are removed automatically; no remote state, process, memory pressure, or Dev Box setting is changed.",
+      "limitations": "GitHub run state, SIGKILL/OOM evidence, and coordinator availability are inert fixtures. Live mutation is deliberately outside the test and implementation-owner contract. No manual-only criterion applies.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_agent_handoff -v",
+          "evidence": "scripts/workflow_pilot/tests/test_agent_handoff.py"
+        },
+        {
+          "command": "python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v",
+          "evidence": "scripts/workflow_pilot/tests/test_reporter.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
+          "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
         },
         {
           "command": "python3 scripts/check_docs.py --check",

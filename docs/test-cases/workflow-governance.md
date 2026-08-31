@@ -465,3 +465,110 @@ criterion applies.
 
 Rollback is a normal revert of issue #176's dedicated commit; no workflow or
 game behavior needs a compensating change.
+
+## TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #178](https://github.com/laqieer/fireemblem8-expansion/issues/178).
+- **Supported configuration or artifact:** clean source checkout with
+  Python 3 and Git; no GitHub token, live PR/run, ROM, emulator, or game build
+  is required.
+- **Prerequisites and clean starting state:** start at the exact repository
+  root with the issue #176 reporter and the agent-handoff module unchanged.
+  Remove prior `build/test-artifacts/agent-handoff-*` test directories.
+
+### Actions
+
+1. Run
+   `python3 -m unittest scripts.workflow_pilot.tests.test_agent_handoff -v`.
+2. Inspect the temporary real-Git success fixture. Confirm its result is the
+   clean worktree `HEAD`, has exactly the assigned direct parent and expected
+   branch, changes only allowlisted paths within the numeric line budget, ends
+   in the exact Copilot trailer, supplies every acceptance/check/budget
+   evidence ID, and uses zero ROM/RAM plus one admitted protocol change.
+3. Exercise the repeated-parent/stale, wrong-parent, unrelated-branch, dirty,
+   incomplete, missing-evidence, missing-trailer, out-of-scope, line-budget,
+   ROM-budget, RAM-budget, protocol-budget, lifetime, and RSS fixtures.
+4. Exercise reused-owner and duplicate-watcher fixtures. Add an
+   implementation-owner push observation and confirm it rejects while the
+   unchanged trusted owner push rule remains outside implementation ownership.
+5. Reconcile a direct watcher timeout with an authoritative successful
+   `github-actions-api` run. Then use an authoritative failed run plus a
+   watcher process error and confirm delivery remains failed.
+6. Exercise the SIGKILL/OOM fixture. Confirm kernel evidence names signal 9,
+   the interrupted check remains incomplete, an allowlisted uncommitted file
+   remains in the exact conflict-free worktree, no host process action occurs,
+   and exactly one differently identified bounded replacement receives the
+   same issue/parent/branch/worktree context.
+7. Exercise the local coordinator with autostop and stop-on-disconnect enabled
+   but no availability plan. Confirm trusted push fails before unattended
+   delivery relies on that coordinator.
+8. Exercise reporter fixture schema version 2 with successful and stale
+   normalized handoffs. Confirm identity sealing and accepted/rejected,
+   stale-response, lifetime, RSS, coordination-turn, and recovery-minute
+   metrics. Confirm the frozen version 1 baseline still rejects the extension
+   field and retains its exact expected schema.
+9. Run
+   `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`,
+   `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`,
+   and `python3 scripts/check_docs.py --check`.
+
+### Expected result
+
+Only the exact clean one-commit descendant reaches `trusted_push_eligible`.
+Assignment sent, received, progressing, committed, and handed-off remain
+distinct timestamped states. A committed result closes its implementation
+owner. Later work requires a fresh handoff and owner. The normalized input
+and result seals are deterministic.
+
+The watcher timeout records process failure while preserving authoritative CI
+success. The true failed run records authoritative failure and cannot become
+delivery-eligible. The OOM fixture preserves exact worktree evidence, records
+one incomplete check and recovery cost, creates exactly one replacement
+assignment, and performs no destructive process action. The hibernated local
+coordinator is unavailable without a time-bounded disable/takeover plan.
+
+The issue #176 reporter consumes version 2 normalized handoff evidence and
+reports failures, stale responses, maximum owner lifetime and RSS,
+coordination turns, and recovery cost. Its frozen version 1 baseline, expected
+values, seals, lifecycle, trusted-push, and centralized-watcher contracts are
+unchanged.
+
+### Negative control
+
+Each stale/repeated SHA, non-direct or wrong parent, wrong branch/worktree,
+dirty/conflicted tree, missing commit/trailer/evidence, failed or interrupted
+required evidence, out-of-scope path, unquantified or over-limit lines,
+ROM/RAM/protocol overage, lifetime/RSS excess, duplicate owner/coordinator/
+watcher, stale run, implementation-owner remote action, missing/multiple OOM
+replacement, reused replacement owner, lost preserved path, completed
+interrupted test, host-process action, unavailable local coordinator, unknown
+field/enum/rejection, duplicate JSON key, and incoherent reporter record fails
+closed. Watcher process success cannot replace a nonterminal or failed
+authoritative run, and a watcher timeout cannot turn authoritative success
+into failure.
+
+### Interactions and save compatibility
+
+Dependency: issue #176. Dependent: issue #181. Conflicts: none with existing
+trusted owner pushes or one centralized direct watcher per exact run. This
+source-only contract changes no modern debug/release ROM, runtime/gameplay,
+save format, generated game data, localization, ROM/RAM content, or archival
+lane. No feature flag, migration, or manual criterion applies.
+
+### Automation
+
+`python3 -m unittest scripts.workflow_pilot.tests.test_agent_handoff -v`
+creates bounded temporary repositories below `build/test-artifacts/`, derives
+real ancestry/branch/diff/worktree/trailer facts with the issue #176 clean Git
+boundary, and exercises every fixture listed above. The complete
+`scripts/workflow_pilot/tests` discovery reruns the frozen issue #176 reporter
+regressions. The workflow-governance and docs checks validate this indexed
+procedure and preserve the trusted-push and centralized-watcher policy.
+
+### Cleanup and limitations
+
+Temporary repositories are removed automatically. The tests model GitHub
+responses, SIGKILL/OOM kernel evidence, and hibernation as inert fixtures; they
+do not mutate GitHub, allocate destructive memory, signal a process, change
+Dev Box settings, or kill any host process. No manual-only criterion applies.

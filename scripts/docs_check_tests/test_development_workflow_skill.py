@@ -29,6 +29,10 @@ MANUAL_HANDOFF_CASE_HEADING = (
     "TC-WORKFLOW-MANUAL-HANDOFF-001: "
     "Surface actionable manual testing and resume automatically"
 )
+AGENT_HANDOFF_CASE_HEADING = (
+    "TC-WORKFLOW-AGENT-HANDOFF-001: "
+    "Validate bounded exact-SHA agent handoffs"
+)
 MANUAL_HANDOFF_POLICY_HEADING = "Actionable manual-testing handoff"
 MANUAL_HANDOFF_SUMMARY_HEADING = "Lifecycle summary"
 MANUAL_HANDOFF_QUERY = (
@@ -2004,6 +2008,55 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             ),
         )
 
+    def test_bounded_exact_sha_agent_handoff_is_indexed(self):
+        _, skill = read_skill()
+        for requirement in (
+            "Bounded exact-SHA implementation handoffs",
+            "scripts.workflow_pilot.agent_handoff",
+            "assignment_sent",
+            "assignment_received",
+            "progressing",
+            "committed",
+            "handed_off",
+            "sole direct parent is the assigned SHA",
+            "A committed handoff closes that owner",
+            "at most one direct watcher for an exact run identity",
+            "authoritative GitHub Actions run",
+            "SIGKILL/OOM",
+            "exactly one different bounded replacement owner",
+            "stop-on-disconnect",
+            "TC-WORKFLOW-AGENT-HANDOFF-001",
+        ):
+            with self.subTest(requirement=requirement):
+                self.assertIn(normalize_policy(requirement), normalize_policy(skill))
+
+        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        case = "\n".join(
+            read_markdown_section(governance, AGENT_HANDOFF_CASE_HEADING)
+        )
+        for heading in (
+            "Actions",
+            "Expected result",
+            "Negative control",
+            "Interactions and save compatibility",
+            "Automation",
+            "Cleanup and limitations",
+        ):
+            with self.subTest(heading=heading):
+                self.assertTrue(read_markdown_section(case, heading))
+
+        registry = json.loads(TEST_CASE_REGISTRY_PATH.read_text(encoding="utf-8"))
+        indexed_case = next(
+            item
+            for item in registry["cases"]
+            if item["id"] == "TC-WORKFLOW-AGENT-HANDOFF-001"
+        )
+        self.assertEqual(indexed_case["feature_id"], "workflow-governance")
+        self.assertEqual(
+            indexed_case["document"],
+            "docs/test-cases/workflow-governance.md",
+        )
+
     def test_trusted_push_ownership_is_mirrored_and_rejects_stale_roles(self):
         required_policy = (
             (
@@ -2957,6 +3010,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "TC-WORKFLOW-MANUAL-HANDOFF-001",
             "TC-WORKFLOW-STACKED-CI-001",
             "TC-WORKFLOW-PILOT-BASELINE-001",
+            "TC-WORKFLOW-AGENT-HANDOFF-001",
         ]
         self.assertEqual(
             [],

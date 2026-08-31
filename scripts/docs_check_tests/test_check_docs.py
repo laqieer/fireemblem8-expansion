@@ -1021,6 +1021,20 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 scripts/check_docs.py --check",
                         },
                     },
+                    "TC-WORKFLOW-AGENT-HANDOFF-001": {
+                        "document": "docs/test-cases/workflow-governance.md",
+                        "commands": {
+                            "python3 -m unittest "
+                            "scripts.workflow_pilot.tests."
+                            "test_agent_handoff -v",
+                            "python3 -m unittest discover -s "
+                            "scripts/workflow_pilot/tests -p 'test_*.py' -v",
+                            "python3 -m unittest "
+                            "scripts.docs_check_tests."
+                            "test_development_workflow_skill -v",
+                            "python3 scripts/check_docs.py --check",
+                        },
+                    },
                 },
             },
         }
