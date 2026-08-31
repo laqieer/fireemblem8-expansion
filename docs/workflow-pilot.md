@@ -120,15 +120,21 @@ identity is missing; worker checkouts never use a merge/default fallback.
 
 Check contexts are mode-separated. `event-router` is common setup only. Full
 candidate runs expose `event-classifier`, `host-tests`, `build`,
-`extended-host-tests`, `legacy`, and `summary`. Metadata-only runs expose
-`metadata-classifier`, `metadata-host-tests-skipped`,
-`metadata-build-skipped`, `metadata-extended-host-tests-skipped`,
-`metadata-legacy-skipped`, and `metadata-summary`. A later green metadata run
-therefore cannot replace any candidate-required full context on the same
-head/base.
+`extended-host-tests`, `legacy`, and `summary`. The running `summary` context
+is the sole candidate attestation; it succeeds only after the same full run's
+classifier and all four workers succeed. Metadata-only runs expose the running
+`metadata-classifier` and `metadata-summary` attestations. GitHub does not
+reliably evaluate `name` expressions for skipped jobs
+([actions/runner#1215](https://github.com/actions/runner/issues/1215)), so
+candidate logic never derives mode or eligibility from skipped worker names.
+Those records are normalized only by stable worker job ID and
+`skipped`/success-shaped conclusion, then ignored as candidate evidence. A
+later green metadata run therefore cannot replace `summary` or make a
+failed/missing full run eligible even when GitHub renders skipped workers as
+successful checks or literal expressions.
 
 [`scripts/workflow_pilot/candidate_evidence.py`](../scripts/workflow_pilot/candidate_evidence.py)
-derives mode from those authoritative check names and evaluates the latest
+derives mode only from the running classifier/summary names and evaluates the latest
 exact-head/exact-base full run as one unit. A metadata-only run is never
 candidate evidence. A failed full run followed by green metadata remains
 ineligible; a prior successful full run remains eligible because metadata
@@ -303,8 +309,8 @@ ambient `GIT_*` name before dispatch. Runner environment files,
 repository/user `sitecustomize.py`, shell startup hooks, and ambient Git
 controls therefore cannot replace either executable or authority root.
 At job scope, router and mode-classifier have separate closed setup mappings.
-Every combined worker has a closed direct mapping: exact dynamic full/metadata
-name, classifier dependency and fail-closed condition,
+Every combined worker has a closed direct mapping: classifier dependency and
+fail-closed condition,
 `runs-on: ubuntu-latest`, `timeout-minutes: 60`, its reviewed environment, and
 `steps`. Host, modern, extended-host, and legacy therefore reject
 containers, services, matrices/strategies, job permissions/defaults,

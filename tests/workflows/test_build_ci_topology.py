@@ -138,28 +138,6 @@ EXPECTED_BUILD_SHA_EXPRESSION = (
     "github.event.after != '' && github.sha == github.event.after && "
     "github.sha) || '' }}"
 )
-JOB_NAME_EXPRESSIONS = {
-    "host-tests": (
-        "${{ needs.event-classifier.result == 'success' && "
-        "needs.event-classifier.outputs.classification == 'metadata-only' "
-        "&& 'metadata-host-tests-skipped' || 'host-tests' }}"
-    ),
-    "build": (
-        "${{ needs.event-classifier.result == 'success' && "
-        "needs.event-classifier.outputs.classification == 'metadata-only' "
-        "&& 'metadata-build-skipped' || 'build' }}"
-    ),
-    "extended-host-tests": (
-        "${{ needs.event-classifier.result == 'success' && "
-        "needs.event-classifier.outputs.classification == 'metadata-only' "
-        "&& 'metadata-extended-host-tests-skipped' || 'extended-host-tests' }}"
-    ),
-    "legacy": (
-        "${{ needs.event-classifier.result == 'success' && "
-        "needs.event-classifier.outputs.classification == 'metadata-only' "
-        "&& 'metadata-legacy-skipped' || 'legacy' }}"
-    ),
-}
 HOST_ENV_LINE = f"      EXPECTED_BUILD_SHA: {EXPECTED_BUILD_SHA_EXPRESSION}"
 COMBINED_JOB_ENV = {
     "host-tests": (HOST_ENV_LINE,),
@@ -790,7 +768,6 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
             continue
         direct_lines.append(line)
     expected_direct = [
-        f"    name: {JOB_NAME_EXPRESSIONS[job_name]}",
         "    needs: [event-classifier]",
         f"    if: {WORKER_CONDITION}",
         "    runs-on: ubuntu-latest",
@@ -2409,9 +2386,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
     def test_metadata_check_contexts_cannot_replace_candidate_contexts(self):
         jobs = _job_blocks(self.text)
-        for job_name, expression in JOB_NAME_EXPRESSIONS.items():
+        for job_name in COMBINED_WORKERS:
             with self.subTest(job=job_name):
-                self.assertIn(f"    name: {expression}", jobs[job_name])
+                self.assertFalse(
+                    _has_direct_key(jobs[job_name], indent=4, key="name")
+                )
         self.assertIn(
             "'metadata-classifier' || 'event-classifier'",
             jobs["event-classifier"],
@@ -2420,10 +2399,13 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "'metadata-summary' || 'summary'",
             jobs["summary"],
         )
-        self.assertEqual(
-            set(candidate_evidence.FULL_CONTEXTS)
-            & set(candidate_evidence.METADATA_CONTEXTS),
-            set(),
+        self.assertNotEqual(
+            candidate_evidence.FULL_ATTESTATION,
+            candidate_evidence.METADATA_ATTESTATION,
+        )
+        self.assertNotEqual(
+            candidate_evidence.FULL_CLASSIFIER,
+            candidate_evidence.METADATA_CLASSIFIER,
         )
 
     def test_classifier_failure_fixtures_select_only_exact_event_head_fallbacks(self):

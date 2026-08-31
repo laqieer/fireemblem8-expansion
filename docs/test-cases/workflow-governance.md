@@ -298,7 +298,9 @@ availability or grant credentials.
 
 Body-only, title-only, and combined body/title edits select only
 `event-router`, `metadata-classifier`, and `metadata-summary`; the four
-expensive workers receive distinct metadata skipped contexts and do not start.
+expensive workers do not start. Skipped worker names and success-shaped
+records are ignored by stable job identity; only the running metadata
+classifier/summary establish metadata mode.
 The summary succeeds only when classifier status is `success`, the classified
 SHA equals the event's exact `pull_request.head.sha`, suppression is exactly
 false, and all four workers are exactly `skipped`.
@@ -363,7 +365,7 @@ exercises strict identity, semantic transition, non-finite JSON, malformed,
 and unknown fail-closed controls.
 
 `python3 -m unittest scripts.workflow_pilot.tests.test_candidate_evidence -v`
-derives full versus metadata mode from dynamic check contexts and proves a
+derives full versus metadata mode from running classifier/summary contexts and proves a
 later green metadata run cannot replace a failed/missing candidate full run.
 
 `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v` parses the
@@ -405,11 +407,10 @@ pushed; this local implementation does not perform it.
 4. Locate the newly created `pull_request` Build run at the unchanged
    `head_sha`, then run
    `gh run view <metadata-run-id> --json event,headSha,conclusion,jobs,url`.
-5. Require `metadata-classifier`, `metadata-host-tests-skipped`,
-   `metadata-build-skipped`, `metadata-extended-host-tests-skipped`,
-   `metadata-legacy-skipped`, and `metadata-summary`; require no normal
-   candidate context to be created/replaced and no expensive job to have a
-   start timestamp.
+5. Require running `metadata-classifier` and `metadata-summary`. Permit skipped
+   worker records to retain normal or literal unevaluated names and even a
+   success-shaped conclusion, but require the evaluator to ignore them by
+   stable worker job ID. Require no expensive job to have a start timestamp.
 6. Feed normalized full and metadata job contexts to
    `scripts.workflow_pilot.candidate_evidence.evaluate_candidate_runs`.
    Confirm a prior failed/missing full run remains ineligible and that the
@@ -631,7 +632,7 @@ field fails before dry-run.
 Patch publication and summary are also complete semantic structures:
 master-only publication condition, pinned actions, scoped secret/env and six
 publisher steps; then `always()`, classifier plus exact ordered
-worker/publisher needs/result env, dynamic full/metadata name, five-minute
+worker/publisher needs/result env, dynamic full/metadata summary name, five-minute
 context, and one fail-closed summary step.
 Neither is locally executed, but any
 runner/condition/needs/permission/env/step/command/action/alternate-context

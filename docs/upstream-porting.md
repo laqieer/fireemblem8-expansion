@@ -218,8 +218,8 @@ workflow-level keys are exactly reviewed `name`, triggers, read-only
 permissions, and jobs, with workflow `env`, `defaults`, and `concurrency`
 absent. The router and mode-classifier contain only their reviewed names,
 runner, timeout, outputs, environment, dependencies/conditions, and steps.
-Each combined job contains only its exact dynamic mode name, classifier
-dependency and fail-closed condition, `runs-on: ubuntu-latest`,
+Each combined job contains only its classifier dependency and fail-closed
+condition, `runs-on: ubuntu-latest`,
 `timeout-minutes: 60`, its exact allowlisted environment, and `steps`.
 Classifier authority uses direct PR-base or push identities, with a
 trusted-default-branch failure bootstrap only when PR base identity is absent;
@@ -241,7 +241,7 @@ adds only the closed, non-mirrored router and mode-classifier setup jobs.
 `patch-release` must retain its master-push-only condition, Ubuntu/60-minute
 context, exact commit env, six ordered publisher steps, pinned checkout/upload
 actions, scoped base-image secret, and upload mapping. `summary` must retain
-`always()`, its dynamic mode name, the classifier plus exact ordered
+`always()`, its reliably evaluated dynamic summary name, the classifier plus exact ordered
 worker/publisher needs, Ubuntu/five-minute context, exact classifier/result
 env, metadata-skip and full-run validation, and missing/stale identity
 failure, plus its single fail-closed command. Runner, condition, needs,

@@ -1,30 +1,21 @@
-"""Evaluate candidate Build evidence from authoritative dynamic check contexts."""
+"""Evaluate candidates from running attestations and worker job identities."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 
-FULL_CONTEXTS = (
-    "event-classifier",
-    "host-tests",
-    "build",
-    "extended-host-tests",
-    "legacy",
-    "summary",
-)
-METADATA_CONTEXTS = (
-    "metadata-classifier",
-    "metadata-host-tests-skipped",
-    "metadata-build-skipped",
-    "metadata-extended-host-tests-skipped",
-    "metadata-legacy-skipped",
-    "metadata-summary",
-)
-KNOWN_CONTEXTS = frozenset(FULL_CONTEXTS) | frozenset(METADATA_CONTEXTS) | {
+WORKER_JOB_IDS = ("host-tests", "build", "extended-host-tests", "legacy")
+KNOWN_JOB_IDS = frozenset(WORKER_JOB_IDS) | {
     "event-router",
+    "event-classifier",
     "patch-release",
+    "summary",
 }
+FULL_CLASSIFIER = "event-classifier"
+FULL_ATTESTATION = "summary"
+METADATA_CLASSIFIER = "metadata-classifier"
+METADATA_ATTESTATION = "metadata-summary"
 
 
 class CandidateEvidenceError(ValueError):
@@ -39,7 +30,17 @@ class CandidateEvidence:
     run_id: int | None
 
 
-def _contexts(run: dict) -> dict[str, str]:
+def _validate_sha(value: object, field: str) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 40
+        or any(character not in "0123456789abcdef" for character in value)
+    ):
+        raise CandidateEvidenceError(f"{field} must be a full lowercase SHA")
+    return value
+
+
+def _contexts(run: dict) -> dict[str, tuple[str, str]]:
     if set(run) != {"base_sha", "contexts", "event", "head_sha", "run_id"}:
         raise CandidateEvidenceError("run record has unknown or missing fields")
     if (
@@ -50,46 +51,78 @@ def _contexts(run: dict) -> dict[str, str]:
         raise CandidateEvidenceError("run_id must be a positive integer")
     if run["event"] != "pull_request":
         raise CandidateEvidenceError("candidate evidence must be a pull_request run")
-    for field in ("base_sha", "head_sha"):
-        value = run[field]
-        if (
-            not isinstance(value, str)
-            or len(value) != 40
-            or any(character not in "0123456789abcdef" for character in value)
-        ):
-            raise CandidateEvidenceError(f"{field} must be a full lowercase SHA")
+    _validate_sha(run["base_sha"], "base_sha")
+    _validate_sha(run["head_sha"], "head_sha")
     if not isinstance(run["contexts"], list):
         raise CandidateEvidenceError("contexts must be a list")
 
     contexts = {}
     for index, raw in enumerate(run["contexts"]):
-        if not isinstance(raw, dict) or set(raw) != {"conclusion", "name"}:
+        if (
+            not isinstance(raw, dict)
+            or set(raw) != {"conclusion", "job_id", "name"}
+        ):
             raise CandidateEvidenceError(f"contexts[{index}] has invalid fields")
+        job_id = raw["job_id"]
         name = raw["name"]
         conclusion = raw["conclusion"]
-        if name not in KNOWN_CONTEXTS:
-            raise CandidateEvidenceError(f"unknown Build check context {name!r}")
-        if name in contexts:
-            raise CandidateEvidenceError(f"duplicate Build check context {name!r}")
+        if job_id not in KNOWN_JOB_IDS:
+            raise CandidateEvidenceError(f"unknown Build job identity {job_id!r}")
+        if job_id in contexts:
+            raise CandidateEvidenceError(f"duplicate Build job identity {job_id!r}")
+        if not isinstance(name, str) or not name:
+            raise CandidateEvidenceError(f"contexts[{index}].name must be nonempty")
         if conclusion not in {"failure", "skipped", "success"}:
             raise CandidateEvidenceError(
                 f"invalid Build check conclusion {conclusion!r}"
             )
-        contexts[name] = conclusion
+        contexts[job_id] = (name, conclusion)
     return contexts
+
+
+def _mode(contexts: dict[str, tuple[str, str]]) -> str:
+    classifier = contexts.get("event-classifier")
+    summary = contexts.get("summary")
+    if classifier is None or summary is None:
+        raise CandidateEvidenceError(
+            "run lacks running classifier or summary attestation"
+        )
+    pair = (classifier[0], summary[0])
+    if pair == (FULL_CLASSIFIER, FULL_ATTESTATION):
+        return "full"
+    if pair == (METADATA_CLASSIFIER, METADATA_ATTESTATION):
+        return "metadata-only"
+    raise CandidateEvidenceError("classifier and summary attest different modes")
+
+
+def _validate_mode_contexts(
+    contexts: dict[str, tuple[str, str]],
+    mode: str,
+) -> None:
+    if mode == "metadata-only":
+        for job_id in WORKER_JOB_IDS:
+            if job_id not in contexts:
+                continue
+            _, conclusion = contexts[job_id]
+            if conclusion not in {"skipped", "success"}:
+                raise CandidateEvidenceError(
+                    f"metadata worker {job_id!r} has invalid conclusion"
+                )
+        return
+
+    for job_id in WORKER_JOB_IDS:
+        context = contexts.get(job_id)
+        if context is not None and context[0] != job_id:
+            raise CandidateEvidenceError(
+                f"full worker {job_id!r} has noncanonical check name"
+            )
 
 
 def run_mode(run: dict) -> str:
     contexts = _contexts(run)
-    has_full = any(name in contexts for name in FULL_CONTEXTS)
-    has_metadata = any(name in contexts for name in METADATA_CONTEXTS)
-    if has_full and has_metadata:
-        raise CandidateEvidenceError("run mixes full and metadata check contexts")
-    if has_metadata:
-        return "metadata-only"
-    if has_full:
-        return "full"
-    raise CandidateEvidenceError("run has no authoritative Build mode context")
+    mode = _mode(contexts)
+    _validate_mode_contexts(contexts, mode)
+    return mode
 
 
 def evaluate_candidate_runs(
@@ -98,6 +131,11 @@ def evaluate_candidate_runs(
     head_sha: str,
     base_sha: str,
 ) -> CandidateEvidence:
+    _validate_sha(head_sha, "requested head_sha")
+    _validate_sha(base_sha, "requested base_sha")
+    if not isinstance(runs, list):
+        raise CandidateEvidenceError("runs must be a list")
+
     matching = []
     seen_ids = set()
     for run in runs:
@@ -106,10 +144,10 @@ def evaluate_candidate_runs(
         if run_id in seen_ids:
             raise CandidateEvidenceError(f"duplicate workflow run {run_id}")
         seen_ids.add(run_id)
-        mode = run_mode(run)
-        if run["head_sha"] != head_sha or run["base_sha"] != base_sha:
-            continue
-        matching.append((run_id, mode, contexts))
+        mode = _mode(contexts)
+        _validate_mode_contexts(contexts, mode)
+        if run["head_sha"] == head_sha and run["base_sha"] == base_sha:
+            matching.append((run_id, mode, contexts))
 
     if not matching:
         return CandidateEvidence(False, "missing", "no-exact-candidate-run", None)
@@ -124,13 +162,17 @@ def evaluate_candidate_runs(
         )
 
     run_id, mode, contexts = max(full_runs, key=lambda record: record[0])
-    missing = [name for name in FULL_CONTEXTS if name not in contexts]
-    failed = [
-        name
-        for name in FULL_CONTEXTS
-        if contexts.get(name) != "success"
-    ]
-    if missing or failed:
+    classifier = contexts["event-classifier"]
+    summary = contexts["summary"]
+    workers = [contexts.get(job_id) for job_id in WORKER_JOB_IDS]
+    if (
+        classifier != (FULL_CLASSIFIER, "success")
+        or summary != (FULL_ATTESTATION, "success")
+        or any(
+            context != (job_id, "success")
+            for job_id, context in zip(WORKER_JOB_IDS, workers)
+        )
+    ):
         return CandidateEvidence(
             False,
             mode,
@@ -141,9 +183,12 @@ def evaluate_candidate_runs(
 
 
 def latest_contexts(runs: list[dict]) -> dict[str, tuple[int, str]]:
-    latest: dict[str, tuple[int, str]] = {}
-    for run in sorted(runs, key=lambda item: item.get("run_id", 0)):
+    validated = []
+    for run in runs:
         contexts = _contexts(run)
-        for name, conclusion in contexts.items():
-            latest[name] = (run["run_id"], conclusion)
+        validated.append((run["run_id"], contexts))
+    latest: dict[str, tuple[int, str]] = {}
+    for run_id, contexts in sorted(validated):
+        for name, conclusion in contexts.values():
+            latest[name] = (run_id, conclusion)
     return latest

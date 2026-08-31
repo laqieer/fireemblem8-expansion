@@ -27,8 +27,9 @@ directly.
 **Automatic Build CI is the only host this repository re-verifies on every
 source-changing push/PR.** A PR candidate uses the complete combined Build
 gate and Copilot review concurrently. Parsed body/title-only edits retain the
-router plus distinct metadata-classifier/skipped-worker/metadata-summary
-contexts; base, mixed, unknown/incomplete,
+router plus distinct running `metadata-classifier` and `metadata-summary`
+contexts; skipped worker names are non-semantic and inadmissible as candidate
+evidence. Base, mixed, unknown/incomplete,
 opened, synchronize, and reopened events with complete identity fail closed to
 the complete graph. Missing base with valid PR head also runs the four workers
 at that head and fails normal summary; missing head runs none. A classifier
@@ -132,8 +133,9 @@ no ROM build or network access is required for either.
 Prefer focused local checks during iteration. A base-authoritative
 `event-router` and mode-specific classifier check precede candidate `host-tests`, `build`,
 `extended-host-tests`, `legacy`, and fail-closed `summary` jobs plus Copilot
-review. Metadata uses distinct `metadata-*` check names, so its green summary
-cannot replace candidate-required full contexts. Only parsed body/title-only
+review. Metadata uses a distinct running `metadata-summary`; normal `summary`
+is the sole candidate attestation and requires all four workers from that same
+full run. Only parsed body/title-only
 edits skip the four expensive workers. A
 merged `master` push reruns the complete combined gate and adds only
 `patch-release`. Unique CJK/font, codec,

@@ -140,26 +140,6 @@ _DYNAMIC_JOB_NAMES = {
         "needs.event-router.outputs.classification == 'metadata-only' && "
         "'metadata-classifier' || 'event-classifier' }}"
     ),
-    "host-tests": (
-        "${{ needs.event-classifier.result == 'success' && "
-        "needs.event-classifier.outputs.classification == 'metadata-only' "
-        "&& 'metadata-host-tests-skipped' || 'host-tests' }}"
-    ),
-    "build": (
-        "${{ needs.event-classifier.result == 'success' && "
-        "needs.event-classifier.outputs.classification == 'metadata-only' "
-        "&& 'metadata-build-skipped' || 'build' }}"
-    ),
-    "extended-host-tests": (
-        "${{ needs.event-classifier.result == 'success' && "
-        "needs.event-classifier.outputs.classification == 'metadata-only' "
-        "&& 'metadata-extended-host-tests-skipped' || 'extended-host-tests' }}"
-    ),
-    "legacy": (
-        "${{ needs.event-classifier.result == 'success' && "
-        "needs.event-classifier.outputs.classification == 'metadata-only' "
-        "&& 'metadata-legacy-skipped' || 'legacy' }}"
-    ),
     "summary": (
         "${{ needs.event-classifier.result == 'success' && "
         "needs.event-classifier.outputs.classification == 'metadata-only' "
@@ -836,7 +816,6 @@ def _parse_job_context(job_name, body):
         ],
         **{
             name: [
-                "name",
                 "needs",
                 "if",
                 "runs-on",
