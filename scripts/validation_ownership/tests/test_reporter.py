@@ -74,6 +74,24 @@ class OwnershipGraphTests(unittest.TestCase):
             self.assertTrue(
                 all(owner["reason"] and owner["gate"] for owner in resolution["owners"])
             )
+        codeowners = next(
+            record
+            for record in report["resolutions"]
+            if record["path"] == ".github/CODEOWNERS"
+        )
+        self.assertEqual(
+            {owner["evidence_type"] for owner in codeowners["owners"]},
+            {"host"},
+        )
+        workflow = next(
+            record
+            for record in report["resolutions"]
+            if record["path"] == ".github/workflows/build.yml"
+        )
+        self.assertIn(
+            "Run workflow contract test suite",
+            {owner["gate"].rsplit(":", 1)[-1] for owner in workflow["owners"]},
+        )
 
     def test_generated_paths_come_from_typed_registry(self):
         model = self.validate(entries=self.entries)
@@ -444,6 +462,112 @@ class OwnershipGraphTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(reporter.OwnershipError, "not tracked"):
                 reporter._parse_make_authorities(loader)
+
+    def test_make_invalidation_is_target_specific(self):
+        makefile = ROOT / "Makefile"
+        original = makefile.read_bytes()
+        base_loader = reporter.AuthorityLoader(ROOT, self.entries, "HEAD")
+        prior_graph = reporter._prior_graph(base_loader)
+        self.assertIsNotNone(prior_graph)
+
+        def changed_edges():
+            loader = reporter.AuthorityLoader(ROOT, self.entries)
+            model = reporter.validate_graph(
+                self.graph,
+                self.schema,
+                loader,
+                self.fixture_entries,
+            )
+            return reporter._authority_changed_edges(
+                self.graph,
+                prior_graph,
+                model,
+                loader,
+                base_loader,
+            )
+
+        try:
+            makefile.write_bytes(original + b"\n# comment-only fixture\n")
+            self.assertEqual(changed_edges(), set())
+
+            makefile.write_bytes(
+                original.replace(
+                    b'echo "The legacy comparison target has been removed',
+                    b'echo "The obsolete comparison target has been removed',
+                )
+            )
+            self.assertEqual(changed_edges(), set())
+
+            makefile.write_bytes(
+                original.replace(
+                    b'check --repository-root "$(CURDIR)" > /dev/null',
+                    b'check --repository-root "$(CURDIR)" > /dev/null; true',
+                )
+            )
+            self.assertEqual(
+                changed_edges(),
+                {"configuration.owns-test"},
+            )
+        finally:
+            makefile.write_bytes(original)
+
+    def test_workflow_invalidation_is_step_specific(self):
+        workflow = ROOT / reporter.BUILD_WORKFLOW_PATH
+        original = workflow.read_bytes()
+        base_loader = reporter.AuthorityLoader(ROOT, self.entries, "HEAD")
+        prior_graph = reporter._prior_graph(base_loader)
+        self.assertIsNotNone(prior_graph)
+
+        def changed_edges():
+            loader = reporter.AuthorityLoader(ROOT, self.entries)
+            model = reporter.validate_graph(
+                self.graph,
+                self.schema,
+                loader,
+                self.fixture_entries,
+            )
+            return reporter._authority_changed_edges(
+                self.graph,
+                prior_graph,
+                model,
+                loader,
+                base_loader,
+            )
+
+        try:
+            workflow.write_bytes(original + b"\n# comment-only fixture\n")
+            self.assertEqual(changed_edges(), set())
+
+            workflow.write_bytes(
+                original.replace(
+                    b"make codeql-alerts-test CODEQL_REQUIRE_FANALYZER=1",
+                    b"make codeql-alerts-test CODEQL_REQUIRE_FANALYZER=1 EXTRA=1",
+                )
+            )
+            self.assertEqual(changed_edges(), set())
+
+            workflow.write_bytes(
+                original.replace(
+                    b'python3 -m unittest discover -s tests/workflows -p "test_*.py" -v',
+                    b'python3 -m unittest discover -s tests/workflows -p "test_*.py" -q',
+                )
+            )
+            self.assertEqual(
+                changed_edges(),
+                {
+                    "docs.adversarial",
+                    "host.adversarial",
+                    "host.owns-test",
+                    "localization.adversarial",
+                    "manual.adversarial",
+                    "repo-config.owns-test",
+                    "runtime.adversarial",
+                    "templates.owns-test",
+                    "workflow.owns-test",
+                },
+            )
+        finally:
+            workflow.write_bytes(original)
 
     def test_review_invalidation_is_derived_from_edge_authority(self):
         unchanged = reporter.compare_graph_edges(self.graph, copy.deepcopy(self.graph))
