@@ -1072,7 +1072,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 "summary",
             ),
         )
-        self.assertEqual(len(verify_mod.gates()), 28)
+        self.assertEqual(len(verify_mod.gates()), 30)
         gate_jobs = {
             job_name
             for job_name, _, _ in verify_mod._workflow_gate_contract(

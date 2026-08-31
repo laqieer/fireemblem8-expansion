@@ -219,12 +219,16 @@ SCRUBBED_STEP_ENV = (
     "        GIT_OBJECT_DIRECTORY: ''",
     "        GIT_REPLACE_REF_BASE: ''",
     "        GIT_WORK_TREE: ''",
+    "        PATH: /usr/bin:/bin",
+    "        PYTHONPATH: ''",
+)
+VALIDATION_OWNERSHIP_STEP_ENV = (
+    *SCRUBBED_STEP_ENV[:-2],
     "        GNUMAKEFLAGS: ''",
     "        MAKEFLAGS: ''",
     "        MAKEOVERRIDES: ''",
     "        MFLAGS: ''",
-    "        PATH: /usr/bin:/bin",
-    "        PYTHONPATH: ''",
+    *SCRUBBED_STEP_ENV[-2:],
 )
 
 
@@ -604,7 +608,10 @@ def _contains_exact_command(job: str, command: str) -> bool:
             or (
                 len(fields) == 3
                 and set(fields) == {"name", "env", "run"}
-                and _step_has_scrubbed_environment(step)
+                and (
+                    _step_has_scrubbed_environment(step)
+                    or _validation_step_has_scrubbed_environment(step)
+                )
             )
         ):
             return True
@@ -644,9 +651,24 @@ def _base_step_has_scrubbed_environment(step: str) -> bool:
         SCRUBBED_STEP_ENV[1],
         VALIDATION_OWNERSHIP_BASE_SHA_ENV,
         VALIDATION_OWNERSHIP_CANDIDATE_SHA_ENV,
-        *SCRUBBED_STEP_ENV[2:],
+        *VALIDATION_OWNERSHIP_STEP_ENV[2:],
     )
     return tuple(entries) == expected
+
+
+def _validation_step_has_scrubbed_environment(step: str) -> bool:
+    lines = step.splitlines()
+    try:
+        env_index = lines.index("      env:")
+    except ValueError:
+        return False
+    entries = []
+    for line in lines[env_index + 1 :]:
+        if line.strip() and len(line) - len(line.lstrip(" ")) <= 6:
+            break
+        if line.strip() and not line.lstrip().startswith("#"):
+            entries.append(line)
+    return tuple(entries) == VALIDATION_OWNERSHIP_STEP_ENV
 
 
 def _step_name(step: str) -> str | None:
@@ -1597,7 +1619,10 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         matching = [
             step for step in host_steps if f"    - name: {name}\n" in step
         ]
-        if len(matching) != 1 or not _step_has_scrubbed_environment(matching[0]):
+        if (
+            len(matching) != 1
+            or not _validation_step_has_scrubbed_environment(matching[0])
+        ):
             errors.append(
                 f"validation ownership step {name!r} changes its scrubbed environment"
             )
@@ -1863,28 +1888,53 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 )
 
     def test_protected_pilot_steps_require_exact_scrubbed_environment(self):
-        names = (
-            "Hydrate workflow-pilot Git authority",
-            "Run workflow-pilot reporter regression suite (issue #176)",
-            "Validate workflow-pilot baseline against checked-out Git history",
-            "Run validation ownership regression suite (issue #180)",
-            "Validate validation ownership graph (issue #180)",
-        )
-        env_block = "      env:\n" + "\n".join(SCRUBBED_STEP_ENV) + "\n"
-        variants = (
-            "",
-            *(
-                env_block.replace(f"{entry}\n", "")
-                for entry in SCRUBBED_STEP_ENV
+        steps = (
+            (
+                "Hydrate workflow-pilot Git authority",
+                SCRUBBED_STEP_ENV,
             ),
-            env_block.replace("        PATH: /usr/bin:/bin", "        PATH: /untrusted"),
-            env_block + "        GITHUB_ENV: build/mask\n",
-            env_block.replace("      env:", '      "env":'),
-            env_block.replace("        BASH_ENV:", "        BASH_ENV :"),
-            env_block.replace("        ENV: ''", "        ENV: &mask ''"),
-            env_block.replace("        PYTHONPATH: ''", "        <<: *mask"),
+            (
+                "Run workflow-pilot reporter regression suite (issue #176)",
+                SCRUBBED_STEP_ENV,
+            ),
+            (
+                "Validate workflow-pilot baseline against checked-out Git history",
+                SCRUBBED_STEP_ENV,
+            ),
+            (
+                "Run validation ownership regression suite (issue #180)",
+                VALIDATION_OWNERSHIP_STEP_ENV,
+            ),
+            (
+                "Validate validation ownership graph (issue #180)",
+                VALIDATION_OWNERSHIP_STEP_ENV,
+            ),
         )
-        for name in names:
+        for name, expected_environment in steps:
+            env_block = (
+                "      env:\n"
+                + "\n".join(expected_environment)
+                + "\n"
+            )
+            variants = (
+                "",
+                *(
+                    env_block.replace(f"{entry}\n", "")
+                    for entry in expected_environment
+                ),
+                env_block.replace(
+                    "        PATH: /usr/bin:/bin",
+                    "        PATH: /untrusted",
+                ),
+                env_block + "        GITHUB_ENV: build/mask\n",
+                env_block.replace("      env:", '      "env":'),
+                env_block.replace("        BASH_ENV:", "        BASH_ENV :"),
+                env_block.replace("        ENV: ''", "        ENV: &mask ''"),
+                env_block.replace(
+                    "        PYTHONPATH: ''",
+                    "        <<: *mask",
+                ),
+            )
             for variant in variants:
                 with self.subTest(name=name, variant=variant):
                     step_start = self.text.index(f"    - name: {name}\n")

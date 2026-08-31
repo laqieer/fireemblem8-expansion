@@ -618,7 +618,7 @@ class OwnershipGraphTests(unittest.TestCase):
             graph_path.write_bytes(reporter.normalized_json(stale))
             with self.assertRaisesRegex(
                 reporter.OwnershipError,
-                "unknown node",
+                "missing target",
             ):
                 reporter.run_lifecycle_check(
                     artifact_root,
