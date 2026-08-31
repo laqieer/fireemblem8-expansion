@@ -70,7 +70,7 @@ fresh hosted publisher as a dedicated unprivileged UID inside mount, PID, and
 network namespaces with no network, capabilities, secrets, `BASH_ENV`, or
 `GITHUB_ENV`. Private mount propagation and recursively read-only host root,
 `/usr/share`, and `/opt` leave only private candidate source, home,
-temporary, and handoff mounts are writable. Private `/tmp`, `/run`, `/proc`,
+temporary, and handoff mounts writable. Private `/tmp`, `/run`, `/proc`,
 `/dev`, and `/dev/shm` mounts hide host D-Bus, Docker, containerd, systemd,
 snap, and other service/runtime sockets. Every builder descendant remains in
 one exact cgroup v2. The trusted host stops that cgroup and the exact process
