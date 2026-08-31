@@ -119,21 +119,30 @@
           "result": "affected-fixed",
           "evidence_result_ids": [
             "result-sibling-FINDING_ACTION_001-actions"
-          ]
+          ],
+          "assertion_inputs": {
+            "changed_paths": [".github/skills/development-workflow/SKILL.md"]
+          }
         },
         {
           "member": "items",
           "result": "verified-unaffected",
           "evidence_result_ids": [
             "result-sibling-FINDING_ACTION_001-items"
-          ]
+          ],
+          "assertion_inputs": {
+            "unchanged_paths": ["Makefile"]
+          }
         },
         {
           "member": "targets",
           "result": "verified-unaffected",
           "evidence_result_ids": [
             "result-sibling-FINDING_ACTION_001-targets"
-          ]
+          ],
+          "assertion_inputs": {
+            "unchanged_paths": ["Makefile"]
+          }
         }
       ]
     },
@@ -145,28 +154,40 @@
           "result": "affected-fixed",
           "evidence_result_ids": [
             "result-sibling-FINDING_GENERATED_001-owners"
-          ]
+          ],
+          "assertion_inputs": {
+            "changed_paths": ["docs/test-cases/registry.json"]
+          }
         },
         {
           "member": "outputs",
           "result": "verified-unaffected",
           "evidence_result_ids": [
             "result-sibling-FINDING_GENERATED_001-outputs"
-          ]
+          ],
+          "assertion_inputs": {
+            "unchanged_paths": ["Makefile"]
+          }
         },
         {
           "member": "consumers",
           "result": "verified-unaffected",
           "evidence_result_ids": [
             "result-sibling-FINDING_GENERATED_001-consumers"
-          ]
+          ],
+          "assertion_inputs": {
+            "unchanged_paths": ["Makefile"]
+          }
         },
         {
           "member": "drift-checks",
           "result": "verified-unaffected",
           "evidence_result_ids": [
             "result-sibling-FINDING_GENERATED_001-drift-checks"
-          ]
+          ],
+          "assertion_inputs": {
+            "unchanged_paths": ["Makefile"]
+          }
         }
       ]
     },
@@ -178,28 +199,40 @@
           "result": "affected-fixed",
           "evidence_result_ids": [
             "result-sibling-FINDING_LIFECYCLE_001-entries"
-          ]
+          ],
+          "assertion_inputs": {
+            "changed_paths": ["scripts/workflow_pilot/review_family.py"]
+          }
         },
         {
           "member": "preservation",
           "result": "verified-unaffected",
           "evidence_result_ids": [
             "result-sibling-FINDING_LIFECYCLE_001-preservation"
-          ]
+          ],
+          "assertion_inputs": {
+            "unchanged_paths": ["Makefile"]
+          }
         },
         {
           "member": "resets",
           "result": "verified-unaffected",
           "evidence_result_ids": [
             "result-sibling-FINDING_LIFECYCLE_001-resets"
-          ]
+          ],
+          "assertion_inputs": {
+            "unchanged_paths": ["Makefile"]
+          }
         },
         {
           "member": "terminals",
           "result": "verified-unaffected",
           "evidence_result_ids": [
             "result-sibling-FINDING_LIFECYCLE_001-terminals"
-          ]
+          ],
+          "assertion_inputs": {
+            "unchanged_paths": ["Makefile"]
+          }
         }
       ]
     },
@@ -211,14 +244,20 @@
           "result": "affected-fixed",
           "evidence_result_ids": [
             "result-sibling-FINDING_RESOURCE_001-enabled"
-          ]
+          ],
+          "assertion_inputs": {
+            "changed_paths": [".github/copilot-instructions.md"]
+          }
         },
         {
           "member": "disabled",
           "result": "verified-unaffected",
           "evidence_result_ids": [
             "result-sibling-FINDING_RESOURCE_001-disabled"
-          ]
+          ],
+          "assertion_inputs": {
+            "unchanged_paths": ["Makefile"]
+          }
         }
       ]
     },
@@ -230,35 +269,50 @@
           "result": "affected-fixed",
           "evidence_result_ids": [
             "result-sibling-FINDING_WIRE_001-producers"
-          ]
+          ],
+          "assertion_inputs": {
+            "changed_paths": ["scripts/workflow_pilot/review_family.py"]
+          }
         },
         {
           "member": "consumers",
           "result": "verified-unaffected",
           "evidence_result_ids": [
             "result-sibling-FINDING_WIRE_001-consumers"
-          ]
+          ],
+          "assertion_inputs": {
+            "unchanged_paths": ["Makefile"]
+          }
         },
         {
           "member": "validators",
           "result": "verified-unaffected",
           "evidence_result_ids": [
             "result-sibling-FINDING_WIRE_001-validators"
-          ]
+          ],
+          "assertion_inputs": {
+            "unchanged_paths": ["Makefile"]
+          }
         },
         {
           "member": "replay",
           "result": "verified-unaffected",
           "evidence_result_ids": [
             "result-sibling-FINDING_WIRE_001-replay"
-          ]
+          ],
+          "assertion_inputs": {
+            "unchanged_paths": ["Makefile"]
+          }
         },
         {
           "member": "stale-bindings",
           "result": "verified-unaffected",
           "evidence_result_ids": [
             "result-sibling-FINDING_WIRE_001-stale-bindings"
-          ]
+          ],
+          "assertion_inputs": {
+            "unchanged_paths": ["Makefile"]
+          }
         }
       ]
     }

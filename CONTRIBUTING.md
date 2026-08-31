@@ -89,16 +89,16 @@ implementer and cannot mutate repository or GitHub state. Evaluate its exact
 candidate report with `python3 -m scripts.workflow_pilot.review_family` using
 the offline report core only for structural diagnostics; it can never authorize
 delivery. Production credentials and authority stay outside the candidate:
-invoke `trusted_review_gate.py` only from the exact authoritative PR base
-checkout or an authenticated external installation, import only that trusted
-root, and treat candidate JSON as inert input. The introducing PR uses
+invoke `trusted_review_gate.py` only from the exact clean authoritative PR
+base, object-bind the complete local import graph before imports, and reject
+any tracked/index/untracked state or candidate path. The introducing PR uses
 fail-closed `introduction` mode because its actual base lacks the checker.
-Later PRs require exact `baseRefOid`/`headRefOid`, an immutable local-finding
-receipt issued before remote review, separately collected GitHub findings,
-closed base-owned assertions, disjoint disposition actors, and dispositions
-bound to both held and next heads. `pushedDate` never reconstructs head
-history. Offline fixtures never authorize delivery. This contract does not
-replace mandatory exact-candidate Copilot review.
+Later PRs require exact `baseRefOid`/`headRefOid`, status-aware base/head blob
+records, an immutable local-finding receipt issued before remote review,
+separately collected GitHub findings, and class/outcome-specific base-owned
+assertions. Only exact top-level green approval or legacy exact clean text is
+clean. `pushedDate` never reconstructs head history. Offline fixtures never
+authorize delivery.
 
 Both PR and master Build runs execute `host-tests`, `build`,
 `extended-host-tests`, `legacy`, and the seconds-only fail-closed `summary` in

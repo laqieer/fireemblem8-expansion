@@ -105,17 +105,19 @@ comment, request review, dispatch CI, or merge. Rounds one and two produce
 bounded family handoffs; a third consecutive change-request round blocks
 another push on an architecture/decomposition hold. Candidate code receives no
 GitHub/HMAC/push credentials and is never inserted into trusted `sys.path`;
-only the exact authoritative PR base checkout or an authenticated external
-installation collects GitHub state, consumes replay, executes the closed
-base-owned assertion registry, or grants merge/push authority. The introducing
-PR fails closed because its base lacks that checker. Bind exact `baseRefOid`
-and `headRefOid`, keep immutable `LOCAL-` pre-review findings separate from
-later remote finding IDs, and never use nullable `pushedDate` to reconstruct
-head history. A disposition binds the held round, held head, and next exact
-head, is single-use, and has an authenticated actor disjoint from the
-implementer/author, pre-reviewer, remote reviewers, and finding authors.
-Recollect semantic review body/state/thread data before merge. Remote Copilot
-review remains mandatory for the current exact candidate.
+only the exact clean authoritative PR base checkout collects GitHub state,
+consumes replay, executes the closed base-owned assertion registry, or grants
+merge/push authority. Before imports, object-bind the entire local import graph
+to that base and reject tracked/index/untracked changes; no environment string
+attests an external install. The introducing PR fails closed because its base
+lacks that checker. Bind exact `baseRefOid`/`headRefOid`, `LOCAL-` findings,
+and status-aware A/D/M/R/C base/head blobs. Distinct class/outcome checks must
+prove affected or unchanged paths; unsupported outcomes reject. Only exact
+top-level green approval (or legacy exact clean text) is clean; yellow, blue,
+unknown, nested, inline, unresolved, or `CHANGES_REQUESTED` shapes are not.
+Never use nullable `pushedDate` to reconstruct head history. Dispositions bind
+held and next exact heads with disjoint authenticated actors. Remote Copilot
+review remains mandatory for the exact candidate.
 
 CI waiting must not occupy a reasoning subagent. The orchestrator that
 dispatches a workflow records its exact SHA and run ID, then returns

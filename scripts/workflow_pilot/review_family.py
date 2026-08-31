@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import sys
 from collections import defaultdict
@@ -61,6 +62,15 @@ BEHAVIOR_ROW_SPECS = {
 REQUIRED_BEHAVIOR_ROWS = tuple(sorted(BEHAVIOR_ROW_SPECS))
 RESULT_SOURCE_PATH = "scripts/workflow_pilot/tests/test_review_family.py"
 COPILOT_ACTOR = "copilot-pull-request-reviewer"
+COPILOT_APPROVAL_MARKER = "### 🟢 Approval recommended"
+COPILOT_CHANGES_MARKER = "### 🟡 Changes recommended"
+COPILOT_CLOSER_LOOK_MARKER = "### 🔵 Needs a closer look"
+COPILOT_LEGACY_CLEAN_BODY = "No issues found."
+COPILOT_TOP_LEVEL_MARKERS = {
+    COPILOT_APPROVAL_MARKER,
+    COPILOT_CHANGES_MARKER,
+    COPILOT_CLOSER_LOOK_MARKER,
+}
 LOCAL_FINDING_RE = re.compile(r"^LOCAL-[A-Z0-9][A-Z0-9_-]{0,95}$")
 ACTOR_LOGIN_RE = re.compile(
     r"^@?[A-Za-z0-9](?:[A-Za-z0-9_-]{0,98}[A-Za-z0-9])?(?:\[bot\])?$"
@@ -107,6 +117,355 @@ def _validate_path(value: Any, label: str) -> str:
     return source
 
 
+def _tree_blob(
+    repository_root: Path, revision: str, path: str
+) -> dict[str, str] | None:
+    raw = reporter.run_git(
+        repository_root,
+        "ls-tree",
+        "-z",
+        "--full-tree",
+        revision,
+        "--",
+        path,
+    )
+    records = [record for record in raw.split(b"\0") if record]
+    if not records:
+        return None
+    if len(records) != 1:
+        raise reporter.PilotDataError(
+            f"Git tree returned ambiguous path {path!r}"
+        )
+    try:
+        metadata, raw_path = records[0].split(b"\t", 1)
+        mode, kind, blob_oid = metadata.decode("ascii").split()
+        actual_path = raw_path.decode("utf-8")
+    except (ValueError, UnicodeDecodeError) as error:
+        raise reporter.PilotDataError(
+            f"Git tree returned malformed path {path!r}"
+        ) from error
+    if (
+        actual_path != path
+        or kind != "blob"
+        or mode not in {"100644", "100755"}
+    ):
+        raise reporter.PilotDataError(
+            f"Git tree path {path!r} has an unsafe type or mode"
+        )
+    return {"mode": mode, "blob_oid": blob_oid}
+
+
+def _expect_tree_identity(
+    actual: dict[str, str] | None,
+    *,
+    mode: str | None,
+    blob_oid: str | None,
+    label: str,
+) -> None:
+    expected = (
+        None
+        if mode is None or blob_oid is None
+        else {"mode": mode, "blob_oid": blob_oid}
+    )
+    if actual != expected:
+        raise reporter.PilotDataError(
+            f"{label} does not match exact Git tree identity"
+        )
+
+
+def derive_change_records(
+    repository_root: Path, base_sha: str, head_sha: str
+) -> list[dict[str, Any]]:
+    """Derive status, path, mode, and blob identities from exact Git trees."""
+    raw = reporter.run_git(
+        repository_root,
+        "diff",
+        "--raw",
+        "-z",
+        "--no-abbrev",
+        "-M",
+        "-C",
+        "--find-copies-harder",
+        f"{base_sha}...{head_sha}",
+        "--",
+    )
+    fields = raw.split(b"\0")
+    if fields and fields[-1] == b"":
+        fields.pop()
+    records = []
+    index = 0
+    while index < len(fields):
+        header = fields[index]
+        index += 1
+        if not header.startswith(b":"):
+            raise reporter.PilotDataError("Git diff returned malformed raw status")
+        try:
+            old_mode, new_mode, old_oid, new_oid, status_token = (
+                header[1:].decode("ascii").split()
+            )
+        except (UnicodeDecodeError, ValueError) as error:
+            raise reporter.PilotDataError(
+                "Git diff returned malformed raw metadata"
+            ) from error
+        status = status_token[:1]
+        score_text = status_token[1:]
+        if status not in {"A", "D", "M", "R", "C"}:
+            raise reporter.PilotDataError(
+                f"Git diff status {status_token!r} is not supported"
+            )
+        if (status in {"R", "C"}) != bool(score_text):
+            raise reporter.PilotDataError(
+                f"Git diff status {status_token!r} has an invalid score"
+            )
+        similarity = int(score_text) if score_text else None
+        if similarity is not None and not 0 <= similarity <= 100:
+            raise reporter.PilotDataError(
+                f"Git diff status {status_token!r} has an invalid score"
+            )
+        path_count = 2 if status in {"R", "C"} else 1
+        if index + path_count > len(fields):
+            raise reporter.PilotDataError("Git diff omitted a status path")
+        try:
+            paths = [
+                _validate_path(
+                    fields[index + offset].decode("utf-8"),
+                    "Git diff status path",
+                )
+                for offset in range(path_count)
+            ]
+        except UnicodeDecodeError as error:
+            raise reporter.PilotDataError(
+                "Git diff status path is not UTF-8"
+            ) from error
+        index += path_count
+
+        if status == "A":
+            old_path, new_path = None, paths[0]
+            base_identity, head_identity = None, _tree_blob(
+                repository_root, head_sha, new_path
+            )
+        elif status == "D":
+            old_path, new_path = paths[0], None
+            base_identity, head_identity = _tree_blob(
+                repository_root, base_sha, old_path
+            ), None
+        elif status == "M":
+            old_path = new_path = paths[0]
+            base_identity = _tree_blob(repository_root, base_sha, old_path)
+            head_identity = _tree_blob(repository_root, head_sha, new_path)
+        else:
+            old_path, new_path = paths
+            if old_path == new_path:
+                raise reporter.PilotDataError(
+                    f"Git diff {status} status reuses one path"
+                )
+            base_identity = _tree_blob(repository_root, base_sha, old_path)
+            head_identity = _tree_blob(repository_root, head_sha, new_path)
+
+        zeros = "0" * 40
+        expected_old_mode = "000000" if base_identity is None else base_identity["mode"]
+        expected_new_mode = "000000" if head_identity is None else head_identity["mode"]
+        expected_old_oid = zeros if base_identity is None else base_identity["blob_oid"]
+        expected_new_oid = zeros if head_identity is None else head_identity["blob_oid"]
+        if (
+            old_mode != expected_old_mode
+            or new_mode != expected_new_mode
+            or old_oid != expected_old_oid
+            or new_oid != expected_new_oid
+        ):
+            raise reporter.PilotDataError(
+                f"Git diff {status} metadata disagrees with exact trees"
+            )
+        if (
+            status in {"M", "R", "C"}
+            and base_identity is not None
+            and head_identity is not None
+            and base_identity["mode"] != head_identity["mode"]
+        ):
+            raise reporter.PilotDataError(
+                f"Git diff {status} status contains an unsupported mode change"
+            )
+        if status in {"A", "R", "C"}:
+            _expect_tree_identity(
+                _tree_blob(repository_root, base_sha, new_path),
+                mode=None,
+                blob_oid=None,
+                label=f"{status} destination in base",
+            )
+        if status in {"D", "R"}:
+            _expect_tree_identity(
+                _tree_blob(repository_root, head_sha, old_path),
+                mode=None,
+                blob_oid=None,
+                label=f"{status} source in head",
+            )
+        if status == "C":
+            _expect_tree_identity(
+                _tree_blob(repository_root, head_sha, old_path),
+                mode=base_identity["mode"],
+                blob_oid=base_identity["blob_oid"],
+                label="copy source in head",
+            )
+        records.append(
+            {
+                "status": status,
+                "similarity": similarity,
+                "old_path": old_path,
+                "new_path": new_path,
+                "base_mode": (
+                    base_identity["mode"] if base_identity is not None else None
+                ),
+                "base_blob_oid": (
+                    base_identity["blob_oid"]
+                    if base_identity is not None
+                    else None
+                ),
+                "head_mode": (
+                    head_identity["mode"] if head_identity is not None else None
+                ),
+                "head_blob_oid": (
+                    head_identity["blob_oid"]
+                    if head_identity is not None
+                    else None
+                ),
+            }
+        )
+    return sorted(
+        records,
+        key=lambda record: (
+            record["old_path"] or "",
+            record["new_path"] or "",
+            record["status"],
+        ),
+    )
+
+
+def _validate_change_records(value: Any, label: str) -> list[dict[str, Any]]:
+    result = []
+    identities = []
+    for index, raw in enumerate(reporter.expect_list(value, label)):
+        item_label = f"{label}[{index}]"
+        record = reporter.expect_object(raw, item_label)
+        reporter.expect_keys(
+            record,
+            item_label,
+            (
+                "status",
+                "similarity",
+                "old_path",
+                "new_path",
+                "base_mode",
+                "base_blob_oid",
+                "head_mode",
+                "head_blob_oid",
+            ),
+        )
+        status = reporter.expect_enum(
+            record["status"], {"A", "D", "M", "R", "C"}, f"{item_label}.status"
+        )
+        similarity = record["similarity"]
+        if status in {"R", "C"}:
+            similarity = reporter.expect_int(
+                similarity, f"{item_label}.similarity", 0
+            )
+            if similarity > 100:
+                raise reporter.PilotDataError(
+                    f"{item_label}.similarity exceeds 100"
+                )
+        elif similarity is not None:
+            raise reporter.PilotDataError(
+                f"{item_label}.similarity is only valid for rename/copy"
+            )
+
+        def optional_path(field: str) -> str | None:
+            value = record[field]
+            return None if value is None else _validate_path(
+                value, f"{item_label}.{field}"
+            )
+
+        def optional_mode(field: str) -> str | None:
+            value = record[field]
+            if value is None:
+                return None
+            if value not in {"100644", "100755"}:
+                raise reporter.PilotDataError(
+                    f"{item_label}.{field} has an unsafe mode"
+                )
+            return value
+
+        def optional_blob(field: str) -> str | None:
+            value = record[field]
+            return None if value is None else reporter.expect_sha(
+                value, f"{item_label}.{field}"
+            )
+
+        normalized = {
+            "status": status,
+            "similarity": similarity,
+            "old_path": optional_path("old_path"),
+            "new_path": optional_path("new_path"),
+            "base_mode": optional_mode("base_mode"),
+            "base_blob_oid": optional_blob("base_blob_oid"),
+            "head_mode": optional_mode("head_mode"),
+            "head_blob_oid": optional_blob("head_blob_oid"),
+        }
+        if status == "A":
+            valid = (
+                normalized["old_path"] is None
+                and normalized["base_mode"] is None
+                and normalized["base_blob_oid"] is None
+                and normalized["new_path"] is not None
+                and normalized["head_mode"] is not None
+                and normalized["head_blob_oid"] is not None
+            )
+        elif status == "D":
+            valid = (
+                normalized["old_path"] is not None
+                and normalized["base_mode"] is not None
+                and normalized["base_blob_oid"] is not None
+                and normalized["new_path"] is None
+                and normalized["head_mode"] is None
+                and normalized["head_blob_oid"] is None
+            )
+        else:
+            valid = all(
+                normalized[field] is not None
+                for field in (
+                    "old_path",
+                    "new_path",
+                    "base_mode",
+                    "base_blob_oid",
+                    "head_mode",
+                    "head_blob_oid",
+                )
+            )
+            if status == "M":
+                valid = valid and normalized["old_path"] == normalized["new_path"]
+            else:
+                valid = valid and normalized["old_path"] != normalized["new_path"]
+            valid = valid and normalized["base_mode"] == normalized["head_mode"]
+        if not valid:
+            raise reporter.PilotDataError(
+                f"{item_label} fields contradict status {status}"
+            )
+        identity = (
+            status,
+            normalized["old_path"],
+            normalized["new_path"],
+        )
+        identities.append(identity)
+        result.append(normalized)
+    reporter.expect_unique(identities, f"{label} identities")
+    return sorted(
+        result,
+        key=lambda record: (
+            record["old_path"] or "",
+            record["new_path"] or "",
+            record["status"],
+        ),
+    )
+
+
 def normalize_actor_login(value: Any, label: str = "actor login") -> str:
     login = reporter.expect_string(value, label)
     if ACTOR_LOGIN_RE.fullmatch(login) is None:
@@ -120,6 +479,25 @@ def normalize_actor_login(value: Any, label: str = "actor login") -> str:
     if not normalized:
         raise reporter.PilotDataError(f"{label} has no normalized identity")
     return normalized
+
+
+def classify_copilot_body(value: Any, label: str = "Copilot review body") -> str:
+    body = reporter.expect_string(value, label, allow_empty=True)
+    if body == COPILOT_LEGACY_CLEAN_BODY:
+        return "clean-legacy"
+    lines = body.splitlines()
+    if not lines:
+        return "unknown"
+    marker = lines[0]
+    if marker not in COPILOT_TOP_LEVEL_MARKERS:
+        return "unknown"
+    if any(line in COPILOT_TOP_LEVEL_MARKERS for line in lines[1:]):
+        return "unknown"
+    if marker == COPILOT_APPROVAL_MARKER:
+        return "clean-approval"
+    if marker == COPILOT_CHANGES_MARKER:
+        return "changes-recommended"
+    return "needs-closer-look"
 
 
 def _validate_trigger(value: Any):
@@ -262,7 +640,12 @@ def _validate_sweeps(value: Any) -> list[dict[str, Any]]:
             reporter.expect_keys(
                 sibling,
                 sibling_label,
-                ("member", "result", "evidence_result_ids"),
+                (
+                    "member",
+                    "result",
+                    "evidence_result_ids",
+                    "assertion_inputs",
+                ),
             )
             member = reporter.expect_enum(
                 sibling["member"], set(FAMILY_MEMBERS[family]), f"{sibling_label}.member"
@@ -276,13 +659,66 @@ def _validate_sweeps(value: Any) -> list[dict[str, Any]]:
                 raise reporter.PilotDataError(
                     f"{sibling_label} does not name the closed base assertion result"
                 )
+            disposition = reporter.expect_enum(
+                sibling["result"], SWEEP_RESULTS, f"{sibling_label}.result"
+            )
+            assertion_inputs = reporter.expect_object(
+                sibling["assertion_inputs"],
+                f"{sibling_label}.assertion_inputs",
+            )
+            if disposition == "affected-fixed":
+                reporter.expect_keys(
+                    assertion_inputs,
+                    f"{sibling_label}.assertion_inputs",
+                    ("changed_paths",),
+                )
+                assertion_inputs = {
+                    "changed_paths": [
+                        _validate_path(
+                            path,
+                            f"{sibling_label}.assertion_inputs.changed_paths"
+                            f"[{path_index}]",
+                        )
+                        for path_index, path in enumerate(
+                            _expect_string_list(
+                                assertion_inputs["changed_paths"],
+                                f"{sibling_label}.assertion_inputs.changed_paths",
+                            )
+                        )
+                    ]
+                }
+            elif disposition == "verified-unaffected":
+                reporter.expect_keys(
+                    assertion_inputs,
+                    f"{sibling_label}.assertion_inputs",
+                    ("unchanged_paths",),
+                )
+                assertion_inputs = {
+                    "unchanged_paths": [
+                        _validate_path(
+                            path,
+                            f"{sibling_label}.assertion_inputs.unchanged_paths"
+                            f"[{path_index}]",
+                        )
+                        for path_index, path in enumerate(
+                            _expect_string_list(
+                                assertion_inputs["unchanged_paths"],
+                                f"{sibling_label}.assertion_inputs.unchanged_paths",
+                            )
+                        )
+                    ]
+                }
+            else:
+                raise reporter.PilotDataError(
+                    f"{sibling_label} not-applicable has no base-owned "
+                    "assertion and is unsupported"
+                )
             normalized_siblings.append(
                 {
                     "member": member,
-                    "result": reporter.expect_enum(
-                        sibling["result"], SWEEP_RESULTS, f"{sibling_label}.result"
-                    ),
+                    "result": disposition,
                     "evidence_result_ids": result_ids,
+                    "assertion_inputs": assertion_inputs,
                 }
             )
         normalized.append(
@@ -366,33 +802,140 @@ def finding_family_map(contract: dict[str, Any]) -> dict[str, str]:
 
 
 def build_assertion_requests(
-    contract: dict[str, Any], evidence: dict[str, Any]
+    contract: dict[str, Any],
+    evidence: dict[str, Any],
+    repository_root: Path,
 ) -> list[dict[str, Any]]:
     """Derive the only assertion requests accepted by the base registry."""
+    changes = derive_change_records(
+        repository_root, contract["base_sha"], contract["candidate_sha"]
+    )
+    changes_sha256 = hashlib.sha256(
+        reporter.normalized_json(changes)
+    ).hexdigest()
+    remote_finding_ids = sorted(
+        finding["node_id"] for finding in evidence.get("findings", [])
+    )
+    local_finding_count = len(evidence.get("pre_review_findings", []))
     requests = []
     for row in contract["behavior_rows"]:
         for evidence_class in EVIDENCE_CLASSES:
             result_id = row["evidence_result_ids"][evidence_class][0]
+            if evidence_class == "positive":
+                inputs = {
+                    "row_id": row["id"],
+                    "repository": contract["repository"],
+                    "pull_request": contract["pull_request"],
+                    "base_sha": contract["base_sha"],
+                    "head_sha": contract["candidate_sha"],
+                }
+            elif evidence_class == "adversarial":
+                inputs = {
+                    "row_id": row["id"],
+                    "negative_control": "fabricated-result-id",
+                    "fabricated_result_id": "candidate-fabricated-pass",
+                }
+            elif evidence_class == "default":
+                inputs = {
+                    "row_id": row["id"],
+                    "trust_mode": contract["trust_mode"],
+                    "pre_review_required": contract["pre_review_required"],
+                    "local_finding_count": local_finding_count,
+                }
+            else:
+                inputs = {
+                    "row_id": row["id"],
+                    "changes_sha256": changes_sha256,
+                    "remote_finding_ids": remote_finding_ids,
+                }
             requests.append(
                 {
                     "id": result_id,
                     "assertion_id": f"{row['id']}:{evidence_class}",
-                    "context": None,
+                    "check_id": (
+                        f"behavior:{row['id']}:{evidence_class}:v1"
+                    ),
+                    "claimed_disposition": None,
+                    "inputs": inputs,
                 }
             )
     for sweep in contract["family_sweeps"]:
         for sibling in sweep["siblings"]:
+            disposition = sibling["result"]
+            configured_inputs = sibling["assertion_inputs"]
+            if disposition == "affected-fixed":
+                changed_paths = configured_inputs["changed_paths"]
+                change_evidence = [
+                    change
+                    for change in changes
+                    if any(
+                        path in {change["old_path"], change["new_path"]}
+                        for path in changed_paths
+                    )
+                ]
+                if any(
+                    not any(
+                        path in {change["old_path"], change["new_path"]}
+                        for change in changes
+                    )
+                    for path in changed_paths
+                ):
+                    raise reporter.PilotDataError(
+                        f"sibling {sweep['finding_id']!r}/"
+                        f"{sibling['member']!r} lacks exact changed-path evidence"
+                    )
+                inputs = {
+                    "finding_id": sweep["finding_id"],
+                    "family": sweep["family"],
+                    "member": sibling["member"],
+                    "changed_paths": changed_paths,
+                    "change_evidence": change_evidence,
+                }
+            elif disposition == "verified-unaffected":
+                unchanged_evidence = []
+                for path in configured_inputs["unchanged_paths"]:
+                    base_identity = _tree_blob(
+                        repository_root, contract["base_sha"], path
+                    )
+                    head_identity = _tree_blob(
+                        repository_root, contract["candidate_sha"], path
+                    )
+                    if base_identity is None or base_identity != head_identity:
+                        raise reporter.PilotDataError(
+                            f"sibling {sweep['finding_id']!r}/"
+                            f"{sibling['member']!r} lacks unchanged blob evidence"
+                        )
+                    unchanged_evidence.append(
+                        {
+                            "path": path,
+                            "base_mode": base_identity["mode"],
+                            "base_blob_oid": base_identity["blob_oid"],
+                            "head_mode": head_identity["mode"],
+                            "head_blob_oid": head_identity["blob_oid"],
+                        }
+                    )
+                inputs = {
+                    "finding_id": sweep["finding_id"],
+                    "family": sweep["family"],
+                    "member": sibling["member"],
+                    "unchanged_evidence": unchanged_evidence,
+                }
+            else:
+                raise reporter.PilotDataError(
+                    "not-applicable is unsupported by the base registry"
+                )
             requests.append(
                 {
                     "id": sibling["evidence_result_ids"][0],
                     "assertion_id": (
                         f"sibling:{sweep['family']}:{sibling['member']}"
                     ),
-                    "context": {
-                        "finding_id": sweep["finding_id"],
-                        "family": sweep["family"],
-                        "member": sibling["member"],
-                    },
+                    "check_id": (
+                        f"sibling:{sweep['family']}:{sibling['member']}:"
+                        f"{disposition}:v1"
+                    ),
+                    "claimed_disposition": disposition,
+                    "inputs": inputs,
                 }
             )
     ids = [request["id"] for request in requests]
@@ -447,6 +990,7 @@ def _validate_pre_reviews(value: Any) -> list[dict[str, Any]]:
                 "actions",
                 "finding_ids",
                 "reviewed_files",
+                "reviewed_changes",
             ),
         )
         review_id = reporter.expect_string(review["id"], f"{label}.id")
@@ -508,6 +1052,9 @@ def _validate_pre_reviews(value: Any) -> list[dict[str, Any]]:
             )
         ]
         reporter.expect_unique(reviewed_files, f"{label}.reviewed_files")
+        reviewed_changes = _validate_change_records(
+            review["reviewed_changes"], f"{label}.reviewed_changes"
+        )
         result.append(
             {
                 "id": review_id,
@@ -528,6 +1075,7 @@ def _validate_pre_reviews(value: Any) -> list[dict[str, Any]]:
                     review["finding_ids"], f"{label}.finding_ids", nonempty=False
                 ),
                 "reviewed_files": reviewed_files,
+                "reviewed_changes": reviewed_changes,
                 "_started": started,
                 "_completed": completed,
                 "_issued": issued,
@@ -559,6 +1107,7 @@ def _validate_remote_reviews(value: Any) -> list[dict[str, Any]]:
                 "submitted_at",
                 "state",
                 "body",
+                "body_classification",
                 "body_has_findings",
                 "outcome",
                 "finding_ids",
@@ -578,10 +1127,30 @@ def _validate_remote_reviews(value: Any) -> list[dict[str, Any]]:
             )
         previous = submitted
         body = reporter.expect_string(review["body"], f"{label}.body", allow_empty=True)
+        body_classification = reporter.expect_enum(
+            review["body_classification"],
+            {
+                "clean-approval",
+                "clean-legacy",
+                "changes-recommended",
+                "needs-closer-look",
+                "unknown",
+            },
+            f"{label}.body_classification",
+        )
+        expected_classification = classify_copilot_body(
+            body, f"{label}.body"
+        )
+        if body_classification != expected_classification:
+            raise reporter.PilotDataError(
+                f"{label}.body_classification contradicts exact top-level marker"
+            )
         body_has_findings = reporter.expect_bool(
             review["body_has_findings"], f"{label}.body_has_findings"
         )
-        if body_has_findings != (body.strip() not in {"", "No issues found."}):
+        if body_has_findings != (
+            body_classification not in {"clean-approval", "clean-legacy"}
+        ):
             raise reporter.PilotDataError(
                 f"{label}.body_has_findings contradicts review body"
             )
@@ -607,6 +1176,7 @@ def _validate_remote_reviews(value: Any) -> list[dict[str, Any]]:
                     f"{label}.state",
                 ),
                 "body": body,
+                "body_classification": body_classification,
                 "body_has_findings": body_has_findings,
                 "outcome": reporter.expect_enum(
                     review["outcome"], REMOTE_OUTCOMES, f"{label}.outcome"
@@ -806,9 +1376,13 @@ def _validate_result_manifest(value: Any) -> dict[str, dict[str, Any]]:
             (
                 "id",
                 "assertion_id",
+                "check_id",
+                "claimed_disposition",
                 "callable",
                 "command_id",
                 "input_sha256",
+                "inputs_sha256",
+                "output_sha256",
                 "base_sha",
                 "candidate_sha",
                 "status",
@@ -821,9 +1395,17 @@ def _validate_result_manifest(value: Any) -> dict[str, dict[str, Any]]:
         input_sha = reporter.expect_string(
             result["input_sha256"], f"{label}.input_sha256"
         )
+        inputs_sha = reporter.expect_string(
+            result["inputs_sha256"], f"{label}.inputs_sha256"
+        )
+        output_sha = reporter.expect_string(
+            result["output_sha256"], f"{label}.output_sha256"
+        )
         if (
             reporter.SHA256_RE.fullmatch(command_id) is None
             or reporter.SHA256_RE.fullmatch(input_sha) is None
+            or reporter.SHA256_RE.fullmatch(inputs_sha) is None
+            or reporter.SHA256_RE.fullmatch(output_sha) is None
         ):
             raise reporter.PilotDataError(
                 f"{label} command/input identity must be SHA-256"
@@ -833,11 +1415,17 @@ def _validate_result_manifest(value: Any) -> dict[str, dict[str, Any]]:
             "assertion_id": reporter.expect_string(
                 result["assertion_id"], f"{label}.assertion_id"
             ),
+            "check_id": reporter.expect_string(
+                result["check_id"], f"{label}.check_id"
+            ),
+            "claimed_disposition": result["claimed_disposition"],
             "callable": reporter.expect_string(
                 result["callable"], f"{label}.callable"
             ),
             "command_id": command_id,
             "input_sha256": input_sha,
+            "inputs_sha256": inputs_sha,
+            "output_sha256": output_sha,
             "base_sha": reporter.expect_sha(
                 result["base_sha"], f"{label}.base_sha"
             ),
@@ -871,6 +1459,7 @@ def _validate_execution_receipts(value: Any) -> list[dict[str, Any]]:
             "checker_blob_oid",
             "argv",
             "changed_files",
+            "changes",
             "remote_finding_ids",
             "review_report_sha256",
             "checker_input_sha256",
@@ -968,6 +1557,9 @@ def _validate_execution_receipts(value: Any) -> list[dict[str, Any]]:
                 "argv": _expect_string_list(receipt["argv"], f"{label}.argv"),
                 "changed_files": _expect_string_list(
                     receipt["changed_files"], f"{label}.changed_files"
+                ),
+                "changes": _validate_change_records(
+                    receipt["changes"], f"{label}.changes"
                 ),
                 "remote_finding_ids": _expect_string_list(
                     receipt["remote_finding_ids"],
@@ -1180,24 +1772,24 @@ def _repository_authority(
         ),
     }
     commits = reporter._load_git_commit_objects(root, shas)
+    changes = derive_change_records(root, contract["base_sha"], head)
     changed_files = sorted(
-        path.decode("utf-8")
-        for path in reporter.run_git(
-            root,
-            "diff",
-            "--name-only",
-            "-z",
-            f"{contract['base_sha']}...{head}",
-        ).split(b"\0")
-        if path
+        {
+            path
+            for change in changes
+            for path in (change["old_path"], change["new_path"])
+            if path is not None
+        }
     )
     for review in evidence["pre_reviews"]:
         if sorted(review["reviewed_files"]) != changed_files:
             raise reporter.PilotDataError(
                 "pre-review does not cover the exact base-to-head changed files"
             )
-        for path in review["reviewed_files"]:
-            reporter.run_git(root, "cat-file", "-e", f"{head}:{path}")
+        if review["reviewed_changes"] != changes:
+            raise reporter.PilotDataError(
+                "pre-review status/blob evidence does not match exact Git diff"
+            )
     tree = reporter.run_git(
         root, "rev-parse", f"{head}^{{tree}}"
     ).decode("ascii").strip()
@@ -1207,6 +1799,7 @@ def _repository_authority(
         "tree": tree,
         "commits": commits,
         "changed_files": changed_files,
+        "changes": changes,
     }
 
 
@@ -1534,13 +2127,17 @@ def _validate_execution(
             "checker-input.json",
         ]
         or sorted(receipt["changed_files"]) != authority["changed_files"]
+        or receipt["changes"] != authority["changes"]
         or sorted(receipt["remote_finding_ids"]) != sorted(evidence["findings"])
     ):
         raise reporter.PilotDataError(
             "assertion receipt does not match base/head/checker/diff/remote findings"
         )
     expected_requests = {
-        request["id"]: request for request in build_assertion_requests(contract, evidence)
+        request["id"]: request
+        for request in build_assertion_requests(
+            contract, evidence["raw"], authority["root"]
+        )
     }
     if set(manifest) != set(expected_requests):
         raise reporter.PilotDataError(
@@ -1556,10 +2153,17 @@ def _validate_execution(
         request = expected_requests[result_id]
         if (
             result["assertion_id"] != request["assertion_id"]
+            or result["check_id"] != request["check_id"]
+            or result["claimed_disposition"]
+            != request["claimed_disposition"]
             or result["base_sha"] != contract["base_sha"]
             or result["candidate_sha"] != authority["head"]
             or result["status"] != "pass"
             or result["input_sha256"] != receipt["checker_input_sha256"]
+            or result["inputs_sha256"]
+            != hashlib.sha256(
+                reporter.normalized_json(request["inputs"])
+            ).hexdigest()
         ):
             raise reporter.PilotDataError(
                 f"result {result_id!r} is fabricated or bound to another assertion"

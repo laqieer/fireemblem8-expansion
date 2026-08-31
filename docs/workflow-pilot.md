@@ -262,8 +262,8 @@ Production authority is deliberately absent from the candidate package.
 `github_review.py` and `isolated_review_gate.py` do not exist, and the
 candidate receives no GitHub token, HMAC key, replay store, merge credential,
 or push credential. A trusted coordinator invokes
-`scripts/workflow_pilot/trusted_review_gate.py` only from the exact PR base
-checkout, or from a separately authenticated external installation:
+`scripts/workflow_pilot/trusted_review_gate.py` only from the exact clean PR
+base checkout:
 
 ```bash
 /usr/bin/python3 -I \
@@ -272,17 +272,20 @@ checkout, or from a separately authenticated external installation:
   --candidate-root <untrusted-candidate-checkout> \
   --expected-base <authoritative-pr-base-oid> \
   --expected-candidate <authoritative-pr-head-oid> \
-  --installation-mode base \
   --contract <candidate-contract.json> \
   --review-receipt <independent-pre-review-receipt.json>
 ```
 
-Before importing project modules or reading credentials, base mode proves the
-launcher path, exact base `HEAD`, and launcher blob. It inserts only the
-trusted base into `sys.path`; the candidate path is rejected. The candidate is
-read only as Git data and schema-validated JSON. An external installation must
-provide its own authenticated installation identity. No signing helper is
-exported by the candidate package.
+Before importing a package initializer or reading credentials, the launcher
+requires empty porcelain-v2 status including tracked, index, and untracked
+state; exact base `HEAD`; regular-file modes; and worktree blob equality with
+the exact base tree. It parses the local import graph before execution and
+object-binds `workflow_pilot/__init__.py`, `trusted_review_gate.py`,
+`reporter.py`, `review_family.py`, `review_base_checker.py`, and every
+transitive local import. Bytecode writes are disabled, preloaded local modules
+fail, and status is rechecked after import. Only then is the trusted base added
+to `sys.path`; the candidate and its parent/child paths are rejected. There is
+no environment-string external-installation bypass.
 
 The credentialed collector queries authoritative `baseRefOid` and
 `headRefOid` and requires exact equality with the contract, coordinator
@@ -314,7 +317,12 @@ Later GitHub review IDs and inline finding node IDs are collected and
 validated separately after they exist. They never replace, backdate, or
 re-sign local findings. `CHANGES_REQUESTED`, a nonempty finding body, inline
 findings, unresolved threads, incomplete pagination, or a stale review SHA
-cannot classify clean. PR, actor, local review/action/finding, remote
+cannot classify clean. A body is clean only when its first top-level line is
+the documented exact `### 🟢 Approval recommended` marker, or its entire body
+is the legacy exact `No issues found.` marker. Exact
+`### 🟡 Changes recommended` and `### 🔵 Needs a closer look` markers,
+unknown/empty bodies, nested/spoofed markers, or conflicting later top-level
+markers are non-clean. PR, actor, local review/action/finding, remote
 review/finding/thread, force-push, and disposition identities share one
 case-normalized uniqueness check.
 
@@ -324,11 +332,27 @@ Candidate result IDs and `verified-unaffected` claims are requests, not
 evidence. The exact base supplies `review_base_checker.py`, whose closed
 registry executes the five behavior rows for positive, adversarial, default,
 and runtime classes plus each exact sibling assertion. Every result binds its
-closed assertion ID, callable, fixed command identity, passing status,
-checker-input digest, exact base, and exact head. The HMAC execution receipt
+closed assertion ID, class/outcome-specific check ID, claimed disposition,
+concrete input and output digests, callable, fixed command identity, passing
+status, checker-input digest, exact base, and exact head. Positive checks bind
+exact scope, adversarial checks execute a fabricated-result negative control,
+default checks bind trigger mode/local findings, and runtime checks bind exact
+change records and remote finding IDs. `affected-fixed` requires named
+status/blob records from the exact diff. `verified-unaffected` requires named
+paths whose mode and blob are identical in base and head. `not-applicable`
+has no generic assertion and is rejected. The HMAC execution receipt
 also binds checker blob/argv, base/candidate trees, Git-derived diff, remote
 finding IDs, report digest, timestamps, output digest, and pre/post clean
 state. Fabricated, swapped, failed, stale, or candidate-only results fail.
+
+The Git-derived diff is a closed status-aware record set. Added files bind
+head mode/blob and base absence; deleted files bind base mode/blob and head
+absence; modified files bind both blobs at one unchanged mode/path; renames
+bind old-base/new-head identities plus opposite-path absence; copies bind the
+retained old head blob and new destination. Unknown statuses, traversal,
+non-blob or surprising modes, malformed similarity, and status/field
+contradictions fail. Review coverage must equal those records, so deletion of
+`isolated_review_gate.py` is reviewable without pretending a head blob exists.
 
 The five families remain exact: action (`actions`, `items`, `targets`);
 generated (`owners`, `outputs`, `consumers`, `drift-checks`); lifecycle
@@ -374,14 +398,14 @@ unavailable historical time-to-clean evidence, and zero captured pilot and
 metadata overhead. Future #179 pilot events use those existing identities and
 formulas; this module adds no alternate counter or current-state field.
 
-The contract depends on #176 and is required by #181. It conflicts with
-candidate-held credentials or authority, duplicate review agents, mutating
-pre-review permissions, incomplete families, stale base/head evidence,
-backdated receipts, inferred push histories, overlapping disposition actors,
-and advancement through an unresolved held head. It has no game/runtime,
-save, generated game-data, localization, ROM, RAM, modern debug/release, or
-archival impact and needs no feature flag. Rollback is a normal revert of
-issue #179; the issue #176 reporter and mandatory remote gates remain intact.
+The contract depends on #176 and is required by #181. It conflicts with dirty
+or candidate-held trusted code/credentials, duplicate review agents, mutating
+pre-review permissions, incomplete or unsupported outcome evidence, stale
+base/head/blob/status evidence, spoofed clean markers, backdated receipts,
+inferred push histories, overlapping disposition actors, and advancement
+through an unresolved held head. It has no game/runtime, save, generated
+game-data, localization, ROM, RAM, modern debug/release, or archival impact
+and needs no feature flag. Rollback is a normal revert of issue #179.
 
 ## Reproducible formulas
 

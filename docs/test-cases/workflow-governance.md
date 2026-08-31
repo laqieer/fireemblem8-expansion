@@ -472,7 +472,7 @@ game behavior needs a compensating change.
   [issue #179](https://github.com/laqieer/fireemblem8-expansion/issues/179).
 - **Supported configuration or artifact:** clean source checkout with Python
   3, Git, the issue #176 workflow-pilot reporter, candidate-pinned offline
-  transform fixtures, a mocked live GraphQL adapter, and an external-trust
+  transform fixtures, a mocked live GraphQL adapter, and an exact-base
   bootstrap model; no GitHub token, live PR, workflow, ROM, or emulator is
   required.
 - **Prerequisites and clean starting state:** start at the repository root
@@ -495,8 +495,12 @@ game behavior needs a compensating change.
    Compare its canonical JSON bytes and confirm it cannot authorize push or
    merge.
 3. Confirm `github_review.py` and `isolated_review_gate.py` are absent, no
-   signing helper is exported, candidate/trusted root equality is rejected,
-   and the candidate root is never inserted into trusted `sys.path`.
+   signing helper or external-installation mode is exported, and the candidate
+   root is never inserted into trusted `sys.path`. Before any package import,
+   mutate untracked, tracked, and index state in an independent trusted-base
+   repository and require rejection before credential access. Verify exact
+   base-tree object identity for the initializer, gate, reporter, family
+   validator, checker, and every transitive local import.
 4. Inspect the GraphQL query and fixture. Validate every polymorphic Actor ID
    through `... on Node { id }`, exact `baseRefOid`/`headRefOid`, bounded
    pagination, review bodies/states/threads, and nullable `pushedDate`.
@@ -507,9 +511,10 @@ game behavior needs a compensating change.
 6. Create an independent two-commit repository under
    `build/test-artifacts/`, place the checker in its actual base, and run the
    extracted base blob with fixed `/usr/bin/python3 -I` argv. Verify each
-   registry result binds assertion ID, callable, command/input identities,
-   pass status, exact base/head, full diff, and HMAC receipt. Fabricate a
-   result ID and require failure.
+   registry result binds assertion ID, class/outcome-specific check ID, claimed
+   disposition, callable, command/input/output identities, pass status, exact
+   base/head, full diff, and HMAC receipt. Fabricate all outcome fields and
+   require failure.
 7. Sign canonical pre-review bytes with a test-only external key. Verify exact
    repository/PR/base/head, epoch, purpose, expiry, nonce, and atomic replay.
    Keep `LOCAL-` findings in that immutable receipt, separately collect later
@@ -517,12 +522,15 @@ game behavior needs a compensating change.
    re-signing after remote review.
 8. Confirm the complete fixture retains all action, lifecycle, wire,
    generated, and resource family members and configured file, finding,
-   duration, sibling, and handoff bounds. Candidate
-   `verified-unaffected` claims without a registry result are not evidence.
-9. Set a remote review to `CHANGES_REQUESTED` with zero inline comments, add a
-   body finding under `COMMENTED`, leave a thread unresolved, truncate a page,
-   change the second live snapshot, or collide global node IDs; require
-   failure or a non-clean gate.
+   duration, sibling, and handoff bounds. Require `affected-fixed` to name
+   exact changed status/blob records and `verified-unaffected` to name equal
+   base/head blobs; unsupported `not-applicable` rejects.
+9. Parse the captured clean PR #183 body and accept its first-line exact
+   `### 🟢 Approval recommended` marker. Reject or classify non-clean exact
+   yellow/blue markers, unknown/empty bodies, nested or conflicting green
+   marker spoofs, inline findings, unresolved threads, and
+   `CHANGES_REQUESTED`. Truncate a page, change the second live snapshot, or
+   collide global node IDs and require failure.
 10. Create a round-3 hold at one exact head, then advance normally to a
     descendant head without disposition; require ineligibility. Add an
     independent authenticated disposition binding held round/head and next
@@ -532,25 +540,32 @@ game behavior needs a compensating change.
 11. Add a second independent round-6 hold and disposition. Confirm rounds 3
     and 6 consume distinct receipts once and do not infer advancement from
     commit or push timestamps.
+12. Derive A/D/M/R/C records in a synthetic repository. Verify added
+    head-blob/base-absence, deleted base-blob/head-absence, modified dual-blob,
+    rename old/new, and copy retained-source contracts. Reject traversal,
+    unknown status, malformed similarity, and mode surprise. Confirm the
+    issue #179 deletion of `isolated_review_gate.py` carries its base blob and
+    has no head path/blob.
 
 ### Expected result
 
 Candidate/offline inputs validate structure but cannot authorize delivery.
 Introducing mode fails closed against the real base. A later base-pinned gate
-can authorize only from the exact trusted base or an authenticated external
-installation with fresh local-review receipt, two matching live snapshots,
+can authorize only from the exact clean trusted base with fresh local-review
+receipt, two matching live snapshots,
 closed base-owned assertion results, clean exact-head Copilot review, and no
 unresolved thread or held head.
 
 ### Negative control
 
-The suite rejects candidate credentials/import authority, public signing
-helpers, ancestor-base substitution, bootstrap self-attestation, invalid Actor
-selection, base/head mismatch, fabricated result IDs, missing/failed registry
-results, dirty checker execution, local/remote finding overlap, backdated or
-re-signed pre-review, exceeded bounds, incomplete families/pages, semantic
-state/body/thread false-clean claims, global identity collisions, undisposed
-fast-forward heads, actor overlap, and disposition replay.
+The suite rejects candidate credentials/import authority, public signing or
+external-installation helpers, dirty or object-mismatched trusted imports,
+ancestor-base substitution, bootstrap self-attestation, invalid Actor
+selection, base/head mismatch, fabricated outcome/class results,
+missing/failed registry results, unsupported dispositions, incorrect
+status/blob coverage, local/remote finding overlap, backdating, exceeded
+bounds, incomplete pages, spoofed clean bodies, global identity collisions,
+undisposed fast-forward heads, actor overlap, and disposition replay.
 
 ### Interactions and save compatibility
 

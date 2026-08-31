@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import base64
 import hashlib
 import hmac
@@ -23,6 +24,13 @@ GH = "/usr/bin/gh"
 GIT = "/usr/bin/git"
 BASE_CHECKER_PATH = "scripts/workflow_pilot/review_base_checker.py"
 TRUSTED_GATE_PATH = "scripts/workflow_pilot/trusted_review_gate.py"
+TRUSTED_REQUIRED_PATHS = {
+    "scripts/workflow_pilot/__init__.py",
+    TRUSTED_GATE_PATH,
+    "scripts/workflow_pilot/reporter.py",
+    "scripts/workflow_pilot/review_family.py",
+    BASE_CHECKER_PATH,
+}
 BASE_CHECKER_ARGV = (
     "/usr/bin/python3",
     "-I",
@@ -159,7 +167,6 @@ def _bind_trusted_modules(
     trusted_root: Path,
     candidate_root: Path,
     expected_base: str,
-    installation_mode: str,
 ) -> None:
     """Bind imports only after proving the trusted installation boundary."""
     global reporter, review_family
@@ -168,30 +175,129 @@ def _bind_trusted_modules(
     candidate_root = candidate_root.resolve()
     if trusted_root == candidate_root:
         raise RuntimeError("candidate checkout cannot be the trusted installation")
-    if str(candidate_root) in sys.path:
-        raise RuntimeError("candidate checkout is present in trusted sys.path")
+    for entry in sys.path:
+        if not entry:
+            continue
+        resolved_entry = Path(entry).resolve()
+        if (
+            resolved_entry == candidate_root
+            or candidate_root in resolved_entry.parents
+            or resolved_entry in candidate_root.parents
+        ):
+            raise RuntimeError(
+                "candidate checkout is present in trusted sys.path"
+            )
     expected_script = (trusted_root / TRUSTED_GATE_PATH).resolve()
     if Path(__file__).resolve() != expected_script:
         raise RuntimeError("trusted gate was not launched from trusted root")
-    if installation_mode == "base":
-        head = _minimal_git(
-            trusted_root, "rev-parse", "--verify", "HEAD^{commit}"
+    head = _minimal_git(
+        trusted_root, "rev-parse", "--verify", "HEAD^{commit}"
+    ).decode("ascii").strip()
+    if head != expected_base:
+        raise RuntimeError("trusted checkout is not the exact expected PR base")
+    if _minimal_git(
+        trusted_root,
+        "status",
+        "--porcelain=v2",
+        "--untracked-files=all",
+        "--ignored=matching",
+    ):
+        raise RuntimeError(
+            "trusted base checkout has tracked, index, or untracked changes"
+        )
+
+    verified_paths = set()
+    pending_paths = set(TRUSTED_REQUIRED_PATHS)
+    while pending_paths:
+        relative = pending_paths.pop()
+        if relative in verified_paths:
+            continue
+        source_path = (trusted_root / relative).resolve()
+        if trusted_root not in source_path.parents or not source_path.is_file():
+            raise RuntimeError(f"trusted Python source is unavailable: {relative}")
+        records = [
+            record
+            for record in _minimal_git(
+                trusted_root,
+                "ls-tree",
+                "-z",
+                "--full-tree",
+                expected_base,
+                "--",
+                relative,
+            ).split(b"\0")
+            if record
+        ]
+        if len(records) != 1:
+            raise RuntimeError(
+                f"trusted Python source is not an exact base-tree entry: {relative}"
+            )
+        metadata, raw_path = records[0].split(b"\t", 1)
+        mode, kind, blob_oid = metadata.decode("ascii").split()
+        if (
+            raw_path.decode("utf-8") != relative
+            or mode not in {"100644", "100755"}
+            or kind != "blob"
+        ):
+            raise RuntimeError(
+                f"trusted Python source has an unsafe tree entry: {relative}"
+            )
+        worktree_oid = _minimal_git(
+            trusted_root,
+            "hash-object",
+            "--no-filters",
+            str(source_path),
         ).decode("ascii").strip()
-        if head != expected_base:
-            raise RuntimeError("trusted checkout is not the exact expected PR base")
-        tracked_blob = _minimal_git(
-            trusted_root, "rev-parse", f"{expected_base}:{TRUSTED_GATE_PATH}"
-        ).decode("ascii").strip()
-        source_blob = _minimal_git(
-            trusted_root, "hash-object", str(expected_script)
-        ).decode("ascii").strip()
-        if tracked_blob != source_blob:
-            raise RuntimeError("trusted gate source differs from the exact base tree")
-    elif installation_mode == "external":
-        if not os.environ.get("WORKFLOW_REVIEW_EXTERNAL_INSTALLATION_ID"):
-            raise RuntimeError("external trusted installation identity is unavailable")
-    else:
-        raise RuntimeError("unknown trusted installation mode")
+        if worktree_oid != blob_oid:
+            raise RuntimeError(
+                f"trusted Python source differs from exact base object: {relative}"
+            )
+        try:
+            syntax = ast.parse(source_path.read_bytes(), filename=relative)
+        except (OSError, SyntaxError) as error:
+            raise RuntimeError(
+                f"trusted Python source cannot be parsed: {relative}"
+            ) from error
+        for node in ast.walk(syntax):
+            module_names = []
+            if isinstance(node, ast.Import):
+                module_names.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                if node.level:
+                    raise RuntimeError(
+                        f"trusted Python source uses an unresolved relative import: "
+                        f"{relative}"
+                    )
+                if node.module == "scripts.workflow_pilot":
+                    module_names.extend(
+                        f"scripts.workflow_pilot.{alias.name}"
+                        for alias in node.names
+                    )
+                elif node.module:
+                    module_names.append(node.module)
+            for module_name in module_names:
+                prefix = "scripts.workflow_pilot."
+                if module_name.startswith(prefix):
+                    local_path = (
+                        "scripts/workflow_pilot/"
+                        + module_name[len(prefix) :].replace(".", "/")
+                        + ".py"
+                    )
+                    pending_paths.add(local_path)
+        verified_paths.add(relative)
+
+    if not TRUSTED_REQUIRED_PATHS <= verified_paths:
+        raise RuntimeError("trusted Python import graph is incomplete")
+    forbidden_modules = {
+        name
+        for name in sys.modules
+        if name == "scripts" or name.startswith("scripts.workflow_pilot")
+    }
+    if forbidden_modules:
+        raise RuntimeError(
+            "trusted Python package was imported before object verification"
+        )
+    sys.dont_write_bytecode = True
     sys.path.insert(0, str(trusted_root))
     reporter = importlib.import_module("scripts.workflow_pilot.reporter")
     review_family = importlib.import_module("scripts.workflow_pilot.review_family")
@@ -201,6 +307,14 @@ def _bind_trusted_modules(
     }
     if any(trusted_root not in path.parents for path in loaded_paths):
         raise RuntimeError("trusted modules did not load from trusted root")
+    if _minimal_git(
+        trusted_root,
+        "status",
+        "--porcelain=v2",
+        "--untracked-files=all",
+        "--ignored=matching",
+    ):
+        raise RuntimeError("trusted imports changed the exact base checkout")
 
 
 def _expect_bound_modules() -> None:
@@ -408,12 +522,14 @@ def run_base_pinned_checker(
     candidate_tree = _git_text(root, "rev-parse", f"{candidate_sha}^{{tree}}")
     checker_blob = _git_text(root, "rev-parse", f"{base_sha}:{BASE_CHECKER_PATH}")
     checker_source = reporter.run_git(root, "show", f"{base_sha}:{BASE_CHECKER_PATH}")
+    changes = review_family.derive_change_records(root, base_sha, candidate_sha)
     changed_files = sorted(
-        path.decode("utf-8")
-        for path in reporter.run_git(
-            root, "diff", "--name-only", "-z", f"{base_sha}...{candidate_sha}"
-        ).split(b"\0")
-        if path
+        {
+            path
+            for change in changes
+            for path in (change["old_path"], change["new_path"])
+            if path is not None
+        }
     )
     if not changed_files:
         raise reporter.PilotDataError("base checker candidate has no changed files")
@@ -437,7 +553,10 @@ def run_base_pinned_checker(
         "candidate_sha": candidate_sha,
         "candidate_tree": candidate_tree,
         "head_sha": head,
+        "trust_mode": contract["trust_mode"],
+        "pre_review_required": contract["pre_review_required"],
         "changed_files": changed_files,
+        "changes": changes,
         "remote_finding_ids": sorted(remote_finding_ids),
         "limits": contract["limits"],
         "review_report": review_report,
@@ -504,6 +623,39 @@ def run_base_pinned_checker(
             ),
             "base checker output",
         )
+        reporter.expect_keys(
+            parsed_output,
+            "base checker output",
+            (
+                "schema_version",
+                "registry_version",
+                "input_sha256",
+                "command_id",
+                "results",
+            ),
+        )
+        expected_input_sha256 = hashlib.sha256(checker_input_bytes).hexdigest()
+        if (
+            parsed_output["schema_version"] != 2
+            or parsed_output["registry_version"] != 1
+            or parsed_output["input_sha256"] != expected_input_sha256
+        ):
+            raise reporter.PilotDataError(
+                "base checker output does not bind its exact immutable input"
+            )
+        assertion_results = reporter.expect_list(
+            parsed_output["results"], "base checker output.results"
+        )
+        if any(
+            reporter.expect_object(
+                result, f"base checker output.results[{index}]"
+            ).get("input_sha256")
+            != expected_input_sha256
+            for index, result in enumerate(assertion_results)
+        ):
+            raise reporter.PilotDataError(
+                "base checker result does not bind its exact immutable input"
+            )
     raw = {
         "id": f"BASE-CHECK:{base_sha}:{candidate_sha}",
         "check_id": "base-pinned-independent-review",
@@ -515,6 +667,7 @@ def run_base_pinned_checker(
         "checker_blob_oid": checker_blob,
         "argv": list(BASE_CHECKER_ARGV),
         "changed_files": changed_files,
+        "changes": changes,
         "remote_finding_ids": sorted(remote_finding_ids),
         "review_report_sha256": hashlib.sha256(review_report_bytes).hexdigest(),
         "checker_input_sha256": hashlib.sha256(checker_input_bytes).hexdigest(),
@@ -806,6 +959,9 @@ def collect_live_evidence_bytes(
             f"{label}.state",
         )
         body = reporter.expect_string(review["body"], f"{label}.body", allow_empty=True)
+        body_classification = review_family.classify_copilot_body(
+            body, f"{label}.body"
+        )
         review_commit = reporter.expect_object(review["commit"], f"{label}.commit")
         reporter.expect_keys(review_commit, f"{label}.commit", ("oid",))
         review_candidate = reporter.expect_sha(
@@ -838,7 +994,10 @@ def collect_live_evidence_bytes(
                     "family": None,
                 }
             )
-        body_has_findings = body.strip() not in {"", "No issues found."}
+        body_has_findings = body_classification not in {
+            "clean-approval",
+            "clean-legacy",
+        }
         parsed_reviews.append(
             {
                 "id": reporter.expect_int(review["databaseId"], f"{label}.databaseId"),
@@ -848,6 +1007,7 @@ def collect_live_evidence_bytes(
                 "submitted_at": review["submittedAt"],
                 "state": state,
                 "body": body,
+                "body_classification": body_classification,
                 "body_has_findings": body_has_findings,
                 "outcome": (
                     "changes-requested"
@@ -962,6 +1122,7 @@ def collect_live_evidence_bytes(
                 ],
                 "finding_ids": [finding["id"] for finding in pre_findings],
                 "reviewed_files": review_report["reviewed_files"],
+                "reviewed_changes": review_report["reviewed_changes"],
             }
         )
     raw_evidence = {
@@ -1032,7 +1193,7 @@ def _bootstrap_result(contract: dict[str, Any], base_sha: str, head_sha: str):
             "external_coordinator_review_required": True,
         },
         "provenance": {
-            "source": "trusted-external-bootstrap",
+            "source": "trusted-base-bootstrap",
             "authoritative": True,
             "live_authoritative": True,
             "authenticated_receipt": False,
@@ -1145,7 +1306,7 @@ def _run_trusted_gate(
     if consumed_report != report_bytes or consumed_envelope != envelope:
         raise reporter.PilotDataError("pre-review receipt changed during consumption")
     assertion_requests = review_family.build_assertion_requests(
-        contract, first_evidence
+        contract, first_evidence, repository_root
     )
     remote_ids = [finding["node_id"] for finding in first_evidence["findings"]]
     execution_receipt = run_base_pinned_checker(
@@ -1211,9 +1372,6 @@ def parse_args(argv: list[str] | None = None) -> Any:
     parser.add_argument("--candidate-root", type=Path, required=True)
     parser.add_argument("--expected-base", required=True)
     parser.add_argument("--expected-candidate", required=True)
-    parser.add_argument(
-        "--installation-mode", choices=("base", "external"), required=True
-    )
     parser.add_argument("--contract", type=Path, required=True)
     parser.add_argument("--review-receipt", type=Path, required=True)
     return parser.parse_args(argv)
@@ -1228,7 +1386,6 @@ def main(argv: list[str] | None = None) -> int:
             args.trusted_root,
             args.candidate_root,
             args.expected_base,
-            args.installation_mode,
         )
     except (OSError, RuntimeError) as error:
         print(f"trusted review gate error: {error}", file=sys.stderr)

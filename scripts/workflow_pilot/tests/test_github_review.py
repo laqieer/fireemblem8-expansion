@@ -38,7 +38,12 @@ def git(root, *arguments):
     )
 
 
-def review_report(base=BASE, candidate=CANDIDATE, reviewed_files=None):
+def review_report(
+    base=BASE,
+    candidate=CANDIDATE,
+    reviewed_files=None,
+    reviewed_changes=None,
+):
     return {
         "schema_version": 2,
         "report_id": "INDEPENDENT_REPORT_001",
@@ -55,6 +60,7 @@ def review_report(base=BASE, candidate=CANDIDATE, reviewed_files=None):
         "permissions": ["contents:read"],
         "actions": ["read-candidate", "emit-local-report"],
         "reviewed_files": reviewed_files or ["changed.txt"],
+        "reviewed_changes": reviewed_changes or [],
         "findings": [],
     }
 
@@ -102,8 +108,10 @@ class TrustedGitHubGateTests(unittest.TestCase):
         artifacts.mkdir(parents=True, exist_ok=True)
         cls.repo = artifacts / f"trusted-review-checker-{os.getpid()}"
         cls.replay = artifacts / f"trusted-review-replay-{os.getpid()}"
+        cls.trusted = artifacts / f"trusted-review-base-{os.getpid()}"
         cls.repo.mkdir()
         cls.replay.mkdir()
+        cls.trusted.mkdir()
         git(cls.repo, "init", "-q")
         git(cls.repo, "config", "user.email", "test@example.com")
         git(cls.repo, "config", "user.name", "Review Gate Test")
@@ -130,11 +138,24 @@ class TrustedGitHubGateTests(unittest.TestCase):
         cls.candidate_sha = (
             git(cls.repo, "rev-parse", "HEAD").stdout.decode().strip()
         )
+        git(cls.trusted, "init", "-q")
+        git(cls.trusted, "config", "user.email", "test@example.com")
+        git(cls.trusted, "config", "user.name", "Trusted Base Test")
+        for relative in trusted_review_gate.TRUSTED_REQUIRED_PATHS:
+            target = cls.trusted / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes((ROOT / relative).read_bytes())
+        git(cls.trusted, "add", ".")
+        git(cls.trusted, "commit", "-q", "-m", "external independent base")
+        cls.trusted_sha = (
+            git(cls.trusted, "rev-parse", "HEAD").stdout.decode().strip()
+        )
 
     @classmethod
     def tearDownClass(cls):
         shutil.rmtree(cls.repo)
         shutil.rmtree(cls.replay)
+        shutil.rmtree(cls.trusted)
 
     def setUp(self):
         for path in self.replay.iterdir():
@@ -173,11 +194,13 @@ class TrustedGitHubGateTests(unittest.TestCase):
             ROOT / trusted_review_gate.TRUSTED_GATE_PATH
         ).read_text(encoding="utf-8")
         self.assertNotIn("sys.path.insert(0, str(candidate_root))", source)
+        self.assertNotIn("--installation-mode", source)
+        self.assertNotIn("WORKFLOW_REVIEW_EXTERNAL_INSTALLATION_ID", source)
         with self.assertRaisesRegex(
             RuntimeError, "candidate checkout cannot be"
         ):
             trusted_review_gate._bind_trusted_modules(
-                ROOT, ROOT, BASE, "base"
+                ROOT, ROOT, BASE
             )
 
     def test_graphql_query_uses_valid_actor_fragments_and_exact_base(self):
@@ -187,6 +210,83 @@ class TrustedGitHubGateTests(unittest.TestCase):
         self.assertGreaterEqual(query.count("... on Node { id }"), 5)
         self.assertNotIn("author { id login }", query)
         self.assertNotIn("owner { id login }", query)
+
+    def run_trusted_startup(self):
+        environment = {
+            "HOME": str(self.trusted),
+            "LC_ALL": "C",
+            "PATH": "/usr/bin:/bin",
+        }
+        return subprocess.run(
+            (
+                "/usr/bin/python3",
+                "-I",
+                str(self.trusted / trusted_review_gate.TRUSTED_GATE_PATH),
+                "--trusted-root",
+                str(self.trusted),
+                "--candidate-root",
+                str(self.repo),
+                "--expected-base",
+                self.trusted_sha,
+                "--expected-candidate",
+                self.candidate_sha,
+                "--contract",
+                str(CONTRACT_PATH),
+                "--review-receipt",
+                str(CONTRACT_PATH),
+            ),
+            cwd=self.trusted,
+            env=environment,
+            check=False,
+            capture_output=True,
+        )
+
+    def test_trusted_startup_verifies_clean_full_import_graph_before_secrets(self):
+        self.assertEqual(
+            trusted_review_gate.TRUSTED_REQUIRED_PATHS,
+            {
+                "scripts/workflow_pilot/__init__.py",
+                "scripts/workflow_pilot/trusted_review_gate.py",
+                "scripts/workflow_pilot/reporter.py",
+                "scripts/workflow_pilot/review_family.py",
+                "scripts/workflow_pilot/review_base_checker.py",
+            },
+        )
+        clean = self.run_trusted_startup()
+        self.assertEqual(clean.returncode, 2)
+        self.assertIn(b"requires external key", clean.stderr)
+
+        untracked = self.trusted / "untracked.py"
+        untracked.write_text("raise SystemExit('candidate code ran')\n")
+        try:
+            dirty = self.run_trusted_startup()
+            self.assertEqual(dirty.returncode, 2)
+            self.assertIn(b"tracked, index, or untracked changes", dirty.stderr)
+            self.assertNotIn(b"requires external key", dirty.stderr)
+        finally:
+            untracked.unlink()
+
+        reporter_path = self.trusted / "scripts/workflow_pilot/reporter.py"
+        original = reporter_path.read_bytes()
+        reporter_path.write_bytes(original + b"\n# untrusted mutation\n")
+        try:
+            dirty = self.run_trusted_startup()
+            self.assertEqual(dirty.returncode, 2)
+            self.assertIn(b"tracked, index, or untracked changes", dirty.stderr)
+            self.assertNotIn(b"requires external key", dirty.stderr)
+        finally:
+            reporter_path.write_bytes(original)
+
+        reporter_path.write_bytes(original + b"\n# staged mutation\n")
+        git(self.trusted, "add", "scripts/workflow_pilot/reporter.py")
+        try:
+            dirty = self.run_trusted_startup()
+            self.assertEqual(dirty.returncode, 2)
+            self.assertIn(b"tracked, index, or untracked changes", dirty.stderr)
+            self.assertNotIn(b"requires external key", dirty.stderr)
+        finally:
+            reporter_path.write_bytes(original)
+            git(self.trusted, "add", "scripts/workflow_pilot/reporter.py")
 
     def test_nullable_pushed_date_is_metadata_not_head_authority(self):
         contract = self.contract()
@@ -328,9 +428,18 @@ class TrustedGitHubGateTests(unittest.TestCase):
         )
         contract["trust_mode"] = "base-pinned"
         report = review_report(
-            self.base_sha, self.candidate_sha, ["changed.txt"]
+            self.base_sha,
+            self.candidate_sha,
+            ["changed.txt"],
+            review_family.derive_change_records(
+                self.repo, self.base_sha, self.candidate_sha
+            ),
         )
-        requests = review_family.build_assertion_requests(contract, {})
+        requests = review_family.build_assertion_requests(
+            contract,
+            {"findings": [], "pre_review_findings": []},
+            self.repo,
+        )
         times = iter(
             (
                 datetime.now(timezone.utc),
@@ -357,6 +466,18 @@ class TrustedGitHubGateTests(unittest.TestCase):
             * len(review_family.EVIDENCE_CLASSES),
         )
         self.assertEqual(
+            {
+                result["callable"]
+                for result in receipt["assertion_results"]
+            },
+            {
+                "_execute_positive_assertion",
+                "_execute_adversarial_assertion",
+                "_execute_default_assertion",
+                "_execute_runtime_assertion",
+            },
+        )
+        self.assertEqual(
             receipt["seal"],
             trusted_review_gate._execution_receipt_seal(receipt, KEY),
         )
@@ -367,9 +488,18 @@ class TrustedGitHubGateTests(unittest.TestCase):
         )
         contract["trust_mode"] = "base-pinned"
         report = review_report(
-            self.base_sha, self.candidate_sha, ["changed.txt"]
+            self.base_sha,
+            self.candidate_sha,
+            ["changed.txt"],
+            review_family.derive_change_records(
+                self.repo, self.base_sha, self.candidate_sha
+            ),
         )
-        requests = review_family.build_assertion_requests(contract, {})
+        requests = review_family.build_assertion_requests(
+            contract,
+            {"findings": [], "pre_review_findings": []},
+            self.repo,
+        )
         requests[0]["id"] = "candidate-fabricated-pass"
         receipt = trusted_review_gate.run_base_pinned_checker(
             self.repo,
@@ -396,7 +526,9 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     remote_finding_ids=[],
                     review_report_bytes=reporter.normalized_json(report),
                     assertion_requests=review_family.build_assertion_requests(
-                        contract, {}
+                        contract,
+                        {"findings": [], "pre_review_findings": []},
+                        self.repo,
                     ),
                     trusted_key=KEY,
                 )

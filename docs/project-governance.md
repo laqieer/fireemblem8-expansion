@@ -37,10 +37,11 @@ it. In summary:
   review/triage evidence consumed by the development workflow.
 - High-risk or large candidates use the
   [executable review-family contract](workflow-pilot.md#sibling-family-review-convergence)
-  for one fresh read-only pre-review, exact-base trusted execution, separate
-  local and remote finding chronology, closed base-owned assertions, complete
-  sibling expansion, enforced bounds, global node identities, semantic clean
-  review, disjoint authenticated dispositions, and exact held-head holds.
+  for one fresh read-only pre-review, clean exact-base import/object identity,
+  separate local and remote finding chronology, outcome-specific base-owned
+  assertions, status-aware blob coverage, complete sibling expansion, exact
+  top-level Copilot markers, enforced bounds, global node identities,
+  disjoint dispositions, and exact held-head holds.
   Candidate code receives no GitHub/HMAC/push credential or authority;
   nullable push timestamps never attest ref history. The introducing PR fails
   closed for external coordinator review. This is not a human approval gate

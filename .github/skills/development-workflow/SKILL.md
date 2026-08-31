@@ -576,21 +576,29 @@ Candidate code receives no GitHub token, HMAC key, replay store, merge
 credential, or push credential and is never inserted into trusted `sys.path`.
 Run production validation only through `/usr/bin/python3 -I
 <trusted-base>/scripts/workflow_pilot/trusted_review_gate.py` from the exact
-authoritative PR base checkout, or an independently authenticated external
-installation. Verify exact `baseRefOid` and `headRefOid`; an ancestor base is
-not equivalent. The introducing PR uses explicit `introduction` mode and
-cannot self-attest or return `merge_allowed` because its actual base lacks the
-trusted checker. After merge, future PRs use `base-pinned` mode against the
-exact actual base containing the checker.
+clean authoritative PR base checkout. Before any package initializer or local
+module import, require empty tracked/index/untracked status and byte/object
+identity for the initializer, gate, reporter, family validator, checker, and
+every transitive local import against that exact base tree. Disable bytecode,
+reject preloaded/candidate paths, and recheck clean status after import. No
+arbitrary environment string may attest an external installation. Verify exact
+`baseRefOid` and `headRefOid`; an ancestor base is not equivalent. The
+introducing PR uses explicit `introduction` mode and cannot self-attest or
+return `merge_allowed` because its actual base lacks the trusted checker.
 
 The executable review-family contract has one exact frozen behavior-row
 inventory. It maps each row to its production predicate and producer, executor
 and consumer, representation, stale-state revalidation, host validation, and
 positive, adversarial, default, and runtime result IDs. Candidate result IDs
 and `verified-unaffected` claims are not evidence. The exact base executes a
-closed assertion registry; each passing result binds its command/callable,
-input digest, assertion identity, exact base/head, and HMAC receipt. A valid
-finding expands to every member of exactly one closed sibling family:
+closed assertion registry; each passing result binds its class/outcome check,
+claimed disposition, command/callable, concrete input/output digests,
+assertion identity, exact base/head, and HMAC receipt. Positive, adversarial,
+default, and runtime checks use distinct inputs and checks.
+`affected-fixed` requires exact changed status/blob records;
+`verified-unaffected` requires equal base/head mode and blob for named paths;
+unsupported `not-applicable` rejects. A valid finding expands to every member
+of exactly one closed sibling family:
 
 - actions, items, and targets;
 - lifecycle entries, preservation, resets, and terminals;
@@ -614,8 +622,13 @@ handoff bounds there. Collect later GitHub finding IDs separately after they
 exist; never backdate or re-sign the pre-review receipt. Actor selections use
 valid Node fragments, `Commit.pushedDate` is nullable and never head authority,
 and normal ref advancement is not reconstructed from commit timestamps.
-Require globally unique node identities and semantic
-`CHANGES_REQUESTED`/body/inline/thread handling. Immediately before merge the
+Require globally unique node identities and semantic body parsing: only exact
+top-level `### 🟢 Approval recommended` or legacy exact `No issues found.` is
+clean; yellow, blue, unknown, empty, nested, conflicting, inline,
+`CHANGES_REQUESTED`, or unresolved-thread shapes are non-clean. Derive
+status-aware A/D/M/R/C review records: additions bind head blobs, deletions
+bind base blobs and head absence, modifications bind both, and rename/copy
+bind old/new paths without traversal or mode surprise. Immediately before merge the
 trusted process recollects base, head, reviews, findings, threads, actors, and
 dispositions and requires an exact match. Remote Copilot review remains
 mandatory.

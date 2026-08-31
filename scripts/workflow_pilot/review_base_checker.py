@@ -151,6 +151,114 @@ def normalized_path(value: Any, label: str) -> str:
     return value
 
 
+def validate_change_records(value: Any, label: str) -> list[dict[str, Any]]:
+    result = []
+    identities = []
+    for index, raw in enumerate(expect_list(value, label)):
+        item_label = f"{label}[{index}]"
+        record = expect_object(raw, item_label)
+        expect_keys(
+            record,
+            item_label,
+            (
+                "status",
+                "similarity",
+                "old_path",
+                "new_path",
+                "base_mode",
+                "base_blob_oid",
+                "head_mode",
+                "head_blob_oid",
+            ),
+        )
+        status = expect_string(record["status"], f"{item_label}.status")
+        if status not in {"A", "D", "M", "R", "C"}:
+            raise CheckError(f"{item_label}.status is not supported")
+        similarity = record["similarity"]
+        if status in {"R", "C"}:
+            similarity = expect_int(similarity, f"{item_label}.similarity", 0)
+            if similarity > 100:
+                raise CheckError(f"{item_label}.similarity exceeds 100")
+        elif similarity is not None:
+            raise CheckError(
+                f"{item_label}.similarity is only valid for rename/copy"
+            )
+
+        def optional_path(field):
+            item = record[field]
+            return None if item is None else normalized_path(
+                item, f"{item_label}.{field}"
+            )
+
+        def optional_mode(field):
+            item = record[field]
+            if item is not None and item not in {"100644", "100755"}:
+                raise CheckError(f"{item_label}.{field} has an unsafe mode")
+            return item
+
+        def optional_blob(field):
+            item = record[field]
+            return None if item is None else expect_sha(
+                item, f"{item_label}.{field}"
+            )
+
+        normalized = {
+            "status": status,
+            "similarity": similarity,
+            "old_path": optional_path("old_path"),
+            "new_path": optional_path("new_path"),
+            "base_mode": optional_mode("base_mode"),
+            "base_blob_oid": optional_blob("base_blob_oid"),
+            "head_mode": optional_mode("head_mode"),
+            "head_blob_oid": optional_blob("head_blob_oid"),
+        }
+        old_present = all(
+            normalized[field] is not None
+            for field in ("old_path", "base_mode", "base_blob_oid")
+        )
+        new_present = all(
+            normalized[field] is not None
+            for field in ("new_path", "head_mode", "head_blob_oid")
+        )
+        old_absent = all(
+            normalized[field] is None
+            for field in ("old_path", "base_mode", "base_blob_oid")
+        )
+        new_absent = all(
+            normalized[field] is None
+            for field in ("new_path", "head_mode", "head_blob_oid")
+        )
+        if status == "A":
+            valid = old_absent and new_present
+        elif status == "D":
+            valid = old_present and new_absent
+        else:
+            valid = (
+                old_present
+                and new_present
+                and normalized["base_mode"] == normalized["head_mode"]
+            )
+            if status == "M":
+                valid = valid and normalized["old_path"] == normalized["new_path"]
+            else:
+                valid = valid and normalized["old_path"] != normalized["new_path"]
+        if not valid:
+            raise CheckError(f"{item_label} contradicts status {status}")
+        identities.append(
+            (status, normalized["old_path"], normalized["new_path"])
+        )
+        result.append(normalized)
+    expect_unique(identities, f"{label} identities")
+    return sorted(
+        result,
+        key=lambda record: (
+            record["old_path"] or "",
+            record["new_path"] or "",
+            record["status"],
+        ),
+    )
+
+
 def _validate_report(
     raw_report: Any,
     *,
@@ -159,6 +267,7 @@ def _validate_report(
     base_sha: str,
     candidate_sha: str,
     changed_files: list[str],
+    changes: list[dict[str, Any]],
 ) -> dict[str, Any]:
     report = expect_object(raw_report, "review report")
     expect_keys(
@@ -180,6 +289,7 @@ def _validate_report(
             "permissions",
             "actions",
             "reviewed_files",
+            "reviewed_changes",
             "findings",
         ),
     )
@@ -230,6 +340,13 @@ def _validate_report(
     expect_unique(reviewed_files, "review report.reviewed_files")
     if set(reviewed_files) != set(changed_files):
         raise CheckError("independent review does not cover every exact changed file")
+    reviewed_changes = validate_change_records(
+        report["reviewed_changes"], "review report.reviewed_changes"
+    )
+    if reviewed_changes != changes:
+        raise CheckError(
+            "independent review status/blob evidence does not match exact changes"
+        )
 
     findings = []
     finding_ids = []
@@ -262,11 +379,12 @@ def _validate_report(
     return {
         **report,
         "reviewed_files": reviewed_files,
+        "reviewed_changes": reviewed_changes,
         "findings": findings,
     }
 
 
-def _assert_actor_permission_bounds(data: dict[str, Any], context: Any) -> None:
+def _assert_actor_permission_bounds(data: dict[str, Any]) -> None:
     report = data["review_report"]
     limits = data["limits"]
     if len(report["reviewed_files"]) > limits["max_reviewed_files"]:
@@ -279,43 +397,33 @@ def _assert_actor_permission_bounds(data: dict[str, Any], context: Any) -> None:
         raise CheckError("independent review duration exceeds the configured bound")
 
 
-def _assert_authority_causality(data: dict[str, Any], context: Any) -> None:
+def _assert_authority_causality(data: dict[str, Any]) -> None:
     if data["base_sha"] == data["candidate_sha"]:
         raise CheckError("base and candidate must be distinct")
     if not data["changed_files"]:
         raise CheckError("candidate diff must not be empty")
+    if not data["changes"]:
+        raise CheckError("candidate status records must not be empty")
 
 
-def _assert_remote_review_metrics(data: dict[str, Any], context: Any) -> None:
+def _assert_remote_review_metrics(data: dict[str, Any]) -> None:
     remote_ids = data["remote_finding_ids"]
     expect_unique(remote_ids, "remote finding IDs")
     if any(LOCAL_FINDING_RE.fullmatch(value) for value in remote_ids):
         raise CheckError("remote finding IDs overlap the independent namespace")
 
 
-def _assert_round_lifecycle(data: dict[str, Any], context: Any) -> None:
+def _assert_round_lifecycle(data: dict[str, Any]) -> None:
     if data["head_sha"] != data["candidate_sha"]:
         raise CheckError("assertion input head does not equal candidate")
 
 
-def _assert_sibling_family(data: dict[str, Any], context: Any) -> None:
-    context = expect_object(context, "sibling assertion context")
-    expect_keys(context, "sibling assertion context", ("finding_id", "family", "member"))
-    family = expect_string(context["family"], "sibling assertion family")
-    member = expect_string(context["member"], "sibling assertion member")
-    if family not in FAMILY_MEMBERS or member not in FAMILY_MEMBERS[family]:
-        raise CheckError("sibling assertion is outside the closed family registry")
-    expect_string(context["finding_id"], "sibling assertion finding ID")
+def _assert_sibling_family_expansion(data: dict[str, Any]) -> None:
+    if not isinstance(data["assertion_requests"], list):
+        raise CheckError("sibling assertion inventory is unavailable")
 
 
-def _assert_sibling_family_expansion(
-    data: dict[str, Any], context: Any
-) -> None:
-    if context is not None:
-        raise CheckError("behavior-row sibling assertion context must be null")
-
-
-ASSERTION_FUNCTIONS: dict[str, Callable[[dict[str, Any], Any], None]] = {
+ASSERTION_FUNCTIONS: dict[str, Callable[[dict[str, Any]], None]] = {
     "actor-permission-bounds": _assert_actor_permission_bounds,
     "authority-causality": _assert_authority_causality,
     "remote-review-metrics": _assert_remote_review_metrics,
@@ -324,9 +432,9 @@ ASSERTION_FUNCTIONS: dict[str, Callable[[dict[str, Any], Any], None]] = {
 }
 
 
-def _assertion_function(assertion_id: str) -> Callable[[dict[str, Any], Any], None]:
-    if assertion_id.startswith("sibling:"):
-        return _assert_sibling_family
+def _behavior_assertion(
+    assertion_id: str,
+) -> tuple[str, str, Callable[[dict[str, Any]], None]]:
     row, separator, evidence_class = assertion_id.rpartition(":")
     if (
         not separator
@@ -334,21 +442,21 @@ def _assertion_function(assertion_id: str) -> Callable[[dict[str, Any], Any], No
         or evidence_class not in EVIDENCE_CLASSES
     ):
         raise CheckError(f"assertion {assertion_id!r} is not in the closed registry")
-    return ASSERTION_FUNCTIONS[row]
+    return row, evidence_class, ASSERTION_FUNCTIONS[row]
 
 
-def _expected_result_id(assertion_id: str, context: Any) -> str:
+def _expected_result_id(assertion_id: str, inputs: Any) -> str:
     if assertion_id.startswith("sibling:"):
-        context = expect_object(context, "sibling assertion context")
+        inputs = expect_object(inputs, "sibling assertion inputs")
         finding_id = expect_string(
-            context.get("finding_id"), "sibling assertion finding ID"
+            inputs.get("finding_id"), "sibling assertion finding ID"
         )
         member = expect_string(
-            context.get("member"), "sibling assertion member"
+            inputs.get("member"), "sibling assertion member"
         )
         _, assertion_family, assertion_member = assertion_id.split(":")
         if (
-            context.get("family") != assertion_family
+            inputs.get("family") != assertion_family
             or member != assertion_member
         ):
             raise CheckError(
@@ -356,6 +464,210 @@ def _expected_result_id(assertion_id: str, context: Any) -> str:
             )
         return f"result-sibling-{finding_id}-{member}"
     return "result-" + assertion_id.replace(":", "-")
+
+
+def _execute_behavior_assertion(
+    data: dict[str, Any],
+    assertion_id: str,
+    check_id: str,
+    claimed_disposition: Any,
+    raw_inputs: Any,
+) -> tuple[str, dict[str, Any]]:
+    row, evidence_class, row_assertion = _behavior_assertion(assertion_id)
+    if claimed_disposition is not None:
+        raise CheckError("behavior assertion cannot claim a sibling disposition")
+    expected_check_id = f"behavior:{row}:{evidence_class}:v1"
+    if check_id != expected_check_id:
+        raise CheckError("behavior assertion check identity is not allowlisted")
+    inputs = expect_object(raw_inputs, "behavior assertion inputs")
+    row_assertion(data)
+    if evidence_class == "positive":
+        expect_keys(
+            inputs,
+            "positive assertion inputs",
+            ("row_id", "repository", "pull_request", "base_sha", "head_sha"),
+        )
+        expected = {
+            "row_id": row,
+            "repository": data["repository"],
+            "pull_request": data["pull_request"],
+            "base_sha": data["base_sha"],
+            "head_sha": data["head_sha"],
+        }
+        if inputs != expected:
+            raise CheckError("positive assertion inputs do not match exact scope")
+        callable_name = "_execute_positive_assertion"
+        output = {"established": "exact-scope", "row_id": row}
+    elif evidence_class == "adversarial":
+        expect_keys(
+            inputs,
+            "adversarial assertion inputs",
+            ("row_id", "negative_control", "fabricated_result_id"),
+        )
+        if (
+            inputs["row_id"] != row
+            or inputs["negative_control"] != "fabricated-result-id"
+            or inputs["fabricated_result_id"]
+            == _expected_result_id(assertion_id, inputs)
+        ):
+            raise CheckError("adversarial negative control is not effective")
+        callable_name = "_execute_adversarial_assertion"
+        output = {
+            "established": "fabricated-result-rejected",
+            "row_id": row,
+        }
+    elif evidence_class == "default":
+        expect_keys(
+            inputs,
+            "default assertion inputs",
+            (
+                "row_id",
+                "trust_mode",
+                "pre_review_required",
+                "local_finding_count",
+            ),
+        )
+        expected = {
+            "row_id": row,
+            "trust_mode": data["trust_mode"],
+            "pre_review_required": data["pre_review_required"],
+            "local_finding_count": len(data["review_report"]["findings"]),
+        }
+        if inputs != expected:
+            raise CheckError("default assertion inputs do not match base context")
+        callable_name = "_execute_default_assertion"
+        output = {"established": "default-contract", "row_id": row}
+    else:
+        expect_keys(
+            inputs,
+            "runtime assertion inputs",
+            ("row_id", "changes_sha256", "remote_finding_ids"),
+        )
+        expected = {
+            "row_id": row,
+            "changes_sha256": hashlib.sha256(
+                normalized_json(data["changes"])
+            ).hexdigest(),
+            "remote_finding_ids": sorted(data["remote_finding_ids"]),
+        }
+        if inputs != expected:
+            raise CheckError("runtime assertion inputs do not match execution state")
+        callable_name = "_execute_runtime_assertion"
+        output = {"established": "runtime-state", "row_id": row}
+    return callable_name, output
+
+
+def _execute_sibling_assertion(
+    data: dict[str, Any],
+    assertion_id: str,
+    check_id: str,
+    claimed_disposition: Any,
+    raw_inputs: Any,
+) -> tuple[str, dict[str, Any]]:
+    try:
+        _, family, member = assertion_id.split(":")
+    except ValueError as error:
+        raise CheckError("sibling assertion identity is malformed") from error
+    if family not in FAMILY_MEMBERS or member not in FAMILY_MEMBERS[family]:
+        raise CheckError("sibling assertion is outside the closed registry")
+    disposition = expect_string(
+        claimed_disposition, "sibling claimed disposition"
+    )
+    if disposition not in {"affected-fixed", "verified-unaffected"}:
+        raise CheckError(
+            "sibling disposition has no supported base-owned assertion"
+        )
+    expected_check_id = f"sibling:{family}:{member}:{disposition}:v1"
+    if check_id != expected_check_id:
+        raise CheckError("sibling outcome check identity is not allowlisted")
+    inputs = expect_object(raw_inputs, "sibling assertion inputs")
+    if (
+        inputs.get("family") != family
+        or inputs.get("member") != member
+    ):
+        raise CheckError("sibling assertion inputs do not match identity")
+    expect_string(inputs.get("finding_id"), "sibling assertion finding ID")
+    if disposition == "affected-fixed":
+        expect_keys(
+            inputs,
+            "affected-fixed assertion inputs",
+            (
+                "finding_id",
+                "family",
+                "member",
+                "changed_paths",
+                "change_evidence",
+            ),
+        )
+        paths = [
+            normalized_path(path, f"affected-fixed changed_paths[{index}]")
+            for index, path in enumerate(
+                expect_list(inputs["changed_paths"], "affected-fixed changed_paths")
+            )
+        ]
+        expect_unique(paths, "affected-fixed changed_paths")
+        evidence = validate_change_records(
+            inputs["change_evidence"], "affected-fixed change_evidence"
+        )
+        if not paths or any(change not in data["changes"] for change in evidence):
+            raise CheckError("affected-fixed evidence is not in exact Git changes")
+        if any(
+            not any(
+                path in {change["old_path"], change["new_path"]}
+                for change in evidence
+            )
+            for path in paths
+        ):
+            raise CheckError("affected-fixed path lacks status/blob evidence")
+        callable_name = "_execute_affected_fixed_assertion"
+        output = {
+            "established": "affected-fixed",
+            "change_count": len(evidence),
+        }
+    else:
+        expect_keys(
+            inputs,
+            "verified-unaffected assertion inputs",
+            ("finding_id", "family", "member", "unchanged_evidence"),
+        )
+        evidence = expect_list(
+            inputs["unchanged_evidence"], "verified-unaffected evidence"
+        )
+        if not evidence:
+            raise CheckError("verified-unaffected evidence must not be empty")
+        paths = []
+        for index, raw in enumerate(evidence):
+            label = f"verified-unaffected evidence[{index}]"
+            item = expect_object(raw, label)
+            expect_keys(
+                item,
+                label,
+                (
+                    "path",
+                    "base_mode",
+                    "base_blob_oid",
+                    "head_mode",
+                    "head_blob_oid",
+                ),
+            )
+            path = normalized_path(item["path"], f"{label}.path")
+            if (
+                item["base_mode"] not in {"100644", "100755"}
+                or item["head_mode"] != item["base_mode"]
+                or expect_sha(item["base_blob_oid"], f"{label}.base_blob_oid")
+                != expect_sha(item["head_blob_oid"], f"{label}.head_blob_oid")
+            ):
+                raise CheckError(
+                    "verified-unaffected evidence does not bind equal blobs"
+                )
+            paths.append(path)
+        expect_unique(paths, "verified-unaffected paths")
+        callable_name = "_execute_verified_unaffected_assertion"
+        output = {
+            "established": "verified-unaffected",
+            "path_count": len(paths),
+        }
+    return callable_name, output
 
 
 def validate_input(raw_input: Any) -> dict[str, Any]:
@@ -372,7 +684,10 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
             "candidate_sha",
             "candidate_tree",
             "head_sha",
+            "trust_mode",
+            "pre_review_required",
             "changed_files",
+            "changes",
             "remote_finding_ids",
             "limits",
             "review_report",
@@ -390,6 +705,11 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
     head_sha = expect_sha(data["head_sha"], "checker input.head_sha")
     if head_sha != candidate_sha:
         raise CheckError("checker input head does not equal candidate")
+    trust_mode = expect_string(data["trust_mode"], "checker input.trust_mode")
+    if trust_mode not in {"introduction", "base-pinned"}:
+        raise CheckError("checker input.trust_mode is not supported")
+    if not isinstance(data["pre_review_required"], bool):
+        raise CheckError("checker input.pre_review_required must be a boolean")
     changed_files = [
         normalized_path(path, f"checker input.changed_files[{index}]")
         for index, path in enumerate(
@@ -399,6 +719,17 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
     if not changed_files:
         raise CheckError("checker input.changed_files must not be empty")
     expect_unique(changed_files, "checker input.changed_files")
+    changes = validate_change_records(data["changes"], "checker input.changes")
+    covered_paths = {
+        path
+        for change in changes
+        for path in (change["old_path"], change["new_path"])
+        if path is not None
+    }
+    if covered_paths != set(changed_files):
+        raise CheckError(
+            "checker input changed files do not match status record paths"
+        )
     remote_finding_ids = [
         expect_string(value, f"checker input.remote_finding_ids[{index}]")
         for index, value in enumerate(
@@ -436,6 +767,7 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         base_sha=base_sha,
         candidate_sha=candidate_sha,
         changed_files=changed_files,
+        changes=changes,
     )
     return {
         **data,
@@ -444,7 +776,10 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         "base_sha": base_sha,
         "candidate_sha": candidate_sha,
         "head_sha": head_sha,
+        "trust_mode": trust_mode,
+        "pre_review_required": data["pre_review_required"],
         "changed_files": changed_files,
+        "changes": changes,
         "remote_finding_ids": remote_finding_ids,
         "limits": normalized_limits,
         "review_report": report,
@@ -462,23 +797,56 @@ def execute_registry(raw_input: Any) -> dict[str, Any]:
     ):
         label = f"checker input.assertion_requests[{index}]"
         request = expect_object(raw, label)
-        expect_keys(request, label, ("id", "assertion_id", "context"))
+        expect_keys(
+            request,
+            label,
+            (
+                "id",
+                "assertion_id",
+                "check_id",
+                "claimed_disposition",
+                "inputs",
+            ),
+        )
         result_id = expect_string(request["id"], f"{label}.id")
         assertion_id = expect_string(request["assertion_id"], f"{label}.assertion_id")
-        function = _assertion_function(assertion_id)
-        if result_id != _expected_result_id(assertion_id, request["context"]):
+        check_id = expect_string(request["check_id"], f"{label}.check_id")
+        if result_id != _expected_result_id(assertion_id, request["inputs"]):
             raise CheckError(
                 f"{label}.id does not match its closed assertion identity"
             )
-        function(data, request["context"])
+        if assertion_id.startswith("sibling:"):
+            callable_name, output = _execute_sibling_assertion(
+                data,
+                assertion_id,
+                check_id,
+                request["claimed_disposition"],
+                request["inputs"],
+            )
+        else:
+            callable_name, output = _execute_behavior_assertion(
+                data,
+                assertion_id,
+                check_id,
+                request["claimed_disposition"],
+                request["inputs"],
+            )
+        inputs_sha256 = hashlib.sha256(
+            normalized_json(request["inputs"])
+        ).hexdigest()
+        output_sha256 = hashlib.sha256(normalized_json(output)).hexdigest()
         result_ids.append(result_id)
         results.append(
             {
                 "id": result_id,
                 "assertion_id": assertion_id,
-                "callable": function.__name__,
+                "check_id": check_id,
+                "claimed_disposition": request["claimed_disposition"],
+                "callable": callable_name,
                 "command_id": command_id,
                 "input_sha256": input_sha256,
+                "inputs_sha256": inputs_sha256,
+                "output_sha256": output_sha256,
                 "base_sha": data["base_sha"],
                 "candidate_sha": data["candidate_sha"],
                 "status": "pass",

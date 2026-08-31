@@ -4,7 +4,24 @@ import unittest
 from scripts.workflow_pilot import review_base_checker
 
 
+def modified_change(path, old, new):
+    return {
+        "status": "M",
+        "similarity": None,
+        "old_path": path,
+        "new_path": path,
+        "base_mode": "100644",
+        "base_blob_oid": old * 40,
+        "head_mode": "100644",
+        "head_blob_oid": new * 40,
+    }
+
+
 def valid_input():
+    changes = [
+        modified_change("docs/a.md", "1", "2"),
+        modified_change("scripts/a.py", "3", "4"),
+    ]
     return {
         "schema_version": 2,
         "repository": "example/project",
@@ -14,7 +31,10 @@ def valid_input():
         "candidate_sha": "c" * 40,
         "candidate_tree": "d" * 40,
         "head_sha": "c" * 40,
+        "trust_mode": "base-pinned",
+        "pre_review_required": True,
         "changed_files": ["docs/a.md", "scripts/a.py"],
+        "changes": changes,
         "remote_finding_ids": ["REMOTE_NODE_1"],
         "limits": {
             "max_duration_minutes": 30,
@@ -39,6 +59,7 @@ def valid_input():
             "permissions": ["contents:read"],
             "actions": ["read-candidate", "emit-local-report"],
             "reviewed_files": ["scripts/a.py", "docs/a.md"],
+            "reviewed_changes": copy.deepcopy(changes),
             "findings": [
                 {
                     "id": "LOCAL-ACTION-1",
@@ -51,15 +72,27 @@ def valid_input():
             {
                 "id": "result-actor-permission-bounds-positive",
                 "assertion_id": "actor-permission-bounds:positive",
-                "context": None,
+                "check_id": "behavior:actor-permission-bounds:positive:v1",
+                "claimed_disposition": None,
+                "inputs": {
+                    "row_id": "actor-permission-bounds",
+                    "repository": "example/project",
+                    "pull_request": 7,
+                    "base_sha": "a" * 40,
+                    "head_sha": "c" * 40,
+                },
             },
             {
                 "id": "result-sibling-LOCAL-ACTION-1-actions",
                 "assertion_id": "sibling:action:actions",
-                "context": {
+                "check_id": "sibling:action:actions:affected-fixed:v1",
+                "claimed_disposition": "affected-fixed",
+                "inputs": {
                     "finding_id": "LOCAL-ACTION-1",
                     "family": "action",
                     "member": "actions",
+                    "changed_paths": ["docs/a.md"],
+                    "change_evidence": [copy.deepcopy(changes[0])],
                 },
             },
         ],
@@ -84,6 +117,10 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         self.assertEqual(
             result["results"][0]["command_id"], result["command_id"]
         )
+        for item in result["results"]:
+            self.assertRegex(item["inputs_sha256"], r"^[0-9a-f]{64}$")
+            self.assertRegex(item["output_sha256"], r"^[0-9a-f]{64}$")
+            self.assertTrue(item["check_id"].endswith(":v1"))
 
     def test_local_findings_have_independent_namespace_and_chronology(self):
         for finding_id, created_at, message in (
@@ -129,14 +166,76 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         data["review_report"]["actions"].reverse()
         self.assert_rejected(data, "not exact read then report")
 
-    def test_fabricated_assertion_ids_and_context_fail(self):
+    def test_fabricated_assertion_ids_inputs_and_outcomes_fail(self):
         data = valid_input()
         data["assertion_requests"][0]["assertion_id"] = "candidate:claimed-pass"
-        self.assert_rejected(data, "closed registry")
+        self.assert_rejected(data, "closed assertion identity|closed registry")
 
         data = valid_input()
-        data["assertion_requests"][1]["context"]["member"] = "targets"
-        self.assert_rejected(data, "outside the closed|does not match")
+        data["assertion_requests"][1]["inputs"]["member"] = "targets"
+        self.assert_rejected(data, "does not match")
+
+        data = valid_input()
+        request = data["assertion_requests"][1]
+        request["claimed_disposition"] = "verified-unaffected"
+        self.assert_rejected(data, "check identity|verified-unaffected")
+
+        data = valid_input()
+        request = data["assertion_requests"][1]
+        request["claimed_disposition"] = "not-applicable"
+        request["check_id"] = "sibling:action:actions:not-applicable:v1"
+        self.assert_rejected(data, "no supported base-owned assertion")
+
+        data = valid_input()
+        request = data["assertion_requests"][0]
+        request["id"] = "result-actor-permission-bounds-runtime"
+        request["assertion_id"] = "actor-permission-bounds:runtime"
+        request["check_id"] = "behavior:actor-permission-bounds:runtime:v1"
+        self.assert_rejected(data, "runtime assertion inputs")
+
+    def test_verified_unaffected_requires_equal_concrete_blobs(self):
+        data = valid_input()
+        request = data["assertion_requests"][1]
+        request["claimed_disposition"] = "verified-unaffected"
+        request["check_id"] = (
+            "sibling:action:actions:verified-unaffected:v1"
+        )
+        request["inputs"] = {
+            "finding_id": "LOCAL-ACTION-1",
+            "family": "action",
+            "member": "actions",
+            "unchanged_evidence": [
+                {
+                    "path": "Makefile",
+                    "base_mode": "100644",
+                    "base_blob_oid": "5" * 40,
+                    "head_mode": "100644",
+                    "head_blob_oid": "5" * 40,
+                }
+            ],
+        }
+        result = review_base_checker.execute_registry(data)
+        self.assertEqual(
+            result["results"][1]["claimed_disposition"],
+            "verified-unaffected",
+        )
+        data["assertion_requests"][1]["inputs"]["unchanged_evidence"][0][
+            "head_blob_oid"
+        ] = "6" * 40
+        self.assert_rejected(data, "does not bind equal blobs")
+
+    def test_status_evidence_is_exact_and_unknown_status_rejects(self):
+        data = valid_input()
+        data["review_report"]["reviewed_changes"].pop()
+        self.assert_rejected(data, "status/blob evidence")
+
+        data = valid_input()
+        data["changes"][0]["status"] = "X"
+        self.assert_rejected(data, "status is not supported")
+
+        data = valid_input()
+        data["changes"][0]["status"] = "D"
+        self.assert_rejected(data, "contradicts status")
 
     def test_boolean_bounds_and_head_mismatch_fail(self):
         data = valid_input()

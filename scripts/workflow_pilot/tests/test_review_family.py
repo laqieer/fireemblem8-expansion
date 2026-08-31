@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+import shutil
 import subprocess
 import sys
 import unittest
@@ -44,8 +45,9 @@ def round_record(number, head, minute):
         "submitted_at": f"2026-08-31T04:{minute:02d}:00Z",
         "_submitted": parsed_time(minute),
         "state": "CHANGES_REQUESTED",
-        "body": "",
-        "body_has_findings": False,
+        "body": "### 🟡 Changes recommended",
+        "body_classification": "changes-recommended",
+        "body_has_findings": True,
         "outcome": "changes-requested",
         "finding_ids": [],
     }
@@ -154,15 +156,63 @@ class ReviewFamilyContractTests(unittest.TestCase):
             {
                 "id": "candidate-claims-pass",
                 "assertion_id": "candidate:pass",
+                "check_id": "candidate:pass",
+                "claimed_disposition": None,
                 "callable": "candidate",
                 "command_id": "a" * 64,
                 "input_sha256": "b" * 64,
+                "inputs_sha256": "c" * 64,
+                "output_sha256": "d" * 64,
                 "base_sha": BASE,
                 "candidate_sha": CANDIDATE,
                 "status": "pass",
             }
         ]
         self.assert_rejected(contract, evidence, "no trusted execution receipt")
+
+    def test_outcome_requests_bind_concrete_changed_or_unchanged_inputs(self):
+        contract, evidence = fixture()
+        validated = review_family.validate_contract(contract)
+        requests = review_family.build_assertion_requests(
+            validated, evidence, ROOT
+        )
+        sibling_requests = [
+            request
+            for request in requests
+            if request["assertion_id"].startswith("sibling:")
+        ]
+        self.assertTrue(
+            any(
+                request["claimed_disposition"] == "affected-fixed"
+                and request["inputs"]["change_evidence"]
+                for request in sibling_requests
+            )
+        )
+        self.assertTrue(
+            any(
+                request["claimed_disposition"] == "verified-unaffected"
+                and request["inputs"]["unchanged_evidence"]
+                for request in sibling_requests
+            )
+        )
+
+        contract["family_sweeps"][0]["siblings"][0]["result"] = (
+            "not-applicable"
+        )
+        contract["family_sweeps"][0]["siblings"][0]["assertion_inputs"] = {}
+        self.assert_rejected(contract, evidence, "unsupported")
+
+        contract, evidence = fixture()
+        contract["family_sweeps"][0]["siblings"][1][
+            "assertion_inputs"
+        ]["unchanged_paths"] = ["docs/workflow-pilot.md"]
+        validated = review_family.validate_contract(contract)
+        with self.assertRaisesRegex(
+            reporter.PilotDataError, "lacks unchanged blob evidence"
+        ):
+            review_family.build_assertion_requests(
+                validated, evidence, ROOT
+            )
 
     def test_local_pre_review_findings_are_distinct_and_not_backdated(self):
         contract, evidence = fixture()
@@ -219,6 +269,7 @@ class ReviewFamilyContractTests(unittest.TestCase):
         contract, evidence = fixture("default")
         review = evidence["remote_reviews"][0]
         review["body"] = "Please fix the authority boundary."
+        review["body_classification"] = "unknown"
         review["body_has_findings"] = True
         review["outcome"] = "changes-requested"
         report = self.report(contract, evidence)
@@ -234,7 +285,8 @@ class ReviewFamilyContractTests(unittest.TestCase):
                 "candidate_sha": CANDIDATE,
                 "submitted_at": "2026-08-31T03:12:30Z",
                 "state": "COMMENTED",
-                "body": "",
+                "body": "### 🟢 Approval recommended",
+                "body_classification": "clean-approval",
                 "body_has_findings": False,
                 "outcome": "clean",
                 "finding_ids": [],
@@ -244,6 +296,37 @@ class ReviewFamilyContractTests(unittest.TestCase):
         self.assertTrue(report["gates"]["current_candidate_clean"])
         self.assertEqual(report["findings"]["current_unresolved"], 5)
         self.assertFalse(report["structural_eligibility"]["merge"])
+
+    def test_pr183_clean_body_and_exact_top_level_marker_parser(self):
+        clean_body = fixture("default")[1]["remote_reviews"][0]["body"]
+        self.assertIn(
+            "consistently satisfy the frozen issue #176 contract",
+            clean_body,
+        )
+        self.assertEqual(
+            review_family.classify_copilot_body(clean_body),
+            "clean-approval",
+        )
+        for body, classification in (
+            ("### 🟡 Changes recommended\n\nFix the finding.", "changes-recommended"),
+            ("### 🔵 Needs a closer look\n\nReview manually.", "needs-closer-look"),
+            ("No issues found.", "clean-legacy"),
+            ("", "unknown"),
+            ("> ### 🟢 Approval recommended", "unknown"),
+            (
+                "Unrecognized summary\n\n### 🟢 Approval recommended",
+                "unknown",
+            ),
+            (
+                "### 🟢 Approval recommended\n\n### 🟡 Changes recommended",
+                "unknown",
+            ),
+        ):
+            with self.subTest(body=body):
+                self.assertEqual(
+                    review_family.classify_copilot_body(body),
+                    classification,
+                )
 
     def test_global_node_ids_are_unique_across_all_domains(self):
         contract, evidence = fixture()
@@ -357,6 +440,126 @@ class ReviewFamilyContractTests(unittest.TestCase):
             }
         ]
         self.assert_rejected(contract, evidence, "pushedDate cannot attest")
+
+    def test_status_records_cover_add_delete_modify_rename_and_copy(self):
+        repository = (
+            ROOT
+            / "build"
+            / "test-artifacts"
+            / f"review-statuses-{os.getpid()}"
+        )
+        repository.mkdir()
+        try:
+            subprocess.run(
+                reporter.git_command(repository, "init", "-q"),
+                env=reporter.git_environment(offline=True),
+                check=True,
+            )
+            for key, value in (
+                ("user.email", "test@example.com"),
+                ("user.name", "Status Test"),
+            ):
+                subprocess.run(
+                    reporter.git_command(repository, "config", key, value),
+                    env=reporter.git_environment(offline=True),
+                    check=True,
+                )
+            for name, content in (
+                ("deleted.txt", "delete me\n"),
+                ("modified.txt", "before\n"),
+                ("rename-old.txt", "rename identity\n"),
+                ("copy-old.txt", "copy identity\n"),
+            ):
+                (repository / name).write_text(content, encoding="utf-8")
+            subprocess.run(
+                reporter.git_command(repository, "add", "."),
+                env=reporter.git_environment(offline=True),
+                check=True,
+            )
+            subprocess.run(
+                reporter.git_command(repository, "commit", "-q", "-m", "base"),
+                env=reporter.git_environment(offline=True),
+                check=True,
+            )
+            base = subprocess.run(
+                reporter.git_command(repository, "rev-parse", "HEAD"),
+                env=reporter.git_environment(offline=True),
+                check=True,
+                capture_output=True,
+            ).stdout.decode().strip()
+            (repository / "deleted.txt").unlink()
+            (repository / "modified.txt").write_text("after\n", encoding="utf-8")
+            (repository / "rename-old.txt").rename(repository / "rename-new.txt")
+            shutil.copy2(repository / "copy-old.txt", repository / "copy-new.txt")
+            (repository / "added.txt").write_text("added\n", encoding="utf-8")
+            subprocess.run(
+                reporter.git_command(repository, "add", "-A"),
+                env=reporter.git_environment(offline=True),
+                check=True,
+            )
+            subprocess.run(
+                reporter.git_command(repository, "commit", "-q", "-m", "head"),
+                env=reporter.git_environment(offline=True),
+                check=True,
+            )
+            head = subprocess.run(
+                reporter.git_command(repository, "rev-parse", "HEAD"),
+                env=reporter.git_environment(offline=True),
+                check=True,
+                capture_output=True,
+            ).stdout.decode().strip()
+            records = review_family.derive_change_records(
+                repository, base, head
+            )
+            self.assertEqual(
+                {record["status"] for record in records},
+                {"A", "D", "M", "R", "C"},
+            )
+            deleted = next(
+                record for record in records if record["status"] == "D"
+            )
+            self.assertEqual(deleted["old_path"], "deleted.txt")
+            self.assertIsNotNone(deleted["base_blob_oid"])
+            self.assertIsNone(deleted["head_blob_oid"])
+        finally:
+            shutil.rmtree(repository)
+
+    def test_issue_179_deleted_entrypoint_has_base_blob_and_head_absence(self):
+        records = review_family.derive_change_records(
+            ROOT,
+            "40d17217c7747c22451a719d75bd48fbd502595d",
+            "3feb9ee1827b0390198b6b9bf4cb8d3743518b05",
+        )
+        deleted = next(
+            record
+            for record in records
+            if record["old_path"]
+            == "scripts/workflow_pilot/isolated_review_gate.py"
+        )
+        self.assertEqual(deleted["status"], "D")
+        self.assertIsNotNone(deleted["base_blob_oid"])
+        self.assertIsNone(deleted["new_path"])
+        self.assertIsNone(deleted["head_blob_oid"])
+
+    def test_status_record_path_mode_and_status_spoofs_fail(self):
+        record = review_family.derive_change_records(
+            ROOT,
+            "40d17217c7747c22451a719d75bd48fbd502595d",
+            "3feb9ee1827b0390198b6b9bf4cb8d3743518b05",
+        )[0]
+        for field, value, message in (
+            ("status", "X", "must be one of"),
+            ("old_path", "../escape", "normalized repository-relative"),
+            ("head_mode", "100755", "contradict|unsafe"),
+        ):
+            mutated = copy.deepcopy(record)
+            mutated[field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(
+                reporter.PilotDataError, message
+            ):
+                review_family._validate_change_records(
+                    [mutated], "spoofed changes"
+                )
 
     def test_cli_is_deterministic_and_never_authoritative(self):
         command = (
