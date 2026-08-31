@@ -1,3 +1,35 @@
+# The report-only ownership gate must be selected from GNU Make's own goal
+# state before any configurable include, shell expansion, or dependency remake.
+ifneq (,$(filter-out default undefined,$(origin MAKECMDGOALS)))
+$(error MAKECMDGOALS must remain owned by GNU Make, got origin=$(origin MAKECMDGOALS) value='$(MAKECMDGOALS)')
+endif
+
+ifneq (,$(filter validation-ownership-check,$(MAKECMDGOALS)))
+ifneq ($(strip $(MAKECMDGOALS)),validation-ownership-check)
+$(error validation-ownership-check must be invoked as the sole Make goal)
+endif
+  override _VALIDATION_OWNERSHIP_FLAGS := \
+	$(strip $(MAKEFLAGS) $(MFLAGS) $(GNUMAKEFLAGS))
+  override _VALIDATION_OWNERSHIP_UNSAFE_FLAGS := \
+	$(filter-out j% -j% --jobserver-auth=% --jobserver-fds=% \
+		--no-print-directory,$(_VALIDATION_OWNERSHIP_FLAGS))
+ifneq ($(_VALIDATION_OWNERSHIP_UNSAFE_FLAGS),)
+$(error validation-ownership-check rejects Make execution controls: $(_VALIDATION_OWNERSHIP_UNSAFE_FLAGS))
+endif
+ifneq ($(strip $(MAKEOVERRIDES)),)
+$(error validation-ownership-check rejects Make variable overrides: $(MAKEOVERRIDES))
+endif
+ifeq ($(origin MAKEOVERRIDES),command line)
+$(error validation-ownership-check rejects Make command-line MAKEOVERRIDES)
+endif
+
+validation-ownership-check:
+	@/usr/bin/python3 -I scripts/validation_ownership/isolated_launcher.py \
+		check --repository-root "$(CURDIR)" > /dev/null
+
+.PHONY: validation-ownership-check
+else
+
 #### Tools ####
 
 ifeq ($(OS),Windows_NT)
@@ -100,33 +132,6 @@ ASFLAGS  := -mcpu=arm7tdmi -mthumb-interwork -I include
 # requirement can never regress bare `make`'s behavior regardless of
 # what any included makefile defines first.
 .DEFAULT_GOAL := all
-
-# This source-only target suppresses generated includes and dependency
-# discovery only as a sole goal. Mixed invocations fail before any included
-# fragment can narrow the other goal's dependency graph.
-ifneq (,$(filter validation-ownership-check,$(MAKECMDGOALS)))
-ifneq ($(strip $(MAKECMDGOALS)),validation-ownership-check)
-$(error validation-ownership-check must be invoked as the sole Make goal)
-endif
-  # These options can skip the recipe, suppress its failure, or report success
-  # without executing it. Parallel jobserver state and no-print-directory are
-  # execution-neutral and remain supported.
-  override _VALIDATION_OWNERSHIP_FLAGS := \
-	$(strip $(MAKEFLAGS) $(MFLAGS) $(GNUMAKEFLAGS))
-  override _VALIDATION_OWNERSHIP_UNSAFE_FLAGS := \
-	$(filter-out j% -j% --jobserver-auth=% --jobserver-fds=% \
-		--no-print-directory,$(_VALIDATION_OWNERSHIP_FLAGS))
-ifneq ($(_VALIDATION_OWNERSHIP_UNSAFE_FLAGS),)
-$(error validation-ownership-check rejects Make execution controls: $(_VALIDATION_OWNERSHIP_UNSAFE_FLAGS))
-endif
-ifneq ($(strip $(MAKEOVERRIDES)),)
-$(error validation-ownership-check rejects Make variable overrides: $(MAKEOVERRIDES))
-endif
-ifeq ($(origin MAKEOVERRIDES),command line)
-$(error validation-ownership-check rejects Make command-line MAKEOVERRIDES)
-endif
-  NODEP := 1
-endif
 
 include generated_data.mk
 
@@ -318,15 +323,6 @@ compare:
 	@false
 
 .PHONY: all legacy compare
-
-# Issue #180: report-only validation ownership graph. This target validates
-# complete Git-tracked path coverage and live authority references; it never
-# skips, narrows, or executes the gates named by the graph.
-validation-ownership-check:
-	@/usr/bin/python3 -I scripts/validation_ownership/isolated_launcher.py \
-		check --repository-root "$(CURDIR)" > /dev/null
-
-.PHONY: validation-ownership-check
 
 # Remote completion gates
 #
@@ -918,3 +914,5 @@ endif
 
 # debug print, to use, call "make print-(your label here)"
 print-% : ; $(info $* is a $(flavor $*) variable set to [$($*)]) @true
+
+endif

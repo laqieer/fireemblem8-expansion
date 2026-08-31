@@ -475,8 +475,9 @@ game behavior needs a compensating change.
 - **Prerequisites and clean starting state:** start at the exact repository
   root with `.github/validation-ownership-graph.json`, its strict schema,
   reporter, generated-data and tester-case registries, Build workflow,
-  Makefiles, and manual-handoff contract unchanged. No token, ROM, emulator,
-  or remote workflow is required.
+  Makefiles, `/usr/bin/make`, `/usr/bin/unshare` with user/mount/network/PID
+  namespace support, a static-capable `/usr/bin/cc`, and the manual-handoff
+  contract unchanged. No token, ROM, emulator, or remote workflow is required.
 
 ### Actions
 
@@ -496,9 +497,17 @@ game behavior needs a compensating change.
    every edge family, delete and restore the graph copy, mutate Make/workflow
    authority, add unknown and overlapping paths, create cycles, duplicate
    owners, remove dependents, replace targets with stale identities, introduce
-   symlink/gitlink modes, and disconnect each lifecycle trigger.
-6. Run `make -n validation-ownership-check compare` and require the explicit
-   sole-goal diagnostic before any dependency suppression.
+   symlink/gitlink modes, and disconnect each lifecycle trigger. Confirm direct
+   GNU Make comparisons cover all 80 CLI domains, environment/fallback origins,
+   `MODE=two`, `$(eval $(RULE))`, a concrete `%.out: %.in` recipe mutation,
+   target-local/automatic/braced/one-character variables, literal missing
+   prerequisites, active `$(error)`, unknown direct shell, and unused `!=`.
+6. Run the hostile public controls, including
+   `make MAKECMDGOALS= -n validation-ownership-check`,
+   `make AUTOTOOLS_CONFIG_MK=/dev/stdin SHELL=/bin/false validation-ownership-check`,
+   every execution-control alias/control variable, and
+   `make -n validation-ownership-check compare`. Require a parse-time bootstrap
+   failure before external includes or dependency suppression.
 
 ### Expected result
 
@@ -530,102 +539,44 @@ authoritative edge or target-authority changes, not filenames or commit prose.
 Unknown paths or edge types, uncovered or overlapping path patterns, cycles,
 duplicate or ambiguous owners, stale Make/workflow/tester/generated/manual
 targets, missing profiles or negative controls, and every removed or
-redirected edge family fail with the missing contract named. Make and workflow
-authority uses target/job-specific normalized semantics: comments,
-nonsemantic spacing, and unrelated `.mk` changes stay green, while ordered
-assignments, operators/flavors, exact prerequisite/recipe order, conditional
-context, steps, endpoints, edge types, owners, and authority targets invalidate
-only their edge IDs. Synthetic fixtures compare each fingerprint change with
-the observable GNU Make result. Cycle-safe transitive prerequisite and
-pattern-rule closure propagates child recipe/assignment/prerequisite changes
-to aggregate parents; a real `expansion-modern-budget-check` child mutation
-invalidates only the edges owned by `expansion-modern-linker-check`. Nested
-variables and the closed pure prerequisite-function subset resolve concrete
-objects before pattern matching; unsupported dynamics, cycles, and expansion
-bounds reject without executing shell functions. Registered shell-derived
-dependencies bind exact expressions, tracked tools/inputs/variables, and
-owners through the separate sealed dynamic registry. C, data, and assembly
-pattern recipe mutations propagate through
-`expansion-modern-all` to its exact compile-owner edges and every real
-link/runtime aggregate that consumes the same objects.
+redirected edge family fail with the missing contract named.
 
-Immediate and recursive assignment fixtures compare GNU Make with the
-authority parser: later base-variable changes preserve earlier `:=`/`::=`
-values but affect deferred `=` values, while ordered append, target-specific,
-and conditional cases retain declaration-time behavior. Independent
-expression/function and variable recursion depth, word, and variant bounds
-reject their first over-limit input. The live linker closure must report zero
-unowned dynamic prerequisites; removing a registration or changing a bound
-tool/input invalidates the exact consuming evidence.
+Make authority is observed from confined `/usr/bin/make`, never from a
+handwritten parser. A fresh exact-tree + exact-gitlink scratch root, empty
+generated-output overlay, fixed locale/time/environment, and trusted absolute
+GNU Make/interceptor binaries are mandatory. Every 80-domain command-line
+variant and each environment-sensitive origin executes the actual parser and
+evaluator; exact concrete closures, pattern stems, expanded recipes, terminal
+inputs, includes, dynamic outputs, errors, argv, environment, and tool
+identities participate in authority. Comments and unrelated targets stay
+stable only when their observed target semantics stay stable.
 
-Multiline `define` assignments preserve their authored bodies and GNU Make
-flavor/timing. Synthetic direct and nested `call` fixtures bind positional
-arguments in recipes and prerequisites; one/two body mutations propagate only
-through their consuming aggregate. Malformed, nested, modified, undefined,
-unsupported, cyclic, and 65-level macro forms plus word/variant overflow fail
-closed. In the real tree, removing the content-disabled ROM, symbol, and
-`gItemData` assertions from `modern_starter_content_disabled_negative` changes
-the starter-hook record and the seven exact linker-owner edges reached by
-`expansion-modern-linker-check`, while its invocation and unrelated authority
-remain unchanged.
+Behavioral fixtures compare direct GNU Make with `MODE=two` conditional
+selection, multiple words, nested functions and variables, `$(eval $(RULE))`,
+`define`/`call`, pattern and static-pattern stems, target-specific values,
+secondary prerequisites, `${NAME}`, one-character `$C`, and automatic
+variables. Mutating a `%.out: %.in` child recipe changes its concrete parent
+authority. Literal missing prerequisites and active `$(error)` reject.
+Unbounded/unregistered domains, malformed or oversized values, cyclic/dynamic/
+escaping/unknown targets, and stale symbolic recipe classifications reject.
 
-Global and target-specific modifier fixtures compare GNU Make expansion and
-child environments for assigned and bare exports, export-all/unexport,
-override precedence, and private inheritance boundaries. Real mutations of
-the committed PATH, item-cap, and modern-tool exports alter every affected
-child-command authority. Duplicate or malformed modifier combinations reject.
-Direct and called defined macros containing an unregistered shell, undefined
-call, cycle, unsupported function, or excessive depth also reject; an exact
-sealed shell contract instead binds its tracked tool/input/evidence and changes
-the authority without executing the tool.
+The Make sandbox exposes no executable shell other than the static
+interceptor. Unknown direct `$(shell)` in a recipe, an unused eager `!=`,
+unregistered include-remake command, ambiguous registry regex, output
+nonconvergence, or any attempted unsandboxed process rejects. Registered
+source-dependent commands execute only in the second networkless exact-tree
+command sandbox and bind their concrete output hash plus tool/input authority.
+Normal and forced-recursive recipes are intercepted and never execute.
+Absolute `/dev/stdin`, dynamic, escaping, symlink, and untracked includes
+reject; confined generated `build/` includes are rebuilt from an empty overlay.
 
-Environment-default fixtures run GNU Make with VALUE absent, imported from a
-controlled environment, and supplied on the command line. The authority keeps
-all three recipe and child-environment variants while remaining byte-identical
-under an unrelated host environment. A sealed exact-name registry covers live
-`PYTHON`, `TOOLCHAIN`/`DEVKITARM`, PATH, and configuration/profile defaults;
-missing/stale names or source, provenance, policy, and seal mutations reject.
-Normal recursive assignments containing shell, undefined call, cycle,
-unsupported function, or 65-level expansion fail exactly like `define`
-macros. Registered direct and called ordinary macros bind their exact
-tool/input/evidence contract and invalidate consuming owners without execution.
-
-Undefined VALUE fixtures compare clean, controlled process-environment, and
-command-line GNU Make results. Every otherwise undefined reachable reference
-has the same closed variants or rejects; all non-override assignment flavors
-also bind a command-line branch, while override removes it. The live census
-classifies `MAKE`, `CURDIR`, `MAKEFLAGS`, `MAKECMDGOALS`, `LZ_FLAGS`,
-`MODERN_BUILD_COMMIT`, the foreach-local `t`, escaped literal `sort`, exported
-and test-control inputs, and reports zero unbound names.
-
-Invoke the public gate under `-n`/`--just-print`, `-t`, `-q`, `-s`, `-i`,
-hostile `MAKEFLAGS`/`GNUMAKEFLAGS`, `MFLAGS`, and `MAKEOVERRIDES`; each must
-fail during Makefile parsing. `-j2 --no-print-directory` must execute and pass.
-The Build step and exact 30-gate mirror scrub all four Make control variables
-before the gate, without changing gate count or mixed-goal precedence.
-
-Prerequisite-domain fixtures seal DEP to exact empty/child values and prove
-clean fallback, process-environment, and command-line runs. The aggregate
-authority traverses the child recipe even when its canonical fallback is
-empty, so a one/two child mutation changes the aggregate while an unrelated
-target remains stable. Multiple-word values, nested pure functions, pattern
-rules, static-pattern stems, escaped secondary prerequisites, trusted
-built-ins, and target-specific selectors expand across every provenance
-variant. Each distinct exact value is traversed once with its complete source
-set attached, so duplicate provenance cannot multiply equivalent graph work.
-Missing/unbounded, malformed, escaping, dynamic, unknown, untracked, cyclic,
-over-4096-variant, and over-20000-word domains reject. The real graph seals
-every used domain and reports zero unconstrained selectors.
-
-Target-specific recursive values and appends are evaluated at target use and
-inherited by prerequisite recipes; simple target values remain immediate.
-Recipe variables and escaped secondary prerequisites use those target-local
-bindings. Unsupported target-specific modifiers or shell assignments reject.
-Unrelated malformed dynamic target declarations also reject globally. A
-sealed synthetic `$(shell python3 tool.py):` target resolves to its concrete
-child without running the tool; changing its recipe changes the parent
-authority, while unregistered, cyclic, unsupported, or 65-level declarations
-fail before requested closure.
+The root Makefile rejects command-line ownership of `MAKECMDGOALS` before
+reading any include. `MAKECMDGOALS= -n`, all dry-run/touch/question/silent/
+ignore aliases, hostile `MAKEFLAGS`/`MFLAGS`/`GNUMAKEFLAGS`/`MAKEOVERRIDES`,
+mixed goals, and `AUTOTOOLS_CONFIG_MK=/dev/stdin SHELL=...` therefore fail
+during trusted bootstrap. The exact sole goal skips every normal config,
+generated, asset, and dependency include; plain and allowed parallel public
+invocations execute the checker rather than printing success.
 
 Exact current/base Git mode and provenance is mandatory. Symlinks, synthetic
 gitlinks under owned prefixes, untracked/ignored/nonexistent changed paths,

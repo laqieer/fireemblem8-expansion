@@ -6,14 +6,10 @@ from __future__ import annotations
 import argparse
 import ast
 import copy
-import fnmatch
 import hashlib
 import importlib
-import itertools
 import json
-import math
 import os
-import posixpath
 import re
 import shutil
 import stat
@@ -36,6 +32,11 @@ PROBE_ORACLE_PATH = Path("scripts/validation_ownership/probe-oracle.json")
 MAKE_DYNAMIC_PATH = Path(
     ".github/validation-ownership-make-dynamics.json"
 )
+_MAKE_AUTHORITY_CACHE: dict[
+    tuple[Any, ...],
+    dict[str, dict[str, Any]],
+] = {}
+_MAKE_AUTHORITY_CACHE_LIMIT = 16
 TEST_CASE_REGISTRY_PATH = Path("docs/test-cases/registry.json")
 BUILD_WORKFLOW_PATH = Path(".github/workflows/build.yml")
 EXPECTED_SCHEMA_VERSION = 1
@@ -725,191 +726,6 @@ def _manual_handoff_record(
     return record
 
 
-def _strip_make_comment(line: str) -> str:
-    escaped = False
-    for index, character in enumerate(line):
-        if character == "#" and not escaped:
-            return line[:index]
-        escaped = character == "\\" and not escaped
-        if character != "\\":
-            escaped = False
-    return line
-
-
-def _make_logical_lines(text: str) -> list[tuple[bool, str]]:
-    result = []
-    pending = ""
-    for physical in text.splitlines():
-        if physical.startswith("\t"):
-            if not pending:
-                result.append((True, physical[1:]))
-                continue
-            physical = physical[1:]
-        stripped = physical.rstrip()
-        continuation = stripped.endswith("\\")
-        piece = stripped[:-1] if continuation else stripped
-        pending = (pending + " " + piece.strip()).strip() if pending else piece
-        if not continuation:
-            result.append((False, pending))
-            pending = ""
-    if pending:
-        result.append((False, pending))
-    return result
-
-
-MAKE_DEFINE_RE = re.compile(
-    r"^((?:(?:override|private|export)\s+)*)define(?:\s+(.*))?$"
-)
-MAKE_DEFINE_NAME_RE = re.compile(
-    r"^([A-Za-z_][A-Za-z0-9_]*)(?:\s*(::=|:=|\?=|\+=|=))?\s*$"
-)
-
-
-def _make_statements(text: str, path: str) -> list[tuple[str, Any]]:
-    result: list[tuple[str, Any]] = []
-    logical_source = []
-    lines = text.splitlines(keepends=True)
-    index = 0
-
-    def flush_logical_source() -> None:
-        if not logical_source:
-            return
-        result.extend(
-            ("recipe" if recipe else "line", line)
-            for recipe, line in _make_logical_lines("".join(logical_source))
-        )
-        logical_source.clear()
-
-    while index < len(lines):
-        physical = lines[index]
-        raw = physical.rstrip("\r\n")
-        directive = _strip_make_comment(raw).strip()
-        if not raw.startswith("\t") and (
-            directive == "endef" or directive.startswith("endef ")
-        ):
-            raise OwnershipError(f"Make authority {path!r} has unmatched endef")
-        define = None if raw.startswith("\t") else MAKE_DEFINE_RE.match(directive)
-        if define is None:
-            logical_source.append(physical)
-            index += 1
-            continue
-        flush_logical_source()
-        modifiers = tuple(define.group(1).split())
-        if modifiers:
-            raise OwnershipError(
-                f"Make authority {path!r} define uses unsupported modifiers "
-                f"{modifiers}"
-            )
-        header = define.group(2)
-        parsed_header = (
-            None if header is None else MAKE_DEFINE_NAME_RE.fullmatch(header)
-        )
-        if parsed_header is None:
-            raise OwnershipError(
-                f"Make authority {path!r} has malformed define {directive!r}"
-            )
-        body_lines = []
-        index += 1
-        while index < len(lines):
-            body_physical = lines[index]
-            body_raw = body_physical.rstrip("\r\n")
-            body_directive = _strip_make_comment(body_raw).strip()
-            if not body_raw.startswith("\t") and MAKE_DEFINE_RE.match(
-                body_directive
-            ):
-                raise OwnershipError(
-                    f"Make authority {path!r} has nested define"
-                )
-            if not body_raw.startswith("\t") and (
-                body_directive == "endef"
-                or body_directive.startswith("endef ")
-            ):
-                if body_directive != "endef":
-                    raise OwnershipError(
-                        f"Make authority {path!r} has malformed endef "
-                        f"{body_directive!r}"
-                    )
-                break
-            body_lines.append(body_physical)
-            index += 1
-        else:
-            raise OwnershipError(f"Make authority {path!r} has unclosed define")
-        body = "".join(body_lines)
-        if body.endswith("\r\n"):
-            body = body[:-2]
-        elif body.endswith("\n"):
-            body = body[:-1]
-        result.append(
-            (
-                "define",
-                {
-                    "name": parsed_header.group(1),
-                    "operator": parsed_header.group(2) or "=",
-                    "value": body,
-                },
-            )
-        )
-        index += 1
-    flush_logical_source()
-    return result
-
-
-def _make_variable_refs(values: Iterable[str]) -> set[str]:
-    return {
-        match.group(1)
-        for value in values
-        for match in re.finditer(
-            r"(?<![$\\])\$\(([A-Za-z_][A-Za-z0-9_]*)\)",
-            value,
-        )
-    }
-
-
-def _make_escaped_literal_refs(values: Iterable[str]) -> set[str]:
-    return {
-        match.group(1)
-        for value in values
-        for match in re.finditer(
-            r"\\\$\(([A-Za-z_][A-Za-z0-9_]*)\)",
-            value,
-        )
-    }
-
-
-MAKE_ASSIGNMENT_RE = re.compile(
-    r"^((?:(?:export|override|private)\s+)*)"
-    r"([A-Za-z_][A-Za-z0-9_]*)\s*(::=|:=|\?=|\+=|!=|=)\s*(.*)$"
-)
-TARGET_ASSIGNMENT_RE = re.compile(
-    r"^((?:(?:override|private|export)\s+)*)"
-    r"([A-Za-z_][A-Za-z0-9_]*)\s*(::=|:=|\?=|\+=|!=|=)\s*(.*)$"
-)
-MAKE_EXPORT_RE = re.compile(r"^(export|unexport)(?:\s+(.*))?$")
-MAKE_CONDITIONAL_RE = re.compile(r"^(ifeq|ifneq|ifdef|ifndef)\b(.*)$")
-_MAKE_AUTHORITY_CACHE: dict[tuple[Any, ...], dict[str, dict[str, Any]]] = {}
-_MAKE_AUTHORITY_CACHE_LIMIT = 16
-
-
-def _normalize_make_expression(value: str) -> str:
-    return " ".join(value.strip().split())
-
-
-def _make_modifiers(raw: str, label: str) -> tuple[str, ...]:
-    modifiers = tuple(raw.split())
-    if len(modifiers) != len(set(modifiers)):
-        raise OwnershipError(f"{label} repeats a Make assignment modifier")
-    unknown = set(modifiers) - {"export", "override", "private"}
-    if unknown:
-        raise OwnershipError(
-            f"{label} uses unsupported Make assignment modifiers "
-            f"{sorted(unknown)}"
-        )
-    return tuple(
-        modifier
-        for modifier in ("override", "private", "export")
-        if modifier in modifiers
-    )
-
 
 def canonical_make_dynamic_payload(data: dict[str, Any]) -> dict[str, Any]:
     contracts = []
@@ -965,6 +781,10 @@ def canonical_make_dynamic_payload(data: dict[str, Any]) -> dict[str, Any]:
         prerequisite_domains["tracked_fallback_names"] = sorted(
             prerequisite_domains["tracked_fallback_names"]
         )
+        if data["schema_version"] >= 5:
+            prerequisite_domains["symbolic_recipe_names"] = sorted(
+                prerequisite_domains["symbolic_recipe_names"]
+            )
         for domain in prerequisite_domains["explicit"]:
             domain["values"] = sorted(domain["values"])
         prerequisite_domains["explicit"].sort(key=lambda item: item["name"])
@@ -1018,17 +838,20 @@ def load_make_dynamic_contracts(
         "contracts",
         "seal",
     }
-    if schema_version in {2, 3, 4}:
+    if schema_version in {2, 3, 4, 5}:
         expected_fields.add("ambient_inputs")
     if schema_version == 3:
         expected_fields.add("execution_controls")
-    if schema_version == 4:
+    if schema_version in {4, 5}:
         expected_fields.update({"execution_controls", "prerequisite_domains"})
     if set(data) != expected_fields:
         raise OwnershipError("Make dynamic dependency registry has invalid fields")
-    if schema_version not in {1, 2, 3, 4} or not isinstance(data["contracts"], list):
+    if schema_version not in {1, 2, 3, 4, 5} or not isinstance(
+        data["contracts"],
+        list,
+    ):
         raise OwnershipError("Make dynamic dependency registry schema is invalid")
-    if schema_version in {2, 3, 4}:
+    if schema_version in {2, 3, 4, 5}:
         ambient = data["ambient_inputs"]
         ambient_fields = {
             "allowed_names",
@@ -1179,7 +1002,7 @@ def load_make_dynamic_contracts(
                 )
         if schema_version >= 4:
             domains = data["prerequisite_domains"]
-            if not isinstance(domains, dict) or set(domains) != {
+            domain_fields = {
                 "tracked_fallback_names",
                 "explicit",
                 "generated_paths",
@@ -1187,9 +1010,13 @@ def load_make_dynamic_contracts(
                 "max_words",
                 "value_policy",
                 "target_policy",
-            }:
+            }
+            if schema_version >= 5:
+                domain_fields.add("symbolic_recipe_names")
+            if not isinstance(domains, dict) or set(domains) != domain_fields:
                 raise OwnershipError("Make prerequisite domains are invalid")
             tracked = domains["tracked_fallback_names"]
+            symbolic_recipe_names = domains.get("symbolic_recipe_names", [])
             if (
                 not isinstance(tracked, list)
                 or tracked != sorted(set(tracked))
@@ -1201,6 +1028,20 @@ def load_make_dynamic_contracts(
             ):
                 raise OwnershipError(
                     "Make tracked-fallback prerequisite names are invalid"
+                )
+            if (
+                not isinstance(symbolic_recipe_names, list)
+                or symbolic_recipe_names
+                != sorted(set(symbolic_recipe_names))
+                or not all(
+                    isinstance(name, str)
+                    and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name)
+                    for name in symbolic_recipe_names
+                )
+                or set(symbolic_recipe_names) & set(tracked)
+            ):
+                raise OwnershipError(
+                    "Make symbolic recipe names are invalid"
                 )
             explicit = domains["explicit"]
             if not isinstance(explicit, list):
@@ -1219,6 +1060,7 @@ def load_make_dynamic_contracts(
                     )
                     or domain["name"] in explicit_names
                     or domain["name"] in tracked
+                    or domain["name"] in symbolic_recipe_names
                     or not isinstance(domain["values"], list)
                     or domain["values"] != sorted(set(domain["values"]))
                     or not all(isinstance(value, str) for value in domain["values"])
@@ -1290,6 +1132,8 @@ def load_make_dynamic_contracts(
             "resolved_value",
             "owning_evidence_ids",
         }
+        if schema_version >= 5:
+            fields.add("command_regex")
         if not isinstance(contract, dict) or set(contract) != fields:
             raise OwnershipError(f"{label} has invalid fields")
         if (
@@ -1311,6 +1155,21 @@ def load_make_dynamic_contracts(
             contract["resolved_value"], str
         ):
             raise OwnershipError(f"{label}.resolved_value must be string or null")
+        if schema_version >= 5:
+            command_regex = contract["command_regex"]
+            if (
+                not isinstance(command_regex, str)
+                or not command_regex.startswith("^")
+                or not command_regex.endswith("$")
+                or len(command_regex) > 8192
+            ):
+                raise OwnershipError(f"{label}.command_regex is invalid")
+            try:
+                re.compile(command_regex)
+            except re.error as error:
+                raise OwnershipError(
+                    f"{label}.command_regex is invalid: {error}"
+                ) from error
         for field in (
             "input_files",
             "input_variables",
@@ -1325,12 +1184,17 @@ def load_make_dynamic_contracts(
             ):
                 raise OwnershipError(f"{label}.{field} must contain unique strings")
         tool = _validate_relative_path(contract["tool"], f"{label}.tool")
+        tool_content = loader.read_blob(tool, f"{label}.tool")
         semantics = {
             "tool": {
                 "path": tool,
-                "semantics": _source_semantics(
-                    tool,
-                    loader.read_blob(tool, f"{label}.tool"),
+                "semantics": (
+                    "observed-by-authoritative-gnu-make"
+                    if tool == "Makefile" or tool.endswith(".mk")
+                    else _source_semantics(
+                        tool,
+                        tool_content,
+                    )
                 ),
             },
             "inputs": [],
@@ -1498,1095 +1362,22 @@ def load_make_generated_prerequisite_paths(
     return result
 
 
-def _split_make_words(value: str) -> tuple[str, ...]:
-    words = []
-    start = None
-    depth = 0
-    index = 0
-    while index < len(value):
-        character = value[index]
-        if character == "(":
-            if start is None:
-                start = index
-            depth += 1
-        elif character == ")" and depth:
-            depth -= 1
-        if character.isspace() and depth == 0:
-            if start is not None:
-                words.append(value[start:index])
-                start = None
-        elif start is None:
-            start = index
-        index += 1
-    if depth:
-        raise OwnershipError("unterminated dynamic Make word")
-    if start is not None:
-        words.append(value[start:])
-    return tuple(words)
+def load_make_symbolic_recipe_names(
+    loader: AuthorityLoader,
+    *,
+    required: bool,
+) -> set[str]:
+    path = MAKE_DYNAMIC_PATH.as_posix()
+    if path not in loader.entries:
+        if required:
+            raise OwnershipError("Make symbolic recipe registry is not tracked")
+        return set()
+    data = loader.read_json(MAKE_DYNAMIC_PATH, "Make symbolic recipe registry")
+    load_make_dynamic_contracts(loader, required=required)
+    if data["schema_version"] < 5:
+        return set()
+    return set(data["prerequisite_domains"]["symbolic_recipe_names"])
 
-
-def _make_reference_depth(value: str) -> int:
-    stack = []
-    active = 0
-    maximum = 0
-    index = 0
-    while index < len(value):
-        if value.startswith("$(", index):
-            stack.append(True)
-            active += 1
-            maximum = max(maximum, active)
-            index += 2
-            continue
-        if value[index] == "(":
-            stack.append(False)
-        elif value[index] == ")" and stack:
-            if stack.pop():
-                active -= 1
-        index += 1
-    return maximum
-
-
-class SafeMakeExpander:
-    """Bounded nonexecuting expansion for prerequisite graph expressions."""
-
-    FUNCTIONS = {
-        "abspath",
-        "addprefix",
-        "addsuffix",
-        "and",
-        "basename",
-        "call",
-        "dir",
-        "filter",
-        "filter-out",
-        "findstring",
-        "foreach",
-        "if",
-        "notdir",
-        "or",
-        "origin",
-        "patsubst",
-        "sort",
-        "strip",
-        "subst",
-        "suffix",
-        "wildcard",
-    }
-    MAX_DEPTH = 64
-    MAX_VARIANTS = 4096
-    MAX_WORDS = 20000
-
-    def __init__(
-        self,
-        loader: AuthorityLoader,
-        assignments: dict[str, list[dict[str, Any]]],
-        dynamic_contracts: dict[str, dict[str, Any]] | None = None,
-        ambient_contracts: dict[str, dict[str, Any]] | None = None,
-        trusted_builtins: dict[str, dict[str, str]] | None = None,
-        scoped_variables: dict[str, dict[str, str]] | None = None,
-    ):
-        self.loader = loader
-        self.assignments = assignments
-        self.dynamic_contracts = (
-            {} if dynamic_contracts is None else dynamic_contracts
-        )
-        self.ambient_contracts = (
-            {} if ambient_contracts is None else ambient_contracts
-        )
-        self.trusted_builtins = (
-            {} if trusted_builtins is None else trusted_builtins
-        )
-        self.scoped_variables = (
-            {} if scoped_variables is None else scoped_variables
-        )
-        self.cache: dict[tuple[str, int | None], list[str]] = {}
-        self.binding_semantics: dict[tuple[str, int | None], dict[str, Any]] = {}
-        self.dynamic_usage: dict[str, set[str]] = defaultdict(set)
-        self.ambient_usage: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
-        self.unbound_usage: dict[str, set[str]] = defaultdict(set)
-        self.trusted_usage: dict[str, dict[str, dict[str, str]]] = defaultdict(dict)
-        self.scoped_usage: dict[str, dict[str, dict[str, str]]] = defaultdict(dict)
-        self.dynamic_expression_cache: dict[
-            tuple[str, int | None],
-            frozenset[str],
-        ] = {}
-        self.context_cache: dict[tuple[tuple[str, ...], int], bool] = {}
-
-    @staticmethod
-    def _split_arguments(value: str) -> list[str]:
-        arguments = []
-        start = 0
-        depth = 0
-        index = 0
-        while index < len(value):
-            if value[index] == "(":
-                depth += 1
-            elif value[index] == ")" and depth:
-                depth -= 1
-            elif value[index] == "," and depth == 0:
-                arguments.append(value[start:index])
-                start = index + 1
-            index += 1
-        arguments.append(value[start:])
-        return arguments
-
-    @staticmethod
-    def _reference_end(value: str, start: int) -> int:
-        depth = 1
-        index = start
-        while index < len(value):
-            if value[index] == "(":
-                depth += 1
-            elif value[index] == ")":
-                depth -= 1
-                if depth == 0:
-                    return index
-            index += 1
-        raise OwnershipError("unterminated dynamic Make prerequisite")
-
-    @staticmethod
-    def _pattern_replace(word: str, pattern: str, replacement: str) -> str:
-        if "%" not in pattern:
-            return replacement if word == pattern else word
-        prefix, suffix = pattern.split("%", 1)
-        if not word.startswith(prefix) or not word.endswith(suffix):
-            return word
-        stem_end = len(word) - len(suffix) if suffix else len(word)
-        stem = word[len(prefix):stem_end]
-        return replacement.replace("%", stem)
-
-    @staticmethod
-    def _pattern_matches(word: str, pattern: str) -> bool:
-        if "%" not in pattern:
-            return word == pattern
-        prefix, suffix = pattern.split("%", 1)
-        return word.startswith(prefix) and word.endswith(suffix)
-
-    def _bounded(self, values: Iterable[str], label: str) -> list[str]:
-        result = list(dict.fromkeys(values))
-        if len(result) > self.MAX_VARIANTS:
-            raise OwnershipError(f"Make expansion exceeds variant bound for {label}")
-        if sum(len(item.split()) for item in result) > self.MAX_WORDS:
-            raise OwnershipError(f"Make expansion exceeds word bound for {label}")
-        return result
-
-    def variable(
-        self,
-        name: str,
-        local: dict[str, str],
-        stack: tuple[str, ...],
-        before_sequence: int | None = None,
-    ) -> list[str]:
-        if name in stack:
-            raise OwnershipError(
-                "cyclic dynamic Make prerequisite variables: "
-                + " -> ".join(stack + (name,))
-            )
-        if name in local:
-            return [local[name]]
-        cache_key = name, before_sequence
-        cacheable = not local
-        if cacheable and cache_key in self.cache:
-            return self.cache[cache_key]
-        records = [
-            record
-            for record in self.assignments.get(name, ())
-            if before_sequence is None
-            or record["_sequence"] < before_sequence
-        ]
-        flavor = None
-        preserve_whitespace = False
-        ambient_default = None
-        ambient_append = None
-        value = ""
-        active_records = []
-        for record in records:
-            evaluation_stack = stack + (f"<usage:{name}>",)
-            if not self._context_active(
-                record["context"],
-                record["_sequence"],
-                evaluation_stack,
-            ):
-                continue
-            active_records.append(record)
-            if record["operator"] == "!=":
-                raise OwnershipError(
-                    f"unsupported shell assignment in Make prerequisite variable {name!r}"
-                )
-            operator = record["operator"]
-            if operator == "?=" and flavor is not None:
-                continue
-            if operator == "+=" and flavor is None:
-                ambient_append = self.ambient_contracts.get(name)
-                if ambient_append is None:
-                    raise OwnershipError(
-                        f"Make append variable {name!r} has undeclared "
-                        "ambient influence"
-                    )
-            if operator == "?=":
-                ambient_default = self.ambient_contracts.get(name)
-                if ambient_default is None:
-                    raise OwnershipError(
-                        f"Make default variable {name!r} has undeclared "
-                        "ambient influence"
-                    )
-            elif operator != "+=":
-                ambient_default = None
-            if operator in {":=", "::="} or (
-                operator == "+=" and flavor == "simple"
-            ):
-                try:
-                    expanded = self.expand(
-                        record["value"],
-                        local,
-                        evaluation_stack,
-                        record["_sequence"],
-                    )
-                except OwnershipError as error:
-                    raise OwnershipError(
-                        f"Make variable {name!r} assignment "
-                        f"{record['value']!r}: {error}"
-                    ) from error
-                if len(expanded) != 1:
-                    raise OwnershipError(
-                        f"Make variable {name!r} immediate assignment is ambiguous"
-                    )
-                rhs = expanded[0]
-            else:
-                rhs = record["value"]
-            if operator == "+=":
-                if preserve_whitespace or record.get("syntax") == "define":
-                    value = value + (" " if value and rhs else "") + rhs
-                else:
-                    value = _normalize_make_expression(value + " " + rhs)
-                if flavor is None:
-                    flavor = "recursive"
-                preserve_whitespace |= record.get("syntax") == "define"
-            elif operator in {":=", "::="}:
-                value = rhs
-                flavor = "simple"
-                preserve_whitespace = record.get("syntax") == "define"
-            else:
-                value = rhs
-                flavor = "recursive"
-                preserve_whitespace = record.get("syntax") == "define"
-        if flavor is None:
-            self_reference = (
-                before_sequence is not None
-                and any(
-                    record["_sequence"] == before_sequence
-                    and f"$({name})" in record["value"]
-                    for record in self.assignments.get(name, ())
-                )
-            )
-            if name in self.trusted_builtins:
-                result = [self.trusted_builtins[name]["value"]]
-            elif name in self.scoped_variables:
-                result = [self.scoped_variables[name]["value"]]
-            else:
-                result = [
-                    f"<ambient-environment:{name}>"
-                    if self_reference
-                    else ""
-                ]
-        elif flavor == "simple":
-            result = [value]
-        else:
-            result = self.expand(
-                value,
-                local,
-                stack + (name,),
-                before_sequence,
-            )
-        result = self._bounded(result, name)
-        if cacheable:
-            trusted_contracts = []
-            scoped_contracts = []
-            unbound_names = []
-            if flavor is None:
-                if name in self.trusted_builtins:
-                    trusted_contracts.append(self.trusted_builtins[name])
-                elif name in self.scoped_variables:
-                    scoped_contracts.append(self.scoped_variables[name])
-                elif name not in self.ambient_contracts:
-                    unbound_names.append(name)
-            ambient_inputs = []
-            attributes = {
-                modifier: any(
-                    modifier in record.get("modifiers", ())
-                    for record in active_records
-                )
-                for modifier in ("export", "override", "private")
-            }
-            authority_variants = []
-            if ambient_default is not None:
-                ambient_inputs.append(ambient_default)
-                authority_variants = [
-                    {
-                        "source": source,
-                        "value": f"<{source}:{name}>",
-                    }
-                    for source in ambient_default["allowed_sources"]
-                ] + [
-                    {
-                        "source": "tracked-fallback",
-                        "value": item,
-                    }
-                    for item in result
-                ]
-            elif flavor is None and name in self.ambient_contracts:
-                ambient = self.ambient_contracts[name]
-                ambient_inputs.append(ambient)
-                authority_variants = [
-                    {
-                        "source": source,
-                        "value": f"<{source}:{name}>",
-                    }
-                    for source in ambient["allowed_sources"]
-                ] + [{"source": "undefined", "value": ""}]
-            elif ambient_append is not None:
-                ambient_inputs.append(ambient_append)
-                authority_variants = []
-                for source in ambient_append["allowed_sources"]:
-                    external = f"<{source}:{name}>"
-                    authority_variants.append(
-                        {
-                            "source": source,
-                            "value": (
-                                _normalize_make_expression(
-                                    external + " " + value
-                                )
-                                if source == "process-environment"
-                                or attributes["override"]
-                                else external
-                            ),
-                        }
-                    )
-                authority_variants.append(
-                    {
-                        "source": "tracked-fallback",
-                        "value": result[0],
-                    }
-                )
-            elif flavor is None:
-                authority_variants = [
-                    {
-                        "source": (
-                            "trusted-builtin"
-                            if trusted_contracts
-                            else "scoped-variable"
-                            if scoped_contracts
-                            else "undefined"
-                        ),
-                        "value": item,
-                    }
-                    for item in result
-                ]
-            else:
-                if not attributes["override"]:
-                    authority_variants.append(
-                        {
-                            "source": "command-line",
-                            "value": f"<command-line:{name}>",
-                        }
-                    )
-                authority_variants.extend(
-                    {
-                        "source": "tracked-make",
-                        "value": item,
-                    }
-                    for item in result
-                )
-            fallback_ambient_inputs = []
-            for referenced in _make_variable_refs((value,)):
-                semantics = self.binding_semantics.get(
-                    (referenced, before_sequence)
-                )
-                if semantics is not None:
-                    fallback_ambient_inputs.extend(
-                        semantics["ambient_input_contracts"]
-                    )
-                    fallback_ambient_inputs.extend(
-                        semantics["fallback_ambient_inputs"]
-                    )
-            fallback_ambient_inputs = list(
-                {
-                    contract["name"]: contract
-                    for contract in fallback_ambient_inputs
-                }.values()
-            )
-            for item in result:
-                for match in re.finditer(
-                    r"<ambient-environment:([A-Za-z_][A-Za-z0-9_]*)>",
-                    item,
-                ):
-                    contract = self.ambient_contracts.get(match.group(1))
-                    if contract is not None:
-                        ambient_inputs.append(contract)
-            ambient_inputs.extend(self.ambient_usage[name].values())
-            ambient_inputs = list(
-                {
-                    contract["name"]: contract
-                    for contract in ambient_inputs
-                }.values()
-            )
-            propagated_ambient = {
-                contract["name"]: contract
-                for contract in (
-                    *ambient_inputs,
-                    *fallback_ambient_inputs,
-                )
-            }
-            trusted_contracts.extend(self.trusted_usage[name].values())
-            trusted_contracts = list(
-                {
-                    contract["name"]: contract
-                    for contract in trusted_contracts
-                }.values()
-            )
-            scoped_contracts.extend(self.scoped_usage[name].values())
-            scoped_contracts = list(
-                {
-                    contract["name"]: contract
-                    for contract in scoped_contracts
-                }.values()
-            )
-            unbound_names = sorted(
-                set(unbound_names) | self.unbound_usage[name]
-            )
-            for variable_name in stack:
-                usage_name = (
-                    variable_name[7:-1]
-                    if variable_name.startswith("<usage:")
-                    and variable_name.endswith(">")
-                    else variable_name
-                )
-                self.ambient_usage[usage_name].update(propagated_ambient)
-                self.trusted_usage[usage_name].update(
-                    {
-                        contract["name"]: contract
-                        for contract in trusted_contracts
-                    }
-                )
-                self.scoped_usage[usage_name].update(
-                    {
-                        contract["name"]: contract
-                        for contract in scoped_contracts
-                    }
-                )
-                self.unbound_usage[usage_name].update(unbound_names)
-            self.cache[cache_key] = result
-            self.binding_semantics[cache_key] = {
-                "flavor": flavor,
-                "raw_value": value,
-                "effective_values": result,
-                "ambient_inputs": sorted(
-                    {
-                        match.group(1)
-                        for item in result
-                        for match in re.finditer(
-                            r"<ambient-environment:([A-Za-z_][A-Za-z0-9_]*)>",
-                            item,
-                        )
-                    }
-                ),
-                "ambient_input_contracts": ambient_inputs,
-                "fallback_ambient_inputs": fallback_ambient_inputs,
-                "trusted_builtin_contracts": trusted_contracts,
-                "scoped_variable_contracts": scoped_contracts,
-                "unbound_names": unbound_names,
-                "authority_variants": authority_variants,
-                "attributes": attributes,
-                "external_precedence": (
-                    "override"
-                    if attributes["override"]
-                    else "command-line"
-                ),
-                "assignments": active_records,
-            }
-        return result
-
-    def variable_semantics(self, name: str) -> dict[str, Any]:
-        return self.variable_semantics_at(name, None)
-
-    def variable_semantics_at(
-        self,
-        name: str,
-        before_sequence: int | None,
-    ) -> dict[str, Any]:
-        self.variable(name, {}, (), before_sequence)
-        semantics = dict(self.binding_semantics[(name, before_sequence)])
-        semantics["dynamic_expressions"] = sorted(
-            self._variable_dynamic_expressions(name, before_sequence, ())
-            | self.dynamic_usage[name]
-        )
-        semantics["trusted_builtin_contracts"] = list(
-            {
-                contract["name"]: contract
-                for contract in (
-                    *semantics["trusted_builtin_contracts"],
-                    *self.trusted_usage[name].values(),
-                )
-            }.values()
-        )
-        semantics["scoped_variable_contracts"] = list(
-            {
-                contract["name"]: contract
-                for contract in (
-                    *semantics["scoped_variable_contracts"],
-                    *self.scoped_usage[name].values(),
-                )
-            }.values()
-        )
-        semantics["unbound_names"] = sorted(
-            set(semantics["unbound_names"]) | self.unbound_usage[name]
-        )
-        return semantics
-
-    def variable_flavor_at(
-        self,
-        name: str,
-        before_sequence: int | None,
-    ) -> str | None:
-        flavor = None
-        for record in self.assignments.get(name, ()):
-            if (
-                before_sequence is not None
-                and record["_sequence"] >= before_sequence
-            ):
-                continue
-            operator = record["operator"]
-            if operator == "+=" and flavor is not None:
-                continue
-            if not self._context_active(
-                record["context"],
-                record["_sequence"],
-                (),
-            ):
-                continue
-            if operator == "!=":
-                raise OwnershipError(
-                    f"unsupported shell assignment in Make variable {name!r}"
-                )
-            if operator == "?=" and flavor is not None:
-                continue
-            if operator in {":=", "::="}:
-                flavor = "simple"
-            elif operator in {"=", "?=", "+="}:
-                flavor = "recursive"
-        return flavor
-
-    def _variable_dynamic_expressions(
-        self,
-        name: str,
-        before_sequence: int | None,
-        stack: tuple[str, ...],
-    ) -> set[str]:
-        if name in stack:
-            return set()
-        cache_key = name, before_sequence
-        if cache_key in self.dynamic_expression_cache:
-            return set(self.dynamic_expression_cache[cache_key])
-        result = set()
-        records = [
-            record
-            for record in self.assignments.get(name, ())
-            if before_sequence is None
-            or record["_sequence"] < before_sequence
-        ]
-        for record in records:
-            if not self._context_active(record["context"], record["_sequence"], stack):
-                continue
-            for expression in self.dynamic_contracts:
-                if expression in record["value"]:
-                    result.add(expression)
-                if any(
-                    expression in condition
-                    for condition in record["context"]
-                ):
-                    result.add(expression)
-            dependency_sequence = (
-                record["_sequence"]
-                if record["operator"] in {":=", "::="}
-                else before_sequence
-            )
-            for referenced in _make_variable_refs((record["value"],)):
-                result.update(
-                    self._variable_dynamic_expressions(
-                        referenced,
-                        dependency_sequence,
-                        stack + (name,),
-                    )
-                )
-            for referenced in _make_variable_refs(record["context"]):
-                result.update(
-                    self._variable_dynamic_expressions(
-                        referenced,
-                        record["_sequence"],
-                        stack + (name,),
-                    )
-                )
-        self.dynamic_expression_cache[cache_key] = frozenset(result)
-        return result
-
-    def _condition_value(
-        self,
-        condition: str,
-        sequence: int,
-        stack: tuple[str, ...],
-    ) -> bool:
-        condition = condition.strip()
-        if condition.startswith("else(") and condition.endswith(")"):
-            return not self._condition_value(
-                condition[5:-1],
-                sequence,
-                stack,
-            )
-        if "&&" in condition:
-            return all(
-                self._condition_value(part, sequence, stack)
-                for part in condition.split("&&")
-            )
-        kind, _, expression = condition.partition(" ")
-        if kind in {"ifdef", "ifndef"}:
-            values = self.variable(expression.strip(), {}, stack, sequence)
-            result = any(value.strip() for value in values)
-            return result if kind == "ifdef" else not result
-        if kind not in {"ifeq", "ifneq"}:
-            raise OwnershipError(f"unsupported Make conditional {condition!r}")
-        expression = expression.strip()
-        if expression.startswith("(") and expression.endswith(")"):
-            arguments = self._split_arguments(expression[1:-1])
-        else:
-            arguments = expression.split(None, 1)
-        if len(arguments) != 2:
-            raise OwnershipError(f"malformed Make conditional {condition!r}")
-        left = self.expand(arguments[0], {}, stack, sequence)
-        right = self.expand(arguments[1], {}, stack, sequence)
-        result = bool(set(left) & set(right))
-        return result if kind == "ifeq" else not result
-
-    def _context_active(
-        self,
-        context: tuple[str, ...],
-        sequence: int,
-        stack: tuple[str, ...],
-    ) -> bool:
-        cache_key = context, sequence
-        if cache_key in self.context_cache:
-            return self.context_cache[cache_key]
-        result = all(
-            self._condition_value(condition, sequence, stack)
-            for condition in context
-        )
-        self.context_cache[cache_key] = result
-        return result
-
-    def _function(
-        self,
-        name: str,
-        raw_arguments: str,
-        local: dict[str, str],
-        stack: tuple[str, ...],
-        before_sequence: int | None,
-    ) -> list[str]:
-        arguments = self._split_arguments(raw_arguments)
-        if name == "call":
-            if not arguments or not arguments[0].strip():
-                raise OwnershipError("call Make function requires a macro name")
-            macro_names = self.expand(
-                arguments[0],
-                local,
-                stack,
-                before_sequence,
-            )
-            argument_values = [
-                self.expand(argument, local, stack, before_sequence)
-                for argument in arguments[1:]
-            ]
-            results = []
-            for macro_name, *parameters in itertools.product(
-                macro_names,
-                *argument_values,
-            ):
-                macro_name = macro_name.strip()
-                if not re.fullmatch(
-                    r"[A-Za-z_][A-Za-z0-9_]*",
-                    macro_name,
-                ):
-                    raise OwnershipError(
-                        f"call Make function has invalid macro {macro_name!r}"
-                    )
-                if macro_name not in self.assignments:
-                    raise OwnershipError(
-                        f"call Make function references undefined macro "
-                        f"{macro_name!r}"
-                    )
-                scoped = dict(local)
-                scoped["0"] = macro_name
-                scoped.update(
-                    {
-                        str(index): parameter
-                        for index, parameter in enumerate(parameters, 1)
-                    }
-                )
-                results.extend(
-                    self.variable(
-                        macro_name,
-                        scoped,
-                        stack,
-                        before_sequence,
-                    )
-                )
-            return self._bounded(results, "call " + arguments[0])
-        if name == "foreach":
-            if len(arguments) != 3:
-                raise OwnershipError("foreach Make prerequisite requires three arguments")
-            variable_name = arguments[0].strip()
-            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", variable_name):
-                raise OwnershipError("foreach Make prerequisite has invalid variable")
-            result = []
-            for values in self.expand(
-                arguments[1], local, stack, before_sequence
-            ):
-                pieces = []
-                for word in values.split():
-                    scoped = dict(local)
-                    scoped[variable_name] = word
-                    variants = self.expand(
-                        arguments[2], scoped, stack, before_sequence
-                    )
-                    if len(variants) != 1:
-                        raise OwnershipError(
-                            "foreach Make prerequisite body is ambiguously expanded"
-                        )
-                    pieces.append(variants[0])
-                result.append(" ".join(pieces))
-            return self._bounded(result, name)
-        if name in {"and", "or"}:
-            selected = ""
-            for argument in arguments:
-                variants = self.expand(
-                    argument,
-                    local,
-                    stack,
-                    before_sequence,
-                )
-                if len(variants) != 1:
-                    raise OwnershipError(
-                        f"{name} Make prerequisite argument is ambiguous"
-                    )
-                value = variants[0]
-                if name == "or" and value:
-                    return [value]
-                if name == "and" and not value:
-                    return [""]
-                selected = value
-            return [selected]
-        if name == "if":
-            if len(arguments) not in {2, 3}:
-                raise OwnershipError("if Make prerequisite requires two or three arguments")
-            condition = self.expand(
-                arguments[0], local, stack, before_sequence
-            )
-            selected = arguments[1] if any(value.strip() for value in condition) else (
-                arguments[2] if len(arguments) == 3 else ""
-            )
-            return self.expand(selected, local, stack, before_sequence)
-        if name == "origin":
-            if len(arguments) != 1:
-                raise OwnershipError("origin Make prerequisite requires one argument")
-            names = self.expand(arguments[0], local, stack, before_sequence)
-            if len(names) != 1 or len(names[0].split()) != 1:
-                raise OwnershipError("origin Make prerequisite variable is ambiguous")
-            variable_name = names[0].strip()
-            if variable_name in local:
-                return ["file"]
-            records = [
-                record
-                for record in self.assignments.get(variable_name, ())
-                if before_sequence is None
-                or record["_sequence"] < before_sequence
-            ]
-            active = any(
-                self._context_active(
-                    record["context"],
-                    record["_sequence"],
-                    stack + ("origin:" + variable_name,),
-                )
-                for record in records
-            )
-            return ["file" if active else "undefined"]
-
-        expanded_arguments = [
-            self.expand(argument, local, stack, before_sequence)
-            for argument in arguments
-        ]
-        results = []
-        for values in itertools.product(*expanded_arguments):
-            if name in {
-                "abspath",
-                "strip",
-                "sort",
-                "notdir",
-                "dir",
-                "basename",
-                "suffix",
-                "wildcard",
-            }:
-                if len(values) != 1:
-                    raise OwnershipError(f"{name} Make prerequisite requires one argument")
-                words = values[0].split()
-                if name == "abspath":
-                    result = " ".join(
-                        str(
-                            Path(word)
-                            if Path(word).is_absolute()
-                            else (self.loader.root / word).resolve(strict=False)
-                        )
-                        for word in words
-                    )
-                elif name == "strip":
-                    result = " ".join(words)
-                elif name == "sort":
-                    result = " ".join(sorted(set(words)))
-                elif name == "notdir":
-                    result = " ".join(posixpath.basename(word) for word in words)
-                elif name == "dir":
-                    result = " ".join(
-                        (posixpath.dirname(word) + "/") if posixpath.dirname(word) else "./"
-                        for word in words
-                    )
-                elif name == "basename":
-                    result = " ".join(posixpath.splitext(word)[0] for word in words)
-                elif name == "suffix":
-                    result = " ".join(posixpath.splitext(word)[1] for word in words)
-                else:
-                    matched = []
-                    for pattern in words:
-                        matched.extend(
-                            path
-                            for path in self.loader.entries
-                            if fnmatch.fnmatchcase(path, pattern)
-                        )
-                    result = " ".join(sorted(set(matched)))
-            elif name in {
-                "addprefix",
-                "addsuffix",
-                "filter",
-                "filter-out",
-                "findstring",
-            }:
-                if len(values) != 2:
-                    raise OwnershipError(f"{name} Make prerequisite requires two arguments")
-                first, words = values[0], values[1].split()
-                if name == "findstring":
-                    result = first if first in values[1] else ""
-                elif name == "addprefix":
-                    result = " ".join(first + word for word in words)
-                elif name == "addsuffix":
-                    result = " ".join(word + first for word in words)
-                else:
-                    patterns = first.split()
-                    selected = [
-                        word
-                        for word in words
-                        if any(self._pattern_matches(word, pattern) for pattern in patterns)
-                    ]
-                    if name == "filter-out":
-                        selected = [word for word in words if word not in selected]
-                    result = " ".join(selected)
-            elif name in {"patsubst", "subst"}:
-                if len(values) != 3:
-                    raise OwnershipError(f"{name} Make prerequisite requires three arguments")
-                source, replacement, text = values
-                if name == "subst":
-                    result = text.replace(source, replacement)
-                else:
-                    result = " ".join(
-                        self._pattern_replace(word, source, replacement)
-                        for word in text.split()
-                    )
-            else:
-                raise OwnershipError(
-                    f"unsupported dynamic Make prerequisite function {name!r}"
-                )
-            results.append(result)
-        return self._bounded(results, name)
-
-    def _reference(
-        self,
-        content: str,
-        local: dict[str, str],
-        stack: tuple[str, ...],
-        before_sequence: int | None,
-    ) -> list[str]:
-        function = re.match(r"^([A-Za-z][A-Za-z0-9-]*)\s+(.*)$", content, re.DOTALL)
-        if function:
-            name = function.group(1)
-            if name == "shell":
-                expression = (
-                    "$(shell " + function.group(2) + ")"
-                ).replace("\0", "$$")
-                contract = self.dynamic_contracts.get(expression)
-                if contract is not None:
-                    for variable_name in stack:
-                        usage_name = (
-                            variable_name[7:-1]
-                            if variable_name.startswith("<usage:")
-                            and variable_name.endswith(">")
-                            else variable_name
-                        )
-                        self.dynamic_usage[usage_name].add(expression)
-                    return [
-                        contract["resolved_value"]
-                        if contract["resolved_value"] is not None
-                        else f"<registered-dynamic:{contract['id']}>"
-                    ]
-            if name not in self.FUNCTIONS:
-                raise OwnershipError(
-                    f"unsupported dynamic Make prerequisite function {name!r}"
-                )
-            return self._function(
-                function.group(1),
-                function.group(2),
-                local,
-                stack,
-                before_sequence,
-            )
-        substitution = re.fullmatch(
-            r"([A-Za-z_][A-Za-z0-9_]*):([^=]*)=(.*)",
-            content,
-            re.DOTALL,
-        )
-        if substitution:
-            return [
-                " ".join(
-                    self._pattern_replace(
-                        word,
-                        substitution.group(2),
-                        substitution.group(3),
-                    )
-                    for word in value.split()
-                )
-                for value in self.variable(
-                    substitution.group(1),
-                    local,
-                    stack,
-                    before_sequence,
-                )
-            ]
-        if re.fullmatch(r"[@<*^?|%](?:D|F)?", content):
-            return [f"<make-automatic:{content}>"]
-        if not re.fullmatch(r"(?:[A-Za-z_][A-Za-z0-9_]*|[0-9]+)", content):
-            raise OwnershipError(
-                f"unsupported dynamic Make prerequisite expression {content!r}"
-            )
-        return self.variable(content, local, stack, before_sequence)
-
-    def expand(
-        self,
-        value: str,
-        local: dict[str, str] | None = None,
-        stack: tuple[str, ...] = (),
-        before_sequence: int | None = None,
-    ) -> list[str]:
-        if len(stack) > self.MAX_DEPTH:
-            raise OwnershipError("Make prerequisite expansion exceeds depth bound")
-        if _make_reference_depth(value) > self.MAX_DEPTH:
-            raise OwnershipError(
-                "Make prerequisite expression exceeds depth bound"
-            )
-        value = value.replace("$$", "\0")
-        value = re.sub(
-            r"\$([@<*^?|%])",
-            lambda match: f"<make-automatic:{match.group(1)}>",
-            value,
-        )
-        local = {} if local is None else local
-        start = value.find("$(")
-        if start < 0:
-            if "$" in value:
-                raise OwnershipError(
-                    f"unsupported dynamic Make prerequisite token {value!r}"
-                )
-            return [_normalize_make_expression(value).replace("\0", "$")]
-        end = self._reference_end(value, start + 2)
-        prefix = value[:start]
-        suffix = value[end + 1:]
-        suffix_separator = (
-            " "
-            if suffix[:1].isspace()
-            else ""
-        )
-        referenced = self._reference(
-            value[start + 2:end],
-            local,
-            stack,
-            before_sequence,
-        )
-        suffixes = self.expand(
-            suffix,
-            local,
-            stack,
-            before_sequence,
-        )
-        return self._bounded(
-            (
-                _normalize_make_expression(
-                    prefix + middle + suffix_separator + tail
-                ).replace(
-                    "\0",
-                    "$",
-                )
-                for middle in referenced
-                for tail in suffixes
-            ),
-            value,
-        )
-
-    def call_semantics(
-        self,
-        value: str,
-        before_sequence: int | None = None,
-    ) -> list[dict[str, Any]]:
-        result = []
-        index = 0
-        while True:
-            start = value.find("$(call", index)
-            if start < 0:
-                break
-            if (
-                (start and value[start - 1] == "$")
-                or start + 6 >= len(value)
-                or not value[start + 6].isspace()
-            ):
-                index = start + 6
-                continue
-            end = self._reference_end(value, start + 2)
-            content = value[start + 2:end]
-            arguments = self._split_arguments(content[5:].lstrip())
-            macro_names = self.expand(
-                arguments[0],
-                before_sequence=before_sequence,
-            )
-            result.append(
-                {
-                    "expression": value[start:end + 1],
-                    "macros": {
-                        name.strip(): self.assignments.get(name.strip(), ())
-                        for name in macro_names
-                    },
-                    "effective_values": self._reference(
-                        content,
-                        {},
-                        (),
-                        before_sequence,
-                    ),
-                }
-            )
-            index = end + 1
-        return result
 
 
 def _parse_make_authorities(
@@ -2595,11 +1386,27 @@ def _parse_make_authorities(
     *,
     require_dynamic_contracts: bool = False,
 ) -> dict[str, dict[str, Any]]:
+    if requested_targets is None:
+        raise OwnershipError(
+            "authoritative GNU Make probing requires explicit target roots"
+        )
     dynamic_contracts = load_make_dynamic_contracts(
         loader,
         required=require_dynamic_contracts,
     )
+    prerequisite_domains = load_make_prerequisite_domains(
+        loader,
+        required=require_dynamic_contracts,
+    )
+    generated_paths = load_make_generated_prerequisite_paths(
+        loader,
+        required=require_dynamic_contracts,
+    )
     ambient_contracts = load_make_ambient_contracts(
+        loader,
+        required=require_dynamic_contracts,
+    )
+    symbolic_recipe_names = load_make_symbolic_recipe_names(
         loader,
         required=require_dynamic_contracts,
     )
@@ -2611,1910 +1418,126 @@ def _parse_make_authorities(
         loader,
         required=require_dynamic_contracts,
     )
-    prerequisite_domains = load_make_prerequisite_domains(
-        loader,
-        required=require_dynamic_contracts,
+    authority_paths = {
+        path
+        for path in loader.entries
+        if path == "Makefile" or path.endswith(".mk")
+    }
+    authority_paths.update(
+        {
+            MAKE_DYNAMIC_PATH.as_posix(),
+            "scripts/validation_ownership/make_probe.py",
+            "scripts/validation_ownership/sandbox_exec.py",
+            "scripts/validation_ownership/shell_interceptor.c",
+        }
+        & set(loader.entries)
     )
-    generated_prerequisite_paths = load_make_generated_prerequisite_paths(
-        loader,
-        required=require_dynamic_contracts,
-    )
-    make_paths = tuple(
-        sorted(
-            path
-            for path in loader.entries
-            if path == "Makefile" or path.endswith(".mk")
+    authority_paths.update(
+        path
+        for contract in dynamic_contracts.values()
+        for path in (
+            contract["tool"],
+            *contract["input_files"],
         )
     )
-    dynamic_path = MAKE_DYNAMIC_PATH.as_posix()
-    dynamic_state: tuple[Any, ...] = ()
-    if dynamic_path in loader.entries:
-        if loader.revision is not None:
-            dynamic_state = (loader.entries[dynamic_path].object_id,)
-        else:
-            dynamic_stat = (loader.root / dynamic_path).stat()
-            dynamic_state = (dynamic_stat.st_mtime_ns, dynamic_stat.st_size)
-    dynamic_authority_paths = sorted(
-        {
-            path
-            for contract in dynamic_contracts.values()
-            for path in (contract["tool"], *contract["input_files"])
-        }
+    authority_paths.update(
+        path
+        for generated in generated_paths.values()
+        for path in (
+            generated["path"],
+            *(
+                item["path"]
+                for item in generated["authority_files"]
+            ),
+        )
+        if path in loader.entries
     )
     if loader.revision is not None:
-        dynamic_input_state = tuple(
-            (path, loader.entries[path].object_id)
-            for path in dynamic_authority_paths
-        )
-    else:
-        dynamic_input_state = tuple(
+        authority_state = tuple(
             (
                 path,
+                loader.entries[path].mode,
+                loader.entries[path].object_id,
+            )
+            for path in sorted(authority_paths)
+        )
+    else:
+        authority_state = tuple(
+            (
+                path,
+                loader.entries[path].mode,
                 (loader.root / path).stat().st_mtime_ns,
                 (loader.root / path).stat().st_size,
             )
-            for path in dynamic_authority_paths
+            for path in sorted(authority_paths)
         )
-    if loader.revision is not None:
-        state = tuple(
-            (path, loader.entries[path].object_id)
-            for path in make_paths
-        )
-    else:
-        try:
-            state = tuple(
-                (
-                    path,
-                    (loader.root / path).stat().st_mtime_ns,
-                    (loader.root / path).stat().st_size,
-                )
-                for path in make_paths
-            )
-        except OSError as error:
-            raise OwnershipError(f"cannot inspect Make authority state: {error}") from error
     cache_key = (
+        "authoritative-gnu-make-v1",
         str(loader.root),
         loader.revision,
-        state,
-        dynamic_state,
-        dynamic_input_state,
+        tuple(sorted(requested_targets)),
+        authority_state,
+        tuple(
+            (
+                path,
+                entry.mode,
+                entry.object_type,
+                entry.object_id,
+            )
+            for path, entry in sorted(loader.entries.items())
+            if entry.mode == "160000"
+        ),
         require_dynamic_contracts,
-        None if requested_targets is None else tuple(sorted(requested_targets)),
     )
     cached = _MAKE_AUTHORITY_CACHE.get(cache_key)
     if cached is not None:
         return cached
-    targets: dict[str, dict[str, Any]] = defaultdict(
-        lambda: {"declarations": [], "recipes": [], "phony": False}
-    )
-    variables: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    export_events: list[dict[str, Any]] = []
-    seen = set()
-    parse_sequence = 0
+    try:
+        from scripts.validation_ownership import make_probe
 
-    def parse_file(relative: str, inherited_context: tuple[str, ...] = ()) -> None:
-        nonlocal parse_sequence
-        relative = _validate_relative_path(relative, "Make include")
-        identity = relative, inherited_context
-        if identity in seen:
-            return
-        seen.add(identity)
-        try:
-            text = loader.read_blob(relative, "Make authority").decode("utf-8")
-        except UnicodeDecodeError as error:
-            raise OwnershipError(f"Make authority {relative!r} is not UTF-8") from error
-        current_targets: list[str] = []
-        conditional_stack = list(inherited_context)
-        for statement_kind, statement in _make_statements(text, relative):
-            if statement_kind == "define":
-                current_targets = []
-                variables[statement["name"]].append(
-                    {
-                        "operator": statement["operator"],
-                        "value": statement["value"],
-                        "modifiers": (),
-                        "context": tuple(conditional_stack),
-                        "syntax": "define",
-                        "_sequence": parse_sequence,
-                    }
-                )
-                parse_sequence += 1
-                continue
-            raw_line = statement
-            if statement_kind == "recipe":
-                command = raw_line.strip()
-                if command and not command.startswith("#"):
-                    for target in current_targets:
-                        targets[target]["recipes"].append(
-                            {
-                                "command": command,
-                                "context": tuple(conditional_stack),
-                                "_sequence": parse_sequence,
-                            }
-                        )
-                continue
-            current_targets = []
-            line = _strip_make_comment(raw_line).strip()
-            if not line:
-                continue
-            conditional = MAKE_CONDITIONAL_RE.match(line)
-            if conditional:
-                conditional_stack.append(
-                    conditional.group(1)
-                    + " "
-                    + _normalize_make_expression(conditional.group(2))
-                )
-                continue
-            if line == "else" or line.startswith("else "):
-                if not conditional_stack:
-                    raise OwnershipError(
-                        f"Make authority {relative!r} has unmatched else"
-                    )
-                previous_condition = conditional_stack[-1]
-                conditional_stack[-1] = "else(" + previous_condition + ")"
-                if line != "else":
-                    nested = MAKE_CONDITIONAL_RE.match(line[5:].strip())
-                    if nested:
-                        conditional_stack[-1] = (
-                            "else(" + previous_condition + ")&&"
-                            + nested.group(1)
-                            + " "
-                            + _normalize_make_expression(nested.group(2))
-                        )
-                continue
-            if line == "endif":
-                if not conditional_stack:
-                    raise OwnershipError(
-                        f"Make authority {relative!r} has unmatched endif"
-                    )
-                conditional_stack.pop()
-                continue
-            include = check_docs.MAKE_INCLUDE_RE.match(line)
-            if include:
-                for candidate in include.group(2).split():
-                    if "$" in candidate or "*" in candidate:
-                        continue
-                    path = Path(relative).parent / candidate
-                    parse_file(path.as_posix(), tuple(conditional_stack))
-                continue
-            assignment = MAKE_ASSIGNMENT_RE.match(line)
-            if assignment:
-                modifiers = _make_modifiers(
-                    assignment.group(1),
-                    "global Make assignment",
-                )
-                if "private" in modifiers:
-                    raise OwnershipError(
-                        "global private Make assignments are unsupported; "
-                        "use target-specific private bindings"
-                    )
-                name = assignment.group(2)
-                record = {
-                    "operator": assignment.group(3),
-                    "value": _normalize_make_expression(assignment.group(4)),
-                    "modifiers": modifiers,
-                    "context": tuple(conditional_stack),
-                    "_sequence": parse_sequence,
-                }
-                variables[name].append(record)
-                if "export" in modifiers:
-                    export_events.append(
-                        {
-                            "action": "export",
-                            "names": (name,),
-                            "context": tuple(conditional_stack),
-                            "_sequence": parse_sequence,
-                            "source": "assignment",
-                        }
-                    )
-                parse_sequence += 1
-                continue
-            export = MAKE_EXPORT_RE.match(line)
-            if export:
-                action = export.group(1)
-                raw_names = export.group(2)
-                if raw_names is None:
-                    names = ()
-                else:
-                    names = tuple(raw_names.split())
-                    if not names or not all(
-                        re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name)
-                        for name in names
-                    ):
-                        raise OwnershipError(
-                            f"global Make {action} directive has invalid names"
-                        )
-                export_events.append(
-                    {
-                        "action": action + ("-all" if not names else ""),
-                        "names": names,
-                        "context": tuple(conditional_stack),
-                        "_sequence": parse_sequence,
-                        "source": "directive",
-                    }
-                )
-                parse_sequence += 1
-                continue
-            if line.split(None, 1)[0] in {"override", "private"}:
-                raise OwnershipError(
-                    f"unsupported global Make modifier statement {line!r}"
-                )
-            if line.startswith("$(error "):
-                continue
-            if ":" not in line or ":=" in line.split(":", 1)[0]:
-                continue
-            lhs, rhs = line.split(":", 1)
-            if lhs.strip() == ".EXPORT_ALL_VARIABLES":
-                if rhs.strip():
-                    raise OwnershipError(
-                        ".EXPORT_ALL_VARIABLES cannot have prerequisites or a recipe"
-                    )
-                export_events.append(
-                    {
-                        "action": "export-all",
-                        "names": (),
-                        "context": tuple(conditional_stack),
-                        "_sequence": parse_sequence,
-                        "source": "special-target",
-                    }
-                )
-                parse_sequence += 1
-                continue
-            if lhs.strip() == ".PHONY":
-                for target in rhs.split():
-                    if "$" not in target:
-                        targets[target]["phony"] = True
-                continue
-            target_names = [
-                token
-                for token in _split_make_words(lhs)
-                if token != "&" and not token.startswith(".")
-            ]
-            if not target_names:
-                continue
-            declaration, separator, inline_recipe = rhs.partition(";")
-            target_assignment = TARGET_ASSIGNMENT_RE.match(declaration.strip())
-            if target_assignment:
-                record = {
-                    "kind": "target-assignment",
-                    "modifiers": _make_modifiers(
-                        target_assignment.group(1),
-                        "target-specific Make assignment",
-                    ),
-                    "name": target_assignment.group(2),
-                    "operator": target_assignment.group(3),
-                    "value": _normalize_make_expression(target_assignment.group(4)),
-                    "context": tuple(conditional_stack),
-                    "_sequence": parse_sequence,
-                }
-                parse_sequence += 1
-                for target in target_names:
-                    targets[target]["declarations"].append(record)
-                current_targets = target_names
-                continue
-            normal, marker, order_only = declaration.partition("|")
-            prerequisites = _split_make_words(normal)
-            static_pattern = None
-            if (
-                prerequisites
-                and prerequisites[0].endswith(":")
-                and "%" in prerequisites[0]
-            ):
-                static_pattern = prerequisites[0][:-1]
-                prerequisites = prerequisites[1:]
-            record = {
-                "kind": "rule",
-                "prerequisites": prerequisites,
-                "order_only": _split_make_words(order_only) if marker else (),
-                "static_pattern": static_pattern,
-                "context": tuple(conditional_stack),
-                "_sequence": parse_sequence,
-            }
-            for target in target_names:
-                targets[target]["declarations"].append(record)
-                if separator and inline_recipe.strip():
-                    targets[target]["recipes"].append(
-                        {
-                            "command": inline_recipe.strip(),
-                            "context": tuple(conditional_stack),
-                            "_sequence": parse_sequence,
-                        }
-                    )
-            current_targets = target_names
-        if len(conditional_stack) != len(inherited_context):
-            raise OwnershipError(
-                f"Make authority {relative!r} has unclosed conditional"
-            )
-
-    parse_file("Makefile")
-    ambient_default_names = set()
-    for name, records in variables.items():
-        for record in records:
-            if record["operator"] in {"?=", "+="}:
-                ambient_default_names.add(name)
-            break
-    for target_record in targets.values():
-        target_defined = set()
-        for record in target_record["declarations"]:
-            if record["kind"] != "target-assignment":
-                continue
-            name = record["name"]
-            prior_global = any(
-                candidate["_sequence"] < record["_sequence"]
-                for candidate in variables.get(name, ())
-            )
-            if (
-                name not in target_defined
-                and not prior_global
-                and record["operator"] in {"?=", "+="}
-            ):
-                ambient_default_names.add(name)
-            target_defined.add(name)
-    fallback_ambient_names = {
-        referenced
-        for name, records in variables.items()
-        for record in records
-        if record["operator"] == "?="
-        for referenced in _make_variable_refs((record["value"],))
-        if referenced not in variables
-    }
-    self_referenced_ambient_names = {
-        name
-        for name, records in variables.items()
-        for record in records
-        if record["operator"] in {":=", "::="}
-        and f"$({name})" in record["value"]
-    }
-    required_ambient_names = (
-        ambient_default_names
-        | fallback_ambient_names
-        | self_referenced_ambient_names
-    )
-    declared_ambient_names = {
-        name
-        for name, contract in ambient_contracts.items()
-        if contract["category"] == "default"
-    }
-    if declared_ambient_names != required_ambient_names:
-        raise OwnershipError(
-            "Make ambient input registry does not match environment-sensitive "
-            f"defaults (missing={sorted(required_ambient_names - declared_ambient_names)}, "
-            f"stale={sorted(declared_ambient_names - required_ambient_names)})"
-        )
-    expander = SafeMakeExpander(
-        loader,
-        variables,
-        dynamic_contracts,
-        ambient_contracts,
-        trusted_builtins,
-        scoped_variables,
-    )
-    active_export_events = [
-        event
-        for event in export_events
-        if expander._context_active(
-            event["context"],
-            event["_sequence"],
-            (),
-        )
-    ]
-    export_all = False
-    explicit_exports: dict[str, bool] = {}
-    for event in active_export_events:
-        if event["action"] == "export-all":
-            export_all = True
-        elif event["action"] == "unexport-all":
-            export_all = False
-        else:
-            exported = event["action"] == "export"
-            for name in event["names"]:
-                explicit_exports[name] = exported
-
-    def variable_is_global_private(name: str) -> bool:
-        return any(
-            "private" in record.get("modifiers", ())
-            and expander._context_active(
-                record["context"],
-                record["_sequence"],
-                (),
-            )
-            for record in variables.get(name, ())
-        )
-
-    globally_exported = {
-        name
-        for name in variables
-        if explicit_exports.get(name, export_all)
-    }
-    globally_exported.update(
-        name
-        for name, exported in explicit_exports.items()
-        if exported
-    )
-
-    def evaluated_variable_semantics(name: str) -> dict[str, Any]:
-        try:
-            semantics = expander.variable_semantics(name)
-            if semantics["unbound_names"]:
-                raise OwnershipError(
-                    "undeclared ambient influence from "
-                    + ", ".join(semantics["unbound_names"])
-                )
-            return semantics
-        except OwnershipError as error:
-            if "undeclared ambient influence" in str(error):
-                raise
-            active_definition = any(
-                expander._context_active(
-                    record["context"],
-                    record["_sequence"],
-                    (),
-                )
-                for record in variables.get(name, ())
-            )
-            if active_definition:
-                raise OwnershipError(
-                    f"defined recipe variable {name!r} cannot be expanded: "
-                    f"{error}"
-                ) from error
-            return {
-                "assignments": variables.get(name, ()),
-                "evaluation": "unresolved-recipe-only-authority",
-                "reason": str(error),
-            }
-
-    global_exported_environment = {}
-    for name in sorted(globally_exported):
-        if variables.get(name):
-            semantics = evaluated_variable_semantics(name)
-            ambient_input = False
-        else:
-            ambient_contract = ambient_contracts.get(name)
-            if ambient_contract is None:
-                raise OwnershipError(
-                    f"exported Make variable {name!r} has undeclared "
-                    "ambient influence"
-                )
-            semantics = {
-                "assignments": (),
-                "flavor": "environment",
-                "raw_value": None,
-                "effective_values": [f"<ambient-environment:{name}>"],
-                "ambient_inputs": [name],
-                "ambient_input_contracts": [ambient_contract],
-                "fallback_ambient_inputs": [],
-                "trusted_builtin_contracts": [],
-                "scoped_variable_contracts": [],
-                "unbound_names": [],
-                "authority_variants": [
-                    {
-                        "source": source,
-                        "value": f"<{source}:{name}>",
-                    }
-                    for source in ambient_contract["allowed_sources"]
-                ],
-                "external_precedence": "environment",
-            }
-            ambient_input = True
-        global_exported_environment[name] = {
-            **semantics,
-            "ambient_input": ambient_input,
-            "scope": "global",
-        }
-
-    def dynamic_dependency(expression: str) -> dict[str, Any] | None:
-        contract = dynamic_contracts.get(expression)
-        if contract is None:
-            return None
-        return {
-            **contract,
-            "input_variable_values": {
-                name: expander.variable(name, {}, ())
-                for name in contract["input_variables"]
-            },
-        }
-
-    def target_variable_bindings(
-        target: str,
-        declarations: list[dict[str, Any]],
-    ) -> tuple[dict[str, str], dict[str, Any]]:
-        bindings: dict[str, dict[str, Any]] = {}
-        global_bases: dict[str, dict[str, Any]] = {}
-        target_ambient_defaults: dict[str, dict[str, Any]] = {}
-        attributes: dict[str, dict[str, bool]] = defaultdict(
-            lambda: {
-                "export": False,
-                "override": False,
-                "private": False,
-            }
-        )
-        assignment_history: dict[str, list[dict[str, Any]]] = defaultdict(list)
-
-        def safe_global_semantics(
-            name: str,
-            before_sequence: int | None,
-        ) -> dict[str, Any]:
-            try:
-                return expander.variable_semantics_at(name, before_sequence)
-            except OwnershipError as error:
-                return {
-                    "flavor": expander.variable_flavor_at(name, before_sequence),
-                    "raw_value": None,
-                    "effective_values": None,
-                    "assignments": [
-                        record
-                        for record in variables.get(name, ())
-                        if before_sequence is None
-                        or record["_sequence"] < before_sequence
-                    ],
-                    "evaluation": "unresolved-recipe-only-authority",
-                    "reason": str(error),
-                }
-
-        def resolve_name(
-            name: str,
-            before_sequence: int | None,
-            stack: tuple[str, ...],
-        ) -> str:
-            if name not in bindings:
-                values = expander.variable(name, {}, stack, before_sequence)
-            else:
-                binding = bindings[name]
-                if "base_variable" in binding:
-                    base_values = expander.variable(
-                        binding["base_variable"],
-                        {},
-                        stack,
-                        binding["base_sequence"],
-                    )
-                    if len(base_values) != 1:
-                        raise OwnershipError(
-                            f"target-specific Make variable {name!r} for "
-                            f"{target!r} has an ambiguous global base"
-                        )
-                    suffix_values = expander.expand(
-                        binding["suffix"],
-                        {},
-                        stack + (name,),
-                        (
-                            binding["base_sequence"]
-                            if binding["flavor"] == "simple"
-                            else before_sequence
-                        ),
-                    )
-                    if len(suffix_values) != 1:
-                        raise OwnershipError(
-                            f"target-specific Make variable {name!r} for "
-                            f"{target!r} has an ambiguous append"
-                        )
-                    values = [
-                        _normalize_make_expression(
-                            base_values[0] + " " + suffix_values[0]
-                        )
-                    ]
-                elif binding["flavor"] == "simple":
-                    values = [binding["value"]]
-                else:
-                    referenced = _make_variable_refs((binding["value"],))
-                    local = {
-                        item: resolve_name(
-                            item,
-                            before_sequence,
-                            stack + (name,),
-                        )
-                        for item in referenced
-                        if item in bindings
-                    }
-                    values = expander.expand(
-                        binding["value"],
-                        local,
-                        stack + (name,),
-                        before_sequence,
-                    )
-            if len(values) != 1:
-                raise OwnershipError(
-                    f"target-specific Make variable {name!r} for "
-                    f"{target!r} is ambiguous"
-                )
-            return values[0]
-
-        def resolved_locals(
-            before_sequence: int | None,
-            names: Iterable[str] | None = None,
-        ) -> dict[str, str]:
-            return {
-                name: resolve_name(name, before_sequence, ())
-                for name in (bindings if names is None else names)
-                if name in bindings
-            }
-
-        for declaration in declarations:
-            if declaration["kind"] != "target-assignment":
-                continue
-            operator = declaration["operator"]
-            if operator == "!=":
-                raise OwnershipError(
-                    f"target-specific shell assignment for {target!r} is not allowed"
-                )
-            name = declaration["name"]
-            for modifier in declaration["modifiers"]:
-                attributes[name][modifier] = True
-            sequence = declaration["_sequence"]
-            binding = bindings.get(name)
-            global_binding = None
-            if binding is None and operator in {"+=", "?="}:
-                global_binding = safe_global_semantics(name, sequence)
-                global_bases[name] = global_binding
-            applied = True
-            if operator == "?=" and (
-                binding is not None
-                or (
-                    global_binding is not None
-                    and global_binding["flavor"] is not None
-                )
-            ):
-                applied = False
-            elif operator == "?=":
-                contract = ambient_contracts.get(name)
-                if contract is None:
-                    raise OwnershipError(
-                        f"target-specific Make default {name!r} has "
-                        "undeclared ambient influence"
-                    )
-                target_ambient_defaults[name] = contract
-            elif (
-                binding is None
-                and operator == "+="
-                and global_binding is not None
-                and global_binding["flavor"] is not None
-            ):
-                if global_binding["flavor"] is not None:
-                    values = global_binding["effective_values"]
-                    if values is None:
-                        binding = {
-                            "flavor": global_binding["flavor"],
-                            "base_variable": name,
-                            "base_sequence": sequence,
-                            "suffix": "",
-                        }
-                        bindings[name] = binding
-                    elif len(values) != 1:
-                        raise OwnershipError(
-                            f"global Make variable {name!r} inherited by "
-                            f"{target!r} is ambiguous"
-                        )
-                    else:
-                        binding = {
-                            "flavor": global_binding["flavor"],
-                            "value": (
-                                values[0]
-                                if global_binding["flavor"] == "simple"
-                                else global_binding["raw_value"]
-                            ),
-                        }
-                        bindings[name] = binding
-            if not applied:
-                assignment_history[name].append(
-                    {
-                        **declaration,
-                        "applied": False,
-                    }
-                )
-                continue
-            if operator in {":=", "::="} or (
-                operator == "+="
-                and binding is not None
-                and binding["flavor"] == "simple"
-            ):
-                referenced = _make_variable_refs((declaration["value"],))
-                values = expander.expand(
-                    declaration["value"],
-                    resolved_locals(sequence, referenced),
-                    before_sequence=sequence,
-                )
-                if len(values) != 1:
-                    raise OwnershipError(
-                        f"target-specific immediate assignment for "
-                        f"{target!r} is ambiguous"
-                    )
-                rhs = values[0]
-                if operator == "+=":
-                    if "base_variable" in binding:
-                        binding["suffix"] = _normalize_make_expression(
-                            binding["suffix"] + " " + rhs
-                        )
-                    else:
-                        binding["value"] = _normalize_make_expression(
-                            binding["value"] + " " + rhs
-                        )
-                else:
-                    bindings[name] = {"flavor": "simple", "value": rhs}
-            elif operator == "+=":
-                if binding is None:
-                    binding = {"flavor": "recursive", "value": ""}
-                    bindings[name] = binding
-                if "base_variable" in binding:
-                    binding["suffix"] = _normalize_make_expression(
-                        binding["suffix"] + " " + declaration["value"]
-                    )
-                else:
-                    binding["value"] = _normalize_make_expression(
-                        binding["value"] + " " + declaration["value"]
-                    )
-            elif operator in {"=", "?="}:
-                bindings[name] = {
-                    "flavor": "recursive",
-                    "value": declaration["value"],
-                }
-            assignment_history[name].append(
-                {
-                    **declaration,
-                    "applied": applied,
-                }
-            )
-
-        resolved = {}
-        resolution_errors = {}
-        for name in bindings:
-            try:
-                resolved[name] = resolve_name(name, None, ())
-            except OwnershipError as error:
-                resolution_errors[name] = str(error)
-        inherited_semantics = {
-            name: safe_global_semantics(name, None)
-            for name in assignment_history
-            if name not in bindings
-        }
-
-        def target_authority_variants(name: str) -> list[dict[str, Any]]:
-            if name in target_ambient_defaults:
-                return [
-                    {
-                        "source": source,
-                        "value": f"<{source}:{name}>",
-                    }
-                    for source in target_ambient_defaults[name][
-                        "allowed_sources"
-                    ]
-                ] + [
-                    {
-                        "source": "tracked-fallback",
-                        "value": resolved.get(name),
-                    }
-                ]
-            global_base = global_bases.get(name)
-            assignments = assignment_history[name]
-            if (
-                assignments
-                and assignments[0]["operator"] == "+="
-                and global_base is not None
-                and global_base["flavor"] is None
-            ):
-                result = []
-                for variant in global_base["authority_variants"]:
-                    source = variant["source"]
-                    if source == "undefined":
-                        result.append(
-                            {
-                                "source": "tracked-fallback",
-                                "value": resolved.get(name),
-                            }
-                        )
-                    elif (
-                        source == "command-line"
-                        and not attributes[name]["override"]
-                    ):
-                        result.append(variant)
-                    else:
-                        result.append(
-                            {
-                                "source": source,
-                                "value": _normalize_make_expression(
-                                    variant["value"]
-                                    + " "
-                                    + (resolved.get(name) or "")
-                                ),
-                            }
-                        )
-                return result
-            return (
-                []
-                if attributes[name]["override"]
-                else [
-                    {
-                        "source": "command-line",
-                        "value": f"<command-line:{name}>",
-                    }
-                ]
-            ) + [
-                {
-                    "source": "tracked-make",
-                    "value": resolved.get(name),
-                }
-            ]
-
-        semantics = {
-            name: (
-                {
-                    "flavor": bindings[name]["flavor"],
-                    "raw_value": bindings[name].get("value"),
-                    "global_base": global_bases.get(name),
-                    "append_value": bindings[name].get("suffix"),
-                    "effective_value": resolved.get(name),
-                    "evaluation_error": resolution_errors.get(name),
-                    "ambient_input_contracts": (
-                        [target_ambient_defaults[name]]
-                        if name in target_ambient_defaults
-                        else []
-                    ),
-                    "authority_variants": target_authority_variants(name),
-                    "attributes": attributes[name],
-                    "external_precedence": (
-                        "override"
-                        if attributes[name]["override"]
-                        else "command-line"
-                    ),
-                    "assignments": assignment_history[name],
-                }
-                if name in bindings
-                else {
-                    "flavor": "inherited",
-                    "raw_value": None,
-                    "global_base": inherited_semantics[name],
-                    "effective_value": (
-                        inherited_semantics[name]["effective_values"][0]
-                        if inherited_semantics[name]["effective_values"] is not None
-                        and len(inherited_semantics[name]["effective_values"]) == 1
-                        else None
-                    ),
-                    "attributes": attributes[name],
-                    "authority_variants": inherited_semantics[name][
-                        "authority_variants"
-                    ],
-                    "external_precedence": (
-                        "override"
-                        if attributes[name]["override"]
-                        else "command-line"
-                    ),
-                    "assignments": assignment_history[name],
-                }
-            )
-            for name in assignment_history
-        }
-        return resolved, semantics
-
-    materialized: dict[str, dict[str, Any]] = defaultdict(
-        lambda: {
-            "declarations": [],
-            "recipes": [],
-            "phony": False,
-            "dynamic_target_expressions": [],
-        }
-    )
-    for raw_target, record in targets.items():
-        dynamic_target_expressions = {
-            expression
-            for expression in dynamic_contracts
-            if expression in raw_target
-        }
-        for variable_name in _make_variable_refs((raw_target,)):
-            dynamic_target_expressions.update(
-                expander._variable_dynamic_expressions(
-                    variable_name,
-                    None,
-                    (),
-                )
-            )
-        try:
-            expanded_targets = expander.expand(raw_target)
-        except OwnershipError as error:
-            raise OwnershipError(
-                f"unregistered dynamic target declaration {raw_target!r}: {error}"
-            ) from error
-        for expanded in expanded_targets:
-            for target in expanded.split():
-                if "$" in target or "<make-automatic:" in target:
-                    raise OwnershipError(
-                        "unresolved dynamic target declaration "
-                        f"{raw_target!r} produced {target!r}"
-                    )
-                materialized[target]["declarations"].extend(record["declarations"])
-                materialized[target]["recipes"].extend(record["recipes"])
-                materialized[target]["phony"] |= record["phony"]
-                materialized[target]["dynamic_target_expressions"].extend(
-                    dynamic_target_expressions
-                )
-    targets = materialized
-
-    def recipe_variable_semantics(
-        name: str,
-        *,
-        strict: bool,
-    ) -> dict[str, Any]:
-        if variable_is_global_private(name):
-            return {
-                **evaluated_variable_semantics(name),
-                "effective_values": [""],
-                "private_global": True,
-            }
-        try:
-            return expander.variable_semantics(name)
-        except OwnershipError:
-            if strict:
-                return evaluated_variable_semantics(name)
-            return {
-                "assignments": variables.get(name, ()),
-                "evaluation": "deferred-recipe-authority",
-            }
-
-    def expand_recipe_records(
-        target: str,
-        recipes: list[dict[str, Any]],
-        target_values: dict[str, str],
-        recipe_variables: dict[str, dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        expanded_recipes = []
-        for recipe in recipes:
-            expanded = recipe["command"]
-            unresolved = []
-            expansion_inputs = {}
-            for call in expander.call_semantics(recipe["command"]):
-                values = call["effective_values"]
-                if len(values) != 1:
-                    raise OwnershipError(
-                        f"Make recipe call {call['expression']!r} for "
-                        f"{target!r} is ambiguous"
-                    )
-                expanded = expanded.replace(call["expression"], values[0])
-            for name in sorted(_make_variable_refs((recipe["command"],))):
-                if name in target_values:
-                    values = [target_values[name]]
-                    semantics = {}
-                else:
-                    semantics = recipe_variables.get(name, {})
-                    values = semantics.get("effective_values")
-                if values is None or len(values) != 1:
-                    unresolved.append(name)
-                    continue
-                expanded = expanded.replace(f"$({name})", values[0])
-                authority_variants = semantics.get("authority_variants", ())
-                if len(authority_variants) > 1:
-                    expansion_inputs[name] = authority_variants
-            expanded_variants = [{"source": "tracked", "text": expanded}]
-            for name, variants in expansion_inputs.items():
-                fallback = next(
-                    (
-                        variant["value"]
-                        for variant in variants
-                        if variant["source"]
-                        in {"tracked-fallback", "tracked-make", "undefined"}
-                    ),
-                    "",
-                )
-                for variant in variants:
-                    if variant["value"] == fallback:
-                        continue
-                    expanded_variants.append(
-                        {
-                            "source": f"{variant['source']}:{name}",
-                            "text": expanded.replace(
-                                fallback,
-                                variant["value"],
-                                1,
-                            ),
-                        }
-                    )
-            expanded_recipes.append(
-                {
-                    "source": recipe["command"],
-                    "expanded": expanded,
-                    "expanded_variants": expanded_variants,
-                    "expansion_inputs": expansion_inputs,
-                    "unresolved_variables": unresolved,
-                }
-            )
-        return expanded_recipes
-
-    direct = {}
-    for target, record in targets.items():
-        active_declarations = [
-            declaration
-            for declaration in record["declarations"]
-            if expander._context_active(
-                declaration["context"],
-                declaration["_sequence"],
-                (),
-            )
-        ]
-        active_recipes = [
-            recipe
-            for recipe in record["recipes"]
-            if expander._context_active(
-                recipe["context"],
-                recipe["_sequence"],
-                (),
-            )
-        ]
-        if not active_declarations and not active_recipes and not record["phony"]:
-            continue
-        target_values, target_semantics = target_variable_bindings(
-            target,
-            active_declarations,
-        )
-        prerequisite_values = [
-            (declaration["static_pattern"] or "")
-            + " "
-            + " ".join(declaration["prerequisites"])
-            + " | "
-            + " ".join(declaration["order_only"])
-            + " "
-            + " ".join(declaration["context"])
-            for declaration in active_declarations
-            if declaration["kind"] == "rule"
-        ]
-        recipe_values = [
-            recipe["command"] + " " + " ".join(recipe["context"])
-            for recipe in active_recipes
-        ]
-        recipe_calls = [
-            call
-            for recipe in active_recipes
-            for call in expander.call_semantics(recipe["command"])
-        ]
-        prerequisite_calls = [
-            call
-            for declaration in active_declarations
-            if declaration["kind"] == "rule"
-            for prerequisite in (
-                *declaration["prerequisites"],
-                *declaration["order_only"],
-            )
-            for call in expander.call_semantics(prerequisite)
-        ]
-        prerequisite_refs = _make_variable_refs(prerequisite_values)
-        recipe_refs = _make_variable_refs(recipe_values) - prerequisite_refs
-        escaped_literal_names = (
-            _make_escaped_literal_refs(prerequisite_values)
-            | _make_escaped_literal_refs(recipe_values)
-        ) - set(variables)
-        unknown_escaped_literals = escaped_literal_names - set(escaped_literals)
-        if unknown_escaped_literals:
-            raise OwnershipError(
-                "Make authority contains undeclared escaped literals "
-                f"{sorted(unknown_escaped_literals)}"
-            )
-        target_variable_names = set(target_semantics)
-        unresolved_prerequisite_variables = (
-            prerequisite_refs & target_variable_names
-        ) - set(target_values)
-        if unresolved_prerequisite_variables:
-            raise OwnershipError(
-                f"target-specific prerequisite variables for {target!r} "
-                "cannot be resolved safely: "
-                + ", ".join(sorted(unresolved_prerequisite_variables))
-            )
-        prerequisite_refs -= target_variable_names
-        recipe_refs -= target_variable_names
-
-        recipe_variables = {
-            name: recipe_variable_semantics(name, strict=False)
-            for name in sorted(recipe_refs)
-        }
-        expanded_recipes = expand_recipe_records(
-            target,
-            active_recipes,
-            target_values,
-            recipe_variables,
-        )
-        exported_environment = {}
-        if active_recipes:
-            for name in sorted(globally_exported):
-                exported_environment[name] = {
-                    "scope": "global",
-                    "binding": name,
-                }
-            for name, semantics in target_semantics.items():
-                attributes = semantics["attributes"]
-                if not (
-                    attributes["export"]
-                    or name in globally_exported
-                ):
-                    continue
-                if name not in target_values:
-                    raise OwnershipError(
-                        f"exported target-specific Make variable {name!r} "
-                        f"for {target!r} cannot be resolved"
-                    )
-                exported_environment[name] = {
-                    "effective_values": [target_values[name]],
-                    "scope": "target",
-                    "target_semantics": semantics,
-                }
-            for name, semantics in recipe_variables.items():
-                ambient_inputs = semantics.get("ambient_input_contracts", ())
-                if not ambient_inputs or name in exported_environment:
-                    continue
-                exported_environment[name] = {
-                    "scope": "conditional-external",
-                    "ambient_input_contracts": ambient_inputs,
-                    "variants": [
-                        {
-                            "source": variant["source"],
-                            "present": variant["source"]
-                            in {"command-line", "process-environment"},
-                            "value": variant["value"],
-                        }
-                        for variant in semantics["authority_variants"]
-                    ],
-                }
-
-        direct[target] = {
-            "declarations": active_declarations,
-            "recipes": active_recipes,
-            "phony": record["phony"],
-            "dynamic_target_expressions": sorted(
-                set(record["dynamic_target_expressions"])
+        result = make_probe.run_probe(
+            loader,
+            requested_targets,
+            prerequisite_domains,
+            dynamic_contracts,
+            declared_external_names=set(ambient_contracts),
+            environment_names=set(ambient_contracts),
+            symbolic_recipe_names=symbolic_recipe_names,
+            scratch_root=(
+                loader.root
+                / "build"
+                / "test-artifacts"
+                / "validation-ownership"
             ),
-            "_prerequisite_refs": sorted(prerequisite_refs),
-            "_recipe_refs": sorted(recipe_refs),
-            "_target_values": target_values,
-            "_target_attributes": {
-                name: semantics["attributes"]
-                for name, semantics in target_semantics.items()
-            },
-            "target_variables": target_semantics,
-            "export_policy": {
-                "events": active_export_events,
-                "export_all": export_all,
-                "explicit_exports": explicit_exports,
-                "ambient_environment": "all" if export_all else "named-only",
-            },
-            "exported_environment": exported_environment,
-            "expanded_recipes": expanded_recipes,
-            "escaped_literal_refs": [
-                escaped_literals[name]
-                for name in sorted(escaped_literal_names)
-            ],
-            "prerequisite_calls": prerequisite_calls,
-            "recipe_calls": recipe_calls,
-            "recipe_variables": recipe_variables,
-        }
-
-    pattern_targets = [target for target in direct if "%" in target]
-    unconstrained_selectors = set()
-
-    def prerequisite_selector_semantics(
-        record: dict[str, Any],
-        name: str,
-    ) -> tuple[list[str], dict[str, Any]]:
-        if name in record["target_variables"]:
-            semantics = record["target_variables"][name]
-            values = [semantics["effective_value"]]
-        else:
-            semantics = expander.variable_semantics(name)
-            values = semantics["effective_values"]
-        if semantics.get("unbound_names"):
-            raise OwnershipError(
-                f"prerequisite selector {name!r} has undeclared ambient "
-                f"influence {semantics['unbound_names']}"
-            )
-        return values, semantics
-
-    def prerequisite_selector_bindings(
-        record: dict[str, Any],
-        expressions: Iterable[str],
-    ) -> dict[str, tuple[list[str], dict[str, Any]]]:
-        pending = set(_make_variable_refs(expressions))
-        for expression in expressions:
-            for call in expander.call_semantics(expression):
-                pending.update(call["macros"])
-        bindings = {}
-        while pending:
-            name = pending.pop()
-            if name in bindings:
-                continue
-            values, semantics = prerequisite_selector_semantics(record, name)
-            bindings[name] = values, semantics
-            nested_expressions = [
-                value
-                for value in (
-                    semantics.get("raw_value"),
-                    semantics.get("append_value"),
-                )
-                if isinstance(value, str)
-            ]
-            global_base = semantics.get("global_base")
-            if isinstance(global_base, dict):
-                nested_expressions.extend(
-                    value
-                    for value in (
-                        global_base.get("raw_value"),
-                        global_base.get("append_value"),
-                    )
-                    if isinstance(value, str)
-                )
-            pending.update(_make_variable_refs(nested_expressions))
-            for expression in nested_expressions:
-                for call in expander.call_semantics(expression):
-                    pending.update(call["macros"])
-            pending.update(
-                contract["name"]
-                for field in (
-                    "ambient_input_contracts",
-                    "fallback_ambient_inputs",
-                    "trusted_builtin_contracts",
-                )
-                for contract in semantics.get(field, ())
-            )
-        return bindings
-
-    def is_external_selector(name: str, semantics: dict[str, Any]) -> bool:
-        return (
-            any(
-                variant["source"]
-                not in {"tracked-fallback", "tracked-make", "scoped-variable"}
-                for variant in semantics.get("authority_variants", ())
-            )
-            or any(
-                contract["name"] == name
-                for field in (
-                    "ambient_input_contracts",
-                    "fallback_ambient_inputs",
-                    "trusted_builtin_contracts",
-                )
-                for contract in semantics.get(field, ())
-            )
         )
-
-    def expand_prerequisite_variants(
-        target: str,
-        token: str,
-        record: dict[str, Any],
-        static_pattern: str | None,
-    ) -> tuple[list[str], list[dict[str, Any]]]:
-        selector_options = {}
-        local = dict(record["_target_values"])
-        expanded_token = token.replace("$$(", "$(")
-        selector_expressions = [expanded_token]
-        if static_pattern is not None:
-            selector_expressions.append(static_pattern.replace("$$(", "$("))
-        bindings = prerequisite_selector_bindings(
-            record,
-            selector_expressions,
+    except make_probe.MakeProbeError as error:
+        raise OwnershipError(str(error)) from error
+    dynamic_values = sorted(
+        dynamic_contracts.values(),
+        key=lambda item: item["id"],
+    )
+    for authority in result.values():
+        census = authority["variable_census"]
+        census["ambient_undefined"] = sorted(
+            name
+            for name, contract in ambient_contracts.items()
+            if contract["category"] == "undefined"
         )
-        for name in sorted(bindings):
-            values, semantics = bindings[name]
-            if not is_external_selector(name, semantics):
-                continue
-            domain = prerequisite_domains.get(name)
-            if domain is None:
-                unconstrained_selectors.add(name)
-                domain = {
-                    "name": name,
-                    "kind": "tracked-fallback",
-                }
-            if domain["kind"] == "explicit":
-                domain_values = domain["values"]
-            else:
-                if len(values) != 1:
-                    raise OwnershipError(
-                        f"tracked prerequisite selector {name!r} is ambiguous"
-                    )
-                domain_values = values
-            sources = {
-                variant["source"]
-                for variant in semantics.get("authority_variants", ())
-            } or {"tracked-make"}
-            selector_options[name] = [
-                {
-                    "domain": domain["kind"],
-                    "name": name,
-                    "sources": sorted(sources),
-                    "value": value,
-                }
-                for value in domain_values
-            ]
-        option_count = math.prod(
-            len(options)
-            for options in selector_options.values()
-        )
-        if option_count > SafeMakeExpander.MAX_VARIANTS:
-            raise OwnershipError(
-                f"Make prerequisite variants for {target!r} exceed bound"
-            )
-        combinations = (
-            itertools.product(*selector_options.values())
-            if selector_options
-            else [()]
-        )
-        children = []
-        variant_records = []
-        for combination in combinations:
-            variant_local = dict(local)
-            for selector in combination:
-                variant_local[selector["name"]] = selector["value"]
-            expanded_values = expander.expand(
-                expanded_token,
-                variant_local,
-            )
-            if static_pattern is not None:
-                patterns = expander.expand(static_pattern, variant_local)
-                if (
-                    len(patterns) != 1
-                    or not SafeMakeExpander._pattern_matches(
-                        target,
-                        patterns[0],
-                    )
-                ):
-                    raise OwnershipError(
-                        f"Make static pattern {static_pattern!r} does not "
-                        f"match target {target!r}"
-                    )
-                prefix, suffix = patterns[0].split("%", 1)
-                stem_end = len(target) - len(suffix) if suffix else len(target)
-                stem = target[len(prefix):stem_end]
-                expanded_values = [
-                    value.replace("%", stem)
-                    for value in expanded_values
-                ]
-            if (
-                sum(len(value.split()) for value in expanded_values)
-                > SafeMakeExpander.MAX_WORDS
-            ):
-                raise OwnershipError(
-                    f"Make prerequisite variants for {target!r} exceed "
-                    "word bound"
-                )
-            selected_targets = []
-            tracked_files = []
-            tracked_directories = []
-            tracked_gitlink_paths = []
-            generated_paths = []
-            generated_build_paths = []
-            for candidate in (
-                word
-                for expanded in expanded_values
-                for word in expanded.split()
-            ):
-                if (
-                    "$" in candidate
-                    or "<" in candidate
-                    or ">" in candidate
-                ):
-                    raise OwnershipError(
-                        f"Make prerequisite variant for {target!r} remains "
-                        f"dynamic: {candidate!r}"
-                    )
-                candidate = _validate_relative_path(
-                    candidate,
-                    "Make prerequisite variant",
-                )
-                matches = []
-                if candidate in direct:
-                    matches.append(candidate)
-                matches.extend(
-                    pattern
-                    for pattern in pattern_targets
-                    if SafeMakeExpander._pattern_matches(candidate, pattern)
-                    and pattern not in matches
-                )
-                if matches:
-                    selected_targets.extend(matches)
-                    children.extend(matches)
-                elif candidate in loader.entries:
-                    entry = loader.entries[candidate]
-                    if entry.object_type != "blob":
-                        raise OwnershipError(
-                            f"Make prerequisite variant {candidate!r} is not "
-                            "a tracked blob"
-                        )
-                    tracked_files.append(candidate)
-                elif any(
-                    path.startswith(candidate.rstrip("/") + "/")
-                    for path in loader.entries
-                ):
-                    tracked_directories.append(candidate)
-                elif any(
-                    entry.mode == "160000"
-                    and candidate.startswith(path.rstrip("/") + "/")
-                    for path, entry in loader.entries.items()
-                ):
-                    tracked_gitlink_paths.append(candidate)
-                elif candidate in generated_prerequisite_paths:
-                    generated_paths.append(
-                        generated_prerequisite_paths[candidate]
-                    )
-                elif (
-                    selector_options
-                    and candidate.startswith("build/")
-                    and all(
-                        selector["domain"] == "tracked-fallback"
-                        for selector in combination
-                    )
-                ):
-                    generated_build_paths.append(candidate)
-                elif selector_options:
-                    raise OwnershipError(
-                        f"Make prerequisite variant {candidate!r} for "
-                        f"{target!r} selects an unknown target"
-                    )
-            if selector_options:
-                variant_records.append(
-                    {
-                        "expanded_values": expanded_values,
-                        "selectors": list(combination),
-                        "targets": sorted(set(selected_targets)),
-                        "tracked_files": sorted(set(tracked_files)),
-                        "tracked_directories": sorted(
-                            set(tracked_directories)
-                        ),
-                        "tracked_gitlink_paths": sorted(
-                            set(tracked_gitlink_paths)
-                        ),
-                        "generated_paths": sorted(
-                            {
-                                item["path"]: item
-                                for item in generated_paths
-                            }.values(),
-                            key=lambda item: item["path"],
-                        ),
-                        "generated_build_paths": sorted(
-                            set(generated_build_paths)
-                        ),
-                    }
-                )
-        return list(dict.fromkeys(children)), variant_records
-
-    child_cache: dict[
-        str,
-        tuple[list[str], list[dict[str, Any]]],
-    ] = {}
-    def child_targets(
-        target: str,
-        dynamic_dependencies: list[dict[str, Any]],
-    ) -> list[str]:
-        if target in child_cache:
-            children, dynamic = child_cache[target]
-            dynamic_dependencies.extend(dynamic)
-            return children
-        result = []
-        local_dynamic = []
-        record = direct[target]
-        target_local = record["_target_values"]
-        prerequisite_variants = []
-        for declaration in record["declarations"]:
-            if declaration["kind"] != "rule":
-                continue
-            if declaration["static_pattern"] is not None:
-                patterns = expander.expand(
-                    declaration["static_pattern"],
-                    target_local,
-                )
-                if not any(
-                    SafeMakeExpander._pattern_matches(target, pattern)
-                    for pattern in patterns
-                ):
-                    continue
-            for prerequisite in (
-                *declaration["prerequisites"],
-                *declaration["order_only"],
-            ):
-                try:
-                    children, variants = expand_prerequisite_variants(
-                        target,
-                        prerequisite,
-                        record,
-                        declaration["static_pattern"],
-                    )
-                    result.extend(children)
-                    prerequisite_variants.extend(variants)
-                except OwnershipError as error:
-                    registered = dynamic_dependency(prerequisite)
-                    if registered is None:
-                        raise OwnershipError(
-                            f"Make target {target!r} has unregistered dynamic "
-                            f"prerequisite {prerequisite!r}: {error}"
-                        ) from error
-                    local_dynamic.append(registered)
-        def variant_key(variant: dict[str, Any]) -> str:
-            return json.dumps(
-                variant,
-                sort_keys=True,
-                separators=(",", ":"),
-            )
-
-        record["prerequisite_variants"] = sorted(
+        census["trusted_builtins"] = sorted(trusted_builtins)
+        census["scoped_variables"] = sorted(scoped_variables)
+        census["escaped_literals"] = sorted(escaped_literals)
+        census["handled_names"] = sorted(
             {
-                variant_key(variant): variant
-                for variant in prerequisite_variants
-            }.values(),
-            key=variant_key,
-        )
-        result = list(dict.fromkeys(result))
-        local_dynamic = list(
-            {
-                item["id"]: item
-                for item in local_dynamic
-            }.values()
-        )
-        child_cache[target] = (result, local_dynamic)
-        dynamic_dependencies.extend(local_dynamic)
-        return result
-
-    context_reference_cache: dict[str, set[str]] = {}
-
-    def context_references(
-        target: str,
-        stack: tuple[str, ...] = (),
-    ) -> set[str]:
-        if target in context_reference_cache:
-            return context_reference_cache[target]
-        if target in stack:
-            return set()
-        record = direct[target]
-        result = set(record["_prerequisite_refs"]) | set(record["_recipe_refs"])
-        for child in child_targets(target, []):
-            result.update(
-                context_references(child, stack + (target,))
-            )
-        context_reference_cache[target] = result
-        return result
-
-    def authority_record(target: str) -> dict[str, Any]:
-        transitive = []
-        cycles = []
-        dynamic_dependencies = []
-        visited = {target}
-        visited_contexts: dict[str, dict[str, Any]] = {}
-
-        def propagated_context(
-            current: str,
-            inherited: dict[str, Any],
-            inherited_exports: dict[str, Any],
-        ) -> tuple[dict[str, Any], dict[str, Any]]:
-            context = dict(inherited)
-            exported = dict(inherited_exports)
-            record = direct[current]
-            for name, value in record["_target_values"].items():
-                binding = {
-                    "attributes": record["_target_attributes"][name],
-                    "authority_variants": record["target_variables"][name][
-                        "authority_variants"
-                    ],
-                    "effective_value": value,
-                    "source_target": current,
-                }
-                context[name] = binding
-                if (
-                    binding["attributes"]["export"]
-                    or name in globally_exported
-                ):
-                    exported[name] = {
-                        "effective_values": [value],
-                        "scope": "inherited-target",
-                        "source_target": current,
-                    }
-            return (
-                {
-                    name: binding
-                    for name, binding in context.items()
-                    if not binding["attributes"]["private"]
-                },
-                exported,
-            )
-
-        def inherited_environment(
-            current: str,
-            inherited_exports: dict[str, Any],
-        ) -> dict[str, Any]:
-            environment = dict(inherited_exports)
-            environment.update(direct[current]["exported_environment"])
-            return environment
-
-        def visit(
-            current: str,
-            stack: tuple[str, ...],
-            inherited: dict[str, Any],
-            inherited_exports: dict[str, Any],
-        ) -> None:
-            child_context, child_exports = propagated_context(
-                current,
-                inherited,
-                inherited_exports,
-            )
-            for child in child_targets(current, dynamic_dependencies):
-                relevant_names = context_references(child)
-                relevant_context = {
-                    name: binding
-                    for name, binding in child_context.items()
-                    if name in relevant_names
-                    or binding["attributes"]["export"]
-                }
-                if child in stack:
-                    cycles.append(stack + (child,))
-                    continue
-                if child in visited:
-                    if visited_contexts.get(child, {}) != {
-                        "variables": relevant_context,
-                        "exports": child_exports,
-                    }:
-                        raise OwnershipError(
-                            f"Make target {child!r} has ambiguous inherited "
-                            "target-specific variable contexts: "
-                            f"{visited_contexts.get(child, {})!r} != "
-                            f"{{'variables': {relevant_context!r}, "
-                            f"'exports': {child_exports!r}}}"
-                        )
-                    continue
-                visited.add(child)
-                visited_contexts[child] = {
-                    "variables": relevant_context,
-                    "exports": child_exports,
-                }
-                transitive.append(
-                    {
-                        "target": child,
-                        "record": direct[child],
-                        "inherited_target_variables": relevant_context,
-                        "effective_exported_environment": inherited_environment(
-                            child,
-                            child_exports,
-                        ),
-                    }
-                )
-                visit(
-                    child,
-                    stack + (child,),
-                    relevant_context,
-                    child_exports,
-                )
-
-        visit(target, (target,), {}, {})
-
-        def semantic_record(
-            target_name: str,
-            record: dict[str, Any],
-            inherited: dict[str, Any] | None = None,
-        ) -> dict[str, Any]:
-            enriched = dict(record)
-            inherited = {} if inherited is None else inherited
-            references = enriched.pop("_prerequisite_refs", ())
-            recipe_references = enriched.pop("_recipe_refs", ())
-            enriched["variables"] = {
-                name: expander.variable_semantics(name)
-                for name in references
-            }
-            enriched["recipe_variables"] = {
-                name: (
-                    {
-                        "assignments": (),
-                        "authority_variants": inherited[name][
-                            "authority_variants"
-                        ],
-                        "effective_values": [
-                            inherited[name]["effective_value"]
-                        ],
-                        "scope": "inherited-target",
-                        "source_target": inherited[name]["source_target"],
-                        "unbound_names": [],
-                    }
-                    if name in inherited
-                    else recipe_variable_semantics(name, strict=True)
-                )
-                for name in recipe_references
-            }
-            effective_target_values = {
-                name: binding["effective_value"]
-                for name, binding in inherited.items()
-            }
-            effective_target_values.update(enriched["_target_values"])
-            enriched["expanded_recipes"] = expand_recipe_records(
-                target_name,
-                enriched["recipes"],
-                effective_target_values,
-                enriched["recipe_variables"],
-            )
-            environment = dict(enriched["exported_environment"])
-            for name, semantics in enriched["recipe_variables"].items():
-                ambient_inputs = semantics.get("ambient_input_contracts", ())
-                if not ambient_inputs or name in environment:
-                    continue
-                environment[name] = {
-                    "scope": "conditional-external",
-                    "ambient_input_contracts": ambient_inputs,
-                    "variants": [
-                        {
-                            "source": variant["source"],
-                            "present": variant["source"]
-                            in {"command-line", "process-environment"},
-                            "value": variant["value"],
-                        }
-                        for variant in semantics["authority_variants"]
-                    ],
-                }
-            enriched["exported_environment"] = environment
-            return enriched
-
-        semantic_root = semantic_record(target, direct[target])
-        semantic_transitive = [
-            {
-                **{
-                    key: value
-                    for key, value in item.items()
-                    if key != "record"
-                },
-                "record": semantic_record(
-                    item["target"],
-                    item["record"],
-                    item["inherited_target_variables"],
-                ),
-            }
-            for item in transitive
-        ]
-        def contains_expression(value: Any, expression: str) -> bool:
-            if isinstance(value, str):
-                return expression in value
-            if isinstance(value, dict):
-                return any(
-                    contains_expression(item, expression)
-                    for item in value.values()
-                )
-            if isinstance(value, (list, tuple)):
-                return any(
-                    contains_expression(item, expression)
-                    for item in value
-                )
-            return False
-
-        semantic_records = {
-            "record": semantic_root,
-            "transitive": semantic_transitive,
-        }
-        for expression in dynamic_contracts:
-            if contains_expression(semantic_records, expression):
-                registered = dynamic_dependency(expression)
-                if registered is not None:
-                    dynamic_dependencies.append(registered)
-
-        census = {
-            "ambient_undefined": set(),
-            "trusted_builtins": set(),
-            "scoped_variables": set(),
-            "escaped_literals": set(),
-            "unbound": set(),
-        }
-
-        def collect_census(value: Any) -> None:
-            if isinstance(value, dict):
-                for contract in value.get("ambient_input_contracts", ()):
-                    if contract.get("category") == "undefined":
-                        census["ambient_undefined"].add(contract["name"])
-                for contract in value.get("trusted_builtin_contracts", ()):
-                    census["trusted_builtins"].add(contract["name"])
-                for contract in value.get("scoped_variable_contracts", ()):
-                    census["scoped_variables"].add(contract["name"])
-                for contract in value.get("escaped_literal_refs", ()):
-                    census["escaped_literals"].add(contract["name"])
-                census["unbound"].update(value.get("unbound_names", ()))
-                for item in value.values():
-                    collect_census(item)
-            elif isinstance(value, (list, tuple)):
-                for item in value:
-                    collect_census(item)
-
-        collect_census(semantic_records)
-        if census["unbound"]:
-            raise OwnershipError(
-                f"Make target {target!r} has undeclared ambient influence "
-                f"{sorted(census['unbound'])}"
-            )
-        variable_census = {
-            key: sorted(values)
-            for key, values in census.items()
-        }
-        variable_census["handled_names"] = sorted(
-            set().union(
-                *(
-                    values
-                    for key, values in census.items()
-                    if key != "unbound"
-                )
-            )
-        )
-        prerequisite_domain_names = sorted(
-            {
-                selector["name"]
-                for record in (
-                    semantic_root,
-                    *(item["record"] for item in semantic_transitive),
-                )
-                for variant in record.get("prerequisite_variants", ())
-                for selector in variant["selectors"]
+                *census["ambient_undefined"],
+                *census["trusted_builtins"],
+                *census["scoped_variables"],
+                *census["escaped_literals"],
             }
         )
-        generated_prerequisite_names = sorted(
-            {
-                generated["path"]
-                for record in (
-                    semantic_root,
-                    *(item["record"] for item in semantic_transitive),
-                )
-                for variant in record.get("prerequisite_variants", ())
-                for generated in variant["generated_paths"]
-            }
+        authority["dynamic_dependencies"] = dynamic_values
+        authority["prerequisite_domain_census"]["generated_paths"] = sorted(
+            generated_paths
         )
-
-        def public_value(value: Any) -> Any:
-            if isinstance(value, dict):
-                return {
-                    key: public_value(item)
-                    for key, item in value.items()
-                    if not key.startswith("_")
-                }
-            if isinstance(value, list):
-                return [public_value(item) for item in value]
-            if isinstance(value, tuple):
-                return tuple(public_value(item) for item in value)
-            return value
-
-        def resolved_environment(
-            environment: dict[str, Any],
-        ) -> dict[str, Any]:
-            return {
-                name: (
-                    global_exported_environment[binding["binding"]]
-                    if binding.get("scope") == "global"
-                    and "binding" in binding
-                    else binding
-                )
-                for name, binding in environment.items()
-            }
-
-        return {
-            "target": target,
-            "record": public_value(semantic_root),
-            "global_exported_environment": public_value(
-                global_exported_environment
-            ),
-            "effective_exported_environment": public_value(
-                resolved_environment(
-                    direct[target]["exported_environment"]
-                )
-            ),
-            "transitive": public_value(semantic_transitive),
-            "variable_census": variable_census,
-            "prerequisite_domain_census": {
-                "used": prerequisite_domain_names,
-                "generated_paths": generated_prerequisite_names,
-                "unconstrained": [],
-            },
-            "cycles": sorted(set(cycles)),
-            "dynamic_dependencies": sorted(
-                {
-                    item["id"]: item
-                    for item in dynamic_dependencies
-                }.values(),
-                key=lambda item: item["id"],
-            ),
-            "unknown_dynamic_prerequisites": [],
-        }
-
-    selected = set(direct) if requested_targets is None else requested_targets
-    result = {
-        target: authority_record(target)
-        for target in sorted(selected)
-        if target in direct
-    }
-    if unconstrained_selectors and require_dynamic_contracts:
-        raise OwnershipError(
-            "Make prerequisite selectors lack finite domains: "
-            + ", ".join(sorted(unconstrained_selectors))
-        )
-    if unconstrained_selectors:
-        for authority in result.values():
-            authority["prerequisite_domain_census"]["unconstrained"] = sorted(
-                unconstrained_selectors
-            )
     if len(_MAKE_AUTHORITY_CACHE) >= _MAKE_AUTHORITY_CACHE_LIMIT:
         _MAKE_AUTHORITY_CACHE.pop(next(iter(_MAKE_AUTHORITY_CACHE)))
     _MAKE_AUTHORITY_CACHE[cache_key] = result
@@ -4550,10 +1573,14 @@ def _validate_authorities(
         for node in evidence_nodes.values()
         if node["authority"]["kind"] == "make-target"
     }
-    make_targets = _parse_make_authorities(
-        loader,
-        requested_make_targets,
-        require_dynamic_contracts=True,
+    make_targets = (
+        _parse_make_authorities(
+            loader,
+            requested_make_targets,
+            require_dynamic_contracts=True,
+        )
+        if requested_make_targets
+        else {}
     )
     ambient_contracts = load_make_ambient_contracts(loader, required=True)
     (
@@ -4579,7 +1606,7 @@ def _validate_authorities(
         }
         for key in expected_census
     }
-    if actual_census != expected_census:
+    if requested_make_targets and actual_census != expected_census:
         raise OwnershipError(
             "Make variable authority census does not match the sealed "
             f"registry (actual={actual_census!r}, expected={expected_census!r})"
@@ -4590,7 +1617,10 @@ def _validate_authorities(
         for target in make_targets.values()
         for name in target["prerequisite_domain_census"]["used"]
     }
-    if actual_prerequisite_domains != set(prerequisite_domains):
+    if (
+        requested_make_targets
+        and actual_prerequisite_domains != set(prerequisite_domains)
+    ):
         raise OwnershipError(
             "Make prerequisite domain census does not match the sealed "
             f"registry (actual={sorted(actual_prerequisite_domains)}, "
@@ -4605,7 +1635,10 @@ def _validate_authorities(
         for target in make_targets.values()
         for path in target["prerequisite_domain_census"]["generated_paths"]
     }
-    if actual_generated_prerequisites != set(generated_prerequisites):
+    if (
+        requested_make_targets
+        and actual_generated_prerequisites != set(generated_prerequisites)
+    ):
         raise OwnershipError(
             "Make generated prerequisite census does not match the sealed "
             f"registry (actual={sorted(actual_generated_prerequisites)}, "
@@ -4635,11 +1668,17 @@ def _validate_authorities(
                     f"evidence node {node_id!r} references stale Make target "
                     f"{target!r}"
                 )
+            target_authority = copy.deepcopy(make_targets[target])
+            target_authority["dynamic_dependencies"] = [
+                contract
+                for contract in target_authority["dynamic_dependencies"]
+                if node_id in contract["owning_evidence_ids"]
+            ]
             fingerprint = _sha256(
                 b"validation-ownership-make-target-v1\0",
-                {"target": target, "record": make_targets[target]},
+                {"target": target, "record": target_authority},
             )
-            for contract in make_targets[target]["dynamic_dependencies"]:
+            for contract in target_authority["dynamic_dependencies"]:
                 dynamic_owners[contract["id"]].add(node_id)
             display = f"make {target}"
         elif kind == "workflow-job":
@@ -4699,7 +1738,7 @@ def _validate_authorities(
             "fingerprint": fingerprint,
         }
     contracts = load_make_dynamic_contracts(loader, required=True)
-    for contract in contracts.values():
+    for contract in contracts.values() if requested_make_targets else ():
         expected = set(contract["owning_evidence_ids"])
         unknown = sorted(expected - set(evidence_nodes))
         if unknown:
@@ -5322,12 +2361,91 @@ def _authority_changed_edges(
             for edge in graph["edges"]
             if edge["target"] in make_nodes
         }
-    prior_authorities = _validate_authorities(
-        base_loader,
-        prior_nodes,
-        model["generated_records"],
-        strict_workflow=False,
+    probe_paths = {
+        "scripts/validation_ownership/make_probe.py",
+        "scripts/validation_ownership/sandbox_exec.py",
+        "scripts/validation_ownership/shell_interceptor.c",
+    }
+    if not probe_paths <= set(base_loader.entries):
+        make_nodes = {
+            node_id
+            for node_id, node in current_nodes.items()
+            if node["authority"]["kind"] == "make-target"
+        }
+        return {
+            edge["id"]
+            for edge in graph["edges"]
+            if edge["target"] in make_nodes
+        }
+    make_node_ids = {
+        node_id
+        for node_id, node in current_nodes.items()
+        if node["authority"]["kind"] == "make-target"
+    }
+    current_contracts = load_make_dynamic_contracts(
+        current_loader,
+        required=True,
     )
+    generated_paths = load_make_generated_prerequisite_paths(
+        current_loader,
+        required=True,
+    )
+    make_paths = {
+        path
+        for path in current_loader.entries
+        if path == "Makefile" or path.endswith(".mk")
+    }
+    make_paths.update(probe_paths)
+    make_paths.add(MAKE_DYNAMIC_PATH.as_posix())
+    make_paths.update(
+        path
+        for contract in current_contracts.values()
+        for path in (contract["tool"], *contract["input_files"])
+    )
+    make_paths.update(
+        item["path"]
+        for generated in generated_paths.values()
+        for item in generated["authority_files"]
+    )
+    same_make_authority = (
+        make_paths <= set(base_loader.entries)
+        and all(
+            current_loader.read_blob(path, "current Make comparison")
+            == base_loader.read_blob(path, "base Make comparison")
+            for path in make_paths
+        )
+        and all(
+            current_loader.entries[path].object_id
+            == base_loader.entries[path].object_id
+            for path in current_loader.entries
+            if current_loader.entries[path].mode == "160000"
+            and path in base_loader.entries
+        )
+    )
+    if same_make_authority:
+        prior_authorities = _validate_authorities(
+            base_loader,
+            {
+                node_id: node
+                for node_id, node in prior_nodes.items()
+                if node_id not in make_node_ids
+            },
+            model["generated_records"],
+            strict_workflow=False,
+        )
+        prior_authorities.update(
+            {
+                node_id: model["authorities"][node_id]
+                for node_id in make_node_ids
+            }
+        )
+    else:
+        prior_authorities = _validate_authorities(
+            base_loader,
+            prior_nodes,
+            model["generated_records"],
+            strict_workflow=False,
+        )
     changed_nodes = {
         node_id
         for node_id in set(current_nodes) & set(prior_nodes)
@@ -5762,25 +2880,30 @@ def run_lifecycle_check(
                 "validation ownership graph artifact is missing: "
                 + LIFECYCLE_FAILURE_REASON
             )
+        authority_bytes = (authority_root / GRAPH_PATH).read_bytes()
+        if graph_path.read_bytes() != authority_bytes:
+            raise OwnershipError(
+                "validation ownership graph artifact differs from exact "
+                "authority: " + LIFECYCLE_FAILURE_REASON
+            )
         graph = load_json(graph_path)
         entries = git_tree_entries(authority_root)
         loader = AuthorityLoader(authority_root, entries)
         schema = loader.read_json(SCHEMA_PATH, "ownership graph schema")
         oracle = loader.read_json(PROBE_ORACLE_PATH, "ownership probe oracle")
-        report = build_report(
+        validate_json_schema(
             graph,
             schema,
-            oracle,
-            loader,
-            entries,
+            schema,
+            "$",
         )
+        validate_probe_oracle(oracle, graph, entries)
         if check_id == "TC-WORKFLOW-GATE-OWNERSHIP-001":
-            measurement = report["measurement"]
-            if (
-                measurement["false_positive_selections"] != 0
-                or measurement["false_negative_selections"] != 0
-            ):
-                raise OwnershipError("ownership consistency check has selection loss")
+            cases = _load_test_case_registry(loader)
+            if check_id not in cases:
+                raise OwnershipError(
+                    "ownership consistency tester case is stale"
+                )
         return 0
     finally:
         cleanup_validation_scratch(scratch)

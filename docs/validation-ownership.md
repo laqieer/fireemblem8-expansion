@@ -173,146 +173,81 @@ The report exposes zero false-negative/false-positive counts plus the bounded
 maintenance estimate without modifying issue #176's immutable baseline
 fixture or expected report.
 
-Each Make authority also contains a cycle-safe transitive closure of exact
-prerequisite targets and matching pattern rules. Nested variables and the
-closed nonexecuting prerequisite-function subset (`addprefix`, `addsuffix`,
-`patsubst`, `filter`, `filter-out`, `foreach`, `subst`, path transforms,
-`sort`, `strip`, and tracked-tree `wildcard`) resolve to concrete prerequisites
-before pattern matching. Unsupported dynamic functions, cyclic variables, and
-bounded expansion overflow are never discarded: unsupported/cyclic
-prerequisites are sealed as explicit unknown records and bounds reject; no
-`shell`, `eval`, or recipe is executed. A child recipe, assignment,
-prerequisite, or generated-rule change
-therefore changes every aggregate authority that consumes it while unrelated
-targets remain stable. Target cycles emit a deterministic cycle record rather
-than recursing or silently dropping an edge.
+Make authority comes from `/usr/bin/make`, not a repository implementation of
+Make syntax. The reporter creates a new scratch root from the selected exact
+Git tree, materializes the exact `mgfembp` gitlink commit from the shared object
+database, and starts GNU Make through user, mount, PID, and network namespaces.
+The superproject and gitlink trees are read-only mounts. Only the ignored
+scratch `build` overlay and command-control directory are writable. Missing
+namespace support, the fixed absolute tools, the exact gitlink object, or the
+statically built command interceptor fails before Make starts.
 
-Global assignment evaluation preserves one parse sequence. `:=` and `::=`
-expand against then-current values; recursive `=` remains deferred; `?=`,
-`+=`, target-specific assignments, flavors, and conditionals follow GNU Make
-timing. A later `BASE` reassignment therefore cannot change an earlier
-`OBJECT := $(BASE)`, while it does affect `OBJECT = $(BASE)`. GNU Make fixtures
-pin global, target-specific, append, and conditional variants.
+The probe binds the SHA-256 and version of `/usr/bin/make`, its normalized
+argv, empty/scrubbed environment, `C` locale, UTC timezone, fixed source-date
+epoch, every tracked Make input path and mode, the interceptor source/compiler/
+binary identity, and the source-built `tools/gbagfx/gbagfx` authority. GNU Make
+runs with `-n -B --trace --debug=v`; built-in implicit rules remain active, but
+tracked inputs have explicit no-remake rules so `-B` cannot invent an unrelated
+makefile-remake chain. The resulting concrete considered-target graph, pattern
+stems, terminal tracked/gitlink/generated inputs, expanded recipes, includes,
+errors, and normalized trace records form the authority fingerprint. Scratch
+prefixes and source line numbers are normalized; comments and unrelated target
+changes remain stable when GNU Make's observed semantics remain stable.
 
-`define` blocks participate in the same ordered assignment sequence. Their
-exact multiline bodies are retained, default and explicit recursive flavor
-remain deferred, and `:=`, `::=`, `+=`, and `?=` retain GNU Make timing.
-Recipe and prerequisite `$(call macro,arg...)` uses bind bounded positional
-variables (`$(0)`, `$(1)`, and later arguments), including nested calls, and
-carry the exact definition into every consuming target authority. Malformed or
-nested definitions, unsupported definition modifiers/operators, undefined or
-unsupported reachable calls, cycles, and call depth/word/variant overflow fail
-closed. The real linker closure includes the starter-hook content-disabled
-artifact-check macro, so removing its ROM, symbol, or `gItemData` checks
-invalidates the exact link-owner edges even though its invocation is unchanged.
+Schema version 5 seals each external selector as either a finite exact domain,
+an exact tracked fallback, or symbolic recipe/environment-only authority.
+Every one of the 80 prerequisite domains is run through a real command-line
+GNU Make invocation; environment-sensitive domains are also run through a
+clean process-environment origin. The baseline plus all variant traces are
+unioned per evidence target. An unclassified external input, stale symbolic
+classification, oversized domain, missing target, alternate active error, or
+failed variant rejects. Symbolic recipe inputs are retained in the fingerprint
+but cannot contribute an enumerated target.
 
-Global `export`, `unexport`, `override`, and `private` assignments and
-directives are parsed rather than discarded. Assignment flavor/timing and
-override precedence remain explicit; bare exports and export-all state produce
-the effective environment bound to each child command. The committed
-`export PATH := ...`, `export FE8_ITEM_ID_CAP`, `export MODERN_NM`, and
-`export MODERN_TOOLCHAIN_ROOT` declarations therefore participate in every
-consuming target authority; incoming PATH participation is represented as an
-explicit ambient environment input rather than host-specific bytes.
-Target-specific exports flow to prerequisite command environments, while
-target-specific `private` prevents Make-value inheritance without erasing an
-explicitly exported process value. Global `private`, duplicate, malformed, or
-unsupported modifier combinations reject globally.
+This means GNU Make itself owns conditionals, `eval`, pattern/static-pattern
+resolution, `define`/`call`, target-specific and inherited values, `${NAME}`,
+one-character `$C`, automatic variables, secondary expansion, assignment
+flavors/modifiers, and include rebuilding. Tests compare positive behavior to
+direct GNU Make and freeze alternate `MODE=two`, `$(eval $(RULE))`, concrete
+`%.out: %.in` stems, target-local prerequisites, and expanded `$@`/`$<`
+recipes. A literal missing prerequisite and active `$(error)` surface the real
+Make failure rather than becoming metadata.
 
-GNU Make imports process-environment and command-line variables before a
-non-override or `override` `?=` decides whether to apply its fallback. The
-sealed dynamic registry therefore carries an exact allowlist for every
-reachable default, self-referenced PATH input, and fallback-only dependency
-such as `DEVKITARM`. Each contract permits only symbolic command-line and
-process-environment sources, records GNU Make import provenance, and binds to
-the consuming Make target; reporter output never reads or records the host
-value. Authorities retain separate command-line, process-environment, and
-tracked-fallback recipe/environment variants for `PYTHON`, `TOOLCHAIN`,
-configuration/profile variables, and all other admitted defaults. Missing or
-stale names, source/policy/provenance drift, or a changed seal reject.
+GNU Make can execute parse-time `$(shell)`, `!=`, and makefile-remake recipes
+even in otherwise nonexecuting modes. The sandbox therefore exposes no general
+shell to Make: `SHELL` is the statically compiled interceptor, and the root
+contains only GNU Make, its loader/libc, and that interceptor. Every attempted
+command is logged. A command must match exactly one sealed registry regex.
+Fixed commands receive their registered output; source-dependent commands run
+once in a second networkless read-only `/usr` + exact-tree command sandbox,
+with only the scratch build overlay writable, and their concrete output digest
+is fingerprinted. Normal recipes are never run; recursive/dry-run recipes that
+GNU Make insists on invoking are intercepted and recorded as suppressed.
+Unknown direct recipe expansion, unregistered shell/eager assignment,
+ambiguous command registration, nonconvergence, or sandbox failure rejects.
 
-An otherwise undefined recipe, prerequisite, macro, or exported variable has
-closed symbolic process-environment, command-line, and empty variants only
-when its exact name is admitted; an undeclared name rejects. Every non-override
-`=`, `:=`, `::=`, `+=`, `?=`, and target-specific binding also retains its
-command-line override variant, while `override` removes that branch except
-where GNU Make suppresses an `override ?=` because the imported value already
-exists. `MAKE`, `CURDIR`, `MAKEFLAGS`, and `MAKECMDGOALS` have separate derived
-built-in contracts. The foreach-local `t` and escaped shell-literal `sort`
-cannot become ambient inputs. A live whole-authority census covers those names,
-`LZ_FLAGS`, `MODERN_BUILD_COMMIT`, environment-only test controls, and
-`FE8_ITEM_ID_CAP`, and requires zero unbound references.
+Every Make include observed by GNU Make must be the primary `Makefile`, a
+tracked regular `.mk`, an exact gitlink-contained file, the trusted probe
+control file, or a confined generated `build/` include. Absolute, dynamic,
+untracked, symlink, and escaping includes reject. Generated asset discovery
+and manifest includes begin from an empty overlay and are rebuilt only through
+registered confined commands; no live source file is written.
 
-Any active definition, whether a normal assignment or a `define` body, rejects
-on shell, call, cycle, function, or depth expansion failure instead of becoming
-unresolved success-shaped metadata. A sealed dynamic dependency may resolve
-such a variable without executing its tool; its exact expression, tool, input,
-evidence owner, and effective expansion remain attached to direct and `call`
-consumers. Selected-target evaluation keeps unrelated shell-derived variables
-outside another authority while live chapter-objective and toolchain-library
-discoveries remain explicit contracts.
+The public gate has a smaller independent bootstrap at the first byte of the
+root Makefile. Command-line ownership of `MAKECMDGOALS` rejects before goal
+selection. A trusted exact sole goal selects `validation-ownership-check`;
+mixed goals and `-n`/`-t`/`-q`/`-s`/`-i`, aliases, hostile control variables,
+or any command-line override reject before `AUTOTOOLS_CONFIG_MK`, generated
+includes, config fragments, shell expansions, or dependency remakes. The sole
+goal parses no normal build includes. Consequently `MAKECMDGOALS= -n` and
+`AUTOTOOLS_CONFIG_MK=/dev/stdin SHELL=...` cannot hide or replace the checker,
+while `make validation-ownership-check` either executes the isolated checker
+or fails during trusted bootstrap.
 
-`validation-ownership-check` rejects execution-control flags at parse time, so
-`-n`/`--just-print`, `-t`, `-q`, `-s`, ignore-error, `MAKEFLAGS`, `MFLAGS`,
-`GNUMAKEFLAGS`, or `MAKEOVERRIDES` cannot skip its recipe or turn failure into
-success. Only `-j`/jobserver forms and `--no-print-directory` are admitted.
-Build CI and the 30-gate upstream mirror prefix the exact gate command with
-empty `MAKEFLAGS`, `MFLAGS`, `MAKEOVERRIDES`, and `GNUMAKEFLAGS`; the reviewed
-step environment independently pins the same four values. The mixed-goal
-rejection remains earlier than this guard.
-
-Symbolic variants cannot select prerequisites. Registry schema v4 requires
-each external selector to have either a finite list of exact values or an
-exact tracked-fallback domain. Every admitted environment, command-line,
-undefined, or built-in variant is expanded through nested pure functions and
-variable fallbacks, escaped secondary prerequisites, and static-pattern stems,
-then traversed into each known target or pattern recipe. Equivalent exact
-values share one traversal while retaining every admitted provenance source in
-authority. Tracked blobs/trees, exact gitlink-contained paths, build-local
-paths derived from tracked fallback values, and the source-bound
-`tools/gbagfx/gbagfx` output are terminal authorities. Escaping, dynamic,
-unknown, non-blob, oversized, cyclic, malformed, missing, or stale domains
-reject. The strict public graph seals the exact live selector census and zero
-unconstrained selectors; non-strict diagnostic parsing reports rather than
-silently discarding any unconstrained selector.
-
-Target-specific recursive `=` and recursive `+=` resolve at target use, so
-they observe later global/target values and are inherited by prerequisites;
-target-specific `:=`/`::=` and append to a simple value remain immediate.
-Target-local bindings participate in recipe fingerprints and escaped
-secondary-prerequisite expansion. `?=` follows the visible global/local
-definition, while target-specific shell assignments and `override`, `private`,
-or `export` modifier combinations use the modeled precedence, environment, and
-inheritance rules; duplicates and unsupported combinations fail closed.
-
-Reachable unregistered dynamic prerequisites reject. The live linker authority
-has zero unowned dynamics: its `scaninc`, generated item-cap, and
-banim-linker shell expressions are represented by the separate registry and
-never executed. Contract tool/input/variable changes flow only to Make
-evidence that consumes the contract. Variable recursion and expression
-nesting have independent limits of 64, with separate word and variant bounds.
-
-Dynamic target declarations are whole-tree authority. No expansion failure is
-ignored, even for a target unrelated to the requested root. A registered
-dynamic target must have an exact sealed expression, concrete resolved target,
-tracked tool/input bindings, and evidence owners; unregistered shell/function,
-cycle, malformed, or over-depth declarations reject before closure. Registered
-targets resolve without shell execution, and their recipes flow into aggregate
-fingerprints.
-
-Domain-separated seals cover the strict schema, probe oracle, complete graph, and resolved
-edges plus live evidence-authority fingerprints. Make authority derives from
-normalized target semantics; workflow authority derives from normalized parsed
-jobs and steps; tester/manual/generated authority derives from real typed
-registries. Graph-edge comparison is the review-invalidation source. Filenames,
-commit messages, comments, and nonsemantic whitespace are not evidence.
-
-All mutation fixtures use a bounded local clone or synthetic authority root;
-tests never overwrite the source checkout's Makefile, workflow, graph, or
-oracle and verify their bytes plus Git status even after a simulated exception.
-Before any sandbox use, no-follow traversal lstats and opens the repository
-root, `build`, `test-artifacts`, and `validation-ownership` components,
-rejecting symlinks, non-directories, escapes, and detectable replacement.
+Domain-separated seals continue to cover the strict schema, probe oracle,
+complete graph, resolved edges, and live evidence-authority fingerprints.
+Graph-edge comparison remains the review-invalidation source; the graph still
+does not execute or narrow any selected validation gate.
 
 ## Tester case and compatibility
 

@@ -1,0 +1,336 @@
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import tempfile
+import unittest
+from pathlib import Path
+
+from scripts.validation_ownership import make_probe, reporter
+
+
+ROOT = Path(__file__).resolve().parents[3]
+SCRATCH_ROOT = ROOT / "build" / "test-artifacts" / "validation-ownership"
+PROBE_INPUTS = (
+    "scripts/validation_ownership/sandbox_exec.py",
+    "scripts/validation_ownership/shell_interceptor.c",
+)
+
+
+class AuthoritativeMakeProbeTests(unittest.TestCase):
+    def fixture(self, makefile: str, files: dict[str, str] | None = None):
+        directory = tempfile.TemporaryDirectory(dir=SCRATCH_ROOT)
+        root = Path(directory.name)
+        (root / "Makefile").write_text(makefile, encoding="ascii")
+        entries = {
+            "Makefile": reporter.GitTreeEntry(
+                "Makefile",
+                "100644",
+                "blob",
+                "0" * 40,
+            )
+        }
+        for path in PROBE_INPUTS:
+            target = root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / path, target)
+            entries[path] = reporter.GitTreeEntry(
+                path,
+                "100644",
+                "blob",
+                "0" * 40,
+            )
+        for path, content in ({} if files is None else files).items():
+            target = root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="ascii")
+            entries[path] = reporter.GitTreeEntry(
+                path,
+                "100644",
+                "blob",
+                "0" * 40,
+            )
+        return directory, root, entries
+
+    def probe(
+        self,
+        root: Path,
+        entries: dict[str, reporter.GitTreeEntry],
+        *,
+        domains: dict[str, dict] | None = None,
+        dynamic: dict[str, dict] | None = None,
+        environment_names: set[str] | None = None,
+    ):
+        return make_probe.run_probe(
+            reporter.AuthorityLoader(root, entries),
+            {"all"},
+            {} if domains is None else domains,
+            {} if dynamic is None else dynamic,
+            environment_names=environment_names,
+            scratch_root=root / "artifacts",
+        )["all"]
+
+    @staticmethod
+    def actual_make(root: Path, *arguments: str):
+        environment = {
+            "HOME": "/nonexistent",
+            "LANG": "C",
+            "LC_ALL": "C",
+            "PATH": "/usr/bin:/bin",
+            "TZ": "UTC",
+        }
+        return subprocess.run(
+            [
+                "/usr/bin/make",
+                "--no-print-directory",
+                "-n",
+                "-B",
+                "--trace",
+                *arguments,
+                "all",
+            ],
+            cwd=root,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    def test_conditionals_and_finite_origins_use_actual_make(self):
+        directory, root, entries = self.fixture(
+            "MODE ?= one\n"
+            "ifeq ($(MODE),two)\n"
+            "all: two\n"
+            "else\n"
+            "all: one\n"
+            "endif\n"
+            "one:\n\t@printf 'one\\n'\n"
+            "two:\n\t@printf 'two\\n'\n"
+        )
+        with directory:
+            authority = self.probe(
+                root,
+                entries,
+                domains={
+                    "MODE": {
+                        "kind": "explicit",
+                        "values": ["one", "two"],
+                    }
+                },
+                environment_names={"MODE"},
+            )
+            self.assertEqual(
+                set(authority["transitive"]),
+                {"one", "two"},
+            )
+            records = authority["record"]["variants"]
+            self.assertEqual(
+                {
+                    (item["origin"], item["value"])
+                    for item in records
+                },
+                {
+                    ("fallback", None),
+                    ("command-line", "one"),
+                    ("command-line", "two"),
+                    ("environment", "one"),
+                    ("environment", "two"),
+                },
+            )
+            self.assertIn("printf 'two", self.actual_make(root, "MODE=two").stdout)
+
+    def test_eval_patterns_automatic_and_variable_spellings(self):
+        makefile = (
+            "C ?= child\n"
+            "NAME ?= child\n"
+            "define RULE\n"
+            "%.out: %.in\n"
+            "\t@printf 'pattern %s %s\\n' '$$@' '$$<'\n"
+            "endef\n"
+            "$(eval $(RULE))\n"
+            ".SECONDEXPANSION:\n"
+            "all: $C ${NAME} sample.out scoped\n"
+            "scoped: VALUE = child\n"
+            "scoped: $$(VALUE)\n"
+            "child:\n\t@printf 'child\\n'\n"
+        )
+        directory, root, entries = self.fixture(
+            makefile,
+            {"sample.in": "input\n"},
+        )
+        domains = {
+            name: {"kind": "tracked-fallback"}
+            for name in ("C", "NAME")
+        }
+        with directory:
+            one = self.probe(root, entries, domains=domains)
+            self.assertTrue(
+                {"child", "sample.in", "sample.out", "scoped"}
+                <= set(one["transitive"])
+            )
+            recipes = one["record"]["variants"][0]["semantics"]["recipes"]
+            pattern_command = " ".join(
+                recipes["sample.out"]["commands"]
+            )
+            self.assertIn("sample.out", pattern_command)
+            self.assertIn("sample.in", pattern_command)
+            (root / "Makefile").write_text(
+                makefile.replace("pattern %s", "changed %s"),
+                encoding="ascii",
+            )
+            two = self.probe(root, entries, domains=domains)
+            self.assertNotEqual(
+                one["record"]["variants"][0]["semantic_sha256"],
+                two["record"]["variants"][0]["semantic_sha256"],
+            )
+
+    def test_literal_missing_prerequisite_fails(self):
+        directory, root, entries = self.fixture("all: missing.file\n")
+        with directory, self.assertRaisesRegex(
+            make_probe.MakeProbeError,
+            "No rule to make target 'missing.file'",
+        ):
+            self.probe(root, entries)
+
+    def test_active_error_fails_and_comments_are_semantically_stable(self):
+        directory, root, entries = self.fixture(
+            "all: child\nchild:\n\t@printf 'child\\n'\n"
+        )
+        with directory:
+            one = self.probe(root, entries)
+            (root / "Makefile").write_text(
+                "# unrelated comment\n"
+                "all: child\nchild:\n\t@printf 'child\\n'\n",
+                encoding="ascii",
+            )
+            two = self.probe(root, entries)
+            self.assertEqual(
+                one["record"]["variants"][0]["semantic_sha256"],
+                two["record"]["variants"][0]["semantic_sha256"],
+            )
+            (root / "Makefile").write_text(
+                "$(error active failure)\nall:\n\t@true\n",
+                encoding="ascii",
+            )
+            with self.assertRaisesRegex(
+                make_probe.MakeProbeError,
+                "active failure",
+            ):
+                self.probe(root, entries)
+
+    def test_unknown_shell_and_eager_assignment_never_execute(self):
+        cases = (
+            "all:\n\t@printf '%s\\n' '$(shell printf direct)'\n",
+            "UNUSED != printf eager\nall:\n\t@true\n",
+        )
+        for index, makefile in enumerate(cases):
+            with self.subTest(index=index):
+                directory, root, entries = self.fixture(makefile)
+                with directory, self.assertRaisesRegex(
+                    make_probe.MakeProbeError,
+                    "unregistered command execution",
+                ):
+                    self.probe(root, entries)
+
+    def test_registered_eager_assignment_is_exact_authority(self):
+        directory, root, entries = self.fixture(
+            "UNUSED != printf eager\nall:\n\t@true\n"
+        )
+        contract = {
+            "id": "fixture-eager",
+            "command_regex": "^printf eager$",
+            "resolved_value": "sealed",
+        }
+        with directory:
+            authority = self.probe(
+                root,
+                entries,
+                dynamic={"$(shell fixture)": contract},
+            )
+            command = authority["record"]["dynamic_commands"][0]
+            self.assertEqual(command["authority"]["id"], "fixture-eager")
+            self.assertEqual(command["command"], "printf eager")
+
+    def test_absolute_and_untracked_includes_reject(self):
+        for include in ("/dev/stdin", "missing-untracked.mk"):
+            with self.subTest(include=include):
+                directory, root, entries = self.fixture(
+                    f"-include {include}\nall:\n\t@true\n"
+                )
+                with directory, self.assertRaisesRegex(
+                    make_probe.MakeProbeError,
+                    "absolute or dynamic include|untracked include",
+                ):
+                    self.probe(root, entries)
+
+    def test_every_live_sized_domain_runs_a_cli_variant(self):
+        names = [f"V{index:02d}" for index in range(80)]
+        directory, root, entries = self.fixture(
+            "\n".join(f"{name} ?= child" for name in names)
+            + "\nall: "
+            + " ".join(f"$({name})" for name in names)
+            + "\nchild:\n\t@printf 'child\\n'\n"
+        )
+        with directory:
+            authority = self.probe(
+                root,
+                entries,
+                domains={
+                    name: {"kind": "tracked-fallback"}
+                    for name in names
+                },
+            )
+            command_line = [
+                item
+                for item in authority["record"]["variants"]
+                if item["origin"] == "command-line"
+            ]
+            self.assertEqual(len(command_line), 80)
+            self.assertEqual(
+                {item["variable"] for item in command_line},
+                set(names),
+            )
+
+    def test_unbounded_external_selector_rejects_but_recipe_text_is_symbolic(self):
+        directory, root, entries = self.fixture(
+            "DEP ?=\nall: $(DEP)\n"
+        )
+        with directory, self.assertRaisesRegex(
+            make_probe.MakeProbeError,
+            "lack finite domains",
+        ):
+            make_probe.run_probe(
+                reporter.AuthorityLoader(root, entries),
+                {"all"},
+                {},
+                {},
+                declared_external_names={"DEP"},
+                environment_names={"DEP"},
+                scratch_root=root / "artifacts",
+            )
+
+        directory, root, entries = self.fixture(
+            "MESSAGE ?= fallback\n"
+            "all:\n\t@printf '%s\\n' '$(MESSAGE)'\n"
+        )
+        with directory:
+            authority = make_probe.run_probe(
+                reporter.AuthorityLoader(root, entries),
+                {"all"},
+                {},
+                {},
+                declared_external_names={"MESSAGE"},
+                environment_names={"MESSAGE"},
+                scratch_root=root / "artifacts",
+                symbolic_recipe_names={"MESSAGE"},
+            )["all"]
+            self.assertEqual(
+                authority["record"]["symbolic_recipe_names"],
+                ["MESSAGE"],
+            )
+            self.assertEqual(len(authority["record"]["variants"]), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()
