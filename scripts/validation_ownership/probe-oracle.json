@@ -5,186 +5,114 @@
     {
       "path": "src/bm.c",
       "expected_surface": "surface.runtime",
-      "expected_edge_types": [
-        "owns-test",
-        "adversarial-control",
-        "compile-owner",
-        "link-owner",
-        "target-scenario"
-      ],
-      "expected_evidence_ids": [
-        "owner.host-runtime",
-        "owner.host-build",
-        "owner.compile-modern",
-        "owner.link-modern",
-        "owner.runtime-modern"
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-runtime"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-modern"}
       ]
     },
     {
       "path": "scripts/check_docs.py",
       "expected_surface": "surface.host",
-      "expected_edge_types": [
-        "owns-test",
-        "adversarial-control"
-      ],
-      "expected_evidence_ids": [
-        "owner.host-build",
-        "owner.host-workflow"
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-workflow"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-build"}
       ]
     },
     {
       "path": "src/data/items.json",
       "expected_surface": "surface.generated",
-      "expected_edge_types": [
-        "owns-test",
-        "adversarial-control",
-        "compile-owner",
-        "link-owner",
-        "target-scenario",
-        "generated-by",
-        "drift-check",
-        "generated-consumer"
-      ],
-      "expected_evidence_ids": [
-        "owner.host-generated",
-        "owner.registry-generated",
-        "owner.compile-modern",
-        "owner.link-modern",
-        "owner.runtime-modern",
-        "owner.generator-generated",
-        "owner.drift-generated",
-        "owner.consumer-generated"
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.registry-generated"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "drift-check", "evidence_id": "owner.drift-generated"},
+        {"edge_type": "generated-by", "evidence_id": "owner.generator-generated"},
+        {"edge_type": "generated-consumer", "evidence_id": "owner.consumer-generated"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-generated"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-modern"}
       ]
     },
     {
       "path": "texts/expansion/catalog.en.json",
       "expected_surface": "surface.localization",
-      "expected_edge_types": [
-        "owns-test",
-        "adversarial-control",
-        "compile-owner",
-        "link-owner",
-        "target-scenario",
-        "generated-by",
-        "drift-check",
-        "generated-consumer",
-        "dependent-profile",
-        "negative-control"
-      ],
-      "expected_evidence_ids": [
-        "owner.host-localization",
-        "owner.host-build",
-        "owner.compile-modern",
-        "owner.link-modern",
-        "owner.runtime-localization",
-        "owner.generator-localization",
-        "owner.drift-localization",
-        "owner.profile-modern",
-        "owner.negative-localization"
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "dependent-profile", "evidence_id": "owner.profile-modern"},
+        {"edge_type": "drift-check", "evidence_id": "owner.drift-localization"},
+        {"edge_type": "generated-by", "evidence_id": "owner.generator-localization"},
+        {"edge_type": "generated-consumer", "evidence_id": "owner.link-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "negative-control", "evidence_id": "owner.negative-localization"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-localization"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-localization"}
       ]
     },
     {
       "path": "config.mk",
       "expected_surface": "surface.configuration",
-      "expected_edge_types": [
-        "owns-test",
-        "adversarial-control",
-        "compile-owner",
-        "link-owner",
-        "target-scenario",
-        "dependent-profile",
-        "negative-control"
-      ],
-      "expected_evidence_ids": [
-        "owner.validation-graph",
-        "owner.host-config",
-        "owner.compile-modern",
-        "owner.link-modern",
-        "owner.runtime-modern",
-        "owner.profile-modern",
-        "owner.negative-config"
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-config"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "dependent-profile", "evidence_id": "owner.profile-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "negative-control", "evidence_id": "owner.negative-config"},
+        {"edge_type": "owns-test", "evidence_id": "owner.validation-graph"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-modern"}
       ]
     },
     {
       "path": "include/global.h",
       "expected_surface": "surface.runtime",
-      "expected_edge_types": [
-        "owns-test",
-        "adversarial-control",
-        "compile-owner",
-        "link-owner",
-        "target-scenario"
-      ],
-      "expected_evidence_ids": [
-        "owner.host-runtime",
-        "owner.host-build",
-        "owner.compile-modern",
-        "owner.link-modern",
-        "owner.runtime-modern"
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-runtime"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-modern"}
       ]
     },
     {
       "path": "graphics/titlescreen/title_main_background_1.png",
       "expected_surface": "surface.manual-av",
-      "expected_edge_types": [
-        "owns-test",
-        "adversarial-control",
-        "compile-owner",
-        "link-owner",
-        "target-scenario",
-        "manual-handoff"
-      ],
-      "expected_evidence_ids": [
-        "owner.host-runtime",
-        "owner.host-build",
-        "owner.compile-modern",
-        "owner.link-modern",
-        "owner.runtime-visual",
-        "owner.manual-handoff"
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-runtime"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-visual"}
       ]
     },
     {
       "path": ".github/manual-testing-handoff.json",
       "expected_surface": "surface.manual-av",
-      "expected_edge_types": [
-        "owns-test",
-        "adversarial-control",
-        "compile-owner",
-        "link-owner",
-        "target-scenario",
-        "manual-handoff"
-      ],
-      "expected_evidence_ids": [
-        "owner.host-runtime",
-        "owner.host-build",
-        "owner.compile-modern",
-        "owner.link-modern",
-        "owner.runtime-visual",
-        "owner.manual-handoff"
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "manual-handoff", "evidence_id": "owner.manual-handoff"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-runtime"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-visual"}
       ]
     },
     {
       "path": ".github/workflows/build.yml",
       "expected_surface": "surface.workflow",
-      "expected_edge_types": [
-        "owns-test",
-        "adversarial-control"
-      ],
-      "expected_evidence_ids": [
-        "owner.host-workflow",
-        "owner.validation-check"
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.validation-check"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-workflow"}
       ]
     },
     {
       "path": ".github/validation-ownership-graph.json",
       "expected_surface": "surface.governance",
-      "expected_edge_types": [
-        "owns-test",
-        "adversarial-control"
-      ],
-      "expected_evidence_ids": [
-        "owner.validation-suite",
-        "owner.validation-check"
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.validation-check"},
+        {"edge_type": "owns-test", "evidence_id": "owner.validation-suite"}
       ]
     },
     {
@@ -194,39 +122,27 @@
     {
       "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
       "expected_surface": "surface.templates",
-      "expected_edge_types": [
-        "owns-test",
-        "adversarial-control"
-      ],
-      "expected_evidence_ids": [
-        "owner.host-workflow",
-        "owner.validation-check"
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.validation-check"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-workflow"}
       ]
     },
     {
       "path": ".github/PULL_REQUEST_TEMPLATE.md",
       "expected_surface": "surface.pr-template",
-      "expected_edge_types": [
-        "owns-test",
-        "adversarial-control"
-      ],
-      "expected_evidence_ids": [
-        "owner.host-docs",
-        "owner.validation-check"
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.validation-check"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-docs"}
       ]
     },
     {
       "path": ".github/requirements/build.txt",
       "expected_surface": "surface.repo-config",
-      "expected_edge_types": [
-        "owns-test",
-        "adversarial-control"
-      ],
-      "expected_evidence_ids": [
-        "owner.host-build",
-        "owner.validation-check"
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.validation-check"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-build"}
       ]
     }
   ],
-  "seal": "357f742073adfe86d797aa23d72b6d3a6ff22c18cf7395731b6848ff3d8137a9"
+  "seal": "ab72f7e4edc19bfaba872b33916071ebae02aeaf6f749a9f5e358fe97945311a"
 }

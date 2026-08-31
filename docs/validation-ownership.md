@@ -157,16 +157,24 @@ named semantic failure, restores the graph, and reruns both successfully.
 Self-declared replacement reasons, fabricated authorities, stale timestamps,
 or non-restoring proofs reject.
 
-The independently sealed oracle pins expected edge families **and evidence
-node IDs** for runtime, host-only, generated,
+The independently sealed oracle pins exact `(edge_type, evidence_id)` owner
+pairs for runtime, host-only, generated,
 localization, configuration, ABI, manual A/V, workflow, governance, templates,
 pull-request-template, and repository-config surfaces, plus the exact
-CODEOWNERS exclusion. Unknown families/evidence IDs, same-type wrong owners,
-stale paths/surfaces, or seal drift reject. Any missing or unexpected edge or
-evidence owner makes the public check fail rather than emitting a successful
-report. The report exposes zero false-negative/false-positive counts plus the
-bounded maintenance estimate without modifying issue #176's immutable
-baseline fixture or expected report.
+CODEOWNERS exclusion. Pair order is normalized before sealing, while duplicate
+pairs, unknown families/evidence IDs, same-type wrong owners, target swaps,
+stale paths/surfaces, or seal drift reject. Any missing or unexpected owner
+pair makes the public check fail rather than emitting a successful report.
+The report exposes zero false-negative/false-positive counts plus the bounded
+maintenance estimate without modifying issue #176's immutable baseline
+fixture or expected report.
+
+Each Make authority also contains a cycle-safe transitive closure of exact
+prerequisite targets and matching pattern rules. A child recipe, assignment,
+prerequisite, or generated-rule change therefore changes every aggregate
+authority that consumes it while unrelated targets remain stable. Cycles emit
+a deterministic cycle record rather than recursing or silently dropping an
+edge.
 
 Domain-separated seals cover the strict schema, probe oracle, complete graph, and resolved
 edges plus live evidence-authority fingerprints. Make authority derives from

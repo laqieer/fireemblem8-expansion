@@ -516,10 +516,11 @@ list. Both ownership commands are required, scrubbed `host-tests` gates and
 members of the complete 30-gate upstream mirror.
 
 The canonical JSON report explains each selected gate, reports zero false
-positive and false negative edge/evidence selections against the independently
-sealed probe oracle, and records bounded maintenance cost through the issue
-#176 artifact shape. Same-type owner substitution is a mismatch and failed
-public check, not a successful report.
+positive and false negative exact `(edge_type, evidence_id)` owner-pair
+selections against the independently sealed probe oracle, and records bounded
+maintenance cost through the issue #176 artifact shape. Pair reordering
+normalizes; duplicate pairs, same-type owner substitution, and swapped
+workflow owners are mismatches and failed public checks.
 Domain-separated graph, schema, and resolved-edge seals change when semantic
 authority changes. Comparing a prior Git revision invalidates review from
 authoritative edge or target-authority changes, not filenames or commit prose.
@@ -535,7 +536,10 @@ nonsemantic spacing, and unrelated `.mk` changes stay green, while ordered
 assignments, operators/flavors, exact prerequisite/recipe order, conditional
 context, steps, endpoints, edge types, owners, and authority targets invalidate
 only their edge IDs. Synthetic fixtures compare each fingerprint change with
-the observable GNU Make result.
+the observable GNU Make result. Cycle-safe transitive prerequisite and
+pattern-rule closure propagates child recipe/assignment/prerequisite changes
+to aggregate parents; a real `expansion-modern-budget-check` child mutation
+invalidates only the edges owned by `expansion-modern-linker-check`.
 
 Exact current/base Git mode and provenance is mandatory. Symlinks, synthetic
 gitlinks under owned prefixes, untracked/ignored/nonexistent changed paths,

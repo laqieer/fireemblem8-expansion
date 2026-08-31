@@ -733,11 +733,10 @@ def _make_logical_lines(text: str) -> list[tuple[bool, str]]:
     pending = ""
     for physical in text.splitlines():
         if physical.startswith("\t"):
-            if pending:
-                result.append((False, pending))
-                pending = ""
-            result.append((True, physical[1:]))
-            continue
+            if not pending:
+                result.append((True, physical[1:]))
+                continue
+            physical = physical[1:]
         stripped = physical.rstrip()
         continuation = stripped.endswith("\\")
         piece = stripped[:-1] if continuation else stripped
@@ -768,7 +767,10 @@ def _normalize_make_expression(value: str) -> str:
     return " ".join(value.strip().split())
 
 
-def _parse_make_authorities(loader: AuthorityLoader) -> dict[str, dict[str, Any]]:
+def _parse_make_authorities(
+    loader: AuthorityLoader,
+    requested_targets: set[str] | None = None,
+) -> dict[str, dict[str, Any]]:
     targets: dict[str, dict[str, Any]] = defaultdict(
         lambda: {"declarations": [], "recipes": [], "phony": False}
     )
@@ -899,7 +901,7 @@ def _parse_make_authorities(loader: AuthorityLoader) -> dict[str, dict[str, Any]
             )
 
     parse_file("Makefile")
-    result = {}
+    direct = {}
     for target, record in targets.items():
         values = [
             *(
@@ -931,7 +933,7 @@ def _parse_make_authorities(loader: AuthorityLoader) -> dict[str, dict[str, Any]
                 )
                 - referenced
             )
-        result[target] = {
+        direct[target] = {
             "declarations": record["declarations"],
             "recipes": record["recipes"],
             "phony": record["phony"],
@@ -940,7 +942,76 @@ def _parse_make_authorities(loader: AuthorityLoader) -> dict[str, dict[str, Any]
                 for name in sorted(referenced)
             },
         }
-    return result
+
+    pattern_targets = [target for target in direct if "%" in target]
+
+    def expand_prerequisite(token: str, record: dict[str, Any]) -> list[str]:
+        candidates = [token]
+        variable = re.fullmatch(r"\$\(([A-Za-z_][A-Za-z0-9_]*)\)", token)
+        if variable:
+            candidates = [
+                value
+                for assignment in record["variables"].get(variable.group(1), ())
+                for value in assignment["value"].split()
+            ]
+        result = []
+        for candidate in candidates:
+            if candidate in direct:
+                result.append(candidate)
+            if "$" in candidate:
+                continue
+            for pattern in pattern_targets:
+                regex = "^" + "".join(
+                    ".+" if part == "%" else re.escape(part)
+                    for part in re.split(r"(%)", pattern)
+                ) + "$"
+                if re.fullmatch(regex, candidate):
+                    result.append(pattern)
+        return list(dict.fromkeys(result))
+
+    def child_targets(target: str) -> list[str]:
+        result = []
+        record = direct[target]
+        for declaration in record["declarations"]:
+            if declaration["kind"] != "rule":
+                continue
+            for prerequisite in (
+                *declaration["prerequisites"],
+                *declaration["order_only"],
+            ):
+                result.extend(expand_prerequisite(prerequisite, record))
+        return list(dict.fromkeys(result))
+
+    def authority_record(target: str) -> dict[str, Any]:
+        transitive = []
+        cycles = []
+        visited = {target}
+
+        def visit(current: str, stack: tuple[str, ...]) -> None:
+            for child in child_targets(current):
+                if child in stack:
+                    cycles.append(stack + (child,))
+                    continue
+                if child in visited:
+                    continue
+                visited.add(child)
+                transitive.append({"target": child, "record": direct[child]})
+                visit(child, stack + (child,))
+
+        visit(target, (target,))
+        return {
+            "target": target,
+            "record": direct[target],
+            "transitive": transitive,
+            "cycles": sorted(set(cycles)),
+        }
+
+    selected = set(direct) if requested_targets is None else requested_targets
+    return {
+        target: authority_record(target)
+        for target in sorted(selected)
+        if target in direct
+    }
 
 
 def _authority_identity(authority: dict[str, Any]) -> tuple[str, ...]:
@@ -967,7 +1038,12 @@ def _validate_authorities(
     *,
     strict_workflow: bool,
 ) -> dict[str, dict[str, str]]:
-    make_targets = _parse_make_authorities(loader)
+    requested_make_targets = {
+        node["authority"]["target"]
+        for node in evidence_nodes.values()
+        if node["authority"]["kind"] == "make-target"
+    }
+    make_targets = _parse_make_authorities(loader, requested_make_targets)
     workflow_jobs, workflow_steps = _workflow_authorities(
         loader,
         strict=strict_workflow,
@@ -1795,6 +1871,24 @@ def _resolve_path(
     }
 
 
+def canonical_probe_oracle_payload(oracle: dict[str, Any]) -> dict[str, Any]:
+    probes = []
+    for raw_probe in oracle["probes"]:
+        probe = copy.deepcopy(raw_probe)
+        if "expected_owners" in probe:
+            probe["expected_owners"] = sorted(
+                probe["expected_owners"],
+                key=lambda item: (item["edge_type"], item["evidence_id"]),
+            )
+        probes.append(probe)
+    probes.sort(key=lambda item: item["path"])
+    return {
+        "schema_version": oracle["schema_version"],
+        "source_case": oracle["source_case"],
+        "probes": probes,
+    }
+
+
 def validate_probe_oracle(
     oracle: Any,
     graph: dict[str, Any],
@@ -1833,8 +1927,7 @@ def validate_probe_oracle(
         owned_keys = {
             "path",
             "expected_surface",
-            "expected_edge_types",
-            "expected_evidence_ids",
+            "expected_owners",
         }
         exclusion_keys = {"path", "expected_exclusion"}
         if keys not in {frozenset(owned_keys), frozenset(exclusion_keys)}:
@@ -1863,38 +1956,37 @@ def validate_probe_oracle(
             raise OwnershipError(
                 f"{label} references unknown surface {probe['expected_surface']!r}"
             )
-        edge_types = probe["expected_edge_types"]
+        expected_owners = probe["expected_owners"]
         if (
-            not isinstance(edge_types, list)
-            or not edge_types
-            or len(edge_types) != len(set(edge_types))
+            not isinstance(expected_owners, list)
+            or not expected_owners
         ):
-            raise OwnershipError(f"{label} edge types must be a unique nonempty list")
-        unknown = sorted(set(edge_types) - EDGE_TYPES)
-        if unknown:
-            raise OwnershipError(f"{label} has unknown edge families {unknown}")
-        expected_evidence = probe["expected_evidence_ids"]
-        if (
-            not isinstance(expected_evidence, list)
-            or not expected_evidence
-            or len(expected_evidence) != len(set(expected_evidence))
-        ):
-            raise OwnershipError(
-                f"{label} evidence IDs must be a unique nonempty list"
-            )
-        unknown_evidence = sorted(set(expected_evidence) - evidence_ids)
-        if unknown_evidence:
-            raise OwnershipError(
-                f"{label} has unknown evidence IDs {unknown_evidence}"
-            )
+            raise OwnershipError(f"{label} owners must be a nonempty list")
+        pairs = []
+        for owner_index, owner in enumerate(expected_owners):
+            owner_label = f"{label}.expected_owners[{owner_index}]"
+            if not isinstance(owner, dict) or set(owner) != {
+                "edge_type",
+                "evidence_id",
+            }:
+                raise OwnershipError(
+                    f"{owner_label} must contain edge_type and evidence_id"
+                )
+            if owner["edge_type"] not in EDGE_TYPES:
+                raise OwnershipError(
+                    f"{owner_label} has unknown edge family {owner['edge_type']!r}"
+                )
+            if owner["evidence_id"] not in evidence_ids:
+                raise OwnershipError(
+                    f"{owner_label} has unknown evidence ID {owner['evidence_id']!r}"
+                )
+            pairs.append((owner["edge_type"], owner["evidence_id"]))
+        if len(pairs) != len(set(pairs)):
+            raise OwnershipError(f"{label} duplicates an exact owner pair")
     seal = oracle["seal"]
     if not isinstance(seal, str) or not re.fullmatch(r"[0-9a-f]{64}", seal):
         raise OwnershipError("probe oracle seal must be a lowercase SHA-256")
-    payload = {
-        "schema_version": oracle["schema_version"],
-        "source_case": oracle["source_case"],
-        "probes": oracle["probes"],
-    }
+    payload = canonical_probe_oracle_payload(oracle)
     expected = _sha256(PROBE_SEAL_DOMAIN, payload)
     if seal != expected:
         raise OwnershipError("probe oracle seal does not match its admitted cases")
@@ -1928,25 +2020,27 @@ def _measure(
             )
             continue
         resolution = _resolve_path(probe["path"], graph, model)
-        actual = {owner["edge_type"] for owner in resolution["owners"]}
-        expected = set(probe["expected_edge_types"])
-        actual_evidence = {
-            owner["evidence_id"] for owner in resolution["owners"]
+        actual = {
+            (owner["edge_type"], owner["evidence_id"])
+            for owner in resolution["owners"]
         }
-        expected_evidence = set(probe["expected_evidence_ids"])
+        expected = {
+            (owner["edge_type"], owner["evidence_id"])
+            for owner in probe["expected_owners"]
+        }
         if resolution["surface"] != probe["expected_surface"]:
             false_positive += 1
             false_negative += 1
         false_positive += len(actual - expected)
         false_negative += len(expected - actual)
-        false_positive += len(actual_evidence - expected_evidence)
-        false_negative += len(expected_evidence - actual_evidence)
         probes.append(
             {
                 "path": probe["path"],
                 "surface": resolution["surface"],
-                "edge_types": sorted(actual),
-                "evidence_ids": sorted(actual_evidence),
+                "owners": [
+                    {"edge_type": edge_type, "evidence_id": evidence_id}
+                    for edge_type, evidence_id in sorted(actual)
+                ],
             }
         )
     if false_positive or false_negative:

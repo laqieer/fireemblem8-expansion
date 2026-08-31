@@ -740,6 +740,64 @@ class OwnershipGraphTests(unittest.TestCase):
                 parse(assignment_false, "conditional-assignment"),
             )
 
+            aggregate_one = (
+                "all: child\n"
+                "child:\n\t@printf 'one\\n'\n"
+                "unrelated:\n\t@printf 'stable\\n'\n"
+            )
+            aggregate_two = aggregate_one.replace("printf 'one", "printf 'two")
+            self.assertEqual(run(aggregate_one, "all").stdout, "one\n")
+            self.assertEqual(run(aggregate_two, "all").stdout, "two\n")
+            parsed_one = parse(aggregate_one, "all")
+            parsed_two = parse(aggregate_two, "all")
+            self.assertNotEqual(parsed_one, parsed_two)
+            makefile.write_text(aggregate_one, encoding="ascii")
+            all_one = reporter._parse_make_authorities(loader)
+            makefile.write_text(aggregate_two, encoding="ascii")
+            all_two = reporter._parse_make_authorities(loader)
+            self.assertEqual(all_one["unrelated"], all_two["unrelated"])
+
+            child_contract_one = (
+                "first second:\n\t@:\n"
+                "all: child\n"
+                "child: VALUE := one\n"
+                "child: first second\n"
+                "\t@printf '%s %s\\n' '$(VALUE)' '$<'\n"
+            )
+            child_contract_two = child_contract_one.replace(
+                "VALUE := one", "VALUE += two"
+            ).replace("child: first second", "child: second first")
+            self.assertNotEqual(
+                run(child_contract_one, "all").stdout,
+                run(child_contract_two, "all").stdout,
+            )
+            self.assertNotEqual(
+                parse(child_contract_one, "all"),
+                parse(child_contract_two, "all"),
+            )
+
+            pattern_one = (
+                "all: sample.out\n"
+                "%.out: %.in\n\t@printf 'pattern-one\\n'\n"
+            )
+            pattern_two = pattern_one.replace("pattern-one", "pattern-two")
+            self.assertNotEqual(
+                parse(pattern_one, "all"),
+                parse(pattern_two, "all"),
+            )
+            self.assertIn(
+                "%.out",
+                {
+                    item["target"]
+                    for item in parse(pattern_one, "all")["transitive"]
+                },
+            )
+
+            cycle = "all: child\nchild: all\n\t@true\n"
+            cycle_record = parse(cycle, "all")
+            self.assertEqual(cycle_record, parse(cycle, "all"))
+            self.assertTrue(cycle_record["cycles"])
+
     def test_recursive_make_authority_rejects_untracked_include(self):
         with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
             scratch = Path(directory)
@@ -808,6 +866,80 @@ class OwnershipGraphTests(unittest.TestCase):
             )
         finally:
             makefile.write_bytes(original)
+
+    def test_real_linker_child_mutation_invalidates_exact_parent_edges(self):
+        entries, _, graph, schema = self.fixture_authority()
+        modern_mk = self.fixture_root / "modern.mk"
+        original = modern_mk.read_bytes()
+        base_loader = reporter.AuthorityLoader(
+            self.fixture_root,
+            entries,
+            "HEAD",
+        )
+        prior_graph = reporter._prior_graph(base_loader)
+        self.assertIsNotNone(prior_graph)
+        loader = reporter.AuthorityLoader(self.fixture_root, entries)
+        before = reporter._parse_make_authorities(
+            loader,
+            {
+                "expansion-modern-linker-check",
+                "expansion-modern-all",
+            },
+        )
+        try:
+            mutated = original.replace(
+                b"--check --validate-elf \\\n"
+                b"\t\t--require-positive-headroom ewram \\\n"
+                b"\t\t--require-positive-headroom iwram\n",
+                b"--check --validate-elf \\\n"
+                b"\t\t--require-positive-headroom ewram \\\n"
+                b"\t\t--require-positive-headroom iwram --fixture-child-change\n",
+                1,
+            )
+            self.assertNotEqual(mutated, original)
+            modern_mk.write_bytes(mutated)
+            loader = reporter.AuthorityLoader(self.fixture_root, entries)
+            after = reporter._parse_make_authorities(
+                loader,
+                {
+                    "expansion-modern-linker-check",
+                    "expansion-modern-all",
+                },
+            )
+            self.assertNotEqual(
+                before["expansion-modern-linker-check"],
+                after["expansion-modern-linker-check"],
+            )
+            self.assertEqual(
+                before["expansion-modern-all"],
+                after["expansion-modern-all"],
+            )
+            model = reporter.validate_graph(
+                graph,
+                schema,
+                loader,
+                entries,
+            )
+            self.assertEqual(
+                reporter._authority_changed_edges(
+                    graph,
+                    prior_graph,
+                    model,
+                    loader,
+                    base_loader,
+                ),
+                {
+                    "configuration.link",
+                    "generated-schema.link",
+                    "generated.link",
+                    "localization.consumer",
+                    "localization.link",
+                    "manual.link",
+                    "runtime.link",
+                },
+            )
+        finally:
+            modern_mk.write_bytes(original)
 
     def test_workflow_invalidation_is_step_specific(self):
         entries, _, graph, schema = self.fixture_authority()
@@ -1048,13 +1180,9 @@ class OwnershipGraphTests(unittest.TestCase):
 
     def test_independent_probe_oracle_is_sealed_and_mismatch_fails(self):
         def reseal(oracle):
-            payload = {
-                key: oracle[key]
-                for key in ("schema_version", "source_case", "probes")
-            }
             oracle["seal"] = reporter._sha256(
                 reporter.PROBE_SEAL_DOMAIN,
-                payload,
+                reporter.canonical_probe_oracle_payload(oracle),
             )
 
         reporter.validate_probe_oracle(
@@ -1069,9 +1197,9 @@ class OwnershipGraphTests(unittest.TestCase):
             reporter.validate_probe_oracle(oracle, self.graph, self.entries)
 
         oracle = copy.deepcopy(self.oracle)
-        oracle["probes"][0]["expected_edge_types"].append("guessed-family")
+        oracle["probes"][0]["expected_owners"][0]["edge_type"] = "guessed-family"
         reseal(oracle)
-        with self.assertRaisesRegex(reporter.OwnershipError, "unknown edge families"):
+        with self.assertRaisesRegex(reporter.OwnershipError, "unknown edge family"):
             reporter.validate_probe_oracle(oracle, self.graph, self.entries)
 
         oracle = copy.deepcopy(self.oracle)
@@ -1081,7 +1209,7 @@ class OwnershipGraphTests(unittest.TestCase):
             reporter.validate_probe_oracle(oracle, self.graph, self.entries)
 
         oracle = copy.deepcopy(self.oracle)
-        oracle["probes"][0]["expected_edge_types"].pop()
+        oracle["probes"][0]["expected_owners"].pop()
         reseal(oracle)
         with self.assertRaisesRegex(reporter.OwnershipError, "selection mismatch"):
             reporter.build_report(
@@ -1092,6 +1220,19 @@ class OwnershipGraphTests(unittest.TestCase):
                 self.entries,
             )
 
+        oracle = copy.deepcopy(self.oracle)
+        oracle["probes"][0]["expected_owners"].append(
+            copy.deepcopy(oracle["probes"][0]["expected_owners"][0])
+        )
+        reseal(oracle)
+        with self.assertRaisesRegex(reporter.OwnershipError, "duplicates an exact owner pair"):
+            reporter.validate_probe_oracle(oracle, self.graph, self.entries)
+
+        oracle = copy.deepcopy(self.oracle)
+        oracle["probes"][0]["expected_owners"].reverse()
+        reporter.validate_probe_oracle(oracle, self.graph, self.entries)
+        self.assertEqual(oracle["seal"], self.oracle["seal"])
+
         graph = copy.deepcopy(self.graph)
         edge = next(
             item
@@ -1099,7 +1240,35 @@ class OwnershipGraphTests(unittest.TestCase):
             if item["id"] == "workflow.owns-test"
         )
         edge["target"] = "owner.host-build"
-        with self.assertRaisesRegex(reporter.OwnershipError, "selection mismatch"):
+        with self.assertRaisesRegex(
+            reporter.OwnershipError,
+            r"false_positive=1, false_negative=1",
+        ):
+            reporter.build_report(
+                graph,
+                self.schema,
+                self.oracle,
+                self.loader,
+                self.entries,
+            )
+
+        graph = copy.deepcopy(self.graph)
+        owns = next(
+            item for item in graph["edges"] if item["id"] == "workflow.owns-test"
+        )
+        adversarial = next(
+            item
+            for item in graph["edges"]
+            if item["id"] == "workflow.adversarial"
+        )
+        owns["target"], adversarial["target"] = (
+            adversarial["target"],
+            owns["target"],
+        )
+        with self.assertRaisesRegex(
+            reporter.OwnershipError,
+            r"false_positive=2, false_negative=2",
+        ):
             reporter.build_report(
                 graph,
                 self.schema,
@@ -1109,20 +1278,23 @@ class OwnershipGraphTests(unittest.TestCase):
             )
 
     def test_public_make_gate_surfaces_probe_mismatch(self):
-        _, loader, _, _ = self.fixture_authority()
-        oracle_path = self.fixture_root / reporter.PROBE_ORACLE_PATH
-        original = oracle_path.read_bytes()
-        oracle = copy.deepcopy(
-            loader.read_json(reporter.PROBE_ORACLE_PATH, "fixture oracle")
+        _, _, graph, _ = self.fixture_authority()
+        graph_path = self.fixture_root / reporter.GRAPH_PATH
+        original = graph_path.read_bytes()
+        owns = next(
+            item for item in graph["edges"] if item["id"] == "workflow.owns-test"
         )
-        oracle["probes"][0]["expected_edge_types"].pop()
-        payload = {
-            key: oracle[key]
-            for key in ("schema_version", "source_case", "probes")
-        }
-        oracle["seal"] = reporter._sha256(reporter.PROBE_SEAL_DOMAIN, payload)
+        adversarial = next(
+            item
+            for item in graph["edges"]
+            if item["id"] == "workflow.adversarial"
+        )
+        owns["target"], adversarial["target"] = (
+            adversarial["target"],
+            owns["target"],
+        )
         try:
-            oracle_path.write_bytes(reporter.normalized_json(oracle))
+            graph_path.write_bytes(reporter.normalized_json(graph))
             completed = subprocess.run(
                 ["make", "validation-ownership-check"],
                 cwd=self.fixture_root,
@@ -1131,9 +1303,12 @@ class OwnershipGraphTests(unittest.TestCase):
                 text=True,
             )
         finally:
-            oracle_path.write_bytes(original)
+            graph_path.write_bytes(original)
         self.assertNotEqual(completed.returncode, 0)
-        self.assertIn("probe oracle selection mismatch", completed.stderr)
+        self.assertIn(
+            "false_positive=2, false_negative=2",
+            completed.stderr,
+        )
 
     def test_mixed_make_goal_is_rejected_before_dependency_suppression(self):
         before = reporter.repository_status(self.fixture_root)
