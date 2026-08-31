@@ -286,18 +286,66 @@ class OwnershipGraphTests(unittest.TestCase):
         unchanged = reporter.compare_graph_edges(self.graph, copy.deepcopy(self.graph))
         self.assertFalse(unchanged["invalidated"])
 
-        graph = copy.deepcopy(self.graph)
-        graph["edges"][0]["reason"] = "changed semantic reason"
-        changed = reporter.compare_graph_edges(graph, self.graph)
-        self.assertTrue(changed["invalidated"])
-        self.assertEqual(changed["changed_edge_ids"], [graph["edges"][0]["id"]])
+        def assert_invalidated(graph, edge_id):
+            changed = reporter.compare_graph_edges(graph, self.graph)
+            self.assertTrue(changed["invalidated"])
+            self.assertIn(edge_id, changed["changed_edge_ids"])
 
-        graph = copy.deepcopy(self.graph)
-        node = next(item for item in graph["nodes"] if item["id"] == "owner.runtime-modern")
-        node["authority"]["target"] = "expansion-modern-title-check"
-        changed = reporter.compare_graph_edges(graph, self.graph)
-        self.assertTrue(changed["invalidated"])
-        self.assertIn("runtime.target", changed["changed_edge_ids"])
+        cases = {
+            "edge-reason": (
+                "runtime.owns-test",
+                lambda graph: next(
+                    edge
+                    for edge in graph["edges"]
+                    if edge["id"] == "runtime.owns-test"
+                ).update(reason="changed semantic reason"),
+            ),
+            "edge-source-endpoint": (
+                "runtime.owns-test",
+                lambda graph: next(
+                    edge
+                    for edge in graph["edges"]
+                    if edge["id"] == "runtime.owns-test"
+                ).update(source="surface.host"),
+            ),
+            "edge-owner-endpoint": (
+                "runtime.owns-test",
+                lambda graph: next(
+                    edge
+                    for edge in graph["edges"]
+                    if edge["id"] == "runtime.owns-test"
+                ).update(target="owner.host-build"),
+            ),
+            "edge-type": (
+                "runtime.owns-test",
+                lambda graph: next(
+                    edge
+                    for edge in graph["edges"]
+                    if edge["id"] == "runtime.owns-test"
+                ).update(type="adversarial-control"),
+            ),
+            "owner-evidence-type": (
+                "runtime.target",
+                lambda graph: next(
+                    node
+                    for node in graph["nodes"]
+                    if node["id"] == "owner.runtime-modern"
+                ).update(evidence_type="link"),
+            ),
+            "authority-target": (
+                "runtime.target",
+                lambda graph: next(
+                    node
+                    for node in graph["nodes"]
+                    if node["id"] == "owner.runtime-modern"
+                )["authority"].update(target="expansion-modern-title-check"),
+            ),
+        }
+        for label, (edge_id, mutate) in cases.items():
+            with self.subTest(label=label):
+                graph = copy.deepcopy(self.graph)
+                mutate(graph)
+                assert_invalidated(graph, edge_id)
 
         graph = copy.deepcopy(self.graph)
         graph["nodes"][0]["label"] = "non-authoritative presentation change"
@@ -384,15 +432,29 @@ class OwnershipGraphTests(unittest.TestCase):
         self.assertTrue(report["selected_gates"])
         self.assertEqual(reporter.repository_status(ROOT), before)
 
-        completed = subprocess.run(
-            command + ["--base-revision", "HEAD"],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
+        original_graph = GRAPH_PATH.read_bytes()
+        mutated_graph = copy.deepcopy(self.graph)
+        mutated_graph["edges"][0]["reason"] = (
+            "deterministic working-tree review invalidation fixture"
         )
+        try:
+            GRAPH_PATH.write_bytes(reporter.normalized_json(mutated_graph))
+            completed = subprocess.run(
+                command + ["--base-revision", "HEAD"],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+            )
+        finally:
+            GRAPH_PATH.write_bytes(original_graph)
         comparison = json.loads(completed.stdout)["review_invalidation"]
         self.assertTrue(comparison["invalidated"])
-        self.assertEqual(comparison["reason"], "ownership-graph-introduced")
+        self.assertEqual(comparison["reason"], "authoritative-graph-edge-change")
+        self.assertEqual(
+            comparison["changed_edge_ids"],
+            [self.graph["edges"][0]["id"]],
+        )
+        self.assertEqual(reporter.repository_status(ROOT), before)
 
 
 if __name__ == "__main__":
