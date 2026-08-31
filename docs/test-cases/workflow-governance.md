@@ -569,6 +569,16 @@ the starter-hook record and the seven exact linker-owner edges reached by
 `expansion-modern-linker-check`, while its invocation and unrelated authority
 remain unchanged.
 
+Global and target-specific modifier fixtures compare GNU Make expansion and
+child environments for assigned and bare exports, export-all/unexport,
+override precedence, and private inheritance boundaries. Real mutations of
+the committed PATH, item-cap, and modern-tool exports alter every affected
+child-command authority. Duplicate or malformed modifier combinations reject.
+Direct and called defined macros containing an unregistered shell, undefined
+call, cycle, unsupported function, or excessive depth also reject; an exact
+sealed shell contract instead binds its tracked tool/input/evidence and changes
+the authority without executing the tool.
+
 Target-specific recursive values and appends are evaluated at target use and
 inherited by prerequisite recipes; simple target values remain immediate.
 Recipe variables and escaped secondary prerequisites use those target-local

@@ -1134,6 +1134,10 @@ class OwnershipGraphTests(unittest.TestCase):
                 ],
                 ["@printf '%s\\n' 'inner:head:tail'"],
             )
+            self.assertEqual(
+                nested_authority["record"]["expanded_recipes"][0]["expanded"],
+                "@printf '%s\\n' 'inner:head:tail'",
+            )
 
             append_default = (
                 "DEFAULT = kept\n"
@@ -1303,6 +1307,358 @@ class OwnershipGraphTests(unittest.TestCase):
             ):
                 expander.expand("$(call MACRO)")
 
+    def test_make_global_and_target_modifiers_match_gnu_make(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            scratch = Path(directory)
+            makefile = scratch / "Makefile"
+            loader = reporter.AuthorityLoader(
+                scratch,
+                {
+                    "Makefile": reporter.GitTreeEntry(
+                        "Makefile", "100644", "blob", "0" * 40
+                    )
+                },
+            )
+
+            def parse(text, target="all"):
+                makefile.write_text(text, encoding="ascii")
+                return reporter._parse_make_authorities(loader, {target})[target]
+
+            def run(text, target="all", *arguments, env=None):
+                makefile.write_text(text, encoding="ascii")
+                return subprocess.run(
+                    [
+                        "make",
+                        "--no-print-directory",
+                        "-s",
+                        *arguments,
+                        target,
+                    ],
+                    cwd=scratch,
+                    env=env,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+
+            exported_one = (
+                "export VALUE := one\n"
+                "all:\n"
+                "\t@printf '%s|%s\\n' '$(VALUE)' \"$$VALUE\"\n"
+            )
+            exported_two = exported_one.replace("one", "two")
+            self.assertEqual(run(exported_one).stdout, "one|one\n")
+            self.assertEqual(run(exported_two).stdout, "two|two\n")
+            one_authority = parse(exported_one)
+            two_authority = parse(exported_two)
+            self.assertNotEqual(one_authority, two_authority)
+            self.assertIn(
+                "one",
+                one_authority["record"]["expanded_recipes"][0]["expanded"],
+            )
+            self.assertEqual(
+                one_authority["effective_exported_environment"]["VALUE"][
+                    "effective_values"
+                ],
+                ["one"],
+            )
+
+            bare_export = (
+                "VALUE := one\n"
+                "export VALUE\n"
+                "all:\n"
+                "\t@printf '%s|%s\\n' '$(VALUE)' \"$$VALUE\"\n"
+            )
+            unexported = bare_export.replace("export VALUE", "unexport VALUE")
+            self.assertEqual(run(bare_export).stdout, "one|one\n")
+            self.assertEqual(run(unexported).stdout, "one|\n")
+            self.assertIn(
+                "VALUE",
+                parse(bare_export)["effective_exported_environment"],
+            )
+            self.assertNotIn(
+                "VALUE",
+                parse(unexported)["effective_exported_environment"],
+            )
+            ambient_export = (
+                "export VALUE\n"
+                "all:\n"
+                "\t@printf '%s\\n' \"$$VALUE\"\n"
+            )
+            self.assertEqual(
+                run(
+                    ambient_export,
+                    env={**os.environ, "VALUE": "ambient"},
+                ).stdout,
+                "ambient\n",
+            )
+            self.assertEqual(
+                parse(ambient_export)["effective_exported_environment"][
+                    "VALUE"
+                ]["effective_values"],
+                ["<ambient-environment:VALUE>"],
+            )
+
+            export_all = bare_export.replace("export VALUE", "export")
+            cancel_export_all = export_all.replace(
+                "export\n",
+                "export\nunexport\n",
+            )
+            self.assertEqual(run(export_all).stdout, "one|one\n")
+            self.assertEqual(run(cancel_export_all).stdout, "one|\n")
+            self.assertIn(
+                "VALUE",
+                parse(export_all)["effective_exported_environment"],
+            )
+            self.assertEqual(
+                parse(export_all)["record"]["export_policy"][
+                    "ambient_environment"
+                ],
+                "all",
+            )
+            self.assertNotIn(
+                "VALUE",
+                parse(cancel_export_all)["effective_exported_environment"],
+            )
+
+            override_one = (
+                "export override VALUE := one\n"
+                "all:\n"
+                "\t@printf '%s|%s\\n' '$(VALUE)' \"$$VALUE\"\n"
+            )
+            override_two = override_one.replace("one", "two")
+            self.assertEqual(
+                run(override_one, "all", "VALUE=command").stdout,
+                "one|one\n",
+            )
+            self.assertEqual(
+                run(override_two, "all", "VALUE=command").stdout,
+                "two|two\n",
+            )
+            self.assertNotEqual(parse(override_one), parse(override_two))
+            self.assertEqual(
+                parse(override_one)["record"]["recipe_variables"]["VALUE"][
+                    "assignments"
+                ][0]["modifiers"],
+                ("override", "export"),
+            )
+            self.assertEqual(
+                parse(override_one)["record"]["recipe_variables"]["VALUE"][
+                    "external_precedence"
+                ],
+                "override",
+            )
+
+            target_normal = (
+                "all: VALUE := target\n"
+                "all:\n"
+                "\t@printf '%s\\n' '$(VALUE)'\n"
+            )
+            target_override = target_normal.replace(
+                "all: VALUE",
+                "all: override VALUE",
+            )
+            self.assertEqual(
+                run(target_normal, "all", "VALUE=command").stdout,
+                "command\n",
+            )
+            self.assertEqual(
+                run(target_override, "all", "VALUE=command").stdout,
+                "target\n",
+            )
+            self.assertNotEqual(
+                parse(target_normal),
+                parse(target_override),
+            )
+
+            target_export = (
+                "all: export VALUE := parent\n"
+                "all: child\n"
+                "child:\n"
+                "\t@printf '%s|%s\\n' '$(VALUE)' \"$$VALUE\"\n"
+            )
+            self.assertEqual(run(target_export).stdout, "parent|parent\n")
+            exported_child = next(
+                item
+                for item in parse(target_export)["transitive"]
+                if item["target"] == "child"
+            )
+            self.assertEqual(
+                exported_child["inherited_target_variables"]["VALUE"][
+                    "effective_value"
+                ],
+                "parent",
+            )
+            self.assertEqual(
+                exported_child["effective_exported_environment"]["VALUE"][
+                    "effective_values"
+                ],
+                ["parent"],
+            )
+
+            target_private = (
+                "VALUE := global\n"
+                "all: private export VALUE := parent\n"
+                "all: child\n"
+                "all:\n"
+                "\t@printf 'all=%s|%s\\n' '$(VALUE)' \"$$VALUE\"\n"
+                "child:\n"
+                "\t@printf 'child=%s|%s\\n' '$(VALUE)' \"$${VALUE-}\"\n"
+            )
+            self.assertEqual(
+                run(target_private).stdout,
+                "child=global|parent\nall=parent|parent\n",
+            )
+            private_authority = parse(target_private)
+            self.assertEqual(
+                private_authority["effective_exported_environment"]["VALUE"][
+                    "effective_values"
+                ],
+                ["parent"],
+            )
+            private_child = next(
+                item
+                for item in private_authority["transitive"]
+                if item["target"] == "child"
+            )
+            self.assertNotIn(
+                "VALUE",
+                private_child["inherited_target_variables"],
+            )
+            self.assertEqual(
+                private_child["effective_exported_environment"]["VALUE"][
+                    "effective_values"
+                ],
+                ["parent"],
+            )
+
+            malformed = (
+                "export export VALUE := bad\nall:\n\t@true\n",
+                "override override VALUE := bad\nall:\n\t@true\n",
+                "private VALUE := bad\nall:\n\t@true\n",
+                "all: private private VALUE := bad\nall:\n\t@true\n",
+                "unexport VALUE := bad\nall:\n\t@true\n",
+            )
+            for text in malformed:
+                with self.subTest(modifiers=text.splitlines()[0]):
+                    makefile.write_text(text, encoding="ascii")
+                    with self.assertRaises(reporter.OwnershipError):
+                        reporter._parse_make_authorities(loader, {"all"})
+
+    def test_defined_recipe_macros_require_registered_expansion(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            scratch = Path(directory)
+            makefile = scratch / "Makefile"
+            tool = scratch / "tool.py"
+            input_file = scratch / "input.txt"
+            registry_path = scratch / reporter.MAKE_DYNAMIC_PATH
+            registry_path.parent.mkdir(parents=True)
+            marker = scratch / "shell-executed"
+            tool.write_text(
+                "from pathlib import Path\n"
+                "Path('shell-executed').write_text('bad')\n"
+                "print('dynamic')\n",
+                encoding="ascii",
+            )
+            input_file.write_text("one\n", encoding="ascii")
+            expression = "$(shell python3 tool.py)"
+            direct = (
+                "define MACRO\n"
+                f"{expression}\n"
+                "endef\n"
+                "all:\n"
+                "\t@printf '%s\\n' '$(MACRO)'\n"
+            )
+            called = direct.replace("$(MACRO)'", "$(call MACRO)'")
+            basic_entries = {
+                "Makefile": reporter.GitTreeEntry(
+                    "Makefile", "100644", "blob", "0" * 40
+                )
+            }
+            for text in (direct, called):
+                makefile.write_text(text, encoding="ascii")
+                with self.assertRaisesRegex(
+                    reporter.OwnershipError,
+                    "defined recipe macro|unsupported dynamic",
+                ):
+                    reporter._parse_make_authorities(
+                        reporter.AuthorityLoader(scratch, basic_entries),
+                        {"all"},
+                    )
+                self.assertFalse(marker.exists())
+
+            contract = {
+                "schema_version": 1,
+                "contracts": [
+                    {
+                        "id": "synthetic-recipe-macro",
+                        "expression": expression,
+                        "tool": "tool.py",
+                        "input_files": ["input.txt"],
+                        "input_variables": [],
+                        "automatic_inputs": [],
+                        "resolved_value": "dynamic",
+                        "owning_evidence_ids": ["owner.synthetic"],
+                    }
+                ],
+                "seal": "",
+            }
+            contract["seal"] = reporter._sha256(
+                reporter.MAKE_DYNAMIC_SEAL_DOMAIN,
+                reporter.canonical_make_dynamic_payload(contract),
+            )
+            registry_path.write_bytes(reporter.normalized_json(contract))
+            entries = {
+                path: reporter.GitTreeEntry(
+                    path, "100644", "blob", "0" * 40
+                )
+                for path in (
+                    "Makefile",
+                    "tool.py",
+                    "input.txt",
+                    reporter.MAKE_DYNAMIC_PATH.as_posix(),
+                )
+            }
+            for text in (direct, called):
+                makefile.write_text(text, encoding="ascii")
+                authority = reporter._parse_make_authorities(
+                    reporter.AuthorityLoader(scratch, entries),
+                    {"all"},
+                    require_dynamic_contracts=True,
+                )["all"]
+                self.assertEqual(
+                    {
+                        item["id"]
+                        for item in authority["dynamic_dependencies"]
+                    },
+                    {"synthetic-recipe-macro"},
+                )
+                self.assertIn(
+                    "dynamic",
+                    authority["record"]["expanded_recipes"][0]["expanded"],
+                )
+                self.assertFalse(marker.exists())
+
+            makefile.write_text(direct, encoding="ascii")
+            before = reporter._parse_make_authorities(
+                reporter.AuthorityLoader(scratch, entries),
+                {"all"},
+                require_dynamic_contracts=True,
+            )["all"]
+            tool.write_text(
+                "from pathlib import Path\n"
+                "Path('shell-executed').write_text('worse')\n"
+                "print('dynamic')\n",
+                encoding="ascii",
+            )
+            after = reporter._parse_make_authorities(
+                reporter.AuthorityLoader(scratch, entries),
+                {"all"},
+                require_dynamic_contracts=True,
+            )["all"]
+            self.assertNotEqual(before, after)
+            self.assertFalse(marker.exists())
+
     def test_make_expansion_rejects_unsupported_cycles_and_bounds(self):
         with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
             scratch = Path(directory)
@@ -1338,9 +1694,9 @@ class OwnershipGraphTests(unittest.TestCase):
                 reporter._parse_make_authorities(loader, {"all"})
 
             for assignment, error in (
-                ("private VALUE = hidden", "unsupported modifiers"),
-                ("override VALUE = forced", "unsupported modifiers"),
-                ("export VALUE = public", "unsupported modifiers"),
+                ("private private VALUE = hidden", "repeats"),
+                ("override override VALUE = forced", "repeats"),
+                ("export export VALUE = public", "repeats"),
                 ("VALUE != printf shell", "target-specific shell assignment"),
             ):
                 with self.subTest(target_assignment=assignment):
@@ -1883,6 +2239,93 @@ class OwnershipGraphTests(unittest.TestCase):
             )
         finally:
             modern_mk.write_bytes(original)
+
+    def test_real_export_mutations_change_child_command_authority(self):
+        entries, _, _, _ = self.fixture_authority()
+        makefile = self.fixture_root / "Makefile"
+        modern_mk = self.fixture_root / "modern.mk"
+        original_makefile = makefile.read_bytes()
+        original_modern = modern_mk.read_bytes()
+        requested = {
+            "expansion-modern-linker-check",
+            "validation-ownership-check",
+        }
+
+        def parse():
+            return reporter._parse_make_authorities(
+                reporter.AuthorityLoader(self.fixture_root, entries),
+                requested,
+            )
+
+        before = parse()
+        for target in requested:
+            self.assertIn(
+                "PATH",
+                before[target]["effective_exported_environment"],
+            )
+            self.assertEqual(
+                before[target]["effective_exported_environment"]["PATH"][
+                    "ambient_inputs"
+                ],
+                ["PATH"],
+            )
+            self.assertIn(
+                "FE8_ITEM_ID_CAP",
+                before[target]["effective_exported_environment"],
+            )
+            self.assertEqual(
+                before[target]["effective_exported_environment"][
+                    "FE8_ITEM_ID_CAP"
+                ]["effective_values"],
+                ["<ambient-environment:FE8_ITEM_ID_CAP>"],
+            )
+        try:
+            changed_path = original_makefile.replace(
+                b"export PATH := $(TOOLCHAIN)/bin:$(PATH)",
+                b"export PATH := $(TOOLCHAIN)/fixture-bin:$(PATH)",
+                1,
+            )
+            self.assertNotEqual(changed_path, original_makefile)
+            makefile.write_bytes(changed_path)
+            after_path = parse()
+            for target in requested:
+                self.assertNotEqual(before[target], after_path[target])
+                self.assertNotEqual(
+                    before[target]["effective_exported_environment"]["PATH"],
+                    after_path[target]["effective_exported_environment"]["PATH"],
+                )
+
+            makefile.write_bytes(
+                original_makefile.replace(
+                    b"export FE8_ITEM_ID_CAP",
+                    b"unexport FE8_ITEM_ID_CAP",
+                    1,
+                )
+            )
+            after_cap = parse()
+            for target in requested:
+                self.assertNotEqual(before[target], after_cap[target])
+                self.assertNotIn(
+                    "FE8_ITEM_ID_CAP",
+                    after_cap[target]["effective_exported_environment"],
+                )
+
+            makefile.write_bytes(original_makefile)
+            changed_nm = original_modern.replace(
+                b"export MODERN_NM",
+                b"unexport MODERN_NM",
+                1,
+            )
+            self.assertNotEqual(changed_nm, original_modern)
+            modern_mk.write_bytes(changed_nm)
+            after_nm = parse()
+            self.assertNotEqual(
+                before["expansion-modern-linker-check"],
+                after_nm["expansion-modern-linker-check"],
+            )
+        finally:
+            makefile.write_bytes(original_makefile)
+            modern_mk.write_bytes(original_modern)
 
     def test_real_compile_recipe_mutations_invalidate_exact_compile_edges(self):
         entries, _, graph, schema = self.fixture_authority()

@@ -862,12 +862,14 @@ def _make_variable_refs(values: Iterable[str]) -> set[str]:
 
 
 MAKE_ASSIGNMENT_RE = re.compile(
-    r"^([A-Za-z_][A-Za-z0-9_]*)\s*(::=|:=|\?=|\+=|!=|=)\s*(.*)$"
+    r"^((?:(?:export|override|private)\s+)*)"
+    r"([A-Za-z_][A-Za-z0-9_]*)\s*(::=|:=|\?=|\+=|!=|=)\s*(.*)$"
 )
 TARGET_ASSIGNMENT_RE = re.compile(
     r"^((?:(?:override|private|export)\s+)*)"
     r"([A-Za-z_][A-Za-z0-9_]*)\s*(::=|:=|\?=|\+=|!=|=)\s*(.*)$"
 )
+MAKE_EXPORT_RE = re.compile(r"^(export|unexport)(?:\s+(.*))?$")
 MAKE_CONDITIONAL_RE = re.compile(r"^(ifeq|ifneq|ifdef|ifndef)\b(.*)$")
 _MAKE_AUTHORITY_CACHE: dict[tuple[Any, ...], dict[str, dict[str, Any]]] = {}
 _MAKE_AUTHORITY_CACHE_LIMIT = 16
@@ -875,6 +877,23 @@ _MAKE_AUTHORITY_CACHE_LIMIT = 16
 
 def _normalize_make_expression(value: str) -> str:
     return " ".join(value.strip().split())
+
+
+def _make_modifiers(raw: str, label: str) -> tuple[str, ...]:
+    modifiers = tuple(raw.split())
+    if len(modifiers) != len(set(modifiers)):
+        raise OwnershipError(f"{label} repeats a Make assignment modifier")
+    unknown = set(modifiers) - {"export", "override", "private"}
+    if unknown:
+        raise OwnershipError(
+            f"{label} uses unsupported Make assignment modifiers "
+            f"{sorted(unknown)}"
+        )
+    return tuple(
+        modifier
+        for modifier in ("override", "private", "export")
+        if modifier in modifiers
+    )
 
 
 def canonical_make_dynamic_payload(data: dict[str, Any]) -> dict[str, Any]:
@@ -1248,7 +1267,19 @@ class SafeMakeExpander:
                 flavor = "recursive"
                 preserve_whitespace = record.get("syntax") == "define"
         if flavor is None:
-            result = [""]
+            self_reference = (
+                before_sequence is not None
+                and any(
+                    record["_sequence"] == before_sequence
+                    and f"$({name})" in record["value"]
+                    for record in self.assignments.get(name, ())
+                )
+            )
+            result = [
+                f"<ambient-environment:{name}>"
+                if self_reference
+                else ""
+            ]
         elif flavor == "simple":
             result = [value]
         else:
@@ -1260,11 +1291,34 @@ class SafeMakeExpander:
             )
         result = self._bounded(result, name)
         if cacheable:
+            attributes = {
+                modifier: any(
+                    modifier in record.get("modifiers", ())
+                    for record in active_records
+                )
+                for modifier in ("export", "override", "private")
+            }
             self.cache[cache_key] = result
             self.binding_semantics[cache_key] = {
                 "flavor": flavor,
                 "raw_value": value,
                 "effective_values": result,
+                "ambient_inputs": sorted(
+                    {
+                        match.group(1)
+                        for item in result
+                        for match in re.finditer(
+                            r"<ambient-environment:([A-Za-z_][A-Za-z0-9_]*)>",
+                            item,
+                        )
+                    }
+                ),
+                "attributes": attributes,
+                "external_precedence": (
+                    "override"
+                    if attributes["override"]
+                    else "command-line"
+                ),
                 "assignments": active_records,
             }
         return result
@@ -1700,6 +1754,7 @@ class SafeMakeExpander:
             raise OwnershipError(
                 "Make prerequisite expression exceeds depth bound"
             )
+        value = value.replace("$$", "\0")
         local = {} if local is None else local
         start = value.find("$(")
         if start < 0:
@@ -1707,7 +1762,7 @@ class SafeMakeExpander:
                 raise OwnershipError(
                     f"unsupported dynamic Make prerequisite token {value!r}"
                 )
-            return [_normalize_make_expression(value)]
+            return [_normalize_make_expression(value).replace("\0", "$")]
         end = self._reference_end(value, start + 2)
         prefix = value[:start]
         suffix = value[end + 1:]
@@ -1725,7 +1780,10 @@ class SafeMakeExpander:
         )
         return self._bounded(
             (
-                _normalize_make_expression(prefix + middle + tail)
+                _normalize_make_expression(prefix + middle + tail).replace(
+                    "\0",
+                    "$",
+                )
                 for middle in referenced
                 for tail in suffixes
             ),
@@ -1855,6 +1913,7 @@ def _parse_make_authorities(
         lambda: {"declarations": [], "recipes": [], "phony": False}
     )
     variables: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    export_events: list[dict[str, Any]] = []
     seen = set()
     parse_sequence = 0
 
@@ -1878,6 +1937,7 @@ def _parse_make_authorities(
                     {
                         "operator": statement["operator"],
                         "value": statement["value"],
+                        "modifiers": (),
                         "context": tuple(conditional_stack),
                         "syntax": "define",
                         "_sequence": parse_sequence,
@@ -1944,21 +2004,87 @@ def _parse_make_authorities(
                 continue
             assignment = MAKE_ASSIGNMENT_RE.match(line)
             if assignment:
-                variables[assignment.group(1)].append(
+                modifiers = _make_modifiers(
+                    assignment.group(1),
+                    "global Make assignment",
+                )
+                if "private" in modifiers:
+                    raise OwnershipError(
+                        "global private Make assignments are unsupported; "
+                        "use target-specific private bindings"
+                    )
+                name = assignment.group(2)
+                record = {
+                    "operator": assignment.group(3),
+                    "value": _normalize_make_expression(assignment.group(4)),
+                    "modifiers": modifiers,
+                    "context": tuple(conditional_stack),
+                    "_sequence": parse_sequence,
+                }
+                variables[name].append(record)
+                if "export" in modifiers:
+                    export_events.append(
+                        {
+                            "action": "export",
+                            "names": (name,),
+                            "context": tuple(conditional_stack),
+                            "_sequence": parse_sequence,
+                            "source": "assignment",
+                        }
+                    )
+                parse_sequence += 1
+                continue
+            export = MAKE_EXPORT_RE.match(line)
+            if export:
+                action = export.group(1)
+                raw_names = export.group(2)
+                if raw_names is None:
+                    names = ()
+                else:
+                    names = tuple(raw_names.split())
+                    if not names or not all(
+                        re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name)
+                        for name in names
+                    ):
+                        raise OwnershipError(
+                            f"global Make {action} directive has invalid names"
+                        )
+                export_events.append(
                     {
-                        "operator": assignment.group(2),
-                        "value": _normalize_make_expression(assignment.group(3)),
+                        "action": action + ("-all" if not names else ""),
+                        "names": names,
                         "context": tuple(conditional_stack),
                         "_sequence": parse_sequence,
+                        "source": "directive",
                     }
                 )
                 parse_sequence += 1
                 continue
+            if line.split(None, 1)[0] in {"override", "private"}:
+                raise OwnershipError(
+                    f"unsupported global Make modifier statement {line!r}"
+                )
             if line.startswith("$(error "):
                 continue
             if ":" not in line or ":=" in line.split(":", 1)[0]:
                 continue
             lhs, rhs = line.split(":", 1)
+            if lhs.strip() == ".EXPORT_ALL_VARIABLES":
+                if rhs.strip():
+                    raise OwnershipError(
+                        ".EXPORT_ALL_VARIABLES cannot have prerequisites or a recipe"
+                    )
+                export_events.append(
+                    {
+                        "action": "export-all",
+                        "names": (),
+                        "context": tuple(conditional_stack),
+                        "_sequence": parse_sequence,
+                        "source": "special-target",
+                    }
+                )
+                parse_sequence += 1
+                continue
             if lhs.strip() == ".PHONY":
                 for target in rhs.split():
                     if "$" not in target:
@@ -1976,7 +2102,10 @@ def _parse_make_authorities(
             if target_assignment:
                 record = {
                     "kind": "target-assignment",
-                    "modifiers": tuple(target_assignment.group(1).split()),
+                    "modifiers": _make_modifiers(
+                        target_assignment.group(1),
+                        "target-specific Make assignment",
+                    ),
                     "name": target_assignment.group(2),
                     "operator": target_assignment.group(3),
                     "value": _normalize_make_expression(target_assignment.group(4)),
@@ -2014,6 +2143,72 @@ def _parse_make_authorities(
 
     parse_file("Makefile")
     expander = SafeMakeExpander(loader, variables, dynamic_contracts)
+    active_export_events = [
+        event
+        for event in export_events
+        if expander._context_active(
+            event["context"],
+            event["_sequence"],
+            (),
+        )
+    ]
+    export_all = False
+    explicit_exports: dict[str, bool] = {}
+    for event in active_export_events:
+        if event["action"] == "export-all":
+            export_all = True
+        elif event["action"] == "unexport-all":
+            export_all = False
+        else:
+            exported = event["action"] == "export"
+            for name in event["names"]:
+                explicit_exports[name] = exported
+
+    def variable_is_global_private(name: str) -> bool:
+        return any(
+            "private" in record.get("modifiers", ())
+            and expander._context_active(
+                record["context"],
+                record["_sequence"],
+                (),
+            )
+            for record in variables.get(name, ())
+        )
+
+    globally_exported = {
+        name
+        for name in variables
+        if explicit_exports.get(name, export_all)
+    }
+    globally_exported.update(
+        name
+        for name, exported in explicit_exports.items()
+        if exported
+    )
+
+    def evaluated_variable_semantics(name: str) -> dict[str, Any]:
+        try:
+            return expander.variable_semantics(name)
+        except OwnershipError as error:
+            defined_macro = any(
+                record.get("syntax") == "define"
+                and expander._context_active(
+                    record["context"],
+                    record["_sequence"],
+                    (),
+                )
+                for record in variables.get(name, ())
+            )
+            if defined_macro:
+                raise OwnershipError(
+                    f"defined recipe macro {name!r} cannot be expanded: "
+                    f"{error}"
+                ) from error
+            return {
+                "assignments": variables.get(name, ()),
+                "evaluation": "unresolved-recipe-only-authority",
+                "reason": str(error),
+            }
 
     def dynamic_dependency(expression: str) -> dict[str, Any] | None:
         contract = dynamic_contracts.get(expression)
@@ -2033,6 +2228,13 @@ def _parse_make_authorities(
     ) -> tuple[dict[str, str], dict[str, Any]]:
         bindings: dict[str, dict[str, Any]] = {}
         global_bases: dict[str, dict[str, Any]] = {}
+        attributes: dict[str, dict[str, bool]] = defaultdict(
+            lambda: {
+                "export": False,
+                "override": False,
+                "private": False,
+            }
+        )
         assignment_history: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
         def safe_global_semantics(
@@ -2136,17 +2338,14 @@ def _parse_make_authorities(
         for declaration in declarations:
             if declaration["kind"] != "target-assignment":
                 continue
-            if declaration["modifiers"]:
-                raise OwnershipError(
-                    f"target-specific Make assignment for {target!r} uses "
-                    f"unsupported modifiers {declaration['modifiers']}"
-                )
             operator = declaration["operator"]
             if operator == "!=":
                 raise OwnershipError(
                     f"target-specific shell assignment for {target!r} is not allowed"
                 )
             name = declaration["name"]
+            for modifier in declaration["modifiers"]:
+                attributes[name][modifier] = True
             sequence = declaration["_sequence"]
             binding = bindings.get(name)
             global_binding = None
@@ -2274,6 +2473,12 @@ def _parse_make_authorities(
                     "append_value": bindings[name].get("suffix"),
                     "effective_value": resolved.get(name),
                     "evaluation_error": resolution_errors.get(name),
+                    "attributes": attributes[name],
+                    "external_precedence": (
+                        "override"
+                        if attributes[name]["override"]
+                        else "command-line"
+                    ),
                     "assignments": assignment_history[name],
                 }
                 if name in bindings
@@ -2286,6 +2491,12 @@ def _parse_make_authorities(
                         if inherited_semantics[name]["effective_values"] is not None
                         and len(inherited_semantics[name]["effective_values"]) == 1
                         else None
+                    ),
+                    "attributes": attributes[name],
+                    "external_precedence": (
+                        "override"
+                        if attributes[name]["override"]
+                        else "command-line"
                     ),
                     "assignments": assignment_history[name],
                 }
@@ -2407,13 +2618,88 @@ def _parse_make_authorities(
         recipe_refs -= target_variable_names
 
         def recipe_variable_semantics(name: str) -> dict[str, Any]:
-            try:
-                return expander.variable_semantics(name)
-            except OwnershipError as error:
+            if variable_is_global_private(name):
                 return {
-                    "assignments": variables.get(name, ()),
-                    "evaluation": "unresolved-recipe-only-authority",
-                    "reason": str(error),
+                    **evaluated_variable_semantics(name),
+                    "effective_values": [""],
+                    "private_global": True,
+                }
+            return evaluated_variable_semantics(name)
+
+        recipe_variables = {
+            name: recipe_variable_semantics(name)
+            for name in sorted(recipe_refs)
+        }
+        expanded_recipes = []
+        for recipe in active_recipes:
+            expanded = recipe["command"]
+            unresolved = []
+            for call in expander.call_semantics(recipe["command"]):
+                values = call["effective_values"]
+                if len(values) != 1:
+                    raise OwnershipError(
+                        f"Make recipe call {call['expression']!r} for "
+                        f"{target!r} is ambiguous"
+                    )
+                expanded = expanded.replace(call["expression"], values[0])
+            for name in sorted(_make_variable_refs((recipe["command"],))):
+                if name in target_values:
+                    values = [target_values[name]]
+                else:
+                    semantics = recipe_variables.get(name)
+                    if semantics is None:
+                        semantics = recipe_variable_semantics(name)
+                    values = semantics.get("effective_values")
+                if values is None or len(values) != 1:
+                    unresolved.append(name)
+                    continue
+                expanded = expanded.replace(f"$({name})", values[0])
+            expanded_recipes.append(
+                {
+                    "source": recipe["command"],
+                    "expanded": expanded,
+                    "unresolved_variables": unresolved,
+                }
+            )
+        exported_environment = {}
+        if active_recipes:
+            for name in sorted(globally_exported):
+                if variables.get(name):
+                    semantics = evaluated_variable_semantics(name)
+                    ambient_input = False
+                else:
+                    semantics = {
+                        "assignments": (),
+                        "flavor": "environment",
+                        "raw_value": None,
+                        "effective_values": [
+                            f"<ambient-environment:{name}>"
+                        ],
+                        "ambient_inputs": [name],
+                        "external_precedence": "environment",
+                    }
+                    ambient_input = True
+                exported_environment[name] = {
+                    **semantics,
+                    "ambient_input": ambient_input,
+                    "scope": "global",
+                }
+            for name, semantics in target_semantics.items():
+                attributes = semantics["attributes"]
+                if not (
+                    attributes["export"]
+                    or name in globally_exported
+                ):
+                    continue
+                if name not in target_values:
+                    raise OwnershipError(
+                        f"exported target-specific Make variable {name!r} "
+                        f"for {target!r} cannot be resolved"
+                    )
+                exported_environment[name] = {
+                    "effective_values": [target_values[name]],
+                    "scope": "target",
+                    "target_semantics": semantics,
                 }
 
         direct[target] = {
@@ -2425,13 +2711,22 @@ def _parse_make_authorities(
             ),
             "_prerequisite_refs": sorted(prerequisite_refs),
             "_target_values": target_values,
+            "_target_attributes": {
+                name: semantics["attributes"]
+                for name, semantics in target_semantics.items()
+            },
             "target_variables": target_semantics,
+            "export_policy": {
+                "events": active_export_events,
+                "export_all": export_all,
+                "explicit_exports": explicit_exports,
+                "ambient_environment": "all" if export_all else "named-only",
+            },
+            "exported_environment": exported_environment,
+            "expanded_recipes": expanded_recipes,
             "prerequisite_calls": prerequisite_calls,
             "recipe_calls": recipe_calls,
-            "recipe_variables": {
-                name: recipe_variable_semantics(name)
-                for name in sorted(recipe_refs)
-            },
+            "recipe_variables": recipe_variables,
         }
 
     pattern_targets = [target for target in direct if "%" in target]
@@ -2511,19 +2806,98 @@ def _parse_make_authorities(
         cycles = []
         dynamic_dependencies = []
         visited = {target}
+        visited_contexts: dict[str, dict[str, Any]] = {}
 
-        def visit(current: str, stack: tuple[str, ...]) -> None:
+        def propagated_context(
+            current: str,
+            inherited: dict[str, Any],
+            inherited_exports: dict[str, Any],
+        ) -> tuple[dict[str, Any], dict[str, Any]]:
+            context = dict(inherited)
+            exported = dict(inherited_exports)
+            record = direct[current]
+            for name, value in record["_target_values"].items():
+                binding = {
+                    "attributes": record["_target_attributes"][name],
+                    "effective_value": value,
+                    "source_target": current,
+                }
+                context[name] = binding
+                if (
+                    binding["attributes"]["export"]
+                    or name in globally_exported
+                ):
+                    exported[name] = {
+                        "effective_values": [value],
+                        "scope": "inherited-target",
+                        "source_target": current,
+                    }
+            return (
+                {
+                    name: binding
+                    for name, binding in context.items()
+                    if not binding["attributes"]["private"]
+                },
+                exported,
+            )
+
+        def inherited_environment(
+            current: str,
+            inherited_exports: dict[str, Any],
+        ) -> dict[str, Any]:
+            environment = dict(inherited_exports)
+            environment.update(direct[current]["exported_environment"])
+            return environment
+
+        def visit(
+            current: str,
+            stack: tuple[str, ...],
+            inherited: dict[str, Any],
+            inherited_exports: dict[str, Any],
+        ) -> None:
+            child_context, child_exports = propagated_context(
+                current,
+                inherited,
+                inherited_exports,
+            )
             for child in child_targets(current, dynamic_dependencies):
                 if child in stack:
                     cycles.append(stack + (child,))
                     continue
                 if child in visited:
+                    if visited_contexts.get(child, {}) != {
+                        "variables": child_context,
+                        "exports": child_exports,
+                    }:
+                        raise OwnershipError(
+                            f"Make target {child!r} has ambiguous inherited "
+                            "target-specific variable contexts"
+                        )
                     continue
                 visited.add(child)
-                transitive.append({"target": child, "record": direct[child]})
-                visit(child, stack + (child,))
+                visited_contexts[child] = {
+                    "variables": child_context,
+                    "exports": child_exports,
+                }
+                transitive.append(
+                    {
+                        "target": child,
+                        "record": direct[child],
+                        "inherited_target_variables": child_context,
+                        "effective_exported_environment": inherited_environment(
+                            child,
+                            child_exports,
+                        ),
+                    }
+                )
+                visit(
+                    child,
+                    stack + (child,),
+                    child_context,
+                    child_exports,
+                )
 
-        visit(target, (target,))
+        visit(target, (target,), {}, {})
 
         def semantic_record(record: dict[str, Any]) -> dict[str, Any]:
             enriched = dict(record)
@@ -2537,7 +2911,11 @@ def _parse_make_authorities(
         semantic_root = semantic_record(direct[target])
         semantic_transitive = [
             {
-                "target": item["target"],
+                **{
+                    key: value
+                    for key, value in item.items()
+                    if key != "record"
+                },
                 "record": semantic_record(item["record"]),
             }
             for item in transitive
@@ -2583,6 +2961,9 @@ def _parse_make_authorities(
         return {
             "target": target,
             "record": public_value(semantic_root),
+            "effective_exported_environment": public_value(
+                direct[target]["exported_environment"]
+            ),
             "transitive": public_value(semantic_transitive),
             "cycles": sorted(set(cycles)),
             "dynamic_dependencies": sorted(

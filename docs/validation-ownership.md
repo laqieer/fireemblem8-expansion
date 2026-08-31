@@ -206,6 +206,26 @@ closed. The real linker closure includes the starter-hook content-disabled
 artifact-check macro, so removing its ROM, symbol, or `gItemData` checks
 invalidates the exact link-owner edges even though its invocation is unchanged.
 
+Global `export`, `unexport`, `override`, and `private` assignments and
+directives are parsed rather than discarded. Assignment flavor/timing and
+override precedence remain explicit; bare exports and export-all state produce
+the effective environment bound to each child command. The committed
+`export PATH := ...`, `export FE8_ITEM_ID_CAP`, `export MODERN_NM`, and
+`export MODERN_TOOLCHAIN_ROOT` declarations therefore participate in every
+consuming target authority; incoming PATH participation is represented as an
+explicit ambient environment input rather than host-specific bytes.
+Target-specific exports flow to prerequisite command environments, while
+target-specific `private` prevents Make-value inheritance without erasing an
+explicitly exported process value. Global `private`, duplicate, malformed, or
+unsupported modifier combinations reject globally.
+
+An ordinary truly undefined recipe variable retains GNU Make's empty-value
+semantics. A referenced `define` macro is different: shell, call, cycle,
+function, or depth expansion failure rejects instead of becoming unresolved
+success-shaped metadata. A sealed dynamic dependency may resolve such a macro
+without executing its tool; its exact tool, input, evidence owner, and
+effective expansion remain attached to both direct and `call` consumers.
+
 Target-specific recursive `=` and recursive `+=` resolve at target use, so
 they observe later global/target values and are inherited by prerequisites;
 target-specific `:=`/`::=` and append to a simple value remain immediate.
