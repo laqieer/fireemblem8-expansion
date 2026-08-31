@@ -133,6 +133,10 @@ _SCRUBBED_PILOT_ENV = (
     "GIT_OBJECT_DIRECTORY: ''",
     "GIT_REPLACE_REF_BASE: ''",
     "GIT_WORK_TREE: ''",
+    "GNUMAKEFLAGS: ''",
+    "MAKEFLAGS: ''",
+    "MAKEOVERRIDES: ''",
+    "MFLAGS: ''",
     "PATH: /usr/bin:/bin",
     "PYTHONPATH: ''",
 )
@@ -1082,10 +1086,18 @@ def gates(jobs: int = 2) -> List[Gate]:
         ),
         Gate(
             name="validation-ownership-check",
-            command=["make", "validation-ownership-check"],
+            command=[
+                "MAKEFLAGS=",
+                "MFLAGS=",
+                "MAKEOVERRIDES=",
+                "GNUMAKEFLAGS=",
+                "make",
+                "validation-ownership-check",
+            ],
             applicable_note=(
                 "issue #180 host lane: validates exact Git-tree coverage, "
-                "independent probes, and executable lifecycle without "
+                "independent probes, and executable lifecycle with Make "
+                "execution controls scrubbed before invocation, without "
                 "narrowing or executing graph-selected gates"
             ),
         ),

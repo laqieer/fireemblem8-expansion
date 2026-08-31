@@ -77,6 +77,10 @@ jobs:
         GIT_OBJECT_DIRECTORY: ''
         GIT_REPLACE_REF_BASE: ''
         GIT_WORK_TREE: ''
+        GNUMAKEFLAGS: ''
+        MAKEFLAGS: ''
+        MAKEOVERRIDES: ''
+        MFLAGS: ''
         PATH: /usr/bin:/bin
         PYTHONPATH: ''
       run: /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py hydrate --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected-head "$EXPECTED_BUILD_SHA"
@@ -140,6 +144,10 @@ jobs:
         GIT_OBJECT_DIRECTORY: ''
         GIT_REPLACE_REF_BASE: ''
         GIT_WORK_TREE: ''
+        GNUMAKEFLAGS: ''
+        MAKEFLAGS: ''
+        MAKEOVERRIDES: ''
+        MFLAGS: ''
         PATH: /usr/bin:/bin
         PYTHONPATH: ''
       run: /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py reporter-tests
@@ -167,6 +175,10 @@ jobs:
         GIT_OBJECT_DIRECTORY: ''
         GIT_REPLACE_REF_BASE: ''
         GIT_WORK_TREE: ''
+        GNUMAKEFLAGS: ''
+        MAKEFLAGS: ''
+        MAKEOVERRIDES: ''
+        MFLAGS: ''
         PATH: /usr/bin:/bin
         PYTHONPATH: ''
       run: /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py baseline --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json > /dev/null
@@ -194,11 +206,18 @@ jobs:
         GIT_OBJECT_DIRECTORY: ''
         GIT_REPLACE_REF_BASE: ''
         GIT_WORK_TREE: ''
+        GNUMAKEFLAGS: ''
+        MAKEFLAGS: ''
+        MAKEOVERRIDES: ''
+        MFLAGS: ''
         PATH: /usr/bin:/bin
         PYTHONPATH: ''
       run: /usr/bin/python3 -I scripts/validation_ownership/isolated_launcher.py tests
 
     - name: Validate validation ownership graph (issue #180)
+      # The Makefile independently rejects execution-control flags at parse
+      # time; this explicit scrub keeps the CI invocation and local mirror
+      # identical before make starts.
       env:
         BASH_ENV: ''
         ENV: ''
@@ -221,9 +240,13 @@ jobs:
         GIT_OBJECT_DIRECTORY: ''
         GIT_REPLACE_REF_BASE: ''
         GIT_WORK_TREE: ''
+        GNUMAKEFLAGS: ''
+        MAKEFLAGS: ''
+        MAKEOVERRIDES: ''
+        MFLAGS: ''
         PATH: /usr/bin:/bin
         PYTHONPATH: ''
-      run: make validation-ownership-check
+      run: MAKEFLAGS= MFLAGS= MAKEOVERRIDES= GNUMAKEFLAGS= make validation-ownership-check
 
     # Issue #18 host-lane closure fix: the scripts/localization package's
     # own pure-stdlib unit test suite (schema/pseudo/catalog/generate/CLI/

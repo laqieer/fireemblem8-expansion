@@ -650,7 +650,10 @@ class OwnershipGraphTests(unittest.TestCase):
 
             def parse(text, target):
                 makefile.write_text(text, encoding="ascii")
-                return reporter._parse_make_authorities(loader).get(target)
+                return reporter._parse_make_authorities(
+                    loader,
+                    {target},
+                ).get(target)
 
             def run(text, target):
                 makefile.write_text(text, encoding="ascii")
@@ -915,6 +918,7 @@ class OwnershipGraphTests(unittest.TestCase):
             )
 
             assignment_true = (
+                "VALUE :=\n"
                 "ifeq (1,1)\nVALUE := enabled\nendif\n"
                 "conditional-assignment:\n\t@printf '%s\\n' '$(VALUE)'\n"
             )
@@ -946,6 +950,7 @@ class OwnershipGraphTests(unittest.TestCase):
             self.assertEqual(all_one["unrelated"], all_two["unrelated"])
 
             child_contract_one = (
+                "VALUE :=\n"
                 "first second:\n\t@:\n"
                 "all: child\n"
                 "child: VALUE := one\n"
@@ -1350,6 +1355,10 @@ class OwnershipGraphTests(unittest.TestCase):
             exported_two = exported_one.replace("one", "two")
             self.assertEqual(run(exported_one).stdout, "one|one\n")
             self.assertEqual(run(exported_two).stdout, "two|two\n")
+            self.assertEqual(
+                run(exported_one, "all", "VALUE=command").stdout,
+                "command|command\n",
+            )
             one_authority = parse(exported_one)
             two_authority = parse(exported_two)
             self.assertNotEqual(one_authority, two_authority)
@@ -1362,6 +1371,40 @@ class OwnershipGraphTests(unittest.TestCase):
                     "effective_values"
                 ],
                 ["one"],
+            )
+            self.assertEqual(
+                [
+                    item["source"]
+                    for item in one_authority["record"]["recipe_variables"][
+                        "VALUE"
+                    ]["authority_variants"]
+                ],
+                ["command-line", "tracked-make"],
+            )
+
+            recursive_append = (
+                "VALUE = tracked\n"
+                "VALUE += tail\n"
+                "all:\n"
+                "\t@printf '%s\\n' '$(VALUE)'\n"
+            )
+            self.assertEqual(run(recursive_append).stdout, "tracked tail\n")
+            self.assertEqual(
+                run(
+                    recursive_append,
+                    "all",
+                    "VALUE=command",
+                ).stdout,
+                "command\n",
+            )
+            self.assertEqual(
+                [
+                    item["source"]
+                    for item in parse(recursive_append)["record"][
+                        "recipe_variables"
+                    ]["VALUE"]["authority_variants"]
+                ],
+                ["command-line", "tracked-make"],
             )
 
             bare_export = (
@@ -1381,25 +1424,6 @@ class OwnershipGraphTests(unittest.TestCase):
                 "VALUE",
                 parse(unexported)["effective_exported_environment"],
             )
-            ambient_export = (
-                "export VALUE\n"
-                "all:\n"
-                "\t@printf '%s\\n' \"$$VALUE\"\n"
-            )
-            self.assertEqual(
-                run(
-                    ambient_export,
-                    env={**os.environ, "VALUE": "ambient"},
-                ).stdout,
-                "ambient\n",
-            )
-            self.assertEqual(
-                parse(ambient_export)["effective_exported_environment"][
-                    "VALUE"
-                ]["effective_values"],
-                ["<ambient-environment:VALUE>"],
-            )
-
             export_all = bare_export.replace("export VALUE", "export")
             cancel_export_all = export_all.replace(
                 "export\n",
@@ -1470,6 +1494,24 @@ class OwnershipGraphTests(unittest.TestCase):
             self.assertNotEqual(
                 parse(target_normal),
                 parse(target_override),
+            )
+            self.assertEqual(
+                [
+                    item["source"]
+                    for item in parse(target_normal)["record"][
+                        "target_variables"
+                    ]["VALUE"]["authority_variants"]
+                ],
+                ["command-line", "tracked-make"],
+            )
+            self.assertEqual(
+                [
+                    item["source"]
+                    for item in parse(target_override)["record"][
+                        "target_variables"
+                    ]["VALUE"]["authority_variants"]
+                ],
+                ["tracked-make"],
             )
 
             target_export = (
@@ -1619,6 +1661,10 @@ class OwnershipGraphTests(unittest.TestCase):
                     "MACRO = $(call MISSING)\n"
                     "all:\n\t@echo $(MACRO)\n"
                 ),
+                "undefined-variable": (
+                    "MACRO = $(UNKNOWN)\n"
+                    "all:\n\t@echo $(MACRO)\n"
+                ),
                 "depth": f"MACRO = {nested}\nall:\n\t@echo $(MACRO)\n",
             }
             for label, text in ordinary_failures.items():
@@ -1717,12 +1763,49 @@ class OwnershipGraphTests(unittest.TestCase):
             registry_path = scratch / reporter.MAKE_DYNAMIC_PATH
             registry_path.parent.mkdir(parents=True)
 
-            def write_registry(names):
+            def write_registry(names, undefined_names=()):
                 registry = {
-                    "schema_version": 2,
+                    "schema_version": 3,
                     "contracts": [],
                     "ambient_inputs": {
                         "allowed_names": sorted(names),
+                        "undefined_names": sorted(undefined_names),
+                        "trusted_builtins": [
+                            {
+                                "name": "CURDIR",
+                                "authority": "repository-root",
+                                "value": "<trusted-builtin:CURDIR>",
+                            },
+                            {
+                                "name": "MAKE",
+                                "authority": "recursive-make",
+                                "value": "<trusted-builtin:MAKE>",
+                            },
+                            {
+                                "name": "MAKEFLAGS",
+                                "authority": "guarded-execution-flags",
+                                "value": "<trusted-builtin:MAKEFLAGS>",
+                            },
+                            {
+                                "name": "MAKECMDGOALS",
+                                "authority": "requested-goals",
+                                "value": "<trusted-builtin:MAKECMDGOALS>",
+                            },
+                        ],
+                        "scoped_variables": [
+                            {
+                                "name": "t",
+                                "authority": "foreach-iteration",
+                                "value": "<scoped-variable:t>",
+                            }
+                        ],
+                        "escaped_literals": [
+                            {
+                                "name": "sort",
+                                "authority": "escaped-shell-literal",
+                                "value": "<escaped-shell-literal:sort>",
+                            }
+                        ],
                         "allowed_sources": [
                             "command-line",
                             "process-environment",
@@ -1730,6 +1813,30 @@ class OwnershipGraphTests(unittest.TestCase):
                         "value_policy": "symbolic-no-host-value",
                         "provenance": "gnu-make-import-before-default",
                         "evidence_binding": "consuming-make-target",
+                    },
+                    "execution_controls": {
+                        "scrubbed_variables": [
+                            "GNUMAKEFLAGS",
+                            "MAKEFLAGS",
+                            "MAKEOVERRIDES",
+                            "MFLAGS",
+                        ],
+                        "allowed_flag_patterns": [
+                            "--jobserver-auth=*",
+                            "--jobserver-fds=*",
+                            "--no-print-directory",
+                            "-j*",
+                            "j*",
+                        ],
+                        "forbidden_modes": [
+                            "dry-run",
+                            "ignore-errors",
+                            "question",
+                            "silent",
+                            "touch",
+                            "unmodeled",
+                        ],
+                        "override_policy": "reject-nonempty",
                     },
                     "seal": "",
                 }
@@ -1740,7 +1847,6 @@ class OwnershipGraphTests(unittest.TestCase):
                 registry_path.write_bytes(reporter.normalized_json(registry))
                 return registry
 
-            write_registry({"VALUE"})
             entries = {
                 path: reporter.GitTreeEntry(
                     path, "100644", "blob", "0" * 40
@@ -1787,6 +1893,47 @@ class OwnershipGraphTests(unittest.TestCase):
                 **clean_environment,
                 "VALUE": "ambient",
             }
+            undefined = (
+                "all:\n"
+                "\t@printf 'make=%s env=%s\\n' '$(VALUE)' \"$${VALUE-}\"\n"
+            )
+            write_registry(set(), {"VALUE"})
+            self.assertEqual(
+                run(undefined, clean_environment).stdout,
+                "make= env=\n",
+            )
+            self.assertEqual(
+                run(undefined, ambient_environment).stdout,
+                "make=ambient env=ambient\n",
+            )
+            self.assertEqual(
+                run(undefined, clean_environment, "VALUE=command").stdout,
+                "make=command env=command\n",
+            )
+            undefined_authority = parse(undefined)
+            with mock.patch.dict(os.environ, {"VALUE": "host-secret"}):
+                self.assertEqual(undefined_authority, parse(undefined))
+            self.assertNotIn(
+                "host-secret",
+                json.dumps(undefined_authority, sort_keys=True),
+            )
+            self.assertEqual(
+                [
+                    item["source"]
+                    for item in undefined_authority["record"][
+                        "recipe_variables"
+                    ]["VALUE"]["authority_variants"]
+                ],
+                ["command-line", "process-environment", "undefined"],
+            )
+            self.assertEqual(
+                undefined_authority["variable_census"][
+                    "ambient_undefined"
+                ],
+                ["VALUE"],
+            )
+
+            write_registry({"VALUE"})
             self.assertEqual(
                 run(defaulted, clean_environment).stdout,
                 "make=fallback env=\n",
@@ -1837,6 +1984,79 @@ class OwnershipGraphTests(unittest.TestCase):
                     "process-environment": True,
                     "tracked-fallback": False,
                 },
+            )
+
+            appended = (
+                "VALUE += tail\n"
+                "all:\n"
+                "\t@printf '%s\\n' '$(VALUE)'\n"
+            )
+            self.assertEqual(
+                run(appended, clean_environment).stdout,
+                "tail\n",
+            )
+            self.assertEqual(
+                run(appended, ambient_environment).stdout,
+                "ambient tail\n",
+            )
+            self.assertEqual(
+                run(appended, clean_environment, "VALUE=command").stdout,
+                "command\n",
+            )
+            self.assertEqual(
+                [
+                    item["source"]
+                    for item in parse(appended)["record"]["recipe_variables"][
+                        "VALUE"
+                    ]["authority_variants"]
+                ],
+                [
+                    "command-line",
+                    "process-environment",
+                    "tracked-fallback",
+                ],
+            )
+
+            target_append = appended.replace(
+                "VALUE += tail",
+                "all: VALUE += tail",
+            )
+            target_override_append = target_append.replace(
+                "all: VALUE",
+                "all: override VALUE",
+            )
+            self.assertEqual(
+                run(target_append, ambient_environment).stdout,
+                "ambient tail\n",
+            )
+            self.assertEqual(
+                run(
+                    target_append,
+                    clean_environment,
+                    "VALUE=command",
+                ).stdout,
+                "command\n",
+            )
+            self.assertEqual(
+                run(
+                    target_override_append,
+                    clean_environment,
+                    "VALUE=command",
+                ).stdout,
+                "command tail\n",
+            )
+            self.assertEqual(
+                [
+                    item["source"]
+                    for item in parse(target_append)["record"][
+                        "target_variables"
+                    ]["VALUE"]["authority_variants"]
+                ],
+                [
+                    "command-line",
+                    "process-environment",
+                    "tracked-fallback",
+                ],
             )
 
             overridden_default = defaulted.replace(
@@ -1891,6 +2111,20 @@ class OwnershipGraphTests(unittest.TestCase):
                     {"all"},
                     require_dynamic_contracts=True,
                 )
+            write_registry(set(), {"VALUE"})
+            makefile.write_text(
+                "all:\n\t@echo $(OTHER)\n",
+                encoding="ascii",
+            )
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "undeclared ambient influence",
+            ):
+                reporter._parse_make_authorities(
+                    reporter.AuthorityLoader(scratch, entries),
+                    {"all"},
+                    require_dynamic_contracts=True,
+                )
 
             for label, field, value, error in (
                 (
@@ -1937,6 +2171,43 @@ class OwnershipGraphTests(unittest.TestCase):
                             {"all"},
                             require_dynamic_contracts=True,
                         )
+            registry = write_registry({"VALUE"})
+            registry["ambient_inputs"]["trusted_builtins"][0][
+                "value"
+            ] = "<host-curdir>"
+            registry["seal"] = reporter._sha256(
+                reporter.MAKE_DYNAMIC_SEAL_DOMAIN,
+                reporter.canonical_make_dynamic_payload(registry),
+            )
+            registry_path.write_bytes(reporter.normalized_json(registry))
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "trusted builtins contract",
+            ):
+                reporter._parse_make_authorities(
+                    reporter.AuthorityLoader(scratch, entries),
+                    {"all"},
+                    require_dynamic_contracts=True,
+                )
+            registry = write_registry({"VALUE"})
+            registry["execution_controls"]["allowed_flag_patterns"].append(
+                "n*"
+            )
+            registry["execution_controls"]["allowed_flag_patterns"].sort()
+            registry["seal"] = reporter._sha256(
+                reporter.MAKE_DYNAMIC_SEAL_DOMAIN,
+                reporter.canonical_make_dynamic_payload(registry),
+            )
+            registry_path.write_bytes(reporter.normalized_json(registry))
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "allowed flags",
+            ):
+                reporter._parse_make_authorities(
+                    reporter.AuthorityLoader(scratch, entries),
+                    {"all"},
+                    require_dynamic_contracts=True,
+                )
             registry = write_registry({"VALUE"})
             registry["seal"] = "0" * 64
             registry_path.write_bytes(reporter.normalized_json(registry))
@@ -2257,6 +2528,89 @@ class OwnershipGraphTests(unittest.TestCase):
                 {"target": target, "record": authority},
             ),
         )
+
+    def test_live_make_variable_census_is_closed(self):
+        entries, loader, graph, schema = self.fixture_authority()
+        targets = {
+            node["authority"]["target"]
+            for node in graph["nodes"]
+            if node["kind"] == "evidence"
+            and node["authority"]["kind"] == "make-target"
+        }
+        authorities = reporter._parse_make_authorities(
+            loader,
+            targets,
+            require_dynamic_contracts=True,
+        )
+        census = {
+            key: set()
+            for key in (
+                "ambient_undefined",
+                "trusted_builtins",
+                "scoped_variables",
+                "escaped_literals",
+                "unbound",
+                "handled_names",
+            )
+        }
+        for authority in authorities.values():
+            for key in census:
+                census[key].update(authority["variable_census"][key])
+        self.assertEqual(
+            census["ambient_undefined"],
+            {
+                "FE8_BANIM_PACKAGE_RUNTIME_TEST",
+                "FE8_EXPANSION_CUSTOM_SPELL_TEST",
+                "FE8_EXPANSION_ITEMTEST",
+                "FE8_ITEM_ID_CAP",
+                "LZ_FLAGS",
+                "MODERN_BUILD_COMMIT",
+                "MODERN_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT",
+                "OS",
+            },
+        )
+        self.assertEqual(
+            census["trusted_builtins"],
+            {"CURDIR", "MAKE", "MAKECMDGOALS", "MAKEFLAGS"},
+        )
+        self.assertEqual(census["scoped_variables"], {"t"})
+        self.assertEqual(census["escaped_literals"], {"sort"})
+        self.assertEqual(census["unbound"], set())
+        original_seven = {
+            "CURDIR",
+            "LZ_FLAGS",
+            "MAKE",
+            "MAKEFLAGS",
+            "MODERN_BUILD_COMMIT",
+            "sort",
+            "t",
+        }
+        self.assertTrue(original_seven <= census["handled_names"])
+        registry_path = self.fixture_root / reporter.MAKE_DYNAMIC_PATH
+        original = registry_path.read_bytes()
+        try:
+            registry = json.loads(original)
+            registry["ambient_inputs"]["undefined_names"].append(
+                "STALE_AMBIENT"
+            )
+            registry["ambient_inputs"]["undefined_names"].sort()
+            registry["seal"] = reporter._sha256(
+                reporter.MAKE_DYNAMIC_SEAL_DOMAIN,
+                reporter.canonical_make_dynamic_payload(registry),
+            )
+            registry_path.write_bytes(reporter.normalized_json(registry))
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "variable authority census",
+            ):
+                reporter.validate_graph(
+                    graph,
+                    schema,
+                    reporter.AuthorityLoader(self.fixture_root, entries),
+                    entries,
+                )
+        finally:
+            registry_path.write_bytes(original)
 
     def test_dynamic_input_change_invalidates_exact_owners(self):
         entries, _, graph, schema = self.fixture_authority()
@@ -3194,6 +3548,92 @@ class OwnershipGraphTests(unittest.TestCase):
             "validation-ownership-check must be invoked as the sole Make goal",
             completed.stderr,
         )
+        self.assertEqual(reporter.repository_status(self.fixture_root), before)
+
+    def test_public_make_gate_rejects_execution_control_bypasses(self):
+        before = reporter.repository_status(self.fixture_root)
+        cases = (
+            (["make", "-n", "validation-ownership-check"], {}),
+            (["make", "--just-print", "validation-ownership-check"], {}),
+            (["make", "-t", "validation-ownership-check"], {}),
+            (["make", "-q", "validation-ownership-check"], {}),
+            (["make", "-s", "validation-ownership-check"], {}),
+            (["make", "-i", "validation-ownership-check"], {}),
+            (
+                ["make", "validation-ownership-check"],
+                {"MAKEFLAGS": "-n"},
+            ),
+            (
+                ["make", "validation-ownership-check"],
+                {"GNUMAKEFLAGS": "-n"},
+            ),
+            (
+                ["make", "MFLAGS=-n", "validation-ownership-check"],
+                {},
+            ),
+            (
+                ["make", "validation-ownership-check"],
+                {"MAKEOVERRIDES": "PYTHON=hostile"},
+            ),
+            (
+                [
+                    "make",
+                    "MAKEOVERRIDES=",
+                    "validation-ownership-check",
+                ],
+                {},
+            ),
+        )
+        for command, hostile_environment in cases:
+            with self.subTest(command=command, env=hostile_environment):
+                environment = dict(os.environ)
+                environment.update(hostile_environment)
+                completed = subprocess.run(
+                    command,
+                    cwd=self.fixture_root,
+                    env=environment,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn(
+                    "validation-ownership-check rejects Make",
+                    completed.stderr,
+                )
+        graph_path = self.fixture_root / reporter.GRAPH_PATH
+        original_graph = graph_path.read_bytes()
+        broken_graph = json.loads(original_graph)
+        broken_graph["seal"] = "0" * 64
+        try:
+            graph_path.write_bytes(reporter.normalized_json(broken_graph))
+            safe = subprocess.run(
+                [
+                    "make",
+                    "-j2",
+                    "--no-print-directory",
+                    "validation-ownership-check",
+                ],
+                cwd=self.fixture_root,
+                env={
+                    **os.environ,
+                    "GNUMAKEFLAGS": "",
+                    "MAKEFLAGS": "",
+                    "MAKEOVERRIDES": "",
+                    "MFLAGS": "",
+                },
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        finally:
+            graph_path.write_bytes(original_graph)
+        self.assertNotEqual(safe.returncode, 0)
+        self.assertNotIn(
+            "validation-ownership-check rejects Make",
+            safe.stderr,
+        )
+        self.assertIn("seal", safe.stderr)
         self.assertEqual(reporter.repository_status(self.fixture_root), before)
 
     def test_report_is_canonical_report_only_and_preserves_git_state(self):

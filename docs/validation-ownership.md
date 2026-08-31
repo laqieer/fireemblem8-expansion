@@ -231,15 +231,35 @@ tracked-fallback recipe/environment variants for `PYTHON`, `TOOLCHAIN`,
 configuration/profile variables, and all other admitted defaults. Missing or
 stale names, source/policy/provenance drift, or a changed seal reject.
 
-An ordinary truly undefined recipe variable retains GNU Make's empty-value
-semantics. Any active definition, whether a normal assignment or a `define`
-body, is different: shell, call, cycle, function, or depth expansion failure
-rejects instead of becoming unresolved success-shaped metadata. A sealed
-dynamic dependency may resolve such a variable without executing its tool; its
-exact expression, tool, input, evidence owner, and effective expansion remain
-attached to both direct and `call` consumers. Selected-target evaluation keeps
-unrelated shell-derived variables outside another authority while the live
-chapter-objective and toolchain library discoveries are explicit contracts.
+An otherwise undefined recipe, prerequisite, macro, or exported variable has
+closed symbolic process-environment, command-line, and empty variants only
+when its exact name is admitted; an undeclared name rejects. Every non-override
+`=`, `:=`, `::=`, `+=`, `?=`, and target-specific binding also retains its
+command-line override variant, while `override` removes that branch except
+where GNU Make suppresses an `override ?=` because the imported value already
+exists. `MAKE`, `CURDIR`, `MAKEFLAGS`, and `MAKECMDGOALS` have separate derived
+built-in contracts. The foreach-local `t` and escaped shell-literal `sort`
+cannot become ambient inputs. A live whole-authority census covers those names,
+`LZ_FLAGS`, `MODERN_BUILD_COMMIT`, environment-only test controls, and
+`FE8_ITEM_ID_CAP`, and requires zero unbound references.
+
+Any active definition, whether a normal assignment or a `define` body, rejects
+on shell, call, cycle, function, or depth expansion failure instead of becoming
+unresolved success-shaped metadata. A sealed dynamic dependency may resolve
+such a variable without executing its tool; its exact expression, tool, input,
+evidence owner, and effective expansion remain attached to direct and `call`
+consumers. Selected-target evaluation keeps unrelated shell-derived variables
+outside another authority while live chapter-objective and toolchain-library
+discoveries remain explicit contracts.
+
+`validation-ownership-check` rejects execution-control flags at parse time, so
+`-n`/`--just-print`, `-t`, `-q`, `-s`, ignore-error, `MAKEFLAGS`, `MFLAGS`,
+`GNUMAKEFLAGS`, or `MAKEOVERRIDES` cannot skip its recipe or turn failure into
+success. Only `-j`/jobserver forms and `--no-print-directory` are admitted.
+Build CI and the 30-gate upstream mirror prefix the exact gate command with
+empty `MAKEFLAGS`, `MFLAGS`, `MAKEOVERRIDES`, and `GNUMAKEFLAGS`; the reviewed
+step environment independently pins the same four values. The mixed-goal
+rejection remains earlier than this guard.
 
 Target-specific recursive `=` and recursive `+=` resolve at target use, so
 they observe later global/target values and are inherited by prerequisites;
@@ -247,7 +267,8 @@ target-specific `:=`/`::=` and append to a simple value remain immediate.
 Target-local bindings participate in recipe fingerprints and escaped
 secondary-prerequisite expansion. `?=` follows the visible global/local
 definition, while target-specific shell assignments and `override`, `private`,
-or `export` modifiers fail closed until explicitly modeled.
+or `export` modifier combinations use the modeled precedence, environment, and
+inheritance rules; duplicates and unsupported combinations fail closed.
 
 Reachable unregistered dynamic prerequisites reject. The live linker authority
 has zero unowned dynamics: its `scaninc`, generated item-cap, and

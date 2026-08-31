@@ -857,7 +857,21 @@ def _make_variable_refs(values: Iterable[str]) -> set[str]:
     return {
         match.group(1)
         for value in values
-        for match in re.finditer(r"\$\(([A-Za-z_][A-Za-z0-9_]*)\)", value)
+        for match in re.finditer(
+            r"(?<![$\\])\$\(([A-Za-z_][A-Za-z0-9_]*)\)",
+            value,
+        )
+    }
+
+
+def _make_escaped_literal_refs(values: Iterable[str]) -> set[str]:
+    return {
+        match.group(1)
+        for value in values
+        for match in re.finditer(
+            r"\\\$\(([A-Za-z_][A-Za-z0-9_]*)\)",
+            value,
+        )
     }
 
 
@@ -916,11 +930,36 @@ def canonical_make_dynamic_payload(data: dict[str, Any]) -> dict[str, Any]:
     ambient_inputs["allowed_sources"] = sorted(
         ambient_inputs["allowed_sources"]
     )
-    return {
+    if data["schema_version"] >= 3:
+        for field in (
+            "undefined_names",
+            "trusted_builtins",
+            "scoped_variables",
+            "escaped_literals",
+        ):
+            ambient_inputs[field] = sorted(
+                ambient_inputs[field],
+                key=(
+                    (lambda item: item["name"])
+                    if field != "undefined_names"
+                    else None
+                ),
+            )
+    result = {
         "schema_version": data["schema_version"],
         "contracts": contracts,
         "ambient_inputs": ambient_inputs,
     }
+    if data["schema_version"] >= 3:
+        execution_controls = copy.deepcopy(data["execution_controls"])
+        for field in (
+            "scrubbed_variables",
+            "allowed_flag_patterns",
+            "forbidden_modes",
+        ):
+            execution_controls[field] = sorted(execution_controls[field])
+        result["execution_controls"] = execution_controls
+    return result
 
 
 def _source_semantics(path: str, content: bytes) -> str:
@@ -964,21 +1003,33 @@ def load_make_dynamic_contracts(
         "contracts",
         "seal",
     }
-    if schema_version == 2:
+    if schema_version in {2, 3}:
         expected_fields.add("ambient_inputs")
+    if schema_version == 3:
+        expected_fields.add("execution_controls")
     if set(data) != expected_fields:
         raise OwnershipError("Make dynamic dependency registry has invalid fields")
-    if schema_version not in {1, 2} or not isinstance(data["contracts"], list):
+    if schema_version not in {1, 2, 3} or not isinstance(data["contracts"], list):
         raise OwnershipError("Make dynamic dependency registry schema is invalid")
-    if schema_version == 2:
+    if schema_version in {2, 3}:
         ambient = data["ambient_inputs"]
-        if not isinstance(ambient, dict) or set(ambient) != {
+        ambient_fields = {
             "allowed_names",
             "allowed_sources",
             "value_policy",
             "provenance",
             "evidence_binding",
-        }:
+        }
+        if schema_version == 3:
+            ambient_fields.update(
+                {
+                    "undefined_names",
+                    "trusted_builtins",
+                    "scoped_variables",
+                    "escaped_literals",
+                }
+            )
+        if not isinstance(ambient, dict) or set(ambient) != ambient_fields:
             raise OwnershipError("Make ambient input registry has invalid fields")
         allowed_names = ambient["allowed_names"]
         if (
@@ -1007,6 +1058,108 @@ def load_make_dynamic_contracts(
             raise OwnershipError("Make ambient input provenance is invalid")
         if ambient["evidence_binding"] != "consuming-make-target":
             raise OwnershipError("Make ambient input evidence binding is invalid")
+        if schema_version == 3:
+            undefined_names = ambient["undefined_names"]
+            if (
+                not isinstance(undefined_names, list)
+                or undefined_names != sorted(set(undefined_names))
+                or not all(
+                    isinstance(name, str)
+                    and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name)
+                    for name in undefined_names
+                )
+                or set(undefined_names) & set(allowed_names)
+            ):
+                raise OwnershipError(
+                    "Make undefined ambient names must be sorted, unique, "
+                    "and separate from default inputs"
+                )
+            typed_fields = {
+                "trusted_builtins": {
+                    "CURDIR": ("repository-root", "<trusted-builtin:CURDIR>"),
+                    "MAKE": ("recursive-make", "<trusted-builtin:MAKE>"),
+                    "MAKEFLAGS": (
+                        "guarded-execution-flags",
+                        "<trusted-builtin:MAKEFLAGS>",
+                    ),
+                    "MAKECMDGOALS": (
+                        "requested-goals",
+                        "<trusted-builtin:MAKECMDGOALS>",
+                    ),
+                },
+                "scoped_variables": {
+                    "t": ("foreach-iteration", "<scoped-variable:t>"),
+                },
+                "escaped_literals": {
+                    "sort": (
+                        "escaped-shell-literal",
+                        "<escaped-shell-literal:sort>",
+                    ),
+                },
+            }
+            for field, expected in typed_fields.items():
+                values = ambient[field]
+                if (
+                    not isinstance(values, list)
+                    or any(
+                        not isinstance(item, dict)
+                        or set(item) != {"name", "authority", "value"}
+                        for item in values
+                    )
+                    or {
+                        item["name"]: (
+                            item["authority"],
+                            item["value"],
+                        )
+                        for item in values
+                    }
+                    != expected
+                ):
+                    raise OwnershipError(
+                        f"Make {field.replace('_', ' ')} contract is invalid"
+                    )
+            controls = data["execution_controls"]
+            if not isinstance(controls, dict) or set(controls) != {
+                "scrubbed_variables",
+                "allowed_flag_patterns",
+                "forbidden_modes",
+                "override_policy",
+            }:
+                raise OwnershipError("Make execution control registry is invalid")
+            if controls["scrubbed_variables"] != [
+                "GNUMAKEFLAGS",
+                "MAKEFLAGS",
+                "MAKEOVERRIDES",
+                "MFLAGS",
+            ]:
+                raise OwnershipError(
+                    "Make execution control scrub list is invalid"
+                )
+            if controls["allowed_flag_patterns"] != [
+                "--jobserver-auth=*",
+                "--jobserver-fds=*",
+                "--no-print-directory",
+                "-j*",
+                "j*",
+            ]:
+                raise OwnershipError(
+                    "Make execution control allowed flags are invalid"
+                )
+            if controls["forbidden_modes"] != [
+                "dry-run",
+                "ignore-errors",
+                "question",
+                "silent",
+                "touch",
+                "unmodeled",
+            ]:
+                raise OwnershipError(
+                    "Make execution control forbidden modes are invalid"
+                )
+            if controls["override_policy"] != "reject-nonempty":
+                raise OwnershipError(
+                    "Make execution control override policy is invalid"
+                )
     seal = data["seal"]
     if not isinstance(seal, str) or not re.fullmatch(r"[0-9a-f]{64}", seal):
         raise OwnershipError("Make dynamic dependency registry seal is invalid")
@@ -1108,16 +1261,54 @@ def load_make_ambient_contracts(
     if data["schema_version"] == 1:
         return {}
     ambient = data["ambient_inputs"]
+    names = [
+        (name, "default")
+        for name in ambient["allowed_names"]
+    ]
+    if data["schema_version"] >= 3:
+        names.extend(
+            (name, "undefined")
+            for name in ambient["undefined_names"]
+        )
     return {
         name: {
             "name": name,
+            "category": category,
             "allowed_sources": ambient["allowed_sources"],
             "value_policy": ambient["value_policy"],
             "provenance": ambient["provenance"],
             "evidence_binding": ambient["evidence_binding"],
         }
-        for name in ambient["allowed_names"]
+        for name, category in names
     }
+
+
+def load_make_typed_variable_contracts(
+    loader: AuthorityLoader,
+    *,
+    required: bool,
+) -> tuple[dict[str, dict[str, str]], ...]:
+    path = MAKE_DYNAMIC_PATH.as_posix()
+    if path not in loader.entries:
+        if required:
+            raise OwnershipError("Make variable authority registry is not tracked")
+        return {}, {}, {}
+    data = loader.read_json(MAKE_DYNAMIC_PATH, "Make variable authority registry")
+    load_make_dynamic_contracts(loader, required=required)
+    if data["schema_version"] < 3:
+        return {}, {}, {}
+    ambient = data["ambient_inputs"]
+    return tuple(
+        {
+            item["name"]: item
+            for item in ambient[field]
+        }
+        for field in (
+            "trusted_builtins",
+            "scoped_variables",
+            "escaped_literals",
+        )
+    )
 
 
 def _split_make_words(value: str) -> tuple[str, ...]:
@@ -1204,6 +1395,8 @@ class SafeMakeExpander:
         assignments: dict[str, list[dict[str, Any]]],
         dynamic_contracts: dict[str, dict[str, Any]] | None = None,
         ambient_contracts: dict[str, dict[str, Any]] | None = None,
+        trusted_builtins: dict[str, dict[str, str]] | None = None,
+        scoped_variables: dict[str, dict[str, str]] | None = None,
     ):
         self.loader = loader
         self.assignments = assignments
@@ -1213,10 +1406,19 @@ class SafeMakeExpander:
         self.ambient_contracts = (
             {} if ambient_contracts is None else ambient_contracts
         )
+        self.trusted_builtins = (
+            {} if trusted_builtins is None else trusted_builtins
+        )
+        self.scoped_variables = (
+            {} if scoped_variables is None else scoped_variables
+        )
         self.cache: dict[tuple[str, int | None], list[str]] = {}
         self.binding_semantics: dict[tuple[str, int | None], dict[str, Any]] = {}
         self.dynamic_usage: dict[str, set[str]] = defaultdict(set)
         self.ambient_usage: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+        self.unbound_usage: dict[str, set[str]] = defaultdict(set)
+        self.trusted_usage: dict[str, dict[str, dict[str, str]]] = defaultdict(dict)
+        self.scoped_usage: dict[str, dict[str, dict[str, str]]] = defaultdict(dict)
         self.dynamic_expression_cache: dict[
             tuple[str, int | None],
             frozenset[str],
@@ -1308,6 +1510,7 @@ class SafeMakeExpander:
         flavor = None
         preserve_whitespace = False
         ambient_default = None
+        ambient_append = None
         value = ""
         active_records = []
         for record in records:
@@ -1326,6 +1529,13 @@ class SafeMakeExpander:
             operator = record["operator"]
             if operator == "?=" and flavor is not None:
                 continue
+            if operator == "+=" and flavor is None:
+                ambient_append = self.ambient_contracts.get(name)
+                if ambient_append is None:
+                    raise OwnershipError(
+                        f"Make append variable {name!r} has undeclared "
+                        "ambient influence"
+                    )
             if operator == "?=":
                 ambient_default = self.ambient_contracts.get(name)
                 if ambient_default is None:
@@ -1382,11 +1592,16 @@ class SafeMakeExpander:
                     for record in self.assignments.get(name, ())
                 )
             )
-            result = [
-                f"<ambient-environment:{name}>"
-                if self_reference
-                else ""
-            ]
+            if name in self.trusted_builtins:
+                result = [self.trusted_builtins[name]["value"]]
+            elif name in self.scoped_variables:
+                result = [self.scoped_variables[name]["value"]]
+            else:
+                result = [
+                    f"<ambient-environment:{name}>"
+                    if self_reference
+                    else ""
+                ]
         elif flavor == "simple":
             result = [value]
         else:
@@ -1398,14 +1613,25 @@ class SafeMakeExpander:
             )
         result = self._bounded(result, name)
         if cacheable:
+            trusted_contracts = []
+            scoped_contracts = []
+            unbound_names = []
+            if flavor is None:
+                if name in self.trusted_builtins:
+                    trusted_contracts.append(self.trusted_builtins[name])
+                elif name in self.scoped_variables:
+                    scoped_contracts.append(self.scoped_variables[name])
+                elif name not in self.ambient_contracts:
+                    unbound_names.append(name)
             ambient_inputs = []
-            authority_variants = [
-                {
-                    "source": "tracked-make",
-                    "value": item,
-                }
-                for item in result
-            ]
+            attributes = {
+                modifier: any(
+                    modifier in record.get("modifiers", ())
+                    for record in active_records
+                )
+                for modifier in ("export", "override", "private")
+            }
+            authority_variants = []
             if ambient_default is not None:
                 ambient_inputs.append(ambient_default)
                 authority_variants = [
@@ -1431,6 +1657,59 @@ class SafeMakeExpander:
                     }
                     for source in ambient["allowed_sources"]
                 ] + [{"source": "undefined", "value": ""}]
+            elif ambient_append is not None:
+                ambient_inputs.append(ambient_append)
+                authority_variants = []
+                for source in ambient_append["allowed_sources"]:
+                    external = f"<{source}:{name}>"
+                    authority_variants.append(
+                        {
+                            "source": source,
+                            "value": (
+                                _normalize_make_expression(
+                                    external + " " + value
+                                )
+                                if source == "process-environment"
+                                or attributes["override"]
+                                else external
+                            ),
+                        }
+                    )
+                authority_variants.append(
+                    {
+                        "source": "tracked-fallback",
+                        "value": result[0],
+                    }
+                )
+            elif flavor is None:
+                authority_variants = [
+                    {
+                        "source": (
+                            "trusted-builtin"
+                            if trusted_contracts
+                            else "scoped-variable"
+                            if scoped_contracts
+                            else "undefined"
+                        ),
+                        "value": item,
+                    }
+                    for item in result
+                ]
+            else:
+                if not attributes["override"]:
+                    authority_variants.append(
+                        {
+                            "source": "command-line",
+                            "value": f"<command-line:{name}>",
+                        }
+                    )
+                authority_variants.extend(
+                    {
+                        "source": "tracked-make",
+                        "value": item,
+                    }
+                    for item in result
+                )
             fallback_ambient_inputs = []
             for referenced in _make_variable_refs((value,)):
                 semantics = self.binding_semantics.get(
@@ -1471,6 +1750,23 @@ class SafeMakeExpander:
                     *fallback_ambient_inputs,
                 )
             }
+            trusted_contracts.extend(self.trusted_usage[name].values())
+            trusted_contracts = list(
+                {
+                    contract["name"]: contract
+                    for contract in trusted_contracts
+                }.values()
+            )
+            scoped_contracts.extend(self.scoped_usage[name].values())
+            scoped_contracts = list(
+                {
+                    contract["name"]: contract
+                    for contract in scoped_contracts
+                }.values()
+            )
+            unbound_names = sorted(
+                set(unbound_names) | self.unbound_usage[name]
+            )
             for variable_name in stack:
                 usage_name = (
                     variable_name[7:-1]
@@ -1479,13 +1775,19 @@ class SafeMakeExpander:
                     else variable_name
                 )
                 self.ambient_usage[usage_name].update(propagated_ambient)
-            attributes = {
-                modifier: any(
-                    modifier in record.get("modifiers", ())
-                    for record in active_records
+                self.trusted_usage[usage_name].update(
+                    {
+                        contract["name"]: contract
+                        for contract in trusted_contracts
+                    }
                 )
-                for modifier in ("export", "override", "private")
-            }
+                self.scoped_usage[usage_name].update(
+                    {
+                        contract["name"]: contract
+                        for contract in scoped_contracts
+                    }
+                )
+                self.unbound_usage[usage_name].update(unbound_names)
             self.cache[cache_key] = result
             self.binding_semantics[cache_key] = {
                 "flavor": flavor,
@@ -1503,6 +1805,9 @@ class SafeMakeExpander:
                 ),
                 "ambient_input_contracts": ambient_inputs,
                 "fallback_ambient_inputs": fallback_ambient_inputs,
+                "trusted_builtin_contracts": trusted_contracts,
+                "scoped_variable_contracts": scoped_contracts,
+                "unbound_names": unbound_names,
                 "authority_variants": authority_variants,
                 "attributes": attributes,
                 "external_precedence": (
@@ -1527,6 +1832,27 @@ class SafeMakeExpander:
         semantics["dynamic_expressions"] = sorted(
             self._variable_dynamic_expressions(name, before_sequence, ())
             | self.dynamic_usage[name]
+        )
+        semantics["trusted_builtin_contracts"] = list(
+            {
+                contract["name"]: contract
+                for contract in (
+                    *semantics["trusted_builtin_contracts"],
+                    *self.trusted_usage[name].values(),
+                )
+            }.values()
+        )
+        semantics["scoped_variable_contracts"] = list(
+            {
+                contract["name"]: contract
+                for contract in (
+                    *semantics["scoped_variable_contracts"],
+                    *self.scoped_usage[name].values(),
+                )
+            }.values()
+        )
+        semantics["unbound_names"] = sorted(
+            set(semantics["unbound_names"]) | self.unbound_usage[name]
         )
         return semantics
 
@@ -2083,6 +2409,14 @@ def _parse_make_authorities(
         loader,
         required=require_dynamic_contracts,
     )
+    (
+        trusted_builtins,
+        scoped_variables,
+        escaped_literals,
+    ) = load_make_typed_variable_contracts(
+        loader,
+        required=require_dynamic_contracts,
+    )
     make_paths = tuple(
         sorted(
             path
@@ -2153,7 +2487,6 @@ def _parse_make_authorities(
     )
     variables: dict[str, list[dict[str, Any]]] = defaultdict(list)
     export_events: list[dict[str, Any]] = []
-    target_default_records = []
     seen = set()
     parse_sequence = 0
 
@@ -2353,8 +2686,6 @@ def _parse_make_authorities(
                     "_sequence": parse_sequence,
                 }
                 parse_sequence += 1
-                if record["operator"] == "?=":
-                    target_default_records.append(record)
                 for target in target_names:
                     targets[target]["declarations"].append(record)
                 current_targets = target_names
@@ -2387,20 +2718,26 @@ def _parse_make_authorities(
     ambient_default_names = set()
     for name, records in variables.items():
         for record in records:
-            if record["operator"] == "+=":
-                continue
-            if record["operator"] == "?=":
+            if record["operator"] in {"?=", "+="}:
                 ambient_default_names.add(name)
             break
-    ambient_default_names.update(
-        record["name"]
-        for record in target_default_records
-        if not any(
-            candidate["_sequence"] < record["_sequence"]
-            and candidate["operator"] != "?="
-            for candidate in variables.get(record["name"], ())
-        )
-    )
+    for target_record in targets.values():
+        target_defined = set()
+        for record in target_record["declarations"]:
+            if record["kind"] != "target-assignment":
+                continue
+            name = record["name"]
+            prior_global = any(
+                candidate["_sequence"] < record["_sequence"]
+                for candidate in variables.get(name, ())
+            )
+            if (
+                name not in target_defined
+                and not prior_global
+                and record["operator"] in {"?=", "+="}
+            ):
+                ambient_default_names.add(name)
+            target_defined.add(name)
     fallback_ambient_names = {
         referenced
         for name, records in variables.items()
@@ -2421,7 +2758,11 @@ def _parse_make_authorities(
         | fallback_ambient_names
         | self_referenced_ambient_names
     )
-    declared_ambient_names = set(ambient_contracts)
+    declared_ambient_names = {
+        name
+        for name, contract in ambient_contracts.items()
+        if contract["category"] == "default"
+    }
     if declared_ambient_names != required_ambient_names:
         raise OwnershipError(
             "Make ambient input registry does not match environment-sensitive "
@@ -2433,6 +2774,8 @@ def _parse_make_authorities(
         variables,
         dynamic_contracts,
         ambient_contracts,
+        trusted_builtins,
+        scoped_variables,
     )
     active_export_events = [
         event
@@ -2479,8 +2822,16 @@ def _parse_make_authorities(
 
     def evaluated_variable_semantics(name: str) -> dict[str, Any]:
         try:
-            return expander.variable_semantics(name)
+            semantics = expander.variable_semantics(name)
+            if semantics["unbound_names"]:
+                raise OwnershipError(
+                    "undeclared ambient influence from "
+                    + ", ".join(semantics["unbound_names"])
+                )
+            return semantics
         except OwnershipError as error:
+            if "undeclared ambient influence" in str(error):
+                raise
             active_definition = any(
                 expander._context_active(
                     record["context"],
@@ -2506,12 +2857,30 @@ def _parse_make_authorities(
             semantics = evaluated_variable_semantics(name)
             ambient_input = False
         else:
+            ambient_contract = ambient_contracts.get(name)
+            if ambient_contract is None:
+                raise OwnershipError(
+                    f"exported Make variable {name!r} has undeclared "
+                    "ambient influence"
+                )
             semantics = {
                 "assignments": (),
                 "flavor": "environment",
                 "raw_value": None,
                 "effective_values": [f"<ambient-environment:{name}>"],
                 "ambient_inputs": [name],
+                "ambient_input_contracts": [ambient_contract],
+                "fallback_ambient_inputs": [],
+                "trusted_builtin_contracts": [],
+                "scoped_variable_contracts": [],
+                "unbound_names": [],
+                "authority_variants": [
+                    {
+                        "source": source,
+                        "value": f"<{source}:{name}>",
+                    }
+                    for source in ambient_contract["allowed_sources"]
+                ],
                 "external_precedence": "environment",
             }
             ambient_input = True
@@ -2784,6 +3153,74 @@ def _parse_make_authorities(
             for name in assignment_history
             if name not in bindings
         }
+
+        def target_authority_variants(name: str) -> list[dict[str, Any]]:
+            if name in target_ambient_defaults:
+                return [
+                    {
+                        "source": source,
+                        "value": f"<{source}:{name}>",
+                    }
+                    for source in target_ambient_defaults[name][
+                        "allowed_sources"
+                    ]
+                ] + [
+                    {
+                        "source": "tracked-fallback",
+                        "value": resolved.get(name),
+                    }
+                ]
+            global_base = global_bases.get(name)
+            assignments = assignment_history[name]
+            if (
+                assignments
+                and assignments[0]["operator"] == "+="
+                and global_base is not None
+                and global_base["flavor"] is None
+            ):
+                result = []
+                for variant in global_base["authority_variants"]:
+                    source = variant["source"]
+                    if source == "undefined":
+                        result.append(
+                            {
+                                "source": "tracked-fallback",
+                                "value": resolved.get(name),
+                            }
+                        )
+                    elif (
+                        source == "command-line"
+                        and not attributes[name]["override"]
+                    ):
+                        result.append(variant)
+                    else:
+                        result.append(
+                            {
+                                "source": source,
+                                "value": _normalize_make_expression(
+                                    variant["value"]
+                                    + " "
+                                    + (resolved.get(name) or "")
+                                ),
+                            }
+                        )
+                return result
+            return (
+                []
+                if attributes[name]["override"]
+                else [
+                    {
+                        "source": "command-line",
+                        "value": f"<command-line:{name}>",
+                    }
+                ]
+            ) + [
+                {
+                    "source": "tracked-make",
+                    "value": resolved.get(name),
+                }
+            ]
+
         semantics = {
             name: (
                 {
@@ -2798,30 +3235,7 @@ def _parse_make_authorities(
                         if name in target_ambient_defaults
                         else []
                     ),
-                    "authority_variants": (
-                        [
-                            {
-                                "source": source,
-                                "value": f"<{source}:{name}>",
-                            }
-                            for source in target_ambient_defaults[name][
-                                "allowed_sources"
-                            ]
-                        ]
-                        + [
-                            {
-                                "source": "tracked-fallback",
-                                "value": resolved.get(name),
-                            }
-                        ]
-                        if name in target_ambient_defaults
-                        else [
-                            {
-                                "source": "tracked-make",
-                                "value": resolved.get(name),
-                            }
-                        ]
-                    ),
+                    "authority_variants": target_authority_variants(name),
                     "attributes": attributes[name],
                     "external_precedence": (
                         "override"
@@ -2842,6 +3256,9 @@ def _parse_make_authorities(
                         else None
                     ),
                     "attributes": attributes[name],
+                    "authority_variants": inherited_semantics[name][
+                        "authority_variants"
+                    ],
                     "external_precedence": (
                         "override"
                         if attributes[name]["override"]
@@ -3042,6 +3459,16 @@ def _parse_make_authorities(
         ]
         prerequisite_refs = _make_variable_refs(prerequisite_values)
         recipe_refs = _make_variable_refs(recipe_values) - prerequisite_refs
+        escaped_literal_names = (
+            _make_escaped_literal_refs(prerequisite_values)
+            | _make_escaped_literal_refs(recipe_values)
+        ) - set(variables)
+        unknown_escaped_literals = escaped_literal_names - set(escaped_literals)
+        if unknown_escaped_literals:
+            raise OwnershipError(
+                "Make authority contains undeclared escaped literals "
+                f"{sorted(unknown_escaped_literals)}"
+            )
         target_variable_names = set(target_semantics)
         unresolved_prerequisite_variables = (
             prerequisite_refs & target_variable_names
@@ -3130,6 +3557,10 @@ def _parse_make_authorities(
             },
             "exported_environment": exported_environment,
             "expanded_recipes": expanded_recipes,
+            "escaped_literal_refs": [
+                escaped_literals[name]
+                for name in sorted(escaped_literal_names)
+            ],
             "prerequisite_calls": prerequisite_calls,
             "recipe_calls": recipe_calls,
             "recipe_variables": recipe_variables,
@@ -3248,6 +3679,9 @@ def _parse_make_authorities(
             for name, value in record["_target_values"].items():
                 binding = {
                     "attributes": record["_target_attributes"][name],
+                    "authority_variants": record["target_variables"][name][
+                        "authority_variants"
+                    ],
                     "effective_value": value,
                     "source_target": current,
                 }
@@ -3341,8 +3775,10 @@ def _parse_make_authorities(
         def semantic_record(
             target_name: str,
             record: dict[str, Any],
+            inherited: dict[str, Any] | None = None,
         ) -> dict[str, Any]:
             enriched = dict(record)
+            inherited = {} if inherited is None else inherited
             references = enriched.pop("_prerequisite_refs", ())
             recipe_references = enriched.pop("_recipe_refs", ())
             enriched["variables"] = {
@@ -3350,13 +3786,33 @@ def _parse_make_authorities(
                 for name in references
             }
             enriched["recipe_variables"] = {
-                name: recipe_variable_semantics(name, strict=True)
+                name: (
+                    {
+                        "assignments": (),
+                        "authority_variants": inherited[name][
+                            "authority_variants"
+                        ],
+                        "effective_values": [
+                            inherited[name]["effective_value"]
+                        ],
+                        "scope": "inherited-target",
+                        "source_target": inherited[name]["source_target"],
+                        "unbound_names": [],
+                    }
+                    if name in inherited
+                    else recipe_variable_semantics(name, strict=True)
+                )
                 for name in recipe_references
             }
+            effective_target_values = {
+                name: binding["effective_value"]
+                for name, binding in inherited.items()
+            }
+            effective_target_values.update(enriched["_target_values"])
             enriched["expanded_recipes"] = expand_recipe_records(
                 target_name,
                 enriched["recipes"],
-                enriched["_target_values"],
+                effective_target_values,
                 enriched["recipe_variables"],
             )
             environment = dict(enriched["exported_environment"])
@@ -3388,7 +3844,11 @@ def _parse_make_authorities(
                     for key, value in item.items()
                     if key != "record"
                 },
-                "record": semantic_record(item["target"], item["record"]),
+                "record": semantic_record(
+                    item["target"],
+                    item["record"],
+                    item["inherited_target_variables"],
+                ),
             }
             for item in transitive
         ]
@@ -3416,6 +3876,52 @@ def _parse_make_authorities(
                 registered = dynamic_dependency(expression)
                 if registered is not None:
                     dynamic_dependencies.append(registered)
+
+        census = {
+            "ambient_undefined": set(),
+            "trusted_builtins": set(),
+            "scoped_variables": set(),
+            "escaped_literals": set(),
+            "unbound": set(),
+        }
+
+        def collect_census(value: Any) -> None:
+            if isinstance(value, dict):
+                for contract in value.get("ambient_input_contracts", ()):
+                    if contract.get("category") == "undefined":
+                        census["ambient_undefined"].add(contract["name"])
+                for contract in value.get("trusted_builtin_contracts", ()):
+                    census["trusted_builtins"].add(contract["name"])
+                for contract in value.get("scoped_variable_contracts", ()):
+                    census["scoped_variables"].add(contract["name"])
+                for contract in value.get("escaped_literal_refs", ()):
+                    census["escaped_literals"].add(contract["name"])
+                census["unbound"].update(value.get("unbound_names", ()))
+                for item in value.values():
+                    collect_census(item)
+            elif isinstance(value, (list, tuple)):
+                for item in value:
+                    collect_census(item)
+
+        collect_census(semantic_records)
+        if census["unbound"]:
+            raise OwnershipError(
+                f"Make target {target!r} has undeclared ambient influence "
+                f"{sorted(census['unbound'])}"
+            )
+        variable_census = {
+            key: sorted(values)
+            for key, values in census.items()
+        }
+        variable_census["handled_names"] = sorted(
+            set().union(
+                *(
+                    values
+                    for key, values in census.items()
+                    if key != "unbound"
+                )
+            )
+        )
 
         def public_value(value: Any) -> Any:
             if isinstance(value, dict):
@@ -3455,6 +3961,7 @@ def _parse_make_authorities(
                 )
             ),
             "transitive": public_value(semantic_transitive),
+            "variable_census": variable_census,
             "cycles": sorted(set(cycles)),
             "dynamic_dependencies": sorted(
                 {
@@ -3512,6 +4019,35 @@ def _validate_authorities(
         requested_make_targets,
         require_dynamic_contracts=True,
     )
+    ambient_contracts = load_make_ambient_contracts(loader, required=True)
+    (
+        trusted_builtins,
+        scoped_variables,
+        escaped_literals,
+    ) = load_make_typed_variable_contracts(loader, required=True)
+    expected_census = {
+        "ambient_undefined": {
+            name
+            for name, contract in ambient_contracts.items()
+            if contract["category"] == "undefined"
+        },
+        "trusted_builtins": set(trusted_builtins),
+        "scoped_variables": set(scoped_variables),
+        "escaped_literals": set(escaped_literals),
+    }
+    actual_census = {
+        key: {
+            name
+            for target in make_targets.values()
+            for name in target["variable_census"][key]
+        }
+        for key in expected_census
+    }
+    if actual_census != expected_census:
+        raise OwnershipError(
+            "Make variable authority census does not match the sealed "
+            f"registry (actual={actual_census!r}, expected={expected_census!r})"
+        )
     workflow_jobs, workflow_steps = _workflow_authorities(
         loader,
         strict=strict_workflow,

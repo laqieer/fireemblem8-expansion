@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "contracts": [
     {
       "id": "generated-chapter-objectives-enablement",
@@ -192,6 +192,7 @@
       "MODERN_OBJCOPY",
       "MODERN_OBJDUMP",
       "MODERN_PREPROC",
+      "MODERN_PREPROC_FLAGS",
       "MODERN_READELF",
       "MODERN_ROM_SIZE",
       "MODERN_SCANINC",
@@ -200,12 +201,60 @@
       "MODERN_TOOLCHAIN_ROOT",
       "PATH",
       "PREFIX",
+      "PREPROC_FLAGS",
       "PYTHON",
       "PYTHON3",
       "RELEASE_TARGET_SHA",
       "SHIFT",
       "SHIFT2",
-      "TOOLCHAIN"
+      "TOOLCHAIN",
+      "data_dep"
+    ],
+    "undefined_names": [
+      "FE8_BANIM_PACKAGE_RUNTIME_TEST",
+      "FE8_EXPANSION_CUSTOM_SPELL_TEST",
+      "FE8_EXPANSION_ITEMTEST",
+      "FE8_ITEM_ID_CAP",
+      "LZ_FLAGS",
+      "MODERN_BUILD_COMMIT",
+      "MODERN_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT",
+      "OS"
+    ],
+    "trusted_builtins": [
+      {
+        "name": "CURDIR",
+        "authority": "repository-root",
+        "value": "<trusted-builtin:CURDIR>"
+      },
+      {
+        "name": "MAKE",
+        "authority": "recursive-make",
+        "value": "<trusted-builtin:MAKE>"
+      },
+      {
+        "name": "MAKEFLAGS",
+        "authority": "guarded-execution-flags",
+        "value": "<trusted-builtin:MAKEFLAGS>"
+      },
+      {
+        "name": "MAKECMDGOALS",
+        "authority": "requested-goals",
+        "value": "<trusted-builtin:MAKECMDGOALS>"
+      }
+    ],
+    "scoped_variables": [
+      {
+        "name": "t",
+        "authority": "foreach-iteration",
+        "value": "<scoped-variable:t>"
+      }
+    ],
+    "escaped_literals": [
+      {
+        "name": "sort",
+        "authority": "escaped-shell-literal",
+        "value": "<escaped-shell-literal:sort>"
+      }
     ],
     "allowed_sources": [
       "command-line",
@@ -215,5 +264,29 @@
     "provenance": "gnu-make-import-before-default",
     "evidence_binding": "consuming-make-target"
   },
-  "seal": "a25b83c23224514b4d632ed9fe043d3511937372754ab7335c49153e44b0a01a"
+  "execution_controls": {
+    "scrubbed_variables": [
+      "GNUMAKEFLAGS",
+      "MAKEFLAGS",
+      "MAKEOVERRIDES",
+      "MFLAGS"
+    ],
+    "allowed_flag_patterns": [
+      "--jobserver-auth=*",
+      "--jobserver-fds=*",
+      "--no-print-directory",
+      "-j*",
+      "j*"
+    ],
+    "forbidden_modes": [
+      "dry-run",
+      "ignore-errors",
+      "question",
+      "silent",
+      "touch",
+      "unmodeled"
+    ],
+    "override_policy": "reject-nonempty"
+  },
+  "seal": "d27d5b993882ec8d500c17246e80c0821198c7d10c56601fc81004ec983294c7"
 }

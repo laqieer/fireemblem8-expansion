@@ -590,6 +590,20 @@ unsupported function, or 65-level expansion fail exactly like `define`
 macros. Registered direct and called ordinary macros bind their exact
 tool/input/evidence contract and invalidate consuming owners without execution.
 
+Undefined VALUE fixtures compare clean, controlled process-environment, and
+command-line GNU Make results. Every otherwise undefined reachable reference
+has the same closed variants or rejects; all non-override assignment flavors
+also bind a command-line branch, while override removes it. The live census
+classifies `MAKE`, `CURDIR`, `MAKEFLAGS`, `MAKECMDGOALS`, `LZ_FLAGS`,
+`MODERN_BUILD_COMMIT`, the foreach-local `t`, escaped literal `sort`, exported
+and test-control inputs, and reports zero unbound names.
+
+Invoke the public gate under `-n`/`--just-print`, `-t`, `-q`, `-s`, `-i`,
+hostile `MAKEFLAGS`/`GNUMAKEFLAGS`, `MFLAGS`, and `MAKEOVERRIDES`; each must
+fail during Makefile parsing. `-j2 --no-print-directory` must execute and pass.
+The Build step and exact 30-gate mirror scrub all four Make control variables
+before the gate, without changing gate count or mixed-goal precedence.
+
 Target-specific recursive values and appends are evaluated at target use and
 inherited by prerequisite recipes; simple target values remain immediate.
 Recipe variables and escaped secondary prerequisites use those target-local

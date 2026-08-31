@@ -78,7 +78,10 @@ WORKFLOW_PILOT_BASELINE_GATE = (
 VALIDATION_OWNERSHIP_TEST_GATE = (
     "/usr/bin/python3 -I scripts/validation_ownership/isolated_launcher.py tests"
 )
-VALIDATION_OWNERSHIP_CHECK_GATE = "make validation-ownership-check"
+VALIDATION_OWNERSHIP_CHECK_GATE = (
+    "MAKEFLAGS= MFLAGS= MAKEOVERRIDES= GNUMAKEFLAGS= "
+    "make validation-ownership-check"
+)
 EXPECTED_BUILD_SHA_EXPRESSION = (
     "${{ github.event_name == 'pull_request' && "
     "github.event.pull_request.head.sha || github.sha }}"
@@ -123,6 +126,10 @@ SCRUBBED_STEP_ENV = (
     "        GIT_OBJECT_DIRECTORY: ''",
     "        GIT_REPLACE_REF_BASE: ''",
     "        GIT_WORK_TREE: ''",
+    "        GNUMAKEFLAGS: ''",
+    "        MAKEFLAGS: ''",
+    "        MAKEOVERRIDES: ''",
+    "        MFLAGS: ''",
     "        PATH: /usr/bin:/bin",
     "        PYTHONPATH: ''",
 )

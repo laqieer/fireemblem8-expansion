@@ -108,6 +108,23 @@ ifneq (,$(filter validation-ownership-check,$(MAKECMDGOALS)))
 ifneq ($(strip $(MAKECMDGOALS)),validation-ownership-check)
 $(error validation-ownership-check must be invoked as the sole Make goal)
 endif
+  # These options can skip the recipe, suppress its failure, or report success
+  # without executing it. Parallel jobserver state and no-print-directory are
+  # execution-neutral and remain supported.
+  override _VALIDATION_OWNERSHIP_FLAGS := \
+	$(strip $(MAKEFLAGS) $(MFLAGS) $(GNUMAKEFLAGS))
+  override _VALIDATION_OWNERSHIP_UNSAFE_FLAGS := \
+	$(filter-out j% -j% --jobserver-auth=% --jobserver-fds=% \
+		--no-print-directory,$(_VALIDATION_OWNERSHIP_FLAGS))
+ifneq ($(_VALIDATION_OWNERSHIP_UNSAFE_FLAGS),)
+$(error validation-ownership-check rejects Make execution controls: $(_VALIDATION_OWNERSHIP_UNSAFE_FLAGS))
+endif
+ifneq ($(strip $(MAKEOVERRIDES)),)
+$(error validation-ownership-check rejects Make variable overrides: $(MAKEOVERRIDES))
+endif
+ifeq ($(origin MAKEOVERRIDES),command line)
+$(error validation-ownership-check rejects Make command-line MAKEOVERRIDES)
+endif
   NODEP := 1
 endif
 
