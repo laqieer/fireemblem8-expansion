@@ -579,6 +579,17 @@ call, cycle, unsupported function, or excessive depth also reject; an exact
 sealed shell contract instead binds its tracked tool/input/evidence and changes
 the authority without executing the tool.
 
+Environment-default fixtures run GNU Make with VALUE absent, imported from a
+controlled environment, and supplied on the command line. The authority keeps
+all three recipe and child-environment variants while remaining byte-identical
+under an unrelated host environment. A sealed exact-name registry covers live
+`PYTHON`, `TOOLCHAIN`/`DEVKITARM`, PATH, and configuration/profile defaults;
+missing/stale names or source, provenance, policy, and seal mutations reject.
+Normal recursive assignments containing shell, undefined call, cycle,
+unsupported function, or 65-level expansion fail exactly like `define`
+macros. Registered direct and called ordinary macros bind their exact
+tool/input/evidence contract and invalidate consuming owners without execution.
+
 Target-specific recursive values and appends are evaluated at target use and
 inherited by prerequisite recipes; simple target values remain immediate.
 Recipe variables and escaped secondary prerequisites use those target-local

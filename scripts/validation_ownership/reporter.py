@@ -909,7 +909,18 @@ def canonical_make_dynamic_payload(data: dict[str, Any]) -> dict[str, Any]:
             contract[field] = sorted(contract[field])
         contracts.append(contract)
     contracts.sort(key=lambda item: item["id"])
-    return {"schema_version": data["schema_version"], "contracts": contracts}
+    if data["schema_version"] == 1:
+        return {"schema_version": 1, "contracts": contracts}
+    ambient_inputs = copy.deepcopy(data["ambient_inputs"])
+    ambient_inputs["allowed_names"] = sorted(ambient_inputs["allowed_names"])
+    ambient_inputs["allowed_sources"] = sorted(
+        ambient_inputs["allowed_sources"]
+    )
+    return {
+        "schema_version": data["schema_version"],
+        "contracts": contracts,
+        "ambient_inputs": ambient_inputs,
+    }
 
 
 def _source_semantics(path: str, content: bytes) -> str:
@@ -945,14 +956,57 @@ def load_make_dynamic_contracts(
             raise OwnershipError("Make dynamic dependency registry is not tracked")
         return {}
     data = loader.read_json(MAKE_DYNAMIC_PATH, "Make dynamic dependency registry")
-    if not isinstance(data, dict) or set(data) != {
+    if not isinstance(data, dict):
+        raise OwnershipError("Make dynamic dependency registry has invalid fields")
+    schema_version = data.get("schema_version")
+    expected_fields = {
         "schema_version",
         "contracts",
         "seal",
-    }:
+    }
+    if schema_version == 2:
+        expected_fields.add("ambient_inputs")
+    if set(data) != expected_fields:
         raise OwnershipError("Make dynamic dependency registry has invalid fields")
-    if data["schema_version"] != 1 or not isinstance(data["contracts"], list):
+    if schema_version not in {1, 2} or not isinstance(data["contracts"], list):
         raise OwnershipError("Make dynamic dependency registry schema is invalid")
+    if schema_version == 2:
+        ambient = data["ambient_inputs"]
+        if not isinstance(ambient, dict) or set(ambient) != {
+            "allowed_names",
+            "allowed_sources",
+            "value_policy",
+            "provenance",
+            "evidence_binding",
+        }:
+            raise OwnershipError("Make ambient input registry has invalid fields")
+        allowed_names = ambient["allowed_names"]
+        if (
+            not isinstance(allowed_names, list)
+            or allowed_names != sorted(set(allowed_names))
+            or not all(
+                isinstance(name, str)
+                and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name)
+                for name in allowed_names
+            )
+        ):
+            raise OwnershipError(
+                "Make ambient input registry names must be sorted unique variables"
+            )
+        if ambient["allowed_sources"] != [
+            "command-line",
+            "process-environment",
+        ]:
+            raise OwnershipError(
+                "Make ambient input registry sources must be command-line and "
+                "process-environment"
+            )
+        if ambient["value_policy"] != "symbolic-no-host-value":
+            raise OwnershipError("Make ambient input value policy is invalid")
+        if ambient["provenance"] != "gnu-make-import-before-default":
+            raise OwnershipError("Make ambient input provenance is invalid")
+        if ambient["evidence_binding"] != "consuming-make-target":
+            raise OwnershipError("Make ambient input evidence binding is invalid")
     seal = data["seal"]
     if not isinstance(seal, str) or not re.fullmatch(r"[0-9a-f]{64}", seal):
         raise OwnershipError("Make dynamic dependency registry seal is invalid")
@@ -1039,6 +1093,33 @@ def load_make_dynamic_contracts(
     return result
 
 
+def load_make_ambient_contracts(
+    loader: AuthorityLoader,
+    *,
+    required: bool,
+) -> dict[str, dict[str, Any]]:
+    path = MAKE_DYNAMIC_PATH.as_posix()
+    if path not in loader.entries:
+        if required:
+            raise OwnershipError("Make ambient input registry is not tracked")
+        return {}
+    data = loader.read_json(MAKE_DYNAMIC_PATH, "Make ambient input registry")
+    load_make_dynamic_contracts(loader, required=required)
+    if data["schema_version"] == 1:
+        return {}
+    ambient = data["ambient_inputs"]
+    return {
+        name: {
+            "name": name,
+            "allowed_sources": ambient["allowed_sources"],
+            "value_policy": ambient["value_policy"],
+            "provenance": ambient["provenance"],
+            "evidence_binding": ambient["evidence_binding"],
+        }
+        for name in ambient["allowed_names"]
+    }
+
+
 def _split_make_words(value: str) -> tuple[str, ...]:
     words = []
     start = None
@@ -1122,14 +1203,25 @@ class SafeMakeExpander:
         loader: AuthorityLoader,
         assignments: dict[str, list[dict[str, Any]]],
         dynamic_contracts: dict[str, dict[str, Any]] | None = None,
+        ambient_contracts: dict[str, dict[str, Any]] | None = None,
     ):
         self.loader = loader
         self.assignments = assignments
         self.dynamic_contracts = (
             {} if dynamic_contracts is None else dynamic_contracts
         )
+        self.ambient_contracts = (
+            {} if ambient_contracts is None else ambient_contracts
+        )
         self.cache: dict[tuple[str, int | None], list[str]] = {}
         self.binding_semantics: dict[tuple[str, int | None], dict[str, Any]] = {}
+        self.dynamic_usage: dict[str, set[str]] = defaultdict(set)
+        self.ambient_usage: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+        self.dynamic_expression_cache: dict[
+            tuple[str, int | None],
+            frozenset[str],
+        ] = {}
+        self.context_cache: dict[tuple[tuple[str, ...], int], bool] = {}
 
     @staticmethod
     def _split_arguments(value: str) -> list[str]:
@@ -1215,10 +1307,16 @@ class SafeMakeExpander:
         ]
         flavor = None
         preserve_whitespace = False
+        ambient_default = None
         value = ""
         active_records = []
         for record in records:
-            if not self._context_active(record["context"], record["_sequence"], stack):
+            evaluation_stack = stack + (f"<usage:{name}>",)
+            if not self._context_active(
+                record["context"],
+                record["_sequence"],
+                evaluation_stack,
+            ):
                 continue
             active_records.append(record)
             if record["operator"] == "!=":
@@ -1228,6 +1326,15 @@ class SafeMakeExpander:
             operator = record["operator"]
             if operator == "?=" and flavor is not None:
                 continue
+            if operator == "?=":
+                ambient_default = self.ambient_contracts.get(name)
+                if ambient_default is None:
+                    raise OwnershipError(
+                        f"Make default variable {name!r} has undeclared "
+                        "ambient influence"
+                    )
+            elif operator != "+=":
+                ambient_default = None
             if operator in {":=", "::="} or (
                 operator == "+=" and flavor == "simple"
             ):
@@ -1235,7 +1342,7 @@ class SafeMakeExpander:
                     expanded = self.expand(
                         record["value"],
                         local,
-                        stack,
+                        evaluation_stack,
                         record["_sequence"],
                     )
                 except OwnershipError as error:
@@ -1291,6 +1398,87 @@ class SafeMakeExpander:
             )
         result = self._bounded(result, name)
         if cacheable:
+            ambient_inputs = []
+            authority_variants = [
+                {
+                    "source": "tracked-make",
+                    "value": item,
+                }
+                for item in result
+            ]
+            if ambient_default is not None:
+                ambient_inputs.append(ambient_default)
+                authority_variants = [
+                    {
+                        "source": source,
+                        "value": f"<{source}:{name}>",
+                    }
+                    for source in ambient_default["allowed_sources"]
+                ] + [
+                    {
+                        "source": "tracked-fallback",
+                        "value": item,
+                    }
+                    for item in result
+                ]
+            elif flavor is None and name in self.ambient_contracts:
+                ambient = self.ambient_contracts[name]
+                ambient_inputs.append(ambient)
+                authority_variants = [
+                    {
+                        "source": source,
+                        "value": f"<{source}:{name}>",
+                    }
+                    for source in ambient["allowed_sources"]
+                ] + [{"source": "undefined", "value": ""}]
+            fallback_ambient_inputs = []
+            for referenced in _make_variable_refs((value,)):
+                semantics = self.binding_semantics.get(
+                    (referenced, before_sequence)
+                )
+                if semantics is not None:
+                    fallback_ambient_inputs.extend(
+                        semantics["ambient_input_contracts"]
+                    )
+                    fallback_ambient_inputs.extend(
+                        semantics["fallback_ambient_inputs"]
+                    )
+            fallback_ambient_inputs = list(
+                {
+                    contract["name"]: contract
+                    for contract in fallback_ambient_inputs
+                }.values()
+            )
+            for item in result:
+                for match in re.finditer(
+                    r"<ambient-environment:([A-Za-z_][A-Za-z0-9_]*)>",
+                    item,
+                ):
+                    contract = self.ambient_contracts.get(match.group(1))
+                    if contract is not None:
+                        ambient_inputs.append(contract)
+            ambient_inputs.extend(self.ambient_usage[name].values())
+            ambient_inputs = list(
+                {
+                    contract["name"]: contract
+                    for contract in ambient_inputs
+                }.values()
+            )
+            propagated_ambient = {
+                contract["name"]: contract
+                for contract in (
+                    *ambient_inputs,
+                    *fallback_ambient_inputs,
+                )
+            }
+            for variable_name in stack:
+                usage_name = (
+                    variable_name[7:-1]
+                    if variable_name.startswith("<usage:")
+                    and variable_name.endswith(">")
+                    else variable_name
+                )
+                self.ambient_usage[usage_name].update(propagated_ambient)
             attributes = {
                 modifier: any(
                     modifier in record.get("modifiers", ())
@@ -1313,6 +1501,9 @@ class SafeMakeExpander:
                         )
                     }
                 ),
+                "ambient_input_contracts": ambient_inputs,
+                "fallback_ambient_inputs": fallback_ambient_inputs,
+                "authority_variants": authority_variants,
                 "attributes": attributes,
                 "external_precedence": (
                     "override"
@@ -1335,6 +1526,7 @@ class SafeMakeExpander:
         semantics = dict(self.binding_semantics[(name, before_sequence)])
         semantics["dynamic_expressions"] = sorted(
             self._variable_dynamic_expressions(name, before_sequence, ())
+            | self.dynamic_usage[name]
         )
         return semantics
 
@@ -1379,6 +1571,9 @@ class SafeMakeExpander:
     ) -> set[str]:
         if name in stack:
             return set()
+        cache_key = name, before_sequence
+        if cache_key in self.dynamic_expression_cache:
+            return set(self.dynamic_expression_cache[cache_key])
         result = set()
         records = [
             record
@@ -1391,6 +1586,11 @@ class SafeMakeExpander:
                 continue
             for expression in self.dynamic_contracts:
                 if expression in record["value"]:
+                    result.add(expression)
+                if any(
+                    expression in condition
+                    for condition in record["context"]
+                ):
                     result.add(expression)
             dependency_sequence = (
                 record["_sequence"]
@@ -1405,6 +1605,15 @@ class SafeMakeExpander:
                         stack + (name,),
                     )
                 )
+            for referenced in _make_variable_refs(record["context"]):
+                result.update(
+                    self._variable_dynamic_expressions(
+                        referenced,
+                        record["_sequence"],
+                        stack + (name,),
+                    )
+                )
+        self.dynamic_expression_cache[cache_key] = frozenset(result)
         return result
 
     def _condition_value(
@@ -1450,10 +1659,15 @@ class SafeMakeExpander:
         sequence: int,
         stack: tuple[str, ...],
     ) -> bool:
-        return all(
+        cache_key = context, sequence
+        if cache_key in self.context_cache:
+            return self.context_cache[cache_key]
+        result = all(
             self._condition_value(condition, sequence, stack)
             for condition in context
         )
+        self.context_cache[cache_key] = result
+        return result
 
     def _function(
         self,
@@ -1698,10 +1912,24 @@ class SafeMakeExpander:
         if function:
             name = function.group(1)
             if name == "shell":
-                expression = "$(shell " + function.group(2) + ")"
+                expression = (
+                    "$(shell " + function.group(2) + ")"
+                ).replace("\0", "$$")
                 contract = self.dynamic_contracts.get(expression)
-                if contract is not None and contract["resolved_value"] is not None:
-                    return [contract["resolved_value"]]
+                if contract is not None:
+                    for variable_name in stack:
+                        usage_name = (
+                            variable_name[7:-1]
+                            if variable_name.startswith("<usage:")
+                            and variable_name.endswith(">")
+                            else variable_name
+                        )
+                        self.dynamic_usage[usage_name].add(expression)
+                    return [
+                        contract["resolved_value"]
+                        if contract["resolved_value"] is not None
+                        else f"<registered-dynamic:{contract['id']}>"
+                    ]
             if name not in self.FUNCTIONS:
                 raise OwnershipError(
                     f"unsupported dynamic Make prerequisite function {name!r}"
@@ -1735,6 +1963,8 @@ class SafeMakeExpander:
                     before_sequence,
                 )
             ]
+        if re.fullmatch(r"[@<*^?|%](?:D|F)?", content):
+            return [f"<make-automatic:{content}>"]
         if not re.fullmatch(r"(?:[A-Za-z_][A-Za-z0-9_]*|[0-9]+)", content):
             raise OwnershipError(
                 f"unsupported dynamic Make prerequisite expression {content!r}"
@@ -1755,6 +1985,11 @@ class SafeMakeExpander:
                 "Make prerequisite expression exceeds depth bound"
             )
         value = value.replace("$$", "\0")
+        value = re.sub(
+            r"\$([@<*^?|%])",
+            lambda match: f"<make-automatic:{match.group(1)}>",
+            value,
+        )
         local = {} if local is None else local
         start = value.find("$(")
         if start < 0:
@@ -1844,6 +2079,10 @@ def _parse_make_authorities(
         loader,
         required=require_dynamic_contracts,
     )
+    ambient_contracts = load_make_ambient_contracts(
+        loader,
+        required=require_dynamic_contracts,
+    )
     make_paths = tuple(
         sorted(
             path
@@ -1914,6 +2153,7 @@ def _parse_make_authorities(
     )
     variables: dict[str, list[dict[str, Any]]] = defaultdict(list)
     export_events: list[dict[str, Any]] = []
+    target_default_records = []
     seen = set()
     parse_sequence = 0
 
@@ -2113,6 +2353,8 @@ def _parse_make_authorities(
                     "_sequence": parse_sequence,
                 }
                 parse_sequence += 1
+                if record["operator"] == "?=":
+                    target_default_records.append(record)
                 for target in target_names:
                     targets[target]["declarations"].append(record)
                 current_targets = target_names
@@ -2142,7 +2384,56 @@ def _parse_make_authorities(
             )
 
     parse_file("Makefile")
-    expander = SafeMakeExpander(loader, variables, dynamic_contracts)
+    ambient_default_names = set()
+    for name, records in variables.items():
+        for record in records:
+            if record["operator"] == "+=":
+                continue
+            if record["operator"] == "?=":
+                ambient_default_names.add(name)
+            break
+    ambient_default_names.update(
+        record["name"]
+        for record in target_default_records
+        if not any(
+            candidate["_sequence"] < record["_sequence"]
+            and candidate["operator"] != "?="
+            for candidate in variables.get(record["name"], ())
+        )
+    )
+    fallback_ambient_names = {
+        referenced
+        for name, records in variables.items()
+        for record in records
+        if record["operator"] == "?="
+        for referenced in _make_variable_refs((record["value"],))
+        if referenced not in variables
+    }
+    self_referenced_ambient_names = {
+        name
+        for name, records in variables.items()
+        for record in records
+        if record["operator"] in {":=", "::="}
+        and f"$({name})" in record["value"]
+    }
+    required_ambient_names = (
+        ambient_default_names
+        | fallback_ambient_names
+        | self_referenced_ambient_names
+    )
+    declared_ambient_names = set(ambient_contracts)
+    if declared_ambient_names != required_ambient_names:
+        raise OwnershipError(
+            "Make ambient input registry does not match environment-sensitive "
+            f"defaults (missing={sorted(required_ambient_names - declared_ambient_names)}, "
+            f"stale={sorted(declared_ambient_names - required_ambient_names)})"
+        )
+    expander = SafeMakeExpander(
+        loader,
+        variables,
+        dynamic_contracts,
+        ambient_contracts,
+    )
     active_export_events = [
         event
         for event in export_events
@@ -2190,18 +2481,17 @@ def _parse_make_authorities(
         try:
             return expander.variable_semantics(name)
         except OwnershipError as error:
-            defined_macro = any(
-                record.get("syntax") == "define"
-                and expander._context_active(
+            active_definition = any(
+                expander._context_active(
                     record["context"],
                     record["_sequence"],
                     (),
                 )
                 for record in variables.get(name, ())
             )
-            if defined_macro:
+            if active_definition:
                 raise OwnershipError(
-                    f"defined recipe macro {name!r} cannot be expanded: "
+                    f"defined recipe variable {name!r} cannot be expanded: "
                     f"{error}"
                 ) from error
             return {
@@ -2209,6 +2499,27 @@ def _parse_make_authorities(
                 "evaluation": "unresolved-recipe-only-authority",
                 "reason": str(error),
             }
+
+    global_exported_environment = {}
+    for name in sorted(globally_exported):
+        if variables.get(name):
+            semantics = evaluated_variable_semantics(name)
+            ambient_input = False
+        else:
+            semantics = {
+                "assignments": (),
+                "flavor": "environment",
+                "raw_value": None,
+                "effective_values": [f"<ambient-environment:{name}>"],
+                "ambient_inputs": [name],
+                "external_precedence": "environment",
+            }
+            ambient_input = True
+        global_exported_environment[name] = {
+            **semantics,
+            "ambient_input": ambient_input,
+            "scope": "global",
+        }
 
     def dynamic_dependency(expression: str) -> dict[str, Any] | None:
         contract = dynamic_contracts.get(expression)
@@ -2228,6 +2539,7 @@ def _parse_make_authorities(
     ) -> tuple[dict[str, str], dict[str, Any]]:
         bindings: dict[str, dict[str, Any]] = {}
         global_bases: dict[str, dict[str, Any]] = {}
+        target_ambient_defaults: dict[str, dict[str, Any]] = {}
         attributes: dict[str, dict[str, bool]] = defaultdict(
             lambda: {
                 "export": False,
@@ -2361,6 +2673,14 @@ def _parse_make_authorities(
                 )
             ):
                 applied = False
+            elif operator == "?=":
+                contract = ambient_contracts.get(name)
+                if contract is None:
+                    raise OwnershipError(
+                        f"target-specific Make default {name!r} has "
+                        "undeclared ambient influence"
+                    )
+                target_ambient_defaults[name] = contract
             elif (
                 binding is None
                 and operator == "+="
@@ -2473,6 +2793,35 @@ def _parse_make_authorities(
                     "append_value": bindings[name].get("suffix"),
                     "effective_value": resolved.get(name),
                     "evaluation_error": resolution_errors.get(name),
+                    "ambient_input_contracts": (
+                        [target_ambient_defaults[name]]
+                        if name in target_ambient_defaults
+                        else []
+                    ),
+                    "authority_variants": (
+                        [
+                            {
+                                "source": source,
+                                "value": f"<{source}:{name}>",
+                            }
+                            for source in target_ambient_defaults[name][
+                                "allowed_sources"
+                            ]
+                        ]
+                        + [
+                            {
+                                "source": "tracked-fallback",
+                                "value": resolved.get(name),
+                            }
+                        ]
+                        if name in target_ambient_defaults
+                        else [
+                            {
+                                "source": "tracked-make",
+                                "value": resolved.get(name),
+                            }
+                        ]
+                    ),
                     "attributes": attributes[name],
                     "external_precedence": (
                         "override"
@@ -2535,7 +2884,7 @@ def _parse_make_authorities(
             ) from error
         for expanded in expanded_targets:
             for target in expanded.split():
-                if "$" in target:
+                if "$" in target or "<make-automatic:" in target:
                     raise OwnershipError(
                         "unresolved dynamic target declaration "
                         f"{raw_target!r} produced {target!r}"
@@ -2547,6 +2896,95 @@ def _parse_make_authorities(
                     dynamic_target_expressions
                 )
     targets = materialized
+
+    def recipe_variable_semantics(
+        name: str,
+        *,
+        strict: bool,
+    ) -> dict[str, Any]:
+        if variable_is_global_private(name):
+            return {
+                **evaluated_variable_semantics(name),
+                "effective_values": [""],
+                "private_global": True,
+            }
+        try:
+            return expander.variable_semantics(name)
+        except OwnershipError:
+            if strict:
+                return evaluated_variable_semantics(name)
+            return {
+                "assignments": variables.get(name, ()),
+                "evaluation": "deferred-recipe-authority",
+            }
+
+    def expand_recipe_records(
+        target: str,
+        recipes: list[dict[str, Any]],
+        target_values: dict[str, str],
+        recipe_variables: dict[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        expanded_recipes = []
+        for recipe in recipes:
+            expanded = recipe["command"]
+            unresolved = []
+            expansion_inputs = {}
+            for call in expander.call_semantics(recipe["command"]):
+                values = call["effective_values"]
+                if len(values) != 1:
+                    raise OwnershipError(
+                        f"Make recipe call {call['expression']!r} for "
+                        f"{target!r} is ambiguous"
+                    )
+                expanded = expanded.replace(call["expression"], values[0])
+            for name in sorted(_make_variable_refs((recipe["command"],))):
+                if name in target_values:
+                    values = [target_values[name]]
+                    semantics = {}
+                else:
+                    semantics = recipe_variables.get(name, {})
+                    values = semantics.get("effective_values")
+                if values is None or len(values) != 1:
+                    unresolved.append(name)
+                    continue
+                expanded = expanded.replace(f"$({name})", values[0])
+                authority_variants = semantics.get("authority_variants", ())
+                if len(authority_variants) > 1:
+                    expansion_inputs[name] = authority_variants
+            expanded_variants = [{"source": "tracked", "text": expanded}]
+            for name, variants in expansion_inputs.items():
+                fallback = next(
+                    (
+                        variant["value"]
+                        for variant in variants
+                        if variant["source"]
+                        in {"tracked-fallback", "tracked-make", "undefined"}
+                    ),
+                    "",
+                )
+                for variant in variants:
+                    if variant["value"] == fallback:
+                        continue
+                    expanded_variants.append(
+                        {
+                            "source": f"{variant['source']}:{name}",
+                            "text": expanded.replace(
+                                fallback,
+                                variant["value"],
+                                1,
+                            ),
+                        }
+                    )
+            expanded_recipes.append(
+                {
+                    "source": recipe["command"],
+                    "expanded": expanded,
+                    "expanded_variants": expanded_variants,
+                    "expansion_inputs": expansion_inputs,
+                    "unresolved_variables": unresolved,
+                }
+            )
+        return expanded_recipes
 
     direct = {}
     for target, record in targets.items():
@@ -2617,72 +3055,22 @@ def _parse_make_authorities(
         prerequisite_refs -= target_variable_names
         recipe_refs -= target_variable_names
 
-        def recipe_variable_semantics(name: str) -> dict[str, Any]:
-            if variable_is_global_private(name):
-                return {
-                    **evaluated_variable_semantics(name),
-                    "effective_values": [""],
-                    "private_global": True,
-                }
-            return evaluated_variable_semantics(name)
-
         recipe_variables = {
-            name: recipe_variable_semantics(name)
+            name: recipe_variable_semantics(name, strict=False)
             for name in sorted(recipe_refs)
         }
-        expanded_recipes = []
-        for recipe in active_recipes:
-            expanded = recipe["command"]
-            unresolved = []
-            for call in expander.call_semantics(recipe["command"]):
-                values = call["effective_values"]
-                if len(values) != 1:
-                    raise OwnershipError(
-                        f"Make recipe call {call['expression']!r} for "
-                        f"{target!r} is ambiguous"
-                    )
-                expanded = expanded.replace(call["expression"], values[0])
-            for name in sorted(_make_variable_refs((recipe["command"],))):
-                if name in target_values:
-                    values = [target_values[name]]
-                else:
-                    semantics = recipe_variables.get(name)
-                    if semantics is None:
-                        semantics = recipe_variable_semantics(name)
-                    values = semantics.get("effective_values")
-                if values is None or len(values) != 1:
-                    unresolved.append(name)
-                    continue
-                expanded = expanded.replace(f"$({name})", values[0])
-            expanded_recipes.append(
-                {
-                    "source": recipe["command"],
-                    "expanded": expanded,
-                    "unresolved_variables": unresolved,
-                }
-            )
+        expanded_recipes = expand_recipe_records(
+            target,
+            active_recipes,
+            target_values,
+            recipe_variables,
+        )
         exported_environment = {}
         if active_recipes:
             for name in sorted(globally_exported):
-                if variables.get(name):
-                    semantics = evaluated_variable_semantics(name)
-                    ambient_input = False
-                else:
-                    semantics = {
-                        "assignments": (),
-                        "flavor": "environment",
-                        "raw_value": None,
-                        "effective_values": [
-                            f"<ambient-environment:{name}>"
-                        ],
-                        "ambient_inputs": [name],
-                        "external_precedence": "environment",
-                    }
-                    ambient_input = True
                 exported_environment[name] = {
-                    **semantics,
-                    "ambient_input": ambient_input,
                     "scope": "global",
+                    "binding": name,
                 }
             for name, semantics in target_semantics.items():
                 attributes = semantics["attributes"]
@@ -2701,6 +3089,23 @@ def _parse_make_authorities(
                     "scope": "target",
                     "target_semantics": semantics,
                 }
+            for name, semantics in recipe_variables.items():
+                ambient_inputs = semantics.get("ambient_input_contracts", ())
+                if not ambient_inputs or name in exported_environment:
+                    continue
+                exported_environment[name] = {
+                    "scope": "conditional-external",
+                    "ambient_input_contracts": ambient_inputs,
+                    "variants": [
+                        {
+                            "source": variant["source"],
+                            "present": variant["source"]
+                            in {"command-line", "process-environment"},
+                            "value": variant["value"],
+                        }
+                        for variant in semantics["authority_variants"]
+                    ],
+                }
 
         direct[target] = {
             "declarations": active_declarations,
@@ -2710,6 +3115,7 @@ def _parse_make_authorities(
                 set(record["dynamic_target_expressions"])
             ),
             "_prerequisite_refs": sorted(prerequisite_refs),
+            "_recipe_refs": sorted(recipe_refs),
             "_target_values": target_values,
             "_target_attributes": {
                 name: semantics["attributes"]
@@ -2746,7 +3152,11 @@ def _parse_make_authorities(
         for candidate in candidates:
             if candidate in direct:
                 result.append(candidate)
-            if "$" in candidate:
+            if (
+                "$" in candidate
+                or "<make-automatic:" in candidate
+                or "<registered-dynamic:" in candidate
+            ):
                 raise OwnershipError(
                     f"unsupported dynamic Make prerequisite candidate {candidate!r}"
                 )
@@ -2799,6 +3209,25 @@ def _parse_make_authorities(
         )
         child_cache[target] = (result, local_dynamic)
         dynamic_dependencies.extend(local_dynamic)
+        return result
+
+    context_reference_cache: dict[str, set[str]] = {}
+
+    def context_references(
+        target: str,
+        stack: tuple[str, ...] = (),
+    ) -> set[str]:
+        if target in context_reference_cache:
+            return context_reference_cache[target]
+        if target in stack:
+            return set()
+        record = direct[target]
+        result = set(record["_prerequisite_refs"]) | set(record["_recipe_refs"])
+        for child in child_targets(target, []):
+            result.update(
+                context_references(child, stack + (target,))
+            )
+        context_reference_cache[target] = result
         return result
 
     def authority_record(target: str) -> dict[str, Any]:
@@ -2861,29 +3290,39 @@ def _parse_make_authorities(
                 inherited_exports,
             )
             for child in child_targets(current, dynamic_dependencies):
+                relevant_names = context_references(child)
+                relevant_context = {
+                    name: binding
+                    for name, binding in child_context.items()
+                    if name in relevant_names
+                    or binding["attributes"]["export"]
+                }
                 if child in stack:
                     cycles.append(stack + (child,))
                     continue
                 if child in visited:
                     if visited_contexts.get(child, {}) != {
-                        "variables": child_context,
+                        "variables": relevant_context,
                         "exports": child_exports,
                     }:
                         raise OwnershipError(
                             f"Make target {child!r} has ambiguous inherited "
-                            "target-specific variable contexts"
+                            "target-specific variable contexts: "
+                            f"{visited_contexts.get(child, {})!r} != "
+                            f"{{'variables': {relevant_context!r}, "
+                            f"'exports': {child_exports!r}}}"
                         )
                     continue
                 visited.add(child)
                 visited_contexts[child] = {
-                    "variables": child_context,
+                    "variables": relevant_context,
                     "exports": child_exports,
                 }
                 transitive.append(
                     {
                         "target": child,
                         "record": direct[child],
-                        "inherited_target_variables": child_context,
+                        "inherited_target_variables": relevant_context,
                         "effective_exported_environment": inherited_environment(
                             child,
                             child_exports,
@@ -2893,22 +3332,55 @@ def _parse_make_authorities(
                 visit(
                     child,
                     stack + (child,),
-                    child_context,
+                    relevant_context,
                     child_exports,
                 )
 
         visit(target, (target,), {}, {})
 
-        def semantic_record(record: dict[str, Any]) -> dict[str, Any]:
+        def semantic_record(
+            target_name: str,
+            record: dict[str, Any],
+        ) -> dict[str, Any]:
             enriched = dict(record)
             references = enriched.pop("_prerequisite_refs", ())
+            recipe_references = enriched.pop("_recipe_refs", ())
             enriched["variables"] = {
                 name: expander.variable_semantics(name)
                 for name in references
             }
+            enriched["recipe_variables"] = {
+                name: recipe_variable_semantics(name, strict=True)
+                for name in recipe_references
+            }
+            enriched["expanded_recipes"] = expand_recipe_records(
+                target_name,
+                enriched["recipes"],
+                enriched["_target_values"],
+                enriched["recipe_variables"],
+            )
+            environment = dict(enriched["exported_environment"])
+            for name, semantics in enriched["recipe_variables"].items():
+                ambient_inputs = semantics.get("ambient_input_contracts", ())
+                if not ambient_inputs or name in environment:
+                    continue
+                environment[name] = {
+                    "scope": "conditional-external",
+                    "ambient_input_contracts": ambient_inputs,
+                    "variants": [
+                        {
+                            "source": variant["source"],
+                            "present": variant["source"]
+                            in {"command-line", "process-environment"},
+                            "value": variant["value"],
+                        }
+                        for variant in semantics["authority_variants"]
+                    ],
+                }
+            enriched["exported_environment"] = environment
             return enriched
 
-        semantic_root = semantic_record(direct[target])
+        semantic_root = semantic_record(target, direct[target])
         semantic_transitive = [
             {
                 **{
@@ -2916,7 +3388,7 @@ def _parse_make_authorities(
                     for key, value in item.items()
                     if key != "record"
                 },
-                "record": semantic_record(item["record"]),
+                "record": semantic_record(item["target"], item["record"]),
             }
             for item in transitive
         ]
@@ -2958,11 +3430,29 @@ def _parse_make_authorities(
                 return tuple(public_value(item) for item in value)
             return value
 
+        def resolved_environment(
+            environment: dict[str, Any],
+        ) -> dict[str, Any]:
+            return {
+                name: (
+                    global_exported_environment[binding["binding"]]
+                    if binding.get("scope") == "global"
+                    and "binding" in binding
+                    else binding
+                )
+                for name, binding in environment.items()
+            }
+
         return {
             "target": target,
             "record": public_value(semantic_root),
+            "global_exported_environment": public_value(
+                global_exported_environment
+            ),
             "effective_exported_environment": public_value(
-                direct[target]["exported_environment"]
+                resolved_environment(
+                    direct[target]["exported_environment"]
+                )
             ),
             "transitive": public_value(semantic_transitive),
             "cycles": sorted(set(cycles)),

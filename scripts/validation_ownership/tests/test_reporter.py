@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts.validation_ownership import reporter
 
@@ -1570,12 +1571,26 @@ class OwnershipGraphTests(unittest.TestCase):
                 "\t@printf '%s\\n' '$(MACRO)'\n"
             )
             called = direct.replace("$(MACRO)'", "$(call MACRO)'")
+            ordinary_direct = (
+                f"MACRO = {expression}\n"
+                "all:\n"
+                "\t@printf '%s\\n' '$(MACRO)'\n"
+            )
+            ordinary_called = ordinary_direct.replace(
+                "$(MACRO)'",
+                "$(call MACRO)'",
+            )
             basic_entries = {
                 "Makefile": reporter.GitTreeEntry(
                     "Makefile", "100644", "blob", "0" * 40
                 )
             }
-            for text in (direct, called):
+            for text in (
+                direct,
+                called,
+                ordinary_direct,
+                ordinary_called,
+            ):
                 makefile.write_text(text, encoding="ascii")
                 with self.assertRaisesRegex(
                     reporter.OwnershipError,
@@ -1586,6 +1601,37 @@ class OwnershipGraphTests(unittest.TestCase):
                         {"all"},
                     )
                 self.assertFalse(marker.exists())
+
+            nested = "value"
+            for _ in range(65):
+                nested = "$(strip " + nested + ")"
+            ordinary_failures = {
+                "unsupported": (
+                    "MACRO = $(unsupported value)\n"
+                    "all:\n\t@echo $(MACRO)\n"
+                ),
+                "cycle": (
+                    "MACRO = $(OTHER)\n"
+                    "OTHER = $(MACRO)\n"
+                    "all:\n\t@echo $(MACRO)\n"
+                ),
+                "undefined-call": (
+                    "MACRO = $(call MISSING)\n"
+                    "all:\n\t@echo $(MACRO)\n"
+                ),
+                "depth": f"MACRO = {nested}\nall:\n\t@echo $(MACRO)\n",
+            }
+            for label, text in ordinary_failures.items():
+                with self.subTest(ordinary_macro=label):
+                    makefile.write_text(text, encoding="ascii")
+                    with self.assertRaises(reporter.OwnershipError):
+                        reporter._parse_make_authorities(
+                            reporter.AuthorityLoader(
+                                scratch,
+                                basic_entries,
+                            ),
+                            {"all"},
+                        )
 
             contract = {
                 "schema_version": 1,
@@ -1619,7 +1665,12 @@ class OwnershipGraphTests(unittest.TestCase):
                     reporter.MAKE_DYNAMIC_PATH.as_posix(),
                 )
             }
-            for text in (direct, called):
+            for text in (
+                direct,
+                called,
+                ordinary_direct,
+                ordinary_called,
+            ):
                 makefile.write_text(text, encoding="ascii")
                 authority = reporter._parse_make_authorities(
                     reporter.AuthorityLoader(scratch, entries),
@@ -1639,7 +1690,7 @@ class OwnershipGraphTests(unittest.TestCase):
                 )
                 self.assertFalse(marker.exists())
 
-            makefile.write_text(direct, encoding="ascii")
+            makefile.write_text(ordinary_direct, encoding="ascii")
             before = reporter._parse_make_authorities(
                 reporter.AuthorityLoader(scratch, entries),
                 {"all"},
@@ -1658,6 +1709,246 @@ class OwnershipGraphTests(unittest.TestCase):
             )["all"]
             self.assertNotEqual(before, after)
             self.assertFalse(marker.exists())
+
+    def test_make_defaults_bind_declared_ambient_variants(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            scratch = Path(directory)
+            makefile = scratch / "Makefile"
+            registry_path = scratch / reporter.MAKE_DYNAMIC_PATH
+            registry_path.parent.mkdir(parents=True)
+
+            def write_registry(names):
+                registry = {
+                    "schema_version": 2,
+                    "contracts": [],
+                    "ambient_inputs": {
+                        "allowed_names": sorted(names),
+                        "allowed_sources": [
+                            "command-line",
+                            "process-environment",
+                        ],
+                        "value_policy": "symbolic-no-host-value",
+                        "provenance": "gnu-make-import-before-default",
+                        "evidence_binding": "consuming-make-target",
+                    },
+                    "seal": "",
+                }
+                registry["seal"] = reporter._sha256(
+                    reporter.MAKE_DYNAMIC_SEAL_DOMAIN,
+                    reporter.canonical_make_dynamic_payload(registry),
+                )
+                registry_path.write_bytes(reporter.normalized_json(registry))
+                return registry
+
+            write_registry({"VALUE"})
+            entries = {
+                path: reporter.GitTreeEntry(
+                    path, "100644", "blob", "0" * 40
+                )
+                for path in (
+                    "Makefile",
+                    reporter.MAKE_DYNAMIC_PATH.as_posix(),
+                )
+            }
+
+            def parse(text):
+                makefile.write_text(text, encoding="ascii")
+                return reporter._parse_make_authorities(
+                    reporter.AuthorityLoader(scratch, entries),
+                    {"all"},
+                    require_dynamic_contracts=True,
+                )["all"]
+
+            def run(text, env, *arguments):
+                makefile.write_text(text, encoding="ascii")
+                return subprocess.run(
+                    [
+                        "make",
+                        "--no-print-directory",
+                        "-s",
+                        *arguments,
+                        "all",
+                    ],
+                    cwd=scratch,
+                    env=env,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+
+            defaulted = (
+                "VALUE ?= fallback\n"
+                "all:\n"
+                "\t@printf 'make=%s env=%s\\n' '$(VALUE)' \"$${VALUE-}\"\n"
+            )
+            clean_environment = dict(os.environ)
+            clean_environment.pop("VALUE", None)
+            ambient_environment = {
+                **clean_environment,
+                "VALUE": "ambient",
+            }
+            self.assertEqual(
+                run(defaulted, clean_environment).stdout,
+                "make=fallback env=\n",
+            )
+            self.assertEqual(
+                run(defaulted, ambient_environment).stdout,
+                "make=ambient env=ambient\n",
+            )
+            self.assertEqual(
+                run(defaulted, clean_environment, "VALUE=command").stdout,
+                "make=command env=command\n",
+            )
+            clean_authority = parse(defaulted)
+            with mock.patch.dict(os.environ, {"VALUE": "host-secret"}):
+                ambient_authority = parse(defaulted)
+            self.assertEqual(clean_authority, ambient_authority)
+            semantics = clean_authority["record"]["recipe_variables"]["VALUE"]
+            self.assertEqual(
+                [item["source"] for item in semantics["authority_variants"]],
+                [
+                    "command-line",
+                    "process-environment",
+                    "tracked-fallback",
+                ],
+            )
+            self.assertEqual(
+                {
+                    item["source"]
+                    for item in clean_authority["record"][
+                        "expanded_recipes"
+                    ][0]["expanded_variants"]
+                },
+                {
+                    "tracked",
+                    "command-line:VALUE",
+                    "process-environment:VALUE",
+                },
+            )
+            self.assertEqual(
+                {
+                    item["source"]: item["present"]
+                    for item in clean_authority[
+                        "effective_exported_environment"
+                    ]["VALUE"]["variants"]
+                },
+                {
+                    "command-line": True,
+                    "process-environment": True,
+                    "tracked-fallback": False,
+                },
+            )
+
+            overridden_default = defaulted.replace(
+                "VALUE ?=",
+                "override VALUE ?=",
+            )
+            self.assertEqual(
+                run(overridden_default, ambient_environment).stdout,
+                "make=ambient env=ambient\n",
+            )
+            self.assertEqual(
+                run(
+                    overridden_default,
+                    clean_environment,
+                    "VALUE=command",
+                ).stdout,
+                "make=command env=command\n",
+            )
+            self.assertTrue(
+                parse(overridden_default)["record"]["recipe_variables"][
+                    "VALUE"
+                ]["attributes"]["override"]
+            )
+
+            prior_definition = (
+                "VALUE := fixed\n"
+                "VALUE ?= fallback\n"
+                "all:\n"
+                "\t@printf '%s\\n' '$(VALUE)'\n"
+            )
+            write_registry(set())
+            prior_semantics = parse(prior_definition)["record"][
+                "recipe_variables"
+            ]["VALUE"]
+            self.assertEqual(prior_semantics["effective_values"], ["fixed"])
+            self.assertEqual(
+                prior_semantics["ambient_input_contracts"],
+                [],
+            )
+
+            write_registry({"VALUE"})
+            makefile.write_text(
+                "OTHER ?= fallback\nall:\n\t@echo $(OTHER)\n",
+                encoding="ascii",
+            )
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "ambient input registry does not match",
+            ):
+                reporter._parse_make_authorities(
+                    reporter.AuthorityLoader(scratch, entries),
+                    {"all"},
+                    require_dynamic_contracts=True,
+                )
+
+            for label, field, value, error in (
+                (
+                    "sources",
+                    "allowed_sources",
+                    ["process-environment"],
+                    "sources must be",
+                ),
+                (
+                    "value-policy",
+                    "value_policy",
+                    "capture-host-value",
+                    "value policy",
+                ),
+                (
+                    "provenance",
+                    "provenance",
+                    "ambient-process",
+                    "provenance",
+                ),
+                (
+                    "evidence",
+                    "evidence_binding",
+                    "unbound",
+                    "evidence binding",
+                ),
+            ):
+                with self.subTest(ambient_contract=label):
+                    registry = write_registry({"VALUE"})
+                    registry["ambient_inputs"][field] = value
+                    registry["seal"] = reporter._sha256(
+                        reporter.MAKE_DYNAMIC_SEAL_DOMAIN,
+                        reporter.canonical_make_dynamic_payload(registry),
+                    )
+                    registry_path.write_bytes(
+                        reporter.normalized_json(registry)
+                    )
+                    with self.assertRaisesRegex(
+                        reporter.OwnershipError,
+                        error,
+                    ):
+                        reporter._parse_make_authorities(
+                            reporter.AuthorityLoader(scratch, entries),
+                            {"all"},
+                            require_dynamic_contracts=True,
+                        )
+            registry = write_registry({"VALUE"})
+            registry["seal"] = "0" * 64
+            registry_path.write_bytes(reporter.normalized_json(registry))
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "seal does not match",
+            ):
+                reporter._parse_make_authorities(
+                    reporter.AuthorityLoader(scratch, entries),
+                    {"all"},
+                    require_dynamic_contracts=True,
+                )
 
     def test_make_expansion_rejects_unsupported_cycles_and_bounds(self):
         with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
@@ -1927,12 +2218,36 @@ class OwnershipGraphTests(unittest.TestCase):
             require_dynamic_contracts=True,
         )[target]
         self.assertEqual(authority["unknown_dynamic_prerequisites"], [])
+        for name in ("PYTHON", "MODERN_CONFIG", "MODERN_ABI"):
+            self.assertEqual(
+                [
+                    item["name"]
+                    for item in authority["record"]["recipe_variables"][name][
+                        "ambient_input_contracts"
+                    ]
+                ],
+                [name],
+            )
+        path_semantics = authority["effective_exported_environment"]["PATH"]
+        self.assertEqual(
+            {
+                item["name"]
+                for item in (
+                    *path_semantics["ambient_input_contracts"],
+                    *path_semantics["fallback_ambient_inputs"],
+                )
+            },
+            {"DEVKITARM", "PATH", "TOOLCHAIN"},
+        )
         self.assertEqual(
             {item["id"] for item in authority["dynamic_dependencies"]},
             {
                 "banim-compressing-linker-inputs",
                 "banim-scaninc-inputs",
+                "generated-chapter-objectives-enablement",
                 "generated-item-cap-resolution",
+                "modern-libc-directory",
+                "modern-libgcc-directory",
             },
         )
         self.assertEqual(
@@ -1983,6 +2298,60 @@ class OwnershipGraphTests(unittest.TestCase):
             )
         finally:
             input_path.write_bytes(original)
+
+    def test_registered_recipe_dynamic_invalidates_exact_owners(self):
+        entries, _, graph, schema = self.fixture_authority()
+        tool_path = (
+            self.fixture_root
+            / "scripts/generated_data/chapterobjectives/enabled.py"
+        )
+        original = tool_path.read_bytes()
+        base_loader = reporter.AuthorityLoader(
+            self.fixture_root,
+            entries,
+            "HEAD",
+        )
+        prior_graph = reporter._prior_graph(base_loader)
+        self.assertIsNotNone(prior_graph)
+        try:
+            tool_path.write_bytes(
+                original + b"\nFIXTURE_RECIPE_DYNAMIC = True\n"
+            )
+            loader = reporter.AuthorityLoader(self.fixture_root, entries)
+            model = reporter.validate_graph(graph, schema, loader, entries)
+            self.assertEqual(
+                reporter._authority_changed_edges(
+                    graph,
+                    prior_graph,
+                    model,
+                    loader,
+                    base_loader,
+                ),
+                {
+                    "configuration.compile",
+                    "configuration.link",
+                    "configuration.target",
+                    "generated-schema.compile",
+                    "generated-schema.adversarial",
+                    "generated-schema.link",
+                    "generated-schema.target",
+                    "generated.compile",
+                    "generated.adversarial",
+                    "generated.link",
+                    "generated.target",
+                    "localization.compile",
+                    "localization.consumer",
+                    "localization.link",
+                    "localization.negative",
+                    "manual.compile",
+                    "manual.link",
+                    "runtime.compile",
+                    "runtime.link",
+                    "runtime.target",
+                },
+            )
+        finally:
+            tool_path.write_bytes(original)
 
     def test_recursive_make_authority_rejects_untracked_include(self):
         with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:

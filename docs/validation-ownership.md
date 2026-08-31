@@ -219,12 +219,27 @@ target-specific `private` prevents Make-value inheritance without erasing an
 explicitly exported process value. Global `private`, duplicate, malformed, or
 unsupported modifier combinations reject globally.
 
+GNU Make imports process-environment and command-line variables before a
+non-override or `override` `?=` decides whether to apply its fallback. The
+sealed dynamic registry therefore carries an exact allowlist for every
+reachable default, self-referenced PATH input, and fallback-only dependency
+such as `DEVKITARM`. Each contract permits only symbolic command-line and
+process-environment sources, records GNU Make import provenance, and binds to
+the consuming Make target; reporter output never reads or records the host
+value. Authorities retain separate command-line, process-environment, and
+tracked-fallback recipe/environment variants for `PYTHON`, `TOOLCHAIN`,
+configuration/profile variables, and all other admitted defaults. Missing or
+stale names, source/policy/provenance drift, or a changed seal reject.
+
 An ordinary truly undefined recipe variable retains GNU Make's empty-value
-semantics. A referenced `define` macro is different: shell, call, cycle,
-function, or depth expansion failure rejects instead of becoming unresolved
-success-shaped metadata. A sealed dynamic dependency may resolve such a macro
-without executing its tool; its exact tool, input, evidence owner, and
-effective expansion remain attached to both direct and `call` consumers.
+semantics. Any active definition, whether a normal assignment or a `define`
+body, is different: shell, call, cycle, function, or depth expansion failure
+rejects instead of becoming unresolved success-shaped metadata. A sealed
+dynamic dependency may resolve such a variable without executing its tool; its
+exact expression, tool, input, evidence owner, and effective expansion remain
+attached to both direct and `call` consumers. Selected-target evaluation keeps
+unrelated shell-derived variables outside another authority while the live
+chapter-objective and toolchain library discoveries are explicit contracts.
 
 Target-specific recursive `=` and recursive `+=` resolve at target use, so
 they observe later global/target values and are inherited by prerequisites;
