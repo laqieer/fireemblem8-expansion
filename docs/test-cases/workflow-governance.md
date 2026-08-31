@@ -179,13 +179,19 @@ issue rather than this repository.
 
 ### Expected result
 
-The synthetic non-master-base pull request selects `event-router`,
-`event-classifier`, the
-existing `host-tests`, `build`, `extended-host-tests`, `legacy`, and
-fail-closed `summary` jobs. Every candidate worker still checks out and
-verifies `pull_request.head.sha`. The publisher is absent from pull-request
-execution, while a push to `master` selects it and a push to any other branch
-selects no workflow jobs.
+The synthetic non-master-base pull request selects the mandatory
+`event-identity` setup before `event-router`, `event-classifier`, the existing
+`host-tests`, `build`, `extended-host-tests`, `legacy`, and fail-closed
+`summary` jobs.
+
+- **Parsed full-PR job set:** {`event-identity`, `event-router`,
+  `event-classifier`, `host-tests`, `build`, `extended-host-tests`, `legacy`,
+  `summary`}.
+
+Every candidate worker still checks out and verifies
+`pull_request.head.sha`. The publisher is absent from pull-request execution,
+while a push to `master` selects it and a push to any other branch selects no
+workflow jobs.
 
 The child remains based on its immediate parent while that parent is open, and
 exact-head Build CI and Copilot review run against that genuine base. After the
@@ -205,7 +211,8 @@ verified.
 ### Negative control
 
 Adding inline or block `branches` or `branches-ignore` filters under
-`pull_request`, removing `edited` or another required activity type, enabling
+`pull_request`, omitting either mandatory `event-identity` or `event-router`
+setup context, removing `edited` or another required activity type, enabling
 `closed`/`labeled` activity, removing either trigger, allowing non-master
 pushes, exposing the patch publisher to pull requests, weakening exact-head
 checkout verification, accepting an old child run after its parent head
@@ -292,8 +299,14 @@ availability or grant credentials.
    missing/duplicate/non-standalone marker comments, a body marker, and every
    prohibited evolving body field.
 8. Replay the same body-only event through the preserved pre-fix Build graph.
-   Confirm all four expensive workers and summary are selected there, while
-   the current parsed workflow selects only classifier and summary.
+   Compare these unordered parsed sets:
+   - **Parsed preserved pre-fix body-only job set:** {`host-tests`, `build`,
+     `extended-host-tests`, `legacy`, `summary`}.
+   - **Parsed current metadata-only job/check set:** {`event-identity`,
+     `event-router`, `metadata-classifier`, `metadata-summary`}.
+   The pre-fix graph therefore starts all four expensive workers and summary;
+   the current graph retains both mandatory setup contexts and only the
+   running metadata classifier/summary checks.
 
 ### Expected result
 
@@ -359,6 +372,7 @@ the secret. The minimal secret step runs before any candidate code.
 The preserved parsed pre-fix workflow fixture selects `host-tests`, `build`,
 `extended-host-tests`, `legacy`, and `summary` for the same body-only fixture
 despite its unchanged head SHA. The focused suites also reject metadata
+topology that omits either mandatory `event-identity` or `event-router` setup,
 suppression for same-value/spoofed/missing-current/extra-key/nested metadata
 records, invalid title/body values, malformed `changes`, missing PR identity,
 body/title metadata with whitespace, control, forbidden-character, dot,

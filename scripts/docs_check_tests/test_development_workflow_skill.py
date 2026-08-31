@@ -26,11 +26,27 @@ WORKFLOW_PILOT_PATH = ROOT / "docs" / "workflow-pilot.md"
 FRAMEWORK_SUPPORT_PATH = ROOT / "docs" / "framework-support.md"
 COPILOT_INSTRUCTIONS_PATH = ROOT / ".github" / "copilot-instructions.md"
 WORKFLOW_GOVERNANCE_PATH = ROOT / "docs" / "test-cases" / "workflow-governance.md"
+BUILD_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "build.yml"
+PRE_FIX_BUILD_WORKFLOW_PATH = (
+    ROOT
+    / "scripts"
+    / "workflow_pilot"
+    / "tests"
+    / "fixtures"
+    / "pre_fix_build.yml"
+)
 TEST_CASE_REGISTRY_PATH = ROOT / "docs" / "test-cases" / "registry.json"
 MANUAL_HANDOFF_CONTRACT_PATH = ROOT / ".github" / "manual-testing-handoff.json"
 MANUAL_HANDOFF_CASE_HEADING = (
     "TC-WORKFLOW-MANUAL-HANDOFF-001: "
     "Surface actionable manual testing and resume automatically"
+)
+STACKED_CI_CASE_HEADING = (
+    "TC-WORKFLOW-STACKED-CI-001: "
+    "Run exact Build CI on a genuine stacked PR base"
+)
+BODY_EDIT_CASE_HEADING = (
+    "TC-WORKFLOW-BODY-EDIT-001: Suppress metadata-only Build workers"
 )
 CANDIDATE_EVIDENCE_MARKER = "<!-- workflow-pilot-candidate-evidence -->"
 EVOLVING_PR_BODY_FIELDS = (
@@ -518,6 +534,107 @@ def scan_policy_markdown(text):
 
 def normalize_policy(text):
     return " ".join(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def workflow_job_ids(path):
+    text = path.read_text(encoding="utf-8")
+    jobs = text.split("\njobs:\n", 1)
+    if len(jobs) != 2:
+        raise AssertionError(f"{path} lacks a jobs mapping")
+    names = re.findall(r"^  ([A-Za-z][A-Za-z0-9_-]*):\s*$", jobs[1], re.MULTILINE)
+    if not names or len(names) != len(set(names)):
+        raise AssertionError(f"{path} has missing or duplicate job IDs")
+    return frozenset(names)
+
+
+def documented_job_set(text, label):
+    pattern = re.compile(
+        rf"- \*\*{re.escape(label)}:\*\*\s+\{{(?P<body>.*?)\}}\.",
+        re.DOTALL,
+    )
+    matches = list(pattern.finditer(text))
+    if len(matches) != 1:
+        raise AssertionError(
+            f"expected exactly one documented job set {label!r}"
+        )
+    entries = [entry.strip() for entry in matches[0].group("body").split(",")]
+    names = []
+    for entry in entries:
+        match = re.fullmatch(r"`([A-Za-z][A-Za-z0-9_-]*)`", entry)
+        if match is None:
+            raise AssertionError(
+                f"documented job set {label!r} has malformed entry {entry!r}"
+            )
+        names.append(match.group(1))
+    if len(names) != len(set(names)):
+        raise AssertionError(f"documented job set {label!r} has duplicates")
+    return frozenset(names)
+
+
+def replace_documented_job_set(text, label, names):
+    pattern = re.compile(
+        rf"- \*\*{re.escape(label)}:\*\*\s+\{{(?P<body>.*?)\}}\.",
+        re.DOTALL,
+    )
+    replacement = (
+        f"- **{label}:** "
+        + "{"
+        + ", ".join(f"`{name}`" for name in names)
+        + "}."
+    )
+    changed, count = pattern.subn(replacement, text, count=1)
+    if count != 1:
+        raise AssertionError(f"cannot replace documented job set {label!r}")
+    return changed
+
+
+def workflow_tester_topology_violations(text):
+    scan_policy_markdown(text)
+    stacked_case = "\n".join(
+        read_markdown_section(text, STACKED_CI_CASE_HEADING)
+    )
+    body_case = "\n".join(
+        read_markdown_section(text, BODY_EDIT_CASE_HEADING)
+    )
+    current_jobs = workflow_job_ids(BUILD_WORKFLOW_PATH)
+    expected = {
+        "stacked-full-pr": current_jobs - {"patch-release"},
+        "current-metadata": frozenset(
+            {
+                "event-identity",
+                "event-router",
+                "metadata-classifier",
+                "metadata-summary",
+            }
+        ),
+        "preserved-pre-fix": workflow_job_ids(PRE_FIX_BUILD_WORKFLOW_PATH),
+    }
+    documented = {
+        "stacked-full-pr": documented_job_set(
+            stacked_case,
+            "Parsed full-PR job set",
+        ),
+        "current-metadata": documented_job_set(
+            body_case,
+            "Parsed current metadata-only job/check set",
+        ),
+        "preserved-pre-fix": documented_job_set(
+            body_case,
+            "Parsed preserved pre-fix body-only job set",
+        ),
+    }
+    violations = [
+        f"{name}-job-set"
+        for name in expected
+        if documented[name] != expected[name]
+    ]
+    skipped_names_contract = normalize_policy(
+        "Skipped worker names and success-shaped records are ignored by "
+        "stable job identity"
+    )
+    if skipped_names_contract not in normalize_policy(body_case):
+        violations.append("skipped-worker-names-are-semantic")
+    return violations
 
 
 def candidate_evidence_violations(body, comments):
@@ -3205,6 +3322,74 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                         expected_violation,
                         classifier_bootstrap_contract_violations(changed),
                     )
+
+    def test_workflow_tester_topologies_match_parsed_job_sets(self):
+        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        self.assertEqual(workflow_tester_topology_violations(governance), [])
+
+        required_setup_sets = (
+            (
+                "Parsed full-PR job set",
+                "stacked-full-pr-job-set",
+            ),
+            (
+                "Parsed current metadata-only job/check set",
+                "current-metadata-job-set",
+            ),
+        )
+        for label, expected_violation in required_setup_sets:
+            documented = documented_job_set(governance, label)
+            for job_id in ("event-identity", "event-router"):
+                with self.subTest(label=label, omitted=job_id):
+                    changed = replace_documented_job_set(
+                        governance,
+                        label,
+                        sorted(documented - {job_id}),
+                    )
+                    self.assertNotEqual(changed, governance)
+                    self.assertIn(
+                        expected_violation,
+                        workflow_tester_topology_violations(changed),
+                    )
+
+        pre_fix_label = "Parsed preserved pre-fix body-only job set"
+        pre_fix = documented_job_set(governance, pre_fix_label)
+        changed = replace_documented_job_set(
+            governance,
+            pre_fix_label,
+            sorted(pre_fix - {"host-tests"}),
+        )
+        self.assertIn(
+            "preserved-pre-fix-job-set",
+            workflow_tester_topology_violations(changed),
+        )
+
+        reordered = governance
+        for label in (
+            "Parsed full-PR job set",
+            "Parsed current metadata-only job/check set",
+            pre_fix_label,
+        ):
+            reordered = replace_documented_job_set(
+                reordered,
+                label,
+                sorted(documented_job_set(reordered, label), reverse=True),
+            )
+        self.assertEqual(workflow_tester_topology_violations(reordered), [])
+
+        semantic_names, count = re.subn(
+            r"Skipped worker\s+names and success-shaped\s+records are ignored "
+            r"by stable job identity",
+            "Skipped worker names determine metadata mode",
+            governance,
+            1,
+        )
+        self.assertEqual(count, 1)
+        self.assertNotEqual(semantic_names, governance)
+        self.assertIn(
+            "skipped-worker-names-are-semantic",
+            workflow_tester_topology_violations(semantic_names),
+        )
 
     def test_tester_facing_case_contract_is_integrated(self):
         _, skill = read_skill()
