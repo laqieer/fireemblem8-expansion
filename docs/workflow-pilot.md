@@ -247,195 +247,114 @@ booleans are accepted only by declared boolean fields.
 Issue [#179](https://github.com/laqieer/fireemblem8-expansion/issues/179)
 extends the issue #176 seam with an accepted **framework capability:
 review-convergence contract**. It does not change the frozen baseline fixture,
-expected values, decision seal, or reporter formulas. It adds a structural stdlib module plus one isolated live gate:
+expected values, decision seal, or reporter formulas. Candidate code emits only
+strict, inert JSON for structural diagnostics:
 
 ```bash
-/usr/bin/python3 -I scripts/workflow_pilot/isolated_review_gate.py \
+/usr/bin/python3 -m scripts.workflow_pilot.review_family \
   --repository-root <exact-candidate-checkout> \
   --expected-candidate <full-head-sha> \
-  --base-sha <immutable-parent-or-base-sha> \
   --contract <candidate-contract.json> \
-  --review-receipt <authenticated-independent-review.json>
+  --evidence <untrusted-evidence.json>
 ```
 
-The module reuses `PilotDataError`, strict JSON loading, full-SHA validation,
-closed risk/threshold enums, hardened Git subprocesses, raw commit authority,
-and canonical output from the issue #176 reporter. `--repository-root` must be
-the real Git top level and its actual `HEAD` must equal
-`--expected-candidate`. Every retained review candidate must exist in that
-object database and be an ancestor of the expected head. Origin, commit time,
-tree ID, reviewed paths, evidence paths, and blob IDs are re-derived from Git.
-A contract or snapshot claiming an invented or stale candidate cannot make
-itself authoritative.
+Production authority is deliberately absent from the candidate package.
+`github_review.py` and `isolated_review_gate.py` do not exist, and the
+candidate receives no GitHub token, HMAC key, replay store, merge credential,
+or push credential. A trusted coordinator invokes
+`scripts/workflow_pilot/trusted_review_gate.py` only from the exact PR base
+checkout, or from a separately authenticated external installation:
 
-The report core never carries a trust token or caller-constructible trusted
-object. `python3 -m scripts.workflow_pilot.review_family --evidence ...` only
-computes structural eligibility and always emits false push/merge gates,
-including when input claims to be live. Only the `/usr/bin/python3 -I`
-launcher can evaluate delivery gates.
+```bash
+/usr/bin/python3 -I \
+  <trusted-base>/scripts/workflow_pilot/trusted_review_gate.py \
+  --trusted-root <trusted-base> \
+  --candidate-root <untrusted-candidate-checkout> \
+  --expected-base <authoritative-pr-base-oid> \
+  --expected-candidate <authoritative-pr-head-oid> \
+  --installation-mode base \
+  --contract <candidate-contract.json> \
+  --review-receipt <independent-pre-review-receipt.json>
+```
 
-The isolated process uses a closed read-only `/usr/bin/gh api graphql` adapter
-at validation time. It obtains the PR node/current head/author, bounded complete
-commit and force-push history, Copilot review and finding nodes, review threads
-and unresolved state, actor IDs/logins, outcomes, timestamps, repository
-permission, and typed disposition comments. Any paginated remainder fails
-instead of silently truncating authority. It collects twice and compares the
-head/review/finding/thread/push/disposition state immediately before promoting
-structural merge eligibility.
+Before importing project modules or reading credentials, base mode proves the
+launcher path, exact base `HEAD`, and launcher blob. It inserts only the
+trusted base into `sys.path`; the candidate path is rejected. The candidate is
+read only as Git data and schema-validated JSON. An external installation must
+provide its own authenticated installation identity. No signing helper is
+exported by the candidate package.
 
-The independent report receipt retains canonical signed payload bytes. Its
-HMAC envelope binds repository, PR, candidate, issue/expiry times, nonce, key
-ID, key epoch, and purpose. The isolated consumer obtains
-`WORKFLOW_REVIEW_RECEIPT_KEY_ID`, `WORKFLOW_REVIEW_RECEIPT_KEY_EPOCH`,
-`WORKFLOW_REVIEW_RECEIPT_HMAC_KEY`, and `WORKFLOW_REVIEW_REPLAY_STORE` only
-from its external environment. It rejects not-yet-valid, expired, 2020-era,
-overlong, wrong-scope/epoch/purpose, malformed-nonce, noncanonical, modified,
-or already-consumed receipts. The nonce is consumed atomically in the external
-replay store. Signed bytes are retained and HMAC/freshness is reverified before
-each parse/consumer. No secret or replay ledger is committed.
+The credentialed collector queries authoritative `baseRefOid` and
+`headRefOid` and requires exact equality with the contract, coordinator
+arguments, checker base, and candidate checkout. An ancestor is not an
+acceptable base substitute. Polymorphic GitHub `Actor` selections obtain
+identity with `... on Node { id }`; the query is validated against GitHub's
+live schema. `Commit.pushedDate` is nullable metadata. It is never used to
+reconstruct normal ref advances or to attest complete head history.
 
-`--evidence <fixture.json>` on the core is explicitly an offline transformation mode. Even
-a fully coherent fixture with a clean remote review always reports
-`authoritative: false`, `trusted_push_allowed: false`, and
-`merge_allowed: false`. Recomputable expected JSON files are not provenance and
-are not consumed. There is no remote mutation in any mode. The committed
-complete/default adapter and transform fixtures are pinned to historical candidate
-`a8768e4f467c36f8bec60ee823d7d1735d3fcd45`; tests create a bounded detached
-local authority worktree at that commit. These are deterministic inputs, not a
-mutable delivery ledger or self-reported current GitHub state.
+Issue #179 is the introducing PR. Its actual base
+`853cff1eb7bdb3ecce46f780473e81be73e24315` has no trusted checker or gate.
+Therefore its contract uses explicit `introduction` mode. That mode always
+returns `merge_allowed: false` and `trusted_push_allowed: false`, cannot
+self-attest, and requires the external delivery coordinator to review this
+PR. After merge, later PRs use `base-pinned` mode with the exact actual base
+that contains both trusted files.
 
-### Base-pinned executable review evidence
+### Independent and remote chronology
 
-Candidate tests may contribute ordinary evidence but are never a trust root.
-The isolated gate derives every changed file from `git diff
-<base>...<candidate>` and requires the authenticated independent report to
-cover that exact set plus every live inline/body finding identity. It loads
-`scripts/workflow_pilot/review_base_checker.py` from the immutable base tree,
-not the candidate worktree, records the base checker blob and fixed argv, and
-executes the extracted source with `/usr/bin/python3 -I` in a bounded sandbox
-under ignored `build/test-artifacts/`.
+The independent pre-review is signed once before remote review. Its HMAC
+envelope binds repository, PR, exact base, exact head, issued/expiry times,
+nonce, key ID, epoch, purpose, and immutable payload. Its findings use the
+`LOCAL-` namespace and carry their family and creation time inside that
+receipt. Configured duration, file, finding, sibling, and handoff bounds apply
+to the actual records. The gate rejects a receipt issued before report
+completion or issued/re-signed at or after the first remote review.
 
-Checker source/input and sandbox are read-only during execution. The candidate
-worktree must be clean before and after. The execution receipt binds base and
-candidate commits/trees, checker path/blob/argv, changed files, live finding
-IDs, independent-report digest, read-only and pre/post-clean status,
-timestamps, exit/result, output digest, and receipt seal. Missing, stale,
-wrong-check/SHA/result/blob/argv/diff/finding, writable, or dirty receipts fail.
-The checker and independent report replace the former hard-coded three-file
-candidate-suite claim.
+Later GitHub review IDs and inline finding node IDs are collected and
+validated separately after they exist. They never replace, backdate, or
+re-sign local findings. `CHANGES_REQUESTED`, a nonempty finding body, inline
+findings, unresolved threads, incomplete pagination, or a stale review SHA
+cannot classify clean. PR, actor, local review/action/finding, remote
+review/finding/thread, force-push, and disposition identities share one
+case-normalized uniqueness check.
 
-### Behavior-row contract
+### Base-owned executable evidence
 
-Behavior rows use one exact frozen inventory. The contract supplies only the
-row ID and four structured result-ID lists; production/execution semantics are
-owned by the module:
+Candidate result IDs and `verified-unaffected` claims are requests, not
+evidence. The exact base supplies `review_base_checker.py`, whose closed
+registry executes the five behavior rows for positive, adversarial, default,
+and runtime classes plus each exact sibling assertion. Every result binds its
+closed assertion ID, callable, fixed command identity, passing status,
+checker-input digest, exact base, and exact head. The HMAC execution receipt
+also binds checker blob/argv, base/candidate trees, Git-derived diff, remote
+finding IDs, report digest, timestamps, output digest, and pre/post clean
+state. Fabricated, swapped, failed, stale, or candidate-only results fail.
 
-| Required row | Owned behavior |
-| --- | --- |
-| `authority-causality` | Real head/tree/blob authority and timestamp causality |
-| `actor-permission-bounds` | Normalized disjoint actors, read-only actions, and enforced maxima |
-| `sibling-family-expansion` | Exact finding/family/member/result association |
-| `round-lifecycle` | Ordered reviews, holds, and disposition events |
-| `remote-review-metrics` | Current clean Copilot review and #176 metric bindings |
+The five families remain exact: action (`actions`, `items`, `targets`);
+generated (`owners`, `outputs`, `consumers`, `drift-checks`); lifecycle
+(`entries`, `preservation`, `resets`, `terminals`); resource (`enabled`,
+`disabled`); and wire (`producers`, `consumers`, `validators`, `replay`,
+`stale-bindings`). Missing, duplicate, extra, or unknown siblings fail.
 
-Missing, duplicate, or invented rows fail. Each positive, adversarial, default,
-and runtime result ID resolves to the closed
-`base-pinned-independent-review` check,
-candidate SHA, same row, evidence class, family/member (when applicable), and
-closed assertion ID. The allowlisted runner requires a clean exact-head
-worktree and executes fixed argv with isolated environment; it records check
-ID, candidate, start/end, exit/result, output digest, and a domain-separated
-receipt seal. Missing, failed, wrong-check, stale-SHA, or wrong-result receipts
-fail. Unused/reused results and swapped IDs with unchanged wording fail
-semantically.
+### Held-head progression
 
-| Required mapping | Producer / consumer contract |
-| --- | --- |
-| Production predicate and producer | Closed module row specification plus sealed Git/GitHub evidence |
-| Executor and consumer | Authority/family/round validator to trusted delivery coordinator |
-| Representation | Candidate contract, live collection or authenticated receipt, execution receipts, canonical report |
-| Stale-state revalidation | Actual HEAD, commit ancestry/time, tree/blob membership, event/review/finding SHAs |
-| Host validation | Authority, seal, actor, bound, family, lifecycle, and metric reproducers |
-| Positive / adversarial / default / runtime evidence | Exact result IDs with candidate blob and semantic row/assertion association |
+Rounds one and two emit bounded sibling-family handoffs. Each third
+consecutive change-request round creates an independent architecture hold
+bound to that review's exact head. A different current head is ineligible,
+including an ordinary fast-forward, unless one authenticated disposition
+names the held round, held head, and authorized next exact head. Its actor must
+be disjoint from the implementer/PR author, pre-reviewer, remote reviewers,
+and every finding author; repository ownership does not override an overlap.
+The disposition must follow the held review and precede the next review, and
+can be consumed once only. Rounds 3 and 6 therefore hold and lift
+independently without inferring ref movement from commit timestamps.
 
-High-risk means any named #176 risk boundary. Large means a
-`changed-files`, `changed-lines`, or `major-boundaries` threshold trigger.
-Before the first remote review of such a candidate, exactly one fresh reviewer
-separate from the implementer receives bounded files, minutes, findings, and
-sibling results. Actor logins are case-normalized and remove `[bot]`, `-bot`,
-and `_bot` aliases before role comparison; duplicate normalized actors or
-overlap with any remote reviewer fail even when raw IDs or spelling differ.
-Its only permission is `contents:read`; its action sequence is exactly one
-`read-candidate` followed by one later `emit-local-report`. Every action has a
-globally unique immutable node ID and time inside the authoritative
-start/completion interval. Duplicates, reversal, same-time reporting, or an
-interleaved action fail, as do edit, push, comment, review request, CI dispatch,
-and merge. A second, duplicate, or overlapping owner also fails. A
-low-risk/non-large default contract allocates no pre-review owner.
-
-The five exact positive integer limits are maximum duration, findings per
-review, reviewed files, siblings per finding, and siblings per handoff.
-Booleans, zero/negative values, values above hard caps, or observed counts and
-durations above the declared maximum fail. The limit is enforced against the
-snapshot, not merely printed; for example, 55 findings cannot pass a
-`max_findings_per_review` value of 10.
-
-### Executable sibling families
-
-Every sealed accepted finding belongs to exactly one remote/pre-review identity
-and one family, then has exactly one contract sweep. Every listed sibling
-carries a closed result (`affected-fixed`, `verified-unaffected`, or
-`not-applicable`) and one or more manifest-backed result IDs:
-
-| Family | Exact members |
-| --- | --- |
-| Action | actions, items, targets |
-| Lifecycle | entries, preservation, resets, terminals |
-| Wire | producers, consumers, validators, replay, stale bindings |
-| Generated | owners, outputs, consumers, drift checks |
-| Resource | enabled, disabled |
-
-Missing, duplicate, extra, or unknown siblings fail before a success-shaped
-handoff. Finding ownership is exact and non-overlapping across the local
-pre-review and remote Copilot rounds. A finding, its sweep, owning review, and
-result record must bind the same full SHA and exact family/member assertion.
-
-For the first and second consecutive change-request rounds, the module emits a
-bounded family handoff with the exact finding, family, candidate, sibling
-evidence, and derived finding/family/sibling counts. A clean remote round
-resets the consecutive count. The third consecutive change-request round
-emits no narrow handoff: it derives an architecture/decomposition hold and
-sets `push_allowed` false.
-
-Architecture dispositions are an ordered list of unique immutable events.
-Each has an ID, held round, exact candidate SHA, closed action, and timestamp
-strictly after the held review and before any next review. Its actor must be
-the immutable repository-owner ID collected live (or a separately
-authenticated trusted coordinator); outsiders and the pre-review owner fail.
-Each event is consumed exactly once. A missing disposition blocks a later
-round; duplicate/reused, out-of-order, mismatched, or future events fail.
-After a valid disposition the consecutive counter restarts, so rounds 3 and 6
-can independently hold and lift in one evidence history.
-
-The collector's bounded commit/force-push history must terminate at the live
-PR head and cover every reviewed candidate. Each push has a globally unique
-node ID, SHA, kind, and GitHub push time. A push after a held review and before
-its required disposition is a hard failure, even if a later disposition or
-review exists. PR, actor, review, finding, thread, push, local review/action,
-and disposition node IDs share one case-normalized global uniqueness domain;
-a review and finding cannot reuse the same node ID.
-
-`CHANGES_REQUESTED` always requests changes even with zero inline comments.
-The collector also retains the review body; nonempty body findings request
-changes. Clean requires an acceptable `COMMENTED`/`APPROVED` state, no body or
-inline findings, and zero unresolved threads.
-
-`remote_copilot_review_required` is always true. A zero-finding local
-pre-review, no accepted finding, or an architecture disposition cannot satisfy
-the final gate. `merge_allowed` requires a zero-finding clean remote Copilot
-review from the canonical normalized Copilot actor, bound to actual Git `HEAD`,
-with coherent immutable finding identities/timestamps and no unresolved
-architecture hold.
+The trusted gate recollects head, base, reviews, bodies, inline findings,
+threads, force-push events, actors, and dispositions immediately before its
+decision. Only matching snapshots, a fresh replay-consumed pre-review receipt,
+passing base-owned assertions, no unresolved hold/thread, and a clean remote
+Copilot review on the exact current head can authorize merge or trusted push.
+The importable core and every offline fixture always deny those authorities.
 
 ### Metric and lifecycle integration
 
@@ -456,12 +375,13 @@ metadata overhead. Future #179 pilot events use those existing identities and
 formulas; this module adds no alternate counter or current-state field.
 
 The contract depends on #176 and is required by #181. It conflicts with
-duplicate review agents, mutating pre-review permissions, incomplete family
-sweeps, stale candidate evidence, and a push made through the third-round
-hold. It has no game/runtime, save, generated game-data, localization, ROM,
-RAM, modern debug/release, or archival impact and needs no feature flag.
-Rollback is a normal revert of issue #179; the issue #176 reporter and the
-mandatory remote Build/review/merge gates remain intact.
+candidate-held credentials or authority, duplicate review agents, mutating
+pre-review permissions, incomplete families, stale base/head evidence,
+backdated receipts, inferred push histories, overlapping disposition actors,
+and advancement through an unresolved held head. It has no game/runtime,
+save, generated game-data, localization, ROM, RAM, modern debug/release, or
+archival impact and needs no feature flag. Rollback is a normal revert of
+issue #179; the issue #176 reporter and mandatory remote gates remain intact.
 
 ## Reproducible formulas
 

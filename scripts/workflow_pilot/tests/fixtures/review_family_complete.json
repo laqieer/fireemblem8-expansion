@@ -1,8 +1,10 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "repository": "laqieer/fireemblem8-expansion",
   "pull_request": 179,
+  "base_sha": "853cff1eb7bdb3ecce46f780473e81be73e24315",
   "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
+  "trust_mode": "introduction",
   "implementer_actor_id": "ACTOR_IMPLEMENTER_001",
   "trigger": {
     "risk_boundaries": [
@@ -116,21 +118,21 @@
           "member": "actions",
           "result": "affected-fixed",
           "evidence_result_ids": [
-            "result-sibling-action-actions"
+            "result-sibling-FINDING_ACTION_001-actions"
           ]
         },
         {
           "member": "items",
           "result": "verified-unaffected",
           "evidence_result_ids": [
-            "result-sibling-action-items"
+            "result-sibling-FINDING_ACTION_001-items"
           ]
         },
         {
           "member": "targets",
           "result": "verified-unaffected",
           "evidence_result_ids": [
-            "result-sibling-action-targets"
+            "result-sibling-FINDING_ACTION_001-targets"
           ]
         }
       ]
@@ -142,28 +144,28 @@
           "member": "owners",
           "result": "affected-fixed",
           "evidence_result_ids": [
-            "result-sibling-generated-owners"
+            "result-sibling-FINDING_GENERATED_001-owners"
           ]
         },
         {
           "member": "outputs",
           "result": "verified-unaffected",
           "evidence_result_ids": [
-            "result-sibling-generated-outputs"
+            "result-sibling-FINDING_GENERATED_001-outputs"
           ]
         },
         {
           "member": "consumers",
           "result": "verified-unaffected",
           "evidence_result_ids": [
-            "result-sibling-generated-consumers"
+            "result-sibling-FINDING_GENERATED_001-consumers"
           ]
         },
         {
           "member": "drift-checks",
           "result": "verified-unaffected",
           "evidence_result_ids": [
-            "result-sibling-generated-drift-checks"
+            "result-sibling-FINDING_GENERATED_001-drift-checks"
           ]
         }
       ]
@@ -175,28 +177,28 @@
           "member": "entries",
           "result": "affected-fixed",
           "evidence_result_ids": [
-            "result-sibling-lifecycle-entries"
+            "result-sibling-FINDING_LIFECYCLE_001-entries"
           ]
         },
         {
           "member": "preservation",
           "result": "verified-unaffected",
           "evidence_result_ids": [
-            "result-sibling-lifecycle-preservation"
+            "result-sibling-FINDING_LIFECYCLE_001-preservation"
           ]
         },
         {
           "member": "resets",
           "result": "verified-unaffected",
           "evidence_result_ids": [
-            "result-sibling-lifecycle-resets"
+            "result-sibling-FINDING_LIFECYCLE_001-resets"
           ]
         },
         {
           "member": "terminals",
           "result": "verified-unaffected",
           "evidence_result_ids": [
-            "result-sibling-lifecycle-terminals"
+            "result-sibling-FINDING_LIFECYCLE_001-terminals"
           ]
         }
       ]
@@ -208,14 +210,14 @@
           "member": "enabled",
           "result": "affected-fixed",
           "evidence_result_ids": [
-            "result-sibling-resource-enabled"
+            "result-sibling-FINDING_RESOURCE_001-enabled"
           ]
         },
         {
           "member": "disabled",
           "result": "verified-unaffected",
           "evidence_result_ids": [
-            "result-sibling-resource-disabled"
+            "result-sibling-FINDING_RESOURCE_001-disabled"
           ]
         }
       ]
@@ -227,35 +229,35 @@
           "member": "producers",
           "result": "affected-fixed",
           "evidence_result_ids": [
-            "result-sibling-wire-producers"
+            "result-sibling-FINDING_WIRE_001-producers"
           ]
         },
         {
           "member": "consumers",
           "result": "verified-unaffected",
           "evidence_result_ids": [
-            "result-sibling-wire-consumers"
+            "result-sibling-FINDING_WIRE_001-consumers"
           ]
         },
         {
           "member": "validators",
           "result": "verified-unaffected",
           "evidence_result_ids": [
-            "result-sibling-wire-validators"
+            "result-sibling-FINDING_WIRE_001-validators"
           ]
         },
         {
           "member": "replay",
           "result": "verified-unaffected",
           "evidence_result_ids": [
-            "result-sibling-wire-replay"
+            "result-sibling-FINDING_WIRE_001-replay"
           ]
         },
         {
           "member": "stale-bindings",
           "result": "verified-unaffected",
           "evidence_result_ids": [
-            "result-sibling-wire-stale-bindings"
+            "result-sibling-FINDING_WIRE_001-stale-bindings"
           ]
         }
       ]

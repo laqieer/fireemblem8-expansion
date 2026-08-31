@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "repository": "laqieer/fireemblem8-expansion",
   "source": {
     "kind": "offline-transform-fixture",
@@ -13,6 +13,7 @@
     "number": 179,
     "node_id": "PR_ISSUE_179_SYNTHETIC",
     "created_at": "2026-08-31T03:08:10Z",
+    "base_sha": "853cff1eb7bdb3ecce46f780473e81be73e24315",
     "author_actor_id": "ACTOR_IMPLEMENTER_001"
   },
   "result_source_path": "scripts/workflow_pilot/tests/test_review_family.py",
@@ -28,10 +29,8 @@
       "kind": "bot"
     }
   ],
-  "trusted_disposition_actor_ids": [
-    "ACTOR_IMPLEMENTER_001"
-  ],
   "pre_reviews": [],
+  "pre_review_findings": [],
   "remote_reviews": [
     {
       "id": 2001,
@@ -49,36 +48,9 @@
   ],
   "findings": [],
   "threads": [],
-  "candidate_advances": [
-    {
-      "node_id": "ADVANCE_DEFAULT_001",
-      "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
-      "pushed_at": "2026-08-31T03:08:05Z",
-      "kind": "commit-push"
-    }
-  ],
+  "candidate_advances": [],
+  "force_push_events": [],
   "architecture_dispositions": [],
   "execution_receipts": [],
-  "result_manifest": [
-    {"id": "result-actor-permission-bounds-positive", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "actor-permission-bounds", "evidence_class": "positive", "family": null, "member": null, "assertion_id": "actor-permission-bounds:positive"},
-    {"id": "result-actor-permission-bounds-adversarial", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "actor-permission-bounds", "evidence_class": "adversarial", "family": null, "member": null, "assertion_id": "actor-permission-bounds:adversarial"},
-    {"id": "result-actor-permission-bounds-default", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "actor-permission-bounds", "evidence_class": "default", "family": null, "member": null, "assertion_id": "actor-permission-bounds:default"},
-    {"id": "result-actor-permission-bounds-runtime", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "actor-permission-bounds", "evidence_class": "runtime", "family": null, "member": null, "assertion_id": "actor-permission-bounds:runtime"},
-    {"id": "result-authority-causality-positive", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "authority-causality", "evidence_class": "positive", "family": null, "member": null, "assertion_id": "authority-causality:positive"},
-    {"id": "result-authority-causality-adversarial", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "authority-causality", "evidence_class": "adversarial", "family": null, "member": null, "assertion_id": "authority-causality:adversarial"},
-    {"id": "result-authority-causality-default", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "authority-causality", "evidence_class": "default", "family": null, "member": null, "assertion_id": "authority-causality:default"},
-    {"id": "result-authority-causality-runtime", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "authority-causality", "evidence_class": "runtime", "family": null, "member": null, "assertion_id": "authority-causality:runtime"},
-    {"id": "result-remote-review-metrics-positive", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "remote-review-metrics", "evidence_class": "positive", "family": null, "member": null, "assertion_id": "remote-review-metrics:positive"},
-    {"id": "result-remote-review-metrics-adversarial", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "remote-review-metrics", "evidence_class": "adversarial", "family": null, "member": null, "assertion_id": "remote-review-metrics:adversarial"},
-    {"id": "result-remote-review-metrics-default", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "remote-review-metrics", "evidence_class": "default", "family": null, "member": null, "assertion_id": "remote-review-metrics:default"},
-    {"id": "result-remote-review-metrics-runtime", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "remote-review-metrics", "evidence_class": "runtime", "family": null, "member": null, "assertion_id": "remote-review-metrics:runtime"},
-    {"id": "result-round-lifecycle-positive", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "round-lifecycle", "evidence_class": "positive", "family": null, "member": null, "assertion_id": "round-lifecycle:positive"},
-    {"id": "result-round-lifecycle-adversarial", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "round-lifecycle", "evidence_class": "adversarial", "family": null, "member": null, "assertion_id": "round-lifecycle:adversarial"},
-    {"id": "result-round-lifecycle-default", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "round-lifecycle", "evidence_class": "default", "family": null, "member": null, "assertion_id": "round-lifecycle:default"},
-    {"id": "result-round-lifecycle-runtime", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "round-lifecycle", "evidence_class": "runtime", "family": null, "member": null, "assertion_id": "round-lifecycle:runtime"},
-    {"id": "result-sibling-family-expansion-positive", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "positive", "family": null, "member": null, "assertion_id": "sibling-family-expansion:positive"},
-    {"id": "result-sibling-family-expansion-adversarial", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": null, "member": null, "assertion_id": "sibling-family-expansion:adversarial"},
-    {"id": "result-sibling-family-expansion-default", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "default", "family": null, "member": null, "assertion_id": "sibling-family-expansion:default"},
-    {"id": "result-sibling-family-expansion-runtime", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "runtime", "family": null, "member": null, "assertion_id": "sibling-family-expansion:runtime"}
-  ]
+  "result_manifest": []
 }

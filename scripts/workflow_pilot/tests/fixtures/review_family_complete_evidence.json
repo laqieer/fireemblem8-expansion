@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "repository": "laqieer/fireemblem8-expansion",
   "source": {
     "kind": "offline-transform-fixture",
@@ -13,6 +13,7 @@
     "number": 179,
     "node_id": "PR_ISSUE_179_SYNTHETIC",
     "created_at": "2026-08-31T03:08:10Z",
+    "base_sha": "853cff1eb7bdb3ecce46f780473e81be73e24315",
     "author_actor_id": "ACTOR_IMPLEMENTER_001"
   },
   "result_source_path": "scripts/workflow_pilot/tests/test_review_family.py",
@@ -33,9 +34,6 @@
       "kind": "bot"
     }
   ],
-  "trusted_disposition_actor_ids": [
-    "ACTOR_IMPLEMENTER_001"
-  ],
   "pre_reviews": [
     {
       "id": "PRE_REVIEW_001",
@@ -43,6 +41,7 @@
       "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
       "started_at": "2026-08-31T03:09:00Z",
       "completed_at": "2026-08-31T03:10:00Z",
+      "receipt_issued_at": "2026-08-31T03:10:01Z",
       "permissions": [
         "contents:read"
       ],
@@ -60,12 +59,25 @@
       ],
       "finding_ids": [],
       "reviewed_files": [
+        ".github/copilot-instructions.md",
+        ".github/skills/development-workflow/SKILL.md",
+        "CONTRIBUTING.md",
+        "docs/README.md",
+        "docs/documentation-inventory.md",
+        "docs/project-governance.md",
+        "docs/test-cases/registry.json",
+        "docs/test-cases/workflow-governance.md",
+        "docs/workflow-pilot.md",
+        "scripts/docs_check_tests/test_check_docs.py",
+        "scripts/docs_check_tests/test_development_workflow_skill.py",
         "scripts/workflow_pilot/review_family.py",
-        "scripts/workflow_pilot/tests/test_review_family.py",
-        "docs/workflow-pilot.md"
+        "scripts/workflow_pilot/tests/fixtures/review_family_complete.json",
+        "scripts/workflow_pilot/tests/fixtures/review_family_default.json",
+        "scripts/workflow_pilot/tests/test_review_family.py"
       ]
     }
   ],
+  "pre_review_findings": [],
   "remote_reviews": [
     {
       "id": 1001,
@@ -88,67 +100,77 @@
     }
   ],
   "findings": [
-    {"node_id": "FINDING_ACTION_001", "review_id": "REMOTE_REVIEW_001", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "created_at": "2026-08-31T03:11:01Z", "family": "action"},
-    {"node_id": "FINDING_GENERATED_001", "review_id": "REMOTE_REVIEW_001", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "created_at": "2026-08-31T03:11:02Z", "family": "generated"},
-    {"node_id": "FINDING_LIFECYCLE_001", "review_id": "REMOTE_REVIEW_001", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "created_at": "2026-08-31T03:11:03Z", "family": "lifecycle"},
-    {"node_id": "FINDING_RESOURCE_001", "review_id": "REMOTE_REVIEW_001", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "created_at": "2026-08-31T03:11:04Z", "family": "resource"},
-    {"node_id": "FINDING_WIRE_001", "review_id": "REMOTE_REVIEW_001", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "created_at": "2026-08-31T03:11:05Z", "family": "wire"}
-  ],
-  "threads": [
-    {"node_id": "THREAD_ACTION_001", "finding_id": "FINDING_ACTION_001", "is_resolved": false},
-    {"node_id": "THREAD_GENERATED_001", "finding_id": "FINDING_GENERATED_001", "is_resolved": false},
-    {"node_id": "THREAD_LIFECYCLE_001", "finding_id": "FINDING_LIFECYCLE_001", "is_resolved": false},
-    {"node_id": "THREAD_RESOURCE_001", "finding_id": "FINDING_RESOURCE_001", "is_resolved": false},
-    {"node_id": "THREAD_WIRE_001", "finding_id": "FINDING_WIRE_001", "is_resolved": false}
-  ],
-  "candidate_advances": [
     {
-      "node_id": "ADVANCE_001",
+      "node_id": "FINDING_ACTION_001",
+      "review_id": "REMOTE_REVIEW_001",
       "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
-      "pushed_at": "2026-08-31T03:08:05Z",
-      "kind": "commit-push"
+      "created_at": "2026-08-31T03:11:01Z",
+      "author_actor_id": "ACTOR_COPILOT_001",
+      "family": "action"
+    },
+    {
+      "node_id": "FINDING_GENERATED_001",
+      "review_id": "REMOTE_REVIEW_001",
+      "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
+      "created_at": "2026-08-31T03:11:02Z",
+      "author_actor_id": "ACTOR_COPILOT_001",
+      "family": "generated"
+    },
+    {
+      "node_id": "FINDING_LIFECYCLE_001",
+      "review_id": "REMOTE_REVIEW_001",
+      "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
+      "created_at": "2026-08-31T03:11:03Z",
+      "author_actor_id": "ACTOR_COPILOT_001",
+      "family": "lifecycle"
+    },
+    {
+      "node_id": "FINDING_RESOURCE_001",
+      "review_id": "REMOTE_REVIEW_001",
+      "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
+      "created_at": "2026-08-31T03:11:04Z",
+      "author_actor_id": "ACTOR_COPILOT_001",
+      "family": "resource"
+    },
+    {
+      "node_id": "FINDING_WIRE_001",
+      "review_id": "REMOTE_REVIEW_001",
+      "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
+      "created_at": "2026-08-31T03:11:05Z",
+      "author_actor_id": "ACTOR_COPILOT_001",
+      "family": "wire"
     }
   ],
+  "threads": [
+    {
+      "node_id": "THREAD_ACTION_001",
+      "finding_id": "FINDING_ACTION_001",
+      "is_resolved": false
+    },
+    {
+      "node_id": "THREAD_GENERATED_001",
+      "finding_id": "FINDING_GENERATED_001",
+      "is_resolved": false
+    },
+    {
+      "node_id": "THREAD_LIFECYCLE_001",
+      "finding_id": "FINDING_LIFECYCLE_001",
+      "is_resolved": false
+    },
+    {
+      "node_id": "THREAD_RESOURCE_001",
+      "finding_id": "FINDING_RESOURCE_001",
+      "is_resolved": false
+    },
+    {
+      "node_id": "THREAD_WIRE_001",
+      "finding_id": "FINDING_WIRE_001",
+      "is_resolved": false
+    }
+  ],
+  "candidate_advances": [],
+  "force_push_events": [],
   "architecture_dispositions": [],
   "execution_receipts": [],
-  "result_manifest": [
-    {"id": "result-actor-permission-bounds-positive", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "actor-permission-bounds", "evidence_class": "positive", "family": null, "member": null, "assertion_id": "actor-permission-bounds:positive"},
-    {"id": "result-actor-permission-bounds-adversarial", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "actor-permission-bounds", "evidence_class": "adversarial", "family": null, "member": null, "assertion_id": "actor-permission-bounds:adversarial"},
-    {"id": "result-actor-permission-bounds-default", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "actor-permission-bounds", "evidence_class": "default", "family": null, "member": null, "assertion_id": "actor-permission-bounds:default"},
-    {"id": "result-actor-permission-bounds-runtime", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "actor-permission-bounds", "evidence_class": "runtime", "family": null, "member": null, "assertion_id": "actor-permission-bounds:runtime"},
-    {"id": "result-authority-causality-positive", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "authority-causality", "evidence_class": "positive", "family": null, "member": null, "assertion_id": "authority-causality:positive"},
-    {"id": "result-authority-causality-adversarial", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "authority-causality", "evidence_class": "adversarial", "family": null, "member": null, "assertion_id": "authority-causality:adversarial"},
-    {"id": "result-authority-causality-default", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "authority-causality", "evidence_class": "default", "family": null, "member": null, "assertion_id": "authority-causality:default"},
-    {"id": "result-authority-causality-runtime", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "authority-causality", "evidence_class": "runtime", "family": null, "member": null, "assertion_id": "authority-causality:runtime"},
-    {"id": "result-remote-review-metrics-positive", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "remote-review-metrics", "evidence_class": "positive", "family": null, "member": null, "assertion_id": "remote-review-metrics:positive"},
-    {"id": "result-remote-review-metrics-adversarial", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "remote-review-metrics", "evidence_class": "adversarial", "family": null, "member": null, "assertion_id": "remote-review-metrics:adversarial"},
-    {"id": "result-remote-review-metrics-default", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "remote-review-metrics", "evidence_class": "default", "family": null, "member": null, "assertion_id": "remote-review-metrics:default"},
-    {"id": "result-remote-review-metrics-runtime", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "remote-review-metrics", "evidence_class": "runtime", "family": null, "member": null, "assertion_id": "remote-review-metrics:runtime"},
-    {"id": "result-round-lifecycle-positive", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "round-lifecycle", "evidence_class": "positive", "family": null, "member": null, "assertion_id": "round-lifecycle:positive"},
-    {"id": "result-round-lifecycle-adversarial", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "round-lifecycle", "evidence_class": "adversarial", "family": null, "member": null, "assertion_id": "round-lifecycle:adversarial"},
-    {"id": "result-round-lifecycle-default", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "round-lifecycle", "evidence_class": "default", "family": null, "member": null, "assertion_id": "round-lifecycle:default"},
-    {"id": "result-round-lifecycle-runtime", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "round-lifecycle", "evidence_class": "runtime", "family": null, "member": null, "assertion_id": "round-lifecycle:runtime"},
-    {"id": "result-sibling-family-expansion-positive", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "positive", "family": null, "member": null, "assertion_id": "sibling-family-expansion:positive"},
-    {"id": "result-sibling-family-expansion-adversarial", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": null, "member": null, "assertion_id": "sibling-family-expansion:adversarial"},
-    {"id": "result-sibling-family-expansion-default", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "default", "family": null, "member": null, "assertion_id": "sibling-family-expansion:default"},
-    {"id": "result-sibling-family-expansion-runtime", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "runtime", "family": null, "member": null, "assertion_id": "sibling-family-expansion:runtime"},
-    {"id": "result-sibling-action-actions", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": "action", "member": "actions", "assertion_id": "sibling:action:actions"},
-    {"id": "result-sibling-action-items", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": "action", "member": "items", "assertion_id": "sibling:action:items"},
-    {"id": "result-sibling-action-targets", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": "action", "member": "targets", "assertion_id": "sibling:action:targets"},
-    {"id": "result-sibling-generated-owners", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": "generated", "member": "owners", "assertion_id": "sibling:generated:owners"},
-    {"id": "result-sibling-generated-outputs", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": "generated", "member": "outputs", "assertion_id": "sibling:generated:outputs"},
-    {"id": "result-sibling-generated-consumers", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": "generated", "member": "consumers", "assertion_id": "sibling:generated:consumers"},
-    {"id": "result-sibling-generated-drift-checks", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": "generated", "member": "drift-checks", "assertion_id": "sibling:generated:drift-checks"},
-    {"id": "result-sibling-lifecycle-entries", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": "lifecycle", "member": "entries", "assertion_id": "sibling:lifecycle:entries"},
-    {"id": "result-sibling-lifecycle-preservation", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": "lifecycle", "member": "preservation", "assertion_id": "sibling:lifecycle:preservation"},
-    {"id": "result-sibling-lifecycle-resets", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": "lifecycle", "member": "resets", "assertion_id": "sibling:lifecycle:resets"},
-    {"id": "result-sibling-lifecycle-terminals", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": "lifecycle", "member": "terminals", "assertion_id": "sibling:lifecycle:terminals"},
-    {"id": "result-sibling-resource-enabled", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": "resource", "member": "enabled", "assertion_id": "sibling:resource:enabled"},
-    {"id": "result-sibling-resource-disabled", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": "resource", "member": "disabled", "assertion_id": "sibling:resource:disabled"},
-    {"id": "result-sibling-wire-producers", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": "wire", "member": "producers", "assertion_id": "sibling:wire:producers"},
-    {"id": "result-sibling-wire-consumers", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": "wire", "member": "consumers", "assertion_id": "sibling:wire:consumers"},
-    {"id": "result-sibling-wire-validators", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": "wire", "member": "validators", "assertion_id": "sibling:wire:validators"},
-    {"id": "result-sibling-wire-replay", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": "wire", "member": "replay", "assertion_id": "sibling:wire:replay"},
-    {"id": "result-sibling-wire-stale-bindings", "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45", "row_id": "sibling-family-expansion", "evidence_class": "adversarial", "family": "wire", "member": "stale-bindings", "assertion_id": "sibling:wire:stale-bindings"}
-  ]
+  "result_manifest": []
 }

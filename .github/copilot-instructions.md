@@ -103,19 +103,19 @@ enabled/disabled resource family with evidence before the next push. Duplicate
 or overlapping review ownership fails. The fresh reviewer cannot edit, push,
 comment, request review, dispatch CI, or merge. Rounds one and two produce
 bounded family handoffs; a third consecutive change-request round blocks
-another push on an architecture/decomposition hold until one ordered
-timestamped disposition consumes the exact round/SHA; later progression can
-hold again. Bind the contract to actual Git `HEAD`/tree/blobs plus independently
-trusted read-only live GitHub collection inside the isolated review-gate
-process; no importable object or offline fixture can authorize delivery.
-Require fresh single-use signed report bytes with external time/key/replay
-authority and repeated verification, plus a passing immutable-base checker
-receipt covering the full diff and actual finding IDs. Enforce exact
-read-then-report action order, global node-ID uniqueness, complete
-candidate-advance history, no pre-disposition push, non-outsider disposition
-ownership, and semantic state/body/inline/thread cleanliness. Recollect live
-state immediately before merge. Remote Copilot review remains mandatory for
-the current exact candidate.
+another push on an architecture/decomposition hold. Candidate code receives no
+GitHub/HMAC/push credentials and is never inserted into trusted `sys.path`;
+only the exact authoritative PR base checkout or an authenticated external
+installation collects GitHub state, consumes replay, executes the closed
+base-owned assertion registry, or grants merge/push authority. The introducing
+PR fails closed because its base lacks that checker. Bind exact `baseRefOid`
+and `headRefOid`, keep immutable `LOCAL-` pre-review findings separate from
+later remote finding IDs, and never use nullable `pushedDate` to reconstruct
+head history. A disposition binds the held round, held head, and next exact
+head, is single-use, and has an authenticated actor disjoint from the
+implementer/author, pre-reviewer, remote reviewers, and finding authors.
+Recollect semantic review body/state/thread data before merge. Remote Copilot
+review remains mandatory for the current exact candidate.
 
 CI waiting must not occupy a reasoning subagent. The orchestrator that
 dispatches a workflow records its exact SHA and run ID, then returns

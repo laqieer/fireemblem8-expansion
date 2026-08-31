@@ -569,32 +569,28 @@ before the first remote review. Its owner must be separate from the
 implementer and have no overlapping review owner. The fresh reviewer is
 read-only: it cannot edit, push, comment, request review, dispatch CI, or
 merge. It may only read the exact candidate and emit the local report consumed
-by the review-family contract. The importable report core never grants trust or
-delivery gates. Invoke production validation only through
-`/usr/bin/python3 -I scripts/workflow_pilot/isolated_review_gate.py` with
-explicit repository root, expected candidate, immutable base, candidate
-contract, and authenticated independent-review receipt. Its closed read-only
-`gh api graphql` collector must
-verify actual Git `HEAD`, origin, commit ancestry/time, tree/source membership,
-complete push/force-push history, PR/review/finding/thread nodes, unresolved
-state, actors, outcomes, permissions, actions, and dispositions. The canonical
-signed bytes bind scope, issue/expiry times, nonce, key epoch, and purpose; the
-process requires external current-time/key/replay authorities, atomically
-consumes the nonce, and reverifies before every consumption. Offline fixtures,
-HMAC bytes without those authorities, and caller-importable objects cannot
-authorize push or merge.
+by the review-family contract. The importable report core and candidate
+artifacts never grant trust or delivery gates.
+
+Candidate code receives no GitHub token, HMAC key, replay store, merge
+credential, or push credential and is never inserted into trusted `sys.path`.
+Run production validation only through `/usr/bin/python3 -I
+<trusted-base>/scripts/workflow_pilot/trusted_review_gate.py` from the exact
+authoritative PR base checkout, or an independently authenticated external
+installation. Verify exact `baseRefOid` and `headRefOid`; an ancestor base is
+not equivalent. The introducing PR uses explicit `introduction` mode and
+cannot self-attest or return `merge_allowed` because its actual base lacks the
+trusted checker. After merge, future PRs use `base-pinned` mode against the
+exact actual base containing the checker.
 
 The executable review-family contract has one exact frozen behavior-row
 inventory. It maps each row to its production predicate and producer, executor
 and consumer, representation, stale-state revalidation, host validation, and
-positive, adversarial, default, and runtime result IDs. Candidate tests are supplemental only. Every result
-must bind the same row/family/assertion/check to a passing receipt from the
-checker source extracted from the immutable base tree and executed with fixed
-argv in an isolated read-only sandbox. The receipt covers the full Git-derived
-changed-file set, actual GitHub finding IDs, checker blob, base/candidate trees,
-signed independent report, and pre/post cleanliness. A valid finding must
-expand to every member of exactly one closed sibling family before another
-push:
+positive, adversarial, default, and runtime result IDs. Candidate result IDs
+and `verified-unaffected` claims are not evidence. The exact base executes a
+closed assertion registry; each passing result binds its command/callable,
+input digest, assertion identity, exact base/head, and HMAC receipt. A valid
+finding expands to every member of exactly one closed sibling family:
 
 - actions, items, and targets;
 - lifecycle entries, preservation, resets, and terminals;
@@ -605,23 +601,24 @@ push:
 The first and second consecutive change-request rounds emit bounded family
 handoffs containing every sibling and its evidence. A third consecutive
 change-request round creates an architecture/decomposition hold and blocks
-another push until an ordered unique timestamped disposition consumes that
-exact held round/SHA. After disposition, progression restarts so a later sixth
-round can independently hold. Enforce the declared maxima against actual
-findings, reviewed files, elapsed minutes, siblings per finding, and siblings
-per handoff. Normalize actor case and bot suffix aliases before rejecting
-duplicate/overlapping ownership. Require exactly ordered `read-candidate` then
-later `emit-local-report` actions, globally unique normalized node IDs across
-all actor/PR/review/finding/thread/push/disposition domains, and no candidate
-push between a held review and its disposition. `CHANGES_REQUESTED`, body
-findings, inline findings, or unresolved threads can never classify clean.
-Disposition actors are limited to the live repository-owner/trusted
-coordinator ID and never the pre-review owner. Unknown families, members,
-actions, outcomes, incomplete/unrelated evidence, stale SHA/check receipts,
-malformed/exceeded bounds, noncausal dispositions, duplicate owners, and
-overlapping finding ownership fail closed. A later zero-finding round does not
-waive remote Copilot review: immediately before merge the isolated process
-recollects head/review/thread state and requires it to match.
+another push while the current head equals that held head. Any different head,
+including a normal fast-forward, is ineligible unless one authenticated
+single-use disposition binds the held round/head and authorized next exact
+head. Its actor must be disjoint from the implementer/PR author, pre-reviewer,
+remote reviewers, and finding authors; repository ownership never overrides
+an overlap. After disposition, a later sixth round can independently hold.
+
+Keep immutable pre-review findings in the `LOCAL-` namespace and inside the
+pre-review receipt. Enforce configured file, duration, finding, sibling, and
+handoff bounds there. Collect later GitHub finding IDs separately after they
+exist; never backdate or re-sign the pre-review receipt. Actor selections use
+valid Node fragments, `Commit.pushedDate` is nullable and never head authority,
+and normal ref advancement is not reconstructed from commit timestamps.
+Require globally unique node identities and semantic
+`CHANGES_REQUESTED`/body/inline/thread handling. Immediately before merge the
+trusted process recollects base, head, reviews, findings, threads, actors, and
+dispositions and requires an exact match. Remote Copilot review remains
+mandatory.
 
 No human code review or approval is required. A CODEOWNERS request is advisory
 unless an external GitHub ruleset enforces it; this workflow does not add such

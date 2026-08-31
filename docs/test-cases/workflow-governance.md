@@ -472,116 +472,105 @@ game behavior needs a compensating change.
   [issue #179](https://github.com/laqieer/fireemblem8-expansion/issues/179).
 - **Supported configuration or artifact:** clean source checkout with Python
   3, Git, the issue #176 workflow-pilot reporter, candidate-pinned offline
-  transform fixtures, and a mocked live GraphQL adapter; no GitHub token, live
-  PR, workflow, ROM, or emulator is required.
+  transform fixtures, a mocked live GraphQL adapter, and an external-trust
+  bootstrap model; no GitHub token, live PR, workflow, ROM, or emulator is
+  required.
 - **Prerequisites and clean starting state:** start at the repository root
   with `scripts/workflow_pilot/review_family.py`,
   `scripts/workflow_pilot/review_base_checker.py`,
-  `scripts/workflow_pilot/isolated_review_gate.py`,
+  `scripts/workflow_pilot/trusted_review_gate.py`,
   `review_family_complete.json`, `review_family_complete_evidence.json`,
   their default counterparts, and `review_family_github_adapter.json`
-  unchanged. The fixture candidate
+  unchanged. The actual introducing base
+  `853cff1eb7bdb3ecce46f780473e81be73e24315` and fixture candidate
   `a8768e4f467c36f8bec60ee823d7d1735d3fcd45` must exist locally.
 
 ### Actions
 
 1. Run
-   `python3 -m unittest scripts.workflow_pilot.tests.test_review_family -v`.
+   `python3 -m unittest scripts.workflow_pilot.tests.test_review_base_checker scripts.workflow_pilot.tests.test_review_family scripts.workflow_pilot.tests.test_github_review -v`.
 2. Run the module twice with explicit `--repository-root`,
    `--expected-candidate`, `--contract`, and offline `--evidence` over a
    detached local checkout whose actual `HEAD` is the fixture candidate.
    Compare its canonical JSON bytes and confirm it cannot authorize push or
    merge.
-3. Mock the production `gh api graphql` adapter with the committed bounded
-   response inside the isolated gate. Confirm the report core itself can never
-   authorize delivery and exports no trust-capability class/token.
-4. Create a two-commit disposable repository under `build/test-artifacts/`.
-   Extract the checker from its immutable base tree, run it with
-   `/usr/bin/python3 -I` in the read-only sandbox, and inspect the receipt's
-   checker blob/argv, base/candidate trees, full diff, actual finding IDs,
-   report digest, pre/post cleanliness, and pass result. Remove one changed
-   file or finding from the independent report and require failure.
-5. Sign canonical independent-report bytes with the test-only external key.
-   Verify fresh scope, key epoch/purpose, expiry, nonce, and atomic replay
-   consumption. Reject stale/2020/future/overlong, wrong-scope/key, mutated,
-   noncanonical, unavailable-replay, and reused receipts. Confirm production
-   stores no key.
-6. Inspect the complete evidence snapshot's immutable PR, actor, review,
-   finding, action, full-SHA, tree/blob, and timestamp identities. Confirm the
-   complete contract's one accepted synthetic finding in each
-   action, lifecycle, wire, generated, and resource family. Confirm all exact
-   siblings and manifest-backed result IDs appear in the global and
-   first-round handoffs.
-7. Mutate actual/live head, origin-bound candidate/tree/source, collector
-   completeness/pagination, review/finding/action timestamps, actor case/bot
-   aliases, ownership, permission/action order, frozen behavior rows, result
-   and execution-receipt association, family/member/result/outcome, and every
-   numeric limit. Reuse one review node as a finding node and require global
-   collision failure. Prove an old `a876...` result cannot support the later
-   `1a6...` candidate.
-8. Supply 55 finding IDs against `max_findings_per_review: 10`; exceed the
-   reviewed-file, duration, sibling-per-finding, and sibling-per-handoff
-   maxima; and use boolean, negative, zero, or above-cap limits. Require
-   failure.
-9. Add six consecutive change-request rounds with dispositions for rounds 3
-   and 6. Confirm both holds lift independently, then remove, reuse, reorder,
-   future-date, or change the SHA of each event and require failure. Confirm a
-   current third round without disposition remains a push-blocking hold.
-   Insert a candidate advance between a held review and its disposition and
-   require failure. Change the disposition actor to an outsider or pre-review
-   owner and require failure.
-10. Set a remote review to `CHANGES_REQUESTED` with zero inline comments, then
-   add a body finding under `COMMENTED`; neither may classify clean. Change
-   head/review/thread state between the gate's first and second live collection
-   and require failure.
-11. Inspect the default fixture's current zero-finding remote Copilot review.
-   Remove it and then make it stale; confirm merge remains blocked while the
-   remote-review-required gate remains true.
+3. Confirm `github_review.py` and `isolated_review_gate.py` are absent, no
+   signing helper is exported, candidate/trusted root equality is rejected,
+   and the candidate root is never inserted into trusted `sys.path`.
+4. Inspect the GraphQL query and fixture. Validate every polymorphic Actor ID
+   through `... on Node { id }`, exact `baseRefOid`/`headRefOid`, bounded
+   pagination, review bodies/states/threads, and nullable `pushedDate`.
+5. Confirm the actual introducing base lacks both trusted gate files.
+   Evaluate explicit `introduction` mode and require false merge/push
+   authority plus an external-coordinator requirement. Do not substitute a
+   later candidate ancestor as the trusted base.
+6. Create an independent two-commit repository under
+   `build/test-artifacts/`, place the checker in its actual base, and run the
+   extracted base blob with fixed `/usr/bin/python3 -I` argv. Verify each
+   registry result binds assertion ID, callable, command/input identities,
+   pass status, exact base/head, full diff, and HMAC receipt. Fabricate a
+   result ID and require failure.
+7. Sign canonical pre-review bytes with a test-only external key. Verify exact
+   repository/PR/base/head, epoch, purpose, expiry, nonce, and atomic replay.
+   Keep `LOCAL-` findings in that immutable receipt, separately collect later
+   GitHub finding node IDs, and reject namespace overlap, backdating, or
+   re-signing after remote review.
+8. Confirm the complete fixture retains all action, lifecycle, wire,
+   generated, and resource family members and configured file, finding,
+   duration, sibling, and handoff bounds. Candidate
+   `verified-unaffected` claims without a registry result are not evidence.
+9. Set a remote review to `CHANGES_REQUESTED` with zero inline comments, add a
+   body finding under `COMMENTED`, leave a thread unresolved, truncate a page,
+   change the second live snapshot, or collide global node IDs; require
+   failure or a non-clean gate.
+10. Create a round-3 hold at one exact head, then advance normally to a
+    descendant head without disposition; require ineligibility. Add an
+    independent authenticated disposition binding held round/head and next
+    exact head, then require success. Replay it or overlap its actor with the
+    implementer/PR author, pre-reviewer, remote reviewer, or finding author and
+    require failure.
+11. Add a second independent round-6 hold and disposition. Confirm rounds 3
+    and 6 consume distinct receipts once and do not infer advancement from
+    commit or push timestamps.
 
 ### Expected result
 
-The complete offline fixture validates transformation semantics against a real
-Git head/tree/object database but cannot authorize delivery. No in-process
-object can set trust. Only the `/usr/bin/python3 -I` live gate with fresh
-single-use externally authenticated report bytes, two matching live snapshots,
-and a passing immutable-base checker promotes structural eligibility. The
-exact five-row inventory maps all result identities to that base-pinned check.
+Candidate/offline inputs validate structure but cannot authorize delivery.
+Introducing mode fails closed against the real base. A later base-pinned gate
+can authorize only from the exact trusted base or an authenticated external
+installation with fresh local-review receipt, two matching live snapshots,
+closed base-owned assertion results, clean exact-head Copilot review, and no
+unresolved thread or held head.
 
 ### Negative control
 
-The suite rejects an in-process/offline trust claim; stale live head,
-repository, source, reviewer, outcome, action, order, unresolved state, or
-timestamp; incomplete API pages; invalid/noncanonical/stale/reused/wrong-scope
-receipt HMAC, key epoch/purpose, nonce, replay authority, result/check/SHA;
-nonexistent or unrelated evidence; one omitted family sibling; unknown
-family/member/result/action/state; cross-domain node collisions; actor case or
-bot-suffix aliases; duplicate/overlapping ownership; duplicate/reversed/
-interleaved actions; exceeded limits; semantic result reassociation; an old
-candidate result; missing changed-file/finding review coverage; writable/dirty
-checker execution; `CHANGES_REQUESTED` or body findings classified clean;
-changed second live state; premature push; and outsider/self disposition.
+The suite rejects candidate credentials/import authority, public signing
+helpers, ancestor-base substitution, bootstrap self-attestation, invalid Actor
+selection, base/head mismatch, fabricated result IDs, missing/failed registry
+results, dirty checker execution, local/remote finding overlap, backdated or
+re-signed pre-review, exceeded bounds, incomplete families/pages, semantic
+state/body/thread false-clean claims, global identity collisions, undisposed
+fast-forward heads, actor overlap, and disposition replay.
 
 ### Interactions and save compatibility
 
-The contract depends on issue #176's hardened Git authority, strict JSON/full-
-SHA patterns, risk/threshold enums, canonical representation, lifecycle
-discipline, and metric namespace. Issue #181 depends on this contract. It
-conflicts with self-asserted or stale evidence,
-overlapping review agents, incomplete sibling/result coverage, exceeded
-bounds, and narrow patching through an unresolved architecture hold. Remote
+The contract depends on issue #176's hardened Git authority, strict JSON/full
+SHAs, risk/threshold enums, canonical representation, lifecycle discipline,
+and metric namespace. Issue #181 depends on it. It conflicts with candidate
+credential or merge authority, stale base/head evidence, inferred ref history,
+overlapping review/disposition actors, incomplete registry/family coverage,
+exceeded bounds, and advancement through an unresolved held head. Remote
 Copilot review, candidate Build, and post-merge Build remain mandatory. There
 is no game, runtime, save, generated game-data, localization, ROM/RAM, modern
 debug/release, or archival impact.
 
 ### Automation
 
-`python3 -m unittest scripts.workflow_pilot.tests.test_review_base_checker
-scripts.workflow_pilot.tests.test_review_family
-scripts.workflow_pilot.tests.test_github_review -v` executes the independent
-base checker, structural evaluator, isolated live collector, immutable receipt,
-replay, full-diff/finding coverage, state revalidation, semantic association,
-global-node, bound, no-push, multi-hold, action-order, owner, and metric
-reproducers.
+`python3 -m unittest scripts.workflow_pilot.tests.test_review_base_checker scripts.workflow_pilot.tests.test_review_family scripts.workflow_pilot.tests.test_github_review -v`
+executes the independent checker, inert structural evaluator, trusted
+collector, receipt/replay, exact-base/head, local/remote chronology, closed
+registry, global-node, bound, semantic state, disjoint actor, normal-advance
+hold, and multi-hold reproducers.
 
 `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
 checks that the production review/merge policy retains the bounded read-only
@@ -596,8 +585,7 @@ ownership and automation paths.
 The focused suites automatically remove ignored detached/synthetic authority
 worktrees, checker sandboxes, and replay files. The collector uses only
 read-only `gh api graphql`; no mode changes remote state. Offline fixtures and
-HMAC bytes without current-time/key/replay plus fresh live authority never grant
-delivery. No manual-only criterion applies.
+introducing mode never grant delivery. No manual-only criterion applies.
 
 Rollback is a normal revert of issue #179. The issue #176 baseline values and
 existing Build, Copilot review, merge, and post-merge gates remain unchanged.

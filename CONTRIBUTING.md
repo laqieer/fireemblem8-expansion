@@ -88,16 +88,16 @@ pre-review before their first remote review. The reviewer is separate from the
 implementer and cannot mutate repository or GitHub state. Evaluate its exact
 candidate report with `python3 -m scripts.workflow_pilot.review_family` using
 the offline report core only for structural diagnostics; it can never authorize
-delivery. Production uses `/usr/bin/python3 -I
-scripts/workflow_pilot/isolated_review_gate.py`, fresh single-use signed
-independent-review bytes with external time/key/replay authority, two matching
-read-only GitHub collections, and a checker extracted from the immutable base
-tree. The checker receipt covers every changed file and actual finding ID,
-fixed argv/blob/tree identities, read-only execution, and pre/post cleanliness.
-Actions are exactly read then report; GitHub node IDs are globally unique;
-`CHANGES_REQUESTED`, body/inline findings, or unresolved threads are not clean;
-complete push history permits no advance before an owner/coordinator
-disposition. Offline fixtures never authorize delivery. This contract does not
+delivery. Production credentials and authority stay outside the candidate:
+invoke `trusted_review_gate.py` only from the exact authoritative PR base
+checkout or an authenticated external installation, import only that trusted
+root, and treat candidate JSON as inert input. The introducing PR uses
+fail-closed `introduction` mode because its actual base lacks the checker.
+Later PRs require exact `baseRefOid`/`headRefOid`, an immutable local-finding
+receipt issued before remote review, separately collected GitHub findings,
+closed base-owned assertions, disjoint disposition actors, and dispositions
+bound to both held and next heads. `pushedDate` never reconstructs head
+history. Offline fixtures never authorize delivery. This contract does not
 replace mandatory exact-candidate Copilot review.
 
 Both PR and master Build runs execute `host-tests`, `build`,

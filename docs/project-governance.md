@@ -37,13 +37,14 @@ it. In summary:
   review/triage evidence consumed by the development workflow.
 - High-risk or large candidates use the
   [executable review-family contract](workflow-pilot.md#sibling-family-review-convergence)
-  for one fresh read-only pre-review, isolated double live-GitHub collection,
-  fresh single-use external-key/replay receipt authority, immutable-base
-  checker execution over every changed file/finding, complete sibling
-  expansion, enforced bounds, global node identities, semantic clean review,
-  and owner-only no-push holds. The importable core and offline fixtures cannot
-  authorize delivery. This is not a human approval gate and does not replace
-  remote Copilot review.
+  for one fresh read-only pre-review, exact-base trusted execution, separate
+  local and remote finding chronology, closed base-owned assertions, complete
+  sibling expansion, enforced bounds, global node identities, semantic clean
+  review, disjoint authenticated dispositions, and exact held-head holds.
+  Candidate code receives no GitHub/HMAC/push credential or authority;
+  nullable push timestamps never attest ref history. The introducing PR fails
+  closed for external coordinator review. This is not a human approval gate
+  and does not replace remote Copilot review.
 
 ## Security reporting
 

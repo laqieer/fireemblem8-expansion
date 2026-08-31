@@ -6,17 +6,25 @@ from scripts.workflow_pilot import review_base_checker
 
 def valid_input():
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "repository": "example/project",
         "pull_request": 7,
         "base_sha": "a" * 40,
         "base_tree": "b" * 40,
         "candidate_sha": "c" * 40,
         "candidate_tree": "d" * 40,
+        "head_sha": "c" * 40,
         "changed_files": ["docs/a.md", "scripts/a.py"],
-        "github_finding_ids": ["FINDING_1"],
+        "remote_finding_ids": ["REMOTE_NODE_1"],
+        "limits": {
+            "max_duration_minutes": 30,
+            "max_findings_per_review": 10,
+            "max_reviewed_files": 40,
+            "max_siblings_per_finding": 5,
+            "max_siblings_per_handoff": 50,
+        },
         "review_report": {
-            "schema_version": 1,
+            "schema_version": 2,
             "report_id": "REPORT_1",
             "repository": "example/project",
             "pull_request": 7,
@@ -31,21 +39,68 @@ def valid_input():
             "permissions": ["contents:read"],
             "actions": ["read-candidate", "emit-local-report"],
             "reviewed_files": ["scripts/a.py", "docs/a.md"],
-            "finding_ids": ["FINDING_1"],
+            "findings": [
+                {
+                    "id": "LOCAL-ACTION-1",
+                    "family": "action",
+                    "created_at": "2026-08-31T04:00:30Z",
+                }
+            ],
         },
+        "assertion_requests": [
+            {
+                "id": "result-actor-permission-bounds-positive",
+                "assertion_id": "actor-permission-bounds:positive",
+                "context": None,
+            },
+            {
+                "id": "result-sibling-LOCAL-ACTION-1-actions",
+                "assertion_id": "sibling:action:actions",
+                "context": {
+                    "finding_id": "LOCAL-ACTION-1",
+                    "family": "action",
+                    "member": "actions",
+                },
+            },
+        ],
     }
 
 
 class ReviewBaseCheckerTests(unittest.TestCase):
     def assert_rejected(self, data, message):
         with self.assertRaisesRegex(review_base_checker.CheckError, message):
-            review_base_checker.validate_input(data)
+            review_base_checker.execute_registry(data)
 
-    def test_accepts_complete_independent_report(self):
-        result = review_base_checker.validate_input(valid_input())
-        self.assertEqual(result["status"], "pass")
-        self.assertEqual(result["reviewed_files"], ["docs/a.md", "scripts/a.py"])
-        self.assertEqual(result["finding_ids"], ["FINDING_1"])
+    def test_closed_registry_executes_bound_assertions(self):
+        result = review_base_checker.execute_registry(valid_input())
+        self.assertEqual(result["registry_version"], 1)
+        self.assertEqual(
+            [item["status"] for item in result["results"]],
+            ["pass", "pass"],
+        )
+        self.assertEqual(
+            result["results"][0]["input_sha256"], result["input_sha256"]
+        )
+        self.assertEqual(
+            result["results"][0]["command_id"], result["command_id"]
+        )
+
+    def test_local_findings_have_independent_namespace_and_chronology(self):
+        for finding_id, created_at, message in (
+            ("REMOTE_NODE_1", "2026-08-31T04:00:30Z", "LOCAL- namespace"),
+            ("LOCAL-ACTION-1", "2026-08-31T03:59:59Z", "outside"),
+            ("LOCAL-ACTION-1", "2026-08-31T04:01:01Z", "outside"),
+        ):
+            data = valid_input()
+            data["review_report"]["findings"][0]["id"] = finding_id
+            data["review_report"]["findings"][0]["created_at"] = created_at
+            with self.subTest(finding_id=finding_id, created_at=created_at):
+                self.assert_rejected(data, message)
+
+    def test_remote_ids_never_become_pre_review_findings(self):
+        data = valid_input()
+        data["remote_finding_ids"] = ["LOCAL-ACTION-1"]
+        self.assert_rejected(data, "overlap the independent namespace")
 
     def test_rejects_missing_extra_and_duplicate_changed_file_coverage(self):
         for mutation in ("missing", "extra", "duplicate"):
@@ -59,19 +114,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             with self.subTest(mutation=mutation):
                 self.assert_rejected(data, "cover every|contains duplicates")
 
-    def test_rejects_missing_extra_and_duplicate_finding_ids(self):
-        for mutation in ("missing", "extra", "duplicate"):
-            data = valid_input()
-            if mutation == "missing":
-                data["review_report"]["finding_ids"] = []
-            elif mutation == "extra":
-                data["review_report"]["finding_ids"].append("FINDING_2")
-            else:
-                data["review_report"]["finding_ids"].append("FINDING_1")
-            with self.subTest(mutation=mutation):
-                self.assert_rejected(data, "do not match|contains duplicates")
-
-    def test_rejects_actor_aliases_and_mutating_permissions(self):
+    def test_rejects_actor_aliases_mutation_and_action_reordering(self):
         for login in ("IMPLEMENTER", "implementer[bot]", "implementer_bot"):
             data = valid_input()
             data["review_report"]["reviewer_login"] = login
@@ -82,46 +125,30 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         data["review_report"]["permissions"] = ["contents:write"]
         self.assert_rejected(data, "not exactly read-only")
 
-    def test_rejects_action_reversal_duplication_and_interleaving(self):
-        mutations = (
-            ["emit-local-report", "read-candidate"],
-            ["read-candidate", "read-candidate", "emit-local-report"],
-            ["read-candidate", "comment", "emit-local-report"],
-        )
-        for actions in mutations:
-            data = valid_input()
-            data["review_report"]["actions"] = actions
-            with self.subTest(actions=actions):
-                self.assert_rejected(data, "not exact read then report")
+        data = valid_input()
+        data["review_report"]["actions"].reverse()
+        self.assert_rejected(data, "not exact read then report")
 
-    def test_rejects_scope_sha_and_time_mutations(self):
-        for field, value in (
-            ("repository", "other/project"),
-            ("pull_request", 8),
-            ("base_sha", "e" * 40),
-            ("candidate_sha", "f" * 40),
-        ):
-            data = valid_input()
-            data["review_report"][field] = value
-            with self.subTest(field=field):
-                self.assert_rejected(data, "does not match")
+    def test_fabricated_assertion_ids_and_context_fail(self):
+        data = valid_input()
+        data["assertion_requests"][0]["assertion_id"] = "candidate:claimed-pass"
+        self.assert_rejected(data, "closed registry")
 
         data = valid_input()
-        data["review_report"]["completed_at"] = data["review_report"]["started_at"]
-        self.assert_rejected(data, "interval is not positive")
+        data["assertion_requests"][1]["context"]["member"] = "targets"
+        self.assert_rejected(data, "outside the closed|does not match")
 
-    def test_rejects_unknown_fields_and_unsafe_paths(self):
+    def test_boolean_bounds_and_head_mismatch_fail(self):
         data = valid_input()
-        data["review_report"]["unknown"] = True
-        self.assert_rejected(data, "unknown fields")
+        data["limits"]["max_reviewed_files"] = True
+        self.assert_rejected(data, "must be an integer")
 
         data = valid_input()
-        data["review_report"]["reviewed_files"][0] = "../outside"
-        self.assert_rejected(data, "repository-relative")
+        data["head_sha"] = "e" * 40
+        self.assert_rejected(data, "head does not equal candidate")
 
     def test_semantic_mutation_with_same_shape_fails(self):
-        data = valid_input()
-        mutation = copy.deepcopy(data)
+        mutation = copy.deepcopy(valid_input())
         mutation["review_report"]["reviewed_files"] = [
             "docs/a.md",
             "scripts/other.py",
