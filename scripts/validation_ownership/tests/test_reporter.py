@@ -32,7 +32,25 @@ class OwnershipGraphTests(unittest.TestCase):
                 "mgfembp",
             }
         }
+        cls.build_root = ROOT / "build"
+        cls.test_artifacts_root = cls.build_root / "test-artifacts"
+        cls.build_root_existed = cls.build_root.exists()
+        cls.test_artifacts_root_existed = cls.test_artifacts_root.exists()
+        cls.scratch_root_existed = SCRATCH_ROOT.exists()
         SCRATCH_ROOT.mkdir(parents=True, exist_ok=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        for path, existed in (
+            (SCRATCH_ROOT, cls.scratch_root_existed),
+            (cls.test_artifacts_root, cls.test_artifacts_root_existed),
+            (cls.build_root, cls.build_root_existed),
+        ):
+            if not existed:
+                try:
+                    path.rmdir()
+                except OSError:
+                    pass
 
     def validate(self, graph=None, entries=None):
         return reporter.validate_graph(
