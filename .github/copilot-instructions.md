@@ -98,28 +98,41 @@ structured non-shell contracts with sealed execution receipts; never execute
 a caller-authored command or trust a passed label without rerunning its safe
 contract.
 
-Rotate owners across documents with the sealed prior-handoff chain, comparing
-immutable numeric GitHub IDs or strict casefolded logins. Reporter v2 consumes
-the complete source document and input/Git/result/check seals, then repeats
-real-worktree validation before metrics; schema v1 stays frozen. Coordinator
-availability records the authoritative evaluation time and unattended
-interval. A disable/takeover plan must cover that interval and include
-same-evaluation runtime evidence that both stop triggers are disabled.
+Use immutable numeric GitHub IDs for every owner, coordinator, and remote
+event. One root owner exists for each issue authority; only an interrupted
+current owner may receive one causally linked replacement. Reporter v2
+consumes the complete source document and input/Git/result/check/coordinator
+seals, then aggregates only Git-derived lines, parsed schema changes, closed
+build/map/resource values, and coordinator runtime telemetry.
 
-The prior-handoff sequence/head comes from the fixed `origin` authority ref,
-queried with `ls-remote` and fetched without updating local refs. Its
-single-parent authority commits are bootstrapped once by the authenticated
-owner and advanced only with expected-head/sequence CAS; local ref resets,
-omitted/truncated history, replay, or caller-selected heads reject. Allowed Git
-checks pin whitespace/config behavior in argv under the minimal Git
-environment and disable external diff, textconv, local attributes, and ambient
-configuration bypasses. After OOM, sent/received/progressing prefixes are
-valid non-eligible replacement progress only when assignment is strictly
-later than interruption; equal, predated, or multiple replacements reject.
-Authority reads use bounded remote-OID-before/fetch/remote-OID-after
-consistency, retry from a moved head, and fail `authority-moved` on exhaustion.
-The stable observation token is rechecked at the final eligibility boundary,
-so no stale authority result can be accepted.
+Create the issue-scoped protected authority branch before a PR exists and
+never rename or reset it at PR creation. Bind the eventual PR by appending an
+immutable record with its number, base, head, time, and authorized numeric
+actor. Every authority and independent anchor update is a normal
+fast-forward: each commit directly parents the observed head and advances a
+monotonic sequence. Branch rules must reject force pushes and deletion for
+both branches; unverified ruleset or actor authority fails closed. Bounded
+remote-OID-before/fetch/remote-OID-after reads and a final dual-ref
+observation check reject replay, rollback, and ABA.
+
+Allowed Git checks execute the exact checker blob from the assigned parent,
+not the candidate worktree. If that parent predates the checker, an external
+coordinator installation must supply it; this bootstrap result is explicitly
+ineligible for `trusted_push_eligible` until the checker is merged. The raw
+checker pins whitespace/config behavior and disables external diff, textconv,
+local attributes, and ambient configuration bypasses.
+
+Remote-action, availability, resource, OOM snapshot, RSS, lifetime,
+coordination-turn, and recovery evidence comes only from a fresh
+coordinator-sealed receipt. The receipt covers repository and actor numeric
+IDs, the full observation interval, timeline/run/ref/audit sources, and
+process/network policy. Incomplete GitHub coverage requires a credentialless,
+network-denied implementation process; otherwise reject. Availability must be
+observed before assignment, remain fresh at validation, and cover the full
+unattended interval. A sealed interruption snapshot remains valid after a
+clean replacement recovers the worktree.
+Sent/received/progressing prefixes remain non-eligible replacement progress,
+and the replacement assignment must be strictly later than interruption.
 
 Implementation subagents validate and commit locally but do not push. The
 orchestrator pushes the exact commit under repository-owner context so Build

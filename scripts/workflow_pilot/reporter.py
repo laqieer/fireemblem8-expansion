@@ -156,10 +156,12 @@ HANDOFF_REJECTION_CODES = {
     "authoritative-run-failed",
     "authoritative-run-incomplete",
     "changed-lines-budget-exceeded",
+    "checker-bootstrap-not-trusted-push-eligible",
     "code-contract-not-merged",
     "closed-owner-reused",
     "conflicting-worktree",
     "coordinator-unavailable",
+    "coordinator-actor-unauthorized",
     "dirty-worktree",
     "duplicate-coordinator",
     "duplicate-owner",
@@ -172,6 +174,9 @@ HANDOFF_REJECTION_CODES = {
     "incomplete-check",
     "incomplete-evidence",
     "incomplete-lifecycle",
+    "invalid-protocol-derivation",
+    "invalid-recovery-telemetry",
+    "invalid-runtime-telemetry",
     "invalid-check-receipt",
     "interrupted-check-not-incomplete",
     "interruption-time-mismatch",
@@ -179,6 +184,8 @@ HANDOFF_REJECTION_CODES = {
     "missing-copilot-trailer",
     "missing-evidence",
     "missing-or-duplicate-watcher",
+    "missing-closed-resource-receipt",
+    "missing-runtime-telemetry",
     "missing-required-code-contract-edge",
     "missing-parent-post-merge-gate",
     "missing-master-recovery",
@@ -194,6 +201,9 @@ HANDOFF_REJECTION_CODES = {
     "replacement-assignment-not-causal",
     "replacement-owner-count",
     "replacement-owner-reused",
+    "replacement-without-interruption",
+    "remote-coverage-incomplete",
+    "root-owner-count",
     "required-check-failed",
     "result-not-worktree-head",
     "rom-bytes-budget-exceeded",
@@ -203,6 +213,8 @@ HANDOFF_REJECTION_CODES = {
     "stale-run",
     "task-status-dependency-mismatch",
     "unquantified-diff",
+    "unexpected-resource-receipt",
+    "unresolved-actor-id",
     "unrelated-branch",
     "watcher-todo-dependency",
     "watcher-authority-stale",
@@ -1463,6 +1475,8 @@ def validate_implementation_handoffs(
                     "peak_rss_bytes",
                     "coordination_turns",
                     "recovery_minutes",
+                    "budget_usage",
+                    "interruption_snapshot",
                     "rejection_codes",
                 ),
             )
@@ -1528,6 +1542,26 @@ def validate_implementation_handoffs(
                     handoff[field],
                     f"{handoff_label}.{field}",
                     0,
+                )
+            budget_usage = expect_object(
+                handoff["budget_usage"],
+                f"{handoff_label}.budget_usage",
+            )
+            expect_keys(
+                budget_usage,
+                f"{handoff_label}.budget_usage",
+                ("rom_bytes", "ram_bytes", "protocol_changes"),
+            )
+            for field in ("rom_bytes", "ram_bytes", "protocol_changes"):
+                expect_int(
+                    budget_usage[field],
+                    f"{handoff_label}.budget_usage.{field}",
+                    0,
+                )
+            if handoff["interruption_snapshot"] is not None:
+                expect_object(
+                    handoff["interruption_snapshot"],
+                    f"{handoff_label}.interruption_snapshot",
                 )
             if outcome == "accepted":
                 if closed_at is None or rejection_codes:

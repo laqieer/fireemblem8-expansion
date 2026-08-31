@@ -579,10 +579,10 @@ python3 -m scripts.workflow_pilot.agent_handoff \
 The assignment records the issue/PR, exact parent SHA, expected branch and
 worktree, allowed path scope, finding IDs, acceptance criteria, focused
 checks, line/ROM/RAM/protocol budgets, owner lifetime/RSS bounds, and the
-complete prohibited remote-action set. Git supplies the worktree, branch,
-result commit, direct parent, diff, changed paths, line count, commit
-message, and clean/conflict state; do not persist a second mutable copy of
-those derivable facts.
+complete prohibited remote-action set. Every owner and coordinator has an
+authoritatively resolved numeric GitHub ID. Git supplies the worktree, branch,
+result commit, direct parent, diff, changed paths, line count, commit message,
+and clean/conflict state; do not persist a second mutable copy of those facts.
 
 Required checks use closed structured check contracts and sealed receipts
 bound to the check ID, exact argv, assigned parent, candidate SHA, worktree
@@ -591,8 +591,12 @@ re-executes only the allowlisted non-shell command and compares the receipt.
 It never executes a caller-authored command. A passed label cannot make
 literal `false`, a failed safe check, or a stale/wrong-command/SHA/worktree
 receipt pass.
-The Git check runs a fixed isolated raw-diff validator under the reporter's
-minimal environment. Its internal Git argv pins the complete
+The Git check runs the assigned parent's exact raw-diff-checker blob under the
+reporter's minimal environment, never the candidate worktree copy. A parent
+without that blob enters explicit bootstrap mode and requires the external
+coordinator-installed validator; bootstrap can produce check evidence but
+cannot become `trusted_push_eligible`. The checker's internal Git argv pins the
+complete
 behavior-affecting `-c` policy and disables external diff, textconv, and binary
 bypasses; the raw added-line policy ignores tracked whitespace attributes, and
 local attributes are forbidden. Local, global, system, alias, tracked
@@ -635,34 +639,38 @@ trusted owner push. Repeated-parent/stale results, wrong parents or branches,
 dirty/conflicting worktrees, missing commits/trailers/evidence, scope or
 budget violations, and any push/PR/comment/dispatch/ref/merge action by the
 implementation owner fail closed. A committed handoff closes that owner; a
-later review cycle receives a fresh owner and handoff rather than reviving the
-closed reasoning process.
+second root cannot be introduced. Only an interrupted current owner can
+receive the single causally linked replacement described below.
 
-Owner and remote-actor comparisons use immutable numeric GitHub IDs when both
-are available, otherwise strict casefolded logins, including bot suffixes.
+Owner, coordinator, and remote-actor comparisons require immutable numeric
+GitHub IDs resolved authoritatively before validation. Missing IDs, one login
+mapped to multiple IDs, or one ID mapped to multiple logins reject.
 Each new document carries the prior closed handoffs as a sealed hash chain
-covering sequence, previous seal, handoff, owner, lifecycle, issue, PR,
-candidate, input, Git, and result identities. Chain gaps, forks, reordering,
-tampering, or reuse of a closed owner in the same delivery lifecycle reject;
-this receipt chain is not a second mutable status ledger.
-The expected sequence/head comes independently from the lifecycle's fixed
-`origin` ref. It points to an append-only authority commit whose
-`authority.json` and single-parent ancestry encode the strict sequence/head
-chain. Validation uses `ls-remote` plus a no-local-ref fetch; a locally reset
-ref cannot forge genesis. A document must present that exact remote
-ref/object/head/sequence and the complete matching chain. Genesis is a
-one-time authenticated owner operation recording sequence zero and a null
-head. Advance uses the expected remote object/sequence plus an atomic
-force-with-lease/CAS. Missing refs, omitted/truncated prior lists, stale CAS,
-forks, replay, reset genesis, or caller-selected heads reject. Implementation
-owners never bootstrap, advance, or push this authority.
-Every read is a bounded before/fetch/after transaction: observe the remote OID,
-fetch the named authority without moving local refs or `FETCH_HEAD`, then
-observe the remote OID again. Accept only equal observations and the exact
-fetched/parsed object. On movement, retry from the new OID up to the fixed
-bound, then fail `authority-moved`; never return the stale parent. Carry the
-sealed observation into the document and re-query it immediately before the
-eligibility decision.
+covering sequence, previous seal, handoff, replacement edge, owner, lifecycle,
+issue, optional PR binding, candidate, interruption snapshot, input, Git, and
+result identities. Exactly one root handoff exists per issue authority. Only
+an interrupted current owner may have one causally later replacement; two
+roots, branches, gaps, replay, or owner reuse across PR binding reject.
+
+Create one stable issue-scoped protected branch under
+`refs/heads/workflow-pilot/authority/` before any PR exists. PR creation
+appends one immutable binding record containing actual PR number, base, head,
+time, and authorized numeric actor; it never creates a new namespace or
+genesis. A second independently protected branch under
+`refs/heads/workflow-pilot/authority-anchor/` binds every authority head and
+sequence. Both branches deny force pushes and deletion. Every new commit has
+the observed head as its sole direct parent and is published only by a normal
+fast-forward push. The planner never emits a force-capable command.
+Unverified ruleset/protection or actor authority fails closed.
+
+Every read is a bounded before/fetch/after transaction over both protected
+branches. It fetches exact objects without moving local refs or `FETCH_HEAD`,
+validates both complete single-parent monotonic chains, and requires the
+anchor's issue/sequence/authority object to match. On movement, retry from the
+new pair up to the fixed bound, then fail `authority-moved`. Re-query the
+sealed dual-ref observation immediately before eligibility. This independent
+anchor rejects rollback and authority A-to-B-to-A ABA even if a caller
+presents an old valid authority object.
 
 There is exactly one delivery coordinator and at most one direct watcher for
 an exact run identity. A watcher timeout or process error is transport
@@ -670,17 +678,22 @@ evidence, not the workflow conclusion: query the authoritative GitHub Actions
 run once and preserve its exact success, failure, or active state. Duplicate
 owners, coordinators, or watchers reject.
 
-After evidenced SIGKILL/OOM, preserve and inspect the exact worktree, mark
-every interrupted check incomplete, record kernel evidence and recovery cost,
-and assign exactly one different bounded replacement owner. Never simulate
-OOM or kill unrelated host processes. Before unattended delivery, an
-always-on coordinator is required unless an explicit time-bounded plan
-disables autostop and stop-on-disconnect or transfers coordination to an
-always-on host; otherwise fail closed before relying on the local coordinator.
-The availability record uses an authoritative evaluation time and pending
-unattended interval. The plan must cover both and carry same-evaluation runtime
-evidence that both stop triggers are disabled; an expired or merely asserted
-plan remains unavailable.
+The trusted coordinator collector seals one complete receipt for repository
+and actor numeric IDs, observation interval, GitHub timeline, Actions runs,
+refs, audit-log availability, normalized remote events, process/network
+policy, runtime telemetry, resources, protection, and availability. A source
+event omitted from normalized coverage rejects. If any GitHub source cannot
+provide complete coverage, every implementation process must instead be
+credentialless and network-denied for its entire lifecycle. Caller-authored
+remote-action arrays or digests have no authority.
+
+After evidenced SIGKILL/OOM, the coordinator seals exact status, dirty paths,
+and preserved paths into the interrupted history receipt, marks every check
+incomplete, and records recovery telemetry. A later completed replacement can
+validate from that immutable snapshot after the old worktree is clean. Never
+simulate OOM or kill unrelated processes. Coordinator availability is also
+sealed: its observation must be fresh at validation, precede assignment, and
+cover the full unattended interval with both stop triggers disabled.
 Replacement lifecycle prefixes containing only `assignment_sent`, then
 optional `assignment_received` and `progressing`, are valid `in_progress`
 states and are never trusted-push or delivery eligible. The replacement's
@@ -688,11 +701,14 @@ first assignment timestamp must be strictly later than the interruption;
 equal, predated, or multiple replacements reject.
 
 Workflow-pilot reporter schema v2 carries the complete source handoff document
-plus its input, Git, check-receipt, and result seals. Before metrics, the
-reporter revalidates the source document against its exact real worktree and
-requires byte-identical normalized results. A hand-authored accepted row
-without that source/Git/result authority rejects. Frozen baseline schema v1
-remains unchanged.
+plus its input, Git, check, coordinator, and result seals. Before metrics, the
+reporter revalidates the source document and aggregates only verified values:
+line usage from Git, protocol changes from the parsed versioned schema,
+ROM/RAM from closed build/map/resource receipts, and RSS/lifetime/coordination/
+recovery from coordinator telemetry. Unaffected surfaces derive zero. A
+hand-authored claim cannot change these values. Frozen reporter baseline
+schema v1 remains unchanged; the handoff protocol is specified by
+`scripts/workflow_pilot/agent_handoff.schema.json`.
 
 The indexed source-only regression is
 [`TC-WORKFLOW-AGENT-HANDOFF-001`](../../../docs/test-cases/workflow-governance.md#tc-workflow-agent-handoff-001-validate-bounded-exact-sha-agent-handoffs).

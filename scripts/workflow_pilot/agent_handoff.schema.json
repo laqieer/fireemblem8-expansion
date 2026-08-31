@@ -1,0 +1,351 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/laqieer/fireemblem8-expansion/blob/master/scripts/workflow_pilot/agent_handoff.schema.json",
+  "title": "Workflow pilot agent handoff",
+  "protocol_version": 2,
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "repository",
+    "prior_handoffs",
+    "history_authority",
+    "delivery_graph",
+    "coordinators",
+    "handoffs",
+    "workflow_runs",
+    "watchers",
+    "coordinator_receipt"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "repository": {
+      "type": "string",
+      "minLength": 1
+    },
+    "prior_handoffs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/historyReceipt"
+      }
+    },
+    "history_authority": {
+      "$ref": "#/$defs/historyAuthority"
+    },
+    "delivery_graph": {
+      "type": "object"
+    },
+    "coordinators": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+        "$ref": "#/$defs/coordinator"
+      }
+    },
+    "handoffs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/handoff"
+      }
+    },
+    "workflow_runs": {
+      "type": "array"
+    },
+    "watchers": {
+      "type": "array"
+    },
+    "coordinator_receipt": {
+      "$ref": "#/$defs/coordinatorReceipt"
+    }
+  },
+  "$defs": {
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "time": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "login",
+        "database_id"
+      ],
+      "properties": {
+        "login": {
+          "type": "string",
+          "minLength": 1
+        },
+        "database_id": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "coordinator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "login",
+        "database_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "login": {
+          "type": "string",
+          "minLength": 1
+        },
+        "database_id": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "historyAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "object_id",
+        "anchor_ref",
+        "anchor_object_id",
+        "schema_version",
+        "repository",
+        "issue",
+        "sequence",
+        "handoff_sequence",
+        "head_seal",
+        "pr_binding",
+        "event",
+        "previous_object_id",
+        "observation"
+      ]
+    },
+    "historyReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "previous_seal",
+        "handoff_id",
+        "owner_id",
+        "owner_database_id",
+        "replaces_handoff_id",
+        "issue",
+        "pull_request",
+        "assigned_parent_sha",
+        "expected_branch",
+        "allowed_worktree",
+        "candidate_sha",
+        "lifecycle_state",
+        "interruption_snapshot",
+        "closed_at",
+        "input_seal",
+        "git_seal",
+        "result_seal",
+        "seal"
+      ]
+    },
+    "handoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "issue",
+        "pull_request",
+        "owner_id",
+        "owner_database_id",
+        "replaces_handoff_id",
+        "assigned_parent_sha",
+        "expected_branch",
+        "allowed_worktree",
+        "allowed_scope",
+        "finding_ids",
+        "acceptance_criteria",
+        "required_checks",
+        "budgets",
+        "prohibited_remote_actions",
+        "max_lifetime_seconds",
+        "max_peak_rss_bytes",
+        "states",
+        "evidence",
+        "check_receipts",
+        "result",
+        "interruption"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "issue": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pull_request": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "owner_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner_database_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "replaces_handoff_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "assigned_parent_sha": {
+          "$ref": "#/$defs/sha"
+        },
+        "expected_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_worktree": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_scope": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "finding_ids": {
+          "type": "array"
+        },
+        "acceptance_criteria": {
+          "type": "array",
+          "minItems": 1
+        },
+        "required_checks": {
+          "type": "array",
+          "minItems": 1
+        },
+        "budgets": {
+          "type": "object"
+        },
+        "prohibited_remote_actions": {
+          "type": "array",
+          "minItems": 1
+        },
+        "max_lifetime_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_peak_rss_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "states": {
+          "type": "array",
+          "minItems": 1
+        },
+        "evidence": {
+          "type": "array"
+        },
+        "check_receipts": {
+          "type": "array"
+        },
+        "result": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "interruption": {
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      }
+    },
+    "coordinatorReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "repository",
+        "repository_database_id",
+        "collector_login",
+        "collector_database_id",
+        "issued_at",
+        "authority_protection",
+        "availability",
+        "remote_coverage",
+        "runtime_telemetry",
+        "resource_receipts",
+        "seal"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repository_database_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "collector_login": {
+          "type": "string",
+          "minLength": 1
+        },
+        "collector_database_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "issued_at": {
+          "$ref": "#/$defs/time"
+        },
+        "authority_protection": {
+          "type": "object"
+        },
+        "availability": {
+          "type": "object"
+        },
+        "remote_coverage": {
+          "type": "object"
+        },
+        "runtime_telemetry": {
+          "type": "array"
+        },
+        "resource_receipts": {
+          "type": "array"
+        },
+        "seal": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    }
+  }
+}

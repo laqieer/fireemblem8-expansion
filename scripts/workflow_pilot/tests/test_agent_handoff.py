@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 import os
 import subprocess
@@ -6,7 +7,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -18,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[3]
 TEST_ARTIFACTS = ROOT / "build" / "test-artifacts"
 TEST_ARTIFACTS.mkdir(parents=True, exist_ok=True)
 AUTHORITY_OWNERS = {}
+COORDINATOR_INSTALLATIONS = {}
 
 
 def git(repository_root, *arguments):
@@ -55,7 +57,7 @@ def owner_write_blob_ref(owner_root, reference, payload):
     return object_id
 
 
-def owner_create_authority_commit(owner_root, record, parent=None):
+def owner_create_record_commit(owner_root, record, filename, parent=None):
     blob = git_with_input(
         owner_root,
         ("hash-object", "-w", "--stdin"),
@@ -64,7 +66,7 @@ def owner_create_authority_commit(owner_root, record, parent=None):
     tree = git_with_input(
         owner_root,
         ("mktree",),
-        f"100644 blob {blob}\tauthority.json\n".encode("ascii"),
+        f"100644 blob {blob}\t{filename}\n".encode("ascii"),
     )
     arguments = ["commit-tree", tree]
     if parent is not None:
@@ -90,23 +92,24 @@ def set_history_authority(
     head_seal,
     *,
     issue=178,
-    pull_request=200,
+    pull_request=None,
 ):
     owner_root = AUTHORITY_OWNERS[str(repository_root)]
     reference = agent_handoff.history_authority_ref(issue, pull_request)
+    anchor_reference = agent_handoff.history_anchor_ref(issue)
     if sequence == 0:
         plan = agent_handoff.plan_history_authority(
             repository_root,
             "example/workflow",
             issue,
-            pull_request,
+            None,
             operation="bootstrap",
         )
         if plan != agent_handoff.plan_history_authority(
             repository_root,
             "example/workflow",
             issue,
-            pull_request,
+            None,
             operation="bootstrap",
         ):
             raise AssertionError("bootstrap plan is not deterministic")
@@ -116,13 +119,13 @@ def set_history_authority(
             repository_root,
             "example/workflow",
             issue,
-            pull_request,
+            None,
         )
         plan = agent_handoff.plan_history_authority(
             repository_root,
             "example/workflow",
             issue,
-            pull_request,
+            None,
             operation="advance",
             expected_object_id=current["object_id"],
             expected_sequence=current["sequence"],
@@ -143,19 +146,97 @@ def set_history_authority(
     planned_sequence = plan["record"]["sequence"]
     if planned_sequence != sequence:
         raise AssertionError("authority test sequence mismatch")
-    object_id = owner_create_authority_commit(
+    object_id = owner_create_record_commit(
         owner_root,
         plan["record"],
+        "authority.json",
         parent,
     )
-    lease = plan["expected_remote_object_id"] or ("0" * 40)
+    anchor_record = copy.deepcopy(plan["anchor_record_template"])
+    anchor_record["authority_object_id"] = object_id
+    anchor_object_id = owner_create_record_commit(
+        owner_root,
+        anchor_record,
+        "anchor.json",
+        plan["expected_anchor_object_id"],
+    )
     git(
         owner_root,
         "push",
         "-q",
-        f"--force-with-lease={reference}:{lease}",
         "origin",
         f"{object_id}:{reference}",
+    )
+    git(
+        owner_root,
+        "push",
+        "-q",
+        "origin",
+        f"{anchor_object_id}:{anchor_reference}",
+    )
+    return agent_handoff.read_history_authority(
+        repository_root,
+        "example/workflow",
+        issue,
+        pull_request,
+    )
+
+
+def bind_history_authority(
+    repository_root,
+    *,
+    issue=178,
+    pull_request=200,
+    base_branch="master",
+    head_branch="agent/issue-178",
+):
+    owner_root = AUTHORITY_OWNERS[str(repository_root)]
+    current = agent_handoff.read_history_authority(
+        repository_root,
+        "example/workflow",
+        issue,
+        None,
+    )
+    plan = agent_handoff.plan_history_authority(
+        repository_root,
+        "example/workflow",
+        issue,
+        pull_request,
+        operation="bind",
+        expected_object_id=current["object_id"],
+        expected_sequence=current["sequence"],
+        binding_base=base_branch,
+        binding_head=head_branch,
+        bound_at="2026-08-31T14:30:00Z",
+        bound_by_database_id=9001,
+    )
+    object_id = owner_create_record_commit(
+        owner_root,
+        plan["record"],
+        "authority.json",
+        current["object_id"],
+    )
+    anchor_record = copy.deepcopy(plan["anchor_record_template"])
+    anchor_record["authority_object_id"] = object_id
+    anchor_object_id = owner_create_record_commit(
+        owner_root,
+        anchor_record,
+        "anchor.json",
+        current["anchor_object_id"],
+    )
+    git(
+        owner_root,
+        "push",
+        "-q",
+        "origin",
+        f"{object_id}:{plan['ref']}",
+    )
+    git(
+        owner_root,
+        "push",
+        "-q",
+        "origin",
+        f"{anchor_object_id}:{plan['anchor_ref']}",
     )
     return agent_handoff.read_history_authority(
         repository_root,
@@ -175,10 +256,14 @@ def handoff_repository():
         remote_root = test_root / "authority.git"
         owner_root = test_root / "owner"
         repository_root = test_root / "implementation"
+        installation_root = test_root / "coordinator-installation"
         remote_root.mkdir()
         owner_root.mkdir()
         repository_root.mkdir()
+        installation_root.mkdir(mode=0o700)
         git(remote_root, "init", "-q", "--bare")
+        git(remote_root, "config", "receive.denyNonFastForwards", "true")
+        git(remote_root, "config", "receive.denyDeletes", "true")
         git(owner_root, "init", "-q", "-b", "master")
         git(owner_root, "config", "user.name", "Authority Owner")
         git(owner_root, "config", "user.email", "owner@example.invalid")
@@ -202,9 +287,74 @@ def handoff_repository():
             str(remote_root),
         )
         AUTHORITY_OWNERS[str(repository_root)] = owner_root
+        bootstrap_validator = installation_root / "raw_diff_check.py"
+        bootstrap_validator.write_bytes(
+            agent_handoff.RAW_DIFF_CHECK_PATH.read_bytes()
+        )
+        bootstrap_validator.chmod(0o500)
+        (installation_root / "receipt.key").write_bytes(b"k" * 32)
+        (installation_root / "receipt.key").chmod(0o600)
+        (installation_root / "installation.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "repository": "example/workflow",
+                    "repository_database_id": 7001,
+                    "collector": {
+                        "login": "collector",
+                        "database_id": 9000,
+                    },
+                    "authorized_coordinators": [
+                        {
+                            "login": "coordinator",
+                            "database_id": 9001,
+                        }
+                    ],
+                    "authority_protection": {
+                        "mode": "bare-remote-config",
+                        "ruleset_id": None,
+                        "enforcement": "active",
+                        "authority_ref_prefix": (
+                            agent_handoff.HISTORY_REF_PREFIX
+                        ),
+                        "anchor_ref_prefix": (
+                            agent_handoff.HISTORY_ANCHOR_REF_PREFIX
+                        ),
+                        "force_pushes_allowed": False,
+                        "deletions_allowed": False,
+                    },
+                    "bootstrap_validator": {
+                        "path": str(bootstrap_validator),
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        COORDINATOR_INSTALLATIONS[str(repository_root)] = installation_root
         seed = repository_root / "README.md"
         seed.write_text("base\n", encoding="utf-8")
-        git(repository_root, "add", "README.md")
+        checker = (
+            repository_root
+            / "scripts"
+            / "workflow_pilot"
+            / "raw_diff_check.py"
+        )
+        checker.parent.mkdir(parents=True)
+        checker.write_bytes(agent_handoff.RAW_DIFF_CHECK_PATH.read_bytes())
+        schema = repository_root / agent_handoff.HANDOFF_SCHEMA_REPOSITORY_PATH
+        schema.write_bytes(
+            (
+                ROOT
+                / agent_handoff.HANDOFF_SCHEMA_REPOSITORY_PATH
+            ).read_bytes()
+        )
+        git(
+            repository_root,
+            "add",
+            "README.md",
+            agent_handoff.RAW_DIFF_CHECK_REPOSITORY_PATH,
+            agent_handoff.HANDOFF_SCHEMA_REPOSITORY_PATH,
+        )
         git(repository_root, "commit", "-q", "-m", "test: base")
         base_sha = git(repository_root, "rev-parse", "HEAD")
 
@@ -215,7 +365,7 @@ def handoff_repository():
         git(repository_root, "switch", "-q", "-c", "agent/issue-178")
 
         implementation = repository_root / "scripts" / "workflow_pilot"
-        implementation.mkdir(parents=True)
+        implementation.mkdir(parents=True, exist_ok=True)
         (implementation / "change.py").write_text(
             "HANDOFF = True\nEVIDENCE = 'focused'\n",
             encoding="utf-8",
@@ -230,11 +380,20 @@ def handoff_repository():
             + agent_handoff.COPILOT_TRAILER,
         )
         result_sha = git(repository_root, "rev-parse", "HEAD")
-        set_history_authority(repository_root, 0, None)
         try:
-            yield repository_root, base_sha, parent_sha, result_sha
+            with mock.patch.dict(
+                os.environ,
+                {
+                    agent_handoff.COORDINATOR_INSTALLATION_ENV: str(
+                        installation_root
+                    )
+                },
+            ):
+                set_history_authority(repository_root, 0, None)
+                yield repository_root, base_sha, parent_sha, result_sha
         finally:
             del AUTHORITY_OWNERS[str(repository_root)]
+            del COORDINATOR_INSTALLATIONS[str(repository_root)]
 
 
 def timestamped_states(receipt=None):
@@ -273,15 +432,50 @@ def timestamped_states(receipt=None):
             },
         ]
     return [
-        {"state": "assignment_sent", "at": "2026-01-01T01:00:00Z"},
-        {"state": "assignment_received", "at": "2026-01-01T01:01:00Z"},
-        {"state": "progressing", "at": "2026-01-01T01:02:00Z"},
-        {"state": "committed", "at": "2026-01-01T01:04:00Z"},
-        {"state": "handed_off", "at": "2026-01-01T01:05:00Z"},
+        {
+            "state": "assignment_sent",
+            "at": (
+                datetime.now(timezone.utc).replace(microsecond=0)
+                - timedelta(minutes=4)
+            ).isoformat().replace("+00:00", "Z"),
+        },
+        {
+            "state": "assignment_received",
+            "at": (
+                datetime.now(timezone.utc).replace(microsecond=0)
+                - timedelta(minutes=3)
+            ).isoformat().replace("+00:00", "Z"),
+        },
+        {
+            "state": "progressing",
+            "at": (
+                datetime.now(timezone.utc).replace(microsecond=0)
+                - timedelta(minutes=2)
+            ).isoformat().replace("+00:00", "Z"),
+        },
+        {
+            "state": "committed",
+            "at": (
+                datetime.now(timezone.utc).replace(microsecond=0)
+                - timedelta(minutes=1)
+            ).isoformat().replace("+00:00", "Z"),
+        },
+        {
+            "state": "handed_off",
+            "at": datetime.now(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z"),
+        },
     ]
 
 
-def evidence(status="passed", completed_at="2026-01-01T01:03:00Z"):
+def evidence(status="passed", completed_at=None):
+    if completed_at is None:
+        completed_at = (
+            datetime.now(timezone.utc).replace(microsecond=0)
+            - timedelta(seconds=90)
+        ).isoformat().replace("+00:00", "Z")
     exit_code = 0 if status == "passed" else None
     return [
         {
@@ -333,6 +527,179 @@ def evidence(status="passed", completed_at="2026-01-01T01:03:00Z"):
             "detail": "The one admitted protocol change is versioned.",
         },
     ]
+
+
+def coordinator_receipt(
+    document,
+    repository_root,
+    *,
+    actions=(),
+    incomplete_sources=(),
+    availability=None,
+    resource_receipts=(),
+):
+    issued_at = datetime.now(timezone.utc).replace(microsecond=0)
+    states = [
+        state
+        for handoff in document["handoffs"]
+        for state in handoff["states"]
+    ]
+    assignment_start = min(
+        datetime.fromisoformat(state["at"].replace("Z", "+00:00"))
+        for state in states
+        if state["state"] == "assignment_sent"
+    )
+    actors = {
+        (
+            document["coordinators"][0]["login"].casefold(),
+            document["coordinators"][0]["database_id"],
+        ),
+        *(
+            (handoff["owner_id"].casefold(), handoff["owner_database_id"])
+            for handoff in document["handoffs"]
+        ),
+        *(
+            (action["actor_login"].casefold(), action["actor_database_id"])
+            for action in actions
+        ),
+    }
+    resolved_at = (
+        assignment_start - timedelta(seconds=2)
+    ).isoformat().replace("+00:00", "Z")
+    actor_records = [
+        {
+            "login": login,
+            "database_id": database_id,
+            "resolved_at": resolved_at,
+            "source": "github-actor-api",
+        }
+        for login, database_id in sorted(actors, key=lambda item: item[1])
+    ]
+    source_records = []
+    for name in agent_handoff.REMOTE_COVERAGE_SOURCES:
+        events = [
+            copy.deepcopy(action)
+            for action in actions
+            if action["source"] == name
+        ]
+        source_records.append(
+            {
+                "name": name,
+                "available": name not in incomplete_sources,
+                "complete": name not in incomplete_sources,
+                "total_count": len(events),
+                "events": events,
+            }
+        )
+    telemetry = []
+    implementation_processes = []
+    status = git(
+        repository_root,
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+    )
+    status_sha256 = hashlib.sha256(status.encode("utf-8")).hexdigest()
+    for index, handoff in enumerate(document["handoffs"]):
+        interruption = handoff["interruption"]
+        snapshot = None
+        if interruption is not None:
+            snapshot = {
+                "status_sha256": status_sha256,
+                "dirty_paths": sorted(
+                    set(interruption["preserved_paths"])
+                ),
+                "preserved_paths": sorted(
+                    interruption["preserved_paths"]
+                ),
+            }
+        telemetry.append(
+            {
+                "handoff_id": handoff["id"],
+                "owner_database_id": handoff["owner_database_id"],
+                "started_at": handoff["states"][0]["at"],
+                "ended_at": handoff["states"][-1]["at"],
+                "peak_rss_bytes": 134217728 + index,
+                "coordination_turns": 2,
+                "recovery_minutes": 7 if interruption is not None else 0,
+                "interruption_snapshot": snapshot,
+                "source": "coordinator-runtime",
+            }
+        )
+        implementation_processes.append(
+            {
+                "handoff_id": handoff["id"],
+                "started_at": handoff["states"][0]["at"],
+                "ended_at": handoff["states"][-1]["at"],
+                "credentials_available": False,
+                "network_mode": "denied",
+                "source": "coordinator-launcher",
+            }
+        )
+    if availability is None:
+        availability = {
+            "mode": "always_on",
+            "observed_at": (
+                assignment_start - timedelta(seconds=1)
+            ).isoformat().replace("+00:00", "Z"),
+            "valid_until": (
+                issued_at + timedelta(hours=2)
+            ).isoformat().replace("+00:00", "Z"),
+            "unattended_from": (
+                assignment_start - timedelta(seconds=1)
+            ).isoformat().replace("+00:00", "Z"),
+            "unattended_until": (
+                issued_at + timedelta(hours=1)
+            ).isoformat().replace("+00:00", "Z"),
+            "autostop_enabled": False,
+            "stop_on_disconnect": False,
+            "enforcement_source": "coordinator-launcher",
+        }
+    authority = document["history_authority"]
+    receipt = {
+        "schema_version": 1,
+        "repository": "example/workflow",
+        "repository_database_id": 7001,
+        "collector_login": "collector",
+        "collector_database_id": 9000,
+        "issued_at": issued_at.isoformat().replace("+00:00", "Z"),
+        "authority_protection": {
+            "authority_ref": authority["ref"],
+            "anchor_ref": authority["anchor_ref"],
+            "authority_object_id": authority["object_id"],
+            "anchor_object_id": authority["anchor_object_id"],
+            "ruleset_id": None,
+            "force_pushes_allowed": False,
+            "deletions_allowed": False,
+            "verified_actor_database_ids": [9001],
+            "observed_at": issued_at.isoformat().replace("+00:00", "Z"),
+        },
+        "availability": availability,
+        "remote_coverage": {
+            "interval_start": (
+                assignment_start - timedelta(seconds=1)
+            ).isoformat().replace("+00:00", "Z"),
+            "interval_end": issued_at.isoformat().replace("+00:00", "Z"),
+            "actors": actor_records,
+            "sources": source_records,
+            "observed_actions": [copy.deepcopy(action) for action in actions],
+            "implementation_processes": implementation_processes,
+        },
+        "runtime_telemetry": telemetry,
+        "resource_receipts": list(resource_receipts),
+    }
+    return agent_handoff.finalize_coordinator_receipt(
+        receipt,
+        repository_root,
+    )
+
+
+def refresh_coordinator_receipt(document, repository_root, **kwargs):
+    document["coordinator_receipt"] = coordinator_receipt(
+        document,
+        repository_root,
+        **kwargs,
+    )
 
 
 def delivery_graph(
@@ -421,7 +788,7 @@ def delivery_graph(
             task(
                 "child-implement",
                 child_issue,
-                200,
+                None,
                 "implementation",
                 child_status,
                 handoff_id=child_handoff_id,
@@ -487,42 +854,53 @@ def handoff_document(repository_root, parent_sha, result_sha):
         parent_sha=parent_sha,
         candidate_sha=result_sha,
     )
-    return {
-        "schema_version": 1,
+    for field in ("started_at", "completed_at"):
+        shifted = datetime.fromisoformat(receipt[field].replace("Z", "+00:00"))
+        receipt[field] = (
+            shifted - timedelta(seconds=10)
+        ).isoformat().replace("+00:00", "Z")
+    receipt["seal"] = agent_handoff.seal_check_receipt(receipt)
+    authority = agent_handoff.read_history_authority(
+        repository_root,
+        "example/workflow",
+        178,
+        None,
+    )
+    pull_request = (
+        authority["pr_binding"]["pull_request"]
+        if authority["pr_binding"] is not None
+        else None
+    )
+    graph = delivery_graph(
+        child_status="done",
+        child_candidate_sha=result_sha,
+        parent_master_sha=parent_sha,
+    )
+    next(
+        task
+        for task in graph["tasks"]
+        if task["phase"] == "implementation"
+    )["pull_request"] = pull_request
+    document = {
+        "schema_version": 2,
         "repository": "example/workflow",
         "prior_handoffs": [],
-        "history_authority": agent_handoff.read_history_authority(
-            repository_root,
-            "example/workflow",
-            178,
-            200,
-        ),
-        "delivery_graph": delivery_graph(
-            child_status="done",
-            child_candidate_sha=result_sha,
-            parent_master_sha=parent_sha,
-        ),
+        "history_authority": authority,
+        "delivery_graph": graph,
         "coordinators": [
             {
                 "id": "coordinator-1",
-                "availability": {
-                    "mode": "always_on",
-                    "autostop_enabled": False,
-                    "stop_on_disconnect": False,
-                    "evaluation_source": "coordinator-runtime",
-                    "evaluated_at": "2026-08-31T03:00:00Z",
-                    "unattended_until": "2026-09-01T03:00:00Z",
-                    "plan": None,
-                },
+                "login": "coordinator",
+                "database_id": 9001,
             }
         ],
         "handoffs": [
             {
                 "id": "issue-178-round-1",
                 "issue": 178,
-                "pull_request": 200,
+                "pull_request": pull_request,
                 "owner_id": "owner-1",
-                "owner_database_id": None,
+                "owner_database_id": 101,
                 "replaces_handoff_id": None,
                 "assigned_parent_sha": parent_sha,
                 "expected_branch": "agent/issue-178",
@@ -554,33 +932,27 @@ def handoff_document(repository_root, parent_sha, result_sha):
                     "changed_lines": 20,
                     "rom_bytes": 0,
                     "ram_bytes": 0,
-                    "protocol_changes": 1,
+                    "protocol_changes": 0,
                 },
                 "prohibited_remote_actions": sorted(
                     agent_handoff.PROHIBITED_REMOTE_ACTIONS
                 ),
                 "max_lifetime_seconds": 3600,
                 "max_peak_rss_bytes": 536870912,
-                "coordination_turns": 2,
-                "peak_rss_bytes": 134217728,
                 "states": timestamped_states(receipt),
                 "evidence": evidence(completed_at=receipt["completed_at"]),
                 "check_receipts": [receipt],
                 "result": {
                     "sha": result_sha,
-                    "budget_usage": {
-                        "rom_bytes": 0,
-                        "ram_bytes": 0,
-                        "protocol_changes": 1,
-                    },
                 },
                 "interruption": None,
             }
         ],
         "workflow_runs": [],
         "watchers": [],
-        "remote_actions": [],
     }
+    refresh_coordinator_receipt(document, repository_root)
+    return document
 
 
 def add_run(document, result_sha, conclusion="success", process_result="success"):
@@ -625,7 +997,7 @@ class DeliveryDependencyGraphTests(unittest.TestCase):
                 "implementation_task": {
                     "id": "child-implement",
                     "issue": 178,
-                    "pull_request": 200,
+                    "pull_request": None,
                     "status": "pending",
                     "status_reason": None,
                     "handoff_id": "issue-178-round-1",
@@ -797,7 +1169,7 @@ class AuthorityReadRaceTests(unittest.TestCase):
                 root,
                 "example/workflow",
                 178,
-                200,
+                None,
             )
             self.assertEqual(stable["sequence"], 0)
             self.assertEqual(stable["observation"]["attempt"], 1)
@@ -811,7 +1183,7 @@ class AuthorityReadRaceTests(unittest.TestCase):
                 root,
                 "example/workflow",
                 178,
-                200,
+                None,
             )
             self.assertEqual(advanced["sequence"], 1)
             self.assertEqual(advanced["head_seal"], "1" * 64)
@@ -831,7 +1203,7 @@ class AuthorityReadRaceTests(unittest.TestCase):
                 root,
                 "example/workflow",
                 178,
-                200,
+                None,
                 observation_hook=advance_once,
             )
             self.assertTrue(moved)
@@ -862,7 +1234,7 @@ class AuthorityReadRaceTests(unittest.TestCase):
                     root,
                     "example/workflow",
                     178,
-                    200,
+                    None,
                     observation_hook=advance_every_time,
                 )
             self.assertEqual(
@@ -894,6 +1266,24 @@ class AuthorityReadRaceTests(unittest.TestCase):
 
 
 class ExactHandoffTests(unittest.TestCase):
+    def test_schema_v2_closes_candidate_reported_authority(self):
+        schema = json.loads(
+            (
+                ROOT / agent_handoff.HANDOFF_SCHEMA_REPOSITORY_PATH
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(schema["protocol_version"], 2)
+        self.assertEqual(schema["properties"]["schema_version"]["const"], 2)
+        self.assertIn(
+            "coordinator_receipt",
+            schema["required"],
+        )
+        self.assertNotIn("remote_actions", schema["properties"])
+        self.assertNotIn(
+            "peak_rss_bytes",
+            schema["$defs"]["handoff"]["properties"],
+        )
+
     def test_exact_clean_strict_descendant_is_accepted(self):
         with handoff_repository() as (root, _base, parent, result):
             report = agent_handoff.validate_document(
@@ -901,7 +1291,10 @@ class ExactHandoffTests(unittest.TestCase):
                 root,
             )
 
-        self.assertTrue(report["summary"]["trusted_push_eligible"])
+        self.assertTrue(
+            report["summary"]["trusted_push_eligible"],
+            report,
+        )
         self.assertFalse(report["summary"]["delivery_eligible"])
         self.assertEqual(report["summary"]["rejection_codes"], [])
         self.assertEqual(report["handoffs"][0]["outcome"], "accepted")
@@ -941,7 +1334,7 @@ class ExactHandoffTests(unittest.TestCase):
                 0,
                 None,
                 issue=999,
-                pull_request=200,
+                pull_request=None,
             )
             wrong_issue[
                 "history_authority"
@@ -949,8 +1342,9 @@ class ExactHandoffTests(unittest.TestCase):
                 root,
                 "example/workflow",
                 999,
-                200,
+                None,
             )
+            refresh_coordinator_receipt(wrong_issue, root)
             report = agent_handoff.validate_document(wrong_issue, root)
             self.assertIn(
                 "missing-handoff-code-contract",
@@ -1230,6 +1624,7 @@ class ExactHandoffTests(unittest.TestCase):
                     child_task["status"] = (
                         "in_progress" if prefix_length == 3 else "pending"
                     )
+                    refresh_coordinator_receipt(document, root)
                     report = agent_handoff.validate_document(document, root)
                     self.assertEqual(
                         report["handoffs"][0]["outcome"],
@@ -1345,6 +1740,10 @@ class ExactHandoffTests(unittest.TestCase):
                 "argv": ["/usr/bin/false"],
                 "candidate_sha": parent,
                 "worktree_identity": "0" * 64,
+                "checker_trust": {
+                    "mode": "external-bootstrap",
+                    "sha256": "0" * 64,
+                },
             }
             for field, value in mutations.items():
                 with self.subTest(receipt_field=field):
@@ -1564,13 +1963,6 @@ class ExactHandoffTests(unittest.TestCase):
             scope["handoffs"][0]["allowed_scope"] = ["docs/"]
             cases["scope"] = (scope, "scope-violation")
 
-            for field in ("rom_bytes", "ram_bytes", "protocol_changes"):
-                document = handoff_document(root, parent, result)
-                document["handoffs"][0]["budgets"][field] = 0
-                document["handoffs"][0]["result"]["budget_usage"][field] = 1
-                code = field.replace("_", "-") + "-budget-exceeded"
-                cases[field] = (document, code)
-
             lifetime = handoff_document(root, parent, result)
             lifetime["handoffs"][0]["max_lifetime_seconds"] = 1
             cases["lifetime"] = (lifetime, "owner-lifetime-exceeded")
@@ -1628,281 +2020,169 @@ class ExactHandoffTests(unittest.TestCase):
     def test_implementation_owner_remote_actions_reject(self):
         with handoff_repository() as (root, _base, parent, result):
             identities = (
-                ("owner-1", None, "Owner-1", None),
-                ("Build-Bot[bot]", None, "build-bot[BOT]", None),
-                ("canonical-owner", 42, "renamed-owner", 42),
+                ("owner-1", 101, "Owner-1", 101),
+                ("Build-Bot[bot]", 102, "build-bot[BOT]", 102),
             )
             for owner_login, owner_id, actor_login, actor_id in identities:
                 with self.subTest(owner=owner_login, actor=actor_login):
                     document = handoff_document(root, parent, result)
                     document["handoffs"][0]["owner_id"] = owner_login
                     document["handoffs"][0]["owner_database_id"] = owner_id
-                    document["remote_actions"] = [
-                        {
-                            "id": "remote:push",
-                            "handoff_id": "issue-178-round-1",
-                            "actor_id": actor_login,
-                            "actor_database_id": actor_id,
-                            "action": "push",
-                            "occurred_at": "2026-01-01T01:06:00Z",
-                        }
-                    ]
+                    action = {
+                        "id": "remote:push",
+                        "handoff_id": "issue-178-round-1",
+                        "actor_login": actor_login,
+                        "actor_database_id": actor_id,
+                        "action": "push",
+                        "occurred_at": datetime.now(timezone.utc)
+                        .replace(microsecond=0)
+                        .isoformat()
+                        .replace("+00:00", "Z"),
+                        "source": "github-timeline",
+                    }
+                    refresh_coordinator_receipt(
+                        document,
+                        root,
+                        actions=[action],
+                    )
                     report = agent_handoff.validate_document(document, root)
                     self.assertIn(
                         "implementation-owner-remote-action",
                         report["summary"]["rejection_codes"],
                     )
 
-    def test_closed_owner_history_chain_rotates_across_documents(self):
-        def relabel(document, handoff_id):
-            document["handoffs"][0]["id"] = handoff_id
-            relationship = document["delivery_graph"]["relationships"][0]
-            relationship["handoff_id"] = handoff_id
-            child_task = next(
-                task
-                for task in document["delivery_graph"]["tasks"]
-                if task["phase"] == "implementation"
-            )
-            child_task["handoff_id"] = handoff_id
-
-        def shift_times(document, seconds):
-            delta = timedelta(seconds=seconds)
-
-            def shifted(value):
-                return (
-                    datetime.fromisoformat(value.replace("Z", "+00:00"))
-                    + delta
-                ).isoformat().replace("+00:00", "Z")
-
-            handoff = document["handoffs"][0]
-            for state in handoff["states"]:
-                state["at"] = shifted(state["at"])
-            for item in handoff["evidence"]:
-                item["completed_at"] = shifted(item["completed_at"])
-            for receipt in handoff["check_receipts"]:
-                receipt["started_at"] = shifted(receipt["started_at"])
-                receipt["completed_at"] = shifted(receipt["completed_at"])
-                receipt["seal"] = agent_handoff.seal_check_receipt(receipt)
-
+    def test_stable_issue_authority_binds_pr_and_rejects_aba(self):
         with handoff_repository() as (root, _base, parent, first_result):
             first = handoff_document(root, parent, first_result)
-            first["handoffs"][0]["owner_id"] = "Owner-1"
-            first["handoffs"][0]["owner_database_id"] = None
             first_report = agent_handoff.validate_document(first, root)
             first_receipt = agent_handoff.make_history_receipt(
                 first,
                 first_report,
                 "issue-178-round-1",
             )
-            self.assertEqual(first_receipt["candidate_sha"], first_result)
             genesis = first["history_authority"]
-            expected_plan = agent_handoff.plan_history_authority(
+            plan = agent_handoff.plan_history_authority(
                 root,
                 "example/workflow",
                 178,
-                200,
+                None,
                 operation="advance",
                 expected_object_id=genesis["object_id"],
                 expected_sequence=0,
                 new_head_seal=first_receipt["seal"],
             )
-            plan_cli = subprocess.run(
-                [
-                    sys.executable,
-                    "-m",
-                    "scripts.workflow_pilot.agent_handoff",
-                    "--authority-operation",
-                    "advance",
-                    "--worktree",
-                    str(root),
-                    "--repository",
-                    "example/workflow",
-                    "--issue",
-                    "178",
-                    "--pull-request",
-                    "200",
-                    "--expected-object-id",
-                    genesis["object_id"],
-                    "--expected-sequence",
-                    "0",
-                    "--new-head-seal",
-                    first_receipt["seal"],
-                ],
-                cwd=ROOT,
-                check=False,
-                capture_output=True,
-            )
-            self.assertEqual(plan_cli.returncode, 0, plan_cli.stderr.decode())
-            self.assertEqual(json.loads(plan_cli.stdout), expected_plan)
-            set_history_authority(root, 1, first_receipt["seal"])
-            with self.assertRaisesRegex(
-                agent_handoff.HandoffDataError,
-                "compare-and-swap expectation is stale",
-            ):
-                agent_handoff.plan_history_authority(
-                    root,
-                    "example/workflow",
-                    178,
-                    200,
-                    operation="advance",
-                    expected_object_id=first["history_authority"][
-                        "object_id"
-                    ],
-                    expected_sequence=0,
-                    new_head_seal=first_receipt["seal"],
+            self.assertTrue(
+                all(
+                    "--force" not in command
+                    for command in plan["normal_fast_forward_pushes"]
                 )
+            )
+            set_history_authority(root, 1, first_receipt["seal"])
+            bound = bind_history_authority(root)
+            self.assertEqual(
+                bound["ref"],
+                agent_handoff.history_authority_ref(178, None),
+            )
+            self.assertEqual(bound["handoff_sequence"], 1)
+            self.assertEqual(bound["pr_binding"]["pull_request"], 200)
+            self.assertEqual(bound["pr_binding"]["base_branch"], "master")
+            self.assertEqual(
+                bound["pr_binding"]["head_branch"],
+                "agent/issue-178",
+            )
 
             change = root / "scripts" / "workflow_pilot" / "change.py"
-            change.write_text("HANDOFF = 'second'\n", encoding="utf-8")
+            change.write_text("HANDOFF = 'rebind'\n", encoding="utf-8")
             git(root, "add", "scripts/workflow_pilot/change.py")
             git(
                 root,
                 "commit",
                 "-q",
                 "-m",
-                "test: second handoff\n\n"
+                "test: attempted second root\n\n"
                 + agent_handoff.COPILOT_TRAILER,
             )
             second_result = git(root, "rev-parse", "HEAD")
-
-            omitted = handoff_document(root, first_result, second_result)
-            relabel(omitted, "issue-178-round-2")
-            with self.assertRaisesRegex(
-                agent_handoff.HandoffDataError,
-                "reset, truncated, or not at canonical head",
-            ):
-                agent_handoff.validate_document(omitted, root)
-
-            stale_authority = handoff_document(
-                root,
-                first_result,
-                second_result,
-            )
-            relabel(stale_authority, "issue-178-round-2")
-            stale_authority["prior_handoffs"] = [first_receipt]
-            stale_authority["history_authority"] = first[
-                "history_authority"
-            ]
-            with self.assertRaisesRegex(
-                agent_handoff.HandoffDataError,
-                "does not match the canonical Git ref",
-            ):
-                agent_handoff.validate_document(stale_authority, root)
-
             reused = handoff_document(root, first_result, second_result)
-            relabel(reused, "issue-178-round-2")
-            shift_times(reused, 10)
             reused["prior_handoffs"] = [first_receipt]
+            reused["handoffs"][0]["id"] = "issue-178-rebound-root"
             reused["handoffs"][0]["owner_id"] = "owner-1"
-            reused["handoffs"][0]["owner_database_id"] = None
+            reused["handoffs"][0]["owner_database_id"] = 101
+            relationship = reused["delivery_graph"]["relationships"][0]
+            relationship["handoff_id"] = "issue-178-rebound-root"
+            task = next(
+                item
+                for item in reused["delivery_graph"]["tasks"]
+                if item["phase"] == "implementation"
+            )
+            task["handoff_id"] = "issue-178-rebound-root"
+            refresh_coordinator_receipt(reused, root)
             reused_report = agent_handoff.validate_document(reused, root)
             self.assertIn(
                 "closed-owner-reused",
                 reused_report["summary"]["rejection_codes"],
             )
-
-            fresh = handoff_document(root, first_result, second_result)
-            relabel(fresh, "issue-178-round-2")
-            shift_times(fresh, 10)
-            fresh["prior_handoffs"] = [first_receipt]
-            fresh["handoffs"][0]["owner_id"] = "owner-2"
-            fresh["handoffs"][0]["owner_database_id"] = 43
-            fresh_report = agent_handoff.validate_document(fresh, root)
-            self.assertTrue(fresh_report["summary"]["trusted_push_eligible"])
-            second_receipt = agent_handoff.make_history_receipt(
-                fresh,
-                fresh_report,
-                "issue-178-round-2",
-            )
-            agent_handoff.validate_prior_handoffs(
-                [first_receipt, second_receipt]
+            self.assertIn(
+                "root-owner-count",
+                reused_report["summary"]["rejection_codes"],
             )
 
-            tampered = copy.deepcopy(first_receipt)
-            tampered["candidate_sha"] = parent
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
-                "seal does not verify",
+                "immutable",
             ):
-                agent_handoff.validate_prior_handoffs([tampered])
-
-            gap = copy.deepcopy(second_receipt)
-            gap["sequence"] = 3
-            gap["seal"] = agent_handoff.seal_history_receipt(gap)
-            with self.assertRaisesRegex(
-                agent_handoff.HandoffDataError,
-                "contiguous",
-            ):
-                agent_handoff.validate_prior_handoffs(
-                    [first_receipt, gap]
+                agent_handoff.plan_history_authority(
+                    root,
+                    "example/workflow",
+                    178,
+                    201,
+                    operation="bind",
+                    expected_object_id=bound["object_id"],
+                    expected_sequence=bound["sequence"],
+                    binding_base="master",
+                    binding_head="agent/issue-178",
+                    bound_at="2026-08-31T14:31:00Z",
+                    bound_by_database_id=9001,
                 )
 
-            fork = copy.deepcopy(second_receipt)
-            fork["previous_seal"] = agent_handoff.ZERO_SEAL
-            fork["seal"] = agent_handoff.seal_history_receipt(fork)
-            with self.assertRaisesRegex(
-                agent_handoff.HandoffDataError,
-                "forks or reorders",
-            ):
-                agent_handoff.validate_prior_handoffs(
-                    [first_receipt, fork]
-                )
-
-            with self.assertRaisesRegex(
-                agent_handoff.HandoffDataError,
-                "contiguous",
-            ):
-                agent_handoff.validate_prior_handoffs(
-                    [second_receipt, first_receipt]
-                )
-
-            current_authority = agent_handoff.read_history_authority(
-                root,
-                "example/workflow",
-                178,
-                200,
-            )
-            owner = AUTHORITY_OWNERS[str(root)]
-            reference = agent_handoff.history_authority_ref(178, 200)
-            fork_commit = owner_create_authority_commit(
-                owner,
-                {
-                    "schema_version": 1,
-                    "repository": "example/workflow",
-                    "issue": 178,
-                    "pull_request": 200,
-                    "sequence": 2,
-                    "head_seal": second_receipt["seal"],
-                    "previous_object_id": genesis["object_id"],
-                },
+            remote = Path(git(root, "remote", "get-url", "origin"))
+            git(
+                remote,
+                "update-ref",
+                bound["ref"],
                 genesis["object_id"],
             )
-            git(
-                owner,
-                "push",
-                "-q",
-                (
-                    f"--force-with-lease={reference}:"
-                    f"{current_authority['object_id']}"
-                ),
-                "origin",
-                f"{fork_commit}:{reference}",
-            )
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
-                "replays or gaps sequence",
+                "independent authority anchor",
             ):
                 agent_handoff.read_history_authority(
                     root,
                     "example/workflow",
                     178,
-                    200,
+                    None,
                 )
+            git(remote, "update-ref", bound["ref"], bound["object_id"])
+
+            replay = subprocess.run(
+                reporter.git_command(
+                    AUTHORITY_OWNERS[str(root)],
+                    "push",
+                    "--force",
+                    "origin",
+                    f"{genesis['object_id']}:{bound['ref']}",
+                ),
+                cwd=AUTHORITY_OWNERS[str(root)],
+                env=reporter.git_environment(offline=True),
+                check=False,
+                capture_output=True,
+            )
+            self.assertNotEqual(replay.returncode, 0)
 
     def test_local_history_ref_cannot_forge_remote_genesis(self):
         with handoff_repository() as (root, _base, parent, result):
             document = handoff_document(root, parent, result)
-            reference = agent_handoff.history_authority_ref(178, 200)
+            reference = agent_handoff.history_authority_ref(178, None)
             clone_root = root.parent / "normal-clone"
             subprocess.run(
                 [
@@ -1936,24 +2216,30 @@ class ExactHandoffTests(unittest.TestCase):
                 clone_root,
                 "example/workflow",
                 178,
-                200,
+                None,
             )
             self.assertEqual(
                 fetched["object_id"],
                 document["history_authority"]["object_id"],
             )
 
-            forged = owner_create_authority_commit(
+            forged = owner_create_record_commit(
                 root,
                 {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "repository": "example/workflow",
                     "issue": 178,
-                    "pull_request": 200,
                     "sequence": 0,
+                    "handoff_sequence": 0,
                     "head_seal": None,
+                    "pr_binding": None,
+                    "event": {
+                        "kind": "genesis",
+                        "handoff_seal": None,
+                    },
                     "previous_object_id": None,
                 },
+                "authority.json",
             )
             git(
                 root,
@@ -1964,8 +2250,8 @@ class ExactHandoffTests(unittest.TestCase):
             report = agent_handoff.validate_document(document, root)
             self.assertTrue(report["summary"]["trusted_push_eligible"])
 
-            owner = AUTHORITY_OWNERS[str(root)]
-            git(owner, "push", "-q", "origin", f":{reference}")
+            remote = Path(git(root, "remote", "get-url", "origin"))
+            git(remote, "update-ref", "-d", reference)
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
                 "genesis is unknown",
@@ -2039,8 +2325,19 @@ class ExactHandoffTests(unittest.TestCase):
             document = handoff_document(root, result, result)
             interrupted = document["handoffs"][0]
             interrupted["result"] = None
-            interrupted["states"] = timestamped_states()[:3] + [
-                {"state": "interrupted", "at": "2026-01-01T01:03:30Z"}
+            interrupted_states = timestamped_states()[:3]
+            interrupted_at = (
+                datetime.fromisoformat(
+                    interrupted_states[-1]["at"].replace("Z", "+00:00")
+                )
+                + timedelta(seconds=30)
+            )
+            interrupted_at_text = interrupted_at.isoformat().replace(
+                "+00:00",
+                "Z",
+            )
+            interrupted["states"] = interrupted_states + [
+                {"state": "interrupted", "at": interrupted_at_text}
             ]
             interrupted["evidence"] = evidence("incomplete")
             interrupted["required_checks"][0]["receipt_id"] = None
@@ -2048,13 +2345,12 @@ class ExactHandoffTests(unittest.TestCase):
             interrupted["interruption"] = {
                 "kind": "sigkill_oom",
                 "signal": 9,
-                "occurred_at": "2026-01-01T01:03:30Z",
+                "occurred_at": interrupted_at_text,
                 "kernel_evidence": (
                     "Fixture: kernel reports Out of memory and killed process."
                 ),
                 "interrupted_check_ids": ["focused-module"],
                 "preserved_paths": ["scripts/workflow_pilot/recovery.py"],
-                "recovery_minutes": 7,
                 "replacement_handoff_id": "issue-178-round-1-replacement",
                 "host_process_actions": [],
             }
@@ -2062,15 +2358,20 @@ class ExactHandoffTests(unittest.TestCase):
             replacement = copy.deepcopy(interrupted)
             replacement["id"] = "issue-178-round-1-replacement"
             replacement["owner_id"] = "owner-2"
+            replacement["owner_database_id"] = 102
             replacement["replaces_handoff_id"] = interrupted["id"]
             replacement["states"] = [
                 {
                     "state": "assignment_sent",
-                    "at": "2026-01-01T01:04:00Z",
+                    "at": (
+                        interrupted_at + timedelta(seconds=30)
+                    ).isoformat().replace("+00:00", "Z"),
                 },
                 {
                     "state": "assignment_received",
-                    "at": "2026-01-01T01:05:00Z",
+                    "at": (
+                        interrupted_at + timedelta(seconds=60)
+                    ).isoformat().replace("+00:00", "Z"),
                 },
             ]
             replacement["evidence"] = []
@@ -2103,11 +2404,14 @@ class ExactHandoffTests(unittest.TestCase):
                     "type": "code_contract",
                 }
             )
+            refresh_coordinator_receipt(document, root)
             report = agent_handoff.validate_document(document, root)
 
             for replacement_at in (
-                "2026-01-01T01:03:30Z",
-                "2026-01-01T01:03:00Z",
+                interrupted_at_text,
+                (interrupted_at - timedelta(seconds=30))
+                .isoformat()
+                .replace("+00:00", "Z"),
             ):
                 with self.subTest(replacement_at=replacement_at):
                     noncausal = copy.deepcopy(document)
@@ -2127,6 +2431,7 @@ class ExactHandoffTests(unittest.TestCase):
             extra = copy.deepcopy(multiple["handoffs"][1])
             extra["id"] = "issue-178-round-1-extra-replacement"
             extra["owner_id"] = "owner-3"
+            extra["owner_database_id"] = 103
             multiple["handoffs"].append(extra)
             extra_task = copy.deepcopy(replacement_task)
             extra_task["id"] = "child-implement-extra-replacement"
@@ -2173,15 +2478,17 @@ class ExactHandoffTests(unittest.TestCase):
     def test_hibernated_local_coordinator_fails_closed(self):
         with handoff_repository() as (root, _base, parent, result):
             document = handoff_document(root, parent, result)
-            document["coordinators"][0]["availability"] = {
-                "mode": "local",
-                "autostop_enabled": True,
-                "stop_on_disconnect": True,
-                "evaluation_source": "coordinator-runtime",
-                "evaluated_at": "2026-08-31T03:00:00Z",
-                "unattended_until": "2026-09-01T03:00:00Z",
-                "plan": None,
-            }
+            unavailable = copy.deepcopy(
+                document["coordinator_receipt"]["availability"]
+            )
+            unavailable["mode"] = "local"
+            unavailable["autostop_enabled"] = True
+            unavailable["stop_on_disconnect"] = True
+            refresh_coordinator_receipt(
+                document,
+                root,
+                availability=unavailable,
+            )
             report = agent_handoff.validate_document(document, root)
 
             self.assertFalse(report["summary"]["trusted_push_eligible"])
@@ -2190,43 +2497,504 @@ class ExactHandoffTests(unittest.TestCase):
                 report["summary"]["rejection_codes"],
             )
 
-            document["coordinators"][0]["availability"]["plan"] = {
-                "kind": "disable_triggers",
-                "available_until": "2026-01-31T03:00:00Z",
-                "evidence": {
-                    "source": "coordinator-runtime",
-                    "observed_at": "2026-08-31T03:00:00Z",
-                    "autostop_enabled": False,
-                    "stop_on_disconnect": False,
-                },
-            }
+            expired_availability = copy.deepcopy(unavailable)
+            expired_availability["autostop_enabled"] = False
+            expired_availability["stop_on_disconnect"] = False
+            expired_availability["valid_until"] = (
+                datetime.now(timezone.utc) - timedelta(minutes=1)
+            ).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+            refresh_coordinator_receipt(
+                document,
+                root,
+                availability=expired_availability,
+            )
             expired = agent_handoff.validate_document(document, root)
             self.assertIn(
                 "coordinator-unavailable",
                 expired["summary"]["rejection_codes"],
             )
 
-            document["coordinators"][0]["availability"]["plan"] = {
-                "kind": "disable_triggers",
-                "available_until": "2026-09-02T03:00:00Z",
-                "evidence": {
-                    "source": "coordinator-runtime",
-                    "observed_at": "2026-08-31T03:00:00Z",
-                    "autostop_enabled": True,
-                    "stop_on_disconnect": False,
-                },
-            }
+            ineffective_availability = copy.deepcopy(unavailable)
+            ineffective_availability["stop_on_disconnect"] = False
+            refresh_coordinator_receipt(
+                document,
+                root,
+                availability=ineffective_availability,
+            )
             ineffective = agent_handoff.validate_document(document, root)
             self.assertIn(
                 "coordinator-unavailable",
                 ineffective["summary"]["rejection_codes"],
             )
 
-            document["coordinators"][0]["availability"]["plan"][
-                "evidence"
-            ]["autostop_enabled"] = False
+            available_receipt = copy.deepcopy(
+                document["coordinator_receipt"]["availability"]
+            )
+            available_receipt["autostop_enabled"] = False
+            refresh_coordinator_receipt(
+                document,
+                root,
+                availability=available_receipt,
+            )
             available = agent_handoff.validate_document(document, root)
             self.assertTrue(available["summary"]["trusted_push_eligible"])
+
+    def test_parent_blob_checker_defeats_candidate_replacement_and_bootstraps_closed(self):
+        with handoff_repository() as (root, _base, _parent, result):
+            checker = root / agent_handoff.RAW_DIFF_CHECK_REPOSITORY_PATH
+            checker.write_text(
+                "#!/usr/bin/env python3\nraise SystemExit(0)\n",
+                encoding="utf-8",
+            )
+            change = root / "scripts" / "workflow_pilot" / "change.py"
+            change.write_text("CANDIDATE_BYPASS = True  \n", encoding="utf-8")
+            git(
+                root,
+                "add",
+                agent_handoff.RAW_DIFF_CHECK_REPOSITORY_PATH,
+                "scripts/workflow_pilot/change.py",
+            )
+            git(
+                root,
+                "commit",
+                "-q",
+                "-m",
+                "test: candidate checker bypass\n\n"
+                + agent_handoff.COPILOT_TRAILER,
+            )
+            candidate = git(root, "rev-parse", "HEAD")
+            receipt = agent_handoff.execute_allowed_check(
+                receipt_id="candidate-checker",
+                check_id="focused-module",
+                contract="git-diff-check",
+                repository_root=root,
+                parent_sha=result,
+                candidate_sha=candidate,
+            )
+            self.assertEqual(
+                receipt["checker_trust"]["mode"],
+                "trusted-parent-blob",
+            )
+            self.assertNotEqual(receipt["exit_code"], 0)
+
+        with handoff_repository() as (root, _base, _parent, result):
+            git(root, "rm", "-q", agent_handoff.RAW_DIFF_CHECK_REPOSITORY_PATH)
+            git(root, "commit", "-q", "-m", "test: checker absent parent")
+            introducing_parent = git(root, "rev-parse", "HEAD")
+            change = root / "scripts" / "workflow_pilot" / "change.py"
+            change.write_text("BOOTSTRAP = True\n", encoding="utf-8")
+            git(root, "add", "scripts/workflow_pilot/change.py")
+            git(
+                root,
+                "commit",
+                "-q",
+                "-m",
+                "test: checker bootstrap\n\n"
+                + agent_handoff.COPILOT_TRAILER,
+            )
+            candidate = git(root, "rev-parse", "HEAD")
+            document = handoff_document(
+                root,
+                introducing_parent,
+                candidate,
+            )
+            report = agent_handoff.validate_document(document, root)
+            self.assertEqual(
+                document["handoffs"][0]["check_receipts"][0][
+                    "checker_trust"
+                ]["mode"],
+                "external-bootstrap",
+            )
+            self.assertIn(
+                "checker-bootstrap-not-trusted-push-eligible",
+                report["summary"]["rejection_codes"],
+            )
+            self.assertFalse(report["summary"]["trusted_push_eligible"])
+
+    def test_remote_coverage_detects_omitted_mutations_and_requires_network_denial(self):
+        action_names = ("push", "comment", "request_review", "dispatch_ci")
+        with handoff_repository() as (root, _base, parent, result):
+            for index, action_name in enumerate(action_names):
+                with self.subTest(action=action_name):
+                    document = handoff_document(root, parent, result)
+                    action = {
+                        "id": f"remote:{action_name}",
+                        "handoff_id": "issue-178-round-1",
+                        "actor_login": "owner-1",
+                        "actor_database_id": 101,
+                        "action": action_name,
+                        "occurred_at": datetime.now(timezone.utc)
+                        .replace(microsecond=0)
+                        .isoformat()
+                        .replace("+00:00", "Z"),
+                        "source": agent_handoff.REMOTE_COVERAGE_SOURCES[
+                            index % len(agent_handoff.REMOTE_COVERAGE_SOURCES)
+                        ],
+                    }
+                    refresh_coordinator_receipt(
+                        document,
+                        root,
+                        actions=[action],
+                    )
+                    report = agent_handoff.validate_document(document, root)
+                    self.assertIn(
+                        "implementation-owner-remote-action",
+                        report["summary"]["rejection_codes"],
+                    )
+
+                    omitted = copy.deepcopy(document)
+                    omitted["coordinator_receipt"]["remote_coverage"][
+                        "observed_actions"
+                    ] = []
+                    omitted["coordinator_receipt"] = (
+                        agent_handoff.finalize_coordinator_receipt(
+                            omitted["coordinator_receipt"],
+                            root,
+                        )
+                    )
+                    with self.assertRaisesRegex(
+                        agent_handoff.HandoffDataError,
+                        "omits or invents",
+                    ):
+                        agent_handoff.validate_document(omitted, root)
+
+            incomplete = handoff_document(root, parent, result)
+            refresh_coordinator_receipt(
+                incomplete,
+                root,
+                incomplete_sources=["github-audit-log"],
+            )
+            self.assertTrue(
+                agent_handoff.validate_document(incomplete, root)[
+                    "summary"
+                ]["trusted_push_eligible"]
+            )
+            incomplete["coordinator_receipt"]["remote_coverage"][
+                "implementation_processes"
+            ] = []
+            incomplete["coordinator_receipt"] = (
+                agent_handoff.finalize_coordinator_receipt(
+                    incomplete["coordinator_receipt"],
+                    root,
+                )
+            )
+            report = agent_handoff.validate_document(incomplete, root)
+            self.assertIn(
+                "remote-coverage-incomplete",
+                report["summary"]["rejection_codes"],
+            )
+
+    def test_actor_ids_and_coordinator_claims_fail_closed(self):
+        with handoff_repository() as (root, _base, parent, result):
+            missing = handoff_document(root, parent, result)
+            missing["handoffs"][0]["owner_database_id"] = None
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "must be an integer",
+            ):
+                agent_handoff.validate_document(missing, root)
+
+            mixed = handoff_document(root, parent, result)
+            action = {
+                "id": "remote:read",
+                "handoff_id": "issue-178-round-1",
+                "actor_login": "renamed-owner",
+                "actor_database_id": 101,
+                "action": "read_github",
+                "occurred_at": datetime.now(timezone.utc)
+                .replace(microsecond=0)
+                .isoformat()
+                .replace("+00:00", "Z"),
+                "source": "github-timeline",
+            }
+            refresh_coordinator_receipt(mixed, root, actions=[action])
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "mixes actor logins",
+            ):
+                agent_handoff.validate_document(mixed, root)
+
+            tampered = handoff_document(root, parent, result)
+            tampered["coordinator_receipt"]["runtime_telemetry"][0][
+                "peak_rss_bytes"
+            ] = 1
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "seal does not verify",
+            ):
+                agent_handoff.validate_document(tampered, root)
+
+    def test_structural_budget_derivation_rejects_unclosed_resources_and_schema_claims(self):
+        with handoff_repository() as (root, _base, _parent, result):
+            document = handoff_document(root, git(root, "rev-parse", "HEAD^"), result)
+            report = agent_handoff.validate_document(document, root)
+            self.assertEqual(
+                report["handoffs"][0]["budget_usage"],
+                {
+                    "rom_bytes": 0,
+                    "ram_bytes": 0,
+                    "protocol_changes": 0,
+                },
+            )
+
+            source = root / "src" / "budget_probe.c"
+            source.parent.mkdir(parents=True, exist_ok=True)
+            source.write_text("int gBudgetProbe;\n", encoding="utf-8")
+            git(root, "add", "src/budget_probe.c")
+            git(
+                root,
+                "commit",
+                "-q",
+                "-m",
+                "test: resource budget\n\n"
+                + agent_handoff.COPILOT_TRAILER,
+            )
+            resource_candidate = git(root, "rev-parse", "HEAD")
+            missing = handoff_document(root, result, resource_candidate)
+            missing["handoffs"][0]["allowed_scope"].append("src/")
+            report = agent_handoff.validate_document(missing, root)
+            self.assertIn(
+                "missing-closed-resource-receipt",
+                report["summary"]["rejection_codes"],
+            )
+            resource = {
+                "handoff_id": "issue-178-round-1",
+                "parent_sha": result,
+                "candidate_sha": resource_candidate,
+                "closed": True,
+                "sources": ["build", "map", "resource"],
+                "rom_bytes": 5,
+                "ram_bytes": 3,
+            }
+            refresh_coordinator_receipt(
+                missing,
+                root,
+                resource_receipts=[resource],
+            )
+            report = agent_handoff.validate_document(missing, root)
+            self.assertIn(
+                "rom-bytes-budget-exceeded",
+                report["summary"]["rejection_codes"],
+            )
+            self.assertIn(
+                "ram-bytes-budget-exceeded",
+                report["summary"]["rejection_codes"],
+            )
+
+        with handoff_repository() as (root, _base, _parent, result):
+            schema = root / agent_handoff.HANDOFF_SCHEMA_REPOSITORY_PATH
+            parsed = json.loads(schema.read_text(encoding="utf-8"))
+            parsed["protocol_version"] += 1
+            schema.write_text(
+                json.dumps(parsed, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            git(root, "add", agent_handoff.HANDOFF_SCHEMA_REPOSITORY_PATH)
+            git(
+                root,
+                "commit",
+                "-q",
+                "-m",
+                "test: protocol advance\n\n"
+                + agent_handoff.COPILOT_TRAILER,
+            )
+            candidate = git(root, "rev-parse", "HEAD")
+            document = handoff_document(root, result, candidate)
+            document["handoffs"][0]["budgets"]["changed_lines"] = 1000
+            report = agent_handoff.validate_document(document, root)
+            self.assertIn(
+                "protocol-changes-budget-exceeded",
+                report["summary"]["rejection_codes"],
+            )
+
+    def test_completed_oom_replacement_uses_sealed_snapshot_after_clean_recovery(self):
+        with handoff_repository() as (root, _base, _parent, result):
+            preserved = root / "scripts" / "workflow_pilot" / "recovery.py"
+            preserved.write_text("RECOVER = True\n", encoding="utf-8")
+            interrupted = handoff_document(root, result, result)
+            handoff = interrupted["handoffs"][0]
+            handoff["result"] = None
+            states = timestamped_states()[:3]
+            interrupted_at = (
+                datetime.fromisoformat(
+                    states[-1]["at"].replace("Z", "+00:00")
+                )
+                + timedelta(seconds=30)
+            ).isoformat().replace("+00:00", "Z")
+            handoff["states"] = states + [
+                {"state": "interrupted", "at": interrupted_at}
+            ]
+            handoff["evidence"] = evidence("incomplete")
+            handoff["required_checks"][0]["receipt_id"] = None
+            handoff["check_receipts"] = []
+            handoff["interruption"] = {
+                "kind": "sigkill_oom",
+                "signal": 9,
+                "occurred_at": interrupted_at,
+                "kernel_evidence": "kernel OOM kill",
+                "interrupted_check_ids": ["focused-module"],
+                "preserved_paths": [
+                    "scripts/workflow_pilot/recovery.py"
+                ],
+                "replacement_handoff_id": None,
+                "host_process_actions": [],
+            }
+            task = next(
+                item
+                for item in interrupted["delivery_graph"]["tasks"]
+                if item["phase"] == "implementation"
+            )
+            task["status"] = "blocked"
+            task["status_reason"] = "owner_interrupted"
+            task["candidate_sha"] = result
+            refresh_coordinator_receipt(interrupted, root)
+            interrupted_report = agent_handoff.validate_document(
+                interrupted,
+                root,
+            )
+            history = agent_handoff.make_history_receipt(
+                interrupted,
+                interrupted_report,
+                "issue-178-round-1",
+            )
+            self.assertIsNotNone(history["interruption_snapshot"])
+            set_history_authority(root, 1, history["seal"])
+
+            preserved.unlink()
+            change = root / "scripts" / "workflow_pilot" / "change.py"
+            change.write_text("RECOVERED = True\n", encoding="utf-8")
+            git(root, "add", "scripts/workflow_pilot/change.py")
+            git(
+                root,
+                "commit",
+                "-q",
+                "-m",
+                "test: recovered replacement\n\n"
+                + agent_handoff.COPILOT_TRAILER,
+            )
+            candidate = git(root, "rev-parse", "HEAD")
+            replacement = handoff_document(root, result, candidate)
+            replacement["prior_handoffs"] = [history]
+            current = replacement["handoffs"][0]
+            current["id"] = "issue-178-replacement"
+            current["owner_id"] = "owner-2"
+            current["owner_database_id"] = 102
+            current["replaces_handoff_id"] = "issue-178-round-1"
+            relationship = replacement["delivery_graph"]["relationships"][0]
+            relationship["handoff_id"] = current["id"]
+            task = next(
+                item
+                for item in replacement["delivery_graph"]["tasks"]
+                if item["phase"] == "implementation"
+            )
+            task["handoff_id"] = current["id"]
+            refresh_coordinator_receipt(replacement, root)
+            report = agent_handoff.validate_document(replacement, root)
+            self.assertTrue(
+                report["summary"]["trusted_push_eligible"],
+                report,
+            )
+            self.assertEqual(report["summary"]["recovery_count"], 0)
+
+    def test_availability_time_and_branch_protection_are_verified(self):
+        with handoff_repository() as (root, _base, parent, result):
+            document = handoff_document(root, parent, result)
+            future = copy.deepcopy(document)
+            receipt = future["coordinator_receipt"]
+            issued = datetime.now(timezone.utc) + timedelta(minutes=1)
+            receipt["issued_at"] = issued.replace(
+                microsecond=0
+            ).isoformat().replace("+00:00", "Z")
+            receipt["remote_coverage"]["interval_end"] = receipt["issued_at"]
+            future["coordinator_receipt"] = (
+                agent_handoff.finalize_coordinator_receipt(receipt, root)
+            )
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "future-dated or stale",
+            ):
+                agent_handoff.validate_document(future, root)
+
+            stale = copy.deepcopy(document)
+            receipt = stale["coordinator_receipt"]
+            issued = datetime.now(timezone.utc) - timedelta(minutes=10)
+            receipt["issued_at"] = issued.replace(
+                microsecond=0
+            ).isoformat().replace("+00:00", "Z")
+            receipt["remote_coverage"]["interval_end"] = receipt["issued_at"]
+            stale["coordinator_receipt"] = (
+                agent_handoff.finalize_coordinator_receipt(receipt, root)
+            )
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "future-dated or stale",
+            ):
+                agent_handoff.validate_document(stale, root)
+
+            late = copy.deepcopy(
+                document["coordinator_receipt"]["availability"]
+            )
+            late["observed_at"] = document["handoffs"][0]["states"][1]["at"]
+            refresh_coordinator_receipt(
+                document,
+                root,
+                availability=late,
+            )
+            report = agent_handoff.validate_document(document, root)
+            self.assertIn(
+                "coordinator-unavailable",
+                report["summary"]["rejection_codes"],
+            )
+
+            remote = Path(git(root, "remote", "get-url", "origin"))
+            git(remote, "config", "receive.denyNonFastForwards", "false")
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "does not enforce",
+            ):
+                agent_handoff.validate_document(
+                    handoff_document(root, parent, result),
+                    root,
+                )
+
+    def test_two_distinct_root_owners_reject(self):
+        with handoff_repository() as (root, _base, parent, result):
+            document = handoff_document(root, parent, result)
+            second = copy.deepcopy(document["handoffs"][0])
+            second["id"] = "issue-178-second-root"
+            second["owner_id"] = "owner-2"
+            second["owner_database_id"] = 102
+            document["handoffs"].append(second)
+            second_task = copy.deepcopy(
+                next(
+                    item
+                    for item in document["delivery_graph"]["tasks"]
+                    if item["phase"] == "implementation"
+                )
+            )
+            second_task["id"] = "child-second-root"
+            second_task["handoff_id"] = second["id"]
+            document["delivery_graph"]["tasks"].append(second_task)
+            second_relationship = copy.deepcopy(
+                document["delivery_graph"]["relationships"][0]
+            )
+            second_relationship["handoff_id"] = second["id"]
+            document["delivery_graph"]["relationships"].append(
+                second_relationship
+            )
+            document["delivery_graph"]["dependencies"].append(
+                {
+                    "task": second_task["id"],
+                    "depends_on": "parent-merge",
+                    "type": "code_contract",
+                }
+            )
+            refresh_coordinator_receipt(document, root)
+            report = agent_handoff.validate_document(document, root)
+            self.assertIn(
+                "root-owner-count",
+                report["summary"]["rejection_codes"],
+            )
 
     def test_duplicate_json_keys_and_non_exact_remote_boundary_fail_schema(self):
         with self.assertRaisesRegex(
@@ -2265,6 +3033,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             stale_handoff = stale_document["handoffs"][0]
             stale_handoff["id"] = "issue-178-stale"
             stale_handoff["owner_id"] = "owner-2"
+            stale_handoff["owner_database_id"] = 102
             stale_relationship = stale_document["delivery_graph"][
                 "relationships"
             ][0]
@@ -2276,6 +3045,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             )
             stale_task["handoff_id"] = stale_handoff["id"]
             stale_handoff["result"]["sha"] = parent
+            refresh_coordinator_receipt(stale_document, root)
             stale_result = agent_handoff.validate_document(
                 stale_document,
                 root,

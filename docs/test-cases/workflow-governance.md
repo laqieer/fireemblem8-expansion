@@ -471,8 +471,8 @@ game behavior needs a compensating change.
 - **Feature / originating issue:** `workflow-governance` /
   [issue #178](https://github.com/laqieer/fireemblem8-expansion/issues/178).
 - **Supported configuration or artifact:** clean source checkout with
-  Python 3 and Git; no GitHub token, live PR/run, ROM, emulator, or game build
-  is required.
+  Python 3, Git, and a coordinator installation outside the candidate
+  worktree; no GitHub token, live PR/run, ROM, or emulator is required.
 - **Prerequisites and clean starting state:** start at the exact repository
   root with the issue #176 reporter and the agent-handoff module unchanged.
   Remove prior `build/test-artifacts/agent-handoff-*` test directories.
@@ -485,49 +485,52 @@ game behavior needs a compensating change.
    clean worktree `HEAD`, has exactly the assigned direct parent and expected
    branch, changes only allowlisted paths within the numeric line budget, ends
    in the exact Copilot trailer, supplies every acceptance/check/budget
-   evidence ID, and uses zero ROM/RAM plus one admitted protocol change.
+   evidence ID, and structurally derives zero ROM/RAM/protocol usage.
    Confirm required checks use the closed non-shell contract and a sealed
    receipt bound to exact argv, check ID, parent/candidate, worktree,
-   timestamps, exit code, and output digest.
+   timestamps, exit code, output digest, and parent-blob/external-bootstrap
+   trust identity. Replace the candidate checker and add trailing whitespace;
+   the immutable parent checker must still fail. Remove the checker from the
+   parent and confirm the external bootstrap validator runs but trusted push
+   remains ineligible.
    Set local `core.whitespace=-trailing-space`, hostile diff/textconv/alias
    config, ambient global/system/external-diff controls, and tracked diff
    attributes; trailing whitespace must still fail under the pinned argv.
    Confirm nonempty local `.git/info/attributes` rejects.
 3. Exercise the repeated-parent/stale, wrong-parent, unrelated-branch, dirty,
    incomplete, missing-evidence, missing-trailer, out-of-scope, line-budget,
-   ROM-budget, RAM-budget, protocol-budget, lifetime, and RSS fixtures.
+   lifetime, and RSS fixtures. Confirm script-only diffs derive zero ROM, RAM,
+   and protocol usage. Then change a resource path and require a closed
+   build/map/resource receipt; change the parsed handoff schema and require a
+   monotonic protocol version. Tampering any telemetry/resource claim without
+   its coordinator seal must reject.
 4. Exercise reused-owner and duplicate-watcher fixtures. Add an
-   implementation-owner push observation and confirm it rejects while the
-   unchanged trusted owner push rule remains outside implementation ownership.
-   Repeat with login case, `[bot]` suffix case, and immutable numeric-ID
-   aliases. Seal two prior handoffs and reject owner reuse, a gap, fork,
-   reorder, changed identity, or broken receipt seal. With separate local-bare
-   owner and implementation roles, bootstrap the fixed `origin` ref, advance
-   it honestly through expected-head/sequence CAS, and reject a stale CAS.
-   Confirm a new document with `prior_handoffs: []`, a reset local ref, stale
-   authority object, or missing upstream ref cannot forge genesis. Confirm a
-   normal clone explicitly fetches the remote authority without changing
-   local refs. Use a real bare-origin advance hook between the first remote
-   observation, fetch, and second observation: one move retries from the new
-   OID, repeated moves exhaust the fixed bound with `authority-moved`, and a
-   move before final eligibility invalidates the observation token.
+   implementation-owner push, comment, review-request, and CI-dispatch event
+   in separate trusted sources and confirm each rejects. Remove each from the
+   normalized coverage index and confirm omission detection. Require numeric
+   IDs for every owner/coordinator/event and reject missing or mixed mappings.
+   With separate local-bare owner and implementation roles, protect the stable
+   issue authority and independent anchor branches against deletion and
+   non-fast-forward updates. Bootstrap before a PR, append a handoff, then
+   append the immutable actual PR/base/head binding without changing the
+   namespace or handoff history. Reject rebinding, same-owner reuse, stale
+   expected head/sequence, rollback, replay, and authority A-to-B-to-A against
+   the anchor. Confirm generated plans contain only normal fast-forward pushes.
 5. Reconcile a direct watcher timeout with an authoritative successful
    `github-actions-api` run. Then use an authoritative failed run plus a
    watcher process error and confirm delivery remains failed.
 6. Exercise the SIGKILL/OOM fixture. Confirm kernel evidence names signal 9,
-   the interrupted check remains incomplete, an allowlisted uncommitted file
-   remains in the exact conflict-free worktree, no host process action occurs,
-   and exactly one differently identified bounded replacement receives the
-   same issue/parent/branch/worktree context. Confirm sent-only,
+   the interrupted check remains incomplete, and the coordinator seals exact
+   status, dirty paths, preserved paths, and recovery telemetry into history.
+   Clean the old worktree, complete one causally linked replacement, and
+   confirm it becomes eligible from that immutable snapshot. Confirm sent-only,
    sent/received, and sent/received/progressing prefixes report `in_progress`
    without trusted/delivery eligibility. Equal, predated, and multiple
    replacement assignments reject.
-7. Exercise the local coordinator with autostop and stop-on-disconnect enabled
-   but no availability plan. Confirm trusted push fails before unattended
-   delivery relies on that coordinator. At a 2026-08-31 evaluation, reject a
-   January expiry and an ineffective `disable_triggers` receipt; accept only
-   same-evaluation runtime evidence showing both triggers disabled through the
-   complete unattended interval.
+7. Exercise coordinator-sealed availability. Reject future, stale, or
+   post-assignment observations, expired coverage, and either enabled stop
+   trigger. Accept only a fresh observation made before assignment and valid
+   through the validation/lifecycle cutoff and unattended interval.
 8. Parse the typed delivery graph. Confirm a merged parent makes child
    implementation ready while its exact-master Build is in progress and
    remote completion is pending; an unmerged parent blocks the child; a
@@ -553,7 +556,9 @@ game behavior needs a compensating change.
 
 ### Expected result
 
-Only the exact clean one-commit descendant reaches `trusted_push_eligible`.
+Only the exact clean one-commit descendant with a parent-trusted checker,
+fresh coordinator receipt, complete remote coverage, and protected monotonic
+authority reaches `trusted_push_eligible`.
 Assignment sent, received, progressing, committed, and handed-off remain
 distinct timestamped states. A committed result closes its implementation
 owner. Later work requires a fresh handoff and owner. The normalized input
@@ -566,19 +571,19 @@ change that outcome.
 
 The watcher timeout records process failure while preserving authoritative CI
 success. The true failed run records authoritative failure and cannot become
-delivery-eligible. The OOM fixture preserves exact worktree evidence, records
-one incomplete check and recovery cost, creates exactly one replacement
-assignment, and performs no destructive process action. The hibernated local
-coordinator is unavailable without a time-bounded disable/takeover plan.
-The plan is accepted only with current runtime evidence covering the pending
-unattended interval. Casefolded logins, bot aliases, and numeric IDs cannot
-reuse closed owners or hide implementation-owner remote actions. Prior closed
-handoffs remain a sealed contiguous chain rather than a mutable ledger, and
-their exact expected head and sequence come from the independently read
-fixed-`origin` authority commit chain. Local ref changes are irrelevant;
-omitted history cannot reset a non-genesis lifecycle, and only owner CAS can
-advance the remote head. A stable read requires equal remote OIDs around the
-fetch; no stale parent survives movement or the final eligibility recheck.
+delivery-eligible. The OOM fixture persists a sealed interruption snapshot and
+lets a later clean completed replacement validate without preserving live
+dirt. Exactly one issue root and one causally linked replacement are allowed.
+All actor identities are numeric and authoritative.
+
+The issue-scoped authority exists before PR creation. Its immutable binding
+retains no-PR history and rejects owner reuse after binding. Authority and
+anchor branches advance only through direct-parent normal pushes under
+verified protection. A stable read requires equal authority/anchor OIDs around
+fetch and at the final eligibility check; rollback, replay, ABA, stale state,
+and unverified protection reject. The coordinator receipt's event-source
+union detects omitted push/comment/review/dispatch events. Incomplete GitHub
+coverage succeeds only with a credentialless network-denied process interval.
 
 The typed dependency graph reports `child-implement` ready as soon as
 `parent-merge` is done, independently of a healthy running master watcher and
@@ -595,7 +600,10 @@ already merged child contract implementation-ready.
 
 The issue #176 reporter consumes version 2 normalized handoff evidence and
 reports failures, stale responses, maximum owner lifetime and RSS,
-coordination turns, and recovery cost. Its frozen version 1 baseline, expected
+coordination turns, and recovery cost only from coordinator telemetry. Git
+derives line usage, parsed schema derives protocol changes, and closed
+build/map/resource receipts derive ROM/RAM; unaffected surfaces are zero. Its
+frozen version 1 baseline, expected
 values, seals, lifecycle, trusted-push, and centralized-watcher contracts are
 unchanged. Version 2 accepts no hand-authored aggregate: it repeats complete
 source worktree and receipt validation before computing those metrics.
@@ -616,13 +624,16 @@ into failure. A code/contract edge to parent remote completion, missing parent
 merge edge, watcher-as-todo dependency, missing parent post-merge gate, or
 terminal failure without active fix-forward/revert also rejects. Issue/task/
 status relabeling, arbitrary commands, forged or stale check receipts,
-hand-authored reporter rows, owner-history chain mutation, actor aliases, and
-expired or ineffective availability evidence reject independently. A
-missing/reset canonical history ref, hostile Git config or local attributes,
+hand-authored reporter rows, owner-history chain mutation, missing/mixed actor
+IDs, omitted remote events, incomplete source coverage, claim tampering,
+future/stale availability, and unverified branch protection reject
+independently. A missing/reset canonical authority or anchor branch, hostile
+Git config or local attributes,
 incomplete-prefix rejection, and equal/predated/multiple OOM replacement also
 fail their dedicated controls. Mid-read movement retries, repeated movement
 fails `authority-moved`, and movement after the read but before eligibility
-invalidates the sealed observation.
+invalidates the sealed dual-ref observation. Parentless checker bootstrap,
+authority rollback/replay/ABA, PR rebinding, and a second issue root also fail.
 
 ### Interactions and save compatibility
 
@@ -638,9 +649,10 @@ lane. No feature flag, migration, or manual criterion applies.
 creates bounded temporary repositories below `build/test-artifacts/`, derives
 real ancestry/branch/diff/worktree/trailer facts with the issue #176 clean Git
 boundary, executes only the closed safe check runner, verifies receipts, and
-uses a local bare remote plus separate owner/implementation repositories to
-exercise deterministic bootstrap/advance plans, explicit fetch, local reset,
-stale CAS, honest CAS, stable/moving read boundaries, bounded exhaustion, and
+uses a protected local bare remote plus separate owner/implementation and
+coordinator-installation directories to exercise deterministic
+bootstrap/advance/bind plans, normal fast-forward updates, explicit fetch,
+rollback/replay/ABA, stable/moving read boundaries, bounded exhaustion, and
 eligibility-token revalidation. It performs no GitHub mutation. The complete
 `scripts/workflow_pilot/tests` discovery reruns the frozen issue #176 reporter
 regressions. Parsed task/dependency/watcher fixtures compute readiness and
@@ -650,7 +662,8 @@ and centralized-watcher policy.
 
 ### Cleanup and limitations
 
-Temporary repositories are removed automatically. The tests model GitHub
-responses, SIGKILL/OOM kernel evidence, and hibernation as inert fixtures; they
+Temporary repositories are removed automatically. The tests model complete
+GitHub source responses, SIGKILL/OOM kernel evidence, coordinator runtime
+telemetry, and availability as inert sealed fixtures; they
 do not mutate GitHub, allocate destructive memory, signal a process, change
 Dev Box settings, or kill any host process. No manual-only criterion applies.
