@@ -420,18 +420,27 @@ pointer/timing/source-text coincidences, are the behavioral oracle.
    ignored `build/upstream-port/` directory.
 3. Review the report and manually record each port/skip/supersede/conflict
    decision with rationale and validation evidence, then run `verify`.
+4. From the source repository root, invoke the documented
+   `python3 -m scripts.upstream_port verify --dry-run`. Exercise implicit
+   source-checkout selection and explicit `--repo <target-root>` selection.
 
 ### Expected result
 
 Scan and drift are read-only and deterministic. Report output contains only
 the explicitly selected local commits; an accepted human decision is recorded
 with its rationale/evidence before the port boundary can advance.
+Both public `verify` paths execute repository-relative gates at the resolved
+target Git top level. That same root supplies `$GITHUB_WORKSPACE` expansion
+and workflow-pilot repository authority, and no gate has a separate working
+directory. The source-tree module is launched from its source repository root;
+it is not an installed nested/external entrypoint.
 
 ### Negative control
 
 The tool rejects a wrong remote, stale/diverged ref, merge report request,
 unsafe/tracked/outside/symlink output path, missing decision evidence, or
-attempt to mutate upstream source.
+attempt to mutate upstream source. A non-root target cannot become gate
+authority or execution cwd.
 
 ### Interactions and save compatibility
 

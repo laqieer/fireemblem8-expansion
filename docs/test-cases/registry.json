@@ -473,18 +473,20 @@
     },
     {
       "id": "workflow-governance",
-      "title": "Exact stacked CI, manual handoff, centralized waiting, and trusted-push orchestration",
+      "title": "Exact delivery orchestration and workflow-pilot measurement governance",
       "issue_urls": [
         "https://github.com/laqieer/fireemblem8-expansion/issues/93",
         "https://github.com/laqieer/fireemblem8-expansion/issues/169",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/171"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/171",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/176"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
       "required_cases": [
         "TC-WORKFLOW-CI-WAIT-001",
         "TC-WORKFLOW-MANUAL-HANDOFF-001",
-        "TC-WORKFLOW-STACKED-CI-001"
+        "TC-WORKFLOW-STACKED-CI-001",
+        "TC-WORKFLOW-PILOT-BASELINE-001"
       ]
     },
     {
@@ -2039,9 +2041,9 @@
       ],
       "purpose": "Prove read-only scan/report safety and the explicit decision-record boundary.",
       "prerequisites": "No pending state update; use a locally available canonical ref or explicit fetch.",
-      "actions": "Scan, drift, report selected non-merge SHAs, then record a manually reviewed decision.",
-      "expected_result": "Read-only commands do not alter source and decisions require rationale and evidence.",
-      "negative_control": "Unsafe output, wrong refs, merges, and missing evidence are rejected.",
+      "actions": "Scan, drift, report selected non-merge SHAs, then record a manually reviewed decision; from the source repository root run the exact documented verify --dry-run module command and exercise implicit source-checkout plus explicit --repo target selection.",
+      "expected_result": "Read-only commands do not alter source and decisions require rationale and evidence; every verify gate executes at the resolved target Git top level, which is also the workspace-expansion and repository-authority root. The source-tree module remains a source-root invocation rather than an installed entrypoint.",
+      "negative_control": "Unsafe output, wrong refs, merges, missing evidence, and a non-root target are rejected; no nested/external module-discovery contract or per-gate working directory is introduced.",
       "interactions": "The tool never executes or mutates upstream source.",
       "save_compatibility": "No runtime, generated-data, ROM, RAM, or save impact.",
       "cleanup": "Remove only the named ignored report directory.",
@@ -2211,6 +2213,46 @@
         {
           "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
           "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-PILOT-BASELINE-001",
+      "title": "Freeze reproducible pilot baseline and decisions",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/176"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-pilot-baseline-001-freeze-reproducible-pilot-baseline-and-decisions",
+      "profiles": [
+        "Clean source checkout with Python 3, Git, immutable workflow fixture, and no live GitHub workflow"
+      ],
+      "purpose": "Prove the frozen baseline formulas, mandatory real-object-database authority, exact cohort identity seal, Git-tree-bound non-derivable decision schema, explicit unavailable historical resolution boundary, globally coherent workflow runs, derived stack and revert causality, executable artifact lifecycle, and deterministic normalized output before pilot behavior changes.",
+      "prerequisites": "Start at the exact Git repository root with the committed workflow-pilot fixture, decision record, expected values, and reporter unchanged; no token, ROM, emulator, or game build is required.",
+      "actions": "Run all suites and reporter determinism; mutate cloned patch-release and summary runners, conditions, needs, permissions, env, steps, commands, actions, containers/defaults, and unknown fields before dry-run; independently inject duplicate Build tools into every combined worker and prove only the intended job changes; retain lifecycle launcher, maximal anchors, target, revert, blob, Git, and proof controls.",
+      "expected_result": "All six jobs participate in complete target/source equivalence. Patch-release retains its master-only condition, exact environment, six publisher steps, scoped secret, and pinned actions; summary retains always(), ordered four-job needs, exact results, and one fail-closed step. Duplicate setup rejection independently covers host, build, extended, and legacy. Every prior authority contract remains exact.",
+      "negative_control": "Any patch/summary runner, if/needs, permission, env, step, command, action, container/default, secret, or unknown-field drift; duplicate setup in any one combined worker; and all prior lifecycle, anchor, execution-context, target, revert, blob, Git, proof, and parser adversaries fail closed.",
+      "interactions": "Dependencies none; dependents #177-#181; conflicts none with CI selection, review ordering, merge gates, runtime/configuration/save/generated/localization/archival behavior, and no feature flag.",
+      "save_compatibility": "Source-only workflow measurement; no save field, epoch, migration, generated game data, localization, ROM/RAM, modern debug/release, gameplay, or archival impact.",
+      "cleanup": "Remove only build/test-artifacts/workflow-pilot if the human procedure created it; reporter-created bounded sandbox children under build/test-artifacts/ are removed automatically, and no remote state is mutated.",
+      "limitations": "The immutable fixture reports only its exact source semantics and is not a live GitHub capture or second mutable delivery ledger. Historical review-thread deliveries were not collected, so that timing metric is explicitly unavailable and ineligible for pilot comparison/promotion; future numeric evidence requires complete GitHub pull_request_review_thread webhook delivery capture.",
+      "automation": [
+        {
+          "command": "python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v",
+          "evidence": "scripts/workflow_pilot/tests/test_reporter.py"
+        },
+        {
+          "command": "python3 -m scripts.workflow_pilot.reporter --repository-root . --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json",
+          "evidence": "scripts/workflow_pilot/reporter.py"
+        },
+        {
+          "command": "python3 -m unittest discover -s tests/workflows -p 'test_*.py' -v",
+          "evidence": "tests/workflows/test_build_ci_topology.py"
+        },
+        {
+          "command": "python3 scripts/check_docs.py --check",
+          "evidence": "scripts/check_docs.py"
         }
       ]
     },

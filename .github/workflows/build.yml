@@ -17,8 +17,9 @@ jobs:
   # upstream-port review tooling suite (tests/upstream_port:
   # classify/scan/drift/state/ref-binding/output-safety/merge-commit and the
   # verify.gates() <-> build.yml mirror), plus the stdlib-only workflow
-  # contract suite under tests/workflows. None needs the arm-none-eabi
-  # cross-toolchain or a 16 MB ROM build. Only a native C compiler
+  # contract suite under tests/workflows and workflow-pilot reporter
+  # regression suite. None needs the arm-none-eabi cross-toolchain or a
+  # 16 MB ROM build. Only a native C compiler
   # (build-essential) and libmgba-dev are installed, since the one integration
   # test that actually drives libmGBA (test_backend_integration.py) compiles
   # its tiny backend for the *host*, never the GBA target; the upstream-port
@@ -49,6 +50,37 @@ jobs:
         printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
         test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"
 
+    # Exact-ref checkout can omit force-pushed historical fixture commits.
+    # The CI-only helper derives exact object IDs from the committed fixture,
+    # fetches only missing commits without refs/tags/eager blobs, and proves
+    # both refs and the candidate checkout remain unchanged.
+    - name: Hydrate workflow-pilot Git authority
+      env:
+        BASH_ENV: ''
+        ENV: ''
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        PATH: /usr/bin:/bin
+        PYTHONPATH: ''
+      run: /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py hydrate --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected-head "$EXPECTED_BUILD_SHA"
+
     - name: Install host-only dependencies (no arm-none-eabi toolchain)
       run: sudo apt-get update && sudo apt-get install -y build-essential libmgba-dev
 
@@ -67,9 +99,8 @@ jobs:
     - name: Run gba-playtest host test suite
       run: GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover -s tools/gba-playtest/tests -v
 
-    # Issue #12/#15 upstream-port review tooling (scripts/upstream_port): 145
-    # pure-stdlib unittest cases (as of the issues #7/#17 integration merge;
-    # re-run the command below for the current count) covering
+    # Issue #12/#15 upstream-port review tooling (scripts/upstream_port):
+    # pure-stdlib unittest coverage for
     # classify/scan/drift/state/
     # ref-binding/output-safety/merge-commit determinism and, crucially, the
     # verify.gates() <-> this-workflow argv/order mirror. Runs here in the
@@ -85,6 +116,60 @@ jobs:
     # stdlib/YAML-text parsing; no ROM/toolchain.
     - name: Run workflow contract test suite
       run: python3 -m unittest discover -s tests/workflows -p "test_*.py" -v
+
+    - name: Run workflow-pilot reporter regression suite (issue #176)
+      env:
+        BASH_ENV: ''
+        ENV: ''
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        PATH: /usr/bin:/bin
+        PYTHONPATH: ''
+      run: /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py reporter-tests
+
+    - name: Validate workflow-pilot baseline against checked-out Git history
+      env:
+        BASH_ENV: ''
+        ENV: ''
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        PATH: /usr/bin:/bin
+        PYTHONPATH: ''
+      run: /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py baseline --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json > /dev/null
 
     # Issue #18 host-lane closure fix: the scripts/localization package's
     # own pure-stdlib unit test suite (schema/pseudo/catalog/generate/CLI/

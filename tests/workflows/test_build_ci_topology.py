@@ -3,9 +3,17 @@
 from __future__ import annotations
 
 import fnmatch
+import json
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
+
+from scripts.workflow_pilot import hydrate_authority, reporter
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -55,6 +63,81 @@ SUMMARY_RESULTS = (
 MAP_MENU_PRESENTATION_GATE = (
     "make expansion-modern-map-menu-presentation-check -j1"
 )
+WORKFLOW_PILOT_GATE = (
+    "/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py "
+    "reporter-tests"
+)
+WORKFLOW_PILOT_BASELINE_GATE = (
+    "/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py baseline "
+    '--repository-root "$GITHUB_WORKSPACE" '
+    "--fixture scripts/workflow_pilot/tests/fixtures/baseline.json "
+    "--decisions .github/workflow-pilot-decisions.json "
+    "--expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json "
+    "> /dev/null"
+)
+EXPECTED_BUILD_SHA_EXPRESSION = (
+    "${{ github.event_name == 'pull_request' && "
+    "github.event.pull_request.head.sha || github.sha }}"
+)
+HOST_ENV_LINE = f"      EXPECTED_BUILD_SHA: {EXPECTED_BUILD_SHA_EXPRESSION}"
+COMBINED_JOB_ENV = {
+    "host-tests": (HOST_ENV_LINE,),
+    "build": (HOST_ENV_LINE,),
+    "extended-host-tests": (HOST_ENV_LINE,),
+    "legacy": (
+        HOST_ENV_LINE,
+        "      AGBCC_COMMIT: da598c1d918402c42c0c0d7128ba14567f3175e9",
+        "      MGFEMBP_AGBCC_COMMIT: 63b22f3eb8a8051af30bd80c4795b355e439e7ef",
+    ),
+}
+WORKFLOW_PILOT_AUTHORITY_HYDRATION = (
+    "/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py hydrate "
+    '--repository-root "$GITHUB_WORKSPACE" '
+    "--fixture scripts/workflow_pilot/tests/fixtures/baseline.json "
+    "--decisions .github/workflow-pilot-decisions.json "
+    '--expected-head "$EXPECTED_BUILD_SHA"'
+)
+SCRUBBED_STEP_ENV = (
+    "        BASH_ENV: ''",
+    "        ENV: ''",
+    "        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''",
+    "        GIT_CEILING_DIRECTORIES: ''",
+    "        GIT_COMMON_DIR: ''",
+    "        GIT_CONFIG_COUNT: '0'",
+    "        GIT_CONFIG_GLOBAL: /dev/null",
+    "        GIT_CONFIG_KEY_0: ''",
+    "        GIT_CONFIG_NOSYSTEM: '1'",
+    "        GIT_CONFIG_PARAMETERS: ''",
+    "        GIT_CONFIG_SYSTEM: /dev/null",
+    "        GIT_CONFIG_VALUE_0: ''",
+    "        GIT_DIR: ''",
+    "        GIT_EXEC_PATH: ''",
+    "        GIT_INDEX_FILE: ''",
+    "        GIT_NAMESPACE: ''",
+    "        GIT_NO_LAZY_FETCH: '1'",
+    "        GIT_NO_REPLACE_OBJECTS: '1'",
+    "        GIT_OBJECT_DIRECTORY: ''",
+    "        GIT_REPLACE_REF_BASE: ''",
+    "        GIT_WORK_TREE: ''",
+    "        PATH: /usr/bin:/bin",
+    "        PYTHONPATH: ''",
+)
+
+
+def _git_run(
+    repository_root: Path,
+    *arguments: str,
+    check: bool = True,
+    text: bool = False,
+    offline: bool = True,
+) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        reporter.git_command(repository_root, *arguments),
+        env=reporter.git_environment(offline=offline),
+        check=check,
+        capture_output=True,
+        text=text,
+    )
 
 
 def _trigger_block(header: str, event_name: str) -> str:
@@ -179,8 +262,8 @@ def _run_block_commands(job: str) -> list[str]:
     commands = []
     index = 0
     while index < len(lines):
-        inline = re.match(r"^    - run: (?P<value>.+)$", lines[index])
-        field = re.match(r"^      run: (?P<value>.+)$", lines[index])
+        inline = re.match(r"^    - run[ \t]*:[ \t]+(?P<value>.+)$", lines[index])
+        field = re.match(r"^      run[ \t]*:[ \t]+(?P<value>.+)$", lines[index])
         match = inline or field
         if match is None:
             index += 1
@@ -210,6 +293,314 @@ def _contains_command(job: str, command: str) -> bool:
         _normalise(command) in _normalise(run)
         for run in _run_block_commands(job)
     )
+
+
+def _step_blocks(job: str) -> list[str]:
+    matches = list(re.finditer(r"^    -(?:[ \t]|\Z)", job, re.MULTILINE))
+    return [
+        job[
+            match.start():
+            matches[index + 1].start() if index + 1 < len(matches) else len(job)
+        ]
+        for index, match in enumerate(matches)
+    ]
+
+
+def _direct_step_mapping_fields(step: str) -> list[str] | None:
+    sequence_key = re.compile(
+        r"^    -[ \t]+(?P<field>[A-Za-z_][A-Za-z0-9_-]*)[ \t]*:"
+    )
+    continuation_key = re.compile(
+        r"^      (?P<field>[A-Za-z_][A-Za-z0-9_-]*)[ \t]*:"
+    )
+    fields = []
+    sequence_entries = 0
+    for line in step.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 4:
+            match = sequence_key.match(line)
+            if match is None:
+                return None
+            sequence_entries += 1
+            fields.append(match.group("field"))
+        elif indent == 6:
+            match = continuation_key.match(line)
+            if match is None:
+                return None
+            fields.append(match.group("field"))
+        elif indent < 8:
+            return None
+    if sequence_entries != 1:
+        return None
+    return fields
+
+
+def _contains_exact_command(job: str, command: str) -> bool:
+    expected = _normalise(command)
+    for step in _step_blocks(job):
+        commands = _run_block_commands(step)
+        if len(commands) != 1 or _normalise(commands[0]) != expected:
+            continue
+        fields = _direct_step_mapping_fields(step)
+        if fields is not None and (
+            (len(fields) == 2 and set(fields) == {"name", "run"})
+            or (
+                len(fields) == 3
+                and set(fields) == {"name", "env", "run"}
+                and _step_has_scrubbed_environment(step)
+            )
+        ):
+            return True
+    return False
+
+
+def _step_has_scrubbed_environment(step: str) -> bool:
+    lines = step.splitlines()
+    try:
+        env_index = lines.index("      env:")
+    except ValueError:
+        return False
+    entries = []
+    for line in lines[env_index + 1 :]:
+        if line.strip() and len(line) - len(line.lstrip(" ")) <= 6:
+            break
+        if line.strip() and not line.lstrip().startswith("#"):
+            entries.append(line)
+    return tuple(entries) == SCRUBBED_STEP_ENV
+
+
+def _step_name(step: str) -> str | None:
+    match = re.search(r"^    - name: (?P<name>.+)$", step, re.MULTILINE)
+    return match.group("name") if match is not None else None
+
+
+def _checkout_step_is_exact(step: str) -> bool:
+    action = (
+        "    - uses: actions/checkout@"
+        "3d3c42e5aac5ba805825da76410c181273ba90b1"
+    )
+    action_lines = [
+        line.split(" #", 1)[0]
+        for line in step.splitlines()
+        if line.startswith("    - uses:")
+    ]
+    if action_lines != [action]:
+        return False
+    if _direct_step_mapping_fields(step) != ["uses", "with"]:
+        return False
+    expected = (
+        "        ref: ${{ github.event_name == 'pull_request' && "
+        "github.event.pull_request.head.sha || github.sha }}",
+        "        fetch-depth: 0",
+        "        submodules: recursive",
+        "        persist-credentials: false",
+    )
+    lines = step.splitlines()
+    try:
+        with_index = lines.index("      with:")
+    except ValueError:
+        return False
+    entries = []
+    for line in lines[with_index + 1 :]:
+        if line.strip() and len(line) - len(line.lstrip(" ")) <= 6:
+            break
+        if line.strip() and not line.lstrip().startswith("#"):
+            entries.append(line)
+    return tuple(entries) == expected
+
+
+def _run_step_is_exact(
+    step: str,
+    name: str,
+    commands: tuple[str, ...],
+    scrubbed: bool = False,
+) -> bool:
+    if _step_name(step) != name:
+        return False
+    if tuple(_run_block_commands(step)) != commands:
+        return False
+    fields = _direct_step_mapping_fields(step)
+    expected_fields = (
+        {"name", "env", "run"} if scrubbed else {"name", "run"}
+    )
+    if fields is None or len(fields) != len(expected_fields):
+        return False
+    if set(fields) != expected_fields:
+        return False
+    return not scrubbed or _step_has_scrubbed_environment(step)
+
+
+def _protected_host_prefix_errors(host: str) -> list[str]:
+    steps = _step_blocks(host)
+    if len(steps) < 9:
+        return ["host-tests lacks the complete protected pre-pilot sequence"]
+    expected = (
+        _checkout_step_is_exact(steps[0]),
+        _run_step_is_exact(
+            steps[1],
+            "Verify checked-out revision",
+            (
+                'ACTUAL_SHA="$(git rev-parse HEAD)"',
+                "printf 'checkout.sha=%s\\n' \"$ACTUAL_SHA\"",
+                'test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"',
+            ),
+        ),
+        _run_step_is_exact(
+            steps[2],
+            "Hydrate workflow-pilot Git authority",
+            (WORKFLOW_PILOT_AUTHORITY_HYDRATION,),
+            scrubbed=True,
+        ),
+        _run_step_is_exact(
+            steps[3],
+            "Install host-only dependencies (no arm-none-eabi toolchain)",
+            (
+                "sudo apt-get update && sudo apt-get install -y "
+                "build-essential libmgba-dev",
+            ),
+        ),
+        _run_step_is_exact(
+            steps[4],
+            "Run gba-playtest host test suite",
+            (
+                "GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover "
+                "-s tools/gba-playtest/tests -v",
+            ),
+        ),
+        _run_step_is_exact(
+            steps[5],
+            "Run upstream-port tooling test suite",
+            ("python3 -m unittest discover -s tests/upstream_port -v",),
+        ),
+        _run_step_is_exact(
+            steps[6],
+            "Run workflow contract test suite",
+            (
+                "python3 -m unittest discover -s tests/workflows "
+                '-p "test_*.py" -v',
+            ),
+        ),
+        _run_step_is_exact(
+            steps[7],
+            "Run workflow-pilot reporter regression suite (issue #176)",
+            (WORKFLOW_PILOT_GATE,),
+            scrubbed=True,
+        ),
+        _run_step_is_exact(
+            steps[8],
+            "Validate workflow-pilot baseline against checked-out Git history",
+            (WORKFLOW_PILOT_BASELINE_GATE,),
+            scrubbed=True,
+        ),
+    )
+    if all(expected):
+        return []
+    return [
+        "host-tests protected pre-pilot step sequence differs from reviewed "
+        "actions, commands, fields, order, or scrubbed environments"
+    ]
+
+
+def _has_execution_defaults(text: str, workflow_scope: bool) -> bool:
+    indent = "" if workflow_scope else r" {4,}"
+    key = r"(?:defaults|\"defaults\"|'defaults')"
+    return re.search(
+        rf"^{indent}{key}[ \t]*:",
+        text,
+        re.MULTILINE,
+    ) is not None
+
+
+def _has_unsupported_direct_key(text: str, indent: int, allow_sequence: bool) -> bool:
+    simple_key = re.compile(
+        rf"^{' ' * indent}[A-Za-z_][A-Za-z0-9_-]*[ \t]*:"
+    )
+    sequence = re.compile(
+        rf"^{' ' * indent}-[ \t]+[A-Za-z_][A-Za-z0-9_-]*[ \t]*:"
+    )
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        line_indent = len(line) - len(line.lstrip(" "))
+        if line_indent != indent:
+            continue
+        if simple_key.match(line):
+            continue
+        if allow_sequence and sequence.match(line):
+            continue
+        return True
+    return False
+
+
+def _has_direct_key(text: str, indent: int, key: str) -> bool:
+    return re.search(
+        rf"^{' ' * indent}{re.escape(key)}[ \t]*:",
+        text,
+        re.MULTILINE,
+    ) is not None
+
+
+def _host_environment_errors(job: str) -> list[str]:
+    lines = job.splitlines()
+    env_indices = [
+        index for index, line in enumerate(lines) if line == "    env:"
+    ]
+    if len(env_indices) != 1:
+        return ["host-tests must define exactly one reviewed env mapping"]
+    index = env_indices[0] + 1
+    entries = []
+    while index < len(lines):
+        line = lines[index]
+        if line.strip() and len(line) - len(line.lstrip(" ")) <= 4:
+            break
+        if line.strip() and not line.lstrip().startswith("#"):
+            entries.append(line)
+        index += 1
+    if entries != [HOST_ENV_LINE]:
+        return [
+            "host-tests env must contain only the reviewed EXPECTED_BUILD_SHA"
+        ]
+    return []
+
+
+def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
+    direct_lines = []
+    for line in job.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent != 4 or line.startswith("    -"):
+            continue
+        direct_lines.append(line)
+    expected_direct = [
+        "    runs-on: ubuntu-latest",
+        "    timeout-minutes: 60",
+        "    env:",
+        "    steps:",
+    ]
+    errors = []
+    if direct_lines != expected_direct:
+        errors.append(
+            f"{job_name} direct job mapping differs from the reviewed "
+            "runs-on, timeout, env, and steps contract"
+        )
+
+    lines = job.splitlines()
+    try:
+        env_index = lines.index("    env:")
+    except ValueError:
+        return errors + [f"{job_name} lacks its reviewed env mapping"]
+    entries = []
+    for line in lines[env_index + 1 :]:
+        if line.strip() and len(line) - len(line.lstrip(" ")) <= 4:
+            break
+        if line.strip() and not line.lstrip().startswith("#"):
+            entries.append(line)
+    if tuple(entries) != COMBINED_JOB_ENV[job_name]:
+        errors.append(f"{job_name} env differs from its reviewed exact mapping")
+    return errors
 
 
 def _hashed_requirements_errors(text: str) -> list[str]:
@@ -268,6 +659,12 @@ def _make_recipe(text: str, target: str) -> str:
 def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     errors = []
     header = text[: text.index("\njobs:\n")]
+    if _has_unsupported_direct_key(header, indent=0, allow_sequence=False):
+        errors.append("workflow uses unsupported direct mapping-key syntax")
+    if _has_execution_defaults(header, workflow_scope=True):
+        errors.append("workflow execution defaults must not alter candidate gates")
+    if _has_direct_key(header, indent=0, key="env"):
+        errors.append("workflow-level env is forbidden")
     try:
         _pull_request_actions(header)
     except ValueError as exc:
@@ -316,8 +713,26 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             errors.append(f"{job_name} adds an unreviewed Python package install")
 
     for job_name in COMBINED_WORKERS:
-        if "if:" in jobs[job_name]:
+        if _has_unsupported_direct_key(
+            jobs[job_name],
+            indent=4,
+            allow_sequence=True,
+        ):
+            errors.append(
+                f"{job_name} uses unsupported direct mapping-key syntax"
+            )
+        if _has_direct_key(jobs[job_name], indent=4, key="if"):
             errors.append(f"{job_name} must run for pull-request candidates and master pushes")
+        if _has_direct_key(
+            jobs[job_name],
+            indent=4,
+            key="continue-on-error",
+        ):
+            errors.append(f"{job_name} must not be advisory")
+        errors.extend(_combined_job_contract_errors(job_name, jobs[job_name]))
+
+    errors.extend(_host_environment_errors(jobs["host-tests"]))
+    errors.extend(_protected_host_prefix_errors(jobs["host-tests"]))
 
     if f"if: {MASTER_PUBLISHER_CONDITION}" not in jobs["patch-release"]:
         errors.append("patch-release must remain master-push-only")
@@ -364,6 +779,34 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     ):
         if not _contains_command(jobs["host-tests"], command):
             errors.append(f"candidate host lost Build-owned evidence: {command}")
+    for command in (WORKFLOW_PILOT_GATE, WORKFLOW_PILOT_BASELINE_GATE):
+        if not _contains_exact_command(jobs["host-tests"], command):
+            errors.append(
+                f"candidate host lost exact fail-closed Build evidence: {command}"
+            )
+    if not _contains_exact_command(
+        jobs["host-tests"],
+        WORKFLOW_PILOT_AUTHORITY_HYDRATION,
+    ):
+        errors.append(
+            "candidate host lost exact workflow-pilot Git authority hydration"
+        )
+    hydration_index = jobs["host-tests"].find(
+        "Hydrate workflow-pilot Git authority"
+    )
+    reporter_index = jobs["host-tests"].find(
+        "Run workflow-pilot reporter regression suite (issue #176)"
+    )
+    if (
+        hydration_index < 0
+        or reporter_index < 0
+        or hydration_index >= reporter_index
+    ):
+        errors.append(
+            "workflow-pilot Git authority hydration must precede reporter tests"
+        )
+    if _has_execution_defaults(jobs["host-tests"], workflow_scope=False):
+        errors.append("candidate host execution defaults must not alter pilot gates")
 
     legacy = jobs["legacy"]
     for command in ("make legacy -j2", "make -C mgfembp compare"):
@@ -412,6 +855,915 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             _remote_completion_errors(MAKEFILE.read_text(encoding="utf-8")),
             [],
         )
+
+    def test_protected_environment_is_exact_and_cannot_mask_python(self):
+        workflow_env_variants = (
+            "env:\n  BASH_ENV: build/python-mask.sh\n",
+            '"env":\n  PATH: /untrusted\n',
+            '"\\u0065nv":\n  PYTHONPATH: build/mask\n',
+            "? env\n:\n  SHELLOPTS: sourcepath\n",
+            "!!str env:\n  ENV: build/mask\n",
+            "env: &shared {BASH_ENV: build/python-mask.sh}\n",
+            "env: {BASH_ENV: build/python-mask.sh}\n",
+        )
+        for variant in workflow_env_variants:
+            with self.subTest(workflow_env=variant):
+                changed = self.text.replace(
+                    "\npermissions:\n",
+                    f"\n{variant}\npermissions:\n",
+                    1,
+                )
+                self.assertTrue(
+                    any(
+                        "workflow-level env is forbidden" in error
+                        or "unsupported direct mapping-key syntax" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+        env_block = (
+            "    env:\n"
+            f"{HOST_ENV_LINE}\n"
+        )
+        value = EXPECTED_BUILD_SHA_EXPRESSION
+        host_env_variants = (
+            f"    env:\n{HOST_ENV_LINE}\n"
+            "      BASH_ENV: build/python-mask.sh\n",
+            f"    env:\n{HOST_ENV_LINE}\n      ENV: build/mask\n",
+            f"    env:\n{HOST_ENV_LINE}\n      PATH: /untrusted\n",
+            f"    env:\n{HOST_ENV_LINE}\n      PYTHONPATH: build/mask\n",
+            f"    env:\n{HOST_ENV_LINE}\n      SHELLOPTS: sourcepath\n",
+            f'    env:\n      "EXPECTED_BUILD_SHA": {value}\n',
+            f'    env:\n      "EXPECTED_\\u0042UILD_SHA": {value}\n',
+            f"    env:\n      ? EXPECTED_BUILD_SHA\n      : {value}\n",
+            f"    env:\n      !!str EXPECTED_BUILD_SHA: {value}\n",
+            f"    env:\n      <<: *shared\n{HOST_ENV_LINE}\n",
+            f"    env: &shared\n{HOST_ENV_LINE}\n",
+            f"    env: {{EXPECTED_BUILD_SHA: \"{value}\"}}\n",
+            f"    env:\n      EXPECTED_BUILD_SHA: \"{value}\"\n",
+            f"    env:\n      EXPECTED_BUILD_SHA: !!str {value}\n",
+            f"    env:\n      EXPECTED_BUILD_SHA: &sha {value}\n",
+            "    env:\n      EXPECTED_BUILD_SHA: *sha\n",
+        )
+        for variant in host_env_variants:
+            with self.subTest(host_env=variant):
+                changed = self.text.replace(env_block, variant, 1)
+                self.assertTrue(
+                    any(
+                        "host-tests env must contain only" in error
+                        or "exactly one reviewed env mapping" in error
+                        or "unsupported direct mapping-key syntax" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+        masked = self.text.replace(
+            env_block,
+            f"    env:\n{HOST_ENV_LINE}\n"
+            "      BASH_ENV: build/python-mask.sh\n",
+            1,
+        ).replace(
+            "    - name: Run workflow-pilot reporter regression suite",
+            "    - name: Prepare Python function mask\n"
+            "      run: printf 'python3() { return 0; }\\n' "
+            "> build/python-mask.sh\n\n"
+            "    - name: Run workflow-pilot reporter regression suite",
+            1,
+        )
+        self.assertTrue(
+            any(
+                "host-tests env must contain only" in error
+                for error in _errors(masked, False)
+            )
+        )
+
+    def test_every_pre_pilot_step_is_exact_and_cannot_persist_masks(self):
+        mutations = (
+            self.text.replace(
+                "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+                "actions/checkout@main",
+                1,
+            ),
+            self.text.replace(
+                "        persist-credentials: false\n",
+                "        persist-credentials: true\n",
+                1,
+            ),
+            self.text.replace(
+                '        test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"\n',
+                '        test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"\n'
+                '        echo "BASH_ENV=build/mask" >> "$GITHUB_ENV"\n',
+                1,
+            ),
+            self.text.replace(
+                "sudo apt-get update && sudo apt-get install -y "
+                "build-essential libmgba-dev",
+                "sudo apt-get update && sudo apt-get install -y "
+                "build-essential libmgba-dev && "
+                'echo build/bin >> "$GITHUB_PATH"',
+                1,
+            ),
+            self.text.replace(
+                "GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover "
+                "-s tools/gba-playtest/tests -v",
+                "true",
+                1,
+            ),
+            self.text.replace(
+                "python3 -m unittest discover -s tests/upstream_port -v",
+                "python3 -m unittest discover -s tests/upstream_port -v || true",
+                1,
+            ),
+            self.text.replace(
+                'python3 -m unittest discover -s tests/workflows -p "test_*.py" -v',
+                'python3 -m unittest discover -s tests/workflows -p "test_*.py" '
+                '-v && echo "PYTHONPATH=build/mask" >> "$GITHUB_ENV"',
+                1,
+            ),
+            self.text.replace(
+                "    - name: Run workflow-pilot reporter regression suite",
+                "    - name: Unreviewed setup\n"
+                "      run: echo build/bin >> \"$GITHUB_PATH\"\n\n"
+                "    - name: Run workflow-pilot reporter regression suite",
+                1,
+            ),
+            self.text.replace(
+                "    - name: Run upstream-port tooling test suite",
+                "    - uses: actions/setup-python@main\n\n"
+                "    - name: Run upstream-port tooling test suite",
+                1,
+            ),
+            self.text.replace(
+                "    - name: Run upstream-port tooling test suite",
+                "    - name: Run workflow contract test suite",
+                1,
+            ),
+        )
+        protected_names = (
+            "Verify checked-out revision",
+            "Install host-only dependencies (no arm-none-eabi toolchain)",
+            "Run gba-playtest host test suite",
+            "Run upstream-port tooling test suite",
+            "Run workflow contract test suite",
+        )
+        for name in protected_names:
+            mutations += (
+                self.text.replace(
+                    f"    - name: {name}\n",
+                    f"    - name: {name}\n      shell: bash {{0}}\n",
+                    1,
+                ),
+                self.text.replace(
+                    f"    - name: {name}\n",
+                    f"    - name: {name}\n      working-directory: /\n",
+                    1,
+                ),
+                self.text.replace(
+                    f"    - name: {name}\n",
+                    f"    - name: {name}\n      continue-on-error: true\n",
+                    1,
+                ),
+                self.text.replace(
+                    f"    - name: {name}\n",
+                    f"    - name: {name}\n      if: ${{{{ false }}}}\n",
+                    1,
+                ),
+                self.text.replace(
+                    f"    - name: {name}\n",
+                    f'    - "name": {name}\n',
+                    1,
+                ),
+            )
+        for changed in mutations:
+            with self.subTest(mutation=changed[:180]):
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "protected pre-pilot step sequence differs" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_protected_pilot_steps_require_exact_scrubbed_environment(self):
+        names = (
+            "Hydrate workflow-pilot Git authority",
+            "Run workflow-pilot reporter regression suite (issue #176)",
+            "Validate workflow-pilot baseline against checked-out Git history",
+        )
+        env_block = "      env:\n" + "\n".join(SCRUBBED_STEP_ENV) + "\n"
+        variants = (
+            "",
+            *(
+                env_block.replace(f"{entry}\n", "")
+                for entry in SCRUBBED_STEP_ENV
+            ),
+            env_block.replace("        PATH: /usr/bin:/bin", "        PATH: /untrusted"),
+            env_block + "        GITHUB_ENV: build/mask\n",
+            env_block.replace("      env:", '      "env":'),
+            env_block.replace("        BASH_ENV:", "        BASH_ENV :"),
+            env_block.replace("        ENV: ''", "        ENV: &mask ''"),
+            env_block.replace("        PYTHONPATH: ''", "        <<: *mask"),
+        )
+        for name in names:
+            for variant in variants:
+                with self.subTest(name=name, variant=variant):
+                    step_start = self.text.index(f"    - name: {name}\n")
+                    env_start = self.text.index("      env:\n", step_start)
+                    run_start = self.text.index("      run:", env_start)
+                    changed = (
+                        self.text[:env_start]
+                        + variant
+                        + self.text[run_start:]
+                    )
+                    self.assertTrue(
+                        any(
+                            "protected pre-pilot step sequence differs" in error
+                            or "lost exact workflow-pilot" in error
+                            for error in _errors(changed, False)
+                        )
+                    )
+
+    def test_workflow_pilot_authority_hydration_is_exact_and_ordered(self):
+        self.assertEqual(hydrate_authority.GIT, "/usr/bin/git")
+        self.assertNotIn(
+            "GIT_NO_LAZY_FETCH",
+            reporter.git_environment(offline=False),
+        )
+        self.assertEqual(
+            reporter.git_environment(offline=False)["GIT_CONFIG_COUNT"],
+            "0",
+        )
+        self.assertEqual(
+            reporter.git_environment(offline=False)["GIT_NO_REPLACE_OBJECTS"],
+            "1",
+        )
+        self.assertEqual(hydrate_authority.BATCH_SIZE, 256)
+        self.assertEqual(
+            hydrate_authority.FETCH_OPTIONS,
+            (
+                "--quiet",
+                "--no-tags",
+                "--filter=blob:none",
+                "--no-write-fetch-head",
+            ),
+        )
+        self.assertEqual(
+            hydrate_authority.BLOB_FETCH_OPTIONS,
+            (
+                "--quiet",
+                "--no-tags",
+                "--no-write-fetch-head",
+            ),
+        )
+        host = _job_blocks(self.text)["host-tests"]
+        self.assertTrue(
+            _contains_exact_command(
+                host,
+                WORKFLOW_PILOT_AUTHORITY_HYDRATION,
+            )
+        )
+        self.assertLess(
+            host.index("Hydrate workflow-pilot Git authority"),
+            host.index("Run workflow-pilot reporter regression suite"),
+        )
+        replacements = (
+            "true",
+            WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(" -I ", " "),
+            WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(
+                "/usr/bin/python3",
+                "python3",
+            ),
+            WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(
+                "scripts/workflow_pilot/isolated_launcher.py",
+                "scripts/workflow_pilot/reporter.py",
+            ),
+            WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(
+                "--fixture scripts/workflow_pilot/tests/fixtures/baseline.json ",
+                "",
+            ),
+            WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(
+                "--decisions .github/workflow-pilot-decisions.json ",
+                "",
+            ),
+            WORKFLOW_PILOT_AUTHORITY_HYDRATION.replace(
+                '--expected-head "$EXPECTED_BUILD_SHA"',
+                "--remote untrusted",
+            ),
+        )
+        for replacement in replacements:
+            with self.subTest(replacement=replacement):
+                changed = self.text.replace(
+                    f"      run: {WORKFLOW_PILOT_AUTHORITY_HYDRATION}\n",
+                    f"      run: {replacement}\n",
+                    1,
+                )
+                self.assertTrue(
+                    any(
+                        "lost exact workflow-pilot Git authority hydration"
+                        in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_isolated_launcher_and_closed_modes_are_pinned(self):
+        commands = (
+            WORKFLOW_PILOT_AUTHORITY_HYDRATION,
+            WORKFLOW_PILOT_GATE,
+            WORKFLOW_PILOT_BASELINE_GATE,
+        )
+        replacements = (
+            lambda command: command.replace(" -I ", " "),
+            lambda command: command.replace(
+                "scripts/workflow_pilot/isolated_launcher.py",
+                "scripts/workflow_pilot/reporter.py",
+            ),
+            lambda command: command.replace(
+                " isolated_launcher.py hydrate",
+                " isolated_launcher.py arbitrary",
+            ),
+            lambda command: command.replace(" hydrate ", " arbitrary "),
+            lambda command: command.replace(" reporter-tests", " arbitrary"),
+            lambda command: command.replace(" baseline ", " arbitrary "),
+        )
+        for command in commands:
+            for replace in replacements:
+                replacement = replace(command)
+                if replacement == command:
+                    continue
+                with self.subTest(command=command, replacement=replacement):
+                    changed = self.text.replace(
+                        f"      run: {command}\n",
+                        f"      run: {replacement}\n",
+                        1,
+                    )
+                    self.assertTrue(
+                        any(
+                            "protected pre-pilot step sequence differs" in error
+                            or "lost exact workflow-pilot" in error
+                            or "lost exact fail-closed" in error
+                            for error in _errors(changed, False)
+                        )
+                    )
+
+    def test_isolated_launcher_ignores_repository_sitecustomize(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="workflow-isolated-launcher-",
+            dir=artifact_root,
+        ) as temporary:
+            root = Path(temporary)
+            package = root / "scripts" / "workflow_pilot"
+            tests = package / "tests"
+            tests.mkdir(parents=True)
+            (root / "scripts" / "__init__.py").write_text("", encoding="ascii")
+            (package / "__init__.py").write_text("", encoding="ascii")
+            (tests / "__init__.py").write_text("", encoding="ascii")
+            shutil.copy2(
+                ROOT / "scripts/workflow_pilot/isolated_launcher.py",
+                package / "isolated_launcher.py",
+            )
+            (root / "sitecustomize.py").write_text(
+                "import os\nos._exit(0)\n",
+                encoding="ascii",
+            )
+            (package / "hydrate_authority.py").write_text(
+                "import os\n"
+                "from pathlib import Path\n"
+                "def main(argv):\n"
+                "    assert not any(key.startswith('GIT_') for key in os.environ)\n"
+                "    Path(__file__).resolve().parents[2]"
+                ".joinpath('hydrate.marker').write_text('ran')\n"
+                "    return 0\n",
+                encoding="ascii",
+            )
+            (package / "reporter.py").write_text(
+                "import os\n"
+                "from pathlib import Path\n"
+                "def main(argv):\n"
+                "    assert not any(key.startswith('GIT_') for key in os.environ)\n"
+                "    Path(__file__).resolve().parents[2]"
+                ".joinpath('baseline.marker').write_text('ran')\n"
+                "    return 0\n"
+                "if __name__ == '__main__':\n"
+                "    raise SystemExit(main(None))\n",
+                encoding="ascii",
+            )
+            (tests / "test_probe.py").write_text(
+                "import os\n"
+                "import unittest\n"
+                "from pathlib import Path\n"
+                "class Probe(unittest.TestCase):\n"
+                "    def test_probe(self):\n"
+                "        self.assertFalse(any(key.startswith('GIT_') "
+                "for key in os.environ))\n"
+                "        Path(__file__).resolve().parents[3]"
+                ".joinpath('tests.marker').write_text('ran')\n",
+                encoding="ascii",
+            )
+            hostile_environment = dict(os.environ)
+            hostile_environment["PYTHONPATH"] = str(root)
+            hostile_environment["GIT_DIR"] = str(root / "redirected.git")
+            hostile_environment["GIT_CONFIG_COUNT"] = "1"
+            hostile_environment["GIT_CONFIG_KEY_0"] = "alias.status"
+            hostile_environment["GIT_CONFIG_VALUE_0"] = "!exit 0"
+            normal = subprocess.run(
+                [
+                    "/usr/bin/python3",
+                    "-m",
+                    "scripts.workflow_pilot.reporter",
+                ],
+                cwd=root,
+                env=hostile_environment,
+                check=False,
+                capture_output=True,
+            )
+            self.assertEqual(normal.returncode, 0)
+            self.assertFalse((root / "baseline.marker").exists())
+
+            launcher = "scripts/workflow_pilot/isolated_launcher.py"
+            commands = (
+                ["/usr/bin/python3", "-I", launcher, "reporter-tests"],
+                [
+                    "/usr/bin/python3",
+                    "-I",
+                    launcher,
+                    "baseline",
+                    "--repository-root",
+                    str(root),
+                ],
+                [
+                    "/usr/bin/python3",
+                    "-I",
+                    launcher,
+                    "hydrate",
+                    "--repository-root",
+                    str(root),
+                ],
+            )
+            for command in commands:
+                completed = subprocess.run(
+                    command,
+                    cwd=root,
+                    env=hostile_environment,
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    completed.stderr.decode("utf-8", errors="replace"),
+                )
+            for marker in (
+                "tests.marker",
+                "baseline.marker",
+                "hydrate.marker",
+            ):
+                self.assertEqual(
+                    (root / marker).read_text(encoding="ascii"),
+                    "ran",
+                )
+
+            rejected = subprocess.run(
+                ["/usr/bin/python3", "-I", launcher, "arbitrary"],
+                cwd=root,
+                env=hostile_environment,
+                check=False,
+                capture_output=True,
+            )
+            self.assertEqual(rejected.returncode, 2)
+            self.assertFalse((root / "arbitrary.marker").exists())
+            for command in (
+                [
+                    "/usr/bin/python3",
+                    "-I",
+                    launcher,
+                    "reporter-tests",
+                    "arbitrary",
+                ],
+                [
+                    "/usr/bin/python3",
+                    "-I",
+                    launcher,
+                    "baseline",
+                    "--repository-root",
+                    str(package),
+                ],
+            ):
+                completed = subprocess.run(
+                    command,
+                    cwd=root,
+                    env=hostile_environment,
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(completed.returncode, 2)
+
+    def test_exact_fixture_hydration_restores_force_pushed_commit(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="workflow-authority-hydration-",
+            dir=artifact_root,
+        ) as temporary:
+            root = Path(temporary)
+            seed = root / "seed"
+            remote = root / "remote.git"
+            checkout = root / "checkout"
+
+            seed.mkdir()
+            _git_run(seed, "init", "-q", "-b", "master")
+            for key, value in (
+                ("user.name", "Hydration Test"),
+                ("user.email", "hydration@example.invalid"),
+            ):
+                _git_run(seed, "config", key, value)
+            (seed / "expected.txt").write_text("expected\n", encoding="ascii")
+            _git_run(seed, "add", "expected.txt")
+            _git_run(seed, "commit", "-q", "-m", "expected head")
+            expected_head = _git_run(
+                seed,
+                "rev-parse",
+                "HEAD",
+                text=True,
+            ).stdout.strip()
+            _git_run(seed, "checkout", "-q", "--orphan", "force-pushed")
+            _git_run(seed, "rm", "-q", "-rf", ".")
+            (seed / "historical.txt").write_text(
+                "force-pushed\n",
+                encoding="ascii",
+            )
+            decision_path = (
+                seed / ".github" / "workflow-pilot-decisions.json"
+            )
+            decision_path.parent.mkdir(parents=True)
+            decision_content = (
+                b'{"artifacts":[],"pull_requests":['
+                b'{"pull_request":1,"threshold":{"override_history":['
+                b'{"enabled":true,"reason":"test override"}]}}],'
+                b'"schema_version":1}\n'
+            )
+            decision_path.write_bytes(decision_content)
+            _git_run(seed, "add", "historical.txt")
+            _git_run(seed, "add", str(reporter.DECISION_RECORD_PATH))
+            _git_run(
+                seed,
+                "commit",
+                "-q",
+                "-m",
+                "force-pushed historical candidate",
+            )
+            historical = _git_run(
+                seed,
+                "rev-parse",
+                "HEAD",
+                text=True,
+            ).stdout.strip()
+            _git_run(seed, "checkout", "-q", "master")
+            remote.mkdir()
+            _git_run(remote, "init", "-q", "--bare")
+            _git_run(seed, "remote", "add", "origin", str(remote))
+            _git_run(
+                seed,
+                "push",
+                "-q",
+                "origin",
+                "master",
+                f"{historical}:refs/heads/force-pushed",
+                offline=False,
+            )
+            anchors = {
+                f"{hydrate_authority.ANCHOR_PREFIX}{sha}": sha
+                for sha in sorted((expected_head, historical))
+            }
+            for name, sha in anchors.items():
+                _git_run(remote, "update-ref", name, sha)
+            _git_run(
+                seed,
+                "push",
+                "-q",
+                "origin",
+                ":refs/heads/force-pushed",
+                offline=False,
+            )
+            _git_run(remote, "reflog", "expire", "--expire=now", "--all")
+            _git_run(remote, "gc", "--prune=now")
+            _git_run(
+                remote,
+                "config",
+                "uploadpack.allowAnySHA1InWant",
+                "true",
+            )
+            _git_run(remote, "config", "uploadpack.allowFilter", "true")
+            checkout.mkdir()
+            _git_run(checkout, "init", "-q", "-b", "master")
+            _git_run(
+                checkout,
+                "remote",
+                "add",
+                "origin",
+                "https://github.com/laqieer/fireemblem8-expansion.git",
+            )
+            _git_run(
+                checkout,
+                "config",
+                f"url.file://{remote}.insteadOf",
+                "https://github.com/laqieer/fireemblem8-expansion.git",
+            )
+            _git_run(
+                checkout,
+                "fetch",
+                "-q",
+                "--depth=1",
+                "origin",
+                expected_head,
+                offline=False,
+            )
+            _git_run(checkout, "checkout", "-q", "--detach", "FETCH_HEAD")
+            self.assertNotEqual(
+                _git_run(
+                    checkout,
+                    "cat-file",
+                    "-e",
+                    f"{historical}^{{commit}}",
+                    check=False,
+                ).returncode,
+                0,
+            )
+
+            _git_run(
+                checkout,
+                "fetch",
+                "--quiet",
+                "--no-tags",
+                "--filter=blob:none",
+                "origin",
+                "+refs/heads/*:refs/remotes/origin/*",
+                offline=False,
+            )
+            self.assertNotEqual(
+                _git_run(
+                    checkout,
+                    "cat-file",
+                    "-e",
+                    f"{historical}^{{commit}}",
+                    check=False,
+                ).returncode,
+                0,
+            )
+            refs_before = _git_run(checkout, "show-ref").stdout
+            fetch_head_before = (checkout / ".git" / "FETCH_HEAD").read_bytes()
+
+            required = sorted([expected_head, historical])
+            hostile = {
+                "GIT_ALTERNATE_OBJECT_DIRECTORIES": str(
+                    seed / ".git" / "objects"
+                ),
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": "remote.origin.url",
+                "GIT_CONFIG_VALUE_0": "file:///does-not-exist",
+                "GIT_DIR": str(seed / ".git"),
+                "GIT_OBJECT_DIRECTORY": str(seed / ".git" / "objects"),
+                "GIT_WORK_TREE": str(seed),
+            }
+            with mock.patch.dict(os.environ, hostile, clear=False):
+                result = hydrate_authority.hydrate_anchor_commits(
+                    checkout,
+                    "laqieer/fireemblem8-expansion",
+                    required,
+                    anchors,
+                    expected_head,
+                )
+            self.assertEqual(result["required"], 2)
+            self.assertGreater(result["fetched"], 0)
+            _git_run(
+                checkout,
+                "cat-file",
+                "-e",
+                f"{historical}^{{commit}}",
+            )
+            _git_run(
+                checkout,
+                "cat-file",
+                "-e",
+                f"{historical}^{{tree}}",
+            )
+            decision_blobs = hydrate_authority.required_decision_blob_ids(
+                checkout,
+                [historical],
+            )
+            self.assertEqual(len(decision_blobs), 1)
+            self.assertEqual(
+                hydrate_authority.available_objects(
+                    checkout,
+                    decision_blobs,
+                    "blob",
+                ),
+                set(),
+            )
+            self.assertNotEqual(
+                _git_run(
+                    checkout,
+                    "show",
+                    f"{historical}:{reporter.DECISION_RECORD_PATH}",
+                    check=False,
+                ).returncode,
+                0,
+            )
+            unrelated_blob = (
+                _git_run(
+                    checkout,
+                    "ls-tree",
+                    historical,
+                    "--",
+                    "historical.txt",
+                    text=True,
+                )
+                .stdout.split()[2]
+            )
+            blob_result = hydrate_authority.hydrate_override_decision_blobs(
+                checkout,
+                "laqieer/fireemblem8-expansion",
+                [historical],
+                expected_head,
+            )
+            self.assertEqual(
+                blob_result,
+                {"required_blobs": 1, "fetched_blobs": 1},
+            )
+            self.assertEqual(
+                _git_run(
+                    checkout,
+                    "show",
+                    f"{historical}:{reporter.DECISION_RECORD_PATH}",
+                ).stdout,
+                decision_content,
+            )
+            self.assertEqual(
+                hydrate_authority.available_objects(
+                    checkout,
+                    [unrelated_blob],
+                    "blob",
+                ),
+                set(),
+            )
+            self.assertEqual(
+                _git_run(
+                    checkout,
+                    "rev-parse",
+                    "HEAD",
+                    text=True,
+                ).stdout.strip(),
+                expected_head,
+            )
+            self.assertEqual(
+                _git_run(checkout, "show-ref").stdout,
+                refs_before,
+            )
+            self.assertEqual(
+                (checkout / ".git" / "FETCH_HEAD").read_bytes(),
+                fetch_head_before,
+            )
+
+            missing_name = next(iter(anchors))
+            _git_run(remote, "update-ref", "-d", missing_name)
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "missing=",
+            ):
+                hydrate_authority.hydrate_anchor_commits(
+                    checkout,
+                    "laqieer/fireemblem8-expansion",
+                    required,
+                    anchors,
+                    expected_head,
+                )
+            wrong_target = (
+                historical
+                if anchors[missing_name] == expected_head
+                else expected_head
+            )
+            _git_run(remote, "update-ref", missing_name, wrong_target)
+            with self.assertRaisesRegex(reporter.PilotDataError, "moved="):
+                hydrate_authority.hydrate_anchor_commits(
+                    checkout,
+                    "laqieer/fireemblem8-expansion",
+                    required,
+                    anchors,
+                    expected_head,
+                )
+            _git_run(remote, "update-ref", missing_name, anchors[missing_name])
+            extra_name = f"{hydrate_authority.ANCHOR_PREFIX}{'f' * 40}"
+            _git_run(remote, "update-ref", extra_name, expected_head)
+            with self.assertRaisesRegex(reporter.PilotDataError, "extra="):
+                hydrate_authority.hydrate_anchor_commits(
+                    checkout,
+                    "laqieer/fireemblem8-expansion",
+                    required,
+                    anchors,
+                    expected_head,
+                )
+            _git_run(remote, "update-ref", "-d", extra_name)
+            omitted = next(name for name in anchors if name != missing_name)
+            _git_run(remote, "update-ref", "-d", omitted)
+            subset = {missing_name: anchors[missing_name]}
+            with self.assertRaisesRegex(reporter.PilotDataError, "do not cover"):
+                hydrate_authority.hydrate_anchor_commits(
+                    checkout,
+                    "laqieer/fireemblem8-expansion",
+                    required,
+                    subset,
+                    expected_head,
+                )
+
+    def test_production_hydration_extracts_only_strict_fixture_commits(self):
+        fixture_path = ROOT / "scripts/workflow_pilot/tests/fixtures/baseline.json"
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        repository, required = hydrate_authority.required_commits_from_fixture(
+            fixture_path
+        )
+        self.assertEqual(repository, "laqieer/fireemblem8-expansion")
+        self.assertEqual(required, sorted(set(required)))
+        self.assertEqual(
+            required,
+            sorted(commit["sha"] for commit in fixture["commits"]),
+        )
+        decisions_path = ROOT / reporter.DECISION_RECORD_PATH
+        (
+            derived_repository,
+            derived_commits,
+            decision_commits,
+        ) = hydrate_authority.required_override_decision_commits(
+            fixture_path,
+            decisions_path,
+        )
+        self.assertEqual(derived_repository, repository)
+        self.assertEqual(derived_commits, required)
+        fixture_data = reporter.validate_fixture(fixture)
+        introduction_commits = {
+            event["sha"]
+            for event in fixture_data["events"].values()
+            if event["type"] == "threshold_override_introduced"
+        }
+        self.assertEqual(set(decision_commits), introduction_commits)
+        anchors = hydrate_authority.required_anchor_refs(fixture_path)
+        self.assertEqual(len(anchors), 12)
+        self.assertEqual(
+            anchors,
+            {
+                f"{hydrate_authority.ANCHOR_PREFIX}{sha}": sha
+                for sha in anchors.values()
+            },
+        )
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "malformed or duplicated",
+        ):
+            hydrate_authority.parse_remote_anchor_refs(
+                b"0" * 40
+                + b"\trefs/tags/workflow-pilot-baseline/not-a-sha\n"
+            )
+        duplicate = next(iter(anchors.items()))
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "malformed or duplicated",
+        ):
+            hydrate_authority.parse_remote_anchor_refs(
+                (
+                    f"{duplicate[1]}\t{duplicate[0]}\n"
+                    f"{duplicate[1]}\t{duplicate[0]}\n"
+                ).encode("ascii")
+            )
+
+    def test_anchor_ref_print_mode_is_deterministic_and_read_only(self):
+        command = [
+            "/usr/bin/python3",
+            "-I",
+            "scripts/workflow_pilot/isolated_launcher.py",
+            "anchor-refs",
+            "--repository-root",
+            str(ROOT),
+            "--fixture",
+            str(ROOT / reporter.BASELINE_FIXTURE_PATH),
+            "--decisions",
+            str(ROOT / reporter.DECISION_RECORD_PATH),
+        ]
+        before = hydrate_authority.authority_state(ROOT)
+        first = subprocess.run(
+            command,
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+        ).stdout
+        second = subprocess.run(
+            command,
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+        ).stdout
+        self.assertEqual(first, second)
+        self.assertEqual(len(first.splitlines()), 12)
+        self.assertEqual(hydrate_authority.authority_state(ROOT), before)
 
     def test_synthetic_stacked_pull_request_runs_candidate_jobs_on_its_real_base(self):
         event = {
@@ -561,6 +1913,247 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             1,
         )
         self.assertTrue(any("must run for pull-request" in error for error in _errors(changed, False)))
+
+    def test_combined_workers_reject_spaced_reviewed_job_keys(self):
+        for job_name in COMBINED_WORKERS:
+            with self.subTest(job=job_name):
+                job = _job_blocks(self.text)[job_name]
+                changed_job = job.replace("    runs-on:", "    runs-on :", 1)
+                self.assertNotEqual(changed_job, job)
+                changed = self.text.replace(job, changed_job, 1)
+                self.assertTrue(
+                    any(
+                        f"{job_name} direct job mapping differs" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_reviewed_job_key_aliases_fail_closed(self):
+        allowed = {
+            "runs-on": "ubuntu-latest",
+            "timeout-minutes": "60",
+            "env": "",
+            "steps": "",
+        }
+        for job_name in COMBINED_WORKERS:
+            for field, value in allowed.items():
+                escaped = f'"\\u{ord(field[0]):04x}{field[1:]}"'
+                suffix = f" {value}" if value else ""
+                original = f"    {field}:{suffix}"
+                variants = (
+                    f'    "{field}":{suffix}',
+                    f"    {escaped}:{suffix}",
+                    f"    !!str {field}:{suffix}",
+                    f"    ? {field}\n    :{suffix}",
+                    f"    {{{field}:{suffix}}}",
+                )
+                for variant in variants:
+                    with self.subTest(
+                        job=job_name,
+                        field=field,
+                        variant=variant,
+                    ):
+                        job = _job_blocks(self.text)[job_name]
+                        changed_job = job.replace(original, variant, 1)
+                        self.assertNotEqual(changed_job, job)
+                        changed = self.text.replace(job, changed_job, 1)
+                        self.assertTrue(
+                            any(
+                                f"{job_name} direct job mapping differs" in error
+                                or f"{job_name} uses unsupported" in error
+                                for error in _errors(changed, False)
+                            )
+                        )
+
+    def test_every_combined_worker_rejects_spaced_advisory_or_skip_keys(self):
+        for job_name in COMBINED_WORKERS:
+            for field, message in (
+                ("if : ${{ false }}", "must run for pull-request"),
+                ("continue-on-error : true", "must not be advisory"),
+            ):
+                with self.subTest(job=job_name, field=field):
+                    changed = self.text.replace(
+                        f"  {job_name}:\n",
+                        f"  {job_name}:\n    {field}\n",
+                        1,
+                    )
+                    self.assertTrue(
+                        any(message in error for error in _errors(changed, False))
+                    )
+
+    def test_every_combined_worker_rejects_complex_job_keys(self):
+        variants = (
+            '"if": ${{ false }}',
+            '"continue-\\u006fn-error": true',
+            "? if\n    : ${{ false }}",
+            "!!str continue-on-error: true",
+            "{if: false, continue-on-error: true}",
+        )
+        for job_name, variant in zip(
+            COMBINED_WORKERS,
+            variants[: len(COMBINED_WORKERS)],
+        ):
+            with self.subTest(job=job_name, variant=variant):
+                changed = self.text.replace(
+                    f"  {job_name}:\n",
+                    f"  {job_name}:\n    {variant}\n",
+                    1,
+                )
+                self.assertTrue(
+                    any(
+                        f"{job_name} uses unsupported direct mapping-key syntax"
+                        in error
+                        for error in _errors(changed, False)
+                    )
+                )
+        changed = self.text.replace(
+            "  host-tests:\n",
+            "  host-tests:\n    {if: false, continue-on-error: true}\n",
+            1,
+        )
+        self.assertTrue(
+            any(
+                "host-tests uses unsupported direct mapping-key syntax" in error
+                for error in _errors(changed, False)
+            )
+        )
+
+    def test_every_combined_worker_has_a_closed_execution_context(self):
+        execution_fields = {
+            "container": "ubuntu:latest",
+            "services": "{}",
+            "strategy": "{matrix: {python: [3.12]}}",
+            "permissions": "{contents: write}",
+            "defaults": "{run: {shell: bash}}",
+            "needs": "summary",
+            "if": "${{ false }}",
+            "continue-on-error": "true",
+            "environment": "production",
+            "concurrency": "attacker-controlled",
+            "uses": "./untrusted-job.yml",
+            "secrets": "inherit",
+            "shell": "untrusted-shell {0}",
+        }
+        for job_name in COMBINED_WORKERS:
+            for field, value in execution_fields.items():
+                with self.subTest(job=job_name, field=field):
+                    changed = self.text.replace(
+                        f"  {job_name}:\n",
+                        f"  {job_name}:\n    {field}: {value}\n",
+                        1,
+                    )
+                    self.assertTrue(
+                        any(
+                            f"{job_name} direct job mapping differs" in error
+                            or f"{job_name} must " in error
+                            for error in _errors(changed, False)
+                        )
+                    )
+
+            for allowed_line in (
+                "    runs-on: ubuntu-latest",
+                "    timeout-minutes: 60",
+                "    env:",
+                "    steps:",
+            ):
+                with self.subTest(job=job_name, duplicate=allowed_line):
+                    job = _job_blocks(self.text)[job_name]
+                    changed_job = job.replace(
+                        allowed_line,
+                        f"{allowed_line}\n{allowed_line}",
+                        1,
+                    )
+                    changed = self.text.replace(job, changed_job, 1)
+                    self.assertTrue(
+                        any(
+                            f"{job_name} direct job mapping differs" in error
+                            for error in _errors(changed, False)
+                        )
+                    )
+
+            job = _job_blocks(self.text)[job_name]
+            reordered = (
+                job.replace(
+                    "    runs-on: ubuntu-latest",
+                    "    __RUNS_ON__",
+                    1,
+                )
+                .replace(
+                    "    timeout-minutes: 60",
+                    "    runs-on: ubuntu-latest",
+                    1,
+                )
+                .replace("    __RUNS_ON__", "    timeout-minutes: 60", 1)
+            )
+            with self.subTest(job=job_name, reordered=True):
+                changed = self.text.replace(job, reordered, 1)
+                self.assertTrue(
+                    any(
+                        f"{job_name} direct job mapping differs" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+            for original, replacement in (
+                ("    runs-on: ubuntu-latest", "    runs-on: self-hosted"),
+                ("    timeout-minutes: 60", "    timeout-minutes: 59"),
+            ):
+                with self.subTest(job=job_name, replacement=replacement):
+                    job = _job_blocks(self.text)[job_name]
+                    changed = self.text.replace(
+                        job,
+                        job.replace(original, replacement, 1),
+                        1,
+                    )
+                    self.assertTrue(
+                        any(
+                            f"{job_name} direct job mapping differs" in error
+                            for error in _errors(changed, False)
+                        )
+                    )
+
+    def test_execution_context_key_syntax_bypasses_fail_closed(self):
+        execution_fields = {
+            "container": "ubuntu:latest",
+            "services": "{}",
+            "strategy": "{matrix: {python: [3.12]}}",
+            "permissions": "{contents: write}",
+            "defaults": "{run: {shell: bash}}",
+            "needs": "summary",
+            "if": "${{ false }}",
+            "continue-on-error": "true",
+            "environment": "production",
+            "concurrency": "attacker-controlled",
+            "uses": "./untrusted-job.yml",
+            "secrets": "inherit",
+            "shell": "untrusted-shell {0}",
+        }
+        for job_name in COMBINED_WORKERS:
+            for field, value in execution_fields.items():
+                escaped = f'"\\u{ord(field[0]):04x}{field[1:]}"'
+                variants = (
+                    f"{field} : {value}",
+                    f'"{field}": {value}',
+                    f"{escaped}: {value}",
+                    f"!!str {field}: {value}",
+                    f"{{{field}: {value}}}",
+                    f"? {field}\n    : {value}",
+                )
+                for variant in variants:
+                    with self.subTest(job=job_name, variant=variant):
+                        changed = self.text.replace(
+                            f"  {job_name}:\n",
+                            f"  {job_name}:\n    {variant}\n",
+                            1,
+                        )
+                        self.assertTrue(
+                            any(
+                                f"{job_name} direct job mapping differs" in error
+                                or f"{job_name} uses unsupported" in error
+                                or f"{job_name} must " in error
+                                for error in _errors(changed, False)
+                            )
+                        )
 
     def test_missing_pull_request_trigger_fails(self):
         changed = self.text.replace(PULL_REQUEST_TRIGGER, "", 1)
@@ -727,6 +2320,430 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             1,
         )
         self.assertTrue(any("summary must depend" in error for error in _errors(changed, False)))
+
+    def test_workflow_pilot_suite_remains_owned_by_required_host_job(self):
+        host_tests = _job_blocks(self.text)["host-tests"]
+        for command in (WORKFLOW_PILOT_GATE, WORKFLOW_PILOT_BASELINE_GATE):
+            with self.subTest(command=command):
+                self.assertTrue(
+                    _contains_exact_command(
+                        host_tests,
+                        command,
+                    )
+                )
+        self.assertIn(
+            '--repository-root "$GITHUB_WORKSPACE"',
+            WORKFLOW_PILOT_BASELINE_GATE,
+        )
+        changed = self.text.replace(
+            f"      run: {WORKFLOW_PILOT_GATE}\n",
+            "      run: true\n",
+            1,
+        )
+        self.assertNotEqual(changed, self.text)
+        self.assertTrue(
+            any(
+                "candidate host lost exact fail-closed Build evidence: "
+                f"{WORKFLOW_PILOT_GATE}"
+                in error
+                for error in _errors(changed, False)
+            )
+        )
+
+        changed = self.text.replace(
+            f"      run: {WORKFLOW_PILOT_BASELINE_GATE}\n",
+            "      run: true\n",
+            1,
+        )
+        self.assertNotEqual(changed, self.text)
+        self.assertTrue(
+            any(
+                "candidate host lost exact fail-closed Build evidence: "
+                f"{WORKFLOW_PILOT_BASELINE_GATE}"
+                in error
+                for error in _errors(changed, False)
+            )
+        )
+
+    def test_workflow_pilot_steps_reject_spaced_protected_keys(self):
+        changed = self.text
+        steps = (
+            (
+                "Run workflow-pilot reporter regression suite (issue #176)",
+                WORKFLOW_PILOT_GATE,
+            ),
+            (
+                "Validate workflow-pilot baseline against checked-out Git history",
+                WORKFLOW_PILOT_BASELINE_GATE,
+            ),
+        )
+        for step_name, command in steps:
+            changed = changed.replace(
+                f"    - name: {step_name}\n",
+                f"    - name : {step_name}\n",
+                1,
+            ).replace(
+                f"      run: {command}\n",
+                f"      run : {command}\n",
+                1,
+            )
+        self.assertNotEqual(changed, self.text)
+        self.assertTrue(
+            any(
+                "protected pre-pilot step sequence differs" in error
+                or "lost exact fail-closed Build evidence" in error
+                for error in _errors(changed, False)
+            )
+        )
+
+    def test_both_workflow_pilot_steps_reject_complex_or_advisory_keys(self):
+        variants = (
+            "continue-on-error: true",
+            "if: ${{ false }}",
+            "shell: bash {0} || true",
+            "working-directory: /",
+            "working-directory : /",
+            '"continue-on-error": true',
+            '"continue-\\u006fn-error": true',
+            "? continue-on-error\n      : true",
+            "!!str continue-on-error: true",
+            "{continue-on-error: true}",
+            '"if": ${{ false }}',
+            "@unsupported",
+        )
+        for command in (WORKFLOW_PILOT_GATE, WORKFLOW_PILOT_BASELINE_GATE):
+            for variant in variants:
+                with self.subTest(command=command, variant=variant):
+                    changed = self.text.replace(
+                        f"      run: {command}\n",
+                        f"      {variant}\n      run: {command}\n",
+                        1,
+                    )
+                    self.assertNotEqual(changed, self.text)
+                    self.assertTrue(
+                        any(
+                            "candidate host lost exact fail-closed Build evidence"
+                            in error
+                            or "unsupported direct mapping-key syntax" in error
+                            for error in _errors(changed, False)
+                        )
+                    )
+
+    def test_both_workflow_pilot_steps_reject_advisory_or_complex_first_keys(self):
+        steps = (
+            (
+                "Run workflow-pilot reporter regression suite (issue #176)",
+                WORKFLOW_PILOT_GATE,
+            ),
+            (
+                "Validate workflow-pilot baseline against checked-out Git history",
+                WORKFLOW_PILOT_BASELINE_GATE,
+            ),
+        )
+        variants = (
+            "continue-on-error: true",
+            "if: ${{ false }}",
+            "shell: bash {0} || true",
+            "working-directory: /",
+            "working-directory : /",
+            '"continue-on-error": true',
+            '"continue-\\u006fn-error": true',
+            "? continue-on-error\n      : true",
+            "!!str continue-on-error: true",
+            "{continue-on-error: true}",
+            "@unsupported",
+        )
+        for step_name, command in steps:
+            original = f"    - name: {step_name}\n"
+            reviewed_key_variants = (
+                f'"name": {step_name}',
+                f'"n\\u0061me": {step_name}',
+                f"? name\n      : {step_name}",
+                f"!!str name: {step_name}",
+                f"{{name: {step_name}}}",
+            )
+            for variant in variants + reviewed_key_variants:
+                with self.subTest(command=command, variant=variant):
+                    changed = self.text.replace(
+                        original,
+                        f"    - {variant}\n",
+                        1,
+                    )
+                    self.assertNotEqual(changed, self.text)
+                    self.assertTrue(
+                        any(
+                            "candidate host lost exact fail-closed Build evidence"
+                            in error
+                            or "unsupported direct mapping-key syntax" in error
+                            for error in _errors(changed, False)
+                        )
+                    )
+
+    def test_both_workflow_pilot_steps_reject_complex_run_keys(self):
+        variants = (
+            '"run"',
+            '"r\\u0075n"',
+            "!!str run",
+        )
+        for command in (WORKFLOW_PILOT_GATE, WORKFLOW_PILOT_BASELINE_GATE):
+            for variant in variants:
+                with self.subTest(command=command, variant=variant):
+                    changed = self.text.replace(
+                        f"      run: {command}\n",
+                        f"      {variant}: {command}\n",
+                        1,
+                    )
+                    self.assertNotEqual(changed, self.text)
+                    self.assertTrue(
+                        any(
+                            "candidate host lost exact fail-closed Build evidence"
+                            in error
+                            or "unsupported direct mapping-key syntax" in error
+                            for error in _errors(changed, False)
+                        )
+                    )
+
+    def test_workflow_pilot_gates_reject_shell_success_masks_and_wrappers(self):
+        mutations = (
+            f"{WORKFLOW_PILOT_GATE} || true",
+            f"{WORKFLOW_PILOT_GATE}; true",
+            f"{WORKFLOW_PILOT_GATE} && true",
+            f"sh -c \"{WORKFLOW_PILOT_GATE}\"",
+            f"echo {WORKFLOW_PILOT_GATE}",
+            f"$({WORKFLOW_PILOT_GATE})",
+            f"{WORKFLOW_PILOT_GATE} 2>/dev/null",
+        )
+        for replacement in mutations:
+            with self.subTest(replacement=replacement):
+                changed = self.text.replace(
+                    f"      run: {WORKFLOW_PILOT_GATE}\n",
+                    f"      run: {replacement}\n",
+                    1,
+                )
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "candidate host lost exact fail-closed Build evidence"
+                        in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+        inherited_defaults = (
+            self.text.replace(
+                "\njobs:\n",
+                "\ndefaults:\n"
+                "  run:\n"
+                "    shell: bash {0} || true\n\n"
+                "jobs:\n",
+                1,
+            ),
+            self.text.replace(
+                "\njobs:\n",
+                "\ndefaults: # inherited mask\n"
+                "  run:\n"
+                "    shell: bash {0} || true\n\n"
+                "jobs:\n",
+                1,
+            ),
+            self.text.replace(
+                "\njobs:\n",
+                "\ndefaults:\n"
+                "  run: # inherited mask\n"
+                "    shell: bash {0} || true\n\n"
+                "jobs:\n",
+                1,
+            ),
+            self.text.replace(
+                "\njobs:\n",
+                "\ndefaults:\n"
+                "    run:\n"
+                "        shell: bash {0} || true\n\n"
+                "jobs:\n",
+                1,
+            ),
+            self.text.replace(
+                "  host-tests:\n",
+                "  host-tests:\n"
+                "    defaults:\n"
+                "      run:\n"
+                "        shell: bash {0} || true\n",
+                1,
+            ),
+            self.text.replace(
+                "  host-tests:\n",
+                "  host-tests:\n"
+                "    defaults: # inherited mask\n"
+                "      run:\n"
+                "        shell: bash {0} || true\n",
+                1,
+            ),
+            self.text.replace(
+                "  host-tests:\n",
+                "  host-tests:\n"
+                "    defaults:\n"
+                "      run: # inherited mask\n"
+                "        shell: bash {0} || true\n",
+                1,
+            ),
+            self.text.replace(
+                "  host-tests:\n",
+                "  host-tests:\n"
+                "    defaults:\n"
+                "        run:\n"
+                "            shell: bash {0} || true\n",
+                1,
+            ),
+            self.text.replace(
+                "\njobs:\n",
+                "\n\"defaults\" :\n"
+                "  \"run\" :\n"
+                "    \"shell\" : bash {0} || true\n\n"
+                "jobs:\n",
+                1,
+            ),
+            self.text.replace(
+                "\njobs:\n",
+                "\ndefaults: {run: {shell: \"bash {0} || true\"}}\n\n"
+                "jobs:\n",
+                1,
+            ),
+            self.text.replace(
+                "  host-tests:\n",
+                "  host-tests:\n"
+                "    \"defaults\" :\n"
+                "      \"run\" :\n"
+                "        \"shell\" : bash {0} || true\n",
+                1,
+            ),
+            self.text.replace(
+                "  host-tests:\n",
+                "  host-tests:\n"
+                "    defaults: {run: {shell: \"bash {0} || true\"}}\n",
+                1,
+            ),
+            self.text.replace(
+                "\njobs:\n",
+                "\n\"def\\u0061ults\":\n"
+                "  run:\n"
+                "    shell: bash {0} || true\n\n"
+                "jobs:\n",
+                1,
+            ),
+            self.text.replace(
+                "\njobs:\n",
+                "\n? defaults\n"
+                ":\n"
+                "  run:\n"
+                "    shell: bash {0} || true\n\n"
+                "jobs:\n",
+                1,
+            ),
+            self.text.replace(
+                "\njobs:\n",
+                "\n!!str defaults:\n"
+                "  run:\n"
+                "    shell: bash {0} || true\n\n"
+                "jobs:\n",
+                1,
+            ),
+            self.text.replace(
+                "  host-tests:\n",
+                "  host-tests:\n"
+                "    \"def\\u0061ults\":\n"
+                "      run:\n"
+                "        shell: bash {0} || true\n",
+                1,
+            ),
+            self.text.replace(
+                "  host-tests:\n",
+                "  host-tests:\n"
+                "    ? defaults\n"
+                "    :\n"
+                "      run:\n"
+                "        shell: bash {0} || true\n",
+                1,
+            ),
+            self.text.replace(
+                "  host-tests:\n",
+                "  host-tests:\n"
+                "    !!str defaults:\n"
+                "      run:\n"
+                "        shell: bash {0} || true\n",
+                1,
+            ),
+        )
+        for changed in inherited_defaults:
+            with self.subTest(inherited_shell_default=changed[:200]):
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "execution defaults must not alter" in error
+                        or "unsupported direct mapping-key syntax" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+        baseline_mutations = (
+            f"{WORKFLOW_PILOT_BASELINE_GATE} || true",
+            f"{WORKFLOW_PILOT_BASELINE_GATE}; true",
+            f"{WORKFLOW_PILOT_BASELINE_GATE} && true",
+            f"sh -c '{WORKFLOW_PILOT_BASELINE_GATE}'",
+            f"echo {WORKFLOW_PILOT_BASELINE_GATE}",
+            f"$({WORKFLOW_PILOT_BASELINE_GATE})",
+            WORKFLOW_PILOT_BASELINE_GATE.replace(
+                "> /dev/null", "> /dev/null 2>&1"
+            ),
+        )
+        for replacement in baseline_mutations:
+            with self.subTest(replacement=replacement):
+                changed = self.text.replace(
+                    f"      run: {WORKFLOW_PILOT_BASELINE_GATE}\n",
+                    f"      run: {replacement}\n",
+                    1,
+                )
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "candidate host lost exact fail-closed Build evidence"
+                        in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+        for field in (
+            "continue-on-error: true",
+            "if: ${{ false }}",
+            "shell: bash {0} || true",
+        ):
+            with self.subTest(advisory_field=field):
+                changed = self.text.replace(
+                    f"      run: {WORKFLOW_PILOT_BASELINE_GATE}\n",
+                    f"      {field}\n      run: {WORKFLOW_PILOT_BASELINE_GATE}\n",
+                    1,
+                )
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "candidate host lost exact fail-closed Build evidence"
+                        in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+        changed = self.text.replace(
+            "  host-tests:\n    runs-on: ubuntu-latest\n",
+            "  host-tests:\n    runs-on: ubuntu-latest\n"
+            "    continue-on-error: true\n",
+            1,
+        )
+        self.assertNotEqual(changed, self.text)
+        self.assertTrue(
+            any(
+                "host-tests must not be advisory" in error
+                for error in _errors(changed, False)
+            )
+        )
 
     def test_summary_omitting_legacy_result_fails(self):
         changed = self.text.replace(

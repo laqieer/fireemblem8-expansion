@@ -4,11 +4,12 @@ after a maintainer has manually applied a port batch.
 WARNING (see docs/upstream-porting.md): this command builds and checks the
 repository's *own* current working tree/commit. It never builds, checks out,
 or executes the canonical upstream ref/tree. It is a thin, literal mirror of
-the four combined workers in `.github/workflows/build.yml` (kept independent
-from that file: this module doesn't parse/execute the workflow, it re-states
-the same gate commands so `verify` stays runnable locally without a CI
-runner). Only the master-only publisher and serial summary jobs have no local
-gate equivalent. The one DELIBERATE command-level exception is build.yml's
+the four combined workers in `.github/workflows/build.yml`. Before execution,
+it parses the selected target checkout's workflow as data and requires exact
+semantic equivalence with both the source workflow and this module's reviewed
+gate list; target Python is never imported. Only the master-only publisher and
+serial summary jobs have no local gate equivalent. The one DELIBERATE
+command-level exception is build.yml's
 "Check documentation (issues #7/#17)" step, which remains a required
 standalone workflow gate outside this mirror. Run that standalone command pair
 directly to reproduce it locally; see docs/upstream-porting.md.
@@ -18,6 +19,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import subprocess
 from dataclasses import dataclass
 from typing import List
@@ -27,6 +29,164 @@ from typing import List
 # the gate list stays an argv-identical copy of the workflow. It is applied
 # to the child environment, never exec-ed as a program.
 _ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_TRUSTED_GIT = "/usr/bin/git"
+_SOURCE_ROOT = os.path.realpath(
+    os.path.join(os.path.dirname(__file__), "..", "..")
+)
+_BUILD_WORKFLOW_RELATIVE = os.path.join(".github", "workflows", "build.yml")
+_COMBINED_JOBS = ("host-tests", "build", "extended-host-tests", "legacy")
+_EXPECTED_JOBS = _COMBINED_JOBS + ("patch-release", "summary")
+_CHECKOUT_USES = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
+_CHECKOUT_WITH = (
+    ("fetch-depth", "0"),
+    ("persist-credentials", "false"),
+    (
+        "ref",
+        "${{ github.event_name == 'pull_request' && "
+        "github.event.pull_request.head.sha || github.sha }}",
+    ),
+    ("submodules", "recursive"),
+)
+_PATCH_CHECKOUT_WITH = (
+    ("persist-credentials", "false"),
+    ("ref", "${{ github.sha }}"),
+    ("submodules", "recursive"),
+)
+_UPLOAD_USES = (
+    "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+)
+_UPLOAD_WITH = (
+    ("if-no-files-found", "error"),
+    ("name", "modern-release-all-locales-all-features-aapcs-bps-${{ github.sha }}"),
+    ("path", "${{ runner.temp }}/patch-artifact"),
+    ("retention-days", "30"),
+)
+_EXPECTED_BUILD_SHA_EXPRESSION = (
+    "${{ github.event_name == 'pull_request' && "
+    "github.event.pull_request.head.sha || github.sha }}"
+)
+_EXPECTED_JOB_ENV = {
+    "host-tests": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
+    "build": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
+    "extended-host-tests": (
+        ("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),
+    ),
+    "legacy": (
+        ("AGBCC_COMMIT", "da598c1d918402c42c0c0d7128ba14567f3175e9"),
+        ("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),
+        (
+            "MGFEMBP_AGBCC_COMMIT",
+            "63b22f3eb8a8051af30bd80c4795b355e439e7ef",
+        ),
+    ),
+    "patch-release": (("PATCH_COMMIT", "${{ github.sha }}"),),
+    "summary": (
+        ("BUILD_RESULT", "${{ needs.build.result }}"),
+        ("EXTENDED_HOST_TESTS_RESULT", "${{ needs.extended-host-tests.result }}"),
+        ("HOST_TESTS_RESULT", "${{ needs.host-tests.result }}"),
+        ("LEGACY_RESULT", "${{ needs.legacy.result }}"),
+    ),
+}
+_NON_GATE_STEP_NAMES = {
+    "Verify checked-out revision",
+    "Hydrate workflow-pilot Git authority",
+    "Install host-only dependencies (no arm-none-eabi toolchain)",
+    "Install dependencies",
+    "Build tools",
+    "Install extended host dependencies",
+    "Install archival build dependencies",
+    "Preflight archival toolchain executables",
+    "Install pinned archival agbcc compilers",
+}
+_DOCS_GOVERNANCE_STEP_NAME = "Check documentation (issues #7/#17)"
+_WORKFLOW_PILOT_TEST_STEP_NAME = (
+    "Run workflow-pilot reporter regression suite (issue #176)"
+)
+_WORKFLOW_PILOT_BASELINE_STEP_NAME = (
+    "Validate workflow-pilot baseline against checked-out Git history"
+)
+_SCRUBBED_PILOT_ENV = (
+    "BASH_ENV: ''",
+    "ENV: ''",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES: ''",
+    "GIT_CEILING_DIRECTORIES: ''",
+    "GIT_COMMON_DIR: ''",
+    "GIT_CONFIG_COUNT: '0'",
+    "GIT_CONFIG_GLOBAL: /dev/null",
+    "GIT_CONFIG_KEY_0: ''",
+    "GIT_CONFIG_NOSYSTEM: '1'",
+    "GIT_CONFIG_PARAMETERS: ''",
+    "GIT_CONFIG_SYSTEM: /dev/null",
+    "GIT_CONFIG_VALUE_0: ''",
+    "GIT_DIR: ''",
+    "GIT_EXEC_PATH: ''",
+    "GIT_INDEX_FILE: ''",
+    "GIT_NAMESPACE: ''",
+    "GIT_NO_LAZY_FETCH: '1'",
+    "GIT_NO_REPLACE_OBJECTS: '1'",
+    "GIT_OBJECT_DIRECTORY: ''",
+    "GIT_REPLACE_REF_BASE: ''",
+    "GIT_WORK_TREE: ''",
+    "PATH: /usr/bin:/bin",
+    "PYTHONPATH: ''",
+)
+_EXPECTED_STEP_ROLES = {
+    "host-tests": (
+        ("setup", None),
+        ("setup", "Verify checked-out revision"),
+        ("setup", "Hydrate workflow-pilot Git authority"),
+        ("setup", "Install host-only dependencies (no arm-none-eabi toolchain)"),
+        ("gate", "Run gba-playtest host test suite"),
+        ("gate", "Run upstream-port tooling test suite"),
+        ("gate", "Run workflow contract test suite"),
+        ("gate", _WORKFLOW_PILOT_TEST_STEP_NAME),
+        ("gate", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
+        ("gate", "Run localization host test suite (issue #18)"),
+        ("gate", "Run full-game localization width contract (issue #18)"),
+    ),
+    "build": (
+        ("setup", None),
+        ("setup", "Verify checked-out revision"),
+        ("gate", "Check tracked artifacts"),
+        ("standalone-gate", _DOCS_GOVERNANCE_STEP_NAME),
+        ("setup", "Install dependencies"),
+        ("setup", "Build tools"),
+        ("gate", "Run CodeQL alert regression suite (issue #84)"),
+        ("gate", "Check default build lane and quickstart legacy glue (issue #15)"),
+        ("gate", "Check generated-data tables for drift"),
+        ("gate", "Build and verify modern target ROMs and linker"),
+        (
+            "gate",
+            "Boundary/serialization item-ID-expansion + content runtime "
+            "gate (cap 0xCE)",
+        ),
+        (
+            "gate",
+            "Build and verify all-locales/all-features map menu "
+            "(issues #49/#168)",
+        ),
+    ),
+    "extended-host-tests": (
+        ("setup", None),
+        ("setup", "Verify checked-out revision"),
+        ("setup", "Install extended host dependencies"),
+        ("gate", "Run CJK font gates"),
+        ("gate", "Run multilang texttools codec gates"),
+        ("gate", "Run configuration and linker-budget gates"),
+    ),
+    "legacy": (
+        ("setup", None),
+        ("setup", "Verify checked-out revision"),
+        ("setup", "Install archival build dependencies"),
+        ("setup", "Preflight archival toolchain executables"),
+        ("setup", "Install pinned archival agbcc compilers"),
+        ("setup", "Build tools"),
+        ("gate", "Build archival lane without a copyrighted baserom"),
+        ("gate", "Validate pinned archival payload identities"),
+    ),
+    "patch-release": (("publisher", None),) * 6,
+    "summary": (("summary", "Render fail-closed combined Build summary"),),
+}
 
 
 def _split_env_prefix(command):
@@ -42,6 +202,739 @@ def _split_env_prefix(command):
         env_overrides[name] = value
         argv = argv[1:]
     return env_overrides, argv
+
+
+def _split_stdout_redirect(command):
+    """Translate the workflow's trailing ``> /dev/null`` without a shell."""
+    argv = list(command)
+    if argv[-2:] == [">", "/dev/null"]:
+        return argv[:-2], subprocess.DEVNULL
+    return argv, subprocess.PIPE
+
+
+def _trusted_git_executable():
+    git = os.path.realpath(_TRUSTED_GIT)
+    if not os.path.isfile(git) or not os.access(git, os.X_OK):
+        raise ValueError(f"trusted Git executable {git!r} is unavailable")
+    return git
+
+
+def _git_environment():
+    return {
+        "GIT_CONFIG_COUNT": "0",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_SYSTEM": "/dev/null",
+        "GIT_NO_LAZY_FETCH": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_TERMINAL_PROMPT": "0",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+    }
+
+
+def _git_top_level(path):
+    git = _trusted_git_executable()
+    try:
+        return os.path.realpath(
+            subprocess.check_output(
+                [
+                    git,
+                    "--no-replace-objects",
+                    "-C",
+                    path,
+                    "rev-parse",
+                    "--show-toplevel",
+                ],
+                env=_git_environment(),
+                stderr=subprocess.PIPE,
+                text=True,
+            ).strip()
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise ValueError(
+            f"{path!r} is not inside a checked-out Git repository"
+        ) from error
+
+
+def _resolve_repository_root(repository_root):
+    requested_root = os.path.realpath(os.path.abspath(repository_root))
+    target_root = _git_top_level(requested_root)
+    if requested_root != target_root:
+        raise ValueError(
+            f"gate repository must be the exact Git top level {target_root!r}"
+        )
+    return target_root
+
+
+def _expand_workspace(argv, repository_root):
+    return [
+        repository_root if argument == "$GITHUB_WORKSPACE" else argument
+        for argument in argv
+    ]
+
+
+def _workflow_job_entries(text):
+    lines = text.splitlines(keepends=True)
+    try:
+        jobs_index = next(
+            index
+            for index, line in enumerate(lines)
+            if line.rstrip("\r\n") == "jobs:"
+        )
+    except StopIteration as error:
+        raise ValueError("workflow lacks jobs mapping") from error
+
+    starts = []
+    for index in range(jobs_index + 1, len(lines)):
+        line = lines[index].rstrip("\r\n")
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 0:
+            raise ValueError("workflow has content after the jobs mapping")
+        if indent != 2:
+            continue
+        match = re.fullmatch(r"  ([A-Za-z_][A-Za-z0-9_-]*):", line)
+        if match is None:
+            raise ValueError("workflow uses unsupported job-key syntax")
+        starts.append((match.group(1), index))
+    names = [name for name, _ in starts]
+    if len(names) != len(set(names)):
+        raise ValueError("workflow contains duplicate job names")
+    return tuple(
+        (
+            name,
+            "".join(
+                lines[
+                    index + 1 :
+                    starts[position + 1][1]
+                    if position + 1 < len(starts)
+                    else len(lines)
+                ]
+            ),
+        )
+        for position, (name, index) in enumerate(starts)
+    )
+
+
+def _parse_workflow_context(text):
+    lines = text.splitlines()
+    direct = []
+    for index, line in enumerate(lines):
+        if line == "jobs:":
+            direct.append(("jobs", "", index))
+            break
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 0:
+            match = re.fullmatch(
+                r"([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)",
+                line,
+            )
+            if match is None:
+                raise ValueError(
+                    "workflow uses unsupported top-level key syntax"
+                )
+            direct.append((match.group(1), match.group(2), index))
+    names = [name for name, _, _ in direct]
+    if len(names) != len(set(names)):
+        raise ValueError("workflow contains duplicate top-level keys")
+    if names != ["name", "on", "permissions", "jobs"]:
+        raise ValueError(
+            "workflow top-level execution context must be exactly "
+            "name, on, permissions, and jobs"
+        )
+
+    values = {}
+    for field_index, (name, raw_value, line_index) in enumerate(direct):
+        end = (
+            direct[field_index + 1][2]
+            if field_index + 1 < len(direct)
+            else len(lines)
+        )
+        value = raw_value.strip()
+        nested = [
+            line
+            for line in lines[line_index + 1 : end]
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        if name == "name":
+            if value != "Build CI" or nested:
+                raise ValueError(
+                    "workflow name must be exactly 'Build CI'"
+                )
+            values[name] = value
+        elif name == "on":
+            if value or not nested:
+                raise ValueError(
+                    "workflow on must use the reviewed block mapping"
+                )
+            values[name] = tuple(
+                (
+                    len(line) - len(line.lstrip(" ")),
+                    line.strip(),
+                )
+                for line in nested
+            )
+        elif name == "permissions":
+            if value:
+                raise ValueError(
+                    "workflow permissions must use a block mapping"
+                )
+            entries = {}
+            for line in nested:
+                if len(line) - len(line.lstrip(" ")) != 2:
+                    raise ValueError(
+                        "workflow permissions uses unsupported indentation"
+                    )
+                match = re.fullmatch(
+                    r"  ([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)",
+                    line,
+                )
+                if match is None:
+                    raise ValueError(
+                        "workflow permissions uses unsupported key syntax"
+                    )
+                key = match.group(1)
+                if key in entries:
+                    raise ValueError(
+                        f"workflow permissions repeats key {key!r}"
+                    )
+                entries[key] = match.group(2).strip()
+            permissions = tuple(sorted(entries.items()))
+            if permissions != (("contents", "read"),):
+                raise ValueError(
+                    "workflow permissions must be exactly contents: read"
+                )
+            values[name] = permissions
+        else:
+            if value:
+                raise ValueError("workflow jobs must use a block mapping")
+            values[name] = None
+    return tuple((name, values[name]) for name in names)
+
+
+def _parse_job_environment(lines, start, end, job_name):
+    entries = {}
+    for line in lines[start:end]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if len(line) - len(line.lstrip(" ")) != 6:
+            raise ValueError(
+                f"job {job_name!r} env uses unsupported indentation"
+            )
+        match = re.fullmatch(
+            r"      ([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)",
+            line,
+        )
+        if match is None:
+            raise ValueError(
+                f"job {job_name!r} env uses unsupported key syntax"
+            )
+        key = match.group(1)
+        if key in entries:
+            raise ValueError(f"job {job_name!r} env repeats key {key!r}")
+        value = match.group(2).strip()
+        if not value:
+            raise ValueError(f"job {job_name!r} env.{key} is empty")
+        entries[key] = value
+    return tuple(sorted(entries.items()))
+
+
+def _parse_job_context(job_name, body):
+    lines = body.splitlines()
+    direct = []
+    for index, line in enumerate(lines):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent != 4 or line.startswith("    -"):
+            continue
+        match = re.fullmatch(
+            r"    ([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)",
+            line,
+        )
+        if match is None:
+            raise ValueError(
+                f"job {job_name!r} uses unsupported direct key syntax"
+            )
+        direct.append((match.group(1), match.group(2), index))
+    names = [name for name, _, _ in direct]
+    if len(names) != len(set(names)):
+        raise ValueError(f"job {job_name!r} contains duplicate direct keys")
+    expected_names = {
+        **{
+            name: ["runs-on", "timeout-minutes", "env", "steps"]
+            for name in _COMBINED_JOBS
+        },
+        "patch-release": ["if", "runs-on", "timeout-minutes", "env", "steps"],
+        "summary": [
+            "if",
+            "needs",
+            "runs-on",
+            "timeout-minutes",
+            "env",
+            "steps",
+        ],
+    }[job_name]
+    if names != expected_names:
+        raise ValueError(
+            f"job {job_name!r} direct mapping differs from reviewed keys"
+        )
+
+    values = {}
+    for field_index, (name, raw_value, line_index) in enumerate(direct):
+        end = (
+            direct[field_index + 1][2]
+            if field_index + 1 < len(direct)
+            else len(lines)
+        )
+        value = raw_value.strip()
+        nested = [
+            line
+            for line in lines[line_index + 1 : end]
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        if name == "if":
+            expected = {
+                "patch-release": (
+                    "${{ github.event_name == 'push' && "
+                    "github.ref == 'refs/heads/master' }}"
+                ),
+                "summary": "always()",
+            }[job_name]
+            if value != expected or nested:
+                raise ValueError(f"job {job_name!r} if condition differs")
+            values[name] = value
+        elif name == "needs":
+            if (
+                value
+                != "[host-tests, build, extended-host-tests, legacy]"
+                or nested
+            ):
+                raise ValueError(f"job {job_name!r} needs differs")
+            values[name] = value
+        elif name == "runs-on":
+            if value != "ubuntu-latest" or nested:
+                raise ValueError(
+                    f"job {job_name!r} runs-on must be ubuntu-latest"
+                )
+            values[name] = value
+        elif name == "timeout-minutes":
+            expected = "5" if job_name == "summary" else "60"
+            if value != expected or nested:
+                raise ValueError(
+                    f"job {job_name!r} timeout-minutes must be {expected}"
+                )
+            values[name] = value
+        elif name == "env":
+            if value:
+                raise ValueError(
+                    f"job {job_name!r} env must use a block mapping"
+                )
+            environment = _parse_job_environment(
+                lines,
+                line_index + 1,
+                end,
+                job_name,
+            )
+            if environment != _EXPECTED_JOB_ENV[job_name]:
+                raise ValueError(
+                    f"job {job_name!r} env differs from its reviewed mapping"
+                )
+            values[name] = environment
+        else:
+            if value:
+                raise ValueError(
+                    f"job {job_name!r} steps must use a block sequence"
+                )
+            values[name] = None
+    return tuple((name, values[name]) for name in names)
+
+
+def _parse_nested_mapping(lines, start, end, field, step_label):
+    entries = {}
+    for line in lines[start:end]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if len(line) - len(line.lstrip(" ")) != 8:
+            raise ValueError(
+                f"{step_label} {field} uses unsupported nested indentation"
+            )
+        match = re.fullmatch(
+            r"        ([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)",
+            line,
+        )
+        if match is None:
+            raise ValueError(
+                f"{step_label} {field} uses unsupported mapping-key syntax"
+            )
+        key = match.group(1)
+        if key in entries:
+            raise ValueError(f"{step_label} {field} repeats key {key!r}")
+        value = match.group(2).strip()
+        if not value:
+            raise ValueError(f"{step_label} {field}.{key} is empty")
+        entries[key] = value
+    if not entries:
+        raise ValueError(f"{step_label} {field} mapping is empty")
+    return tuple(sorted(entries.items()))
+
+
+def _parse_run_value(lines, start, end, value, step_label):
+    if value and value != "|":
+        commands = (tuple(shlex.split(value)),)
+    elif value == "|":
+        parsed = []
+        continued = ""
+        for line in lines[start:end]:
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            if len(line) - len(line.lstrip(" ")) < 8:
+                raise ValueError(f"{step_label} run block has invalid indentation")
+            text = continued + line.strip()
+            if text.endswith("\\"):
+                continued = text[:-1] + " "
+                continue
+            parsed.append(tuple(shlex.split(text)))
+            continued = ""
+        if continued:
+            raise ValueError(f"{step_label} run block has dangling continuation")
+        commands = tuple(parsed)
+    else:
+        raise ValueError(f"{step_label} run field is empty")
+    if not commands or any(not command for command in commands):
+        raise ValueError(f"{step_label} run command is empty")
+    return commands
+
+
+def _parse_step(block, job_name, index):
+    lines = block.splitlines()
+    first_index = next(
+        (
+            line_index
+            for line_index, line in enumerate(lines)
+            if line.strip() and not line.lstrip().startswith("#")
+        ),
+        None,
+    )
+    step_label = f"job {job_name!r} step {index}"
+    if first_index is None:
+        raise ValueError(f"{step_label} is empty")
+    first = re.fullmatch(
+        r"    -[ \t]+([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)",
+        lines[first_index],
+    )
+    if first is None:
+        raise ValueError(f"{step_label} uses unsupported sequence-key syntax")
+
+    direct = [(first.group(1), first.group(2), first_index)]
+    for line_index in range(first_index + 1, len(lines)):
+        line = lines[line_index]
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 6:
+            match = re.fullmatch(
+                r"      ([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)",
+                line,
+            )
+            if match is None:
+                raise ValueError(
+                    f"{step_label} uses unsupported direct mapping-key syntax"
+                )
+            direct.append((match.group(1), match.group(2), line_index))
+        elif indent < 8:
+            raise ValueError(f"{step_label} uses unsupported step indentation")
+
+    direct_names = [name for name, _, _ in direct]
+    if len(direct_names) != len(set(direct_names)):
+        raise ValueError(f"{step_label} contains duplicate direct fields")
+    unknown = sorted(
+        set(direct_names) - {"name", "uses", "run", "env", "with"}
+    )
+    if unknown:
+        raise ValueError(
+            f"{step_label} has unsupported direct fields: {', '.join(unknown)}"
+        )
+
+    values = {}
+    for field_index, (name, raw_value, line_index) in enumerate(direct):
+        end = (
+            direct[field_index + 1][2]
+            if field_index + 1 < len(direct)
+            else len(lines)
+        )
+        value = raw_value.strip()
+        if name in {"env", "with"}:
+            if value:
+                raise ValueError(
+                    f"{step_label} {name} must use a block mapping"
+                )
+            values[name] = _parse_nested_mapping(
+                lines,
+                line_index + 1,
+                end,
+                name,
+                step_label,
+            )
+        elif name == "run":
+            values[name] = _parse_run_value(
+                lines,
+                line_index + 1,
+                end,
+                value,
+                step_label,
+            )
+        else:
+            scalar = value.strip()
+            if name == "uses":
+                scalar = scalar.split(" #", 1)[0].strip()
+            if not scalar:
+                raise ValueError(f"{step_label} {name} is empty")
+            if any(
+                line.strip() and not line.lstrip().startswith("#")
+                for line in lines[line_index + 1 : end]
+            ):
+                raise ValueError(
+                    f"{step_label} {name} cannot contain nested values"
+                )
+            values[name] = scalar
+
+    name = values.get("name")
+    if job_name == "patch-release":
+        expected_fields = (
+            {"uses", "with"}
+            if index in {0, 5}
+            else {"run", "env"}
+            if index == 4
+            else {"run"}
+        )
+        if name is not None or set(values) != expected_fields:
+            raise ValueError(f"{step_label} publisher mapping differs")
+        if index == 0 and (
+            values["uses"] != _CHECKOUT_USES
+            or values["with"] != _PATCH_CHECKOUT_WITH
+        ):
+            raise ValueError(f"{step_label} checkout action differs")
+        if index == 4 and values["env"] != (
+            ("BASEROM_URL", "${{ secrets.BASEROM_URL }}"),
+            ("PATCH_ARTIFACT_DIR", "${{ runner.temp }}/patch-artifact"),
+        ):
+            raise ValueError(f"{step_label} publication environment differs")
+        if index == 5 and (
+            values["uses"] != _UPLOAD_USES
+            or values["with"] != _UPLOAD_WITH
+        ):
+            raise ValueError(f"{step_label} upload action differs")
+        role = "publisher"
+    elif job_name == "summary":
+        if (
+            name != "Render fail-closed combined Build summary"
+            or set(values) != {"name", "run"}
+        ):
+            raise ValueError(f"{step_label} summary mapping differs")
+        role = "summary"
+    elif name is None:
+        if (
+            set(values) != {"uses", "with"}
+            or values["uses"] != _CHECKOUT_USES
+            or values["with"] != _CHECKOUT_WITH
+            or index != 0
+        ):
+            raise ValueError(
+                f"{step_label} is an unreviewed unnamed step"
+            )
+        role = "setup"
+    else:
+        expected_fields = (
+            {"name", "env", "run"}
+            if name
+            in {
+                _WORKFLOW_PILOT_TEST_STEP_NAME,
+                _WORKFLOW_PILOT_BASELINE_STEP_NAME,
+                "Hydrate workflow-pilot Git authority",
+            }
+            else {"name", "run"}
+        )
+        if set(values) != expected_fields:
+            raise ValueError(
+                f"{step_label} must contain exactly "
+                f"{', '.join(sorted(expected_fields))}"
+            )
+        if "env" in values and values["env"] != tuple(
+            sorted(
+                tuple(
+                    entry.split(": ", 1)
+                    if ": " in entry
+                    else (entry[:-1], "")
+                )
+                for entry in _SCRUBBED_PILOT_ENV
+            )
+        ):
+            raise ValueError(
+                f"{step_label} changes its reviewed scrubbed environment"
+            )
+        if name in _NON_GATE_STEP_NAMES:
+            role = "setup"
+        elif name == _DOCS_GOVERNANCE_STEP_NAME:
+            role = "standalone-gate"
+        else:
+            role = "gate"
+    return (
+        role,
+        name,
+        tuple(sorted(values.items())),
+    )
+
+
+def _parse_job_steps(job_name, body):
+    lines = body.splitlines(keepends=True)
+    step_headers = [
+        index
+        for index, line in enumerate(lines)
+        if re.match(r"^    -(?:[ \t]|\r?\n?\Z)", line)
+    ]
+    steps_lines = [
+        index
+        for index, line in enumerate(lines)
+        if line.rstrip("\r\n") == "    steps:"
+    ]
+    if len(steps_lines) != 1:
+        raise ValueError(f"job {job_name!r} must have exactly one steps sequence")
+    if not step_headers or step_headers[0] <= steps_lines[0]:
+        raise ValueError(f"job {job_name!r} steps sequence is empty")
+    for line in lines[steps_lines[0] + 1 : step_headers[0]]:
+        if line.strip() and not line.lstrip().startswith("#"):
+            raise ValueError(
+                f"job {job_name!r} has content before its first step"
+            )
+    blocks = [
+        "".join(
+            lines[
+                start :
+                step_headers[index + 1]
+                if index + 1 < len(step_headers)
+                else len(lines)
+            ]
+        )
+        for index, start in enumerate(step_headers)
+    ]
+    steps = tuple(
+        _parse_step(block, job_name, index)
+        for index, block in enumerate(blocks)
+    )
+    names = [step[1] for step in steps if step[1] is not None]
+    if len(names) != len(set(names)):
+        raise ValueError(f"job {job_name!r} contains duplicate step names")
+    expected_unnamed = 6 if job_name == "patch-release" else 0 if job_name == "summary" else 1
+    if sum(step[1] is None for step in steps) != expected_unnamed:
+        raise ValueError(
+            f"job {job_name!r} unnamed step count differs"
+        )
+    roles = tuple((role, name) for role, name, _ in steps)
+    if roles != _EXPECTED_STEP_ROLES[job_name]:
+        raise ValueError(
+            f"job {job_name!r} step roles and order differ from reviewed setup"
+        )
+    return steps
+
+
+def _parse_workflow_structure_text(text):
+    workflow_context = _parse_workflow_context(text)
+    jobs = _workflow_job_entries(text)
+    names = tuple(name for name, _ in jobs)
+    if names != _EXPECTED_JOBS:
+        raise ValueError(
+            "workflow job order must exactly match the reviewed Build jobs"
+        )
+    blocks = dict(jobs)
+    for required in _EXPECTED_JOBS:
+        if required not in blocks:
+            raise ValueError(f"missing candidate Build job {required!r}")
+    structures = tuple(
+        (
+            name,
+            _parse_job_context(name, blocks[name]),
+            _parse_job_steps(name, blocks[name]),
+        )
+        for name in _EXPECTED_JOBS
+    )
+    return workflow_context, names, structures
+
+
+def _workflow_gate_contract(structure):
+    commands = []
+    _, _, jobs = structure
+    for job_name, _, steps in jobs:
+        for role, step_name, fields in steps:
+            if role not in {"gate", "standalone-gate"}:
+                continue
+            values = dict(fields)
+            run_commands = values["run"]
+            if step_name == "Build archival lane without a copyrighted baserom":
+                run_commands = tuple(
+                    command
+                    for command in run_commands
+                    if command and command[0] == "make"
+                )
+            for command in run_commands:
+                commands.append((job_name, step_name, command))
+    return tuple(commands)
+
+
+def _parse_workflow_gate_contract_text(text):
+    return _workflow_gate_contract(_parse_workflow_structure_text(text))
+
+
+def _read_workflow_gate_contract(repository_root):
+    path = os.path.join(repository_root, _BUILD_WORKFLOW_RELATIVE)
+    try:
+        if os.path.islink(path) or not os.path.isfile(path):
+            raise ValueError(
+                f"target Build workflow {path!r} must be a regular file"
+            )
+        if os.path.commonpath((repository_root, os.path.realpath(path))) != (
+            repository_root
+        ):
+            raise ValueError(
+                f"target Build workflow {path!r} escapes the checkout"
+            )
+        if os.path.getsize(path) > 1024 * 1024:
+            raise ValueError(f"Build workflow {path!r} exceeds 1 MiB")
+        with open(path, "r", encoding="utf-8") as handle:
+            text = handle.read()
+    except (OSError, UnicodeError) as error:
+        raise ValueError(f"cannot read target Build workflow {path!r}: {error}") from error
+    return _parse_workflow_structure_text(text)
+
+
+def _mirrored_workflow_commands(contract):
+    return [
+        list(argv)
+        for _, step_name, argv in contract
+        if step_name != _DOCS_GOVERNANCE_STEP_NAME
+    ]
+
+
+def _require_target_gate_equivalence(repository_root):
+    source = _read_workflow_gate_contract(_SOURCE_ROOT)
+    target = _read_workflow_gate_contract(repository_root)
+    if target != source:
+        raise ValueError(
+            "target Build workflow gate contract differs from the reviewed "
+            "source checkout"
+        )
+    source_commands = _mirrored_workflow_commands(
+        _workflow_gate_contract(source)
+    )
+    reviewed_commands = [gate.command for gate in gates(jobs=2)]
+    if source_commands != reviewed_commands:
+        raise ValueError(
+            "source Build workflow gate contract differs from reviewed gates"
+        )
 
 
 @dataclass
@@ -129,6 +1022,42 @@ def gates(jobs: int = 2) -> List[Gate]:
             ),
         ),
         Gate(
+            name="workflow-pilot-reporter-tests",
+            command=[
+                "/usr/bin/python3",
+                "-I",
+                "scripts/workflow_pilot/isolated_launcher.py",
+                "reporter-tests",
+            ],
+            applicable_note=(
+                "issue #176 host lane: pure-stdlib workflow-pilot reporter "
+                "regression suite, including immutable baseline validation"
+            ),
+        ),
+        Gate(
+            name="workflow-pilot-baseline",
+            command=[
+                "/usr/bin/python3",
+                "-I",
+                "scripts/workflow_pilot/isolated_launcher.py",
+                "baseline",
+                "--repository-root",
+                "$GITHUB_WORKSPACE",
+                "--fixture",
+                "scripts/workflow_pilot/tests/fixtures/baseline.json",
+                "--decisions",
+                ".github/workflow-pilot-decisions.json",
+                "--expected",
+                "scripts/workflow_pilot/tests/fixtures/baseline_expected.json",
+                ">",
+                "/dev/null",
+            ],
+            applicable_note=(
+                "issue #176 host lane: validates the frozen workflow-pilot "
+                "baseline against checked-out Git history"
+            ),
+        ),
+        Gate(
             name="localization-host-suite",
             command=[
                 "python3",
@@ -142,7 +1071,7 @@ def gates(jobs: int = 2) -> List[Gate]:
             ],
             applicable_note=(
                 "issue #18 host lane addition (same `host-tests` job, "
-                "textually after workflow-contract-tests): the "
+                "textually after the workflow-pilot gates): the "
                 "scripts/localization package's own pure-stdlib unit test "
                 "suite (schema/pseudo/catalog/generate/CLI/determinism plus "
                 "the host-native resolver-behavior and vanilla-isolation "
@@ -443,9 +1372,13 @@ class GateResult:
         return self.ran and self.returncode == 0
 
 
-def run_gates(cwd: str, jobs: int = 2, dry_run: bool = False) -> List[GateResult]:
-    """Execute (or, if dry_run, just describe) every gate, in the fixed
-    order returned by `gates()`.
+def run_gates(
+    repository_root: str,
+    jobs: int = 2,
+    dry_run: bool = False,
+) -> List[GateResult]:
+    """Execute (or, if dry_run, just describe) every gate at the exact target
+    repository root, in the fixed order returned by `gates()`.
 
     Stops at the first failing gate (fail-fast, matching CI). Never
     weakens, reorders, or skips a gate. There is intentionally no gate
@@ -458,20 +1391,24 @@ def run_gates(cwd: str, jobs: int = 2, dry_run: bool = False) -> List[GateResult
     that either.)
     """
     results: List[GateResult] = []
+    repository_root = _resolve_repository_root(repository_root)
+    _require_target_gate_equivalence(repository_root)
     for gate in gates(jobs=jobs):
         if dry_run:
             results.append(GateResult(gate=gate, ran=False, returncode=0, stdout="", stderr=""))
             continue
         env_overrides, argv = _split_env_prefix(gate.command)
+        argv, stdout = _split_stdout_redirect(argv)
+        argv = _expand_workspace(argv, repository_root)
         child_env = None
         if env_overrides:
             child_env = dict(os.environ)
             child_env.update(env_overrides)
         proc = subprocess.run(
             argv,
-            cwd=cwd,
+            cwd=repository_root,
             env=child_env,
-            stdout=subprocess.PIPE,
+            stdout=stdout,
             stderr=subprocess.PIPE,
             text=True,
         )
@@ -479,7 +1416,7 @@ def run_gates(cwd: str, jobs: int = 2, dry_run: bool = False) -> List[GateResult
             gate=gate,
             ran=True,
             returncode=proc.returncode,
-            stdout=proc.stdout,
+            stdout=proc.stdout or "",
             stderr=proc.stderr,
         )
         results.append(result)

@@ -238,3 +238,230 @@ temporary base flip solely to trigger CI.
 No cleanup is required. The case evaluates committed workflow and governance
 contracts without dispatching GitHub Actions; it does not prove live service
 availability or grant credentials.
+
+## TC-WORKFLOW-PILOT-BASELINE-001: Freeze reproducible pilot baseline and decisions
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #176](https://github.com/laqieer/fireemblem8-expansion/issues/176).
+- **Supported configuration or artifact:** clean source checkout with Python
+  3, Git, the immutable issue #176 fixture, and the versioned decision record;
+  no GitHub token, live workflow, ROM, emulator, or game build is required.
+- **Prerequisites and clean starting state:** start at the repository root with
+  `.github/workflow-pilot-decisions.json`,
+  `scripts/workflow_pilot/tests/fixtures/baseline.json`, and
+  `scripts/workflow_pilot/reporter.py` unchanged. Remove any prior
+  `build/test-artifacts/workflow-pilot` directory.
+
+### Actions
+
+1. Run
+   `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`.
+2. Create `build/test-artifacts/workflow-pilot`, then run the documented
+   reporter twice with `--repository-root .` over the committed fixture,
+   decision record, and expected values, writing `first.json` and
+   `second.json` in that directory.
+3. Compare `first.json` and `second.json` byte for byte. Parse either file and
+   verify the frozen window, identity arrays, 64-PR/9.4-hour delivery baseline,
+   326 exhaustively partitioned Build outcomes, one active run, 51
+   duplicate-SHA Builds, and PR #150's review/Build/base-change/close-reopen
+   metrics. Confirm first-push-to-clean-review is `unavailable`, its reason is
+   `historical-review-thread-events-not-collected`, `pilot_ready` is false,
+   and `median_hours` is null while 34 reviews, 101 findings, and zero current
+   unresolved findings remain reportable.
+4. Inspect the focused suite's positive classification fixture for inclusive
+   boundaries, cancellation, supersession, unchanged-SHA duplication, stack
+   ancestry, generated-only work, bulk deletion, reverts, still-running work,
+   cross-PR SHA-bound safety outcomes, and pilot overhead.
+5. Inspect the temporary-Git-repository controls: an exact pre-review override
+   tree passes; a missing decision file, missing/changed entry, digest
+   mismatch, non-candidate SHA, post-review commit, backdating, reordering, and
+   recomputed current-record mutation each fail.
+6. Inspect the resolution controls: cumulative unresolved identities,
+   resolution before/after review, absent source timing, direct synthetic
+   `resolved_at`, and an untrusted source kind. Confirm only a complete
+   identity-bound GitHub webhook history can produce numeric clean-review
+   evidence.
+7. Inspect the executable lifecycle controls. Confirm the reporter creates a
+   bounded plain artifact sandbox beneath the checkout's ignored
+   `build/test-artifacts/` directory, while retaining the original checkout
+   and object database as separate immutable Git authority. Confirm it removes
+   each allowlisted decision/fixture/reporter artifact copy in turn, runs the
+   declared production reporter consumer and/or focused reporter consistency
+   test, observes the named semantic failure, restores the copy, and observes
+   success. Confirm automatic bounded cleanup, unchanged source artifact
+   bytes, and fail-closed stale, fabricated, or fixture-command substitutions.
+8. Inspect the CI authority-hydration fixture: an exact-ref shallow checkout
+   in a new object-clean temporary repository initially lacks a test-created,
+   force-pushed unreachable commit, and the prior all-head refspec still cannot
+   recover it with lazy fetching disabled. The strict exact-commit seam
+   restores it without changing `HEAD`, refs, or `FETCH_HEAD`. Separately,
+   confirm production extraction returns exactly the unique commit identities
+   in the committed full baseline and that setup remains absent from the 28
+   local gates.
+9. Mutate every combined worker with container/services/strategy/permissions/
+   defaults/needs/if/advisory/environment/concurrency/uses/secrets/shell
+   execution context, including spaced, quoted, escaped, tagged, explicit,
+   flow, duplicate, reordered, and wrong-value forms.
+10. Place a real `sitecustomize.py` that exits successfully before ordinary
+    Python commands. Confirm normal startup is bypassed while all three
+    `/usr/bin/python3 -I` launcher modes execute, and arbitrary modes,
+    arguments, roots, or launcher/`-I` changes fail.
+11. Feed the workflow mirror parser a long repeated
+    `a\n        ` environment adversary and require bounded completion with
+    the same accepted/rejected structural results.
+12. Run `python3 scripts/check_docs.py --check`.
+
+### Expected result
+
+Both reporter outputs are byte-identical canonical JSON and match
+`baseline_expected.json`. The active run remains active at the frozen
+measurement boundary even though GitHub later completed it. Current PR and
+artifact states are derived from authoritative facts and disposition history;
+threshold override decisions contain no editable introduction timestamp, SHA,
+diff, run conclusion, or copied current-state field. Every override is read
+from the cited candidate commit and first-reviewed commit trees. Every review
+SHA is an exact member of its PR's candidate-history set and available by the
+review timestamp. Before these calculations, the repository origin, base,
+every commit object, exact parents, timestamps, messages, PR candidate/merge
+ranges, and referenced history are validated against the real object database.
+Commit messages are decoded as UTF-8 from the raw commit object, with exactly
+one conventional terminal LF removed; additional trailing blank lines and all
+other authored whitespace remain exact authority. Every numeric schema field
+requires a JSON integer that is not a boolean before any range or version
+comparison, while declared boolean fields remain valid.
+Every Git subprocess uses resolved `/usr/bin/git`, explicit
+`--no-replace-objects -C <validated-root>`, and a constructed minimal
+environment with no inherited Git redirection or configuration controls.
+Repository grafts, replacement refs, and object-alternate files fail closed;
+hydration alone permits the fixed bounded `origin` fetch.
+Commit hydration keeps `blob:none`, then strict fixture/decision relationships
+derive only override-introduction and first-review decision-record blob IDs.
+Those exact blobs are fetched separately while unrelated blobs, HEAD, refs,
+and FETCH_HEAD remain unchanged.
+The fixture parent graph also derives a minimal maximal-tip set and exact
+lightweight remote anchor names. Only a complete exact fixed-origin namespace
+may hydrate commits; local refs and FETCH_HEAD remain unchanged, and remote
+GC/repack retains otherwise force-pushed history. The read-only print mode
+emits the same mappings twice without remote mutation.
+The expected cohort seal binds normalized identities plus review, event,
+timestamp, PR/SHA, and other metric relationships.
+Every Build and non-Build workflow run is also rejected when its creation
+precedes the repository-validated commit time of its head SHA.
+The independent decision seal binds all validated PR decisions, artifact
+admission/disposition semantics, authoritative artifact sources, lifecycle
+proofs, review boundaries/events, and dependency associations.
+PR #150's clean-review timing remains explicitly unavailable because no
+authoritative historical thread events were collected; no numeric result is
+emitted or eligible for pilot comparison/promotion.
+
+The positive controls report Build/review savings beside coordination and
+metadata-maintenance overhead. Every authoritative workflow run has a coherent
+status/timestamp interval before Build selection. Stack depths are proven from
+the complete parent-decision chain, including a genuine depth-three exception.
+Checkpoint, dependency-change, and pre-graduation removal proofs preserve
+necessary artifacts after a named semantic failure; every historical
+restoration passes, and a deletion-ready artifact passes only with `Delete`.
+Every proof kind independently has the correct identity, artifact, trigger,
+strictly later time, shared named reason, semantic outcome, restoration, and
+current-disposition causality; one invalid record cannot be masked by valid
+siblings or event ordering.
+The committed artifacts additionally pass actual sandboxed removal/failure
+and restoration/success execution through the closed command allowlist while
+the plain `build/test-artifacts/` sandbox continues to use the immutable
+original checkout and object database as separate Git authority.
+Each child uses only `/usr/bin/python3 -I` and the copied closed launcher with
+explicit sandbox/authority/check arguments; repository and user-site
+`sitecustomize.py` exit hooks cannot run first, and root/mode/check/extra
+argument mutations reject.
+
+### Negative control
+
+The suite rejects a boundary record outside the snapshot, terminal/active
+status contradiction, cancelled-run misclassification, missing Actions page,
+missing issue/commit/review/decision, derived-fact override, post-review
+override insertion/backdating/reordering/current-record mutation, a cited tree
+without the exact override entry, cumulative unresolved findings, post-review
+resolution, direct synthetic resolution timestamps, untrusted/incomplete
+resolution history, wrong-PR or missing event SHA, fabricated repository
+identity/commit/parent/timestamp/message, base-only/merge-only/unrelated/future
+review commits, incoherent candidate/merge or review history, any
+PR/issue/review/run/finding/commit identity or metric-relationship
+substitution, boolean substitution for any integer/version/count field,
+commit-message trailing newline/space/blank-line/body/leading-whitespace
+mutation, an omitted identity seal, PR events before creation, invalid
+open/closed phases, future event or workflow-run SHAs,
+earlier/equal/unrelated/fabricated reverts,
+non-final/multiple/mixed-case/short/uppercase or text-padded revert trailers,
+inconsistent stack parent/base/depth, missing parent decisions, stack cycles,
+false depth-two or depth-three claims, an older spotlight run outside the
+cohort, impossible non-Build intervals, incoherent
+queued/in-progress/completed timestamps, unreported accepted conclusion,
+unknown risk/event/edge/disposition, unclaimed or ambiguously owned dependency
+edge, orphan/duplicate/expired artifact, deletion-ready non-Delete artifact,
+non-causal or missing deletion proof, premature disposition, stale lifecycle
+expiry, any failed historical restoration, an empty/fabricated Git authority,
+a stale or fabricated executable proof, ambient Git directory/work-tree/object/
+alternate/config/replace redirection, local graft/replace/alternate authority,
+mixed proof semantic/restoration/reason/identity/time/kind/disposition state,
+and any unallowlisted fixture command.
+Build topology mutations also reject pilot commands hidden by `|| true`, `; true`,
+`&& true`, wrappers, substitutions, or changed redirections.
+
+### Interactions and save compatibility
+
+Dependencies are none. Dependents are issues #177, #178, #179, #180, and
+#181. Conflicts are none with CI selection, review ordering, merge gates,
+runtime/gameplay, configuration, save, generated game data, localization, or
+archival output. Modern debug, modern release, and archival impact are all
+none; there is no feature flag and no ROM/RAM or save-format impact.
+
+### Automation
+
+`python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`
+parses the decision and fixture schemas, reproduces every frozen calculation,
+compares canonical bytes, and exercises all positive/adversarial controls
+above. Build CI runs the same command plus the baseline reporter with
+`--repository-root "$GITHUB_WORKSPACE"` in its existing required `host-tests`
+job. Before those reporter commands, CI hydrates the fixture's exact commit
+authority and proves exact `HEAD` and refs are unchanged. The parsed workflow
+topology suite fails if hydration, pre-pilot step order/content, scrubbed
+protected-step environments, ownership, or checked-out-root binding is removed
+or weakened. It also requires each combined worker's exact direct job mapping
+and values; no container or alternate execution context can replace the
+reviewed Ubuntu host.
+The protected Python steps use the closed isolated launcher, so repository or
+user site customization cannot run before control. The workflow mirror parser
+uses deterministic line/indent parsing rather than an ambiguous multiline
+regular expression. Cross-checkout verification parses target workflow data
+without importing target code and requires complete source/target job and step
+sequences: counts/order, unique names, setup-versus-gate roles, immutable
+actions, run argv, `env`/`with` mappings, direct fields, and root execution
+before dry-run or execution. Unnamed non-checkout steps, duplicate setup names,
+complex keys, and extra jobs fail closed. Workflow execution context is
+exactly name/triggers/read-only permissions/jobs with no workflow env,
+defaults, or concurrency. Every combined job is exactly Ubuntu, 60 minutes,
+its allowlisted env, and steps; self-hosted/container/service/strategy/default
+shell or any other execution field fails before dry-run.
+Patch publication and summary are also complete semantic structures:
+master-only publication condition, pinned actions, scoped secret/env and six
+publisher steps; then `always()`, exact ordered needs/result env, five-minute
+context, and one fail-closed summary step. Neither is locally executed, but any
+runner/condition/needs/permission/env/step/command/action/alternate-context
+drift rejects before dry-run.
+
+`python3 scripts/check_docs.py --check` validates this complete procedure,
+registry ownership, links, and automation evidence.
+
+### Cleanup and limitations
+
+Remove `build/test-artifacts/workflow-pilot`. No remote state was read or
+changed by the procedure. The frozen fixture can reproduce only the explicitly
+captured source semantics. GitHub's historical thread-resolution timing was
+not captured for this baseline, so the reporter preserves counts/current
+state while making the timing metric and its pilot readiness unavailable.
+Future numeric evidence requires complete GitHub
+`pull_request_review_thread` webhook delivery capture. No manual-only
+criterion applies.
+
+Rollback is a normal revert of issue #176's dedicated commit; no workflow or
+game behavior needs a compensating change.

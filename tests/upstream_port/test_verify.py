@@ -3,8 +3,8 @@ import inspect
 import io
 import os
 import re
-import shlex
 import subprocess
+import tempfile
 import unittest
 from unittest import mock
 
@@ -14,94 +14,34 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 BUILD_WORKFLOW_PATH = os.path.join(REPO_ROOT, ".github", "workflows", "build.yml")
 UPSTREAM_PORTING_PATH = os.path.join(REPO_ROOT, "docs", "upstream-porting.md")
 
-_STEP_NAME_RE = re.compile(r"^    - name: (.+)$", re.M)
-_SINGLE_RUN_RE = re.compile(r"^      run: (?!\|\s*$)(.+)$", re.M)
-_MULTI_RUN_RE = re.compile(r"^      run: \|\n((?:        .*\n?)+)", re.M)
-
-# Steps in build.yml that are pure environment setup (checkout, apt/pip
-# installs, building host tools) rather than a pass/fail correctness gate
-# `verify` needs to reproduce. Everything else in the workflow is expected
-# to have a literal, argv-identical counterpart in verify.gates().
-_NON_GATE_STEP_NAMES = {
-    # Exact checkout binding is a required workflow invariant, but not a
-    # repository correctness gate mirrored by scripts/upstream_port/verify.py.
-    # tests/workflows/test_build_ci_checkout.py owns its positive and negative
-    # structural coverage.
-    "Verify checked-out revision",
-    # host-tests job setup: installs build-essential + libmgba-dev only (no
-    # arm-none-eabi toolchain), so it is environment setup, not a gate.
-    "Install host-only dependencies (no arm-none-eabi toolchain)",
-    # build job setup
-    "Install dependencies",
-    "Build tools",
-    # Combined-gate extended and archival job setup.
-    "Install extended host dependencies",
-    "Install archival build dependencies",
-    "Preflight archival toolchain executables",
-    "Install pinned archival agbcc compilers",
-}
-
 # Issues #7/#17 remediation: the documentation step is a genuine required
 # workflow gate, but it is the sole correctness step deliberately excluded
 # from verify.gates(). Its exact commands and position are asserted separately
-# below; localization remains part of the current 25-gate candidate mirror.
+# below; localization remains part of the current 28-gate candidate mirror.
 _DOCS_GOVERNANCE_STEP_NAME = "Check documentation (issues #7/#17)"
 _CODEQL_ALERTS_STEP_NAME = "Run CodeQL alert regression suite (issue #84)"
 _LOCALIZATION_HOST_STEP_NAME = "Run localization host test suite (issue #18)"
 _GAME_LOCALIZATION_WIDTH_STEP_NAME = "Run full-game localization width contract (issue #18)"
 _WORKFLOW_CONTRACT_STEP_NAME = "Run workflow contract test suite"
+_WORKFLOW_PILOT_TEST_STEP_NAME = verify_mod._WORKFLOW_PILOT_TEST_STEP_NAME
+_WORKFLOW_PILOT_BASELINE_STEP_NAME = (
+    verify_mod._WORKFLOW_PILOT_BASELINE_STEP_NAME
+)
 
 
 def _parse_workflow_gate_commands(path=BUILD_WORKFLOW_PATH):
-    """Read candidate-safe Build CI jobs with stdlib only (no PyYAML).
-
-    ``verify`` is a local, no-secret mirror of all four combined candidate
-    workers. Only the master-only publisher and the serial summary are
-    excluded at the job level; the separately asserted documentation step is
-    the one deliberate command-level exception. This deliberately re-derives
-    expected commands from live run blocks instead of hardcoding a copy.
-    """
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()
+    return _parse_workflow_gate_commands_text(text)
 
-    commands = []
-    for job_name in ("host-tests", "build", "extended-host-tests", "legacy"):
-        job = re.search(
-            rf"(?ms)^  {re.escape(job_name)}:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
-            text,
+
+def _parse_workflow_gate_commands_text(text):
+    return [
+        (step_name, list(argv))
+        for _, step_name, argv in verify_mod._parse_workflow_gate_contract_text(
+            text
         )
-        assert job is not None, f"missing candidate Build job {job_name!r}"
-        step_matches = list(_STEP_NAME_RE.finditer(job.group("body")))
-        assert step_matches, f"no steps found parsing {job_name!r}; workflow format changed?"
-
-        for i, m in enumerate(step_matches):
-            step_name = m.group(1).strip()
-            start = m.end()
-            end = step_matches[i + 1].start() if i + 1 < len(step_matches) else len(job.group("body"))
-            block = job.group("body")[start:end]
-
-            if step_name in _NON_GATE_STEP_NAMES:
-                continue
-
-            single_m = _SINGLE_RUN_RE.search(block)
-            if single_m:
-                lines = [single_m.group(1).strip()]
-            else:
-                multi_m = _MULTI_RUN_RE.search(block)
-                assert multi_m, f"step {step_name!r} has no parseable 'run:' block"
-                lines = [line.strip() for line in multi_m.group(1).splitlines() if line.strip()]
-
-            if step_name == "Build archival lane without a copyrighted baserom":
-                # The workflow adds shell-local `set`/`test` assertions around
-                # its one portable verifier command. `verify` owns the
-                # executable archival build itself; the workflow topology test
-                # owns the surrounding no-baserom shell boundary.
-                lines = [line for line in lines if line.startswith("make ")]
-
-            for line in lines:
-                commands.append((step_name, shlex.split(line)))
-
-    return commands
+    ]
 
 
 class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
@@ -165,8 +105,20 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             any(argv and argv[0].startswith("ACTUAL_SHA=") for _, argv in parsed),
         )
 
+    def test_ci_authority_hydration_is_setup_not_a_local_network_gate(self):
+        parsed_names = {
+            step_name for step_name, _ in _parse_workflow_gate_commands()
+        }
+        self.assertNotIn("Hydrate workflow-pilot Git authority", parsed_names)
+        self.assertFalse(
+            any(
+                gate.command[:2] == ["git", "fetch"]
+                for gate in verify_mod.gates()
+            )
+        )
+
     def test_issue_7_17_docs_governance_is_a_standalone_workflow_step_not_a_verify_gate(self):
-        """Docs governance stays outside the current 25-gate candidate mirror
+        """Docs governance stays outside the current 28-gate candidate mirror
         while remaining required, argv-identical, and immediately after the
         artifact guard in build.yml."""
         names = [g.name for g in verify_mod.gates()]
@@ -246,7 +198,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         localization_index = ordered_unique_steps.index(_LOCALIZATION_HOST_STEP_NAME)
         self.assertEqual(
             ordered_unique_steps[localization_index - 1],
-            _WORKFLOW_CONTRACT_STEP_NAME,
+            _WORKFLOW_PILOT_BASELINE_STEP_NAME,
         )
 
     def test_issue_18_full_game_width_contract_is_in_mirrored_gate_set(self):
@@ -295,6 +247,124 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         self.assertEqual(gate.command, commands[0])
         self.assertNotIn("make", gate.command)
 
+    def test_workflow_pilot_commands_are_mirrored_exactly_in_order(self):
+        workflow_commands = _parse_workflow_gate_commands()
+        pilot_commands = [
+            (step_name, argv)
+            for step_name, argv in workflow_commands
+            if step_name
+            in {
+                _WORKFLOW_PILOT_TEST_STEP_NAME,
+                _WORKFLOW_PILOT_BASELINE_STEP_NAME,
+            }
+        ]
+        self.assertEqual(
+            pilot_commands,
+            [
+                (
+                    _WORKFLOW_PILOT_TEST_STEP_NAME,
+                    [
+                        "/usr/bin/python3", "-I",
+                        "scripts/workflow_pilot/isolated_launcher.py",
+                        "reporter-tests",
+                    ],
+                ),
+                (
+                    _WORKFLOW_PILOT_BASELINE_STEP_NAME,
+                    [
+                        "/usr/bin/python3", "-I",
+                        "scripts/workflow_pilot/isolated_launcher.py",
+                        "baseline",
+                        "--repository-root", "$GITHUB_WORKSPACE",
+                        "--fixture",
+                        "scripts/workflow_pilot/tests/fixtures/baseline.json",
+                        "--decisions", ".github/workflow-pilot-decisions.json",
+                        "--expected",
+                        "scripts/workflow_pilot/tests/fixtures/baseline_expected.json",
+                        ">", "/dev/null",
+                    ],
+                ),
+            ],
+        )
+        by_name = {gate.name: gate.command for gate in verify_mod.gates()}
+        self.assertEqual(
+            [
+                by_name["workflow-pilot-reporter-tests"],
+                by_name["workflow-pilot-baseline"],
+            ],
+            [argv for _, argv in pilot_commands],
+        )
+        ordered_steps = [step_name for step_name, _ in workflow_commands]
+        self.assertLess(
+            ordered_steps.index(_WORKFLOW_CONTRACT_STEP_NAME),
+            ordered_steps.index(_WORKFLOW_PILOT_TEST_STEP_NAME),
+        )
+        self.assertLess(
+            ordered_steps.index(_WORKFLOW_PILOT_BASELINE_STEP_NAME),
+            ordered_steps.index(_LOCALIZATION_HOST_STEP_NAME),
+        )
+
+    def test_workflow_parser_is_linear_on_long_environment_adversary(self):
+        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
+            workflow = handle.read()
+        self.assertTrue(_parse_workflow_gate_commands_text(workflow))
+        adversarial = workflow.replace(
+            "    - name: Run workflow-pilot reporter regression suite (issue #176)\n"
+            "      env:\n"
+            "        BASH_ENV: ''\n",
+            "    - name: Run workflow-pilot reporter regression suite (issue #176)\n"
+            "      env:\n"
+            + ("        a\n" * 50000)
+            + "        BASH_ENV: ''\n",
+            1,
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "unsupported mapping-key syntax|reviewed scrubbed environment",
+        ):
+            _parse_workflow_gate_commands_text(adversarial)
+
+    def test_every_mirrored_gate_rejects_unmodeled_execution_fields(self):
+        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
+            workflow = handle.read()
+        mirrored_steps = []
+        for step_name, _ in _parse_workflow_gate_commands():
+            if (
+                step_name != _DOCS_GOVERNANCE_STEP_NAME
+                and step_name not in mirrored_steps
+            ):
+                mirrored_steps.append(step_name)
+
+        variants = (
+            "continue-on-error: true",
+            "if: ${{ false }}",
+            "shell: bash {0} || true",
+            "working-directory: scripts",
+            "working-directory : scripts",
+            '"working-directory": scripts',
+            "'working-directory' : scripts",
+            '"working-\\u0064irectory": scripts',
+            "? working-directory\n      : scripts",
+            "!!str working-directory: scripts",
+            "{working-directory: scripts}",
+        )
+        for step_name in mirrored_steps:
+            marker = f"    - name: {step_name}\n"
+            for variant in variants:
+                with self.subTest(step=step_name, variant=variant):
+                    changed = workflow.replace(
+                        marker,
+                        marker + f"      {variant}\n",
+                        1,
+                    )
+                    self.assertNotEqual(changed, workflow)
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "unsupported direct mapping|unsupported direct fields|"
+                        "must contain exactly",
+                    ):
+                        _parse_workflow_gate_commands_text(changed)
+
     def test_issue_15_default_lane_and_quickstart_gates_present(self):
         names = [g.name for g in verify_mod.gates()]
         self.assertIn("default-lane-check", names)
@@ -331,7 +401,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         )
 
     def test_gate_list_full_ordered_names(self):
-        # All 26 current candidate Build gates remain; docs governance is
+        # All 28 current candidate Build gates remain; docs governance is
         # deliberately absent and asserted as a standalone workflow step.
         names = [g.name for g in verify_mod.gates()]
         self.assertEqual(
@@ -340,6 +410,8 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                 "gba-playtest-host-suite",
                 "upstream-port-tests",
                 "workflow-contract-tests",
+                "workflow-pilot-reporter-tests",
+                "workflow-pilot-baseline",
                 "localization-host-suite",
                 "game-localization-width-contract",
                 "game-localization-catalog-check",
@@ -366,13 +438,13 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             ],
         )
         # The merged CI runs the fast `host-tests` lane textually before the
-        # ROM `build` job, so the host-only gates are first. The first four
-        # remain pure Python/native checks; the fifth runs the full-game
+        # ROM `build` job, so the host-only gates are first. The first six
+        # remain pure Python/native checks; the seventh runs the full-game
         # localization Make target but still never builds a ROM.
         # stay host-only -- never a ROM/linker `make` build (that belongs
         # solely to the modern-linker gates) -- so the fast host job and the
         # ROM build job never duplicate work.
-        for g in verify_mod.gates()[:4]:
+        for g in verify_mod.gates()[:6]:
             self.assertNotIn("make", g.command)
             self.assertNotIn("expansion-modern-linker-check", g.command)
 
@@ -393,7 +465,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
     def test_artifact_guard_command(self):
         # Full-game closure and artifact-guard unit checks precede the
         # immutable-tree check in the mirrored Build gate order.
-        g = verify_mod.gates()[9]
+        g = verify_mod.gates()[11]
         self.assertEqual(g.name, "artifact-guard")
         self.assertEqual(g.command, ["python3", "scripts/artifact_guard.py", "--revision", "HEAD"])
 
@@ -405,8 +477,8 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         self.assertIn("MODERN_CONFIG=release", release_gate.command)
 
     def test_dry_run_never_executes_subprocess(self):
-        results = verify_mod.run_gates("/nonexistent/path/should/not/matter", dry_run=True)
-        self.assertEqual(len(results), 26)
+        results = verify_mod.run_gates(REPO_ROOT, dry_run=True)
+        self.assertEqual(len(results), 28)
         self.assertTrue(all(r.ran is False for r in results))
         self.assertTrue(all(r.passed is False for r in results))  # not-ran != passed
 
@@ -414,10 +486,10 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         """`--dry-run` (verify_mod.run_gates(dry_run=True)) must always list
         every gate the (non-dry-run) real run would perform, in the exact
         same order -- never a partial/filtered preview."""
-        dry = [r.gate.name for r in verify_mod.run_gates("/nonexistent/path", dry_run=True)]
+        dry = [r.gate.name for r in verify_mod.run_gates(REPO_ROOT, dry_run=True)]
         real_names = [g.name for g in verify_mod.gates()]
         self.assertEqual(dry, real_names)
-        self.assertEqual(len(dry), 26)
+        self.assertEqual(len(dry), 28)
 
 
 class VerifyGateSelectionRemovedTests(unittest.TestCase):
@@ -432,12 +504,17 @@ class VerifyGateSelectionRemovedTests(unittest.TestCase):
         sig = inspect.signature(verify_mod.run_gates)
         self.assertNotIn("selected", sig.parameters)
         self.assertNotIn("gates", sig.parameters)
-        self.assertEqual(set(sig.parameters), {"cwd", "jobs", "dry_run"})
+        self.assertEqual(
+            set(sig.parameters),
+            {"repository_root", "jobs", "dry_run"},
+        )
 
     def test_run_gates_rejects_unexpected_selection_kwarg(self):
         with self.assertRaises(TypeError):
             verify_mod.run_gates(  # type: ignore[call-arg]
-                "/nonexistent/path", dry_run=True, selected=["artifact-guard"]
+                REPO_ROOT,
+                dry_run=True,
+                selected=["artifact-guard"],
             )
 
     def test_cli_verify_has_no_gate_flag_at_all(self):
@@ -477,10 +554,32 @@ class VerifyGateSelectionRemovedTests(unittest.TestCase):
             self.assertIn(name, printed)
         # Every line for a dry-run gate is explicitly marked SKIPPED(dry-run)
         # -- never silently omitted, never marked PASS/FAIL without running.
-        self.assertEqual(printed.count("[SKIPPED(dry-run)]"), 26)
+        self.assertEqual(printed.count("[SKIPPED(dry-run)]"), 28)
 
 
 class HostOnlyEnvGateMirrorTests(unittest.TestCase):
+    def test_repository_discovery_ignores_ambient_git_redirection(self):
+        hostile = {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "alias.rev-parse",
+            "GIT_CONFIG_VALUE_0": "!printf redirected",
+            "GIT_DIR": os.path.join(REPO_ROOT, "build", "redirected.git"),
+            "GIT_OBJECT_DIRECTORY": os.path.join(
+                REPO_ROOT,
+                "build",
+                "redirected-objects",
+            ),
+            "GIT_WORK_TREE": os.path.join(
+                REPO_ROOT,
+                "build",
+                "redirected-tree",
+            ),
+        }
+        with mock.patch.dict(os.environ, hostile, clear=False):
+            self.assertEqual(
+                verify_mod._git_top_level(REPO_ROOT),
+                REPO_ROOT,
+            )
     """Issue #10/#13 harness fix: the host lane runs the tools/gba-playtest
     suite in explicit host-only mode (GBA_PLAYTEST_HOST_ONLY=1), so its
     result is decided by mode, never by whether a git-ignored ROM happens to
@@ -558,17 +657,28 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
         parent_env = {key: value for key, value in os.environ.items()}
         parent_env.pop(self.HOST_ONLY_ENV, None)
         with mock.patch.dict(os.environ, parent_env, clear=True):
-            with mock.patch.object(verify_mod.subprocess, "run", side_effect=fake_run):
-                results = verify_mod.run_gates(".", jobs=2)
+            with (
+                mock.patch.object(
+                    verify_mod.subprocess,
+                    "run",
+                    side_effect=fake_run,
+                ),
+                mock.patch.object(
+                    verify_mod,
+                    "_resolve_repository_root",
+                    return_value=REPO_ROOT,
+                ),
+            ):
+                results = verify_mod.run_gates(REPO_ROOT, jobs=2)
             self.assertNotIn(
                 self.HOST_ONLY_ENV,
                 os.environ,
                 "run_gates must not mutate the parent environment",
             )
 
-        self.assertEqual(len(results), 26)
+        self.assertEqual(len(results), 28)
         self.assertTrue(all(result.passed for result in results))
-        self.assertEqual(len(seen), 26)
+        self.assertEqual(len(seen), 28)
 
         host_argv, host_env = seen[0]
         self.assertEqual(host_argv[0], "python3")
@@ -582,6 +692,778 @@ class HostOnlyEnvGateMirrorTests(unittest.TestCase):
                     {} if env is None else env,
                     f"host-only mode leaked into {gate.name}",
                 )
+
+    def test_run_gates_preserves_argv_order_at_target_repository_root(self):
+        seen = []
+
+        def fake_run(argv, **kwargs):
+            seen.append((list(argv), kwargs))
+            return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+        with (
+            mock.patch.dict(os.environ, {}, clear=True),
+            mock.patch.object(verify_mod.subprocess, "run", side_effect=fake_run),
+            mock.patch.object(
+                verify_mod,
+                "_resolve_repository_root",
+                return_value=REPO_ROOT,
+            ),
+        ):
+            results = verify_mod.run_gates(REPO_ROOT, jobs=2)
+
+        expected_argv = []
+        expected_stdout = []
+        for gate in verify_mod.gates(jobs=2):
+            _, argv = verify_mod._split_env_prefix(gate.command)
+            argv, stdout = verify_mod._split_stdout_redirect(argv)
+            expected_argv.append(verify_mod._expand_workspace(argv, REPO_ROOT))
+            expected_stdout.append(stdout)
+
+        self.assertEqual([argv for argv, _ in seen], expected_argv)
+        self.assertEqual(
+            [kwargs["cwd"] for _, kwargs in seen],
+            [REPO_ROOT] * 28,
+        )
+        baseline_argv = seen[
+            [gate.name for gate in verify_mod.gates()].index(
+                "workflow-pilot-baseline"
+            )
+        ][0]
+        self.assertEqual(
+            baseline_argv[baseline_argv.index("--repository-root") + 1],
+            REPO_ROOT,
+        )
+        self.assertEqual([kwargs["stdout"] for _, kwargs in seen], expected_stdout)
+        self.assertEqual(
+            [result.gate.name for result in results],
+            [gate.name for gate in verify_mod.gates(jobs=2)],
+        )
+
+    def test_target_repository_root_is_both_authority_and_execution_root(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(
+                verify_mod._resolve_repository_root(REPO_ROOT),
+                REPO_ROOT,
+            )
+        with mock.patch.dict(
+            os.environ,
+            {"GITHUB_WORKSPACE": REPO_ROOT},
+            clear=True,
+        ):
+            self.assertEqual(
+                verify_mod._resolve_repository_root(REPO_ROOT),
+                REPO_ROOT,
+            )
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(ValueError, "exact Git top level"):
+                verify_mod._resolve_repository_root(
+                    os.path.join(REPO_ROOT, "tests")
+                )
+
+    def test_ambient_workspace_does_not_override_explicit_target(self):
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"GITHUB_WORKSPACE": "/different/repository"},
+                clear=True,
+            ),
+            mock.patch.object(
+                verify_mod,
+                "_git_top_level",
+                return_value=REPO_ROOT,
+            ),
+        ):
+            self.assertEqual(
+                verify_mod._resolve_repository_root(REPO_ROOT),
+                REPO_ROOT,
+            )
+
+    def test_baseline_gate_expands_workspace_and_redirects_without_a_shell(self):
+        seen = []
+
+        def fake_run(argv, **kwargs):
+            seen.append((tuple(argv), kwargs))
+            return subprocess.CompletedProcess(argv, 0, stdout=None, stderr="")
+
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with (
+                mock.patch.object(
+                    verify_mod.subprocess,
+                    "run",
+                    side_effect=fake_run,
+                ),
+                mock.patch.object(
+                    verify_mod,
+                    "_resolve_repository_root",
+                    return_value=REPO_ROOT,
+                ),
+            ):
+                results = verify_mod.run_gates(REPO_ROOT, jobs=2)
+
+        index = [gate.name for gate in verify_mod.gates()].index(
+            "workflow-pilot-baseline"
+        )
+        argv, kwargs = seen[index]
+        self.assertNotIn(">", argv)
+        self.assertNotIn("/dev/null", argv)
+        self.assertNotIn("$GITHUB_WORKSPACE", argv)
+        self.assertEqual(argv[argv.index("--repository-root") + 1], REPO_ROOT)
+        self.assertEqual(kwargs["stdout"], subprocess.DEVNULL)
+        self.assertEqual(results[index].stdout, "")
+
+
+class VerifyCliCwdTests(unittest.TestCase):
+    def clone_target(self, parent, name="target"):
+        target = os.path.join(parent, name)
+        subprocess.run(
+            [
+                verify_mod._trusted_git_executable(),
+                "--no-replace-objects",
+                "-C",
+                parent,
+                "clone",
+                "-q",
+                "--no-hardlinks",
+                REPO_ROOT,
+                target,
+            ],
+            env=verify_mod._git_environment(),
+            check=True,
+            capture_output=True,
+        )
+        target_workflow = os.path.join(
+            target,
+            ".github",
+            "workflows",
+            "build.yml",
+        )
+        with open(BUILD_WORKFLOW_PATH, "rb") as source:
+            workflow_bytes = source.read()
+        with open(target_workflow, "wb") as destination:
+            destination.write(workflow_bytes)
+        return target
+
+    def job_bounds(self, workflow, job_name):
+        start = workflow.index(f"\n  {job_name}:\n") + 1
+        body_start = workflow.index("\n", start) + 1
+        next_job = re.search(
+            r"^  [A-Za-z_][A-Za-z0-9_-]*:",
+            workflow[body_start:],
+            re.M,
+        )
+        end = (
+            len(workflow)
+            if next_job is None
+            else body_start + next_job.start()
+        )
+        return start, end
+
+    def job_body(self, workflow, job_name):
+        start, end = self.job_bounds(workflow, job_name)
+        return workflow[start:end]
+
+    def append_job_steps(self, workflow, job_name, steps):
+        _, end = self.job_bounds(workflow, job_name)
+        return workflow[:end] + steps + "\n" + workflow[end:]
+
+    def replace_in_job(self, workflow, job_name, old, new):
+        start, end = self.job_bounds(workflow, job_name)
+        body = workflow[start:end]
+        self.assertIn(old, body)
+        return workflow[:start] + body.replace(old, new, 1) + workflow[end:]
+
+    def assert_only_job_changed(self, original, changed, job_name):
+        self.assertNotEqual(
+            self.job_body(original, job_name),
+            self.job_body(changed, job_name),
+        )
+        for other in verify_mod._EXPECTED_JOBS:
+            if other != job_name:
+                self.assertEqual(
+                    self.job_body(original, other),
+                    self.job_body(changed, other),
+                )
+
+    def test_normal_cli_executes_all_gates_at_selected_target_root(self):
+        artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
+        os.makedirs(artifact_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="verify-target-checkout-",
+            dir=artifact_root,
+        ) as temporary:
+            target_root = self.clone_target(temporary)
+            for arguments, expected_root in (
+                (["verify"], REPO_ROOT),
+                (["--repo", target_root, "verify"], target_root),
+            ):
+                with self.subTest(arguments=arguments):
+                    seen = []
+                    real_run = subprocess.run
+
+                    def fake_run(argv, **kwargs):
+                        if argv[0] == verify_mod._trusted_git_executable():
+                            return real_run(argv, **kwargs)
+                        seen.append((list(argv), kwargs))
+                        return subprocess.CompletedProcess(
+                            argv,
+                            0,
+                            stdout="",
+                            stderr="",
+                        )
+
+                    with (
+                        contextlib.chdir(REPO_ROOT),
+                        mock.patch.dict(os.environ, {}, clear=True),
+                        mock.patch.object(
+                            verify_mod.subprocess,
+                            "run",
+                            side_effect=fake_run,
+                        ),
+                        contextlib.redirect_stdout(io.StringIO()),
+                    ):
+                        self.assertEqual(cli.main(arguments), 0)
+
+                    self.assertEqual(len(seen), 28)
+                    self.assertEqual(
+                        [kwargs["cwd"] for _, kwargs in seen],
+                        [expected_root] * 28,
+                    )
+                    baseline = seen[
+                        [gate.name for gate in verify_mod.gates()].index(
+                            "workflow-pilot-baseline"
+                        )
+                    ][0]
+                    self.assertEqual(
+                        baseline[baseline.index("--repository-root") + 1],
+                        expected_root,
+                    )
+
+    def test_cross_checkout_requires_exact_target_gate_equivalence(self):
+        artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
+        os.makedirs(artifact_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="verify-target-equivalence-",
+            dir=artifact_root,
+        ) as temporary:
+            target_root = self.clone_target(temporary)
+            workflow_path = os.path.join(
+                target_root,
+                ".github",
+                "workflows",
+                "build.yml",
+            )
+            with open(workflow_path, "r", encoding="utf-8") as handle:
+                original = handle.read()
+            self.assertEqual(
+                len(verify_mod.run_gates(target_root, dry_run=True)),
+                28,
+            )
+
+            upstream_step = (
+                "    - name: Run upstream-port tooling test suite\n"
+                "      run: python3 -m unittest discover "
+                "-s tests/upstream_port -v\n"
+            )
+            workflow_step = (
+                "    - name: Run workflow contract test suite\n"
+                '      run: python3 -m unittest discover -s tests/workflows '
+                '-p "test_*.py" -v\n'
+            )
+            mutations = {
+                "newer-added": original.replace(
+                    upstream_step,
+                    "    - name: Run target-only newer gate\n"
+                    "      run: python3 -c pass\n\n"
+                    + upstream_step,
+                    1,
+                ),
+                "older-removed": original.replace(upstream_step, "", 1),
+                "mutated-argv": original.replace(
+                    "tests/upstream_port -v",
+                    "tests/upstream_port-new -v",
+                    1,
+                ),
+                "reordered": original.replace(
+                    upstream_step,
+                    "__UPSTREAM_STEP__",
+                    1,
+                ).replace(
+                    workflow_step,
+                    upstream_step,
+                    1,
+                ).replace(
+                    "__UPSTREAM_STEP__",
+                    workflow_step,
+                    1,
+                ),
+                "altered-action": original.replace(
+                    verify_mod._CHECKOUT_USES,
+                    "actions/checkout@" + "0" * 40,
+                    1,
+                ),
+                "altered-with": original.replace(
+                    "        fetch-depth: 0",
+                    "        fetch-depth: 1",
+                    1,
+                ),
+                "altered-env": original.replace(
+                    "        BASH_ENV: ''",
+                    "        BASH_ENV: build/mask",
+                    1,
+                ),
+                "altered-setup": original.replace(
+                    "      run: ./build_tools.sh",
+                    "      run: exit 1",
+                    1,
+                ),
+                "extra-job": original
+                + "\n  target-only:\n"
+                + "    runs-on: ubuntu-latest\n"
+                + "    steps:\n"
+                + "    - run: exit 1\n",
+            }
+            for name, changed in mutations.items():
+                with self.subTest(name=name):
+                    with open(workflow_path, "w", encoding="utf-8") as handle:
+                        handle.write(changed)
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "target Build workflow gate contract differs|"
+                        "unreviewed unnamed step|reviewed scrubbed environment|"
+                        "workflow job order|step roles and order",
+                    ):
+                        verify_mod.run_gates(target_root, dry_run=True)
+
+            os.unlink(workflow_path)
+            with self.assertRaisesRegex(
+                ValueError,
+                "target Build workflow",
+            ):
+                verify_mod.run_gates(target_root, dry_run=True)
+
+    def test_unnamed_and_duplicate_setup_steps_reject_in_every_worker(self):
+        artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
+        os.makedirs(artifact_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="verify-invisible-step-",
+            dir=artifact_root,
+        ) as temporary:
+            target_root = self.clone_target(temporary)
+            workflow_path = os.path.join(
+                target_root,
+                ".github",
+                "workflows",
+                "build.yml",
+            )
+            with open(workflow_path, "r", encoding="utf-8") as handle:
+                original = handle.read()
+            for job_name in verify_mod._COMBINED_JOBS:
+                with self.subTest(job=job_name, mutation="unnamed"):
+                    changed = self.append_job_steps(
+                        original,
+                        job_name,
+                        "    - run: exit 1\n",
+                    )
+                    self.assert_only_job_changed(original, changed, job_name)
+                    with open(workflow_path, "w", encoding="utf-8") as handle:
+                        handle.write(changed)
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "unreviewed unnamed step",
+                    ):
+                        verify_mod.run_gates(target_root, dry_run=True)
+                with self.subTest(job=job_name, mutation="duplicate-setup"):
+                    changed = self.append_job_steps(
+                        original,
+                        job_name,
+                        "    - name: Build tools\n"
+                        "      run: exit 1\n\n"
+                        "    - name: Build tools\n"
+                        "      run: exit 1\n",
+                    )
+                    self.assert_only_job_changed(original, changed, job_name)
+                    with open(workflow_path, "w", encoding="utf-8") as handle:
+                        handle.write(changed)
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "duplicate step names",
+                    ):
+                        verify_mod.run_gates(target_root, dry_run=True)
+
+    def test_target_execution_context_is_closed_before_dry_run(self):
+        artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
+        os.makedirs(artifact_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="verify-execution-context-",
+            dir=artifact_root,
+        ) as temporary:
+            target_root = self.clone_target(temporary)
+            workflow_path = os.path.join(
+                target_root,
+                ".github",
+                "workflows",
+                "build.yml",
+            )
+            with open(workflow_path, "r", encoding="utf-8") as handle:
+                original = handle.read()
+            self.assertEqual(
+                len(verify_mod.run_gates(target_root, dry_run=True)),
+                28,
+            )
+
+            for job_name in verify_mod._COMBINED_JOBS:
+                job_mutations = {
+                    "self-hosted": self.replace_in_job(
+                        original,
+                        job_name,
+                        "    runs-on: ubuntu-latest",
+                        "    runs-on: self-hosted",
+                    ),
+                    "container": self.replace_in_job(
+                        original,
+                        job_name,
+                        "    timeout-minutes: 60",
+                        "    timeout-minutes: 60\n"
+                        "    container: ubuntu:latest",
+                    ),
+                    "timeout": self.replace_in_job(
+                        original,
+                        job_name,
+                        "    timeout-minutes: 60",
+                        "    timeout-minutes: 1",
+                    ),
+                    "job-env": self.replace_in_job(
+                        original,
+                        job_name,
+                        "    env:\n",
+                        "    env:\n      BASH_ENV: build/mask\n",
+                    ),
+                    "defaults-shell": self.replace_in_job(
+                        original,
+                        job_name,
+                        "    steps:\n",
+                        "    defaults:\n"
+                        "      run:\n"
+                        "        shell: bash\n"
+                        "    steps:\n",
+                    ),
+                    "services": self.replace_in_job(
+                        original,
+                        job_name,
+                        "    steps:\n",
+                        "    services:\n"
+                        "      db:\n"
+                        "        image: postgres\n"
+                        "    steps:\n",
+                    ),
+                    "strategy": self.replace_in_job(
+                        original,
+                        job_name,
+                        "    steps:\n",
+                        "    strategy: {matrix: {runner: [self-hosted]}}\n"
+                        "    steps:\n",
+                    ),
+                    "complex-key": self.replace_in_job(
+                        original,
+                        job_name,
+                        "    runs-on: ubuntu-latest",
+                        '    "runs-on": ubuntu-latest',
+                    ),
+                    "duplicate-key": self.replace_in_job(
+                        original,
+                        job_name,
+                        "    timeout-minutes: 60",
+                        "    timeout-minutes: 60\n"
+                        "    timeout-minutes: 60",
+                    ),
+                    "reordered-keys": self.replace_in_job(
+                        self.replace_in_job(
+                            original,
+                            job_name,
+                            "    runs-on: ubuntu-latest",
+                            "    __RUNS_ON__",
+                        ),
+                        job_name,
+                        "    timeout-minutes: 60",
+                        "    runs-on: ubuntu-latest",
+                    ).replace(
+                        "    __RUNS_ON__",
+                        "    timeout-minutes: 60",
+                        1,
+                    ),
+                }
+                for mutation, changed in job_mutations.items():
+                    with self.subTest(job=job_name, mutation=mutation):
+                        with open(
+                            workflow_path,
+                            "w",
+                            encoding="utf-8",
+                        ) as handle:
+                            handle.write(changed)
+                        with self.assertRaises(ValueError):
+                            verify_mod.run_gates(target_root, dry_run=True)
+
+    def test_publisher_and_summary_contexts_are_closed_before_dry_run(self):
+        artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
+        os.makedirs(artifact_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="verify-terminal-jobs-",
+            dir=artifact_root,
+        ) as temporary:
+            target_root = self.clone_target(temporary)
+            workflow_path = os.path.join(
+                target_root,
+                ".github",
+                "workflows",
+                "build.yml",
+            )
+            with open(workflow_path, "r", encoding="utf-8") as handle:
+                original = handle.read()
+            mutations = []
+            for job_name in ("patch-release", "summary"):
+                for label, old, new in (
+                        (
+                            "runner",
+                            "    runs-on: ubuntu-latest",
+                            "    runs-on: self-hosted",
+                        ),
+                        (
+                            "permissions",
+                            "    runs-on: ubuntu-latest",
+                            "    permissions: write-all\n"
+                            "    runs-on: ubuntu-latest",
+                        ),
+                        (
+                            "container",
+                            "    runs-on: ubuntu-latest",
+                            "    container: ubuntu:latest\n"
+                            "    runs-on: ubuntu-latest",
+                        ),
+                        (
+                            "defaults",
+                            "    runs-on: ubuntu-latest",
+                            "    defaults: {run: {shell: bash}}\n"
+                            "    runs-on: ubuntu-latest",
+                        ),
+                        (
+                            "unknown",
+                            "    runs-on: ubuntu-latest",
+                            "    mystery: true\n"
+                            "    runs-on: ubuntu-latest",
+                        ),
+                ):
+                        mutations.append(
+                            (
+                                job_name,
+                                label,
+                                self.replace_in_job(
+                                    original,
+                                    job_name,
+                                    old,
+                                    new,
+                                ),
+                            )
+                        )
+            for job_name, label, old, new in (
+                (
+                        "patch-release",
+                        "if",
+                        "    if: ${{ github.event_name == 'push' && "
+                        "github.ref == 'refs/heads/master' }}",
+                        "    if: always()",
+                ),
+                (
+                        "patch-release",
+                        "env",
+                        "      PATCH_COMMIT: ${{ github.sha }}",
+                        "      PATCH_COMMIT: attacker",
+                ),
+                (
+                        "patch-release",
+                        "secret",
+                        "        BASEROM_URL: ${{ secrets.BASEROM_URL }}",
+                        "        BASEROM_URL: ${{ secrets.OTHER }}",
+                ),
+                (
+                        "patch-release",
+                        "step",
+                        "    - run: make expansion-modern-all-locales-all-features-check -j1\n",
+                        "",
+                ),
+                (
+                        "patch-release",
+                        "command",
+                        "    - run: ./build_tools.sh",
+                        "    - run: exit 1",
+                ),
+                (
+                        "patch-release",
+                        "action",
+                        verify_mod._UPLOAD_USES,
+                        "actions/upload-artifact@" + "0" * 40,
+                ),
+                (
+                        "summary",
+                        "if",
+                        "    if: always()",
+                        "    if: false",
+                ),
+                (
+                        "summary",
+                        "needs",
+                        "    needs: [host-tests, build, extended-host-tests, legacy]",
+                        "    needs: [build, host-tests, legacy]",
+                ),
+                (
+                        "summary",
+                        "env",
+                        "      HOST_TESTS_RESULT: ${{ needs.host-tests.result }}",
+                        "      HOST_TESTS_RESULT: success",
+                ),
+                (
+                        "summary",
+                        "command",
+                        '            exit 1',
+                        '            exit 0',
+                ),
+                (
+                        "summary",
+                        "action",
+                        "    - name: Render fail-closed combined Build summary",
+                        "    - uses: actions/checkout@" + "0" * 40,
+                ),
+            ):
+                mutations.append(
+                        (
+                            job_name,
+                            label,
+                            self.replace_in_job(original, job_name, old, new),
+                        )
+                )
+            for job_name, label, changed in mutations:
+                with self.subTest(job=job_name, mutation=label):
+                        self.assert_only_job_changed(original, changed, job_name)
+                        with open(workflow_path, "w", encoding="utf-8") as handle:
+                            handle.write(changed)
+                        with self.assertRaises(ValueError):
+                            verify_mod.run_gates(target_root, dry_run=True)
+
+            workflow_mutations = {
+                "env": original.replace(
+                    "permissions:\n",
+                    "env:\n  BASH_ENV: build/mask\n\npermissions:\n",
+                    1,
+                ),
+                "defaults": original.replace(
+                    "permissions:\n",
+                    "defaults:\n  run:\n    shell: bash\n\npermissions:\n",
+                    1,
+                ),
+                "permissions": original.replace(
+                    "  contents: read",
+                    "  contents: write",
+                    1,
+                ),
+                "concurrency": original.replace(
+                    "permissions:\n",
+                    "concurrency: target-controlled\n\npermissions:\n",
+                    1,
+                ),
+            }
+            for mutation, changed in workflow_mutations.items():
+                with self.subTest(workflow=mutation):
+                    with open(
+                        workflow_path,
+                        "w",
+                        encoding="utf-8",
+                    ) as handle:
+                        handle.write(changed)
+                    with self.assertRaises(ValueError):
+                        verify_mod.run_gates(target_root, dry_run=True)
+
+    def test_source_root_gate_equivalence_remains_supported(self):
+        self.assertEqual(
+            len(verify_mod.run_gates(REPO_ROOT, dry_run=True)),
+            28,
+        )
+
+    def test_dry_run_and_normal_cli_select_the_same_target_root(self):
+        for common, expected_root in (
+            ([], REPO_ROOT),
+            (["--repo", REPO_ROOT], REPO_ROOT),
+        ):
+            with self.subTest(arguments=common):
+                with (
+                    contextlib.chdir(REPO_ROOT),
+                    mock.patch.object(
+                        verify_mod,
+                        "run_gates",
+                        return_value=[],
+                    ) as run_gates,
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    self.assertEqual(cli.main([*common, "verify"]), 0)
+                    self.assertEqual(
+                        cli.main([*common, "verify", "--dry-run"]),
+                        0,
+                    )
+                self.assertEqual(
+                    run_gates.call_args_list,
+                    [
+                        mock.call(expected_root, jobs=2, dry_run=False),
+                        mock.call(expected_root, jobs=2, dry_run=True),
+                    ],
+                )
+
+    def test_documented_source_root_module_dry_run_is_real(self):
+        completed = subprocess.run(
+            [
+                "python3",
+                "-m",
+                "scripts.upstream_port",
+                "verify",
+                "--dry-run",
+            ],
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout.count("[SKIPPED(dry-run)]"), 28)
+
+    def test_invalid_explicit_repo_is_a_normal_cli_error(self):
+        cases = (
+            os.path.join(REPO_ROOT, "build", "does-not-exist"),
+            os.path.join(REPO_ROOT, "tests"),
+            os.path.join(REPO_ROOT, "scripts", "upstream_port", "cli.py"),
+        )
+        for target in cases:
+            with self.subTest(target=target):
+                stderr = io.StringIO()
+                with (
+                    contextlib.chdir(REPO_ROOT),
+                    mock.patch.dict(os.environ, {}, clear=True),
+                    contextlib.redirect_stderr(stderr),
+                ):
+                    self.assertEqual(
+                        cli.main(["--repo", target, "verify", "--dry-run"]),
+                        1,
+                    )
+                self.assertTrue(stderr.getvalue().startswith("error: "))
+                self.assertNotIn("Traceback", stderr.getvalue())
+
+    def test_implicit_repo_is_the_exact_source_root(self):
+        self.assertEqual(cli._repo_root(None), REPO_ROOT)
+        stderr = io.StringIO()
+        with (
+            mock.patch.object(cli, "SOURCE_ROOT", os.path.join(REPO_ROOT, "tests")),
+            mock.patch.dict(os.environ, {}, clear=True),
+            contextlib.redirect_stderr(stderr),
+        ):
+            self.assertEqual(cli.main(["verify", "--dry-run"]), 1)
+        self.assertIn("exact Git top level", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
 
 
 if __name__ == "__main__":
