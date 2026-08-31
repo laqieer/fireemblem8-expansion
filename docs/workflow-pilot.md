@@ -104,45 +104,61 @@ but does not hash source files, blobs, objects, ROMs, or the repository tree.
 
 Issue [#177](https://github.com/laqieer/fireemblem8-expansion/issues/177)
 adds one parsed, fail-closed `event-classifier` job ahead of the four expensive
-workers. For pull requests, that small job checks out the exact current
-`pull_request.base.sha` with the pinned checkout action, no credentials, no
-submodules, and depth one. It verifies that authority checkout before invoking
-the closed `/usr/bin/python3 -I` launcher's `classify-event` mode. A branch
-whose base predates the classifier takes an explicit bootstrap full-build
-path, so introducing or reverting the seam cannot silently suppress evidence.
+workers. For pull requests with complete identity, that small job checks out
+the exact current `pull_request.base.sha` with the pinned checkout action, no
+credentials, no submodules, and depth one. A missing PR base uses only the
+repository's trusted default-branch ref to execute the failure/bootstrap
+classifier; it never substitutes the event's merge `github.sha`. Pushes use
+their separate event `after` SHA. The job verifies exact immutable authority
+when that base/push identity exists before invoking the closed
+`/usr/bin/python3 -I` launcher's `classify-event` mode. A branch whose trusted
+base predates the classifier takes an explicit bootstrap full-build path, so
+introducing or reverting the seam cannot silently suppress evidence.
 
 The classifier reads the bounded `GITHUB_EVENT_PATH` JSON file with duplicate
-key rejection. An `edited` event suppresses `host-tests`, `build`,
+key and non-finite `NaN`/`Infinity` rejection. An `edited` event suppresses `host-tests`, `build`,
 `extended-host-tests`, and `legacy` only when:
 
 - the event has a complete pull-request base and exact head identity;
-- the event head equals the same `pull_request.head.sha` expression used by
-  every expensive worker checkout;
+- the event head/base equal the direct event identities used by every
+  expensive worker condition;
 - the nonempty `changes` key set is exactly `body`, `title`, or both; and
-- each changed metadata field has the documented GitHub `{"from": ...}`
-  shape and a corresponding current pull-request value.
+- each changed metadata field has exactly the documented GitHub
+  `{"from": ...}` shape, schema-valid previous/current values, and a real
+  value transition. A title's previous/current values are nonempty strings;
+  a body may transition between null and string; same-value, missing-current,
+  nested, malformed, or extra-key claims are not metadata-only.
 
-Base-only edits, mixed edits, unknown fields, incomplete identities or change
-records, unknown actions/events, `opened`, `synchronize`, `reopened`, and
-`master` pushes select the complete required graph. Classifier failure or
-missing output also selects all four workers through `always()` conditions,
-then makes `summary` fail. On a metadata-only edit, `summary` succeeds only
+Base-only edits, mixed edits, unknown fields, incomplete change records,
+unknown actions, `opened`, `synchronize`, `reopened`, and `master` pushes with
+complete identity select the complete required graph. Missing PR head/base,
+malformed JSON, classifier failure, or missing/stale output starts no worker
+at a merge/default ref and makes `summary` fail. Each worker runs only when
+the classifier has a valid full-build decision whose head and base still equal
+the direct event identities. On a metadata-only edit, `summary` succeeds only
 when classification succeeded, the classified head still equals the event
-head, the suppression output is exactly false, and all four worker conclusions
-are exactly `skipped`. On a full event, the previous exact-head checkout,
-worker commands, environments, and success-only summary remain unchanged.
+head, the classified base still equals the event base, suppression is exactly
+false, and all four worker conclusions are exactly `skipped`. On a full event,
+all workers check out only the classifier's exact nonempty head output and
+retain their revision verification, commands, environments, and success-only
+summary.
 The current Build workflow has no explicit final-dispatch trigger; if that
 supported surface is introduced later, `workflow_dispatch` classifies as full
 and the trigger/topology contracts must be updated together.
 
-The pull-request body remains the stable frozen scope, non-goals, acceptance,
-dependency, and tester-case contract. Evolving candidate SHA, Build run,
-Copilot review, unresolved-thread, budget, and review-size evidence belongs in
-one canonical PR evidence comment carrying this standalone marker:
+The pull-request body/template remains the stable frozen scope, non-goals,
+classification, dependency, acceptance, tester procedure, and compatibility
+contract. It must contain neither evolving evidence fields nor the canonical
+marker. Evolving commands/results, tester actual results, candidate SHA, Build
+run, Copilot/security review, unresolved-thread, completion, budget, and
+review-size evidence belongs in exactly one canonical PR evidence comment
+carrying this standalone marker:
 
 <!-- workflow-pilot-candidate-evidence -->
 
-Update that comment in place. Do not append those facts to the body, title,
+Update that comment in place. A missing marker, duplicate markers in one or
+more comments, a non-standalone marker, or a marker/body evidence field in the
+PR body violates the contract. Do not append those facts to the body, title,
 decision record, fixture, or another tracked/current-state ledger. Comment
 edits emit no `pull_request: edited` event, while Git, GitHub, and Actions
 remain authoritative for every value.

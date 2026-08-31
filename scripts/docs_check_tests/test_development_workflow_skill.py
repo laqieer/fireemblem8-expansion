@@ -29,6 +29,23 @@ MANUAL_HANDOFF_CASE_HEADING = (
     "TC-WORKFLOW-MANUAL-HANDOFF-001: "
     "Surface actionable manual testing and resume automatically"
 )
+CANDIDATE_EVIDENCE_MARKER = "<!-- workflow-pilot-candidate-evidence -->"
+EVOLVING_PR_BODY_FIELDS = (
+    "## Validation commands",
+    "Validation results:",
+    "Tester actual results:",
+    "actual result:",
+    "## Review-size preflight",
+    "Changed files:",
+    "Additions:",
+    "Deletions:",
+    "Total changed lines:",
+    "current SHA:",
+    "run ID:",
+    "Candidate Build CI",
+    "Copilot review ran",
+    "security checks passed",
+)
 MANUAL_HANDOFF_POLICY_HEADING = "Actionable manual-testing handoff"
 MANUAL_HANDOFF_SUMMARY_HEADING = "Lifecycle summary"
 MANUAL_HANDOFF_QUERY = (
@@ -498,6 +515,35 @@ def scan_policy_markdown(text):
 
 def normalize_policy(text):
     return " ".join(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def candidate_evidence_violations(body, comments):
+    scan_policy_markdown(body)
+    violations = []
+    if CANDIDATE_EVIDENCE_MARKER in body:
+        violations.append("body-marker")
+    folded = body.casefold()
+    for field in EVOLVING_PR_BODY_FIELDS:
+        if field.casefold() in folded:
+            violations.append(f"evolving-body-field:{field}")
+
+    marker_comments = 0
+    marker_count = 0
+    for comment in comments:
+        lines = comment.splitlines()
+        exact = sum(
+            line.strip() == CANDIDATE_EVIDENCE_MARKER
+            for line in lines
+        )
+        occurrences = comment.count(CANDIDATE_EVIDENCE_MARKER)
+        if occurrences != exact:
+            violations.append("non-standalone-comment-marker")
+        if exact:
+            marker_comments += 1
+            marker_count += exact
+    if marker_comments != 1 or marker_count != 1:
+        violations.append("canonical-comment-marker-count")
+    return violations
 
 
 def assert_normalized_policy(test_case, surface, text, concepts, forbidden=()):
@@ -2819,25 +2865,80 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             with self.subTest(normalized_requirement=requirement):
                 self.assertIn(normalize_policy(requirement), normalize_policy(text))
 
-    def test_pull_request_template_records_boundary_stack_and_size(self):
+    def test_pull_request_template_keeps_only_frozen_contract(self):
         text = PR_TEMPLATE_PATH.read_text(encoding="utf-8")
         required_contract = (
             "exactly one independent issue",
+            "Frozen classification and relationships",
             "Immediate base branch",
             "Stack position",
             "Depends on",
             "Known dependents",
             "explicit dependent",
             "sub-issues",
-            "git diff --name-only <base>...HEAD",
-            "Total changed lines",
-            "20,000-line hard ceiling",
-            "Indivisible-change exception and alternative evidence",
+            "Frozen acceptance criteria",
+            "Tester-facing procedure",
+            "Compatibility impact",
+            "Canonical candidate evidence",
+            "canonical marked-comment protocol",
+            "do not copy its marker or evolving fields",
         )
 
         for requirement in required_contract:
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, text)
+        self.assertNotIn(CANDIDATE_EVIDENCE_MARKER, text)
+        self.assertNotIn("- [ ]", text)
+        self.assertEqual(
+            candidate_evidence_violations(
+                text,
+                [CANDIDATE_EVIDENCE_MARKER],
+            ),
+            [],
+        )
+
+    def test_candidate_evidence_requires_one_canonical_comment(self):
+        body = PR_TEMPLATE_PATH.read_text(encoding="utf-8")
+        canonical_comment = (
+            f"{CANDIDATE_EVIDENCE_MARKER}\n"
+            "Candidate evidence is maintained here.\n"
+        )
+        self.assertEqual(
+            candidate_evidence_violations(body, [canonical_comment]),
+            [],
+        )
+
+        for field in EVOLVING_PR_BODY_FIELDS:
+            with self.subTest(field=field):
+                self.assertTrue(
+                    candidate_evidence_violations(
+                        body + f"\n{field} evolving\n",
+                        [canonical_comment],
+                    )
+                )
+        for changed_body, comments in (
+            (body + f"\n{CANDIDATE_EVIDENCE_MARKER}\n", [canonical_comment]),
+            (body, []),
+            (body, [canonical_comment, canonical_comment]),
+            (
+                body,
+                [
+                    CANDIDATE_EVIDENCE_MARKER
+                    + " inline text\n",
+                ],
+            ),
+            (
+                body,
+                [
+                    f"{CANDIDATE_EVIDENCE_MARKER}\n"
+                    f"{CANDIDATE_EVIDENCE_MARKER}\n",
+                ],
+            ),
+        ):
+            with self.subTest(body=changed_body[-80:], comments=comments):
+                self.assertTrue(
+                    candidate_evidence_violations(changed_body, comments)
+                )
 
     def test_tester_facing_case_contract_is_integrated(self):
         _, skill = read_skill()
@@ -2880,14 +2981,15 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
 
         template = PR_TEMPLATE_PATH.read_text(encoding="utf-8")
         template_contract = (
-            "Tester-facing cases",
-            "Case IDs exercised",
+            "Tester-facing procedure",
+            "Stable case IDs",
             "Definition/catalog links",
-            "Exact configuration/profile or artifact",
-            "Positive procedure and actual result",
-            "pre-fix negative control and actual result",
+            "Supported configuration/profile or artifact",
+            "Exact actions or inputs",
+            "Observable expected result",
+            "pre-fix negative control",
             "feature interactions, and save expectations",
-            "Automation mapping and result, or precise manual-only reason",
+            "Automation mapping, or precise manual-only reason",
             "Reset/cleanup, known limitations, and unsupported configurations",
             "visual, audio, or UX judgment",
         )

@@ -4,18 +4,18 @@
       "event_name": "pull_request",
       "expected": {
         "classification": "metadata-only",
+        "expected_base": "2222222222222222222222222222222222222222",
         "expected_head": "1111111111111111111111111111111111111111",
+        "identity_valid": true,
         "jobs": [
           "event-classifier",
           "summary"
         ],
         "reason": "body-title-only-edit",
-        "run_expensive": false
+        "run_expensive": false,
+        "summary_success": true
       },
-      "expected_build_sha": "1111111111111111111111111111111111111111",
-      "github_ref": "refs/pull/177/merge",
-      "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "id": "body-only",
+      "id": "body-only-merge-sha-ignored",
       "payload": {
         "action": "edited",
         "changes": {
@@ -34,23 +34,30 @@
           },
           "title": "Implement issue 177"
         }
+      },
+      "runner": {
+        "github_ref": "refs/pull/177/merge",
+        "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pr_base_sha": "2222222222222222222222222222222222222222",
+        "pr_head_sha": "1111111111111111111111111111111111111111",
+        "push_sha": ""
       }
     },
     {
       "event_name": "pull_request",
       "expected": {
         "classification": "metadata-only",
+        "expected_base": "2222222222222222222222222222222222222222",
         "expected_head": "1111111111111111111111111111111111111111",
+        "identity_valid": true,
         "jobs": [
           "event-classifier",
           "summary"
         ],
         "reason": "body-title-only-edit",
-        "run_expensive": false
+        "run_expensive": false,
+        "summary_success": true
       },
-      "expected_build_sha": "1111111111111111111111111111111111111111",
-      "github_ref": "refs/pull/177/merge",
-      "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "id": "title-only",
       "payload": {
         "action": "edited",
@@ -70,23 +77,30 @@
           },
           "title": "New title"
         }
+      },
+      "runner": {
+        "github_ref": "refs/pull/177/merge",
+        "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pr_base_sha": "2222222222222222222222222222222222222222",
+        "pr_head_sha": "1111111111111111111111111111111111111111",
+        "push_sha": ""
       }
     },
     {
       "event_name": "pull_request",
       "expected": {
         "classification": "metadata-only",
+        "expected_base": "2222222222222222222222222222222222222222",
         "expected_head": "1111111111111111111111111111111111111111",
+        "identity_valid": true,
         "jobs": [
           "event-classifier",
           "summary"
         ],
         "reason": "body-title-only-edit",
-        "run_expensive": false
+        "run_expensive": false,
+        "summary_success": true
       },
-      "expected_build_sha": "1111111111111111111111111111111111111111",
-      "github_ref": "refs/pull/177/merge",
-      "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "id": "body-and-title",
       "payload": {
         "action": "edited",
@@ -109,13 +123,22 @@
           },
           "title": "New title"
         }
+      },
+      "runner": {
+        "github_ref": "refs/pull/177/merge",
+        "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pr_base_sha": "2222222222222222222222222222222222222222",
+        "pr_head_sha": "1111111111111111111111111111111111111111",
+        "push_sha": ""
       }
     },
     {
       "event_name": "pull_request",
       "expected": {
         "classification": "full",
+        "expected_base": "2222222222222222222222222222222222222222",
         "expected_head": "1111111111111111111111111111111111111111",
+        "identity_valid": true,
         "jobs": [
           "build",
           "event-classifier",
@@ -125,11 +148,9 @@
           "summary"
         ],
         "reason": "base-edit",
-        "run_expensive": true
+        "run_expensive": true,
+        "summary_success": true
       },
-      "expected_build_sha": "1111111111111111111111111111111111111111",
-      "github_ref": "refs/pull/177/merge",
-      "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "id": "base-only",
       "payload": {
         "action": "edited",
@@ -151,13 +172,22 @@
           },
           "title": "Implement issue 177"
         }
+      },
+      "runner": {
+        "github_ref": "refs/pull/177/merge",
+        "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pr_base_sha": "2222222222222222222222222222222222222222",
+        "pr_head_sha": "1111111111111111111111111111111111111111",
+        "push_sha": ""
       }
     },
     {
       "event_name": "pull_request",
       "expected": {
         "classification": "full",
+        "expected_base": "2222222222222222222222222222222222222222",
         "expected_head": "1111111111111111111111111111111111111111",
+        "identity_valid": true,
         "jobs": [
           "build",
           "event-classifier",
@@ -167,11 +197,9 @@
           "summary"
         ],
         "reason": "mixed-edit",
-        "run_expensive": true
+        "run_expensive": true,
+        "summary_success": true
       },
-      "expected_build_sha": "1111111111111111111111111111111111111111",
-      "github_ref": "refs/pull/177/merge",
-      "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "id": "mixed-base-and-body",
       "payload": {
         "action": "edited",
@@ -196,13 +224,22 @@
           },
           "title": "Implement issue 177"
         }
+      },
+      "runner": {
+        "github_ref": "refs/pull/177/merge",
+        "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pr_base_sha": "2222222222222222222222222222222222222222",
+        "pr_head_sha": "1111111111111111111111111111111111111111",
+        "push_sha": ""
       }
     },
     {
       "event_name": "pull_request",
       "expected": {
         "classification": "full",
+        "expected_base": "2222222222222222222222222222222222222222",
         "expected_head": "1111111111111111111111111111111111111111",
+        "identity_valid": true,
         "jobs": [
           "build",
           "event-classifier",
@@ -212,11 +249,9 @@
           "summary"
         ],
         "reason": "unknown-edit",
-        "run_expensive": true
+        "run_expensive": true,
+        "summary_success": true
       },
-      "expected_build_sha": "1111111111111111111111111111111111111111",
-      "github_ref": "refs/pull/177/merge",
-      "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "id": "unknown-edit-field",
       "payload": {
         "action": "edited",
@@ -236,13 +271,22 @@
           },
           "title": "Implement issue 177"
         }
+      },
+      "runner": {
+        "github_ref": "refs/pull/177/merge",
+        "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pr_base_sha": "2222222222222222222222222222222222222222",
+        "pr_head_sha": "1111111111111111111111111111111111111111",
+        "push_sha": ""
       }
     },
     {
       "event_name": "pull_request",
       "expected": {
         "classification": "full",
+        "expected_base": "2222222222222222222222222222222222222222",
         "expected_head": "1111111111111111111111111111111111111111",
+        "identity_valid": true,
         "jobs": [
           "build",
           "event-classifier",
@@ -252,11 +296,9 @@
           "summary"
         ],
         "reason": "incomplete-edit",
-        "run_expensive": true
+        "run_expensive": true,
+        "summary_success": true
       },
-      "expected_build_sha": "1111111111111111111111111111111111111111",
-      "github_ref": "refs/pull/177/merge",
-      "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "id": "incomplete-body-change",
       "payload": {
         "action": "edited",
@@ -274,13 +316,22 @@
           },
           "title": "Implement issue 177"
         }
+      },
+      "runner": {
+        "github_ref": "refs/pull/177/merge",
+        "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pr_base_sha": "2222222222222222222222222222222222222222",
+        "pr_head_sha": "1111111111111111111111111111111111111111",
+        "push_sha": ""
       }
     },
     {
       "event_name": "pull_request",
       "expected": {
         "classification": "full",
+        "expected_base": "2222222222222222222222222222222222222222",
         "expected_head": "1111111111111111111111111111111111111111",
+        "identity_valid": true,
         "jobs": [
           "build",
           "event-classifier",
@@ -290,12 +341,10 @@
           "summary"
         ],
         "reason": "pull-request-opened",
-        "run_expensive": true
+        "run_expensive": true,
+        "summary_success": true
       },
-      "expected_build_sha": "1111111111111111111111111111111111111111",
-      "github_ref": "refs/pull/177/merge",
-      "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "id": "opened",
+      "id": "stacked-opened",
       "payload": {
         "action": "opened",
         "pull_request": {
@@ -309,13 +358,22 @@
           },
           "title": "Implement issue 177"
         }
+      },
+      "runner": {
+        "github_ref": "refs/pull/177/merge",
+        "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pr_base_sha": "2222222222222222222222222222222222222222",
+        "pr_head_sha": "1111111111111111111111111111111111111111",
+        "push_sha": ""
       }
     },
     {
       "event_name": "pull_request",
       "expected": {
         "classification": "full",
+        "expected_base": "2222222222222222222222222222222222222222",
         "expected_head": "3333333333333333333333333333333333333333",
+        "identity_valid": true,
         "jobs": [
           "build",
           "event-classifier",
@@ -325,11 +383,9 @@
           "summary"
         ],
         "reason": "pull-request-synchronize",
-        "run_expensive": true
+        "run_expensive": true,
+        "summary_success": true
       },
-      "expected_build_sha": "3333333333333333333333333333333333333333",
-      "github_ref": "refs/pull/177/merge",
-      "github_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "id": "synchronize",
       "payload": {
         "action": "synchronize",
@@ -344,13 +400,22 @@
           },
           "title": "Implement issue 177"
         }
+      },
+      "runner": {
+        "github_ref": "refs/pull/177/merge",
+        "github_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "pr_base_sha": "2222222222222222222222222222222222222222",
+        "pr_head_sha": "3333333333333333333333333333333333333333",
+        "push_sha": ""
       }
     },
     {
       "event_name": "pull_request",
       "expected": {
         "classification": "full",
+        "expected_base": "2222222222222222222222222222222222222222",
         "expected_head": "1111111111111111111111111111111111111111",
+        "identity_valid": true,
         "jobs": [
           "build",
           "event-classifier",
@@ -360,11 +425,9 @@
           "summary"
         ],
         "reason": "pull-request-reopened",
-        "run_expensive": true
+        "run_expensive": true,
+        "summary_success": true
       },
-      "expected_build_sha": "1111111111111111111111111111111111111111",
-      "github_ref": "refs/pull/177/merge",
-      "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "id": "reopened",
       "payload": {
         "action": "reopened",
@@ -379,13 +442,145 @@
           },
           "title": "Implement issue 177"
         }
+      },
+      "runner": {
+        "github_ref": "refs/pull/177/merge",
+        "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pr_base_sha": "2222222222222222222222222222222222222222",
+        "pr_head_sha": "1111111111111111111111111111111111111111",
+        "push_sha": ""
+      }
+    },
+    {
+      "event_name": "pull_request",
+      "expected": {
+        "classification": "full",
+        "expected_base": "",
+        "expected_head": "1111111111111111111111111111111111111111",
+        "identity_valid": false,
+        "jobs": [
+          "event-classifier",
+          "summary"
+        ],
+        "reason": "missing-pull-request-base",
+        "run_expensive": true,
+        "summary_success": false
+      },
+      "id": "missing-base",
+      "payload": {
+        "action": "edited",
+        "changes": {
+          "body": {
+            "from": "Old body"
+          }
+        },
+        "pull_request": {
+          "base": {
+            "ref": "master"
+          },
+          "body": "New body",
+          "head": {
+            "sha": "1111111111111111111111111111111111111111"
+          },
+          "title": "Implement issue 177"
+        }
+      },
+      "runner": {
+        "github_ref": "refs/pull/177/merge",
+        "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pr_base_sha": "",
+        "pr_head_sha": "1111111111111111111111111111111111111111",
+        "push_sha": ""
+      }
+    },
+    {
+      "event_name": "pull_request",
+      "expected": {
+        "classification": "full",
+        "expected_base": "2222222222222222222222222222222222222222",
+        "expected_head": "",
+        "identity_valid": false,
+        "jobs": [
+          "event-classifier",
+          "summary"
+        ],
+        "reason": "missing-pull-request-head",
+        "run_expensive": true,
+        "summary_success": false
+      },
+      "id": "missing-head",
+      "payload": {
+        "action": "edited",
+        "changes": {
+          "body": {
+            "from": "Old body"
+          }
+        },
+        "pull_request": {
+          "base": {
+            "ref": "master",
+            "sha": "2222222222222222222222222222222222222222"
+          },
+          "body": "New body",
+          "head": {},
+          "title": "Implement issue 177"
+        }
+      },
+      "runner": {
+        "github_ref": "refs/pull/177/merge",
+        "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pr_base_sha": "2222222222222222222222222222222222222222",
+        "pr_head_sha": "",
+        "push_sha": ""
+      }
+    },
+    {
+      "event_name": "pull_request",
+      "expected": {
+        "classification": "full",
+        "expected_base": "",
+        "expected_head": "",
+        "identity_valid": false,
+        "jobs": [
+          "event-classifier",
+          "summary"
+        ],
+        "reason": "missing-pull-request-identities",
+        "run_expensive": true,
+        "summary_success": false
+      },
+      "id": "missing-head-and-base",
+      "payload": {
+        "action": "edited",
+        "changes": {
+          "body": {
+            "from": "Old body"
+          }
+        },
+        "pull_request": {
+          "base": {
+            "ref": "master"
+          },
+          "body": "New body",
+          "head": {},
+          "title": "Implement issue 177"
+        }
+      },
+      "runner": {
+        "github_ref": "refs/pull/177/merge",
+        "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pr_base_sha": "",
+        "pr_head_sha": "",
+        "push_sha": ""
       }
     },
     {
       "event_name": "push",
       "expected": {
         "classification": "full",
+        "expected_base": "",
         "expected_head": "4444444444444444444444444444444444444444",
+        "identity_valid": true,
         "jobs": [
           "build",
           "event-classifier",
@@ -396,18 +591,23 @@
           "summary"
         ],
         "reason": "master-push",
-        "run_expensive": true
+        "run_expensive": true,
+        "summary_success": true
       },
-      "expected_build_sha": "4444444444444444444444444444444444444444",
-      "github_ref": "refs/heads/master",
-      "github_sha": "4444444444444444444444444444444444444444",
       "id": "master-push",
       "payload": {
         "after": "4444444444444444444444444444444444444444",
         "ref": "refs/heads/master"
+      },
+      "runner": {
+        "github_ref": "refs/heads/master",
+        "github_sha": "4444444444444444444444444444444444444444",
+        "pr_base_sha": "",
+        "pr_head_sha": "",
+        "push_sha": "4444444444444444444444444444444444444444"
       }
     }
   ],
-  "schema_version": 1,
+  "schema_version": 2,
   "workflow_dispatch_supported": false
 }

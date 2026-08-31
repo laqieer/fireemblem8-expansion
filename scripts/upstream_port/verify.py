@@ -45,11 +45,7 @@ _CHECKOUT_USES = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
 _CHECKOUT_WITH = (
     ("fetch-depth", "0"),
     ("persist-credentials", "false"),
-    (
-        "ref",
-        "${{ github.event_name == 'pull_request' && "
-        "github.event.pull_request.head.sha || github.sha }}",
-    ),
+    ("ref", "${{ needs.event-classifier.outputs.expected_head }}"),
     ("submodules", "recursive"),
 )
 _CLASSIFIER_CHECKOUT_WITH = (
@@ -57,8 +53,10 @@ _CLASSIFIER_CHECKOUT_WITH = (
     ("persist-credentials", "false"),
     (
         "ref",
-        "${{ github.event_name == 'pull_request' && "
-        "github.event.pull_request.base.sha || github.sha }}",
+        "${{ (github.event_name == 'pull_request' && "
+        "(github.event.pull_request.base.sha || format('refs/heads/{0}', "
+        "github.event.repository.default_branch))) || "
+        "(github.event_name == 'push' && github.event.after) || '' }}",
     ),
 )
 _PATCH_CHECKOUT_WITH = (
@@ -76,21 +74,45 @@ _UPLOAD_WITH = (
     ("retention-days", "30"),
 )
 _EXPECTED_BUILD_SHA_EXPRESSION = (
-    "${{ github.event_name == 'pull_request' && "
-    "github.event.pull_request.head.sha || github.sha }}"
+    "${{ needs.event-classifier.outputs.expected_head }}"
 )
 _CLASSIFIER_REF_EXPRESSION = (
-    "${{ github.event_name == 'pull_request' && "
-    "github.event.pull_request.base.sha || github.sha }}"
+    "${{ (github.event_name == 'pull_request' && "
+    "(github.event.pull_request.base.sha || format('refs/heads/{0}', "
+    "github.event.repository.default_branch))) || "
+    "(github.event_name == 'push' && github.event.after) || '' }}"
+)
+_CLASSIFIER_EXPECTED_SHA_EXPRESSION = (
+    "${{ (github.event_name == 'pull_request' && "
+    "github.event.pull_request.base.sha) || "
+    "(github.event_name == 'push' && github.event.after) || '' }}"
 )
 _WORKER_CONDITION = (
-    "${{ always() && (needs.event-classifier.result != 'success' || "
-    "needs.event-classifier.outputs.run_expensive != 'false') }}"
+    "${{ needs.event-classifier.result == 'success' && "
+    "needs.event-classifier.outputs.identity_valid == 'true' && "
+    "needs.event-classifier.outputs.run_expensive == 'true' && "
+    "((github.event_name == 'pull_request' && "
+    "needs.event-classifier.outputs.expected_head == "
+    "github.event.pull_request.head.sha && "
+    "needs.event-classifier.outputs.expected_base == "
+    "github.event.pull_request.base.sha && "
+    "github.event.pull_request.head.sha != '' && "
+    "github.event.pull_request.base.sha != '') || "
+    "(github.event_name == 'push' && "
+    "needs.event-classifier.outputs.expected_head == github.event.after && "
+    "needs.event-classifier.outputs.expected_base == '' && "
+    "github.event.after != '')) }}"
 )
 _CLASSIFIER_VERIFY_COMMANDS = (
     ("ACTUAL_SHA=$(git rev-parse HEAD)",),
     ("printf", "classifier.sha=%s\\n", "$ACTUAL_SHA"),
-    ("test", "$ACTUAL_SHA", "=", "$CLASSIFIER_REF"),
+    ("if", "[", "-n", "$CLASSIFIER_EXPECTED_SHA", "];", "then"),
+    ("test", "$ACTUAL_SHA", "=", "$CLASSIFIER_EXPECTED_SHA"),
+    ("else",),
+    ("test", "$GITHUB_EVENT_NAME", "=", "pull_request"),
+    ("test", "-z", "$PR_BASE_SHA"),
+    ("test", "$CLASSIFIER_REF", "=", "refs/heads/$DEFAULT_BRANCH"),
+    ("fi",),
 )
 _CLASSIFIER_COMMANDS = (
     ("if", "test", "-f", "scripts/workflow_pilot/event_classifier.py;", "then"),
@@ -107,32 +129,99 @@ _CLASSIFIER_COMMANDS = (
         "$GITHUB_REF",
         "--github-sha",
         "$GITHUB_SHA",
-        "--expected-build-sha",
-        "$EXPECTED_BUILD_SHA",
+        "--pr-base-sha",
+        "$PR_BASE_SHA",
+        "--pr-head-sha",
+        "$PR_HEAD_SHA",
+        "--push-sha",
+        "$PUSH_SHA",
         "--output",
         "$GITHUB_OUTPUT",
     ),
     ("else",),
+    ("expected_base=",),
+    ("expected_head=",),
+    ("identity_valid=false",),
+    ("if", "[[", "$GITHUB_EVENT_NAME", "=", "pull_request", "]];", "then"),
+    (
+        "if",
+        "[[",
+        "$PR_BASE_SHA",
+        "=~",
+        "^[0-9a-f]{40}$",
+        "]];",
+        "then",
+    ),
+    ("expected_base=$PR_BASE_SHA",),
+    ("fi",),
+    (
+        "if",
+        "[[",
+        "$PR_HEAD_SHA",
+        "=~",
+        "^[0-9a-f]{40}$",
+        "]];",
+        "then",
+    ),
+    ("expected_head=$PR_HEAD_SHA",),
+    ("fi",),
+    (
+        "if",
+        "[[",
+        "-n",
+        "$expected_base",
+        "&&",
+        "-n",
+        "$expected_head",
+        "]];",
+        "then",
+    ),
+    ("identity_valid=true",),
+    ("fi",),
+    (
+        "elif",
+        "[[",
+        "$GITHUB_EVENT_NAME",
+        "=",
+        "push",
+        "&&",
+        "$PUSH_SHA",
+        "=~",
+        "^[0-9a-f]{40}$",
+        "]];",
+        "then",
+    ),
+    ("expected_head=$PUSH_SHA",),
+    ("identity_valid=true",),
+    ("fi",),
     ("{",),
     ("echo", "classification=full"),
     ("echo", "reason=classifier-bootstrap"),
+    ("echo", "expected_base=$expected_base"),
+    ("echo", "expected_head=$expected_head"),
+    ("echo", "identity_valid=$identity_valid"),
     ("echo", "run_expensive=true"),
-    ("echo", "expected_head=$EXPECTED_BUILD_SHA"),
     ("}", ">>", "$GITHUB_OUTPUT"),
     ("fi",),
 )
 _EXPECTED_JOB_OUTPUTS = {
     "event-classifier": (
         ("classification", "${{ steps.classify.outputs.classification }}"),
+        ("expected_base", "${{ steps.classify.outputs.expected_base }}"),
         ("expected_head", "${{ steps.classify.outputs.expected_head }}"),
+        ("identity_valid", "${{ steps.classify.outputs.identity_valid }}"),
         ("reason", "${{ steps.classify.outputs.reason }}"),
         ("run_expensive", "${{ steps.classify.outputs.run_expensive }}"),
     ),
 }
 _EXPECTED_JOB_ENV = {
     "event-classifier": (
+        ("CLASSIFIER_EXPECTED_SHA", _CLASSIFIER_EXPECTED_SHA_EXPRESSION),
         ("CLASSIFIER_REF", _CLASSIFIER_REF_EXPRESSION),
-        ("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),
+        ("DEFAULT_BRANCH", "${{ github.event.repository.default_branch }}"),
+        ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
+        ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
+        ("PUSH_SHA", "${{ github.event.after }}"),
     ),
     "host-tests": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
     "build": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
@@ -152,14 +241,21 @@ _EXPECTED_JOB_ENV = {
         ("BUILD_RESULT", "${{ needs.build.result }}"),
         ("CLASSIFICATION", "${{ needs.event-classifier.outputs.classification }}"),
         (
+            "CLASSIFIED_BASE_SHA",
+            "${{ needs.event-classifier.outputs.expected_base }}",
+        ),
+        (
             "CLASSIFIED_BUILD_SHA",
             "${{ needs.event-classifier.outputs.expected_head }}",
         ),
         ("CLASSIFIER_RESULT", "${{ needs.event-classifier.result }}"),
-        ("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),
         ("EXTENDED_HOST_TESTS_RESULT", "${{ needs.extended-host-tests.result }}"),
         ("HOST_TESTS_RESULT", "${{ needs.host-tests.result }}"),
+        ("IDENTITY_VALID", "${{ needs.event-classifier.outputs.identity_valid }}"),
         ("LEGACY_RESULT", "${{ needs.legacy.result }}"),
+        ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
+        ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
+        ("PUSH_SHA", "${{ github.event.after }}"),
         ("RUN_EXPENSIVE", "${{ needs.event-classifier.outputs.run_expensive }}"),
     ),
 }

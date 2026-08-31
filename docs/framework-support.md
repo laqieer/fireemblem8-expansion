@@ -28,7 +28,9 @@ directly.
 source-changing push/PR.** A PR candidate uses the complete combined Build
 gate and Copilot review concurrently. Parsed body/title-only edits retain only
 the classifier and successful summary; base, mixed, unknown/incomplete,
-opened, synchronize, and reopened events fail closed to the complete graph.
+opened, synchronize, and reopened events with complete identity fail closed to
+the complete graph. A missing PR head/base or classifier failure starts no
+worker at a merge/default fallback and fails summary.
 The same Build jobs rerun on `master`; only the
 technically used patch publisher is master-only. Arch and macOS support is
 exercised by the same script logic but is not re-run in CI; treat regressions

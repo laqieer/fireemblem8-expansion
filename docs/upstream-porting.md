@@ -220,6 +220,11 @@ absent. The classifier contains only its reviewed runner, timeout, outputs,
 environment, and steps. Each combined job contains only its exact classifier
 dependency and fail-closed condition, `runs-on: ubuntu-latest`,
 `timeout-minutes: 60`, its exact allowlisted environment, and `steps`.
+Classifier authority uses direct PR-base or push identities, with a
+trusted-default-branch failure bootstrap only when PR base identity is absent;
+neither classifier nor worker can substitute the pull-request merge
+`github.sha`. Workers accept only a complete, current classifier head/base
+pair and check out that exact nonempty head.
 Containers, services, strategies/matrices, permissions, defaults, dependency
 or condition substitutions, deployment environment, concurrency, reusable-job
 `uses`/secrets, custom shell context, unknown fields, and complex, duplicate,
@@ -231,7 +236,8 @@ context, exact commit env, six ordered publisher steps, pinned checkout/upload
 actions, scoped base-image secret, and upload mapping. `summary` must retain
 `always()`, the classifier plus exact four ordered worker needs,
 Ubuntu/five-minute context, exact classifier/result env, metadata-skip and
-full-run validation, and its single fail-closed command. Runner, condition, needs,
+full-run validation, and missing/stale identity failure, plus its single
+fail-closed command. Runner, condition, needs,
 permission, env, step, command, action, container/default, or unknown-field
 drift in either job fails before local dry-run even though neither job becomes
 one of the 28 locally executed gates.

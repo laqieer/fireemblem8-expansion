@@ -264,9 +264,11 @@ availability or grant credentials.
    `python3 -m unittest tests.upstream_port.test_verify -v`.
 4. Inspect the parsed body-only, title-only, body-and-title, base-only,
    base-plus-body, unknown-field, incomplete-change, `opened`, `synchronize`,
-   `reopened`, and `master`-push cases. Confirm every fixture provides the
-   event name, runner ref/SHA, expected Build SHA, GitHub-shaped payload, exact
-   classifier result, exact selected job set, and exact head.
+   `reopened`, missing-base, missing-head, missing-both, stacked-base,
+   merge-`github.sha`, and `master`-push cases. Confirm every fixture provides
+   separate PR base/head and push identity, GitHub-shaped payload, exact
+   classifier result, exact selected job set, exact head/base, and expected
+   summary conclusion.
 5. Inspect the disposable-event replay. It writes each payload beneath ignored
    `build/test-artifacts/`, invokes the real `/usr/bin/python3 -I` launcher and
    output-file protocol, parses the resulting job outputs, and removes the
@@ -280,6 +282,11 @@ availability or grant credentials.
    Evolving SHA/run/review/budget/preflight values are updated there in place
    rather than in the body, title, baseline fixture, decision record, or
    another mutable ledger.
+7. Parse `.github/PULL_REQUEST_TEMPLATE.md`. Confirm it contains only frozen
+   scope/non-goals, classification/relationships, acceptance criteria, tester
+   procedure, and compatibility decisions. Replay one canonical comment,
+   missing/duplicate/non-standalone marker comments, a body marker, and every
+   prohibited evolving body field.
 
 ### Expected result
 
@@ -289,26 +296,31 @@ The summary succeeds only when classifier status is `success`, the classified
 SHA equals the event's exact `pull_request.head.sha`, suppression is exactly
 false, and all four workers are exactly `skipped`.
 
-Base-only edits, mixed edits, unknown and incomplete edits, `opened`,
+Base-only edits, mixed edits, unknown and incomplete change records, `opened`,
 `synchronize`, and `reopened` select the classifier, all four expensive
 workers, and summary at the exact PR head. A `master` push additionally selects
-the existing patch publisher and runs the complete graph. A classifier
-failure or missing/unknown output still starts all expensive workers and makes
-summary fail. The classifier itself executes from the verified current PR
-base SHA; a base without the new classifier uses the explicit full-build
-bootstrap. The current workflow has no `workflow_dispatch`, so the fixture and
-topology test assert that no final-dispatch job selection exists to preserve.
+the existing patch publisher and runs the complete graph from its separate
+push SHA. Missing PR head/base, malformed JSON, classifier failure, and
+missing/stale output start no worker at a fallback ref and make summary fail.
+The classifier executes from the verified current PR base SHA; a missing base
+uses the trusted default branch only to report invalid identity, while a base
+without the new classifier uses the explicit strict bootstrap. The current
+workflow has no `workflow_dispatch`, so the fixture and topology test assert
+that no final-dispatch job selection exists to preserve.
 
 ### Negative control
 
 The pre-fix trigger-only model selects `host-tests`, `build`,
 `extended-host-tests`, `legacy`, and `summary` for the same body-only fixture
 despite its unchanged head SHA. The focused suites also reject metadata
-suppression for malformed `changes`, missing PR identity, duplicate JSON keys,
-oversized event files, base or mixed edits, an unverified/mutable classifier
-checkout, classifier output drift, worker conditions that do not run on
-classifier failure, summary success on unknown/skipped full jobs, weakened
-exact-head checkout, and source/target workflow mirror drift.
+suppression for same-value/spoofed/missing-current/extra-key/nested metadata
+records, invalid title/body values, malformed `changes`, missing PR identity,
+duplicate JSON keys, `NaN`/positive or negative `Infinity`, oversized event
+files, base or mixed edits, merge-SHA fallback, an unverified/mutable
+classifier checkout, classifier output drift, worker conditions that accept
+invalid/stale identity, summary success on missing identity, weakened
+exact-head checkout, body/template evolving evidence or marker placement, and
+source/target workflow mirror drift.
 
 ### Interactions and save compatibility
 
@@ -326,7 +338,8 @@ ROM/RAM, or archival impact.
 
 `python3 -m unittest scripts.workflow_pilot.tests.test_event_classifier -v`
 parses every fixture, replays the real isolated event-file/output protocol, and
-exercises malformed and unknown fail-closed controls.
+exercises strict identity, semantic transition, non-finite JSON, malformed,
+and unknown fail-closed controls.
 
 `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v` parses the
 workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
@@ -336,6 +349,11 @@ pin, and environment semantics, including the pre-fix negative selection.
 gates while requiring complete seven-job source/target equivalence: the six
 issue #176 jobs remain closed and the classifier is a closed setup-only
 seventh job, never a 29th local gate.
+
+`python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
+parses the frozen PR template/body and comment collection, requiring exactly
+one standalone canonical marker while rejecting missing, duplicate, inline,
+or body markers and every evolving body field.
 
 ### Cleanup and limitations
 

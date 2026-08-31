@@ -26,9 +26,11 @@ class EventClassificationError(ValueError):
 @dataclass(frozen=True)
 class EventDecision:
     classification: str
+    expected_base: str
     reason: str
     run_expensive: bool
     expected_head: str
+    identity_valid: bool
 
     def canonical_json(self) -> str:
         return json.dumps(
@@ -43,12 +45,20 @@ def _is_sha(value: object) -> bool:
     return isinstance(value, str) and SHA_RE.fullmatch(value) is not None
 
 
-def _full(reason: str, expected_head: str) -> EventDecision:
+def _full(
+    reason: str,
+    expected_head: str,
+    expected_base: str = "",
+    *,
+    identity_valid: bool = True,
+) -> EventDecision:
     return EventDecision(
         classification="full",
+        expected_base=expected_base,
         reason=reason,
         run_expensive=True,
         expected_head=expected_head,
+        identity_valid=identity_valid,
     )
 
 
@@ -56,33 +66,72 @@ def _valid_metadata_change(name: str, value: object, pull_request: dict[str, Any
     if not isinstance(value, dict) or set(value) != {"from"}:
         return False
     previous = value["from"]
-    if previous is not None and not isinstance(previous, str):
-        return False
     if name not in pull_request:
         return False
     current = pull_request[name]
     if name == "title":
-        return isinstance(current, str) and bool(current)
-    return current is None or isinstance(current, str)
+        return (
+            isinstance(previous, str)
+            and bool(previous.strip())
+            and isinstance(current, str)
+            and bool(current.strip())
+            and previous != current
+        )
+    return (
+        (previous is None or isinstance(previous, str))
+        and (current is None or isinstance(current, str))
+        and previous != current
+    )
 
 
-def _valid_pull_request_identity(
+def _pull_request_identity(
     pull_request: object,
-    expected_head: str,
-) -> dict[str, Any] | None:
+    pr_head_sha: str,
+    pr_base_sha: str,
+) -> tuple[dict[str, Any] | None, EventDecision | None]:
+    expected_head = pr_head_sha if _is_sha(pr_head_sha) else ""
+    expected_base = pr_base_sha if _is_sha(pr_base_sha) else ""
     if not isinstance(pull_request, dict):
-        return None
+        return None, _full(
+            "incomplete-pull-request",
+            expected_head,
+            expected_base,
+            identity_valid=False,
+        )
     head = pull_request.get("head")
     base = pull_request.get("base")
-    if not isinstance(head, dict) or not isinstance(base, dict):
-        return None
-    if head.get("sha") != expected_head or not _is_sha(head.get("sha")):
-        return None
-    if not isinstance(base.get("ref"), str) or not base["ref"]:
-        return None
-    if not _is_sha(base.get("sha")):
-        return None
-    return pull_request
+    payload_head = head.get("sha") if isinstance(head, dict) else None
+    payload_base = base.get("sha") if isinstance(base, dict) else None
+    missing_head = not expected_head or not _is_sha(payload_head)
+    missing_base = (
+        not expected_base
+        or not _is_sha(payload_base)
+        or not isinstance(base, dict)
+        or not isinstance(base.get("ref"), str)
+        or not base["ref"]
+    )
+    if missing_head or missing_base:
+        reason = (
+            "missing-pull-request-identities"
+            if missing_head and missing_base
+            else "missing-pull-request-head"
+            if missing_head
+            else "missing-pull-request-base"
+        )
+        return None, _full(
+            reason,
+            expected_head,
+            expected_base,
+            identity_valid=False,
+        )
+    if payload_head != expected_head or payload_base != expected_base:
+        return None, _full(
+            "pull-request-identity-mismatch",
+            expected_head,
+            expected_base,
+            identity_valid=False,
+        )
+    return pull_request, None
 
 
 def _valid_base_change(value: object, pull_request: dict[str, Any]) -> bool:
@@ -108,31 +157,38 @@ def classify_event(
     *,
     github_ref: str,
     github_sha: str,
-    expected_build_sha: str,
+    pr_base_sha: str,
+    pr_head_sha: str,
+    push_sha: str,
 ) -> EventDecision:
-    if not _is_sha(expected_build_sha):
-        raise EventClassificationError("--expected-build-sha must be a full lowercase SHA")
     if not isinstance(event_name, str) or not event_name:
         raise EventClassificationError("--event-name must be nonempty")
     if not isinstance(payload, dict):
-        return _full("incomplete-payload", expected_build_sha)
+        return _full("incomplete-payload", "", identity_valid=False)
 
     if event_name == "pull_request":
-        pull_request = _valid_pull_request_identity(
+        pull_request, identity_error = _pull_request_identity(
             payload.get("pull_request"),
-            expected_build_sha,
+            pr_head_sha,
+            pr_base_sha,
         )
+        if identity_error is not None:
+            return identity_error
         if pull_request is None:
-            return _full("incomplete-pull-request", expected_build_sha)
+            return _full(
+                "incomplete-pull-request",
+                "",
+                identity_valid=False,
+            )
         action = payload.get("action")
         if action in FULL_PR_ACTIONS:
-            return _full(f"pull-request-{action}", expected_build_sha)
+            return _full(f"pull-request-{action}", pr_head_sha, pr_base_sha)
         if action != "edited":
-            return _full("unknown-pull-request-action", expected_build_sha)
+            return _full("unknown-pull-request-action", pr_head_sha, pr_base_sha)
 
         changes = payload.get("changes")
         if not isinstance(changes, dict) or not changes:
-            return _full("incomplete-edit", expected_build_sha)
+            return _full("incomplete-edit", pr_head_sha, pr_base_sha)
         changed_fields = frozenset(changes)
         if changed_fields <= METADATA_FIELDS:
             if all(
@@ -141,35 +197,48 @@ def classify_event(
             ):
                 return EventDecision(
                     classification="metadata-only",
+                    expected_base=pr_base_sha,
                     reason="body-title-only-edit",
                     run_expensive=False,
-                    expected_head=expected_build_sha,
+                    expected_head=pr_head_sha,
+                    identity_valid=True,
                 )
-            return _full("incomplete-edit", expected_build_sha)
+            return _full("incomplete-edit", pr_head_sha, pr_base_sha)
         if changed_fields == {"base"}:
             reason = (
                 "base-edit"
                 if _valid_base_change(changes["base"], pull_request)
                 else "incomplete-edit"
             )
-            return _full(reason, expected_build_sha)
+            return _full(reason, pr_head_sha, pr_base_sha)
         if "base" in changed_fields or changed_fields & METADATA_FIELDS:
-            return _full("mixed-edit", expected_build_sha)
-        return _full("unknown-edit", expected_build_sha)
+            return _full("mixed-edit", pr_head_sha, pr_base_sha)
+        return _full("unknown-edit", pr_head_sha, pr_base_sha)
 
     if event_name == "push":
+        expected_head = push_sha if _is_sha(push_sha) else ""
         if (
             payload.get("ref") == "refs/heads/master"
             and github_ref == "refs/heads/master"
-            and payload.get("after") == expected_build_sha
-            and github_sha == expected_build_sha
+            and payload.get("after") == expected_head
+            and github_sha == expected_head
+            and expected_head
         ):
-            return _full("master-push", expected_build_sha)
-        return _full("incomplete-push", expected_build_sha)
+            return _full("master-push", expected_head)
+        return _full(
+            "incomplete-push",
+            expected_head,
+            identity_valid=False,
+        )
 
     if event_name == "workflow_dispatch":
-        return _full("explicit-final-dispatch", expected_build_sha)
-    return _full("unknown-event", expected_build_sha)
+        expected_head = github_sha if _is_sha(github_sha) else ""
+        return _full(
+            "explicit-final-dispatch",
+            expected_head,
+            identity_valid=bool(expected_head),
+        )
+    return _full("unknown-event", "", identity_valid=False)
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -179,6 +248,10 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
             raise EventClassificationError(f"event JSON repeats key {key!r}")
         value[key] = item
     return value
+
+
+def _reject_nonfinite_constant(value: str) -> None:
+    raise EventClassificationError(f"event JSON contains non-finite number {value}")
 
 
 def load_event(path: Path) -> object:
@@ -197,6 +270,7 @@ def load_event(path: Path) -> object:
         return json.loads(
             raw.decode("utf-8"),
             object_pairs_hook=_reject_duplicate_keys,
+            parse_constant=_reject_nonfinite_constant,
         )
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise EventClassificationError(f"cannot parse event payload: {error}") from error
@@ -205,9 +279,11 @@ def load_event(path: Path) -> object:
 def write_github_output(path: Path, decision: EventDecision) -> None:
     values = {
         "classification": decision.classification,
+        "expected_base": decision.expected_base,
+        "expected_head": decision.expected_head,
+        "identity_valid": "true" if decision.identity_valid else "false",
         "reason": decision.reason,
         "run_expensive": "true" if decision.run_expensive else "false",
-        "expected_head": decision.expected_head,
     }
     try:
         with path.open("a", encoding="ascii", newline="\n") as output:
@@ -223,7 +299,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--event-path", type=Path, required=True)
     parser.add_argument("--github-ref", required=True)
     parser.add_argument("--github-sha", required=True)
-    parser.add_argument("--expected-build-sha", required=True)
+    parser.add_argument("--pr-base-sha", required=True)
+    parser.add_argument("--pr-head-sha", required=True)
+    parser.add_argument("--push-sha", required=True)
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args(argv)
 
@@ -236,7 +314,9 @@ def main(argv: list[str] | None = None) -> int:
             load_event(args.event_path),
             github_ref=args.github_ref,
             github_sha=args.github_sha,
-            expected_build_sha=args.expected_build_sha,
+            pr_base_sha=args.pr_base_sha,
+            pr_head_sha=args.pr_head_sha,
+            push_sha=args.push_sha,
         )
         write_github_output(args.output, decision)
     except EventClassificationError as error:

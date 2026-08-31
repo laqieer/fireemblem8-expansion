@@ -1078,9 +1078,16 @@ class VerifyCliCwdTests(unittest.TestCase):
                 1,
             ),
             original.replace(
-                "      CLASSIFIER_REF: ${{ github.event_name == 'pull_request' && "
-                "github.event.pull_request.base.sha || github.sha }}",
+                "      CLASSIFIER_REF: ${{ (github.event_name == 'pull_request' && "
+                "(github.event.pull_request.base.sha || format('refs/heads/{0}', "
+                "github.event.repository.default_branch))) || "
+                "(github.event_name == 'push' && github.event.after) || '' }}",
                 "      CLASSIFIER_REF: ${{ github.sha }}",
+                1,
+            ),
+            original.replace(
+                "      identity_valid: ${{ steps.classify.outputs.identity_valid }}",
+                "      identity_valid: true",
                 1,
             ),
             original.replace(

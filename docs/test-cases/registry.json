@@ -2232,13 +2232,13 @@
       ],
       "purpose": "Prove body/title-only edits suppress the four expensive Build workers while base, mixed, unknown/incomplete, source, stacked-base, and master events retain the complete exact-head graph.",
       "prerequisites": "Start at the repository root with the Build workflow, event classifier, isolated launcher, and event-classification fixture unchanged; no token, ROM, emulator, or remote mutation is required.",
-      "actions": "Run the event-classifier, workflow, and upstream-mirror suites; replay body-only, title-only, both, base-only, mixed, unknown, incomplete, opened, synchronize, reopened, and master-push event files through the isolated output protocol; inspect the stable-body and canonical evidence-comment contract.",
-      "expected_result": "Metadata-only edits select only the verified base-authoritative classifier and successful exact-head summary. Every other supported or uncertain event selects all required workers; master also publishes. Classifier failure runs workers and fails summary. The six issue #176 jobs remain closed, the seventh classifier is setup-only, and the 28 local gates remain exact.",
-      "negative_control": "The pre-fix edited trigger selects all four expensive workers for the unchanged-head body fixture. Malformed/duplicate/oversized/incomplete payloads, base or mixed suppression, mutable authority, non-fail-closed worker conditions, unknown summary output, checkout drift, and source/target mirror drift all fail.",
+      "actions": "Run classifier, workflow, upstream-mirror, and documentation suites; replay body/title, base, mixed, unknown/incomplete-change, stacked, missing head/base, merge-SHA, push, semantic-spoof, non-finite JSON, and canonical-comment/template fixtures through parsed isolated protocols.",
+      "expected_result": "Metadata-only edits with complete exact identity select only classifier and successful summary. Supported uncertain changes with valid identity run all workers; master also publishes. Missing identity or classifier failure starts no fallback-ref worker and fails summary. The template/body stays frozen while exactly one marked comment owns evolving evidence. Six issue #176 jobs remain closed, the classifier is setup-only, and 28 local gates remain exact.",
+      "negative_control": "The pre-fix trigger runs all workers for unchanged metadata. Merge-SHA fallback, missing/stale identity, same-value/spoofed/missing/extra/nested metadata, invalid title/body values, duplicate/non-finite/oversized JSON, base/mixed suppression, mutable authority, weak worker/summary conditions, evolving body/template fields, marker missing/duplication/body placement, checkout drift, and mirror drift fail.",
       "interactions": "Depends on #176 baseline, isolated launcher, exact checkout, seven-job mirror, and summary authority; #181 depends on it; conflicts with manual labels, pull_request_target, mutable ledgers, head-authored classification, success defaults, or suppressing genuine stack base edits.",
       "save_compatibility": "Source-only CI selection and evidence-comment governance; no feature flag, save, generated-data, localization, ROM/RAM, modern debug/release output, gameplay, or archival impact.",
       "cleanup": "Disposable event files stay under ignored build/test-artifacts and are removed automatically; no remote state is read or changed.",
-      "limitations": "The deterministic replay covers GitHub event-file and workflow semantics without dispatching a live event. The current Build workflow has no explicit final-dispatch trigger, and no manual-only criterion applies.",
+      "limitations": "The deterministic replay covers GitHub event-file, PR-template/comment collection, and workflow semantics without dispatching a live event. The current Build workflow has no explicit final-dispatch trigger, and no manual-only criterion applies.",
       "automation": [
         {
           "command": "python3 -m unittest scripts.workflow_pilot.tests.test_event_classifier -v",
@@ -2251,6 +2251,10 @@
         {
           "command": "python3 -m unittest tests.upstream_port.test_verify -v",
           "evidence": "tests/upstream_port/test_verify.py"
+        },
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v",
+          "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
         }
       ]
     },
