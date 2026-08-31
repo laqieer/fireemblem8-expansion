@@ -26,18 +26,21 @@ EVENT_FIXTURE = (
     / "fixtures"
     / "event_classification.json"
 )
+PRE_FIX_WORKFLOW = EVENT_FIXTURE.with_name("pre_fix_build.yml")
 PYTHON_REQUIREMENTS = ROOT / ".github" / "requirements" / "build.txt"
 RETIRED_WORKFLOW_FILENAME = "full" + "-matrix.yml"
 RETIRED_WORKFLOW = ROOT / ".github" / "workflows" / RETIRED_WORKFLOW_FILENAME
 MAKEFILE = ROOT / "Makefile"
 MASTER_PUBLISHER_CONDITION = (
-    "${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}"
+    "${{ github.event_name == 'push' && github.ref == 'refs/heads/master' "
+    "&& github.sha != '' }}"
 )
 COMBINED_WORKERS = ("host-tests", "build", "extended-host-tests", "legacy")
 CLASSIFIER_JOB = "event-classifier"
 INDEPENDENT_JOBS = ("patch-release",)
 SUMMARY_NEEDS = (
-    "needs: [event-classifier, host-tests, build, extended-host-tests, legacy]"
+    "needs: [event-classifier, host-tests, build, extended-host-tests, legacy, "
+    "patch-release]"
 )
 WORKER_NEEDS = "needs: [event-classifier]"
 WORKER_CONDITION = (
@@ -56,8 +59,10 @@ WORKER_CONDITION = (
     "needs.event-classifier.outputs.expected_base == '' && "
     "github.event.after != ''))) || "
     "(needs.event-classifier.result == 'failure' && "
-    "github.event_name == 'pull_request' && "
-    "github.event.pull_request.head.sha != '')) }}"
+    "((github.event_name == 'pull_request' && "
+    "github.event.pull_request.head.sha != '') || "
+    "(github.event_name == 'push' && github.ref == 'refs/heads/master' && "
+    "github.sha != '')))) }}"
 )
 CANDIDATE_FULL_JOBS = set(COMBINED_WORKERS) | {CLASSIFIER_JOB, "summary"}
 HASHED_PIP_INSTALL = (
@@ -112,7 +117,10 @@ EXPECTED_BUILD_SHA_EXPRESSION = (
     "needs.event-classifier.outputs.expected_head) || "
     "(needs.event-classifier.result == 'failure' && "
     "github.event_name == 'pull_request' && "
-    "github.event.pull_request.head.sha) || '' }}"
+    "github.event.pull_request.head.sha) || "
+    "(needs.event-classifier.result == 'failure' && "
+    "github.event_name == 'push' && github.ref == 'refs/heads/master' && "
+    "github.sha) || '' }}"
 )
 HOST_ENV_LINE = f"      EXPECTED_BUILD_SHA: {EXPECTED_BUILD_SHA_EXPRESSION}"
 COMBINED_JOB_ENV = {
@@ -268,12 +276,18 @@ def _triggered_jobs(text: str, event: dict) -> set[str]:
         return set()
 
     jobs = set(_job_blocks(text))
+    runner = event.get("runner", {})
+    raw_github_sha = runner.get(
+        "github_sha",
+        event.get("github_sha", event.get("sha", "")),
+    )
     if not (
         event["event_name"] == "push"
         and payload["ref"] == "refs/heads/master"
+        and isinstance(raw_github_sha, str)
+        and bool(raw_github_sha)
     ):
         jobs.discard("patch-release")
-    runner = event.get("runner", {})
     pull_request = payload.get("pull_request", {})
     base = pull_request.get("base", {}) if isinstance(pull_request, dict) else {}
     head = pull_request.get("head", {}) if isinstance(pull_request, dict) else {}
@@ -291,11 +305,18 @@ def _triggered_jobs(text: str, event: dict) -> set[str]:
     )
     classifier_result = event.get("classifier_result", "success")
     if classifier_result == "failure":
-        if not (
+        pr_fallback = (
             event["event_name"] == "pull_request"
             and isinstance(pr_head_sha, str)
             and bool(pr_head_sha)
-        ):
+        )
+        push_fallback = (
+            event["event_name"] == "push"
+            and payload["ref"] == "refs/heads/master"
+            and isinstance(raw_github_sha, str)
+            and bool(raw_github_sha)
+        )
+        if not (pr_fallback or push_fallback):
             jobs.difference_update(COMBINED_WORKERS)
         return jobs
     if classifier_result != "success":
@@ -319,6 +340,16 @@ def _triggered_jobs(text: str, event: dict) -> set[str]:
     if not decision.identity_valid or not decision.run_expensive:
         jobs.difference_update(COMBINED_WORKERS)
     return jobs
+
+
+def _pre_fix_triggered_jobs(text: str, event: dict) -> set[str]:
+    header = text[: text.index("\njobs:\n")]
+    payload = event.get("payload", event)
+    if event["event_name"] != "pull_request":
+        return set()
+    if payload["action"] not in _pull_request_actions(header):
+        return set()
+    return set(_job_blocks(text))
 
 
 def _job_blocks(text: str) -> dict[str, str]:
@@ -998,9 +1029,14 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         or '[ "$GITHUB_EVENT_NAME" = "pull_request" ]' not in summary
         or '[ -n "$PR_HEAD_SHA" ]' not in summary
         or "classifier-fallback Build worker did not succeed" not in summary
+        or "classifier-fallback publisher did not succeed" not in summary
         or "classifier failed after exact-head fallback workers completed"
         not in summary
-        or "classifier failure without a PR head started a worker" not in summary
+        or "classifier failed after exact-push fallback jobs completed"
+        not in summary
+        or "classifier failure without an exact fallback SHA started a worker"
+        not in summary
+        or "classifier failure without a raw SHA ran publisher" not in summary
     ):
         errors.append("summary must audit classifier-failure worker topology")
     if (
@@ -1026,11 +1062,14 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         not metadata_section
         or '"$RUN_EXPENSIVE" != "false"' not in metadata_section
         or '[ "$result" != "skipped" ]' not in metadata_section
+        or '"$PATCH_RELEASE_RESULT" != "skipped"' not in metadata_section
     ):
         errors.append("summary must accept only exact metadata-only suppression")
     if (
         '"$CLASSIFICATION" != "full"' not in summary
         or '"$RUN_EXPENSIVE" != "true"' not in summary
+        or '"$PATCH_RELEASE_RESULT" != "success"' not in summary
+        or "pull-request Build unexpectedly ran publisher" not in summary
     ):
         errors.append("summary must reject unknown full-build classifier output")
     loop_start = summary.rindex("for result")
@@ -2175,7 +2214,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             fixture["workflow_dispatch_supported"],
         )
 
-    def test_pre_fix_body_edit_negative_control_selected_every_expensive_worker(self):
+    def test_pre_fix_body_edit_negative_control_executes_preserved_graph(self):
         fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
         body_only = next(
             case
@@ -2184,17 +2223,17 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         )
         header = self.text[: self.text.index("\njobs:\n")]
         self.assertIn(body_only["payload"]["action"], _pull_request_actions(header))
-        pre_fix_jobs = set(COMBINED_WORKERS) | {"summary"}
-        self.assertEqual(
-            pre_fix_jobs,
-            {"host-tests", "build", "extended-host-tests", "legacy", "summary"},
-        )
+        pre_fix_text = PRE_FIX_WORKFLOW.read_text(encoding="utf-8")
+        pre_fix_jobs = _pre_fix_triggered_jobs(pre_fix_text, body_only)
+        self.assertEqual(pre_fix_jobs - {"summary"}, set(COMBINED_WORKERS))
+        self.assertIn("summary", pre_fix_jobs)
+        self.assertNotIn("event-classifier", pre_fix_jobs)
         self.assertEqual(
             _triggered_jobs(self.text, body_only),
             {"event-classifier", "summary"},
         )
 
-    def test_classifier_failure_fixtures_select_only_exact_pr_head_fallbacks(self):
+    def test_classifier_failure_fixtures_select_only_exact_event_head_fallbacks(self):
         fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
         for case in fixture["classifier_failure_cases"]:
             with self.subTest(case=case["id"]):
@@ -2204,19 +2243,26 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 )
                 self.assertFalse(case["expected_summary_success"])
                 if set(COMBINED_WORKERS) <= set(case["expected_jobs"]):
+                    raw_head = (
+                        case["runner"]["pr_head_sha"]
+                        if case["event_name"] == "pull_request"
+                        else case["runner"]["github_sha"]
+                    )
                     self.assertEqual(
                         case["expected_worker_head"],
-                        case["runner"]["pr_head_sha"],
+                        raw_head,
                     )
                     self.assertTrue(case["expected_worker_head"])
-                    self.assertNotEqual(
-                        case["expected_worker_head"],
-                        case["runner"]["github_sha"],
-                    )
+                    if case["event_name"] == "pull_request":
+                        self.assertNotEqual(
+                            case["expected_worker_head"],
+                            case["runner"]["github_sha"],
+                        )
+                    else:
+                        self.assertEqual(case["runner"]["pr_head_sha"], "")
                 else:
                     self.assertEqual(case["expected_worker_head"], "")
 
-        self.assertNotIn("github.sha", EXPECTED_BUILD_SHA_EXPRESSION)
         self.assertIn(
             "needs.event-classifier.result == 'failure'",
             EXPECTED_BUILD_SHA_EXPRESSION,
@@ -2225,6 +2271,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "github.event.pull_request.head.sha",
             EXPECTED_BUILD_SHA_EXPRESSION,
         )
+        self.assertIn("github.sha", EXPECTED_BUILD_SHA_EXPRESSION)
+        self.assertIn("github.event_name == 'push'", EXPECTED_BUILD_SHA_EXPRESSION)
 
     def test_edited_base_change_reruns_exact_head_candidate_without_publisher(self):
         unchanged_head = "4" * 40
@@ -2235,6 +2283,9 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "base": {
                     "ref": {
                         "from": "agent/issue-170",
+                    },
+                    "sha": {
+                        "from": "3" * 40,
                     },
                 },
             },
@@ -3285,13 +3336,16 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "CLASSIFIER_RESULT": "success",
             "EXTENDED_HOST_TESTS_RESULT": "success",
             "GITHUB_EVENT_NAME": "pull_request",
+            "GITHUB_REF": "refs/pull/177/merge",
             "HOST_TESTS_RESULT": "success",
             "IDENTITY_VALID": "true",
             "LEGACY_RESULT": "success",
             "PR_BASE_SHA": "2" * 40,
             "PR_HEAD_SHA": "1" * 40,
             "PUSH_SHA": "",
+            "RAW_PUSH_SHA": "a" * 40,
             "RUN_EXPENSIVE": "true",
+            "PATCH_RELEASE_RESULT": "skipped",
         }
         metadata = {
             **full,
@@ -3307,9 +3361,12 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "CLASSIFIED_BASE_SHA": "",
             "CLASSIFIED_BUILD_SHA": "3" * 40,
             "GITHUB_EVENT_NAME": "push",
+            "GITHUB_REF": "refs/heads/master",
             "PR_BASE_SHA": "",
             "PR_HEAD_SHA": "",
             "PUSH_SHA": "3" * 40,
+            "RAW_PUSH_SHA": "3" * 40,
+            "PATCH_RELEASE_RESULT": "success",
         }
         skipped = {
             **full,
@@ -3346,20 +3403,32 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     "PR_HEAD_SHA": "",
                 },
                 1,
-                "failed without an exact PR head",
+                "failed without an exact fallback SHA",
             ),
             (
                 "classifier-failed-push",
                 {
                     **push,
-                    "BUILD_RESULT": "skipped",
                     "CLASSIFIER_RESULT": "failure",
-                    "EXTENDED_HOST_TESTS_RESULT": "skipped",
-                    "HOST_TESTS_RESULT": "skipped",
-                    "LEGACY_RESULT": "skipped",
                 },
                 1,
-                "failed without an exact PR head",
+                "exact-push fallback jobs completed",
+            ),
+            (
+                "classifier-failed-missing-push-sha",
+                {
+                    **skipped,
+                    "CLASSIFIER_RESULT": "failure",
+                    "GITHUB_EVENT_NAME": "push",
+                    "GITHUB_REF": "refs/heads/master",
+                    "PATCH_RELEASE_RESULT": "skipped",
+                    "PR_BASE_SHA": "",
+                    "PR_HEAD_SHA": "",
+                    "PUSH_SHA": "",
+                    "RAW_PUSH_SHA": "",
+                },
+                1,
+                "failed without an exact fallback SHA",
             ),
             ("identity-invalid", {**full, "IDENTITY_VALID": "false"}, 1, None),
             ("full-skipped", {**full, "BUILD_RESULT": "skipped"}, 1, None),

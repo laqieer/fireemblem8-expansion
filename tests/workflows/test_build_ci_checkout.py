@@ -15,7 +15,10 @@ EXPECTED_SHA = (
     "needs.event-classifier.outputs.expected_head) || "
     "(needs.event-classifier.result == 'failure' && "
     "github.event_name == 'pull_request' && "
-    "github.event.pull_request.head.sha) || '' }}"
+    "github.event.pull_request.head.sha) || "
+    "(needs.event-classifier.result == 'failure' && "
+    "github.event_name == 'push' && github.ref == 'refs/heads/master' && "
+    "github.sha) || '' }}"
 )
 MERGE_SHA_FALLBACK = (
     "github.event_name == 'pull_request' && "

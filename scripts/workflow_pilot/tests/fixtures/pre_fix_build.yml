@@ -1,0 +1,26 @@
+# Minimal parsed graph preserved from merged parent
+# 853cff1eb7bdb3ecce46f780473e81be73e24315.
+name: Build CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [ "master" ]
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-latest
+  extended-host-tests:
+    runs-on: ubuntu-latest
+  legacy:
+    runs-on: ubuntu-latest
+  summary:
+    if: always()
+    needs: [host-tests, build, extended-host-tests, legacy]
+    runs-on: ubuntu-latest

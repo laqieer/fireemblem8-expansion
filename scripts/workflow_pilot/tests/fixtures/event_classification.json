@@ -138,12 +138,16 @@
       "classifier_result": "failure",
       "event_name": "push",
       "expected_jobs": [
+        "build",
         "event-classifier",
+        "extended-host-tests",
+        "host-tests",
+        "legacy",
         "patch-release",
         "summary"
       ],
       "expected_summary_success": false,
-      "expected_worker_head": "",
+      "expected_worker_head": "4444444444444444444444444444444444444444",
       "id": "malformed-push",
       "payload": {
         "after": "4444444444444444444444444444444444444444",
@@ -156,6 +160,29 @@
         "pr_base_sha": "",
         "pr_head_sha": "",
         "push_sha": "4444444444444444444444444444444444444444"
+      }
+    },
+    {
+      "classifier_result": "failure",
+      "event_name": "push",
+      "expected_jobs": [
+        "event-classifier",
+        "summary"
+      ],
+      "expected_summary_success": false,
+      "expected_worker_head": "",
+      "id": "malformed-missing-push-sha",
+      "payload": {
+        "after": "",
+        "ref": "refs/heads/master"
+      },
+      "raw_kind": "malformed",
+      "runner": {
+        "github_ref": "refs/heads/master",
+        "github_sha": "",
+        "pr_base_sha": "",
+        "pr_head_sha": "",
+        "push_sha": ""
       }
     }
   ],
@@ -311,13 +338,16 @@
         "run_expensive": true,
         "summary_success": true
       },
-      "id": "base-only",
+      "id": "base-only-stack-retarget",
       "payload": {
         "action": "edited",
         "changes": {
           "base": {
             "ref": {
               "from": "agent/issue-176"
+            },
+            "sha": {
+              "from": "5555555555555555555555555555555555555555"
             }
           }
         },
@@ -367,6 +397,9 @@
           "base": {
             "ref": {
               "from": "agent/issue-176"
+            },
+            "sha": {
+              "from": "5555555555555555555555555555555555555555"
             }
           },
           "body": {

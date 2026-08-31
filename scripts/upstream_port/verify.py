@@ -51,7 +51,10 @@ _CHECKOUT_WITH = (
         "needs.event-classifier.outputs.expected_head) || "
         "(needs.event-classifier.result == 'failure' && "
         "github.event_name == 'pull_request' && "
-        "github.event.pull_request.head.sha) || '' }}",
+        "github.event.pull_request.head.sha) || "
+        "(needs.event-classifier.result == 'failure' && "
+        "github.event_name == 'push' && github.ref == 'refs/heads/master' && "
+        "github.sha) || '' }}",
     ),
     ("submodules", "recursive"),
 )
@@ -85,7 +88,10 @@ _EXPECTED_BUILD_SHA_EXPRESSION = (
     "needs.event-classifier.outputs.expected_head) || "
     "(needs.event-classifier.result == 'failure' && "
     "github.event_name == 'pull_request' && "
-    "github.event.pull_request.head.sha) || '' }}"
+    "github.event.pull_request.head.sha) || "
+    "(needs.event-classifier.result == 'failure' && "
+    "github.event_name == 'push' && github.ref == 'refs/heads/master' && "
+    "github.sha) || '' }}"
 )
 _CLASSIFIER_REF_EXPRESSION = (
     "${{ (github.event_name == 'pull_request' && "
@@ -114,8 +120,10 @@ _WORKER_CONDITION = (
     "needs.event-classifier.outputs.expected_base == '' && "
     "github.event.after != ''))) || "
     "(needs.event-classifier.result == 'failure' && "
-    "github.event_name == 'pull_request' && "
-    "github.event.pull_request.head.sha != '')) }}"
+    "((github.event_name == 'pull_request' && "
+    "github.event.pull_request.head.sha != '') || "
+    "(github.event_name == 'push' && github.ref == 'refs/heads/master' && "
+    "github.sha != '')))) }}"
 )
 _CLASSIFIER_VERIFY_COMMANDS = (
     ("ACTUAL_SHA=$(git rev-parse HEAD)",),
@@ -267,9 +275,11 @@ _EXPECTED_JOB_ENV = {
         ("HOST_TESTS_RESULT", "${{ needs.host-tests.result }}"),
         ("IDENTITY_VALID", "${{ needs.event-classifier.outputs.identity_valid }}"),
         ("LEGACY_RESULT", "${{ needs.legacy.result }}"),
+        ("PATCH_RELEASE_RESULT", "${{ needs.patch-release.result }}"),
         ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
         ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
         ("PUSH_SHA", "${{ github.event.after }}"),
+        ("RAW_PUSH_SHA", "${{ github.sha }}"),
         ("RUN_EXPENSIVE", "${{ needs.event-classifier.outputs.run_expensive }}"),
     ),
 }
@@ -709,7 +719,7 @@ def _parse_job_context(job_name, body):
                 else {
                     "patch-release": (
                         "${{ github.event_name == 'push' && "
-                        "github.ref == 'refs/heads/master' }}"
+                        "github.ref == 'refs/heads/master' && github.sha != '' }}"
                     ),
                     "summary": "always()",
                 }[job_name]
@@ -722,7 +732,7 @@ def _parse_job_context(job_name, body):
                 "[event-classifier]"
                 if job_name in _COMBINED_JOBS
                 else "[event-classifier, host-tests, build, "
-                "extended-host-tests, legacy]"
+                "extended-host-tests, legacy, patch-release]"
             )
             if value != expected or nested:
                 raise ValueError(f"job {job_name!r} needs differs")

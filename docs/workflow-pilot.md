@@ -114,6 +114,8 @@ when that base/push identity exists before invoking the closed
 `/usr/bin/python3 -I` launcher's `classify-event` mode. A branch whose trusted
 base predates the classifier takes an explicit bootstrap full-build path, so
 introducing or reverting the seam cannot silently suppress evidence.
+The classifier bootstrap may use the trusted default branch when PR base
+identity is missing; worker checkouts never use a merge/default fallback.
 
 The classifier reads the bounded `GITHUB_EVENT_PATH` JSON file with duplicate
 key and non-finite `NaN`/`Infinity` rejection. JSON floats are converted
@@ -135,6 +137,14 @@ metadata-only event. An `edited` event suppresses `host-tests`, `build`,
   a body may transition between null and string; same-value, missing-current,
   nested, malformed, or extra-key claims are not metadata-only.
 
+A base edit uses the production `changes.base.ref.from` and
+`changes.base.sha.from` records. Previous and current refs are nonempty,
+previous/current SHAs are full identities, and both transitions must differ.
+The current `pull_request.base` ref/SHA remains classifier checkout authority;
+the previous base identifies the transition only and is never checked out.
+Missing, ref-only, SHA-only, same, extra, or spoofed records remain full
+fail-closed edits rather than metadata suppression.
+
 Base-only edits, mixed edits, unknown fields, incomplete change records,
 unknown actions, `opened`, `synchronize`, `reopened`, and `master` pushes with
 complete identity select the complete required graph. A classifier
@@ -142,18 +152,23 @@ parser/runtime failure (including malformed, duplicate-key, or non-finite
 JSON) on a PR with a nonempty authoritative event head also runs all four
 workers at that raw `pull_request.head.sha`; it never uses merge `github.sha`.
 Summary verifies that every fallback worker succeeded, then still fails to
-surface the classifier defect. A classifier failure with no PR head, on a push,
-or with another unsupported result starts no worker and fails summary. Missing
-identity or stale outputs from a successful classifier likewise cannot select
-a fallback worker. Each normal worker runs only when the classifier has a
+surface the classifier defect. On a `master` push, classifier failure with a
+nonempty authoritative raw `github.sha` similarly runs all four workers and
+the master-only publisher at that exact push SHA, audits success, then fails
+summary. A classifier failure with no PR/push fallback SHA or another
+unsupported result starts no worker/publisher and fails summary. Missing
+identity or stale outputs from a successful classifier cannot select a
+fallback worker. Each normal worker runs only when the classifier has a
 valid full-build decision whose head and base still equal the direct event
 identities. On a metadata-only edit, `summary` succeeds only
 when classification succeeded, the classified head still equals the event
 head, the classified base still equals the event base, suppression is exactly
 false, and all four worker conclusions are exactly `skipped`. On a full event,
 normal workers check out the classifier's exact nonempty head output; failure
-fallback workers check out only the raw nonempty PR event head. Both paths
-retain revision verification, commands, and environments.
+fallback workers check out only the raw nonempty PR head or guarded master-push
+`github.sha`. Both paths retain revision verification, commands, and
+environments. Summary now joins the publisher as well: PR and metadata paths
+require it to be skipped, while master-push paths require success.
 The current Build workflow has no explicit final-dispatch trigger; if that
 supported surface is introduced later, `workflow_dispatch` classifies as full
 and the trigger/topology contracts must be updated together.

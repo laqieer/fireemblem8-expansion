@@ -1383,7 +1383,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                         "patch-release",
                         "if",
                         "    if: ${{ github.event_name == 'push' && "
-                        "github.ref == 'refs/heads/master' }}",
+                        "github.ref == 'refs/heads/master' && github.sha != '' }}",
                         "    if: always()",
                 ),
                 (
@@ -1426,7 +1426,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                         "summary",
                         "needs",
                         "    needs: [event-classifier, host-tests, build, "
-                        "extended-host-tests, legacy]",
+                        "extended-host-tests, legacy, patch-release]",
                         "    needs: [build, host-tests, legacy]",
                 ),
                 (

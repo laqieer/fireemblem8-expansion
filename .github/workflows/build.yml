@@ -12,11 +12,11 @@ permissions:
 jobs:
   # Event payloads are classified from the current integration base, never
   # from mutable PR-head code. A branch whose base predates the classifier
-  # takes the bootstrap full-build path. Classifier failure with a nonempty PR
-  # event head runs every worker at that raw exact head, then fails summary;
-  # without a PR head it runs none. Missing/stale successful output never
-  # selects a fallback ref. Unknown, mixed, and incomplete change records with
-  # complete identity select the existing expensive graph.
+  # takes the bootstrap full-build path. Classifier failure with a nonempty
+  # event-specific PR head or guarded master-push SHA runs every worker at that
+  # raw exact SHA, then fails summary; without one it runs none. Missing/stale
+  # successful output never selects a fallback ref. Unknown, mixed, and
+  # incomplete change records with complete identity select the expensive graph.
   event-classifier:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -137,16 +137,16 @@ jobs:
   # All host test steps are genuine gates (required status), not advisory.
   host-tests:
     needs: [event-classifier]
-    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && needs.event-classifier.outputs.expected_base == github.event.pull_request.base.sha && github.event.pull_request.head.sha != '' && github.event.pull_request.base.sha != '') || (github.event_name == 'push' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha != '')) }}
+    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && needs.event-classifier.outputs.expected_base == github.event.pull_request.base.sha && github.event.pull_request.head.sha != '' && github.event.pull_request.base.sha != '') || (github.event_name == 'push' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && ((github.event_name == 'pull_request' && github.event.pull_request.head.sha != '') || (github.event_name == 'push' && github.ref == 'refs/heads/master' && github.sha != '')))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha) || '' }}
+      EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha) || (needs.event-classifier.result == 'failure' && github.event_name == 'push' && github.ref == 'refs/heads/master' && github.sha) || '' }}
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        ref: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha) || '' }}
+        ref: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha) || (needs.event-classifier.result == 'failure' && github.event_name == 'push' && github.ref == 'refs/heads/master' && github.sha) || '' }}
         fetch-depth: 0
         submodules: recursive
         persist-credentials: false
@@ -320,18 +320,18 @@ jobs:
   # target-ROM checks.
   build:
     needs: [event-classifier]
-    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && needs.event-classifier.outputs.expected_base == github.event.pull_request.base.sha && github.event.pull_request.head.sha != '' && github.event.pull_request.base.sha != '') || (github.event_name == 'push' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha != '')) }}
+    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && needs.event-classifier.outputs.expected_base == github.event.pull_request.base.sha && github.event.pull_request.head.sha != '' && github.event.pull_request.base.sha != '') || (github.event_name == 'push' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && ((github.event_name == 'pull_request' && github.event.pull_request.head.sha != '') || (github.event_name == 'push' && github.ref == 'refs/heads/master' && github.sha != '')))) }}
     runs-on: ubuntu-latest
     # A normal debug+release linker/runtime run is roughly 25 minutes, but
     # shared-runner variance has reached the former 30-minute ceiling.
     timeout-minutes: 60
     env:
-      EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha) || '' }}
+      EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha) || (needs.event-classifier.result == 'failure' && github.event_name == 'push' && github.ref == 'refs/heads/master' && github.sha) || '' }}
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        ref: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha) || '' }}
+        ref: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha) || (needs.event-classifier.result == 'failure' && github.event_name == 'push' && github.ref == 'refs/heads/master' && github.sha) || '' }}
         fetch-depth: 0
         submodules: recursive
         persist-credentials: false
@@ -460,16 +460,16 @@ jobs:
   # post-merge Build runs. It is independent of host-tests and build.
   extended-host-tests:
     needs: [event-classifier]
-    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && needs.event-classifier.outputs.expected_base == github.event.pull_request.base.sha && github.event.pull_request.head.sha != '' && github.event.pull_request.base.sha != '') || (github.event_name == 'push' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha != '')) }}
+    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && needs.event-classifier.outputs.expected_base == github.event.pull_request.base.sha && github.event.pull_request.head.sha != '' && github.event.pull_request.base.sha != '') || (github.event_name == 'push' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && ((github.event_name == 'pull_request' && github.event.pull_request.head.sha != '') || (github.event_name == 'push' && github.ref == 'refs/heads/master' && github.sha != '')))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha) || '' }}
+      EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha) || (needs.event-classifier.result == 'failure' && github.event_name == 'push' && github.ref == 'refs/heads/master' && github.sha) || '' }}
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        ref: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha) || '' }}
+        ref: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha) || (needs.event-classifier.result == 'failure' && github.event_name == 'push' && github.ref == 'refs/heads/master' && github.sha) || '' }}
         fetch-depth: 0
         submodules: recursive
         persist-credentials: false
@@ -498,18 +498,18 @@ jobs:
   # runs, parallel with the supported modern jobs.
   legacy:
     needs: [event-classifier]
-    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && needs.event-classifier.outputs.expected_base == github.event.pull_request.base.sha && github.event.pull_request.head.sha != '' && github.event.pull_request.base.sha != '') || (github.event_name == 'push' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha != '')) }}
+    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && needs.event-classifier.outputs.expected_base == github.event.pull_request.base.sha && github.event.pull_request.head.sha != '' && github.event.pull_request.base.sha != '') || (github.event_name == 'push' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && ((github.event_name == 'pull_request' && github.event.pull_request.head.sha != '') || (github.event_name == 'push' && github.ref == 'refs/heads/master' && github.sha != '')))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha) || '' }}
+      EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha) || (needs.event-classifier.result == 'failure' && github.event_name == 'push' && github.ref == 'refs/heads/master' && github.sha) || '' }}
       AGBCC_COMMIT: da598c1d918402c42c0c0d7128ba14567f3175e9
       MGFEMBP_AGBCC_COMMIT: 63b22f3eb8a8051af30bd80c4795b355e439e7ef
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        ref: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha) || '' }}
+        ref: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && github.event_name == 'pull_request' && github.event.pull_request.head.sha) || (needs.event-classifier.result == 'failure' && github.event_name == 'push' && github.ref == 'refs/heads/master' && github.sha) || '' }}
         fetch-depth: 0
         submodules: recursive
         persist-credentials: false
@@ -576,7 +576,7 @@ jobs:
   # through curl's environment expansion and never prints or persists it. It
   # is independent of other master jobs so summary is the only graph join.
   patch-release:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && github.sha != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -624,7 +624,7 @@ jobs:
 
   summary:
     if: always()
-    needs: [event-classifier, host-tests, build, extended-host-tests, legacy]
+    needs: [event-classifier, host-tests, build, extended-host-tests, legacy, patch-release]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
@@ -637,10 +637,12 @@ jobs:
       PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
       PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       PUSH_SHA: ${{ github.event.after }}
+      RAW_PUSH_SHA: ${{ github.sha }}
       HOST_TESTS_RESULT: ${{ needs.host-tests.result }}
       BUILD_RESULT: ${{ needs.build.result }}
       EXTENDED_HOST_TESTS_RESULT: ${{ needs.extended-host-tests.result }}
       LEGACY_RESULT: ${{ needs.legacy.result }}
+      PATCH_RELEASE_RESULT: ${{ needs.patch-release.result }}
 
     steps:
     - name: Render fail-closed combined Build summary
@@ -667,18 +669,43 @@ jobs:
                 exit 1
               fi
             done
+            if [ "$PATCH_RELEASE_RESULT" != "skipped" ]; then
+              echo "classifier-fallback PR unexpectedly ran publisher: $PATCH_RELEASE_RESULT" >&2
+              exit 1
+            fi
             echo "Build event classifier failed after exact-head fallback workers completed" >&2
+            exit 1
+          fi
+          if [ "$GITHUB_EVENT_NAME" = "push" ] && \
+             [ "$GITHUB_REF" = "refs/heads/master" ] && [ -n "$RAW_PUSH_SHA" ]; then
+            for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \
+              "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
+            do
+              if [ "$result" != "success" ]; then
+                echo "classifier-fallback Build worker did not succeed: $result" >&2
+                exit 1
+              fi
+            done
+            if [ "$PATCH_RELEASE_RESULT" != "success" ]; then
+              echo "classifier-fallback publisher did not succeed: $PATCH_RELEASE_RESULT" >&2
+              exit 1
+            fi
+            echo "Build event classifier failed after exact-push fallback jobs completed" >&2
             exit 1
           fi
           for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \
             "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
           do
             if [ "$result" != "skipped" ]; then
-              echo "classifier failure without a PR head started a worker: $result" >&2
+              echo "classifier failure without an exact fallback SHA started a worker: $result" >&2
               exit 1
             fi
           done
-          echo "Build event classifier failed without an exact PR head" >&2
+          if [ "$PATCH_RELEASE_RESULT" != "skipped" ]; then
+            echo "classifier failure without a raw SHA ran publisher: $PATCH_RELEASE_RESULT" >&2
+            exit 1
+          fi
+          echo "Build event classifier failed without an exact fallback SHA" >&2
           exit 1
         fi
         if [ "$CLASSIFIER_RESULT" != "success" ]; then
@@ -717,6 +744,10 @@ jobs:
               exit 1
             fi
           done
+          if [ "$PATCH_RELEASE_RESULT" != "skipped" ]; then
+            echo "metadata-only Build unexpectedly ran publisher: $PATCH_RELEASE_RESULT" >&2
+            exit 1
+          fi
           exit 0
         fi
 
@@ -732,3 +763,12 @@ jobs:
             exit 1
           fi
         done
+        if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+          if [ "$PATCH_RELEASE_RESULT" != "success" ]; then
+            echo "required master publisher did not succeed: $PATCH_RELEASE_RESULT" >&2
+            exit 1
+          fi
+        elif [ "$PATCH_RELEASE_RESULT" != "skipped" ]; then
+          echo "pull-request Build unexpectedly ran publisher: $PATCH_RELEASE_RESULT" >&2
+          exit 1
+        fi

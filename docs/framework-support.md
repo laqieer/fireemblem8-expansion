@@ -30,8 +30,12 @@ gate and Copilot review concurrently. Parsed body/title-only edits retain only
 the classifier and successful summary; base, mixed, unknown/incomplete,
 opened, synchronize, and reopened events with complete identity fail closed to
 the complete graph. A classifier failure with a nonempty PR event head runs
-all four workers at that exact raw head and then fails summary; without a PR
-head it starts no worker. No path uses a merge/default fallback.
+all four workers at that exact raw head and then fails summary. A master-push
+classifier failure does the same at nonempty raw `github.sha` and audits the
+master-only publisher before failing; without an event-specific fallback SHA,
+it starts no worker or publisher. The classifier bootstrap may use the trusted
+default branch when PR base identity is missing; worker checkouts never use a
+merge/default fallback.
 The same Build jobs rerun on `master`; only the
 technically used patch publisher is master-only. Arch and macOS support is
 exercised by the same script logic but is not re-run in CI; treat regressions

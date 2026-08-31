@@ -23,6 +23,7 @@ CONTRIBUTING_PATH = ROOT / "CONTRIBUTING.md"
 PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
 ISSUE_RESOLUTION_POLICY_PATH = ROOT / "docs" / "issue-resolution-policy.md"
 WORKFLOW_PILOT_PATH = ROOT / "docs" / "workflow-pilot.md"
+FRAMEWORK_SUPPORT_PATH = ROOT / "docs" / "framework-support.md"
 COPILOT_INSTRUCTIONS_PATH = ROOT / ".github" / "copilot-instructions.md"
 WORKFLOW_GOVERNANCE_PATH = ROOT / "docs" / "test-cases" / "workflow-governance.md"
 TEST_CASE_REGISTRY_PATH = ROOT / "docs" / "test-cases" / "registry.json"
@@ -3001,6 +3002,31 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                             text + "\n" + stale
                         )
                     )
+
+    def test_classifier_bootstrap_and_worker_fallback_are_distinct_in_docs(self):
+        contract = (
+            "classifier bootstrap may use the trusted default branch when PR "
+            "base identity is missing; worker checkouts never use a "
+            "merge/default fallback"
+        )
+        for path in (
+            FRAMEWORK_SUPPORT_PATH,
+            WORKFLOW_PILOT_PATH,
+            WORKFLOW_GOVERNANCE_PATH,
+        ):
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(path=path):
+                scan_policy_markdown(text)
+                self.assertIn(
+                    normalize_policy(contract),
+                    normalize_policy(text),
+                )
+                changed = text.replace("worker checkouts never", "workers may")
+                self.assertNotEqual(changed, text)
+                self.assertNotIn(
+                normalize_policy(contract),
+                normalize_policy(changed),
+                )
 
     def test_tester_facing_case_contract_is_integrated(self):
         _, skill = read_skill()

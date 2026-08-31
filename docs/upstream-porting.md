@@ -226,9 +226,11 @@ neither classifier nor worker can substitute the pull-request merge
 `github.sha`. Workers accept only a complete, current classifier head/base
 pair and check out that exact nonempty head during normal classification.
 After classifier failure only, a PR with a nonempty direct event head runs the
-same four workers at that raw exact head; missing-head and push failures run no
-combined worker. Summary audits those conclusions and always fails the
-classifier-failure path even when every fallback worker succeeds.
+same four workers at that raw exact head. A guarded master-push failure uses
+only nonempty raw `github.sha`, runs those workers plus the publisher, and
+never crosses into the PR fallback. Missing event-specific SHA runs no worker
+or publisher. Summary audits worker and publisher conclusions and always fails
+the classifier-failure path even when every fallback job succeeds.
 Containers, services, strategies/matrices, permissions, defaults, dependency
 or condition substitutions, deployment environment, concurrency, reusable-job
 `uses`/secrets, custom shell context, unknown fields, and complex, duplicate,

@@ -137,19 +137,30 @@ def _pull_request_identity(
 
 
 def _valid_base_change(value: object, pull_request: dict[str, Any]) -> bool:
-    if not isinstance(value, dict) or set(value) != {"ref"}:
+    if not isinstance(value, dict) or set(value) != {"ref", "sha"}:
         return False
     ref = value["ref"]
-    if not isinstance(ref, dict) or set(ref) != {"from"}:
+    sha = value["sha"]
+    if (
+        not isinstance(ref, dict)
+        or set(ref) != {"from"}
+        or not isinstance(sha, dict)
+        or set(sha) != {"from"}
+    ):
         return False
-    previous = ref["from"]
-    current = pull_request["base"]["ref"]
+    previous_ref = ref["from"]
+    previous_sha = sha["from"]
+    current_ref = pull_request["base"]["ref"]
+    current_sha = pull_request["base"]["sha"]
     return (
-        isinstance(previous, str)
-        and bool(previous)
-        and isinstance(current, str)
-        and bool(current)
-        and previous != current
+        isinstance(previous_ref, str)
+        and bool(previous_ref)
+        and _is_sha(previous_sha)
+        and isinstance(current_ref, str)
+        and bool(current_ref)
+        and _is_sha(current_sha)
+        and previous_ref != current_ref
+        and previous_sha != current_sha
     )
 
 

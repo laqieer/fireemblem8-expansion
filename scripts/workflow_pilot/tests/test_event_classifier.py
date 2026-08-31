@@ -81,7 +81,7 @@ class EventClassifierFixtureTests(unittest.TestCase):
                 "body-only-merge-sha-ignored",
                 "title-only",
                 "body-and-title",
-                "base-only",
+                "base-only-stack-retarget",
                 "mixed-base-and-body",
                 "unknown-edit-field",
                 "incomplete-body-change",
@@ -342,6 +342,74 @@ class EventClassifierFixtureTests(unittest.TestCase):
                 transition["payload"]["pull_request"]["body"] = current
                 decision = _decision(transition)
                 self.assertEqual(decision.classification, "metadata-only")
+
+    def test_base_edit_requires_coherent_ref_and_sha_transition(self):
+        cases = {case["id"]: case for case in _load_fixture()["cases"]}
+        base_edit = cases["base-only-stack-retarget"]
+        decision = _decision(base_edit)
+        self.assertEqual(decision.reason, "base-edit")
+        self.assertEqual(
+            decision.expected_head,
+            base_edit["runner"]["pr_head_sha"],
+        )
+
+        mutations = []
+        missing = copy.deepcopy(base_edit)
+        missing["payload"]["changes"] = {}
+        mutations.append(missing)
+
+        ref_only = copy.deepcopy(base_edit)
+        del ref_only["payload"]["changes"]["base"]["sha"]
+        mutations.append(ref_only)
+
+        sha_only = copy.deepcopy(base_edit)
+        del sha_only["payload"]["changes"]["base"]["ref"]
+        mutations.append(sha_only)
+
+        same_ref = copy.deepcopy(base_edit)
+        same_ref["payload"]["changes"]["base"]["ref"]["from"] = "master"
+        mutations.append(same_ref)
+
+        same_sha = copy.deepcopy(base_edit)
+        same_sha["payload"]["changes"]["base"]["sha"]["from"] = "2" * 40
+        mutations.append(same_sha)
+
+        spoofed = copy.deepcopy(base_edit)
+        spoofed["payload"]["changes"]["base"]["ref"]["from"] = "master"
+        spoofed["payload"]["changes"]["base"]["sha"]["from"] = "2" * 40
+        mutations.append(spoofed)
+
+        malformed_sha = copy.deepcopy(base_edit)
+        malformed_sha["payload"]["changes"]["base"]["sha"]["from"] = "short"
+        mutations.append(malformed_sha)
+
+        extra_key = copy.deepcopy(base_edit)
+        extra_key["payload"]["changes"]["base"]["current"] = {}
+        mutations.append(extra_key)
+
+        nested_extra = copy.deepcopy(base_edit)
+        nested_extra["payload"]["changes"]["base"]["sha"]["extra"] = True
+        mutations.append(nested_extra)
+
+        for mutation in mutations:
+            with self.subTest(changes=mutation["payload"]["changes"]):
+                result = _decision(mutation)
+                self.assertEqual(result.classification, "full")
+                self.assertEqual(result.reason, "incomplete-edit")
+                self.assertTrue(result.identity_valid)
+                self.assertTrue(result.run_expensive)
+                self.assertEqual(
+                    result.expected_head,
+                    mutation["runner"]["pr_head_sha"],
+                )
+
+        mixed = _decision(cases["mixed-base-and-body"])
+        self.assertEqual(mixed.classification, "full")
+        self.assertEqual(mixed.reason, "mixed-edit")
+        self.assertEqual(
+            mixed.expected_head,
+            cases["mixed-base-and-body"]["runner"]["pr_head_sha"],
+        )
 
     def test_identity_mismatch_and_unknown_event_fail_closed(self):
         case = copy.deepcopy(_load_fixture()["cases"][0])

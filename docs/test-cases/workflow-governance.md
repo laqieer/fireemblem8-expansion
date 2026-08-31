@@ -250,7 +250,8 @@ availability or grant credentials.
 - **Prerequisites and clean starting state:** start at the repository root
   with `.github/workflows/build.yml`,
   `scripts/workflow_pilot/event_classifier.py`, the isolated launcher, and
-  `scripts/workflow_pilot/tests/fixtures/event_classification.json` unchanged.
+  `scripts/workflow_pilot/tests/fixtures/event_classification.json` plus the
+  preserved `pre_fix_build.yml` parsed graph unchanged.
   The fixture declares that the current workflow has no explicit final
   dispatch surface.
 
@@ -268,7 +269,8 @@ availability or grant credentials.
    merge-`github.sha`, and `master`-push cases. Confirm every fixture provides
    separate PR base/head and push identity, GitHub-shaped payload, exact
    classifier result, exact selected job set, exact head/base, and expected
-   summary conclusion.
+   summary conclusion. Base-only, mixed, and stack-retarget fixtures carry the
+   production `changes.base.ref.from` plus `changes.base.sha.from` transition.
 5. Inspect the disposable-event replay. It writes each payload beneath ignored
    `build/test-artifacts/`, invokes the real `/usr/bin/python3 -I` launcher and
    output-file protocol, parses the resulting job outputs, and removes the
@@ -287,6 +289,9 @@ availability or grant credentials.
    procedure, and compatibility decisions. Replay one canonical comment,
    missing/duplicate/non-standalone marker comments, a body marker, and every
    prohibited evolving body field.
+8. Replay the same body-only event through the preserved pre-fix Build graph.
+   Confirm all four expensive workers and summary are selected there, while
+   the current parsed workflow selects only classifier and summary.
 
 ### Expected result
 
@@ -303,17 +308,24 @@ the existing patch publisher and runs the complete graph from its separate
 push SHA. Malformed/duplicate/non-finite JSON or another classifier failure
 with a nonempty authoritative PR head runs all four workers at that exact raw
 head, then summary still fails to expose the classifier defect. A classifier
-failure with a missing PR head or on a push starts no combined worker and
-fails summary. Missing/stale successful output cannot select a fallback ref.
+failure on a master push with nonempty raw `github.sha` runs all four workers
+and the publisher at that exact push SHA, then summary still fails. Missing PR
+head or push SHA starts no combined worker/publisher and fails summary.
+Missing/stale successful output cannot select a fallback ref.
+An accepted base retarget requires valid, differing previous/current ref and
+SHA pairs; ref-only, SHA-only, same, missing, extra, or spoofed transition
+records remain full fail-closed edits and never metadata suppression.
 The classifier executes from the verified current PR base SHA; a missing base
 uses the trusted default branch only to report invalid identity, while a base
 without the new classifier uses the explicit strict bootstrap. The current
 workflow has no `workflow_dispatch`, so the fixture and topology test assert
 that no final-dispatch job selection exists to preserve.
+The classifier bootstrap may use the trusted default branch when PR base
+identity is missing; worker checkouts never use a merge/default fallback.
 
 ### Negative control
 
-The pre-fix trigger-only model selects `host-tests`, `build`,
+The preserved parsed pre-fix workflow fixture selects `host-tests`, `build`,
 `extended-host-tests`, `legacy`, and `summary` for the same body-only fixture
 despite its unchanged head SHA. The focused suites also reject metadata
 suppression for same-value/spoofed/missing-current/extra-key/nested metadata
@@ -324,8 +336,8 @@ overflow field on metadata-only input, oversized event
 files, base or mixed edits, merge-SHA fallback, an unverified/mutable
 classifier checkout, classifier output drift, worker conditions that accept
 invalid/stale identity, worker skipping after classifier exit 2 with a valid
-PR head, worker execution after classifier failure with no PR head, summary
-success after any classifier failure, weakened
+PR/push head, cross-event fallback, worker/publisher execution after classifier
+failure with no event SHA, summary success after any classifier failure, weakened
 exact-head checkout, body/template evolving evidence or marker placement, and
 source/target workflow mirror drift.
 
