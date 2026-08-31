@@ -227,15 +227,19 @@ Classifier authority uses direct PR-base or push identities, with a
 trusted-default-branch failure bootstrap only when PR base identity is absent
 or unusable;
 neither classifier nor worker can substitute the pull-request merge
-`github.sha`. Workers accept either a complete current classifier head/base
-pair or the explicit fail-closed state for a valid exact PR head with an
-incomplete/malformed/incoherent base, and check out only that exact nonempty
+`github.sha`. Every successful PR classification requires the identity
+validator's numeric event number, exact `refs/pull/<number>/merge` ref, and
+lowercase 40-hex SHA to match both the classifier and direct PR head; successful
+push classification requires the corresponding validated push kind/SHA.
+Workers accept either a complete current classifier head/base pair or the
+explicit fail-closed state for a valid exact PR head with an
+incomplete/malformed/incoherent base, and check out only that exact validated
 head during normal classification. The latter state audits all four workers
 and then fails summary; a valid base SHA may remain diagnostic data but cannot
 authorize a checkout.
 After classifier failure only, trusted event setup permits fallback solely for
-an exact lowercase 40-hex SHA. PR fallback additionally requires a coherent
-`refs/pull/<number>/merge` event ref; push fallback requires
+an exact lowercase 40-hex SHA. PR fallback additionally requires its numeric
+event number and exact `refs/pull/<number>/merge` event ref; push fallback requires
 `refs/heads/master` and equal event `after`/`github.sha`. Workers consume only
 that validated output, and the publisher consumes only the validated push
 output. Missing, uppercase, short, nonhex, ref-name, mismatched, or cross-event
@@ -260,6 +264,10 @@ failure, plus its single fail-closed command. Runner, condition, needs,
 permission, env, step, command, action, container/default, or unknown-field
 drift in either job fails before local dry-run even though neither job becomes
 one of the 28 locally executed gates.
+Candidate-evidence normalization independently requires one canonical
+successful `event-identity` job context in both full and metadata runs;
+missing, failed, skipped, renamed, duplicate, or unknown setup contexts reject
+the run before eligibility evaluation.
 
 CI additionally hydrates commit authority before the workflow-pilot tests with
 the strict fixture-derived helper. It derives the minimal maximal commit tips,

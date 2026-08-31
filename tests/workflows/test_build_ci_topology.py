@@ -52,16 +52,24 @@ SUMMARY_NEEDS = (
 WORKER_NEEDS = "needs: [event-identity, event-classifier]"
 WORKER_CONDITION = (
     "${{ always() && ((needs.event-classifier.result == 'success' && "
+    "needs.event-identity.result == 'success' && "
     "needs.event-classifier.outputs.classification == 'full' && "
     "needs.event-classifier.outputs.head_valid == 'true' && "
     "needs.event-classifier.outputs.run_expensive == 'true' && "
     "((github.event_name == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_kind == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "needs.event-classifier.outputs.expected_head && "
     "needs.event-classifier.outputs.expected_head == "
     "github.event.pull_request.head.sha && "
     "github.event.pull_request.head.sha != '' && "
     "(needs.event-classifier.outputs.identity_valid == 'true' || "
     "needs.event-classifier.outputs.full_fallback == 'true')) || "
     "(github.event_name == 'push' && "
+    "needs.event-identity.outputs.fallback_kind == 'push' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "needs.event-classifier.outputs.expected_head && "
+    "needs.event-identity.outputs.fallback_sha == github.sha && "
     "needs.event-classifier.outputs.identity_valid == 'true' && "
     "needs.event-classifier.outputs.expected_head == github.event.after && "
     "needs.event-classifier.outputs.expected_base == '' && "
@@ -323,20 +331,38 @@ def _triggered_jobs(text: str, event: dict) -> set[str]:
         "push_sha",
         event.get("sha", payload.get("after", "")),
     )
+    github_ref = runner.get(
+        "github_ref",
+        event.get(
+            "github_ref",
+            "refs/pull/177/merge"
+            if event["event_name"] == "pull_request"
+            else payload.get("ref", ""),
+        ),
+    )
+    pr_number = runner.get(
+        "pr_number",
+        event.get("number", payload.get("number", 177)),
+    )
+    pr_event_identity = (
+        event["event_name"] == "pull_request"
+        and isinstance(pr_number, int)
+        and not isinstance(pr_number, bool)
+        and pr_number > 0
+        and isinstance(github_ref, str)
+        and github_ref == f"refs/pull/{pr_number}/merge"
+        and _is_lower_sha(pr_head_sha)
+    )
     classifier_result = event.get("classifier_result", "success")
     if classifier_result == "failure":
-        github_ref = runner.get("github_ref", event.get("github_ref", ""))
-        pr_fallback = (
-            event["event_name"] == "pull_request"
-            and isinstance(github_ref, str)
-            and re.fullmatch(r"refs/pull/[1-9][0-9]*/merge", github_ref) is not None
-            and _is_lower_sha(pr_head_sha)
-        )
         push_fallback = push_fallback and push_sha == raw_github_sha
-        if not (pr_fallback or push_fallback):
+        if not (pr_event_identity or push_fallback):
             jobs.difference_update(COMBINED_WORKERS)
         return jobs
     if classifier_result != "success":
+        jobs.difference_update(COMBINED_WORKERS)
+        return jobs
+    if not (pr_event_identity or push_fallback):
         jobs.difference_update(COMBINED_WORKERS)
         return jobs
     decision = event_classifier.classify_event(
@@ -812,15 +838,18 @@ def _identity_contract_errors(job: str) -> list[str]:
         "toJSON(github.event.pull_request.base.sha) }}",
         "      PR_HEAD_SHA_JSON: ${{ "
         "toJSON(github.event.pull_request.head.sha) }}",
+        "      PR_NUMBER: ${{ github.event.number }}",
+        "      PR_NUMBER_JSON: ${{ toJSON(github.event.number) }}",
         "      PUSH_SHA_JSON: ${{ toJSON(github.event.after) }}",
         "      RAW_SHA_JSON: ${{ toJSON(github.sha) }}",
         "    - name: Validate trusted event identities",
         "      id: identity",
         '          [[ "$1" =~ ^[0-9a-f]{40}$ && "$2" = "\\"$1\\"" ]]',
+        '          [[ "$1" =~ ^[1-9][0-9]*$ && "$2" = "$1" ]]',
         '        classifier_ref="refs/heads/$DEFAULT_BRANCH"',
         '        /usr/bin/git check-ref-format "$classifier_ref"',
-        '          if [[ "$EVENT_REF" =~ '
-        "^refs/pull/[1-9][0-9]*/merge$ ]] && \\",
+        '          if is_pr_number "$PR_NUMBER" "$PR_NUMBER_JSON" && \\',
+        '             [[ "$EVENT_REF" = "refs/pull/$PR_NUMBER/merge" ]] && \\',
         '             is_lower_sha "$PR_HEAD_SHA" "$PR_HEAD_SHA_JSON"; then',
         '        elif [[ "$EVENT_NAME" = "push" && '
         '"$EVENT_REF" = "refs/heads/master" ]] && \\',
@@ -1030,12 +1059,22 @@ def _mode_contract_errors(job: str) -> list[str]:
         "needs.event-router.outputs.classification == "
         "'metadata-only' && 'metadata-classifier' || 'event-classifier' }}",
         "    if: always()",
-        "    needs: [event-router]",
+        "    needs: [event-identity, event-router]",
+        "      CLASSIFIED_HEAD: ${{ needs.event-router.outputs.expected_head }}",
+        "      EVENT_IDENTITY_RESULT: ${{ needs.event-identity.result }}",
+        "      EVENT_NAME: ${{ github.event_name }}",
+        "      EVENT_SHA: ${{ github.sha }}",
+        "      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}",
+        "      TRUSTED_EVENT_KIND: ${{ needs.event-identity.outputs.fallback_kind }}",
+        "      TRUSTED_EVENT_SHA: ${{ needs.event-identity.outputs.fallback_sha }}",
+        "      PUSH_SHA: ${{ github.event.after }}",
         "      full_fallback: ${{ needs.event-router.outputs.full_fallback }}",
         "      head_valid: ${{ needs.event-router.outputs.head_valid }}",
         "      FULL_FALLBACK: ${{ needs.event-router.outputs.full_fallback }}",
         "      ROUTER_RESULT: ${{ needs.event-router.result }}",
         '        case "$FULL_FALLBACK" in',
+        '            echo "classified PR head lacks coherent trusted event identity" >&2',
+        '            echo "classified push head lacks coherent trusted event identity" >&2',
         '          echo "full fallback mode is not authoritative" >&2',
         "    - name: Verify authoritative Build event mode",
     )
@@ -1057,7 +1096,7 @@ def _mode_contract_errors(job: str) -> list[str]:
         "needs.event-router.outputs.classification == "
         "'metadata-only' && 'metadata-classifier' || 'event-classifier' }}",
         "    if: always()",
-        "    needs: [event-router]",
+        "    needs: [event-identity, event-router]",
         "    runs-on: ubuntu-latest",
         "    timeout-minutes: 5",
         "    outputs:",
@@ -1240,6 +1279,16 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         errors.append("summary must depend on every required combined Build job")
     if '"$CLASSIFIER_RESULT" != "success"' not in summary:
         errors.append("summary must fail when event classification fails")
+    if (
+        "successful PR classification lacks coherent trusted event identity"
+        not in summary
+        or "successful push classification lacks coherent trusted event identity"
+        not in summary
+        or '[ "$FALLBACK_SHA" != "$CLASSIFIED_BUILD_SHA" ]' not in summary
+    ):
+        errors.append(
+            "summary must bind every successful classification to trusted event identity"
+        )
     if (
         '"$CLASSIFIER_RESULT" = "failure"' not in summary
         or '[ "$FALLBACK_IDENTITY_RESULT" = "success" ]' not in summary
@@ -2609,6 +2658,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                             "github_sha": raw_sha,
                             "pr_base_sha": "2" * 40 if event_name == "pull_request" else "",
                             "pr_head_sha": pr_head_sha,
+                            "pr_number": case.get("pr_number", 177),
                             "push_sha": push_sha,
                         },
                     }
@@ -2653,6 +2703,16 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                             "PR_HEAD_SHA_JSON": json.dumps(
                                 pr_head_sha if event_name == "pull_request" else None
                             ),
+                            "PR_NUMBER": (
+                                str(case.get("pr_number", 177))
+                                if event_name == "pull_request"
+                                else ""
+                            ),
+                            "PR_NUMBER_JSON": (
+                                json.dumps(case.get("pr_number", 177))
+                                if event_name == "pull_request"
+                                else "null"
+                            ),
                             "PUSH_SHA": push_sha,
                             "PUSH_SHA_JSON": json.dumps(
                                 push_sha if event_name == "push" else None
@@ -2685,6 +2745,67 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     self.assertNotEqual(outputs["fallback_sha"], "refs/heads/attacker")
                     if "attacker" in push_sha:
                         self.assertNotEqual(outputs["classifier_ref"], push_sha)
+
+    def test_successful_classification_requires_coherent_event_identity(self):
+        fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
+        pr_template = next(
+            case
+            for case in fixture["cases"]
+            if case["id"] == "body-only-merge-sha-ignored"
+        )
+        push_template = next(
+            case for case in fixture["cases"] if case["id"] == "master-push"
+        )
+        for identity in fixture["successful_identity_cases"]:
+            with self.subTest(case=identity["id"]):
+                case = json.loads(
+                    json.dumps(
+                        push_template
+                        if identity["event_name"] == "push"
+                        else pr_template
+                    )
+                )
+                if identity["event_name"] == "pull_request":
+                    case["payload"]["action"] = identity["action"]
+                    if identity["action"] != "edited":
+                        case["payload"].pop("changes", None)
+                    case["runner"]["github_ref"] = identity["github_ref"]
+                    case["runner"]["pr_number"] = identity["pr_number"]
+                selected = _triggered_jobs(self.text, case)
+                expected = {
+                    "event-identity",
+                    "event-router",
+                    "event-classifier",
+                    "summary",
+                }
+                if identity["run_workers"]:
+                    expected.update(COMBINED_WORKERS)
+                if identity["run_publisher"]:
+                    expected.add("patch-release")
+                self.assertEqual(selected, expected)
+
+                decision = event_classifier.classify_event(
+                    case["event_name"],
+                    case["payload"],
+                    github_ref=case["runner"]["github_ref"],
+                    github_sha=case["runner"]["github_sha"],
+                    pr_base_sha=case["runner"]["pr_base_sha"],
+                    pr_head_sha=case["runner"]["pr_head_sha"],
+                    push_sha=case["runner"]["push_sha"],
+                )
+                self.assertEqual(
+                    decision.classification,
+                    identity["expected_classification"],
+                )
+                self.assertEqual(
+                    identity["expected_summary_success"],
+                    identity["id"]
+                    in {
+                        "valid-full-pr-identity",
+                        "valid-metadata-pr-identity",
+                        "valid-successful-push-identity",
+                    },
+                )
 
     def test_edited_base_change_reruns_exact_head_candidate_without_publisher(self):
         unchanged_head = "4" * 40
@@ -2857,8 +2978,13 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             ),
             (
                 "arbitrary-pr-ref",
-                '"$EVENT_REF" =~ ^refs/pull/[1-9][0-9]*/merge$',
+                '"$EVENT_REF" = "refs/pull/$PR_NUMBER/merge"',
                 '-n "$EVENT_REF"',
+            ),
+            (
+                "unvalidated-pr-number",
+                '[[ "$1" =~ ^[1-9][0-9]*$ && "$2" = "$1" ]]',
+                '[[ -n "$1" ]]',
             ),
             (
                 "mismatched-push",
@@ -3865,6 +3991,41 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             ("metadata", metadata, 0, None),
             ("full-pr", full, 0, None),
             ("full-push", push, 0, None),
+            (
+                "successful-metadata-incoherent-event-ref",
+                {
+                    **metadata,
+                    "FALLBACK_KIND": "none",
+                    "FALLBACK_SHA": "",
+                },
+                1,
+                "successful PR classification lacks coherent trusted event identity",
+            ),
+            (
+                "successful-full-incoherent-event-ref",
+                {
+                    **skipped,
+                    "FALLBACK_KIND": "none",
+                    "FALLBACK_SHA": "",
+                },
+                1,
+                "successful PR classification lacks coherent trusted event identity",
+            ),
+            (
+                "successful-push-incoherent-event-kind",
+                {
+                    **push,
+                    "BUILD_RESULT": "skipped",
+                    "EXTENDED_HOST_TESTS_RESULT": "skipped",
+                    "FALLBACK_KIND": "none",
+                    "FALLBACK_SHA": "",
+                    "HOST_TESTS_RESULT": "skipped",
+                    "LEGACY_RESULT": "skipped",
+                    "PATCH_RELEASE_RESULT": "skipped",
+                },
+                1,
+                "successful push classification lacks coherent trusted event identity",
+            ),
             ("missing-head", {**full, "PR_HEAD_SHA": ""}, 1, None),
             (
                 "missing-base",
@@ -4058,6 +4219,16 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
     def test_event_mode_runtime_separates_metadata_from_full_checks(self):
         mode_step = _step_blocks(_job_blocks(self.text)["event-classifier"])[0]
         script = _literal_run_script(mode_step)
+        pr_identity = {
+            "CLASSIFIED_HEAD": "1" * 40,
+            "EVENT_IDENTITY_RESULT": "success",
+            "EVENT_NAME": "pull_request",
+            "EVENT_SHA": "a" * 40,
+            "PR_HEAD_SHA": "1" * 40,
+            "PUSH_SHA": "",
+            "TRUSTED_EVENT_KIND": "pull_request",
+            "TRUSTED_EVENT_SHA": "1" * 40,
+        }
         cases = (
             (
                 "metadata",
@@ -4068,6 +4239,25 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     "IDENTITY_VALID": "true",
                     "ROUTER_RESULT": "success",
                     "RUN_EXPENSIVE": "false",
+                },
+                0,
+            ),
+            (
+                "push",
+                {
+                    "CLASSIFICATION": "full",
+                    "CLASSIFIED_HEAD": "3" * 40,
+                    "EVENT_NAME": "push",
+                    "EVENT_SHA": "3" * 40,
+                    "FULL_FALLBACK": "false",
+                    "HEAD_VALID": "true",
+                    "IDENTITY_VALID": "true",
+                    "PR_HEAD_SHA": "",
+                    "PUSH_SHA": "3" * 40,
+                    "ROUTER_RESULT": "success",
+                    "RUN_EXPENSIVE": "true",
+                    "TRUSTED_EVENT_KIND": "push",
+                    "TRUSTED_EVENT_SHA": "3" * 40,
                 },
                 0,
             ),
@@ -4104,6 +4294,33 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     "IDENTITY_VALID": "",
                     "ROUTER_RESULT": "failure",
                     "RUN_EXPENSIVE": "",
+                },
+                1,
+            ),
+            (
+                "successful-metadata-incoherent-ref",
+                {
+                    "CLASSIFICATION": "metadata-only",
+                    "FULL_FALLBACK": "false",
+                    "HEAD_VALID": "true",
+                    "IDENTITY_VALID": "true",
+                    "ROUTER_RESULT": "success",
+                    "RUN_EXPENSIVE": "false",
+                    "TRUSTED_EVENT_KIND": "none",
+                    "TRUSTED_EVENT_SHA": "",
+                },
+                1,
+            ),
+            (
+                "successful-full-stale-trusted-head",
+                {
+                    "CLASSIFICATION": "full",
+                    "FULL_FALLBACK": "false",
+                    "HEAD_VALID": "true",
+                    "IDENTITY_VALID": "true",
+                    "ROUTER_RESULT": "success",
+                    "RUN_EXPENSIVE": "true",
+                    "TRUSTED_EVENT_SHA": "9" * 40,
                 },
                 1,
             ),
@@ -4161,7 +4378,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 completed = subprocess.run(
                     ["/bin/bash", "-c", script],
                     cwd=ROOT,
-                    env={**os.environ, **environment},
+                    env={**os.environ, **pr_identity, **environment},
                     check=False,
                     capture_output=True,
                     text=True,

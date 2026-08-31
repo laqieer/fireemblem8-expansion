@@ -303,8 +303,9 @@ Body-only, title-only, and combined body/title edits select only
 names and success-shaped records are ignored by stable job identity; only the
 running metadata classifier/summary establish metadata mode.
 The summary succeeds only when classifier status is `success`, the classified
-SHA equals the event's exact `pull_request.head.sha`, suppression is exactly
-false, and all four workers are exactly `skipped`.
+SHA equals the event's validated exact `pull_request.head.sha`, event number
+matches the exact `refs/pull/<number>/merge` ref, suppression is exactly false,
+and all four workers are exactly `skipped`.
 
 Base-only edits, mixed edits, unknown and incomplete change records, `opened`,
 `synchronize`, and `reopened` select the classifier, all four expensive
@@ -332,12 +333,17 @@ that no final-dispatch job selection exists to preserve.
 The classifier bootstrap may use the trusted default branch when PR base
 identity is missing or unusable; worker checkouts never use a merge/default
 fallback.
-Trusted event setup accepts fallback only as an exact lowercase 40-hex SHA.
-PR fallback also requires a coherent `refs/pull/<number>/merge` event ref;
-push fallback requires `refs/heads/master` and equal event
-`after`/`github.sha`. Workers consume only that validated SHA. Missing,
-uppercase, short, nonhex, ref-name, mismatched, or cross-event identities run
-no fallback worker/publisher. The publisher uses the same validated push SHA,
+Trusted event setup accepts identity only as an exact lowercase 40-hex SHA. A
+PR also requires its numeric event number and exact
+`refs/pull/<number>/merge` ref; a push requires `refs/heads/master` and equal
+event `after`/`github.sha`. Successful full/metadata classifications, workers,
+and summary all bind to that same kind and SHA. Missing, uppercase, short,
+nonhex, ref-name, ref-number-mismatched, malformed, or cross-event identities
+run no worker and cannot produce a successful summary. Candidate normalization
+requires exactly one canonical successful `event-identity` context for both
+full and metadata modes; missing, failed, skipped, renamed, duplicate, or
+unknown setup contexts reject the run. Workers consume only that validated
+SHA. The publisher uses the same validated push SHA,
 verifies `/usr/bin/git rev-parse HEAD` immediately after checkout, and exposes
 `BASEROM_URL` only to the later minimal curl step; candidate code runs without
 the secret. The minimal secret step runs before any candidate code.
@@ -355,6 +361,8 @@ duplicate JSON keys, `NaN`/positive or negative `Infinity`, positive/negative
 exponent overflow, nonzero-to-zero underflow, huge exponents, an unused
 overflow field on metadata-only input, oversized event
 files, base or mixed edits, merge-SHA fallback, malformed fallback identities,
+successful classification with a cross-event/malformed/number-mismatched ref,
+missing/failed/skipped/renamed/duplicate/unknown event-identity evidence,
 an unverified/mutable
 classifier checkout, classifier output drift, worker conditions that accept
 invalid/stale identity, worker skipping after classifier exit 2 with a valid

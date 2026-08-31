@@ -43,12 +43,17 @@ validated event-specific fallback SHA, it starts no worker or publisher. The
 classifier bootstrap may use the trusted
 default branch when PR base identity is missing or unusable; worker checkouts
 never use a merge/default fallback.
-Trusted event setup accepts fallback only as an exact lowercase 40-hex SHA.
-PR fallback also requires a coherent `refs/pull/<number>/merge` event ref;
-push fallback requires `refs/heads/master` and equal event
-`after`/`github.sha`. Workers consume only that validated SHA. Missing,
-uppercase, short, nonhex, ref-name, mismatched, or cross-event identities run
-no fallback worker/publisher. The publisher uses the same validated push SHA,
+Trusted event setup accepts identity only as an exact lowercase 40-hex SHA. A
+PR also requires its numeric event number and exact
+`refs/pull/<number>/merge` ref; a push requires `refs/heads/master` and equal
+event `after`/`github.sha`. Every successful full/metadata classification,
+worker, and summary binds to that kind and SHA. Missing, uppercase, short,
+nonhex, ref-name, ref-number-mismatched, malformed, or cross-event identities
+run no worker and cannot produce a successful summary. Candidate normalization
+requires one canonical successful `event-identity` context in both modes and
+rejects missing, failed, skipped, renamed, duplicate, or unknown setup
+contexts. Workers consume only that validated SHA. The publisher uses the same
+validated push SHA,
 verifies `/usr/bin/git rev-parse HEAD` immediately after checkout, and exposes
 `BASEROM_URL` only to the later minimal curl step; candidate code runs without
 the secret. The minimal secret step runs before any candidate code.

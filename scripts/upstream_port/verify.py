@@ -100,16 +100,24 @@ _CLASSIFIER_EXPECTED_SHA_EXPRESSION = (
 )
 _WORKER_CONDITION = (
     "${{ always() && ((needs.event-classifier.result == 'success' && "
+    "needs.event-identity.result == 'success' && "
     "needs.event-classifier.outputs.classification == 'full' && "
     "needs.event-classifier.outputs.head_valid == 'true' && "
     "needs.event-classifier.outputs.run_expensive == 'true' && "
     "((github.event_name == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_kind == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "needs.event-classifier.outputs.expected_head && "
     "needs.event-classifier.outputs.expected_head == "
     "github.event.pull_request.head.sha && "
     "github.event.pull_request.head.sha != '' && "
     "(needs.event-classifier.outputs.identity_valid == 'true' || "
     "needs.event-classifier.outputs.full_fallback == 'true')) || "
     "(github.event_name == 'push' && "
+    "needs.event-identity.outputs.fallback_kind == 'push' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "needs.event-classifier.outputs.expected_head && "
+    "needs.event-identity.outputs.fallback_sha == github.sha && "
     "needs.event-classifier.outputs.identity_valid == 'true' && "
     "needs.event-classifier.outputs.expected_head == github.event.after && "
     "needs.event-classifier.outputs.expected_base == '' && "
@@ -148,6 +156,9 @@ _IDENTITY_COMMANDS = (
     ("is_lower_sha()", "{"),
     ("[[", "$1", "=~", "^[0-9a-f]{40}$", "&&", "$2", "=", '"$1"', "]]"),
     ("}",),
+    ("is_pr_number()", "{"),
+    ("[[", "$1", "=~", "^[1-9][0-9]*$", "&&", "$2", "=", "$1", "]]"),
+    ("}",),
     ("classifier_expected_sha=",),
     ("classifier_ref=refs/heads/$DEFAULT_BRANCH",),
     ("fallback_kind=none",),
@@ -160,10 +171,14 @@ _IDENTITY_COMMANDS = (
     ("fi",),
     (
         "if",
+        "is_pr_number",
+        "$PR_NUMBER",
+        "$PR_NUMBER_JSON",
+        "&&",
         "[[",
         "$EVENT_REF",
-        "=~",
-        "^refs/pull/[1-9][0-9]*/merge$",
+        "=",
+        "refs/pull/$PR_NUMBER/merge",
         "]]",
         "&&",
         "is_lower_sha",
@@ -340,6 +355,84 @@ _MODE_COMMANDS = (
     ("echo", "Build event router did not succeed: $ROUTER_RESULT", ">&2"),
     ("exit", "1"),
     ("fi",),
+    ("if", "[", "$EVENT_IDENTITY_RESULT", "!=", "success", "];", "then"),
+    (
+        "echo",
+        "trusted Build event identity did not succeed: $EVENT_IDENTITY_RESULT",
+        ">&2",
+    ),
+    ("exit", "1"),
+    ("fi",),
+    ("if", "[", "$EVENT_NAME", "=", "pull_request", "];", "then"),
+    (
+        "if",
+        "[",
+        "$TRUSTED_EVENT_KIND",
+        "!=",
+        "pull_request",
+        "]",
+        "||",
+        "[",
+        "-z",
+        "$TRUSTED_EVENT_SHA",
+        "]",
+        "||",
+        "[",
+        "$TRUSTED_EVENT_SHA",
+        "!=",
+        "$PR_HEAD_SHA",
+        "]",
+        "||",
+        "[",
+        "$TRUSTED_EVENT_SHA",
+        "!=",
+        "$CLASSIFIED_HEAD",
+        "];",
+        "then",
+    ),
+    ("echo", "classified PR head lacks coherent trusted event identity", ">&2"),
+    ("exit", "1"),
+    ("fi",),
+    ("elif", "[", "$EVENT_NAME", "=", "push", "];", "then"),
+    (
+        "if",
+        "[",
+        "$TRUSTED_EVENT_KIND",
+        "!=",
+        "push",
+        "]",
+        "||",
+        "[",
+        "-z",
+        "$TRUSTED_EVENT_SHA",
+        "]",
+        "||",
+        "[",
+        "$TRUSTED_EVENT_SHA",
+        "!=",
+        "$PUSH_SHA",
+        "]",
+        "||",
+        "[",
+        "$TRUSTED_EVENT_SHA",
+        "!=",
+        "$EVENT_SHA",
+        "]",
+        "||",
+        "[",
+        "$TRUSTED_EVENT_SHA",
+        "!=",
+        "$CLASSIFIED_HEAD",
+        "];",
+        "then",
+    ),
+    ("echo", "classified push head lacks coherent trusted event identity", ">&2"),
+    ("exit", "1"),
+    ("fi",),
+    ("else",),
+    ("echo", "classified event has no trusted identity mode", ">&2"),
+    ("exit", "1"),
+    ("fi",),
     ("case", "$HEAD_VALID", "in"),
     ("true|false)", ";;"),
     (
@@ -497,6 +590,8 @@ _EXPECTED_JOB_ENV = {
         ("PR_BASE_SHA_JSON", "${{ toJSON(github.event.pull_request.base.sha) }}"),
         ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
         ("PR_HEAD_SHA_JSON", "${{ toJSON(github.event.pull_request.head.sha) }}"),
+        ("PR_NUMBER", "${{ github.event.number }}"),
+        ("PR_NUMBER_JSON", "${{ toJSON(github.event.number) }}"),
         ("PUSH_SHA", "${{ github.event.after }}"),
         ("PUSH_SHA_JSON", "${{ toJSON(github.event.after) }}"),
         ("RAW_SHA", "${{ github.sha }}"),
@@ -523,11 +618,25 @@ _EXPECTED_JOB_ENV = {
     ),
     "event-classifier": (
         ("CLASSIFICATION", "${{ needs.event-router.outputs.classification }}"),
+        ("CLASSIFIED_HEAD", "${{ needs.event-router.outputs.expected_head }}"),
+        ("EVENT_IDENTITY_RESULT", "${{ needs.event-identity.result }}"),
+        ("EVENT_NAME", "${{ github.event_name }}"),
+        ("EVENT_SHA", "${{ github.sha }}"),
         ("FULL_FALLBACK", "${{ needs.event-router.outputs.full_fallback }}"),
         ("HEAD_VALID", "${{ needs.event-router.outputs.head_valid }}"),
         ("IDENTITY_VALID", "${{ needs.event-router.outputs.identity_valid }}"),
+        ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
+        ("PUSH_SHA", "${{ github.event.after }}"),
         ("ROUTER_RESULT", "${{ needs.event-router.result }}"),
         ("RUN_EXPENSIVE", "${{ needs.event-router.outputs.run_expensive }}"),
+        (
+            "TRUSTED_EVENT_KIND",
+            "${{ needs.event-identity.outputs.fallback_kind }}",
+        ),
+        (
+            "TRUSTED_EVENT_SHA",
+            "${{ needs.event-identity.outputs.fallback_sha }}",
+        ),
     ),
     "host-tests": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
     "build": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
@@ -1077,7 +1186,7 @@ def _parse_job_context(job_name, body):
             expected = (
                 "[event-identity]"
                 if job_name in {"event-router", "patch-release"}
-                else "[event-router]"
+                else "[event-identity, event-router]"
                 if job_name == "event-classifier"
                 else "[event-identity, event-classifier]"
                 if job_name in _COMBINED_JOBS

@@ -1083,8 +1083,13 @@ class VerifyCliCwdTests(unittest.TestCase):
                 1,
             ),
             original.replace(
-                '"$EVENT_REF" =~ ^refs/pull/[1-9][0-9]*/merge$',
+                '"$EVENT_REF" = "refs/pull/$PR_NUMBER/merge"',
                 '-n "$EVENT_REF"',
+                1,
+            ),
+            original.replace(
+                '[[ "$1" =~ ^[1-9][0-9]*$ && "$2" = "$1" ]]',
+                '[[ -n "$1" ]]',
                 1,
             ),
             original.replace(

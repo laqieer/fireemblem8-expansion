@@ -592,13 +592,21 @@ def classifier_bootstrap_contract_violations(text):
     fallback_requirements = {
         "fallback-lowercase-sha": ("exact lowercase 40-hex SHA",),
         "fallback-pr-coherence": ("refs/pull/<number>/merge",),
+        "fallback-pr-number": ("numeric event number",),
         "fallback-push-coherence": (
             "refs/heads/master",
             "event after/github.sha",
         ),
         "validated-worker-fallback": ("Workers consume only that validated",),
         "malformed-fallback-rejection": (
-            "Missing, uppercase, short, nonhex, ref-name, mismatched",
+            "Missing",
+            "uppercase",
+            "short",
+            "nonhex",
+            "ref-name",
+            "ref-number-mismatched",
+            "malformed",
+            "cross-event",
         ),
         "publisher-revision-verification": (
             "verifies /usr/bin/git rev-parse HEAD immediately after checkout",
@@ -609,6 +617,10 @@ def classifier_bootstrap_contract_violations(text):
             "candidate code",
             "without the secret",
             "secret step runs before any candidate code",
+        ),
+        "candidate-common-identity": (
+            "canonical successful event-identity context",
+            "missing, failed, skipped, renamed, duplicate, or unknown",
         ),
     }
     if bootstrap not in normalized:
@@ -622,6 +634,16 @@ def classifier_bootstrap_contract_violations(text):
     for violation, phrases in fallback_requirements.items():
         if any(normalize_policy(phrase) not in normalized for phrase in phrases):
             violations.append(violation)
+    successful_identity_phrases = (
+        "successful full and metadata classifications",
+        "successful full/metadata classification",
+        "successful full/metadata classifications",
+    )
+    if not any(
+        normalize_policy(phrase) in normalized
+        for phrase in successful_identity_phrases
+    ):
+        violations.append("successful-classification-event-identity")
     return violations
 
 
@@ -3131,6 +3153,18 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "publisher-secret-boundary",
                 r"secret step runs before any candidate code",
                 "candidate code runs before the secret step",
+            ),
+            (
+                "drop-pr-number-coherence",
+                "fallback-pr-number",
+                r"numeric event number",
+                "unvalidated event label",
+            ),
+            (
+                "make-common-identity-optional",
+                "candidate-common-identity",
+                r"canonical successful\s+`event-identity`\s+context",
+                "optional event-identity context",
             ),
         )
         for path in (

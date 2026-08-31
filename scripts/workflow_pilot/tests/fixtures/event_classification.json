@@ -910,6 +910,37 @@
       "run_workers": false
     },
     {
+      "event_name": "pull_request",
+      "expected_kind": "none",
+      "expected_sha": "",
+      "github_ref": "refs/pull/178/merge",
+      "id": "pr-number-mismatch",
+      "pr_head_sha": "1111111111111111111111111111111111111111",
+      "run_publisher": false,
+      "run_workers": false
+    },
+    {
+      "event_name": "pull_request",
+      "expected_kind": "none",
+      "expected_sha": "",
+      "github_ref": "refs/pull/177/head",
+      "id": "pr-malformed-event-ref",
+      "pr_head_sha": "1111111111111111111111111111111111111111",
+      "run_publisher": false,
+      "run_workers": false
+    },
+    {
+      "event_name": "pull_request",
+      "expected_kind": "none",
+      "expected_sha": "",
+      "github_ref": "refs/pull/177/merge",
+      "id": "pr-malformed-number-type",
+      "pr_head_sha": "1111111111111111111111111111111111111111",
+      "pr_number": "177",
+      "run_publisher": false,
+      "run_workers": false
+    },
+    {
       "event_name": "push",
       "expected_kind": "push",
       "expected_sha": "4444444444444444444444444444444444444444",
@@ -974,6 +1005,94 @@
       "raw_sha": "5555555555555555555555555555555555555555",
       "run_publisher": false,
       "run_workers": false
+    }
+  ],
+  "successful_identity_cases": [
+    {
+      "action": "opened",
+      "event_name": "pull_request",
+      "expected_classification": "full",
+      "expected_summary_success": true,
+      "github_ref": "refs/pull/177/merge",
+      "id": "valid-full-pr-identity",
+      "pr_number": 177,
+      "run_publisher": false,
+      "run_workers": true
+    },
+    {
+      "action": "edited",
+      "event_name": "pull_request",
+      "expected_classification": "metadata-only",
+      "expected_summary_success": true,
+      "github_ref": "refs/pull/177/merge",
+      "id": "valid-metadata-pr-identity",
+      "pr_number": 177,
+      "run_publisher": false,
+      "run_workers": false
+    },
+    {
+      "action": "opened",
+      "event_name": "pull_request",
+      "expected_classification": "full",
+      "expected_summary_success": false,
+      "github_ref": "refs/heads/master",
+      "id": "successful-classifier-cross-event-ref",
+      "pr_number": 177,
+      "run_publisher": false,
+      "run_workers": false
+    },
+    {
+      "action": "edited",
+      "event_name": "pull_request",
+      "expected_classification": "metadata-only",
+      "expected_summary_success": false,
+      "github_ref": "refs/pull/178/merge",
+      "id": "successful-classifier-pr-number-mismatch",
+      "pr_number": 177,
+      "run_publisher": false,
+      "run_workers": false
+    },
+    {
+      "action": "opened",
+      "event_name": "pull_request",
+      "expected_classification": "full",
+      "expected_summary_success": false,
+      "github_ref": "refs/pull/not-a-number/merge",
+      "id": "successful-classifier-malformed-pr-ref",
+      "pr_number": 177,
+      "run_publisher": false,
+      "run_workers": false
+    },
+    {
+      "action": "opened",
+      "event_name": "pull_request",
+      "expected_classification": "full",
+      "expected_summary_success": false,
+      "github_ref": "refs/pull/177/head",
+      "id": "successful-classifier-wrong-pr-ref-kind",
+      "pr_number": 177,
+      "run_publisher": false,
+      "run_workers": false
+    },
+    {
+      "action": "opened",
+      "event_name": "pull_request",
+      "expected_classification": "full",
+      "expected_summary_success": false,
+      "github_ref": "refs/pull/177/merge",
+      "id": "successful-classifier-malformed-pr-number",
+      "pr_number": "177",
+      "run_publisher": false,
+      "run_workers": false
+    },
+    {
+      "event_name": "push",
+      "expected_classification": "full",
+      "expected_summary_success": true,
+      "github_ref": "refs/heads/master",
+      "id": "valid-successful-push-identity",
+      "run_publisher": true,
+      "run_workers": true
     }
   ],
   "incomplete_base_cases": [

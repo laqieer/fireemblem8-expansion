@@ -36,7 +36,7 @@ def _run(run_id, contexts):
 
 
 def _full_run(run_id, summary="success"):
-    contexts = [_context("event-router")]
+    contexts = [_context("event-identity"), _context("event-router")]
     contexts.append(_context("event-classifier"))
     contexts.extend(
         _context(job_id)
@@ -47,7 +47,7 @@ def _full_run(run_id, summary="success"):
 
 
 def _metadata_run(run_id, worker_conclusion="skipped"):
-    contexts = [_context("event-router")]
+    contexts = [_context("event-identity"), _context("event-router")]
     contexts.append(
         _context("event-classifier", candidate_evidence.METADATA_CLASSIFIER)
     )
@@ -169,6 +169,33 @@ class CandidateEvidenceTests(unittest.TestCase):
             if context["job_id"] == "build"
         )["name"] = "literal-or-dynamic-name"
         mutations.append(renamed_full_worker)
+
+        run_id = 44
+        for mode, factory in (
+            ("full", _full_run),
+            ("metadata", _metadata_run),
+        ):
+            for conclusion in ("missing", "failure", "skipped"):
+                identity = factory(run_id)
+                identity_context = next(
+                    context
+                    for context in identity["contexts"]
+                    if context["job_id"] == "event-identity"
+                )
+                if conclusion == "missing":
+                    identity["contexts"].remove(identity_context)
+                else:
+                    identity_context["conclusion"] = conclusion
+                mutations.append(identity)
+                run_id += 1
+
+        renamed_identity = _metadata_run(run_id)
+        next(
+            context
+            for context in renamed_identity["contexts"]
+            if context["job_id"] == "event-identity"
+        )["name"] = "trusted-setup"
+        mutations.append(renamed_identity)
 
         for mutation in mutations:
             with self.subTest(contexts=mutation["contexts"]):

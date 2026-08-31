@@ -1,4 +1,4 @@
-"""Evaluate candidates from running attestations and worker job identities."""
+"""Evaluate candidates from common event identity and running attestations."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 WORKER_JOB_IDS = ("host-tests", "build", "extended-host-tests", "legacy")
 KNOWN_JOB_IDS = frozenset(WORKER_JOB_IDS) | {
+    "event-identity",
     "event-router",
     "event-classifier",
     "patch-release",
@@ -99,6 +100,10 @@ def _validate_mode_contexts(
     contexts: dict[str, tuple[str, str]],
     mode: str,
 ) -> None:
+    if contexts.get("event-identity") != ("event-identity", "success"):
+        raise CandidateEvidenceError(
+            "run lacks successful canonical event-identity setup"
+        )
     if mode == "metadata-only":
         for job_id in WORKER_JOB_IDS:
             if job_id not in contexts:

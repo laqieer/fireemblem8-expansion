@@ -121,8 +121,10 @@ identity is missing or unusable; worker checkouts never use a merge/default
 fallback.
 
 Check contexts are mode-separated. `event-identity` and `event-router` are
-common setup only. Full
-candidate runs expose `event-classifier`, `host-tests`, `build`,
+common setup only. Every normalized full or metadata run must contain exactly
+one canonical successful `event-identity` context; missing, failed, skipped,
+renamed, duplicate, or unknown setup contexts are invalid. Full candidate runs
+expose `event-classifier`, `host-tests`, `build`,
 `extended-host-tests`, `legacy`, and `summary`. The running `summary` context
 is the sole candidate attestation; it succeeds only after the same full run's
 classifier and all four workers succeed. Metadata-only runs expose the running
@@ -141,7 +143,9 @@ derives mode only from the running classifier/summary names and evaluates the la
 exact-head/exact-base full run as one unit. A metadata-only run is never
 candidate evidence. A failed full run followed by green metadata remains
 ineligible; a prior successful full run remains eligible because metadata
-contexts are distinct rather than replacements.
+contexts are distinct rather than replacements. Both modes require the same
+successful common identity setup before their running attestations are
+admissible.
 
 The classifier reads the bounded `GITHUB_EVENT_PATH` JSON file with duplicate
 key and non-finite `NaN`/`Infinity` rejection. JSON floats are converted
@@ -205,12 +209,16 @@ SHA. Both paths retain revision verification, commands, and environments.
 Summary now joins the publisher as well: PR and metadata paths require it to
 be skipped, while master-push paths require success.
 
-Trusted event setup accepts a fallback identity only as an exact lowercase
-40-hex SHA. PR fallback also requires a coherent
-`refs/pull/<number>/merge` event ref; push fallback requires event `push`,
-`refs/heads/master`, and equal event `after`/`github.sha`. Workers consume only
-that validated output. Missing, uppercase, short, nonhex, ref-name, mismatched,
-or cross-event identities select no fallback worker or publisher. The
+Trusted event setup accepts an event identity only as an exact lowercase
+40-hex SHA. A PR additionally requires its numeric event number and exact
+`refs/pull/<number>/merge` ref; a push requires event `push`,
+`refs/heads/master`, and equal event `after`/`github.sha`. Successful full and
+metadata classifications, normal workers, and summary must all bind their
+classified head to that same kind and SHA. Missing, uppercase, short, nonhex,
+ref-name, ref-number-mismatched, malformed, or cross-event identities select
+no worker and cannot produce a successful summary. Classifier-failure workers
+also consume only that validated output. Workers consume only that validated
+SHA. The
 publisher consumes the same validated push SHA, verifies
 `/usr/bin/git rev-parse HEAD` immediately after checkout, and only then exposes
 `BASEROM_URL` to a minimal curl-only step; candidate code runs later without
