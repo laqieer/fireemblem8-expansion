@@ -777,6 +777,95 @@ class OwnershipGraphTests(unittest.TestCase):
                 parse(target_immediate, "all"),
                 parse(target_later_change, "all"),
             )
+            target_recursive = target_immediate.replace(
+                "all: OBJECT :=", "all: OBJECT ="
+            )
+            target_recursive_later = target_later_change.replace(
+                "all: OBJECT :=", "all: OBJECT ="
+            )
+            self.assertEqual(run(target_recursive, "all").stdout, "new\n")
+            self.assertEqual(run(target_recursive_later, "all").stdout, "later\n")
+            self.assertNotEqual(
+                parse(target_recursive, "all"),
+                parse(target_recursive_later, "all"),
+            )
+
+            target_simple_append = (
+                "BASE = old\n"
+                "all: VALUE := $(BASE)\n"
+                "all: VALUE += $(BASE)\n"
+                "BASE = new\n"
+                "all:\n\t@printf '%s\\n' '$(VALUE)'\n"
+            )
+            target_recursive_append = target_simple_append.replace(
+                "VALUE :=", "VALUE ="
+            )
+            self.assertEqual(
+                run(target_simple_append, "all").stdout,
+                "old old\n",
+            )
+            self.assertEqual(
+                run(target_recursive_append, "all").stdout,
+                "new new\n",
+            )
+            self.assertNotEqual(
+                parse(target_simple_append, "all"),
+                parse(target_recursive_append, "all"),
+            )
+
+            inherited = (
+                "BASE = old\n"
+                "all: VALUE = $(BASE)\n"
+                "all: child\n"
+                "BASE = new\n"
+                "child:\n\t@printf '%s\\n' '$(VALUE)'\n"
+            )
+            inherited_later = inherited.replace("BASE = new", "BASE = later")
+            self.assertEqual(run(inherited, "all").stdout, "new\n")
+            self.assertEqual(run(inherited_later, "all").stdout, "later\n")
+            self.assertNotEqual(
+                parse(inherited, "all"),
+                parse(inherited_later, "all"),
+            )
+
+            secondary = (
+                ".SECONDEXPANSION:\n"
+                "BASE = old\n"
+                "all: DEPS = $(BASE)\n"
+                "all: $$(DEPS)\n"
+                "BASE = child\n"
+                "child:\n\t@printf 'secondary\\n'\n"
+            )
+            self.assertEqual(run(secondary, "all").stdout, "secondary\n")
+            self.assertIn(
+                "child",
+                {
+                    item["target"]
+                    for item in parse(secondary, "all")["transitive"]
+                },
+            )
+
+            target_conditional_default = (
+                "VALUE = global-old\n"
+                "all: VALUE ?= target\n"
+                "VALUE = global-new\n"
+                "all:\n\t@printf '%s\\n' '$(VALUE)'\n"
+            )
+            target_conditional_later = target_conditional_default.replace(
+                "VALUE = global-new", "VALUE = global-later"
+            )
+            self.assertEqual(
+                run(target_conditional_default, "all").stdout,
+                "global-new\n",
+            )
+            self.assertEqual(
+                run(target_conditional_later, "all").stdout,
+                "global-later\n",
+            )
+            self.assertNotEqual(
+                parse(target_conditional_default, "all"),
+                parse(target_conditional_later, "all"),
+            )
 
             conditional_old = (
                 "BASE = old\n"
@@ -975,6 +1064,23 @@ class OwnershipGraphTests(unittest.TestCase):
             ):
                 reporter._parse_make_authorities(loader, {"all"})
 
+            for assignment, error in (
+                ("private VALUE = hidden", "unsupported modifiers"),
+                ("override VALUE = forced", "unsupported modifiers"),
+                ("export VALUE = public", "unsupported modifiers"),
+                ("VALUE != printf shell", "target-specific shell assignment"),
+            ):
+                with self.subTest(target_assignment=assignment):
+                    makefile.write_text(
+                        f"all: {assignment}\nall:\n\t@true\n",
+                        encoding="ascii",
+                    )
+                    with self.assertRaisesRegex(
+                        reporter.OwnershipError,
+                        error,
+                    ):
+                        reporter._parse_make_authorities(loader, {"all"})
+
             expander = reporter.SafeMakeExpander(
                 loader,
                 {
@@ -1006,6 +1112,177 @@ class OwnershipGraphTests(unittest.TestCase):
                 "expression exceeds depth bound",
             ):
                 expander.expand(expression)
+
+    def test_dynamic_target_declarations_are_registered_or_rejected(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            scratch = Path(directory)
+            makefile = scratch / "Makefile"
+            tool = scratch / "tool.py"
+            input_file = scratch / "input.txt"
+            registry_path = scratch / reporter.MAKE_DYNAMIC_PATH
+            registry_path.parent.mkdir(parents=True)
+            tool.write_text(
+                "from pathlib import Path\n"
+                "Path('shell-executed').write_text('bad')\n"
+                "print('child')\n",
+                encoding="ascii",
+            )
+            input_file.write_text("authority\n", encoding="ascii")
+            dynamic_expression = "$(shell python3 tool.py)"
+            make_one = (
+                "all: child\n"
+                f"{dynamic_expression}:\n"
+                "\t@printf 'one\\n'\n"
+            )
+            makefile.write_text(make_one, encoding="ascii")
+            basic_entries = {
+                "Makefile": reporter.GitTreeEntry(
+                    "Makefile", "100644", "blob", "0" * 40
+                )
+            }
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "unregistered dynamic target declaration",
+            ):
+                reporter._parse_make_authorities(
+                    reporter.AuthorityLoader(scratch, basic_entries),
+                    {"all"},
+                )
+            self.assertFalse((scratch / "shell-executed").exists())
+
+            contract = {
+                "schema_version": 1,
+                "contracts": [
+                    {
+                        "id": "synthetic-target",
+                        "expression": dynamic_expression,
+                        "tool": "tool.py",
+                        "input_files": ["input.txt"],
+                        "input_variables": [],
+                        "automatic_inputs": [],
+                        "resolved_value": "child",
+                        "owning_evidence_ids": ["owner.synthetic"],
+                    }
+                ],
+                "seal": "",
+            }
+            contract["seal"] = reporter._sha256(
+                reporter.MAKE_DYNAMIC_SEAL_DOMAIN,
+                reporter.canonical_make_dynamic_payload(contract),
+            )
+            registry_path.write_bytes(reporter.normalized_json(contract))
+            entries = {
+                path: reporter.GitTreeEntry(
+                    path, "100644", "blob", "0" * 40
+                )
+                for path in (
+                    "Makefile",
+                    "tool.py",
+                    "input.txt",
+                    reporter.MAKE_DYNAMIC_PATH.as_posix(),
+                )
+            }
+            loader = reporter.AuthorityLoader(scratch, entries)
+            one = reporter._parse_make_authorities(
+                loader,
+                {"all"},
+                require_dynamic_contracts=True,
+            )["all"]
+            self.assertFalse((scratch / "shell-executed").exists())
+            self.assertIn(
+                "child",
+                {item["target"] for item in one["transitive"]},
+            )
+            self.assertEqual(
+                {item["id"] for item in one["dynamic_dependencies"]},
+                {"synthetic-target"},
+            )
+
+            makefile.write_text(make_one.replace("printf 'one", "printf 'two"), encoding="ascii")
+            two = reporter._parse_make_authorities(
+                reporter.AuthorityLoader(scratch, entries),
+                {"all"},
+                require_dynamic_contracts=True,
+            )["all"]
+            self.assertNotEqual(one, two)
+            self.assertFalse((scratch / "shell-executed").exists())
+
+            makefile.write_text(
+                "TARGET = $(shell python3 tool.py)\n"
+                "all: child\n"
+                "$(TARGET):\n"
+                "\t@printf 'nested\\n'\n",
+                encoding="ascii",
+            )
+            nested = reporter._parse_make_authorities(
+                reporter.AuthorityLoader(scratch, entries),
+                {"all"},
+                require_dynamic_contracts=True,
+            )["all"]
+            self.assertEqual(
+                {item["id"] for item in nested["dynamic_dependencies"]},
+                {"synthetic-target"},
+            )
+            self.assertFalse((scratch / "shell-executed").exists())
+
+            makefile.write_text(
+                "all:\n\t@true\n$(unsupported value):\n\t@true\n",
+                encoding="ascii",
+            )
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "unregistered dynamic target declaration",
+            ):
+                reporter._parse_make_authorities(
+                    reporter.AuthorityLoader(scratch, entries),
+                    {"all"},
+                    require_dynamic_contracts=True,
+                )
+
+            makefile.write_text(
+                "all:\n\t@true\n$@:\n\t@true\n",
+                encoding="ascii",
+            )
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "dynamic target declaration",
+            ):
+                reporter._parse_make_authorities(
+                    reporter.AuthorityLoader(scratch, entries),
+                    {"all"},
+                    require_dynamic_contracts=True,
+                )
+
+            makefile.write_text(
+                "A = $(B)\nB = $(A)\nall:\n\t@true\n$(A):\n\t@true\n",
+                encoding="ascii",
+            )
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "cyclic dynamic Make prerequisite variables",
+            ):
+                reporter._parse_make_authorities(
+                    reporter.AuthorityLoader(scratch, entries),
+                    {"all"},
+                    require_dynamic_contracts=True,
+                )
+
+            expression = "child"
+            for _ in range(65):
+                expression = "$(strip " + expression + ")"
+            makefile.write_text(
+                "all:\n\t@true\n" + expression + ":\n\t@true\n",
+                encoding="ascii",
+            )
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "expression exceeds depth bound",
+            ):
+                reporter._parse_make_authorities(
+                    reporter.AuthorityLoader(scratch, entries),
+                    {"all"},
+                    require_dynamic_contracts=True,
+                )
 
     def test_live_linker_dynamics_are_registered_and_complete(self):
         entries, loader, graph, schema = self.fixture_authority()

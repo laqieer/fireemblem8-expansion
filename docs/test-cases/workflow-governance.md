@@ -558,6 +558,16 @@ reject their first over-limit input. The live linker closure must report zero
 unowned dynamic prerequisites; removing a registration or changing a bound
 tool/input invalidates the exact consuming evidence.
 
+Target-specific recursive values and appends are evaluated at target use and
+inherited by prerequisite recipes; simple target values remain immediate.
+Recipe variables and escaped secondary prerequisites use those target-local
+bindings. Unsupported target-specific modifiers or shell assignments reject.
+Unrelated malformed dynamic target declarations also reject globally. A
+sealed synthetic `$(shell python3 tool.py):` target resolves to its concrete
+child without running the tool; changing its recipe changes the parent
+authority, while unregistered, cyclic, unsupported, or 65-level declarations
+fail before requested closure.
+
 Exact current/base Git mode and provenance is mandatory. Symlinks, synthetic
 gitlinks under owned prefixes, untracked/ignored/nonexistent changed paths,
 mode changes, escaping authorities, untracked recursive Make includes, and

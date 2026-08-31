@@ -767,6 +767,10 @@ def _make_variable_refs(values: Iterable[str]) -> set[str]:
 MAKE_ASSIGNMENT_RE = re.compile(
     r"^([A-Za-z_][A-Za-z0-9_]*)\s*(::=|:=|\?=|\+=|!=|=)\s*(.*)$"
 )
+TARGET_ASSIGNMENT_RE = re.compile(
+    r"^((?:(?:override|private|export)\s+)*)"
+    r"([A-Za-z_][A-Za-z0-9_]*)\s*(::=|:=|\?=|\+=|!=|=)\s*(.*)$"
+)
 MAKE_CONDITIONAL_RE = re.compile(r"^(ifeq|ifneq|ifdef|ifndef)\b(.*)$")
 _MAKE_AUTHORITY_CACHE: dict[tuple[Any, ...], dict[str, dict[str, Any]]] = {}
 _MAKE_AUTHORITY_CACHE_LIMIT = 16
@@ -984,6 +988,7 @@ class SafeMakeExpander:
         "if",
         "notdir",
         "or",
+        "origin",
         "patsubst",
         "sort",
         "strip",
@@ -1151,18 +1156,59 @@ class SafeMakeExpander:
         self.cache[cache_key] = result
         self.binding_semantics[cache_key] = {
             "flavor": flavor,
+            "raw_value": value,
             "effective_values": result,
             "assignments": active_records,
         }
         return result
 
     def variable_semantics(self, name: str) -> dict[str, Any]:
-        self.variable(name, {}, ())
-        semantics = dict(self.binding_semantics[(name, None)])
+        return self.variable_semantics_at(name, None)
+
+    def variable_semantics_at(
+        self,
+        name: str,
+        before_sequence: int | None,
+    ) -> dict[str, Any]:
+        self.variable(name, {}, (), before_sequence)
+        semantics = dict(self.binding_semantics[(name, before_sequence)])
         semantics["dynamic_expressions"] = sorted(
-            self._variable_dynamic_expressions(name, None, ())
+            self._variable_dynamic_expressions(name, before_sequence, ())
         )
         return semantics
+
+    def variable_flavor_at(
+        self,
+        name: str,
+        before_sequence: int | None,
+    ) -> str | None:
+        flavor = None
+        for record in self.assignments.get(name, ()):
+            if (
+                before_sequence is not None
+                and record["_sequence"] >= before_sequence
+            ):
+                continue
+            operator = record["operator"]
+            if operator == "+=" and flavor is not None:
+                continue
+            if not self._context_active(
+                record["context"],
+                record["_sequence"],
+                (),
+            ):
+                continue
+            if operator == "!=":
+                raise OwnershipError(
+                    f"unsupported shell assignment in Make variable {name!r}"
+                )
+            if operator == "?=" and flavor is not None:
+                continue
+            if operator in {":=", "::="}:
+                flavor = "simple"
+            elif operator in {"=", "?=", "+="}:
+                flavor = "recursive"
+        return flavor
 
     def _variable_dynamic_expressions(
         self,
@@ -1311,6 +1357,30 @@ class SafeMakeExpander:
                 arguments[2] if len(arguments) == 3 else ""
             )
             return self.expand(selected, local, stack, before_sequence)
+        if name == "origin":
+            if len(arguments) != 1:
+                raise OwnershipError("origin Make prerequisite requires one argument")
+            names = self.expand(arguments[0], local, stack, before_sequence)
+            if len(names) != 1 or len(names[0].split()) != 1:
+                raise OwnershipError("origin Make prerequisite variable is ambiguous")
+            variable_name = names[0].strip()
+            if variable_name in local:
+                return ["file"]
+            records = [
+                record
+                for record in self.assignments.get(variable_name, ())
+                if before_sequence is None
+                or record["_sequence"] < before_sequence
+            ]
+            active = any(
+                self._context_active(
+                    record["context"],
+                    record["_sequence"],
+                    stack + ("origin:" + variable_name,),
+                )
+                for record in records
+            )
+            return ["file" if active else "undefined"]
 
         expanded_arguments = [
             self.expand(argument, local, stack, before_sequence)
@@ -1603,7 +1673,18 @@ def _parse_make_authorities(
             raise OwnershipError(f"Make authority {relative!r} is not UTF-8") from error
         current_targets: list[str] = []
         conditional_stack = list(inherited_context)
+        define_depth = 0
         for recipe, raw_line in _make_logical_lines(text):
+            stripped_raw = raw_line.strip()
+            if define_depth:
+                if stripped_raw.startswith("define "):
+                    define_depth += 1
+                elif stripped_raw == "endef":
+                    define_depth -= 1
+                continue
+            if not recipe and stripped_raw.startswith("define "):
+                define_depth = 1
+                continue
             if recipe:
                 command = raw_line.strip()
                 if command and not command.startswith("#"):
@@ -1690,13 +1771,14 @@ def _parse_make_authorities(
             if not target_names:
                 continue
             declaration, separator, inline_recipe = rhs.partition(";")
-            target_assignment = MAKE_ASSIGNMENT_RE.match(declaration.strip())
+            target_assignment = TARGET_ASSIGNMENT_RE.match(declaration.strip())
             if target_assignment:
                 record = {
                     "kind": "target-assignment",
-                    "name": target_assignment.group(1),
-                    "operator": target_assignment.group(2),
-                    "value": _normalize_make_expression(target_assignment.group(3)),
+                    "modifiers": tuple(target_assignment.group(1).split()),
+                    "name": target_assignment.group(2),
+                    "operator": target_assignment.group(3),
+                    "value": _normalize_make_expression(target_assignment.group(4)),
                     "context": tuple(conditional_stack),
                     "_sequence": parse_sequence,
                 }
@@ -1728,6 +1810,8 @@ def _parse_make_authorities(
             raise OwnershipError(
                 f"Make authority {relative!r} has unclosed conditional"
             )
+        if define_depth:
+            raise OwnershipError(f"Make authority {relative!r} has unclosed define")
 
     parse_file("Makefile")
     expander = SafeMakeExpander(loader, variables, dynamic_contracts)
@@ -1743,19 +1827,315 @@ def _parse_make_authorities(
                 for name in contract["input_variables"]
             },
         }
+
+    def target_variable_bindings(
+        target: str,
+        declarations: list[dict[str, Any]],
+    ) -> tuple[dict[str, str], dict[str, Any]]:
+        bindings: dict[str, dict[str, Any]] = {}
+        global_bases: dict[str, dict[str, Any]] = {}
+        assignment_history: dict[str, list[dict[str, Any]]] = defaultdict(list)
+
+        def safe_global_semantics(
+            name: str,
+            before_sequence: int | None,
+        ) -> dict[str, Any]:
+            try:
+                return expander.variable_semantics_at(name, before_sequence)
+            except OwnershipError as error:
+                return {
+                    "flavor": expander.variable_flavor_at(name, before_sequence),
+                    "raw_value": None,
+                    "effective_values": None,
+                    "assignments": [
+                        record
+                        for record in variables.get(name, ())
+                        if before_sequence is None
+                        or record["_sequence"] < before_sequence
+                    ],
+                    "evaluation": "unresolved-recipe-only-authority",
+                    "reason": str(error),
+                }
+
+        def resolve_name(
+            name: str,
+            before_sequence: int | None,
+            stack: tuple[str, ...],
+        ) -> str:
+            if name not in bindings:
+                values = expander.variable(name, {}, stack, before_sequence)
+            else:
+                binding = bindings[name]
+                if "base_variable" in binding:
+                    base_values = expander.variable(
+                        binding["base_variable"],
+                        {},
+                        stack,
+                        binding["base_sequence"],
+                    )
+                    if len(base_values) != 1:
+                        raise OwnershipError(
+                            f"target-specific Make variable {name!r} for "
+                            f"{target!r} has an ambiguous global base"
+                        )
+                    suffix_values = expander.expand(
+                        binding["suffix"],
+                        {},
+                        stack + (name,),
+                        (
+                            binding["base_sequence"]
+                            if binding["flavor"] == "simple"
+                            else before_sequence
+                        ),
+                    )
+                    if len(suffix_values) != 1:
+                        raise OwnershipError(
+                            f"target-specific Make variable {name!r} for "
+                            f"{target!r} has an ambiguous append"
+                        )
+                    values = [
+                        _normalize_make_expression(
+                            base_values[0] + " " + suffix_values[0]
+                        )
+                    ]
+                elif binding["flavor"] == "simple":
+                    values = [binding["value"]]
+                else:
+                    referenced = _make_variable_refs((binding["value"],))
+                    local = {
+                        item: resolve_name(
+                            item,
+                            before_sequence,
+                            stack + (name,),
+                        )
+                        for item in referenced
+                        if item in bindings
+                    }
+                    values = expander.expand(
+                        binding["value"],
+                        local,
+                        stack + (name,),
+                        before_sequence,
+                    )
+            if len(values) != 1:
+                raise OwnershipError(
+                    f"target-specific Make variable {name!r} for "
+                    f"{target!r} is ambiguous"
+                )
+            return values[0]
+
+        def resolved_locals(
+            before_sequence: int | None,
+            names: Iterable[str] | None = None,
+        ) -> dict[str, str]:
+            return {
+                name: resolve_name(name, before_sequence, ())
+                for name in (bindings if names is None else names)
+                if name in bindings
+            }
+
+        for declaration in declarations:
+            if declaration["kind"] != "target-assignment":
+                continue
+            if declaration["modifiers"]:
+                raise OwnershipError(
+                    f"target-specific Make assignment for {target!r} uses "
+                    f"unsupported modifiers {declaration['modifiers']}"
+                )
+            operator = declaration["operator"]
+            if operator == "!=":
+                raise OwnershipError(
+                    f"target-specific shell assignment for {target!r} is not allowed"
+                )
+            name = declaration["name"]
+            sequence = declaration["_sequence"]
+            binding = bindings.get(name)
+            global_binding = None
+            if binding is None and operator in {"+=", "?="}:
+                global_binding = safe_global_semantics(name, sequence)
+                global_bases[name] = global_binding
+            applied = True
+            if operator == "?=" and (
+                binding is not None
+                or (
+                    global_binding is not None
+                    and global_binding["flavor"] is not None
+                )
+            ):
+                applied = False
+            elif (
+                binding is None
+                and operator == "+="
+                and global_binding is not None
+                and global_binding["flavor"] is not None
+            ):
+                if global_binding["flavor"] is not None:
+                    values = global_binding["effective_values"]
+                    if values is None:
+                        binding = {
+                            "flavor": global_binding["flavor"],
+                            "base_variable": name,
+                            "base_sequence": sequence,
+                            "suffix": "",
+                        }
+                        bindings[name] = binding
+                    elif len(values) != 1:
+                        raise OwnershipError(
+                            f"global Make variable {name!r} inherited by "
+                            f"{target!r} is ambiguous"
+                        )
+                    else:
+                        binding = {
+                            "flavor": global_binding["flavor"],
+                            "value": (
+                                values[0]
+                                if global_binding["flavor"] == "simple"
+                                else global_binding["raw_value"]
+                            ),
+                        }
+                        bindings[name] = binding
+            if not applied:
+                assignment_history[name].append(
+                    {
+                        **declaration,
+                        "applied": False,
+                    }
+                )
+                continue
+            if operator in {":=", "::="} or (
+                operator == "+="
+                and binding is not None
+                and binding["flavor"] == "simple"
+            ):
+                referenced = _make_variable_refs((declaration["value"],))
+                values = expander.expand(
+                    declaration["value"],
+                    resolved_locals(sequence, referenced),
+                    before_sequence=sequence,
+                )
+                if len(values) != 1:
+                    raise OwnershipError(
+                        f"target-specific immediate assignment for "
+                        f"{target!r} is ambiguous"
+                    )
+                rhs = values[0]
+                if operator == "+=":
+                    if "base_variable" in binding:
+                        binding["suffix"] = _normalize_make_expression(
+                            binding["suffix"] + " " + rhs
+                        )
+                    else:
+                        binding["value"] = _normalize_make_expression(
+                            binding["value"] + " " + rhs
+                        )
+                else:
+                    bindings[name] = {"flavor": "simple", "value": rhs}
+            elif operator == "+=":
+                if binding is None:
+                    binding = {"flavor": "recursive", "value": ""}
+                    bindings[name] = binding
+                if "base_variable" in binding:
+                    binding["suffix"] = _normalize_make_expression(
+                        binding["suffix"] + " " + declaration["value"]
+                    )
+                else:
+                    binding["value"] = _normalize_make_expression(
+                        binding["value"] + " " + declaration["value"]
+                    )
+            elif operator in {"=", "?="}:
+                bindings[name] = {
+                    "flavor": "recursive",
+                    "value": declaration["value"],
+                }
+            assignment_history[name].append(
+                {
+                    **declaration,
+                    "applied": applied,
+                }
+            )
+
+        resolved = {}
+        resolution_errors = {}
+        for name in bindings:
+            try:
+                resolved[name] = resolve_name(name, None, ())
+            except OwnershipError as error:
+                resolution_errors[name] = str(error)
+        inherited_semantics = {
+            name: safe_global_semantics(name, None)
+            for name in assignment_history
+            if name not in bindings
+        }
+        semantics = {
+            name: (
+                {
+                    "flavor": bindings[name]["flavor"],
+                    "raw_value": bindings[name].get("value"),
+                    "global_base": global_bases.get(name),
+                    "append_value": bindings[name].get("suffix"),
+                    "effective_value": resolved.get(name),
+                    "evaluation_error": resolution_errors.get(name),
+                    "assignments": assignment_history[name],
+                }
+                if name in bindings
+                else {
+                    "flavor": "inherited",
+                    "raw_value": None,
+                    "global_base": inherited_semantics[name],
+                    "effective_value": (
+                        inherited_semantics[name]["effective_values"][0]
+                        if inherited_semantics[name]["effective_values"] is not None
+                        and len(inherited_semantics[name]["effective_values"]) == 1
+                        else None
+                    ),
+                    "assignments": assignment_history[name],
+                }
+            )
+            for name in assignment_history
+        }
+        return resolved, semantics
+
     materialized: dict[str, dict[str, Any]] = defaultdict(
-        lambda: {"declarations": [], "recipes": [], "phony": False}
+        lambda: {
+            "declarations": [],
+            "recipes": [],
+            "phony": False,
+            "dynamic_target_expressions": [],
+        }
     )
     for raw_target, record in targets.items():
+        dynamic_target_expressions = {
+            expression
+            for expression in dynamic_contracts
+            if expression in raw_target
+        }
+        for variable_name in _make_variable_refs((raw_target,)):
+            dynamic_target_expressions.update(
+                expander._variable_dynamic_expressions(
+                    variable_name,
+                    None,
+                    (),
+                )
+            )
         try:
             expanded_targets = expander.expand(raw_target)
-        except OwnershipError:
-            continue
+        except OwnershipError as error:
+            raise OwnershipError(
+                f"unregistered dynamic target declaration {raw_target!r}: {error}"
+            ) from error
         for expanded in expanded_targets:
             for target in expanded.split():
+                if "$" in target:
+                    raise OwnershipError(
+                        "unresolved dynamic target declaration "
+                        f"{raw_target!r} produced {target!r}"
+                    )
                 materialized[target]["declarations"].extend(record["declarations"])
                 materialized[target]["recipes"].extend(record["recipes"])
                 materialized[target]["phony"] |= record["phony"]
+                materialized[target]["dynamic_target_expressions"].extend(
+                    dynamic_target_expressions
+                )
     targets = materialized
 
     direct = {}
@@ -1780,32 +2160,18 @@ def _parse_make_authorities(
         ]
         if not active_declarations and not active_recipes and not record["phony"]:
             continue
-        for declaration in active_declarations:
-            if declaration["kind"] == "target-assignment":
-                try:
-                    declaration["effective_values"] = expander.expand(
-                        declaration["value"],
-                        before_sequence=declaration["_sequence"],
-                    )
-                except OwnershipError as error:
-                    declaration["effective_values"] = [
-                        "<unresolved-dynamic-assignment>"
-                    ]
-                    declaration["_unresolved_error"] = str(error)
+        target_values, target_semantics = target_variable_bindings(
+            target,
+            active_declarations,
+        )
         prerequisite_values = [
-            " ".join(
-                declaration.get(
-                    "effective_values",
-                    (declaration.get("value", ""),),
-                )
-            )
-            + " "
-            + " ".join(declaration.get("prerequisites", ()))
+            " ".join(declaration["prerequisites"])
             + " | "
-            + " ".join(declaration.get("order_only", ()))
+            + " ".join(declaration["order_only"])
             + " "
             + " ".join(declaration["context"])
             for declaration in active_declarations
+            if declaration["kind"] == "rule"
         ]
         recipe_values = [
             recipe["command"] + " " + " ".join(recipe["context"])
@@ -1813,6 +2179,18 @@ def _parse_make_authorities(
         ]
         prerequisite_refs = _make_variable_refs(prerequisite_values)
         recipe_refs = _make_variable_refs(recipe_values) - prerequisite_refs
+        target_variable_names = set(target_semantics)
+        unresolved_prerequisite_variables = (
+            prerequisite_refs & target_variable_names
+        ) - set(target_values)
+        if unresolved_prerequisite_variables:
+            raise OwnershipError(
+                f"target-specific prerequisite variables for {target!r} "
+                "cannot be resolved safely: "
+                + ", ".join(sorted(unresolved_prerequisite_variables))
+            )
+        prerequisite_refs -= target_variable_names
+        recipe_refs -= target_variable_names
 
         def recipe_variable_semantics(name: str) -> dict[str, Any]:
             try:
@@ -1828,7 +2206,12 @@ def _parse_make_authorities(
             "declarations": active_declarations,
             "recipes": active_recipes,
             "phony": record["phony"],
+            "dynamic_target_expressions": sorted(
+                set(record["dynamic_target_expressions"])
+            ),
             "_prerequisite_refs": sorted(prerequisite_refs),
+            "_target_values": target_values,
+            "target_variables": target_semantics,
             "recipe_variables": {
                 name: recipe_variable_semantics(name)
                 for name in sorted(recipe_refs)
@@ -1839,6 +2222,7 @@ def _parse_make_authorities(
     prerequisite_cache: dict[tuple[str, tuple[tuple[str, str], ...]], list[str]] = {}
 
     def expand_prerequisite(token: str, local: dict[str, str]) -> list[str]:
+        token = token.replace("$$(", "$(")
         cache_key = token, tuple(sorted(local.items()))
         if cache_key in prerequisite_cache:
             return prerequisite_cache[cache_key]
@@ -1877,42 +2261,7 @@ def _parse_make_authorities(
         result = []
         local_dynamic = []
         record = direct[target]
-        target_local: dict[str, str] = {}
-        for declaration in record["declarations"]:
-            if declaration["kind"] != "target-assignment":
-                continue
-            if declaration["operator"] == "!=":
-                raise OwnershipError(
-                    f"unregistered target-specific shell assignment for {target!r}"
-                )
-            try:
-                values = expander.expand(
-                    declaration["value"],
-                    target_local,
-                    before_sequence=declaration["_sequence"],
-                )
-            except OwnershipError as error:
-                registered = dynamic_dependency(declaration["value"])
-                if registered is None:
-                    raise OwnershipError(
-                        f"Make target {target!r} has unregistered dynamic "
-                        f"assignment {declaration['value']!r}: {error}"
-                    ) from error
-                local_dynamic.append(registered)
-                continue
-            if len(values) != 1:
-                raise OwnershipError(
-                    f"target-specific Make assignment for {target!r} is ambiguous"
-                )
-            name = declaration["name"]
-            if declaration["operator"] == "+=":
-                target_local[name] = _normalize_make_expression(
-                    target_local.get(name, "") + " " + values[0]
-                )
-            elif declaration["operator"] == "?=" and name in target_local:
-                continue
-            else:
-                target_local[name] = values[0]
+        target_local = record["_target_values"]
         for declaration in record["declarations"]:
             if declaration["kind"] != "rule":
                 continue

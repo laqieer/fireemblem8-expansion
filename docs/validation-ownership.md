@@ -194,12 +194,28 @@ timing. A later `BASE` reassignment therefore cannot change an earlier
 `OBJECT := $(BASE)`, while it does affect `OBJECT = $(BASE)`. GNU Make fixtures
 pin global, target-specific, append, and conditional variants.
 
+Target-specific recursive `=` and recursive `+=` resolve at target use, so
+they observe later global/target values and are inherited by prerequisites;
+target-specific `:=`/`::=` and append to a simple value remain immediate.
+Target-local bindings participate in recipe fingerprints and escaped
+secondary-prerequisite expansion. `?=` follows the visible global/local
+definition, while target-specific shell assignments and `override`, `private`,
+or `export` modifiers fail closed until explicitly modeled.
+
 Reachable unregistered dynamic prerequisites reject. The live linker authority
 has zero unowned dynamics: its `scaninc`, generated item-cap, and
 banim-linker shell expressions are represented by the separate registry and
 never executed. Contract tool/input/variable changes flow only to Make
 evidence that consumes the contract. Variable recursion and expression
 nesting have independent limits of 64, with separate word and variant bounds.
+
+Dynamic target declarations are whole-tree authority. No expansion failure is
+ignored, even for a target unrelated to the requested root. A registered
+dynamic target must have an exact sealed expression, concrete resolved target,
+tracked tool/input bindings, and evidence owners; unregistered shell/function,
+cycle, malformed, or over-depth declarations reject before closure. Registered
+targets resolve without shell execution, and their recipes flow into aggregate
+fingerprints.
 
 Domain-separated seals cover the strict schema, probe oracle, complete graph, and resolved
 edges plus live evidence-authority fingerprints. Make authority derives from
