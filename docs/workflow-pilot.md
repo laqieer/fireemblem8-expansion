@@ -249,6 +249,9 @@ metadata suppression. The indexed
 [`TC-WORKFLOW-BODY-EDIT-001`](test-cases/workflow-governance.md#planned-live-title-only-exercise-after-push)
 procedure freezes creation, opened/full evidence, title-edit and title-restore
 metadata evidence, evaluator input, and complete PR/branch/worktree cleanup.
+Its bounded direct shell helper paginates and excludes all prior IDs, validates
+created/event/branch/head fields before each exact-ID watcher, and installs
+idempotent exact-resource cleanup before remote mutation.
 
 The pull-request body/template remains the stable frozen scope, non-goals,
 classification, dependency, acceptance, tester procedure, and compatibility

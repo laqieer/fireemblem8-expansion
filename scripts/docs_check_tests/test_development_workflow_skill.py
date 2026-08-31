@@ -4,6 +4,8 @@ import json
 import posixpath
 from pathlib import Path
 import re
+import subprocess
+import textwrap
 from typing import FrozenSet, Tuple
 import unittest
 
@@ -687,6 +689,7 @@ def workflow_tester_topology_violations(text):
 def live_title_probe_violations(text):
     scan_policy_markdown(text)
     body_case = raw_markdown_section(text, BODY_EDIT_CASE_HEADING)
+    commands = " ".join(body_case.replace("\\\n", " ").split())
     normalized = normalize_policy(body_case)
     required_text = {
         "candidate-containing-base": (
@@ -702,8 +705,10 @@ def live_title_probe_violations(text):
             ".github/workflow-probes/issue-177-title-only.json",
         ),
         "title-edit-and-restore": (
-            'gh pr edit "$pr" --title "$original_title [title-only metadata probe]"',
-            'gh pr edit "$pr" --title "$original_title"',
+            'gh api --method PATCH "repos/{owner}/{repo}/pulls/$pr" '
+            '-f title="$probe_title" > /dev/null',
+            'gh api --method PATCH "repos/{owner}/{repo}/pulls/$pr" '
+            '-f title="$original_title" > /dev/null',
             'test "$title_run_id" != "$opened_run_id"',
             'test "$restore_run_id" != "$title_run_id"',
             "Normalize all three real runs",
@@ -716,16 +721,46 @@ def live_title_probe_violations(text):
             'gh run view "$title_run_id" --json event,headSha,conclusion,jobs,url',
             'gh run view "$restore_run_id" --json event,headSha,conclusion,jobs,url',
         ),
+        "bounded-unseen-run-discovery": (
+            'while [ "$attempt" -lt 60 ]',
+            "sleep 5",
+            "gh api --method GET --paginate --slurp",
+            'for page in json.loads(os.environ["RUNS_JSON"])',
+            'str(record["id"]) not in prior',
+            'record["name"] == "Build CI"',
+            'record["event"] == "pull_request"',
+            'record["head_branch"] == os.environ["EXPECTED_BRANCH"]',
+            'record["head_sha"] == os.environ["EXPECTED_HEAD"]',
+            'record["created_at"] >= os.environ["EXPECTED_CREATED_AFTER"]',
+            "if len(matches) != 1",
+            'opened_run_id="$(discover_build_run',
+            'title_run_id="$(discover_build_run',
+            'restore_run_id="$(discover_build_run',
+        ),
+        "fail-fast-trapped-cleanup": (
+            "set -euo pipefail",
+            "trap 'cleanup_probe $?' EXIT",
+            "trap 'exit 130' INT",
+            "trap 'exit 143' TERM",
+            "cleanup_probe 0",
+        ),
         "complete-probe-cleanup": (
+            "evidence_dir_created=false",
+            "probe_branch_created=false",
+            "probe_pushed=false",
+            'gh api --method PATCH "repos/{owner}/{repo}/pulls/$pr" '
+            '-f title="$original_title"',
             'gh pr close "$pr"',
             'git push origin --delete "$probe_branch"',
-            'git worktree remove "$probe_worktree"',
-            'git branch -D "$probe_branch"',
+            'git -C "$source_root" worktree remove "$probe_worktree"',
+            'git -C "$source_root" branch -D -- "$probe_branch"',
+            '[ "$evidence_dir" = '
+            '"$source_root/build/test-artifacts/issue-177-live-probe"',
         ),
     }
     violations = []
     for violation, fragments in required_text.items():
-        if any(fragment not in body_case for fragment in fragments):
+        if any(fragment not in commands for fragment in fragments):
             violations.append(violation)
     required_policy = {
         "implementation-pr-bootstrap-negative": (
@@ -751,6 +786,49 @@ def live_title_probe_violations(text):
             violations.append(violation)
     if "git commit --allow-empty -m" in body_case:
         violations.append("no-empty-or-merge-commit")
+    head_assertion = (
+        'test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" '
+        '= "$head_sha"'
+    )
+    base_assertion = (
+        'test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)" '
+        '= "$base_sha"'
+    )
+    if commands.count(head_assertion) != 3 or commands.count(base_assertion) != 3:
+        violations.append("three-run-head-base-identity")
+    restore_title = (
+        'gh api --method PATCH "repos/{owner}/{repo}/pulls/$pr" '
+        '-f title="$original_title"'
+    )
+    if commands.count(restore_title) != 2:
+        violations.append("title-edit-and-restore")
+    if commands.count("candidate_evidence.evaluate_candidate_runs") != 7:
+        violations.append("actual-evaluator-assertions")
+    evaluator_assertions = (
+        "assert opened_result.eligible and opened_result.run_id == opened[\"run_id\"]",
+        "assert not title_result.eligible and title_result.mode == \"metadata-only\"",
+        "assert full_title_result.eligible",
+        "assert full_title_result.run_id == opened[\"run_id\"]",
+        "assert not failed_result.eligible",
+        "assert all_runs_result.eligible",
+        "assert all_runs_result.run_id == opened[\"run_id\"]",
+        "assert not restore_result.eligible and restore_result.mode == \"metadata-only\"",
+        "assert not failed_restore_result.eligible",
+    )
+    if any(assertion not in commands for assertion in evaluator_assertions):
+        violations.append("actual-evaluator-assertions")
+    if re.search(r"--limit\s+1(?:\s|$)", commands):
+        violations.append("bounded-unseen-run-discovery")
+    trap_index = commands.find("trap 'cleanup_probe $?' EXIT")
+    push_index = commands.find('git push -u origin "$probe_branch"')
+    if trap_index < 0 or push_index < 0 or trap_index > push_index:
+        violations.append("fail-fast-trapped-cleanup")
+    for variable in ("opened_run_id", "title_run_id", "restore_run_id"):
+        discovery = commands.find(f'{variable}="$(discover_build_run')
+        watch = commands.find(f'gh run watch "${variable}"')
+        if discovery < 0 or watch < 0 or discovery > watch:
+            violations.append("bounded-unseen-run-discovery")
+            break
     return violations
 
 
@@ -3526,6 +3604,33 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
     def test_live_title_probe_contract_is_complete_and_fail_closed(self):
         governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
         self.assertEqual(live_title_probe_violations(governance), [])
+        body_case = raw_markdown_section(governance, BODY_EDIT_CASE_HEADING)
+        bash_blocks = [
+            textwrap.dedent(match.group("body"))
+            for match in re.finditer(
+                r"^[ ]*```bash\n(?P<body>.*?)^[ ]*```",
+                body_case,
+                re.DOTALL | re.MULTILINE,
+            )
+        ]
+        self.assertTrue(bash_blocks)
+        parsed = subprocess.run(
+            ["/bin/bash", "-n"],
+            input="\n".join(bash_blocks),
+            text=True,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(parsed.returncode, 0, parsed.stderr)
+        embedded_python = re.findall(
+            r"<<'PY'\n(?P<body>.*?)\nPY",
+            "\n".join(bash_blocks),
+            re.DOTALL,
+        )
+        self.assertEqual(len(embedded_python), 2)
+        for index, source in enumerate(embedded_python):
+            with self.subTest(embedded_python=index):
+                compile(source, f"<live-title-probe-{index}>", "exec")
 
         mutations = (
             (
@@ -3545,14 +3650,37 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             ),
             (
                 "title-edit-and-restore",
-                'gh pr edit "$pr" --title "$original_title"',
-                'printf "title restore omitted\\n"',
+                '-f title="$original_title" > /dev/null\n'
+                '   restore_run_id="$(discover_build_run',
+                '-f title="$probe_title" > /dev/null\n'
+                '   restore_run_id="$(discover_build_run',
             ),
             (
                 "three-exact-live-runs",
-                'gh run view "$restore_run_id" '
+                'gh run view "$restore_run_id" \\\n'
+                '     '
                 "--json event,headSha,conclusion,jobs,url",
                 'printf "restore run not inspected\\n"',
+            ),
+            (
+                "actual-evaluator-assertions",
+                "candidate_evidence.evaluate_candidate_runs(",
+                "candidate_evidence.CandidateEvidence(",
+            ),
+            (
+                "bounded-unseen-run-discovery",
+                'str(record["id"]) not in prior',
+                "True",
+            ),
+            (
+                "fail-fast-trapped-cleanup",
+                "set -euo pipefail",
+                "set -u",
+            ),
+            (
+                "fail-fast-trapped-cleanup",
+                "trap 'cleanup_probe $?' EXIT",
+                "true # cleanup trap omitted",
             ),
             (
                 "complete-probe-cleanup",
@@ -3575,6 +3703,30 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 changed = governance.replace(old, new, 1)
                 self.assertNotEqual(changed, governance)
                 self.assertIn(expected, live_title_probe_violations(changed))
+
+        identity_assertions = (
+            'test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" '
+            '= "$head_sha"',
+            'test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)" '
+            '= "$base_sha"',
+        )
+        for assertion in identity_assertions:
+            positions = [
+                match.start()
+                for match in re.finditer(re.escape(assertion), governance)
+            ]
+            self.assertEqual(len(positions), 3)
+            for run_index, position in enumerate(positions):
+                with self.subTest(assertion=assertion, run=run_index):
+                    changed = (
+                        governance[:position]
+                        + "true # run identity assertion omitted"
+                        + governance[position + len(assertion):]
+                    )
+                    self.assertIn(
+                        "three-run-head-base-identity",
+                        live_title_probe_violations(changed),
+                    )
 
     def test_tester_facing_case_contract_is_integrated(self):
         _, skill = read_skill()

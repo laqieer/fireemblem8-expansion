@@ -447,17 +447,153 @@ base predates `event_classifier.py`, base-authoritative routing correctly
 reports `classifier-bootstrap` and runs the full graph, so it is not a valid
 metadata-suppression probe until the classifier is merged into that base.
 
+Run all commands below in one Bash session. The discovery helper snapshots all
+prior run IDs, then makes at most 60 attempts five seconds apart. It accepts
+exactly one unseen `Build CI` pull-request run created after the mutation with
+the exact branch and head; timeout or ambiguity fails before `gh run watch`.
+
 1. From the issue worktree, choose unused temporary names and create a direct
-   child of the exact candidate branch with one deterministic tracked probe:
+   child of the exact candidate branch with one deterministic tracked probe.
+   Install cleanup before the first remote mutation:
 
    ```bash
+   set -euo pipefail
    source_root="$PWD"
    candidate_branch="${candidate_branch:-agent/issue-177}"
    probe_branch="${probe_branch:-validation/issue-177-title-probe}"
-   probe_worktree="${probe_worktree:-../issue-177-title-probe}"
+   probe_worktree="$source_root/../issue-177-title-probe"
    probe_file=".github/workflow-probes/issue-177-title-only.json"
+   evidence_dir="$source_root/build/test-artifacts/issue-177-live-probe"
+   pr=""
+   original_title="TC-WORKFLOW-BODY-EDIT-001 validation"
+   evidence_dir_created=false
+   probe_branch_created=false
+   probe_pushed=false
+
+   list_build_run_ids() {
+     gh api --method GET --paginate --slurp \
+       "repos/{owner}/{repo}/actions/workflows/build.yml/runs" \
+       -f event=pull_request -f branch="$probe_branch" -f per_page=100 \
+       --jq '.[].workflow_runs[].id'
+   }
+
+   discover_build_run() {
+     prior_ids="$1"
+     created_after="$2"
+     attempt=0
+     while [ "$attempt" -lt 60 ]; do
+       runs_json="$(gh api --method GET --paginate --slurp \
+         "repos/{owner}/{repo}/actions/workflows/build.yml/runs" \
+         -f event=pull_request -f branch="$probe_branch" -f per_page=100)"
+       if run_id="$(RUNS_JSON="$runs_json" PRIOR_IDS="$prior_ids" \
+           EXPECTED_CREATED_AFTER="$created_after" \
+           EXPECTED_BRANCH="$probe_branch" EXPECTED_HEAD="$head_sha" \
+           python3 - <<'PY'
+   import json
+   import os
+
+   prior = set(os.environ["PRIOR_IDS"].splitlines())
+   records = [
+       record
+       for page in json.loads(os.environ["RUNS_JSON"])
+       for record in page["workflow_runs"]
+   ]
+   matches = [
+       record
+       for record in records
+       if str(record["id"]) not in prior
+       and record["name"] == "Build CI"
+       and record["event"] == "pull_request"
+       and record["head_branch"] == os.environ["EXPECTED_BRANCH"]
+       and record["head_sha"] == os.environ["EXPECTED_HEAD"]
+       and record["created_at"] >= os.environ["EXPECTED_CREATED_AFTER"]
+   ]
+   if len(matches) != 1:
+       raise SystemExit(1)
+   print(matches[0]["id"])
+   PY
+       )"; then
+         test -n "$run_id"
+         printf '%s\n' "$run_id"
+         return 0
+       fi
+       attempt=$((attempt + 1))
+       sleep 5
+     done
+     echo "timed out waiting for one unseen exact Build CI run" >&2
+     return 1
+   }
+
+   cleanup_probe() {
+     status="$1"
+     cleanup_failed=0
+     trap - EXIT INT TERM
+     set +e
+     if [ -n "${pr:-}" ]; then
+       gh api --method PATCH "repos/{owner}/{repo}/pulls/$pr" \
+         -f title="$original_title" > /dev/null 2>&1 || cleanup_failed=1
+       gh pr close "$pr" > /dev/null 2>&1 || true
+       test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .state)" = "closed" \
+         || cleanup_failed=1
+     fi
+     if [ "${probe_pushed:-false}" = true ]; then
+       remote_probe_ref="$(git ls-remote --heads origin \
+         "refs/heads/$probe_branch")" || cleanup_failed=1
+       if [ -n "$remote_probe_ref" ]; then
+         git push origin --delete "$probe_branch" > /dev/null 2>&1 \
+           || cleanup_failed=1
+       fi
+       remote_probe_ref="$(git ls-remote --heads origin \
+         "refs/heads/$probe_branch")" || cleanup_failed=1
+       if [ -n "$remote_probe_ref" ]; then
+         cleanup_failed=1
+       fi
+     fi
+     if [ "${probe_branch_created:-false}" = true ] && \
+        [ -d "$probe_worktree" ]; then
+       git -C "$source_root" worktree remove "$probe_worktree" \
+         || cleanup_failed=1
+     fi
+     if [ "${probe_branch_created:-false}" = true ] && \
+        git -C "$source_root" show-ref --verify --quiet \
+          "refs/heads/$probe_branch"; then
+       git -C "$source_root" branch -D -- "$probe_branch" \
+         || cleanup_failed=1
+     fi
+     if [ "${evidence_dir_created:-false}" = true ] && \
+        [ "$evidence_dir" = \
+          "$source_root/build/test-artifacts/issue-177-live-probe" ]; then
+       rm -rf -- "$evidence_dir" || cleanup_failed=1
+     elif [ "${evidence_dir_created:-false}" = true ]; then
+       cleanup_failed=1
+     fi
+     if [ "$status" -ne 0 ]; then
+       return "$status"
+     fi
+     return "$cleanup_failed"
+   }
+   trap 'cleanup_probe $?' EXIT
+   trap 'exit 130' INT
+   trap 'exit 143' TERM
+
+   test ! -e "$probe_worktree"
+   test ! -e "$evidence_dir"
+   if git -C "$source_root" show-ref --verify --quiet \
+        "refs/heads/$probe_branch"; then
+     echo "local probe branch already exists" >&2
+     exit 1
+   fi
+   remote_probe_ref="$(git ls-remote --heads origin \
+     "refs/heads/$probe_branch")"
+   if [ -n "$remote_probe_ref" ]; then
+     echo "remote probe branch already exists" >&2
+     exit 1
+   fi
+   mkdir -p "$evidence_dir"
+   evidence_dir_created=true
    candidate_sha="$(git rev-parse "$candidate_branch^{commit}")"
    git worktree add -b "$probe_branch" "$probe_worktree" "$candidate_sha"
+   probe_branch_created=true
    cd "$probe_worktree"
    mkdir -p "$(dirname "$probe_file")"
    printf '{"candidate_sha":"%s","case":"TC-WORKFLOW-BODY-EDIT-001"}\n' \
@@ -469,12 +605,17 @@ metadata-suppression probe until the classifier is merged into that base.
    head_sha="$(git rev-parse HEAD)"
    test "$(git rev-parse "$head_sha^")" = "$candidate_sha"
    test "$(git diff-tree --no-commit-id --name-only -r "$head_sha")" = "$probe_file"
+   opened_prior_ids="$(list_build_run_ids)"
+   opened_created_after="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
    git push -u origin "$probe_branch"
+   probe_pushed=true
    pr_url="$(gh pr create --head "$probe_branch" --base "$candidate_branch" \
-     --title "TC-WORKFLOW-BODY-EDIT-001 validation" \
+     --title "$original_title" \
      --body "Validation-only disposable PR. Never merge.")"
-   pr="$(gh pr view "$probe_branch" --json number --jq .number)"
-   original_title="$(gh pr view "$pr" --json title --jq .title)"
+   pr="${pr_url##*/}"
+   case "$pr" in
+     ""|*[!0-9]*) echo "cannot parse disposable PR number" >&2; exit 1 ;;
+   esac
    base_ref="$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.ref)"
    base_sha="$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)"
    test "$base_ref" = "$candidate_branch"
@@ -484,35 +625,37 @@ metadata-suppression probe until the classifier is merged into that base.
    Never use `git commit --allow-empty`, an empty commit, or a merge commit.
    The tracked probe is deterministic for the candidate SHA and the direct
    parent assertion proves the head is a strict nonempty descendant.
-2. Record the opened-event Build run ID and require it to be green at the exact
-   `head_sha` and `base_sha`.
+2. Discover, watch, and save the opened-event full run:
 
    ```bash
-   opened_run_id="$(gh run list --workflow "Build CI" --event pull_request \
-     --branch "$probe_branch" --limit 1 --json databaseId --jq '.[0].databaseId')"
-   test -n "$opened_run_id"
+   opened_run_id="$(discover_build_run \
+     "$opened_prior_ids" "$opened_created_after")"
    test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" = "$head_sha"
    test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)" = "$base_sha"
    timeout 90m gh run watch "$opened_run_id" --interval 30 --exit-status
-   gh run view "$opened_run_id" --json event,headSha,conclusion,jobs,url
+   gh run view "$opened_run_id" \
+     --json event,headSha,conclusion,jobs,url > "$evidence_dir/opened.json"
    ```
 
    - **Parsed live opened-run job set:** {`event-identity`, `event-router`,
      `event-classifier`, `host-tests`, `build`, `extended-host-tests`, `legacy`,
      `summary`}.
-3. Run
-   `gh pr edit "$pr" --title "$original_title [title-only metadata probe]"`,
-   record the new run ID, and require the unchanged exact `head_sha`/`base_sha`.
+3. Snapshot prior IDs, apply the title-only mutation through the owner REST
+   endpoint, then discover, watch, and save its distinct metadata run:
 
    ```bash
-   title_run_id="$(gh run list --workflow "Build CI" --event pull_request \
-     --branch "$probe_branch" --limit 1 --json databaseId --jq '.[0].databaseId')"
-   test -n "$title_run_id"
+   title_prior_ids="$(list_build_run_ids)"
+   title_created_after="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+   probe_title="$original_title [title-only metadata probe]"
+   gh api --method PATCH "repos/{owner}/{repo}/pulls/$pr" \
+     -f title="$probe_title" > /dev/null
+   title_run_id="$(discover_build_run "$title_prior_ids" "$title_created_after")"
    test "$title_run_id" != "$opened_run_id"
    test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" = "$head_sha"
    test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)" = "$base_sha"
    timeout 90m gh run watch "$title_run_id" --interval 30 --exit-status
-   gh run view "$title_run_id" --json event,headSha,conclusion,jobs,url
+   gh run view "$title_run_id" \
+     --json event,headSha,conclusion,jobs,url > "$evidence_dir/title.json"
    ```
 
    - **Parsed live title-edit job/check set:** {`event-identity`,
@@ -521,40 +664,148 @@ metadata-suppression probe until the classifier is merged into that base.
    Skipped worker records may retain normal or literal unevaluated names and
    even a success-shaped conclusion, but the evaluator ignores them by stable
    worker job ID. No expensive worker may have a start timestamp.
-4. Normalize the real opened and title-edit job contexts and pass both runs to
-   `scripts.workflow_pilot.candidate_evidence.evaluate_candidate_runs`.
-   Require the opened full run to remain the candidate evidence and the
-   metadata run itself to remain ineligible.
-5. Restore the title with
-   `gh pr edit "$pr" --title "$original_title"`. Record the distinct restore
-   run ID at the unchanged exact head/base and require the restore to be
-   metadata-only too.
+4. Snapshot IDs before restoring the original title through the owner REST
+   endpoint. Discover, watch, and save the distinct restore metadata run:
 
    ```bash
-   restore_run_id="$(gh run list --workflow "Build CI" --event pull_request \
-     --branch "$probe_branch" --limit 1 --json databaseId --jq '.[0].databaseId')"
-   test -n "$restore_run_id"
+   restore_prior_ids="$(list_build_run_ids)"
+   restore_created_after="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+   gh api --method PATCH "repos/{owner}/{repo}/pulls/$pr" \
+     -f title="$original_title" > /dev/null
+   restore_run_id="$(discover_build_run \
+     "$restore_prior_ids" "$restore_created_after")"
    test "$restore_run_id" != "$title_run_id"
    test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" = "$head_sha"
    test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)" = "$base_sha"
    timeout 90m gh run watch "$restore_run_id" --interval 30 --exit-status
-   gh run view "$restore_run_id" --json event,headSha,conclusion,jobs,url
+   gh run view "$restore_run_id" \
+     --json event,headSha,conclusion,jobs,url > "$evidence_dir/restore.json"
    ```
 
    - **Parsed live title-restore job/check set:** {`event-identity`,
      `event-router`, `metadata-classifier`, `metadata-summary`}.
-
-   Normalize all three real runs and repeat the evaluator assertions.
-6. Close without merging and remove every temporary remote and local resource:
+5. Normalize all three real runs and execute the candidate evaluator's full,
+   metadata-only, combined, failed-full, and missing-full assertions:
 
    ```bash
-   gh pr close "$pr"
-   git push origin --delete "$probe_branch"
-   cd "$source_root"
-   git worktree remove "$probe_worktree"
-   git branch -D "$probe_branch"
+   python3 - "$head_sha" "$base_sha" \
+     "$opened_run_id" "$evidence_dir/opened.json" \
+     "$title_run_id" "$evidence_dir/title.json" \
+     "$restore_run_id" "$evidence_dir/restore.json" <<'PY'
+   import copy
+   import json
+   import sys
+
+   from scripts.workflow_pilot import candidate_evidence
+
+   head_sha, base_sha = sys.argv[1:3]
+   run_specs = (
+       ("full", int(sys.argv[3]), sys.argv[4]),
+       ("metadata-only", int(sys.argv[5]), sys.argv[6]),
+       ("metadata-only", int(sys.argv[7]), sys.argv[8]),
+   )
+
+   def normalize_run(mode, run_id, path):
+       with open(path, encoding="utf-8") as source:
+           raw = json.load(source)
+       assert raw["event"] == "pull_request"
+       assert raw["headSha"] == head_sha
+       assert raw["conclusion"] == "success"
+       jobs = {job["name"]: job for job in raw["jobs"]}
+       names = (
+           (
+               ("event-identity", "event-identity"),
+               ("event-router", "event-router"),
+               ("event-classifier", "event-classifier"),
+               ("host-tests", "host-tests"),
+               ("build", "build"),
+               ("extended-host-tests", "extended-host-tests"),
+               ("legacy", "legacy"),
+               ("summary", "summary"),
+           )
+           if mode == "full"
+           else (
+               ("event-identity", "event-identity"),
+               ("event-router", "event-router"),
+               ("event-classifier", "metadata-classifier"),
+               ("summary", "metadata-summary"),
+           )
+       )
+       contexts = []
+       for job_id, name in names:
+           job = jobs[name]
+           contexts.append(
+               {
+                   "conclusion": job["conclusion"],
+                   "job_id": job_id,
+                   "name": name,
+               }
+           )
+       return {
+           "base_sha": base_sha,
+           "contexts": contexts,
+           "event": "pull_request",
+           "head_sha": head_sha,
+           "run_id": run_id,
+       }
+
+   opened, title, restore = [
+       normalize_run(*spec)
+       for spec in run_specs
+   ]
+   opened_result = candidate_evidence.evaluate_candidate_runs(
+       [opened], head_sha=head_sha, base_sha=base_sha
+   )
+   assert opened_result.eligible and opened_result.run_id == opened["run_id"]
+   title_result = candidate_evidence.evaluate_candidate_runs(
+       [title], head_sha=head_sha, base_sha=base_sha
+   )
+   assert not title_result.eligible and title_result.mode == "metadata-only"
+   full_title_result = candidate_evidence.evaluate_candidate_runs(
+       [opened, title], head_sha=head_sha, base_sha=base_sha
+   )
+   assert full_title_result.eligible
+   assert full_title_result.run_id == opened["run_id"]
+   failed_opened = copy.deepcopy(opened)
+   next(
+       context
+       for context in failed_opened["contexts"]
+       if context["job_id"] == "summary"
+   )["conclusion"] = "failure"
+   failed_result = candidate_evidence.evaluate_candidate_runs(
+       [failed_opened, title], head_sha=head_sha, base_sha=base_sha
+   )
+   assert not failed_result.eligible
+   all_runs_result = candidate_evidence.evaluate_candidate_runs(
+       [opened, title, restore], head_sha=head_sha, base_sha=base_sha
+   )
+   assert all_runs_result.eligible
+   assert all_runs_result.run_id == opened["run_id"]
+   restore_result = candidate_evidence.evaluate_candidate_runs(
+       [restore], head_sha=head_sha, base_sha=base_sha
+   )
+   assert not restore_result.eligible and restore_result.mode == "metadata-only"
+   failed_restore_result = candidate_evidence.evaluate_candidate_runs(
+       [failed_opened, title, restore], head_sha=head_sha, base_sha=base_sha
+   )
+   assert not failed_restore_result.eligible
+   PY
    ```
 
+   The title-only and restore runs alone prove the missing-full negative; the
+   copied failed summary proves the failed-full negative without inventing a
+   success-shaped fallback.
+6. Run exact idempotent cleanup explicitly. The EXIT trap performs the same
+   cleanup automatically on any earlier failure:
+
+   ```bash
+   trap - EXIT INT TERM
+   cleanup_probe 0
+   ```
+
+   Cleanup restores the original title if necessary, closes without merging,
+   deletes only the exact remote probe branch, removes only the exact isolated
+   worktree/local probe branch, and deletes only the exact evidence directory.
    Architecture/review comments remain unmarked; only the canonical evolving
    evidence comment carries the one marker.
 
