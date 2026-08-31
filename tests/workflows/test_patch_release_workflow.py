@@ -155,10 +155,11 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         "Download private base image",
         "Create and verify patch artifact",
         "Cleanup and verify private base",
+        "Revalidate patch-only upload",
     )
     if any(names.count(name) != 1 for name in required):
         return ["publisher boundary steps differ"]
-    verify, dependencies, isolated_build, download, create, cleanup = (
+    verify, dependencies, isolated_build, download, create, cleanup, revalidate = (
         names.index(name) for name in required
     )
     if not (
@@ -167,10 +168,11 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         and download == isolated_build + 1
         and create == download + 1
         and cleanup == create + 1
+        and revalidate == cleanup + 1
     ):
         errors.append("private base lifetime ordering differs")
-    if cleanup != len(steps) - 2:
-        errors.append("private cleanup must immediately precede upload")
+    if revalidate != len(steps) - 2:
+        errors.append("late patch-only revalidation must immediately precede upload")
     candidate_markers = (
         "/usr/bin/apt-get",
         "./build_tools.sh",
@@ -212,8 +214,42 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "--no-new-privs" not in isolated_step
         or "--bounding-set=-all" not in isolated_step
         or "/usr/bin/env -i" not in isolated_step
-        or "GITHUB_ENV" in isolated_step
-        or "/usr/bin/env -i BASH_ENV=" in isolated_step
+        or "GITHUB_ENV=\"$GITHUB_ENV\"" in isolated_step
+        or "BASH_ENV=\"$BASH_ENV\"" in isolated_step
+        or "/usr/bin/mount --make-rprivate /" not in isolated_step
+        or "/usr/bin/mount -o remount,bind,ro /" not in isolated_step
+        or "runner temp is outside the masked host tree" not in isolated_step
+        or "for hidden in /home/runner /root /var /run /sys; do"
+        not in isolated_step
+        or "builder-tmp /tmp" not in isolated_step
+        or "builder-dev /dev" not in isolated_step
+        or "builder-shm /dev/shm" not in isolated_step
+        or "/usr/share/dbus-1/system-services" not in isolated_step
+        or "/run/dbus/system_bus_socket" not in isolated_step
+        or "/run/docker.sock" not in isolated_step
+        or "/run/containerd/containerd.sock" not in isolated_step
+        or "/run/systemd/private" not in isolated_step
+        or "/run/snapd.socket" not in isolated_step
+        or 'test ! -e /sys/fs/cgroup/cgroup.procs' not in isolated_step
+        or "unexpected writable mount" not in isolated_step
+        or re.search(
+            r"/usr/bin/mount -o remount,bind,rw /(?:opt|usr(?:/share)?)"
+            r"(?:\s|$)",
+            isolated_step,
+        )
+        or "/sys/fs/cgroup/cgroup.controllers" not in isolated_step
+        or 'test -f "$builder_cgroup/cgroup.kill"' not in isolated_step
+        or 'test -f "$builder_cgroup/cgroup.procs"' not in isolated_step
+        or 'test -r "$builder_cgroup/cgroup.procs"' not in isolated_step
+        or 'test -z "$(builder_cgroup_pids)"' not in isolated_step
+        or 'test ! -e "$builder_cgroup"' not in isolated_step
+        or 'builder_cgroup_owned=1' not in isolated_step
+        or '/usr/bin/sudo /usr/bin/rmdir -- "$builder_cgroup"'
+        not in isolated_step
+        or "$builder_cgroup/cgroup.kill" not in isolated_step
+        or "printf '1\\n'" not in isolated_step
+        or "/usr/bin/sudo /usr/bin/tee" not in isolated_step
+        or re.search(r"/bin/kill[^\n]*[\"']?\$pid", isolated_step)
         or 'test ! -L "$source"' not in isolated_step
         or 'test "$(/usr/bin/stat -c %h "$source")" = 1' not in isolated_step
         or "handoff_names=" not in isolated_step
@@ -234,9 +270,20 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or 'test ! -e "$BUILDER_ROOT"' not in isolated_step
         or 'test ! -e "$PATCH_WHEELHOUSE"' not in isolated_step
         or (
-            'remove_builder_state\n'
+            'test -z "$(builder_group_pids "$builder_pgid")"\n'
+            '        test -z "$(builder_cgroup_pids)"\n'
+            '        test -z "$(builder_uid_pids "$builder_uid")"\n'
+            '        remove_builder_cgroup\n'
+            '        test ! -e "$builder_cgroup"\n'
+            '        handoff_root='
+        )
+        not in isolated_step
+        or (
+            'remove_builder_cgroup\n'
+            '        remove_builder_state\n'
             '        trap - EXIT INT TERM\n'
             '        test -z "$(builder_group_pids "$builder_pgid")"\n'
+            '        test ! -e "$builder_cgroup"\n'
             '        test -z "$(builder_uid_pids "$builder_uid")"\n'
             '        test -z "$(/usr/bin/getent passwd "$builder_user" || true)"\n'
             '        test ! -e "$BUILDER_ROOT"\n'
@@ -250,6 +297,7 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
     secret_step = steps[download]
     create_step = steps[create]
     cleanup_step = steps[cleanup]
+    revalidate_step = steps[revalidate]
     if (
         "BASEROM_URL: ${{ secrets.BASEROM_URL }}" not in secret_step
         or "/usr/bin/mktemp -d" not in secret_step
@@ -272,9 +320,27 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or
         'test ! -e "$BASE_IMAGE"' not in cleanup_step
         or "BASEROM_URL" in cleanup_step
+        or "BASE_IMAGE" in revalidate_step
         or "BASE_IMAGE" in steps[-1]
     ):
         errors.append("private cleanup boundary differs")
+    if (
+        "PATCH_ARTIFACT_DIR: ${{ runner.temp }}/patch-artifact"
+        not in revalidate_step
+        or "artifact_names=" not in revalidate_step
+        or "README.txt" not in revalidate_step
+        or "fireemblem8-expansion-all-locales-all-features-aapcs.bps"
+        not in revalidate_step
+        or "manifest.json" not in revalidate_step
+        or 'test ! -L "$artifact"' not in revalidate_step
+        or 'test "$(/usr/bin/stat -c %F "$artifact")" = "regular file"'
+        not in revalidate_step
+        or 'test "$(/usr/bin/stat -c %h "$artifact")" = 1'
+        not in revalidate_step
+        or "PATCH_INPUT_ROOT" in revalidate_step
+        or "target.gba" in revalidate_step
+    ):
+        errors.append("late patch-only upload revalidation differs")
     if (
         "actions/upload-artifact@" not in steps[-1]
         or "path: ${{ runner.temp }}/patch-artifact" not in steps[-1]
@@ -446,8 +512,32 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("/usr/bin/unshare", self.patch_job)
         self.assertIn("--kill-child=KILL", self.patch_job)
         self.assertIn("--net", self.patch_job)
+        self.assertIn("/usr/bin/mount --make-rprivate /", self.patch_job)
+        self.assertIn("/usr/bin/mount -o remount,bind,ro /", self.patch_job)
+        self.assertIn("runner temp is outside the masked host tree", self.patch_job)
+        self.assertIn("for hidden in /home/runner /root /var /run /sys; do", self.patch_job)
+        self.assertIn("/run/dbus/system_bus_socket", self.patch_job)
+        self.assertIn("/run/docker.sock", self.patch_job)
+        self.assertIn("/run/containerd/containerd.sock", self.patch_job)
+        self.assertIn("/run/systemd/private", self.patch_job)
+        self.assertIn("/run/snapd.socket", self.patch_job)
         self.assertIn("/usr/bin/setpriv", self.patch_job)
         self.assertIn("--bounding-set=-all", self.patch_job)
+        self.assertIn('"$builder_cgroup/cgroup.kill"', self.patch_job)
+        self.assertIn('test -z "$(builder_cgroup_pids)"', self.patch_job)
+        self.assertIn('test ! -e "$builder_cgroup"', self.patch_job)
+        self.assertNotRegex(self.patch_job, r"/bin/kill[^\n]*[\"']?\$pid")
+        stop = self.patch_job.index(
+            'test -z "$(builder_cgroup_pids)"',
+            self.patch_job.index('wait "$builder_supervisor_pid"'),
+        )
+        remove = self.patch_job.index("remove_builder_cgroup", stop)
+        stage = self.patch_job.index(
+            '/usr/bin/install -d -m 0700 "$PATCH_INPUT_ROOT"',
+            remove,
+        )
+        self.assertLess(stop, remove)
+        self.assertLess(remove, stage)
         self.assertIn(
             'test -z "$(builder_uid_pids "$builder_uid")"',
             self.patch_job,
@@ -482,9 +572,11 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         download = names.index("Download private base image")
         create = names.index("Create and verify patch artifact")
         cleanup = names.index("Cleanup and verify private base")
+        revalidate = names.index("Revalidate patch-only upload")
         self.assertEqual(create, download + 1)
         self.assertEqual(cleanup, create + 1)
-        self.assertEqual(len(steps) - 1, cleanup + 1)
+        self.assertEqual(revalidate, cleanup + 1)
+        self.assertEqual(len(steps) - 1, revalidate + 1)
         create_step = steps[create]
         for forbidden in (
             "./",
@@ -506,6 +598,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertNotIn("BASEROM_URL", create_step)
         self.assertIn('test ! -e "$BASE_IMAGE"', steps[cleanup])
         self.assertIn("      if: always()", steps[cleanup])
+        self.assertIn("artifact_names=", steps[revalidate])
         self.assertNotIn("BASE_IMAGE", steps[-1])
 
     def test_every_private_boundary_step_scrubs_ambient_execution_state(self):
@@ -517,6 +610,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "Download private base image",
             "Create and verify patch artifact",
             "Cleanup and verify private base",
+            "Revalidate patch-only upload",
         ):
             with self.subTest(step=step_name):
                 step = next(item for item in steps if f"- name: {step_name}" in item)
@@ -542,6 +636,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         download = next(step for step in steps if "Download private base image" in step)
         create = next(step for step in steps if "Create and verify patch artifact" in step)
         cleanup = next(step for step in steps if "Cleanup and verify private base" in step)
+        revalidate = next(step for step in steps if "Revalidate patch-only upload" in step)
         isolated = next(
             step
             for step in steps
@@ -586,11 +681,15 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         disabled_cleanup = self.text.replace(cleanup, disabled_cleanup_step, 1)
-        missing_network_namespace = self.text.replace(" --net --ipc --uts", " --ipc --uts", 1)
+        missing_network_namespace = self.text.replace(
+            isolated,
+            isolated.replace(" --net --ipc --uts", " --ipc --uts"),
+            1,
+        )
         missing_pid_teardown = self.text.replace(
             isolated,
             isolated.replace(
-                'test -z "$(builder_uid_pids "$builder_uid")"',
+                'test -z "$(builder_cgroup_pids)"',
                 "true",
             ),
             1,
@@ -613,13 +712,82 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         leaked_github_env = self.text.replace(
-            '/usr/bin/env -i HOME="$BUILDER_ROOT/home"',
-            '/usr/bin/env -i GITHUB_ENV="$GITHUB_ENV" HOME="$BUILDER_ROOT/home"',
+            "/usr/bin/env -i HOME=/mnt/home",
+            '/usr/bin/env -i GITHUB_ENV="$GITHUB_ENV" HOME=/mnt/home',
             1,
         )
         leaked_bash_env = self.text.replace(
-            '/usr/bin/env -i HOME="$BUILDER_ROOT/home"',
-            '/usr/bin/env -i BASH_ENV="$BASH_ENV" HOME="$BUILDER_ROOT/home"',
+            "/usr/bin/env -i HOME=/mnt/home",
+            '/usr/bin/env -i BASH_ENV="$BASH_ENV" HOME=/mnt/home',
+            1,
+        )
+        writable_host_root = self.text.replace(
+            "/usr/bin/mount -o remount,bind,ro /",
+            "/usr/bin/mount -o remount,bind,rw /",
+            1,
+        )
+        writable_dbus_activation = self.text.replace(
+            "/usr/bin/mount -o remount,bind,ro /",
+            "/usr/bin/mount -o remount,bind,ro /\n"
+            "        /usr/bin/mount --bind /usr/share /usr/share\n"
+            "        /usr/bin/mount -o remount,bind,rw /usr/share",
+            1,
+        )
+        writable_opt = self.text.replace(
+            "/usr/bin/mount -o remount,bind,ro /",
+            "/usr/bin/mount -o remount,bind,ro /\n"
+            "        /usr/bin/mount --bind /opt /opt\n"
+            "        /usr/bin/mount -o remount,bind,rw /opt",
+            1,
+        )
+        exposed_host_service_sockets = self.text.replace(
+            "for hidden in /home/runner /root /var /run /sys; do",
+            "for hidden in /home/runner /root /var /sys; do",
+            1,
+        )
+        writable_host_runner_temp = self.text.replace(
+            isolated,
+            isolated.replace(
+                "/usr/bin/mount -o remount,bind,ro /",
+                "/usr/bin/mount -o remount,bind,rw /",
+                1,
+            )
+            .replace(
+                "for hidden in /home/runner /root /var /run /sys; do",
+                "for hidden in /root /var /run /sys; do",
+                1,
+            ),
+            1,
+        )
+        daemon_escape_without_cgroup = self.text.replace(
+            isolated,
+            isolated.replace(
+                'printf \'1\\n\' \\\n'
+                '                | /usr/bin/sudo /usr/bin/tee \\\n'
+                '                  "$builder_cgroup/cgroup.kill" > /dev/null',
+                "true",
+                1,
+            ),
+            1,
+        )
+        cgroup_escape_surface = self.text.replace(
+            "for hidden in /home/runner /root /var /run /sys; do",
+            "for hidden in /home/runner /root /var /run; do",
+            1,
+        )
+        unavailable_cgroup = self.text.replace(
+            "        test -r /sys/fs/cgroup/cgroup.controllers",
+            "        true",
+            1,
+        )
+        unavailable_cgroup_kill = self.text.replace(
+            '        test -f "$builder_cgroup/cgroup.kill"',
+            "        true",
+            1,
+        )
+        unavailable_mount_namespace = self.text.replace(
+            "        /usr/bin/mount --make-rprivate /",
+            "        true",
             1,
         )
         retained_candidate_workspace = self.text.replace(
@@ -666,6 +834,19 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "true",
             1,
         )
+        disabled_late_revalidation = self.text.replace(
+            revalidate,
+            "    - name: Revalidate patch-only upload\n"
+            "      run: true\n\n",
+            1,
+        )
+        candidate_patch_artifact_mutation = self.text.replace(
+            revalidate,
+            revalidate
+            + "    - name: Candidate patch artifact mutation\n"
+            "      run: touch \"$RUNNER_TEMP/patch-artifact/target.gba\"\n\n",
+            1,
+        )
         rom_artifact_transfer = self.text.replace(
             "\n  extended-host-tests:\n",
             "\n    - uses: actions/upload-artifact@"
@@ -684,17 +865,29 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             ("missing-cleanup", removed_cleanup),
             ("disabled-cleanup-step", disabled_cleanup),
             ("missing-network-namespace", missing_network_namespace),
-            ("missing-builder-pid-teardown", missing_pid_teardown),
+            ("missing-builder-cgroup-teardown", missing_pid_teardown),
             ("missing-symlink-guard", missing_symlink_guard),
             ("missing-hardlink-guard", missing_hardlink_guard),
             ("leaked-github-env", leaked_github_env),
             ("leaked-bash-env", leaked_bash_env),
+            ("writable-host-root", writable_host_root),
+            ("writable-dbus-activation", writable_dbus_activation),
+            ("writable-opt", writable_opt),
+            ("exposed-host-service-sockets", exposed_host_service_sockets),
+            ("writable-host-runner-temp", writable_host_runner_temp),
+            ("daemon-escape-without-cgroup-kill", daemon_escape_without_cgroup),
+            ("cgroup-escape-surface", cgroup_escape_surface),
+            ("unavailable-cgroup-v2", unavailable_cgroup),
+            ("unavailable-cgroup-kill", unavailable_cgroup_kill),
+            ("unavailable-mount-isolation", unavailable_mount_namespace),
             ("retained-candidate-workspace", retained_candidate_workspace),
             ("untracked-builder-user", untracked_builder_user),
             ("untracked-builder-root", untracked_builder_root),
             ("ambient-dependency-python", ambient_dependency_python),
             ("unverified-builder-state", unverified_builder_state),
             ("allowed-unexpected-handoff", allowed_unexpected_handoff),
+            ("disabled-late-revalidation", disabled_late_revalidation),
+            ("candidate-patch-artifact-mutation", candidate_patch_artifact_mutation),
             ("complete-rom-artifact-transfer", rom_artifact_transfer),
         ):
             with self.subTest(name=name):
@@ -897,10 +1090,16 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             self.text,
             "Build candidate in isolated namespace and stage public inputs",
         )
-        start = full_script.index('handoff_root="$BUILDER_ROOT/handoff"')
+        start = full_script.index('handoff_names="$(/usr/bin/find "$handoff_root"')
         end_marker = 'test "$metadata_size" -le 1048576'
         end = full_script.index(end_marker, start) + len(end_marker)
-        script = full_script[start:end]
+        script = (
+            'handoff_root="$BUILDER_ROOT/handoff"\n'
+            + full_script[start:end].replace(
+                '/usr/bin/sudo /bin/chown "$host_uid:$host_gid" "$source"',
+                "true",
+            )
+        )
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
@@ -1176,7 +1375,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     ]:
                         publisher_interpreters.add(command[index])
 
-        self.assertEqual(install_interpreters, set())
+        self.assertEqual(install_interpreters, {"$HOME/venv/bin/python3"})
         self.assertEqual(publisher_interpreters, {"/usr/bin/python3"})
 
     def test_embedded_publisher_shell_and_python_are_syntactically_valid(self):
@@ -1236,6 +1435,32 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                             "<patch-release-workflow>",
                             "exec",
                         )
+
+        isolated_step = next(
+            step
+            for step in patch_release_step_blocks(self.text)
+            if "Build candidate in isolated namespace and stage public inputs"
+            in step
+        )
+        for delimiter in ("BUILDER_ISOLATION", "CANDIDATE_BUILD"):
+            match = re.search(
+                rf"(?ms)<<'{delimiter}'\n(?P<body>.*?)^        {delimiter}$",
+                isolated_step,
+            )
+            self.assertIsNotNone(match, delimiter)
+            body = "\n".join(
+                line[8:] if line.startswith("        ") else line
+                for line in match.group("body").splitlines()
+            )
+            with self.subTest(language="heredoc-shell", delimiter=delimiter):
+                completed = subprocess.run(
+                    ["/bin/bash", "-n"],
+                    input=body,
+                    text=True,
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
 
 
 if __name__ == "__main__":

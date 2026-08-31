@@ -937,6 +937,8 @@ jobs:
         builder_user=ci-patch-builder
         builder_uid=""
         builder_gid=""
+        builder_cgroup=""
+        builder_cgroup_owned=0
         builder_pgid=""
         builder_supervisor_pid=""
         builder_root_owned=0
@@ -950,6 +952,12 @@ jobs:
         builder_uid_pids() {
           /usr/bin/ps -eo uid=,pid= \
             | /usr/bin/awk -v uid="$1" '$1 == uid {print $2}'
+        }
+        builder_cgroup_pids() {
+          if [ "$builder_cgroup_owned" = 1 ] && \
+             [ -r "$builder_cgroup/cgroup.procs" ]; then
+            /bin/cat "$builder_cgroup/cgroup.procs"
+          fi
         }
         terminate_builder_processes() {
           cleanup_failed=0
@@ -973,26 +981,36 @@ jobs:
                 || cleanup_failed=1
             fi
           fi
-          if [ -n "$builder_uid" ]; then
-            remaining_pids="$(builder_uid_pids "$builder_uid")"
-            if [ -n "$remaining_pids" ]; then
-              while IFS= read -r pid; do
-                /usr/bin/sudo /bin/kill -TERM "$pid" \
-                  2>/dev/null || true
-              done <<< "$remaining_pids"
-              /bin/sleep 1
-              remaining_pids="$(builder_uid_pids "$builder_uid")"
+          if [ "$builder_cgroup_owned" = 1 ]; then
+            if [ -n "$(builder_cgroup_pids)" ]; then
+              printf '1\n' \
+                | /usr/bin/sudo /usr/bin/tee \
+                  "$builder_cgroup/cgroup.kill" > /dev/null
+              for attempt in $(/usr/bin/seq 1 50); do
+                if [ -z "$(builder_cgroup_pids)" ]; then
+                  break
+                fi
+                /bin/sleep 0.1
+              done
             fi
-            if [ -n "$remaining_pids" ]; then
-              while IFS= read -r pid; do
-                /usr/bin/sudo /bin/kill -KILL "$pid" \
-                  2>/dev/null || true
-              done <<< "$remaining_pids"
-              /bin/sleep 1
-            fi
-            test -z "$(builder_uid_pids "$builder_uid")" \
-              || cleanup_failed=1
+            test -z "$(builder_cgroup_pids)" || cleanup_failed=1
           fi
+          test -z "$(builder_uid_pids "$builder_uid")" \
+            || cleanup_failed=1
+          return "$cleanup_failed"
+        }
+        remove_builder_cgroup() {
+          cleanup_failed=0
+          if [ "$builder_cgroup_owned" = 1 ]; then
+            test -z "$(builder_cgroup_pids)" || cleanup_failed=1
+            if [ "$cleanup_failed" = 0 ] && \
+               /usr/bin/sudo /usr/bin/rmdir -- "$builder_cgroup"; then
+              builder_cgroup_owned=0
+            else
+              cleanup_failed=1
+            fi
+          fi
+          test ! -e "$builder_cgroup" || cleanup_failed=1
           return "$cleanup_failed"
         }
         remove_builder_state() {
@@ -1037,12 +1055,16 @@ jobs:
           if [ -n "$builder_supervisor_pid" ]; then
             wait "$builder_supervisor_pid" 2>/dev/null
           fi
+          remove_builder_cgroup
+          cgroup_cleanup="$?"
           remove_builder_state
           state_cleanup="$?"
           if [ "$status" -ne 0 ]; then
             exit "$status"
           fi
-          if [ "$process_cleanup" -ne 0 ] || [ "$state_cleanup" -ne 0 ]; then
+          if [ "$process_cleanup" -ne 0 ] || \
+             [ "$cgroup_cleanup" -ne 0 ] || \
+             [ "$state_cleanup" -ne 0 ]; then
             exit 1
           fi
           exit 0
@@ -1058,6 +1080,7 @@ jobs:
         /usr/bin/install -d -m 0700 "$BUILDER_ROOT"
         builder_root_owned=1
         /usr/bin/install -d -m 0700 \
+          "$BUILDER_ROOT/control" "$BUILDER_ROOT/handoff" \
           "$BUILDER_ROOT/home" "$BUILDER_ROOT/source" \
           "$BUILDER_ROOT/tmp" "$BUILDER_ROOT/wheelhouse"
         /bin/cp -a -- "$GITHUB_WORKSPACE_PATH/." "$BUILDER_ROOT/source/"
@@ -1079,20 +1102,195 @@ jobs:
         test "$(/usr/bin/id -u "$builder_user")" = "$builder_uid"
         builder_gid="$(/usr/bin/id -g "$builder_user")"
         test -z "$(builder_uid_pids "$builder_uid")"
-        /usr/bin/sudo /bin/chown -R "$builder_uid:$builder_gid" "$BUILDER_ROOT"
+        /usr/bin/tee "$BUILDER_ROOT/control/builder-isolation.sh" \
+          > /dev/null <<'BUILDER_ISOLATION'
+        #!/bin/bash
+        set -euo pipefail
+        cgroup_path="$1"
+        builder_uid="$2"
+        builder_gid="$3"
+        builder_root="$4"
+        host_runner_temp="$5"
+        candidate_script="$6"
+        printf '%s\n' "$$" > "$cgroup_path/cgroup.procs"
+        /usr/bin/grep -Fqx "$$" "$cgroup_path/cgroup.procs"
+        cd /
+        /usr/bin/mount --make-rprivate /
+        /usr/bin/mount --bind / /
+        /usr/bin/mount -o remount,bind,ro /
+        case "$host_runner_temp" in
+          /home/runner/*) ;;
+          *) echo "runner temp is outside the masked host tree" >&2; exit 1 ;;
+        esac
+        /usr/bin/mount -t tmpfs \
+          -o nosuid,nodev,noexec,mode=0755,size=16m \
+          builder-work /mnt
+        /usr/bin/mkdir -m 0755 /mnt/control /mnt/handoff /mnt/home \
+          /mnt/source /mnt/tmp /mnt/wheelhouse
+        /usr/bin/mount --bind "$builder_root/source" /mnt/source
+        /usr/bin/mount -o remount,bind,rw,nosuid,nodev /mnt/source
+        /usr/bin/mount --bind "$builder_root/home" /mnt/home
+        /usr/bin/mount -o remount,bind,rw,nosuid,nodev /mnt/home
+        /usr/bin/mount --bind "$builder_root/tmp" /mnt/tmp
+        /usr/bin/mount -o remount,bind,rw,nosuid,nodev /mnt/tmp
+        /usr/bin/mount --bind "$builder_root/handoff" /mnt/handoff
+        /usr/bin/mount -o remount,bind,rw,nosuid,nodev,noexec /mnt/handoff
+        /usr/bin/mount --bind "$builder_root/wheelhouse" /mnt/wheelhouse
+        /usr/bin/mount -o remount,bind,ro,nosuid,nodev,noexec \
+          /mnt/wheelhouse
+        /usr/bin/install -m 0555 "$candidate_script" \
+          /mnt/control/candidate-build.sh
+        /usr/bin/mount --bind /mnt/control /mnt/control
+        /usr/bin/mount -o remount,bind,ro,nosuid,nodev,noexec /mnt/control
+        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt
+        unmount_if_mounted() {
+          if /usr/bin/mountpoint -q "$1"; then
+            /usr/bin/umount --recursive "$1"
+          fi
+        }
+        unmount_if_mounted /home/runner
+        unmount_if_mounted /root
+        unmount_if_mounted /var
+        unmount_if_mounted /run
+        unmount_if_mounted /sys
+        for hidden in /home/runner /root /var /run /sys; do
+          test -d "$hidden"
+          /usr/bin/mount -t tmpfs \
+            -o nosuid,nodev,noexec,mode=0755,size=1m \
+            builder-mask "$hidden"
+          /usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$hidden"
+        done
+        unmount_if_mounted /tmp
+        /usr/bin/mount -t tmpfs \
+          -o nosuid,nodev,noexec,mode=1777,size=256m \
+          builder-tmp /tmp
+        unmount_if_mounted /dev
+        /usr/bin/mount -t tmpfs \
+          -o nosuid,mode=0755,size=4m builder-dev /dev
+        /usr/bin/mknod -m 0666 /dev/null c 1 3
+        /usr/bin/mknod -m 0666 /dev/zero c 1 5
+        /usr/bin/mknod -m 0666 /dev/random c 1 8
+        /usr/bin/mknod -m 0666 /dev/urandom c 1 9
+        /usr/bin/mkdir -m 1777 /dev/shm
+        /usr/bin/mount -t tmpfs \
+          -o nosuid,nodev,noexec,mode=1777,size=64m \
+          builder-shm /dev/shm
+        /usr/bin/ln -s /proc/self/fd /dev/fd
+        /usr/bin/ln -s /proc/self/fd/0 /dev/stdin
+        /usr/bin/ln -s /proc/self/fd/1 /dev/stdout
+        /usr/bin/ln -s /proc/self/fd/2 /dev/stderr
+        /usr/bin/mount -o remount,ro,nosuid /dev
+        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /proc
+        exec /usr/bin/setpriv --reuid="$builder_uid" \
+          --regid="$builder_gid" --clear-groups --no-new-privs \
+          --bounding-set=-all --inh-caps=-all --ambient-caps=-all \
+          /usr/bin/env -i HOME=/mnt/home GITHUB_WORKSPACE=/mnt/source \
+          HOST_RUNNER_TEMP="$host_runner_temp" LC_ALL=C \
+          PATH=/usr/bin:/bin PIP_CONFIG_FILE=/dev/null \
+          RUNNER_TEMP=/mnt/tmp TMPDIR=/mnt/tmp \
+          WHEELHOUSE=/mnt/wheelhouse HANDOFF=/mnt/handoff \
+          /bin/bash --noprofile --norc -euo pipefail \
+          /mnt/control/candidate-build.sh
+        BUILDER_ISOLATION
+        /usr/bin/tee "$BUILDER_ROOT/control/candidate-build.sh" \
+          > /dev/null <<'CANDIDATE_BUILD'
+        #!/bin/bash
+        set -euo pipefail
+        umask 077
+        test -z "${BASH_ENV-}"
+        test -z "${ENV-}"
+        test -z "${GITHUB_ENV-}"
+        test -z "${LD_LIBRARY_PATH-}"
+        test -z "${LD_PRELOAD-}"
+        test -z "${PYTHONPATH-}"
+        for readonly_path in / /etc /opt /usr /usr/share \
+          /usr/share/dbus-1/system-services
+        do
+          test -e "$readonly_path"
+          test ! -w "$readonly_path"
+        done
+        test ! -w "$WHEELHOUSE"
+        test ! -w "$HOST_RUNNER_TEMP"
+        for writable_path in "$GITHUB_WORKSPACE" "$HOME" "$RUNNER_TEMP" \
+          "$HANDOFF"
+        do
+          test -d "$writable_path"
+          test -w "$writable_path"
+        done
+        for socket_path in /run/dbus/system_bus_socket \
+          /run/docker.sock /run/containerd/containerd.sock \
+          /run/systemd/private /run/snapd.socket \
+          /run/podman/podman.sock /var/run/docker.sock \
+          /var/run/dbus/system_bus_socket
+        do
+          test ! -e "$socket_path"
+        done
+        test ! -e /sys/fs/cgroup/cgroup.procs
+        test -z "$(/usr/bin/find / -xdev -type s \
+          -print -quit 2>/dev/null)"
+        while read -r mount_target mount_options; do
+          case ",$mount_options," in
+            *,rw,*)
+              case "$mount_target" in
+                /dev/shm|/mnt/handoff|/mnt/home|/mnt/source|/mnt/tmp|/tmp) ;;
+                *) echo "unexpected writable mount: $mount_target" >&2; exit 1 ;;
+              esac
+              ;;
+          esac
+        done < <(/usr/bin/findmnt -Rno TARGET,OPTIONS /)
+        /usr/bin/python3 -m venv "$HOME/venv"
+        "$HOME/venv/bin/python3" -m pip install --no-index --find-links="$WHEELHOUSE" --require-hashes --only-binary=:all: --no-deps -r "$GITHUB_WORKSPACE/.github/requirements/build.txt"
+        cd "$GITHUB_WORKSPACE"
+        ./build_tools.sh
+        make expansion-modern-map-menu-presentation-check -j1
+        /usr/bin/install -m 0400 \
+          build/expansion-modern-all-locales-all-features/release/aapcs/fireemblem8.gba \
+          "$HANDOFF/target.gba"
+        /usr/bin/install -m 0400 \
+          build/expansion-modern-all-locales-all-features/release/aapcs/generated/expansion_build_metadata.json \
+          "$HANDOFF/metadata.json"
+        CANDIDATE_BUILD
+        /bin/chmod 0500 "$BUILDER_ROOT/control/builder-isolation.sh"
+        /bin/chmod 0400 "$BUILDER_ROOT/control/candidate-build.sh"
+        /usr/bin/sudo /bin/chown -R "$builder_uid:$builder_gid" \
+          "$BUILDER_ROOT/handoff" "$BUILDER_ROOT/home" \
+          "$BUILDER_ROOT/source" "$BUILDER_ROOT/tmp" \
+          "$BUILDER_ROOT/wheelhouse"
+        /usr/bin/sudo /usr/bin/unshare --fork --kill-child=KILL \
+          --mount --pid --mount-proc --net --ipc --uts \
+          /bin/true
+        test -r /sys/fs/cgroup/cgroup.controllers
+        cgroup_relative="$(/usr/bin/awk -F: \
+          '$1 == "0" && $2 == "" {print $3}' /proc/self/cgroup)"
+        case "$cgroup_relative" in
+          /*) ;;
+          *) echo "invalid cgroup v2 membership" >&2; exit 1 ;;
+        esac
+        case "/$cgroup_relative/" in
+          */../*) echo "unsafe cgroup v2 membership" >&2; exit 1 ;;
+        esac
+        cgroup_parent="$(/usr/bin/realpath -m \
+          "/sys/fs/cgroup$cgroup_relative")"
+        case "$cgroup_parent" in
+          /sys/fs/cgroup|/sys/fs/cgroup/*) ;;
+          *) echo "cgroup v2 membership escaped mount" >&2; exit 1 ;;
+        esac
+        test -d "$cgroup_parent"
+        builder_cgroup="$cgroup_parent/ci-patch-builder"
+        test ! -e "$builder_cgroup"
+        /usr/bin/sudo /usr/bin/mkdir -- "$builder_cgroup"
+        builder_cgroup_owned=1
+        test -f "$builder_cgroup/cgroup.kill"
+        test -f "$builder_cgroup/cgroup.procs"
+        test -r "$builder_cgroup/cgroup.procs"
+        test -z "$(builder_cgroup_pids)"
         /usr/bin/setsid --wait /usr/bin/timeout --signal=TERM \
           --kill-after=30s 55m /usr/bin/sudo /usr/bin/unshare --fork \
           --kill-child=KILL --mount --pid --mount-proc --net --ipc --uts \
-          /usr/bin/setpriv --reuid="$builder_uid" --regid="$builder_gid" \
-          --clear-groups --no-new-privs --bounding-set=-all \
-          /usr/bin/env -i HOME="$BUILDER_ROOT/home" \
-          GITHUB_WORKSPACE="$BUILDER_ROOT/source" \
-          LC_ALL=C PATH=/usr/bin:/bin PIP_CONFIG_FILE=/dev/null \
-          RUNNER_TEMP="$BUILDER_ROOT/tmp" TMPDIR="$BUILDER_ROOT/tmp" \
-          WHEELHOUSE="$BUILDER_ROOT/wheelhouse" \
-          HANDOFF="$BUILDER_ROOT/handoff" \
-          /bin/bash --noprofile --norc -euo pipefail -c \
-          '/usr/bin/python3 -m venv "$HOME/venv"; "$HOME/venv/bin/python3" -m pip install --no-index --find-links="$WHEELHOUSE" --require-hashes --only-binary=:all: --no-deps -r "$GITHUB_WORKSPACE/.github/requirements/build.txt"; cd "$GITHUB_WORKSPACE"; ./build_tools.sh; make expansion-modern-map-menu-presentation-check -j1; /usr/bin/install -d -m 0700 "$HANDOFF"; /usr/bin/install -m 0400 build/expansion-modern-all-locales-all-features/release/aapcs/fireemblem8.gba "$HANDOFF/target.gba"; /usr/bin/install -m 0400 build/expansion-modern-all-locales-all-features/release/aapcs/generated/expansion_build_metadata.json "$HANDOFF/metadata.json"' &
+          /bin/bash "$BUILDER_ROOT/control/builder-isolation.sh" \
+          "$builder_cgroup" "$builder_uid" "$builder_gid" \
+          "$BUILDER_ROOT" "$RUNNER_TEMP" \
+          "$BUILDER_ROOT/control/candidate-build.sh" &
         builder_supervisor_pid="$!"
         builder_pgid="$(/usr/bin/ps -o pgid= -p "$builder_supervisor_pid" \
           | /usr/bin/tr -d ' ')"
@@ -1102,12 +1300,18 @@ jobs:
         wait "$builder_supervisor_pid"
         builder_supervisor_pid=""
         test -z "$(builder_group_pids "$builder_pgid")"
+        test -z "$(builder_cgroup_pids)"
         test -z "$(builder_uid_pids "$builder_uid")"
+        remove_builder_cgroup
+        test ! -e "$builder_cgroup"
         handoff_root="$BUILDER_ROOT/handoff"
         test -d "$handoff_root"
         test ! -L "$handoff_root"
         test "$(/usr/bin/stat -c %u "$handoff_root")" = "$builder_uid"
         test "$(/usr/bin/realpath "$handoff_root")" = "$handoff_root"
+        host_uid="$(/usr/bin/id -u)"
+        host_gid="$(/usr/bin/id -g)"
+        /usr/bin/sudo /bin/chown "$host_uid:$host_gid" "$handoff_root"
         handoff_names="$(/usr/bin/find "$handoff_root" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C /usr/bin/sort)"
         test "$handoff_names" = "$(printf 'metadata.json\ntarget.gba')"
         target_source="$handoff_root/target.gba"
@@ -1122,6 +1326,7 @@ jobs:
             "$handoff_root"/*) ;;
             *) echo "builder output escaped isolated handoff" >&2; exit 1 ;;
           esac
+          /usr/bin/sudo /bin/chown "$host_uid:$host_gid" "$source"
         done
         test "$(/usr/bin/stat -c %s "$target_source")" = 33554432
         metadata_size="$(/usr/bin/stat -c %s "$metadata_source")"
@@ -1136,9 +1341,11 @@ jobs:
         /usr/bin/find "$GITHUB_WORKSPACE_PATH" -mindepth 1 -delete
         test -z "$(/usr/bin/find "$GITHUB_WORKSPACE_PATH" -mindepth 1 -print -quit)"
         terminate_builder_processes
+        remove_builder_cgroup
         remove_builder_state
         trap - EXIT INT TERM
         test -z "$(builder_group_pids "$builder_pgid")"
+        test ! -e "$builder_cgroup"
         test -z "$(builder_uid_pids "$builder_uid")"
         test -z "$(/usr/bin/getent passwd "$builder_user" || true)"
         test ! -e "$BUILDER_ROOT"
@@ -1401,6 +1608,58 @@ jobs:
         fi
         test ! -e "$BASE_IMAGE"
         test ! -e "$private_dir"
+
+    - name: Revalidate patch-only upload
+      shell: /bin/bash --noprofile --norc -euo pipefail {0}
+      env:
+        BASH_ENV: ''
+        CDPATH: ''
+        ENV: ''
+        GLOBIGNORE: ''
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        HOME: ${{ runner.temp }}/patch-runtime
+        LD_LIBRARY_PATH: ''
+        LD_PRELOAD: ''
+        PATH: /usr/bin:/bin
+        PATCH_ARTIFACT_DIR: ${{ runner.temp }}/patch-artifact
+        PYTHONPATH: ''
+        SHELLOPTS: ''
+      run: |
+        LC_ALL=C
+        export LC_ALL
+        artifact_names="$(/usr/bin/find "$PATCH_ARTIFACT_DIR" -mindepth 1 \
+          -maxdepth 1 -printf '%f\n' | /usr/bin/sort)"
+        test "$artifact_names" = \
+          "$(printf '%s\n' README.txt \
+            fireemblem8-expansion-all-locales-all-features-aapcs.bps \
+            manifest.json | /usr/bin/sort)"
+        for artifact in "$PATCH_ARTIFACT_DIR/README.txt" \
+          "$PATCH_ARTIFACT_DIR/fireemblem8-expansion-all-locales-all-features-aapcs.bps" \
+          "$PATCH_ARTIFACT_DIR/manifest.json"
+        do
+          test -f "$artifact"
+          test ! -L "$artifact"
+          test "$(/usr/bin/stat -c %F "$artifact")" = "regular file"
+          test "$(/usr/bin/stat -c %h "$artifact")" = 1
+        done
 
     - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
       with:

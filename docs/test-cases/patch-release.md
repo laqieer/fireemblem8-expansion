@@ -138,15 +138,19 @@ workflow is trusted `push` to `master` only, pull requests receive no base
 secret or artifact upload, and diagnostics expose no protected base content.
 The publisher finishes every repository-controlled command before download,
 builds the exact validated after tree as a dedicated unprivileged UID in
-mount/PID/network isolation, and transfers no complete target ROM through an
-Actions artifact, cache, release, or log. It rejects a device, symlink,
-hardlink, escaped path, or unexpected isolated handoff output; terminates the
-exact process group; proves the builder UID has no remaining process; and
-removes the candidate tree, user, and environment before private download. It
-stages its producer from the same exact after commit without source hash pins,
-uses an unpredictable mode-restricted base path, invokes only that staged tool
-through absolute isolated Python while the base exists, removes it on
-success/failure, verifies cleanup, and uploads only the patch artifact.
+mount/PID/network isolation with private propagation, recursively read-only
+host root/system/tool mounts, private `/tmp`/`run`/`proc`/`dev`, and masked host
+D-Bus/container/service sockets. Every builder descendant remains in one exact
+cgroup v2. It transfers no complete target ROM through an Actions artifact,
+cache, release, or log; rejects a device, symlink, hardlink, escaped path, or
+unexpected isolated handoff output; stops the exact process group and cgroup;
+proves `cgroup.procs` and the builder UID are empty; removes only owned state;
+and uses no broad UID signal. It stages its producer from the same exact after
+commit without source hash pins, uses an unpredictable mode-restricted base
+path, invokes only that staged tool through absolute isolated Python while the
+base exists, removes it on success/failure, verifies cleanup, revalidates the
+BPS/manifest/README allowlist immediately before upload, and uploads only that
+patch artifact.
 
 ### Negative control
 
@@ -173,9 +177,10 @@ archival-lane behavior changes.
   `tests/workflows/test_patch_release_workflow.py` maps the trusted event,
   secret scope, no-PR publication, candidate-before-download ordering,
   exact-after isolated tool, no-ROM-transfer boundary, dedicated builder UID
-  and namespaces, exact process teardown, two-file handoff rejection controls,
-  unpredictable private path, cleanup-before-upload, artifact allowlist, and
-  profile/verifier requirements.
+  and namespaces, read-only host/private-filesystem probes, exact cgroup-v2 and
+  process teardown, socket/daemon/cgroup-escape adversaries, two-file handoff
+  rejection controls, unpredictable private path, cleanup-before-upload, late
+  artifact revalidation, and profile/verifier requirements.
 
 ### Cleanup and limitations
 

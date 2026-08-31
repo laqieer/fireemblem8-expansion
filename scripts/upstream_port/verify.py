@@ -872,6 +872,7 @@ _EXPECTED_STEP_ROLES = {
         ("publisher", "Download private base image"),
         ("publisher", "Create and verify patch artifact"),
         ("publisher", "Cleanup and verify private base"),
+        ("publisher", "Revalidate patch-only upload"),
         ("publisher", None),
     ),
     "summary": (("summary", "Render fail-closed combined Build summary"),),
@@ -1527,11 +1528,11 @@ def _parse_step(block, job_name, index):
     elif job_name == "patch-release":
         expected_fields = (
             {"uses", "with"}
-            if index in {0, 7}
+            if index in {0, 8}
             else {"id", "name", "shell", "env", "run"}
             if index == 4
             else {"name", "shell", "env", "run"}
-            if index in {2, 3, 5}
+            if index in {2, 3, 5, 7}
             else {"if", "name", "shell", "env", "run"}
             if index == 6
             else {"name", "env", "run"}
@@ -1545,6 +1546,7 @@ def _parse_step(block, job_name, index):
             4: "Download private base image",
             5: "Create and verify patch artifact",
             6: "Cleanup and verify private base",
+            7: "Revalidate patch-only upload",
         }.get(index)
         if name != expected_name or set(values) != expected_fields:
             raise ValueError(f"{step_label} publisher mapping differs")
@@ -1613,7 +1615,15 @@ def _parse_step(block, job_name, index):
             not in {token for command in values["run"] for token in command}
             or "--kill-child=KILL"
             not in {token for command in values["run"] for token in command}
-            or ("test", "-z", "$(builder_uid_pids $builder_uid)")
+            or "/usr/bin/mount"
+            not in {token for command in values["run"] for token in command}
+            or "--make-rprivate"
+            not in {token for command in values["run"] for token in command}
+            or "/sys/fs/cgroup/cgroup.controllers"
+            not in {token for command in values["run"] for token in command}
+            or "$builder_cgroup/cgroup.kill"
+            not in {token for command in values["run"] for token in command}
+            or ("test", "-z", "$(builder_cgroup_pids)")
             not in values["run"]
             or ("test", "-z", "$(builder_group_pids $builder_pgid)")
             not in values["run"]
@@ -1627,6 +1637,12 @@ def _parse_step(block, job_name, index):
             in " ".join(token for command in values["run"] for token in command)
             or "killall"
             in " ".join(token for command in values["run"] for token in command)
+            or any(
+                token == "$pid"
+                for command in values["run"]
+                if "/bin/kill" in command
+                for token in command
+            )
         ):
             raise ValueError(f"{step_label} isolated candidate build differs")
         if index == 4 and (
@@ -1702,6 +1718,33 @@ def _parse_step(block, job_name, index):
         ):
             raise ValueError(f"{step_label} private cleanup verification differs")
         if index == 7 and (
+            values["shell"]
+            != "/bin/bash --noprofile --norc -euo pipefail {0}"
+            or values["env"]
+            != tuple(
+                sorted(
+                    _PRIVATE_STEP_ENV
+                    + (
+                        (
+                            "PATCH_ARTIFACT_DIR",
+                            "${{ runner.temp }}/patch-artifact",
+                        ),
+                    )
+                )
+            )
+            or "artifact_names="
+            not in " ".join(token for command in values["run"] for token in command)
+            or ("test", "!", "-L", "$artifact") not in values["run"]
+            or (
+                "test",
+                "$(/usr/bin/stat -c %F $artifact)",
+                "=",
+                "regular file",
+            )
+            not in values["run"]
+        ):
+            raise ValueError(f"{step_label} upload revalidation differs")
+        if index == 8 and (
             values["uses"] != _UPLOAD_USES
             or values["with"] != _UPLOAD_WITH
         ):

@@ -244,12 +244,20 @@ publisher consumes the same validated push SHA, verifies
 three-file producer from that exact validated after commit without whole-file
 source hash pins. Before private download, the exact after tree builds as a
 dedicated unprivileged UID inside mount, PID, and network namespaces with no
-network, capabilities, secrets, `BASH_ENV`, or `GITHUB_ENV`. The trusted host
-admits only the expected regular, nonsymlink, single-link 32 MiB target and
-bounded metadata handoff; device, escaped, or unexpected outputs fail. It
-terminates the exact process group, proves no builder-UID process remains, and
-removes the builder user, tree, wheelhouse, and candidate checkout. No complete
-target ROM enters an Actions artifact, cache, release, or log.
+network, capabilities, secrets, `BASH_ENV`, or `GITHUB_ENV`. Private mount
+propagation, recursively read-only host root/system/tool paths, private
+`/tmp`/`run`/`proc`/`dev`, and masked D-Bus/container/service sockets leave only
+exact candidate source/home/tmp/handoff mounts writable. Every descendant stays
+in one exact cgroup v2. The trusted host stops the exact process group and
+cgroup, verifies `cgroup.procs` is empty, proves no builder-UID process remains,
+and removes the
+owned cgroup, then admits only the expected regular, nonsymlink, single-link
+32 MiB target and bounded metadata handoff; device, escaped, or unexpected
+outputs fail. It removes the builder user, tree, wheelhouse, and candidate
+checkout. No complete target ROM enters an Actions artifact, cache, release,
+or log.
+Unavailable mount/cgroup features fail closed, and cleanup sends no UID-wide
+signal.
 The minimal `BASEROM_URL` step then creates an unpredictable, mode-restricted
 private path and exposes only that path through trusted output. The immediately
 following step runs the staged producer with absolute isolated Python, an
@@ -257,6 +265,8 @@ empty runtime CWD/environment, and no repository import path. No candidate
 command runs while the base exists. Traps delete the base on success or
 failure, cleanup is verified before upload, and later steps see only the patch
 artifact.
+After private cleanup, a final adjacent step revalidates exactly regular,
+single-link BPS/manifest/README outputs immediately before upload.
 All repository/candidate-controlled commands finish before private download.
 Cleanup is verified before upload.
 No whole-file source hash pins are used.

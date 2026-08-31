@@ -53,15 +53,23 @@ after SHA. It stages the producer from that same immutable commit with no
 whole-file source hash ledger. Before any secret or base exists, the candidate
 tree is copied to a disposable workspace owned by a dedicated unprivileged
 UID and built inside mount, PID, network, IPC, and UTS namespaces with no
-network, capabilities, secrets, `BASH_ENV`, or `GITHUB_ENV`. Hash-locked wheels
-are fetched by the trusted host before isolation and installed offline inside
-it. The trusted host admits only a regular, nonsymlink, single-link 32 MiB ROM
-and bounded metadata from an exact two-file handoff; devices, escaped paths,
-and unexpected outputs fail. It terminates the exact builder process group,
-proves no process with the builder UID remains, validates the metadata against
-the after SHA, copies only those public inputs into runner-owned `0400`
+network, capabilities, secrets, `BASH_ENV`, or `GITHUB_ENV`. Mount propagation
+is private and all recursively visible host root/system/tool mounts, including
+`/usr/share` and `/opt`, must be read-only. Only exact private source, home,
+temporary, and handoff mounts are writable. Private tmpfs `/tmp`, `/run`,
+`/dev`, and `/dev/shm` plus private `/proc` hide host D-Bus activation/service,
+Docker, containerd, systemd, snap, and other UNIX sockets and runtime paths.
+Hash-locked wheels are fetched by the trusted host before isolation and
+installed offline inside it. Every builder descendant is placed in one exact
+cgroup v2 that the candidate cannot see or leave. The trusted host stops the
+exact process group and cgroup, verifies `cgroup.procs` and the builder UID are
+empty, removes only that owned cgroup, then admits a regular, nonsymlink,
+single-link 32 MiB ROM and bounded metadata from the exact two-file handoff.
+Devices, escaped paths, and unexpected outputs fail. It validates metadata
+against the after SHA, copies only those public inputs into runner-owned `0400`
 staging, and removes the builder user, tree, wheelhouse, and candidate
-checkout.
+checkout. Missing mount/cgroup-v2 capabilities fail before candidate execution;
+cleanup never uses `pkill`, `killall`, or a UID-wide signal.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.
@@ -69,7 +77,9 @@ The immediately following step runs only the staged tool through absolute
 isolated Python from an empty runtime CWD/environment. No repository command
 runs while the base exists. Success/failure traps remove the base and its
 directory, a separate step verifies absence, and only then may the three-file
-patch artifact be uploaded.
+patch artifact be uploaded. A separate final step revalidates the exact regular,
+single-link BPS/manifest/README allowlist after private cleanup and immediately
+before upload, so no late candidate or process mutation can enter the artifact.
 
 ## Artifact contents and verification
 

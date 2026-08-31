@@ -1452,8 +1452,14 @@ class VerifyCliCwdTests(unittest.TestCase):
                 (
                         "patch-release",
                         "isolation",
-                        "/usr/bin/unshare --fork",
-                        "/bin/bash",
+                        "        /usr/bin/mount --make-rprivate /",
+                        "        true",
+                ),
+                (
+                        "patch-release",
+                        "late-upload-revalidation",
+                        "    - name: Revalidate patch-only upload",
+                        "    - name: Skip patch-only upload revalidation",
                 ),
                 (
                         "patch-release",

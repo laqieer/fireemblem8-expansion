@@ -68,18 +68,29 @@ verifies `/usr/bin/git rev-parse HEAD` immediately after checkout, and exposes
 `BASEROM_URL` only after the exact validated after tree has been built in a
 fresh hosted publisher as a dedicated unprivileged UID inside mount, PID, and
 network namespaces with no network, capabilities, secrets, `BASH_ENV`, or
-`GITHUB_ENV`. The trusted host admits exactly one regular, nonsymlink,
-single-link 32 MiB target ROM plus bounded nonexecuting metadata; devices,
-escaped paths, and unexpected handoff outputs fail. It terminates the exact
-process group, proves no builder-UID process remains, and removes the
-builder user, tree, wheelhouse, and candidate checkout before private
-download. No complete target ROM enters an Actions artifact, cache, release,
-or log. The three-file patch producer is staged from that exact validated
-after commit with no whole-file source hash pins.
+`GITHUB_ENV`. Private mount propagation and recursively read-only host root,
+`/usr/share`, and `/opt` leave only private candidate source, home,
+temporary, and handoff mounts are writable. Private `/tmp`, `/run`, `/proc`,
+`/dev`, and `/dev/shm` mounts hide host D-Bus, Docker, containerd, systemd,
+snap, and other service/runtime sockets. Every builder descendant remains in
+one exact cgroup v2. The trusted host stops that cgroup and the exact process
+group, verifies `cgroup.procs` is empty, proves no builder-UID process remains,
+and removes only the
+owned cgroup, then admits exactly one regular, nonsymlink, single-link 32 MiB
+target ROM plus bounded nonexecuting metadata. Devices, escaped paths, and
+unexpected handoff outputs fail. It removes the builder user, tree,
+wheelhouse, and candidate checkout before private download. No complete target
+ROM enters an Actions artifact, cache, release, or log. The three-file patch
+producer is staged from that exact validated after commit with no whole-file
+source hash pins.
+Unavailable mount/cgroup features fail closed, and cleanup sends no UID-wide
+signal.
 The base is then downloaded to an unpredictable mode-restricted path and only
 absolute isolated Python from an empty runtime CWD/environment may consume the
 staged producer, target, and base. The base is deleted on success/failure,
 cleanup is verified, and only then is the patch artifact uploaded.
+The exact BPS/manifest/README regular-file allowlist is revalidated after
+private cleanup and immediately before upload.
 All repository/candidate-controlled commands finish before private download.
 No candidate command runs while the base exists. Cleanup is verified before
 upload.

@@ -374,10 +374,14 @@ immediately after checkout, and stages the three-file producer from that exact
 validated after commit without whole-file source hash pins. Before private
 download, the exact after tree builds as a dedicated unprivileged UID inside
 mount, PID, and network namespaces with no network, capabilities, secrets,
-`BASH_ENV`, or `GITHUB_ENV`. The trusted host admits only the expected regular,
+`BASH_ENV`, or `GITHUB_ENV`. Private mount propagation, recursively read-only host
+root/system/tool paths, private `/tmp`/`run`/`proc`/`dev`, and masked host
+D-Bus/container/service sockets leave only exact candidate-owned mounts
+writable. Every descendant stays in one exact cgroup v2. The trusted host stops
+the exact process group and cgroup, verifies `cgroup.procs` is empty, proves no
+builder-UID process remains, removes only the owned cgroup, then admits the expected regular,
 nonsymlink, single-link 32 MiB target and bounded metadata handoff; device,
-escaped, and unexpected outputs fail. It terminates the exact process group,
-proves no builder-UID process remains, and removes the builder user, tree,
+escaped, and unexpected outputs fail. It removes the builder user, tree,
 wheelhouse, and candidate checkout. No complete target ROM enters an Actions
 artifact, cache, release, or log. The minimal `BASEROM_URL` step then creates an
 unpredictable mode-restricted path and exposes only its trusted output. The
@@ -387,6 +391,10 @@ on success/failure, cleanup is verified, and only the patch artifact reaches
 upload.
 All repository/candidate-controlled commands finish before private download.
 Cleanup is verified before upload.
+After that cleanup, an adjacent final check revalidates exactly regular,
+single-link BPS/manifest/README outputs immediately before upload.
+Unavailable mount/cgroup features fail closed, and cleanup sends no UID-wide
+signal.
 No whole-file source hash pins are used.
 Before the base exists, the fresh hosted publisher proves that no
 candidate-written `GITHUB_ENV`, `BASH_ENV`, background process, checkout, or
@@ -1254,10 +1262,11 @@ field fails before dry-run.
 Patch publication and summary are also complete semantic structures:
 validated master-only publication condition, pinned actions, immediate exact
 revision verification, exact-after producer, no target-ROM artifact transfer,
-dedicated-UID mount/PID/network isolation, offline dependencies, exact builder
-process teardown, exact regular/single-link two-file handoff, candidate-state
-removal before download, unpredictable private path, immediate isolated patch
-tool, verified cleanup before upload, and eight fresh-job publisher steps;
+dedicated-UID private-mount/PID/network isolation, read-only host paths, masked
+service sockets, offline dependencies, exact cgroup-v2/process teardown, exact
+regular/single-link two-file handoff, candidate-state removal before download,
+unpredictable private path, immediate isolated patch tool, verified cleanup,
+late BPS/manifest/README revalidation, and nine fresh-job publisher steps;
 then `always()`, identity/classifier plus exact ordered
 worker/publisher needs/result env, dynamic full/metadata summary name, five-minute
 context, and one fail-closed summary step.

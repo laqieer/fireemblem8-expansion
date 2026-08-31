@@ -259,16 +259,18 @@ or reordered keys fail before dry-run.
 The complete nine-job structure preserves the six closed issue #176 jobs and
 adds only the closed, non-mirrored identity/router/mode-classifier setup jobs.
 `patch-release` must retain its validated master-push-only condition,
-Ubuntu/60-minute context, exact commit env, eight ordered fresh-job publisher
+Ubuntu/60-minute context, exact commit env, nine ordered fresh-job publisher
 steps, pinned checkout/upload actions, exact-after producer without whole-file
-source hash pins, dedicated-UID mount/PID/network-isolated candidate build,
-offline hash-locked dependencies, exact process teardown, and an exact
+source hash pins, dedicated-UID private-mount/PID/network isolation, recursively
+read-only host paths, private runtime mounts, masked service sockets, offline
+hash-locked dependencies, exact cgroup-v2/process teardown, and an exact
 two-file regular/single-link handoff. Complete target ROM bytes never enter an
 Actions artifact, cache, release, or log. All candidate work finishes and its
-user/tree/process state is removed before the unpredictable mode-restricted
-private download; immediate absolute isolated patch creation, guaranteed base
-cleanup, cleanup verification, and the exact patch-only upload mapping remain
-mandatory. `summary` must retain
+cgroup/user/tree/process state is removed before the unpredictable
+mode-restricted private download; immediate absolute isolated patch creation,
+guaranteed base cleanup, cleanup verification, post-cleanup BPS/manifest/README
+revalidation, and the exact patch-only upload mapping remain mandatory.
+`summary` must retain
 `always()`, its reliably evaluated dynamic summary name, the classifier plus exact ordered
 worker/publisher needs, Ubuntu/five-minute context, exact classifier/result
 env, metadata-skip and full-run validation, and missing/stale identity
