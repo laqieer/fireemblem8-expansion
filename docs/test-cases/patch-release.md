@@ -137,11 +137,16 @@ inputs fail closed. A wrong source never writes the requested BPS output, the
 workflow is trusted `push` to `master` only, pull requests receive no base
 secret or artifact upload, and diagnostics expose no protected base content.
 The publisher finishes every repository-controlled command before download,
-transfers only inert ROM/metadata from the non-secret build job, stages its
-tool from the verified previous-master commit without source hash pins, uses an
-unpredictable mode-restricted base path, invokes only that staged tool through
-absolute isolated Python while the base exists, removes it on success/failure,
-verifies cleanup, and uploads only the patch artifact.
+builds the exact validated after tree as a dedicated unprivileged UID in
+mount/PID/network isolation, and transfers no complete target ROM through an
+Actions artifact, cache, release, or log. It rejects a device, symlink,
+hardlink, escaped path, or unexpected isolated handoff output; terminates the
+exact process group; proves the builder UID has no remaining process; and
+removes the candidate tree, user, and environment before private download. It
+stages its producer from the same exact after commit without source hash pins,
+uses an unpredictable mode-restricted base path, invokes only that staged tool
+through absolute isolated Python while the base exists, removes it on
+success/failure, verifies cleanup, and uploads only the patch artifact.
 
 ### Negative control
 
@@ -167,8 +172,9 @@ archival-lane behavior changes.
 - `python3 -m unittest tests.workflows.test_patch_release_workflow -v` —
   `tests/workflows/test_patch_release_workflow.py` maps the trusted event,
   secret scope, no-PR publication, candidate-before-download ordering,
-  previous-master isolated tool, inert transfer, unpredictable private path,
-  cleanup-before-upload, mutation controls, artifact allowlist, and
+  exact-after isolated tool, no-ROM-transfer boundary, dedicated builder UID
+  and namespaces, exact process teardown, two-file handoff rejection controls,
+  unpredictable private path, cleanup-before-upload, artifact allowlist, and
   profile/verifier requirements.
 
 ### Cleanup and limitations

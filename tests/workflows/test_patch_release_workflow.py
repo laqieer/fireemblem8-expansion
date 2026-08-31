@@ -143,48 +143,110 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
     ).group("body")
     if "BASEROM_URL" in build or "patch-private." in build:
         errors.append("private base can enter candidate build job")
+    if (
+        workflow.count("actions/upload-artifact@") != 1
+        or "actions/download-artifact@" in workflow
+    ):
+        errors.append("complete ROM artifact transfer is possible")
     required = (
-        "Verify and stage trusted previous-master producer",
-        "Download inert patch-release inputs",
-        "Validate inert patch-release inputs",
+        "Verify exact candidate and stage trusted producer",
+        "Install trusted isolated-build dependencies",
+        "Build candidate in isolated namespace and stage public inputs",
         "Download private base image",
         "Create and verify patch artifact",
         "Cleanup and verify private base",
     )
     if any(names.count(name) != 1 for name in required):
         return ["publisher boundary steps differ"]
-    verify, inert_download, inert_validate, download, create, cleanup = (
+    verify, dependencies, isolated_build, download, create, cleanup = (
         names.index(name) for name in required
     )
     if not (
-        verify < inert_download
-        and inert_validate == inert_download + 1
-        and download == inert_validate + 1
+        dependencies == verify + 1
+        and isolated_build == dependencies + 1
+        and download == isolated_build + 1
         and create == download + 1
         and cleanup == create + 1
     ):
         errors.append("private base lifetime ordering differs")
     if cleanup != len(steps) - 2:
         errors.append("private cleanup must immediately precede upload")
-    candidate_markers = ("sudo apt-get", "./build_tools.sh", "make expansion-modern")
+    candidate_markers = (
+        "/usr/bin/apt-get",
+        "./build_tools.sh",
+        "make expansion-modern",
+    )
     for index, step in enumerate(steps):
-        if any(marker in step for marker in candidate_markers):
-            errors.append("candidate command exists in fresh publisher job")
+        if any(marker in step for marker in candidate_markers) and index != isolated_build:
+            if index != dependencies:
+                errors.append("candidate command escapes isolated builder step")
     producer_step = steps[verify]
-    inert_step = steps[inert_validate]
+    dependency_step = steps[dependencies]
+    isolated_step = steps[isolated_build]
     if (
-        "ref: ${{ needs.event-identity.outputs.previous_sha }}" not in steps[0]
-        or 'test "$ACTUAL_SHA" = "$PREVIOUS_MASTER_SHA"' not in producer_step
-        or "/usr/bin/git merge-base --is-ancestor" not in producer_step
+        "ref: ${{ needs.event-identity.outputs.fallback_sha }}" not in steps[0]
+        or 'test "$ACTUAL_SHA" = "$PATCH_COMMIT"' not in producer_step
+        or '/usr/bin/git cat-file -t "$PATCH_COMMIT"' not in producer_step
+        or "PREVIOUS_MASTER_SHA" in producer_step
         or "sha256sum" in producer_step
     ):
-        errors.append("previous-master producer boundary differs")
+        errors.append("exact candidate producer boundary differs")
     if (
-        'test ! -L "$PATCH_INPUT_ROOT/target.gba"' not in inert_step
-        or 'test ! -L "$PATCH_INPUT_ROOT/metadata.json"' not in inert_step
-        or "build_commit" not in inert_step
+        "shell: /bin/bash --noprofile --norc -euo pipefail {0}"
+        not in dependency_step
+        or "BASH_ENV: ''" not in dependency_step
+        or "LD_PRELOAD: ''" not in dependency_step
+        or "PYTHONPATH: ''" not in dependency_step
+        or "GIT_CONFIG_GLOBAL: /dev/null" not in dependency_step
+        or "/usr/bin/env -i" not in dependency_step
+        or "PIP_CONFIG_FILE=/dev/null" not in dependency_step
+        or "/usr/bin/python3 -I -m pip download" not in dependency_step
     ):
-        errors.append("inert candidate artifact validation differs")
+        errors.append("isolated dependency boundary differs")
+    if (
+        "/usr/bin/unshare" not in isolated_step
+        or "--net" not in isolated_step
+        or "--pid" not in isolated_step
+        or "--kill-child=KILL" not in isolated_step
+        or "/usr/bin/setpriv" not in isolated_step
+        or "--no-new-privs" not in isolated_step
+        or "--bounding-set=-all" not in isolated_step
+        or "/usr/bin/env -i" not in isolated_step
+        or "GITHUB_ENV" in isolated_step
+        or "/usr/bin/env -i BASH_ENV=" in isolated_step
+        or 'test ! -L "$source"' not in isolated_step
+        or 'test "$(/usr/bin/stat -c %h "$source")" = 1' not in isolated_step
+        or "handoff_names=" not in isolated_step
+        or "metadata.json\\ntarget.gba" not in isolated_step
+        or 'test "$handoff_names" = ' not in isolated_step
+        or 'test -z "$(builder_uid_pids "$builder_uid")"' not in isolated_step
+        or 'test -z "$(builder_group_pids "$builder_pgid")"' not in isolated_step
+        or "userdel" not in isolated_step
+        or "builder_user_created=0" not in isolated_step
+        or "builder_user_created=1" not in isolated_step
+        or "builder_root_owned=0" not in isolated_step
+        or "builder_root_owned=1" not in isolated_step
+        or "wheelhouse_owned=0" not in isolated_step
+        or "pkill" in isolated_step
+        or "killall" in isolated_step
+        or '/usr/bin/find "$GITHUB_WORKSPACE_PATH" -mindepth 1 -delete'
+        not in isolated_step
+        or 'test ! -e "$BUILDER_ROOT"' not in isolated_step
+        or 'test ! -e "$PATCH_WHEELHOUSE"' not in isolated_step
+        or (
+            'remove_builder_state\n'
+            '        trap - EXIT INT TERM\n'
+            '        test -z "$(builder_group_pids "$builder_pgid")"\n'
+            '        test -z "$(builder_uid_pids "$builder_uid")"\n'
+            '        test -z "$(/usr/bin/getent passwd "$builder_user" || true)"\n'
+            '        test ! -e "$BUILDER_ROOT"\n'
+            '        test ! -e "$PATCH_WHEELHOUSE"\n'
+            '        input_names='
+        )
+        not in isolated_step
+        or "build_commit" not in isolated_step
+    ):
+        errors.append("isolated candidate builder boundary differs")
     secret_step = steps[download]
     create_step = steps[create]
     cleanup_step = steps[cleanup]
@@ -213,6 +275,13 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "BASE_IMAGE" in steps[-1]
     ):
         errors.append("private cleanup boundary differs")
+    if (
+        "actions/upload-artifact@" not in steps[-1]
+        or "path: ${{ runner.temp }}/patch-artifact" not in steps[-1]
+        or "PATCH_INPUT_ROOT" in steps[-1]
+        or "target.gba" in steps[-1]
+    ):
+        errors.append("final upload is not patch-only")
     return errors
 
 
@@ -221,8 +290,18 @@ def artifact_filename_set_check(directory: Path, inherited_locale: str) -> subpr
 set -euo pipefail
 LC_ALL=C
 export LC_ALL
-find "$1" -maxdepth 1 -type f -printf '%f\\n' | sort | diff -u \\
-  <(printf '%s\\n' README.txt fireemblem8-expansion-all-locales-all-features-aapcs.bps manifest.json | sort) -
+artifact_names="$(find "$1" -mindepth 1 -maxdepth 1 -printf '%f\\n' | sort)"
+test "$artifact_names" = \\
+  "$(printf '%s\\n' README.txt fireemblem8-expansion-all-locales-all-features-aapcs.bps manifest.json | sort)"
+for artifact in "$1/README.txt" \\
+  "$1/fireemblem8-expansion-all-locales-all-features-aapcs.bps" \\
+  "$1/manifest.json"
+do
+  test -f "$artifact"
+  test ! -L "$artifact"
+  test "$(stat -c %F "$artifact")" = "regular file"
+  test "$(stat -c %h "$artifact")" = 1
+done
 """
     environment = dict(os.environ, LC_ALL=inherited_locale)
     return subprocess.run(
@@ -257,16 +336,15 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "needs.event-identity.outputs.fallback_sha == github.sha",
             self.patch_job,
         )
-        self.assertIn("needs: [event-identity, build]", self.patch_job)
-        self.assertIn("needs.build.result == 'success'", self.patch_job)
-        self.assertIn("needs.event-identity.outputs.previous_sha != ''", self.patch_job)
+        self.assertIn("needs: [event-identity]", self.patch_job)
+        self.assertNotIn("needs.build.result", self.patch_job)
         self.assertNotIn("needs: [event-classifier", self.patch_job)
         self.assertIn(
             "PATCH_COMMIT: ${{ needs.event-identity.outputs.fallback_sha }}",
             self.patch_job,
         )
         self.assertIn(
-            "ref: ${{ needs.event-identity.outputs.previous_sha }}",
+            "ref: ${{ needs.event-identity.outputs.fallback_sha }}",
             self.patch_job,
         )
         self.assertNotIn("pull_request_target", self.text)
@@ -337,24 +415,21 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
     def test_exact_revision_is_verified_before_code_or_secret_access(self):
         checkout = self.patch_job.index("uses: actions/checkout@")
         verification = self.patch_job.index(
-            "- name: Verify and stage trusted previous-master producer"
+            "- name: Verify exact candidate and stage trusted producer"
         )
-        artifact_download = self.patch_job.index(
-            "- name: Download inert patch-release inputs"
-        )
-        artifact_validation = self.patch_job.index(
-            "- name: Validate inert patch-release inputs"
+        isolated_build = self.patch_job.index(
+            "- name: Build candidate in isolated namespace and stage public inputs"
         )
         secret = self.patch_job.index("BASEROM_URL: ${{ secrets.BASEROM_URL }}")
         self.assertLess(checkout, verification)
-        self.assertLess(verification, artifact_download)
-        self.assertLess(artifact_download, artifact_validation)
-        self.assertLess(artifact_validation, secret)
+        self.assertLess(verification, isolated_build)
+        self.assertLess(isolated_build, secret)
         verification_step = self.patch_job[verification:secret]
         self.assertIn('ACTUAL_SHA="$(/usr/bin/git rev-parse HEAD)"', verification_step)
-        self.assertIn('test "$ACTUAL_SHA" = "$PREVIOUS_MASTER_SHA"', verification_step)
-        self.assertIn("/usr/bin/git merge-base --is-ancestor", verification_step)
-        self.assertIn("/usr/bin/git rev-list --first-parent", verification_step)
+        self.assertIn('test "$ACTUAL_SHA" = "$PATCH_COMMIT"', verification_step)
+        self.assertIn('/usr/bin/git cat-file -t "$PATCH_COMMIT"', verification_step)
+        self.assertNotIn("PREVIOUS_MASTER_SHA", verification_step)
+        self.assertNotIn("sha256sum", verification_step)
         self.assertNotIn("BASEROM_URL", verification_step)
 
     def test_secret_publisher_is_a_fresh_candidate_free_job(self):
@@ -362,29 +437,25 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             r"(?ms)^  build:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
             self.text,
         ).group("body")
-        self.assertIn("Stage inert patch-release inputs", build)
-        self.assertIn("Upload inert patch-release inputs", build)
-        self.assertIn("retention-days: 1", build)
+        self.assertNotIn("Stage inert patch-release inputs", build)
+        self.assertNotIn("Upload inert patch-release inputs", build)
+        self.assertNotIn("patch-input-${{", self.text)
+        self.assertNotIn("actions/download-artifact@", self.text)
+        self.assertNotIn("$GITHUB_ENV", self.patch_job)
+        self.assertNotIn("$GITHUB_PATH", self.patch_job)
+        self.assertIn("/usr/bin/unshare", self.patch_job)
+        self.assertIn("--kill-child=KILL", self.patch_job)
+        self.assertIn("--net", self.patch_job)
+        self.assertIn("/usr/bin/setpriv", self.patch_job)
+        self.assertIn("--bounding-set=-all", self.patch_job)
         self.assertIn(
-            "name: patch-input-${{ needs.event-identity.outputs.fallback_sha }}",
-            build,
+            'test -z "$(builder_uid_pids "$builder_uid")"',
+            self.patch_job,
         )
-        inert_stage = build[
-            build.index("- name: Stage inert patch-release inputs"):
-            build.index("- name: Upload inert patch-release inputs")
-        ]
-        self.assertIn('"$PATCH_INPUT_ROOT/target.gba"', inert_stage)
-        self.assertIn('"$PATCH_INPUT_ROOT/metadata.json"', inert_stage)
-        for source in AUDITED_PATCH_TOOL_FILES:
-            self.assertNotIn(source, inert_stage)
-        for candidate_marker in (
-            "sudo apt-get",
-            "./build_tools.sh",
-            "make expansion-modern-all-locales-all-features-check",
-            "$GITHUB_ENV",
-            "$GITHUB_PATH",
-        ):
-            self.assertNotIn(candidate_marker, self.patch_job)
+        self.assertIn(
+            'test -z "$(builder_group_pids "$builder_pgid")"',
+            self.patch_job,
+        )
 
         attack = (
             "\n    - name: Candidate persistence attack\n"
@@ -440,8 +511,9 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
     def test_every_private_boundary_step_scrubs_ambient_execution_state(self):
         steps = patch_release_step_blocks(self.text)
         for step_name in (
-            "Verify and stage trusted previous-master producer",
-            "Validate inert patch-release inputs",
+            "Verify exact candidate and stage trusted producer",
+            "Install trusted isolated-build dependencies",
+            "Build candidate in isolated namespace and stage public inputs",
             "Download private base image",
             "Create and verify patch artifact",
             "Cleanup and verify private base",
@@ -470,6 +542,11 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         download = next(step for step in steps if "Download private base image" in step)
         create = next(step for step in steps if "Create and verify patch artifact" in step)
         cleanup = next(step for step in steps if "Cleanup and verify private base" in step)
+        isolated = next(
+            step
+            for step in steps
+            if "Build candidate in isolated namespace and stage public inputs" in step
+        )
         moved_early = self.text.replace(
             "    - name: Install dependencies\n",
             "    - name: Candidate-job private download\n"
@@ -509,6 +586,96 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         disabled_cleanup = self.text.replace(cleanup, disabled_cleanup_step, 1)
+        missing_network_namespace = self.text.replace(" --net --ipc --uts", " --ipc --uts", 1)
+        missing_pid_teardown = self.text.replace(
+            isolated,
+            isolated.replace(
+                'test -z "$(builder_uid_pids "$builder_uid")"',
+                "true",
+            ),
+            1,
+        )
+        missing_symlink_guard = self.text.replace(
+            'for source in "$target_source" "$metadata_source"; do\n'
+            '          test -f "$source"\n'
+            '          test ! -L "$source"',
+            'for source in "$target_source" "$metadata_source"; do\n'
+            '          test -f "$source"\n'
+            "          true",
+            1,
+        )
+        missing_hardlink_guard = self.text.replace(
+            isolated,
+            isolated.replace(
+                'test "$(/usr/bin/stat -c %h "$source")" = 1',
+                "true",
+            ),
+            1,
+        )
+        leaked_github_env = self.text.replace(
+            '/usr/bin/env -i HOME="$BUILDER_ROOT/home"',
+            '/usr/bin/env -i GITHUB_ENV="$GITHUB_ENV" HOME="$BUILDER_ROOT/home"',
+            1,
+        )
+        leaked_bash_env = self.text.replace(
+            '/usr/bin/env -i HOME="$BUILDER_ROOT/home"',
+            '/usr/bin/env -i BASH_ENV="$BASH_ENV" HOME="$BUILDER_ROOT/home"',
+            1,
+        )
+        retained_candidate_workspace = self.text.replace(
+            '/usr/bin/find "$GITHUB_WORKSPACE_PATH" -mindepth 1 -delete',
+            "true",
+            1,
+        )
+        untracked_builder_user = self.text.replace(
+            isolated,
+            isolated.replace(
+                "        builder_user_created=1",
+                "        true",
+                1,
+            ),
+            1,
+        )
+        untracked_builder_root = self.text.replace(
+            isolated,
+            isolated.replace(
+                "        builder_root_owned=1",
+                "        true",
+                1,
+            ),
+            1,
+        )
+        ambient_dependency_python = self.text.replace(
+            "/usr/bin/env -i HOME=\"$PATCH_RUNTIME_ROOT\" LC_ALL=C",
+            "HOME=\"$PATCH_RUNTIME_ROOT\"",
+            1,
+        )
+        unverified_builder_state = self.text.replace(
+            isolated,
+            isolated.replace(
+                '        test ! -e "$BUILDER_ROOT"\n'
+                '        test ! -e "$PATCH_WHEELHOUSE"\n'
+                '        input_names=',
+                "        input_names=",
+                1,
+            ),
+            1,
+        )
+        allowed_unexpected_handoff = self.text.replace(
+            'test "$handoff_names" = "$(printf \'metadata.json\\ntarget.gba\')"',
+            "true",
+            1,
+        )
+        rom_artifact_transfer = self.text.replace(
+            "\n  extended-host-tests:\n",
+            "\n    - uses: actions/upload-artifact@"
+            "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a\n"
+            "      with:\n"
+            "        name: complete-target-rom\n"
+            "        path: build/modern/fireemblem8.gba\n"
+            "\n  extended-host-tests:\n",
+            1,
+        )
         for name, changed in (
             ("download-before-candidate", moved_early),
             ("candidate-between-download-and-patch", inserted_candidate),
@@ -516,12 +683,25 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             ("secret-leak", leaked_secret),
             ("missing-cleanup", removed_cleanup),
             ("disabled-cleanup-step", disabled_cleanup),
+            ("missing-network-namespace", missing_network_namespace),
+            ("missing-builder-pid-teardown", missing_pid_teardown),
+            ("missing-symlink-guard", missing_symlink_guard),
+            ("missing-hardlink-guard", missing_hardlink_guard),
+            ("leaked-github-env", leaked_github_env),
+            ("leaked-bash-env", leaked_bash_env),
+            ("retained-candidate-workspace", retained_candidate_workspace),
+            ("untracked-builder-user", untracked_builder_user),
+            ("untracked-builder-root", untracked_builder_root),
+            ("ambient-dependency-python", ambient_dependency_python),
+            ("unverified-builder-state", unverified_builder_state),
+            ("allowed-unexpected-handoff", allowed_unexpected_handoff),
+            ("complete-rom-artifact-transfer", rom_artifact_transfer),
         ):
             with self.subTest(name=name):
                 self.assertNotEqual(changed, self.text)
                 self.assertTrue(publisher_boundary_errors(changed))
 
-    def test_previous_master_patch_tool_imports_are_closed(self):
+    def test_exact_candidate_patch_tool_imports_are_closed(self):
         allowed_import_roots = {
             "__future__",
             "argparse",
@@ -540,9 +720,10 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             r"[0-9a-f]{64}\s+scripts/modernize/",
         )
         self.assertIn(
-            "ref: ${{ needs.event-identity.outputs.previous_sha }}",
+            "ref: ${{ needs.event-identity.outputs.fallback_sha }}",
             self.patch_job,
         )
+        self.assertNotIn("previous_sha", self.patch_job)
         for relative in AUDITED_PATCH_TOOL_FILES:
             with self.subTest(relative=relative):
                 data = (ROOT / relative).read_bytes()
@@ -616,15 +797,15 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 1)
             self.assertIn("base validation failed: size mismatch", completed.stderr)
 
-    def test_previous_master_relationship_is_proven_before_staging(self):
+    def test_exact_candidate_revision_is_proven_before_staging(self):
         script = named_step_run_script(
             self.text,
-            "Verify and stage trusted previous-master producer",
+            "Verify exact candidate and stage trusted producer",
         )
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
-            prefix="previous-master-producer-",
+            prefix="exact-after-producer-",
             dir=artifact_root,
         ) as temporary:
             sandbox = Path(temporary)
@@ -679,43 +860,21 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 text=True,
             ).strip()
             subprocess.run(
-                ["/usr/bin/git", "-C", str(origin), "checkout", "-q", "--orphan", "unrelated"],
-                check=True,
-            )
-            subprocess.run(
-                ["/usr/bin/git", "-C", str(origin), "rm", "-q", "-rf", "."],
-                check=True,
-            )
-            (origin / "unrelated").write_text("unrelated\n", encoding="ascii")
-            subprocess.run(
-                ["/usr/bin/git", "-C", str(origin), "add", "unrelated"],
-                check=True,
-            )
-            subprocess.run(
-                ["/usr/bin/git", "-C", str(origin), "commit", "-q", "-m", "unrelated"],
-                check=True,
-            )
-            unrelated = subprocess.check_output(
-                ["/usr/bin/git", "-C", str(origin), "rev-parse", "HEAD"],
-                text=True,
-            ).strip()
-            subprocess.run(
                 ["/usr/bin/git", "clone", "-q", str(origin), str(checkout)],
                 check=True,
             )
             subprocess.run(
-                ["/usr/bin/git", "-C", str(checkout), "checkout", "-q", before],
+                ["/usr/bin/git", "-C", str(checkout), "checkout", "-q", after],
                 check=True,
             )
 
-            def verify(previous_sha, patch_commit, expected):
+            def verify(patch_commit, expected):
                 case_root = sandbox / f"case-{len(list(sandbox.glob('case-*')))}"
                 environment = {
                     **os.environ,
                     "PATCH_COMMIT": patch_commit,
                     "PATCH_RUNTIME_ROOT": str(case_root / "runtime"),
                     "PATCH_TOOL_ROOT": str(case_root / "tool"),
-                    "PREVIOUS_MASTER_SHA": previous_sha,
                     "RUNNER_TEMP": str(case_root),
                 }
                 completed = subprocess.run(
@@ -728,40 +887,41 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 )
                 self.assertEqual(completed.returncode, expected, completed.stderr)
 
-            verify(before, after, 0)
-            verify("0" * 40, after, 1)
-            verify("A" * 40, after, 1)
-            verify(after, after, 1)
-            verify(before, before, 1)
-            verify(before, unrelated, 1)
+            verify(after, 0)
+            verify("0" * 40, 1)
+            verify("A" * 40, 1)
+            verify(before, 1)
 
-    def test_inert_candidate_artifact_is_validated_without_execution(self):
-        script = named_step_run_script(
+    def test_isolated_builder_output_rejects_symlink_and_hardlink(self):
+        full_script = named_step_run_script(
             self.text,
-            "Validate inert patch-release inputs",
+            "Build candidate in isolated namespace and stage public inputs",
         )
+        start = full_script.index('handoff_root="$BUILDER_ROOT/handoff"')
+        end_marker = 'test "$metadata_size" -le 1048576'
+        end = full_script.index(end_marker, start) + len(end_marker)
+        script = full_script[start:end]
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
-            prefix="inert-patch-input-",
+            prefix="isolated-builder-output-",
             dir=artifact_root,
         ) as temporary:
             sandbox = Path(temporary)
-            runtime = sandbox / "runtime"
-            runtime.mkdir()
 
-            def make_input(name):
-                input_root = sandbox / name
-                input_root.mkdir()
-                with (input_root / "target.gba").open("wb") as target:
+            def make_builder(name):
+                builder_root = sandbox / name
+                output = builder_root / "handoff"
+                output.mkdir(parents=True)
+                with (output / "target.gba").open("wb") as target:
                     target.truncate(32 * 1024 * 1024)
-                (input_root / "metadata.json").write_text(
+                (output / "metadata.json").write_text(
                     json.dumps({"build_commit": "1" * 40}),
                     encoding="ascii",
                 )
-                return input_root
+                return builder_root, output
 
-            def validate(input_root):
+            def validate(builder_root):
                 return subprocess.run(
                     [
                         "/bin/bash",
@@ -772,38 +932,45 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                         "-c",
                         script,
                     ],
-                    cwd=runtime,
+                    cwd=sandbox,
                     env={
                         **os.environ,
-                        "PATCH_COMMIT": "1" * 40,
-                        "PATCH_INPUT_ROOT": str(input_root),
-                        "PATCH_RUNTIME_ROOT": str(runtime),
+                        "BUILDER_ROOT": str(builder_root),
+                        "builder_uid": str(os.getuid()),
                     },
                     check=False,
                     capture_output=True,
                     text=True,
                 )
 
-            valid = make_input("valid")
+            valid, _ = make_builder("valid")
             self.assertEqual(validate(valid).returncode, 0)
 
-            symlink = make_input("symlink")
-            (symlink / "target.gba").unlink()
-            (symlink / "target.gba").symlink_to(valid / "target.gba")
+            symlink, symlink_output = make_builder("symlink")
+            (symlink_output / "target.gba").unlink()
+            (symlink_output / "target.gba").symlink_to(
+                sandbox / "valid" / "handoff" / "target.gba"
+            )
             self.assertNotEqual(validate(symlink).returncode, 0)
 
-            nested = make_input("nested")
-            (nested / "traversal").mkdir()
-            self.assertNotEqual(validate(nested).returncode, 0)
-
-            code_like = make_input("code-like")
-            marker = sandbox / "must-not-exist"
-            (code_like / "metadata.json").write_text(
-                f'__import__("pathlib").Path({str(marker)!r}).touch()\n',
-                encoding="ascii",
+            hardlink, hardlink_output = make_builder("hardlink")
+            hardlink_target = hardlink_output / "target.gba"
+            second_link = hardlink / "second-link"
+            os.link(hardlink_target, second_link)
+            self.assertNotEqual(validate(hardlink).returncode, 0)
+            self.assertEqual(
+                os.stat(hardlink_target).st_ino,
+                os.stat(second_link).st_ino,
             )
-            self.assertNotEqual(validate(code_like).returncode, 0)
-            self.assertFalse(marker.exists())
+
+            device, device_output = make_builder("device")
+            (device_output / "target.gba").unlink()
+            os.mkfifo(device_output / "target.gba")
+            self.assertNotEqual(validate(device).returncode, 0)
+
+            unexpected, unexpected_output = make_builder("unexpected")
+            (unexpected_output / "extra").write_bytes(b"not an admitted output")
+            self.assertNotEqual(validate(unexpected).returncode, 0)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)
@@ -914,18 +1081,19 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertNotIn("modern-release-aapcs-rom-map", self.text)
 
     def test_artifact_filename_allowlist_is_locale_independent_and_exact(self):
-        expected_check = (
-            "LC_ALL=C\n"
-            "        export LC_ALL\n"
-            "        /usr/bin/find \"$PATCH_ARTIFACT_DIR\" -maxdepth 1 -type f "
-            "-printf '%f\\n' \\\n"
-            "          | /usr/bin/sort \\\n"
-            "          | /usr/bin/diff -u \\\n"
-            "            <(printf '%s\\n' README.txt \\\n"
-            "              fireemblem8-expansion-all-locales-all-features-aapcs.bps \\\n"
-            "              manifest.json | /usr/bin/sort) -"
+        self.assertIn(
+            'artifact_names="$(/usr/bin/find "$PATCH_ARTIFACT_DIR" -mindepth 1',
+            self.patch_job,
         )
-        self.assertIn(expected_check, self.patch_job)
+        self.assertIn('test ! -L "$artifact"', self.patch_job)
+        self.assertIn(
+            'test "$(/usr/bin/stat -c %F "$artifact")" = "regular file"',
+            self.patch_job,
+        )
+        self.assertIn(
+            'test "$(/usr/bin/stat -c %h "$artifact")" = 1',
+            self.patch_job,
+        )
 
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
@@ -944,6 +1112,30 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 self.assertNotEqual(artifact_filename_set_check(artifact, "C.UTF-8").returncode, 0)
                 (artifact / "extra.bin").unlink()
 
+                (artifact / "extra-dir").mkdir()
+                self.assertNotEqual(
+                    artifact_filename_set_check(artifact, "C").returncode,
+                    0,
+                )
+                (artifact / "extra-dir").rmdir()
+
+                (artifact / "README.txt").unlink()
+                (artifact / "README.txt").symlink_to("manifest.json")
+                self.assertNotEqual(
+                    artifact_filename_set_check(artifact, "C").returncode,
+                    0,
+                )
+                (artifact / "README.txt").unlink()
+                (artifact / "README.txt").write_bytes(b"artifact")
+
+                outside_link = artifact.parent / "outside-link"
+                os.link(artifact / "README.txt", outside_link)
+                self.assertNotEqual(
+                    artifact_filename_set_check(artifact, "C").returncode,
+                    0,
+                )
+                outside_link.unlink()
+
                 (artifact / "README.txt").unlink()
                 self.assertNotEqual(artifact_filename_set_check(artifact, "C").returncode, 0)
         finally:
@@ -960,7 +1152,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertIn(
             "build/expansion-modern-all-locales-all-features/release/aapcs/"
             "fireemblem8.gba",
-            build,
+            self.patch_job,
         )
         self.assertEqual(self.patch_job.count("from scripts.modernize.patch_release import main"), 2)
         self.assertIn('"$PATCH_TOOL_ROOT" create', self.patch_job)
@@ -986,6 +1178,64 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
 
         self.assertEqual(install_interpreters, set())
         self.assertEqual(publisher_interpreters, {"/usr/bin/python3"})
+
+    def test_embedded_publisher_shell_and_python_are_syntactically_valid(self):
+        for step_index, step in enumerate(patch_release_step_blocks(self.text)):
+            if "      run: |\n" not in step:
+                continue
+            lines = step.splitlines()
+            run_index = lines.index("      run: |")
+            script = "\n".join(
+                line[8:] for line in lines[run_index + 1:]
+                if line.startswith("        ")
+            )
+            with self.subTest(step=step_index, language="shell"):
+                completed = subprocess.run(
+                    ["/bin/bash", "-n"],
+                    input=script,
+                    text=True,
+                    check=False,
+                    capture_output=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        for step_index, commands in enumerate(
+            parse_patch_release_run_commands(self.text)
+        ):
+            for command_index, command in enumerate(commands):
+                if "/bin/bash" in command and "-c" in command:
+                    bash_index = command.index("/bin/bash")
+                    command_flag = command.index("-c", bash_index)
+                    with self.subTest(
+                        step=step_index,
+                        command=command_index,
+                        language="nested-shell",
+                    ):
+                        completed = subprocess.run(
+                            ["/bin/bash", "-n"],
+                            input=command[command_flag + 1],
+                            text=True,
+                            check=False,
+                            capture_output=True,
+                        )
+                        self.assertEqual(
+                            completed.returncode,
+                            0,
+                            completed.stderr,
+                        )
+                if "/usr/bin/python3" in command and "-c" in command:
+                    python_index = command.index("/usr/bin/python3")
+                    command_flag = command.index("-c", python_index)
+                    with self.subTest(
+                        step=step_index,
+                        command=command_index,
+                        language="python",
+                    ):
+                        compile(
+                            command[command_flag + 1],
+                            "<patch-release-workflow>",
+                            "exec",
+                        )
 
 
 if __name__ == "__main__":

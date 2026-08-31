@@ -65,23 +65,27 @@ Metadata-only mode is PR-only; push-shaped metadata output
 fails into the validated full fallback. Workers consume only that validated
 SHA. The publisher uses the same validated push SHA,
 verifies `/usr/bin/git rev-parse HEAD` immediately after checkout, and exposes
-`BASEROM_URL` only after every repository/candidate-controlled setup and build
-command has finished. It stages the patch tool from the verified previous
-protected-branch commit without whole-file source hash pins, downloads inert
-public inputs, then downloads the base to an unpredictable mode-restricted
-path and invokes only absolute
-isolated Python from an empty runtime CWD/environment while the base exists,
-deletes the base on success/failure, verifies cleanup, and only then uploads
-the patch artifact.
+`BASEROM_URL` only after the exact validated after tree has been built in a
+fresh hosted publisher as a dedicated unprivileged UID inside mount, PID, and
+network namespaces with no network, capabilities, secrets, `BASH_ENV`, or
+`GITHUB_ENV`. The trusted host admits exactly one regular, nonsymlink,
+single-link 32 MiB target ROM plus bounded nonexecuting metadata; devices,
+escaped paths, and unexpected handoff outputs fail. It terminates the exact
+process group, proves no builder-UID process remains, and removes the
+builder user, tree, wheelhouse, and candidate checkout before private
+download. No complete target ROM enters an Actions artifact, cache, release,
+or log. The three-file patch producer is staged from that exact validated
+after commit with no whole-file source hash pins.
+The base is then downloaded to an unpredictable mode-restricted path and only
+absolute isolated Python from an empty runtime CWD/environment may consume the
+staged producer, target, and base. The base is deleted on success/failure,
+cleanup is verified, and only then is the patch artifact uploaded.
 All repository/candidate-controlled commands finish before private download.
 No candidate command runs while the base exists. Cleanup is verified before
 upload.
-The previous SHA must be exact lowercase nonzero `github.event.before`,
-checked out and verified independently, and present on the pushed commit's
-first-parent ancestry.
-No whole-file source hash pins are used.
-The fresh hosted publisher has no candidate-written `GITHUB_ENV`, background
-process, checkout, or executable state.
+Before the base exists, that publisher proves that no
+candidate-written `GITHUB_ENV`, `BASH_ENV`, background process, checkout, or
+executable state can survive the builder teardown.
 The same Build jobs rerun on `master`; only the
 technically used patch publisher is master-only. Arch and macOS support is
 exercised by the same script logic but is not re-run in CI; treat regressions

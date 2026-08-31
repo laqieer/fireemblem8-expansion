@@ -370,11 +370,16 @@ bound pull request. Push-shaped or cross-event metadata output fails the
 classifier, runs the validated full fallback workers/publisher, and leaves
 normal summary failed. Workers consume only that validated SHA. The publisher
 uses the same validated push SHA, verifies `/usr/bin/git rev-parse HEAD`
-immediately after checkout, and exposes
-`BASEROM_URL` only after every repository/candidate-controlled setup and build
-command has finished. The three-file patch tool comes from the verified
-previous protected-branch commit without whole-file source hash pins; inert
-already-built public inputs are transferred separately. The minimal secret step creates an
+immediately after checkout, and stages the three-file producer from that exact
+validated after commit without whole-file source hash pins. Before private
+download, the exact after tree builds as a dedicated unprivileged UID inside
+mount, PID, and network namespaces with no network, capabilities, secrets,
+`BASH_ENV`, or `GITHUB_ENV`. The trusted host admits only the expected regular,
+nonsymlink, single-link 32 MiB target and bounded metadata handoff; device,
+escaped, and unexpected outputs fail. It terminates the exact process group,
+proves no builder-UID process remains, and removes the builder user, tree,
+wheelhouse, and candidate checkout. No complete target ROM enters an Actions
+artifact, cache, release, or log. The minimal `BASEROM_URL` step then creates an
 unpredictable mode-restricted path and exposes only its trusted output. The
 next step uses absolute isolated Python from an empty runtime CWD/environment;
 no candidate command runs while the base exists. Cleanup traps delete the base
@@ -382,12 +387,10 @@ on success/failure, cleanup is verified, and only the patch artifact reaches
 upload.
 All repository/candidate-controlled commands finish before private download.
 Cleanup is verified before upload.
-The previous SHA is exact lowercase nonzero `github.event.before`, checked out
-and verified as previous master, and required on the pushed commit's
-first-parent ancestry.
 No whole-file source hash pins are used.
-The fresh hosted publisher has no candidate-written `GITHUB_ENV`, background
-process, checkout, or executable state.
+Before the base exists, the fresh hosted publisher proves that no
+candidate-written `GITHUB_ENV`, `BASH_ENV`, background process, checkout, or
+executable state can survive the builder teardown.
 
 ### Negative control
 
@@ -1250,10 +1253,11 @@ self-hosted/container/service/strategy/default shell or any other execution
 field fails before dry-run.
 Patch publication and summary are also complete semantic structures:
 validated master-only publication condition, pinned actions, immediate exact
-revision verification, candidate work before download, previous-master trusted
-tool plus the build job's two inert-input steps, unpredictable private path,
-immediate isolated patch tool, verified cleanup before upload, and eight
-fresh-job publisher steps;
+revision verification, exact-after producer, no target-ROM artifact transfer,
+dedicated-UID mount/PID/network isolation, offline dependencies, exact builder
+process teardown, exact regular/single-link two-file handoff, candidate-state
+removal before download, unpredictable private path, immediate isolated patch
+tool, verified cleanup before upload, and eight fresh-job publisher steps;
 then `always()`, identity/classifier plus exact ordered
 worker/publisher needs/result env, dynamic full/metadata summary name, five-minute
 context, and one fail-closed summary step.

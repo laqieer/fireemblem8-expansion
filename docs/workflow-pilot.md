@@ -230,34 +230,39 @@ Trusted event setup accepts an event identity only as an exact lowercase
 `refs/pull/<number>/merge` ref; a push requires event `push`,
 `refs/heads/master`, and equal event `after`/`github.sha`. Successful full and
 metadata classifications, normal workers, and summary must all bind their
-classified head to that same kind and SHA. Missing, uppercase, short, nonhex,
+classified head to that same kind and SHA.
 Metadata-only classification is accepted only for a coherently bound
 `pull_request`; metadata-shaped router output on push or another event fails
-the classifier and takes the validated full fallback path. Missing, uppercase, short, nonhex,
+the classifier and takes the validated full fallback path. Missing, uppercase,
+short, nonhex,
 ref-name, ref-number-mismatched, malformed, or cross-event identities select
 no worker and cannot produce a successful summary. Classifier-failure workers
 also consume only that validated output. Workers consume only that validated
 SHA. The
 publisher consumes the same validated push SHA, verifies
-`/usr/bin/git rev-parse HEAD` immediately after checkout, then completes every
-repository/candidate-controlled setup and build command before private-base
-download. A three-file patch tool is staged from the verified previous
-protected-branch commit without a source-content ledger; the already-built
-public inputs arrive separately. The minimal `BASEROM_URL` step creates an unpredictable,
-mode-restricted private path and exposes only that path through trusted output.
-The immediately following step runs the staged tool with absolute isolated
-Python, an empty runtime CWD/environment, and no repository import path. No
-candidate command runs while the base exists. Traps delete the base on success
-or failure, cleanup is verified before upload, and later steps see only the
-patch artifact.
+`/usr/bin/git rev-parse HEAD` immediately after checkout, and stages the
+three-file producer from that exact validated after commit without whole-file
+source hash pins. Before private download, the exact after tree builds as a
+dedicated unprivileged UID inside mount, PID, and network namespaces with no
+network, capabilities, secrets, `BASH_ENV`, or `GITHUB_ENV`. The trusted host
+admits only the expected regular, nonsymlink, single-link 32 MiB target and
+bounded metadata handoff; device, escaped, or unexpected outputs fail. It
+terminates the exact process group, proves no builder-UID process remains, and
+removes the builder user, tree, wheelhouse, and candidate checkout. No complete
+target ROM enters an Actions artifact, cache, release, or log.
+The minimal `BASEROM_URL` step then creates an unpredictable, mode-restricted
+private path and exposes only that path through trusted output. The immediately
+following step runs the staged producer with absolute isolated Python, an
+empty runtime CWD/environment, and no repository import path. No candidate
+command runs while the base exists. Traps delete the base on success or
+failure, cleanup is verified before upload, and later steps see only the patch
+artifact.
 All repository/candidate-controlled commands finish before private download.
 Cleanup is verified before upload.
-The trusted producer comes from the exact nonzero `github.event.before` commit,
-which must be verified as the checked-out previous master and as an ancestor on
-the pushed commit's first-parent history.
 No whole-file source hash pins are used.
-The fresh hosted publisher has no candidate-written `GITHUB_ENV`, background
-process, checkout, or executable state.
+Before the base exists, the fresh hosted publisher proves that no
+candidate-written `GITHUB_ENV`, `BASH_ENV`, background process, checkout, or
+executable state can survive the builder teardown.
 The current Build workflow has no explicit final-dispatch trigger; if that
 supported surface is introduced later, `workflow_dispatch` classifies as full
 and the trigger/topology contracts must be updated together.

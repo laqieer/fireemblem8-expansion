@@ -319,7 +319,6 @@
       "id": "malformed-push",
       "payload": {
         "after": "4444444444444444444444444444444444444444",
-        "before": "3333333333333333333333333333333333333333",
         "ref": "refs/heads/master"
       },
       "raw_kind": "malformed",
@@ -366,7 +365,6 @@
       "id": "malformed-mismatched-push-sha",
       "payload": {
         "after": "4444444444444444444444444444444444444444",
-        "before": "3333333333333333333333333333333333333333",
         "ref": "refs/heads/master"
       },
       "raw_kind": "malformed",
@@ -1007,7 +1005,6 @@
       "id": "master-push",
       "payload": {
         "after": "4444444444444444444444444444444444444444",
-        "before": "3333333333333333333333333333333333333333",
         "ref": "refs/heads/master"
       },
       "runner": {

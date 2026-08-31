@@ -22,11 +22,8 @@ jobs:
       classifier_ref: ${{ steps.identity.outputs.classifier_ref }}
       fallback_kind: ${{ steps.identity.outputs.fallback_kind }}
       fallback_sha: ${{ steps.identity.outputs.fallback_sha }}
-      previous_sha: ${{ steps.identity.outputs.previous_sha }}
     env:
       BASH_ENV: ''
-      BEFORE_SHA: ${{ github.event.before }}
-      BEFORE_SHA_JSON: ${{ toJSON(github.event.before) }}
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       ENV: ''
       EVENT_NAME: ${{ github.event_name }}
@@ -58,7 +55,6 @@ jobs:
         classifier_ref="refs/heads/$DEFAULT_BRANCH"
         fallback_kind="none"
         fallback_sha=""
-        previous_sha=""
         /usr/bin/git check-ref-format "$classifier_ref"
 
         if [[ "$EVENT_NAME" = "pull_request" ]]; then
@@ -80,10 +76,6 @@ jobs:
           classifier_ref="$PUSH_SHA"
           fallback_kind="push"
           fallback_sha="$PUSH_SHA"
-          if is_lower_sha "$BEFORE_SHA" "$BEFORE_SHA_JSON" && \
-             [[ "$BEFORE_SHA" != 0000000000000000000000000000000000000000 ]]; then
-            previous_sha="$BEFORE_SHA"
-          fi
         fi
 
         {
@@ -91,7 +83,6 @@ jobs:
           echo "classifier_ref=$classifier_ref"
           echo "fallback_kind=$fallback_kind"
           echo "fallback_sha=$fallback_sha"
-          echo "previous_sha=$previous_sha"
         } >> "$GITHUB_OUTPUT"
 
   # Event payloads are classified from the current integration base, never
@@ -666,37 +657,6 @@ jobs:
     - name: Build and verify all-locales/all-features map menu (issues #49/#168)
       run: make expansion-modern-map-menu-presentation-check -j1
 
-    - name: Stage inert patch-release inputs
-      if: ${{ github.event_name == 'push' && needs.event-identity.result == 'success' && needs.event-identity.outputs.previous_sha != '' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha }}
-      env:
-        PATCH_INPUT_ROOT: ${{ runner.temp }}/patch-input
-      run: |
-        set -euo pipefail
-        /bin/rm -rf -- "$PATCH_INPUT_ROOT"
-        /usr/bin/install -d -m 0700 "$PATCH_INPUT_ROOT"
-        target_source=build/expansion-modern-all-locales-all-features/release/aapcs/fireemblem8.gba
-        metadata_source=build/expansion-modern-all-locales-all-features/release/aapcs/generated/expansion_build_metadata.json
-        test -f "$target_source"
-        test ! -L "$target_source"
-        test -f "$metadata_source"
-        test ! -L "$metadata_source"
-        /usr/bin/install -m 0400 "$target_source" "$PATCH_INPUT_ROOT/target.gba"
-        /usr/bin/install -m 0400 "$metadata_source" "$PATCH_INPUT_ROOT/metadata.json"
-        test "$(/usr/bin/stat -c %s "$PATCH_INPUT_ROOT/target.gba")" = 33554432
-        metadata_size="$(/usr/bin/stat -c %s "$PATCH_INPUT_ROOT/metadata.json")"
-        test "$metadata_size" -gt 0
-        test "$metadata_size" -le 1048576
-
-    - name: Upload inert patch-release inputs
-      if: ${{ github.event_name == 'push' && needs.event-identity.result == 'success' && needs.event-identity.outputs.previous_sha != '' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha }}
-      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
-      with:
-        name: patch-input-${{ needs.event-identity.outputs.fallback_sha }}
-        path: ${{ runner.temp }}/patch-input
-        if-no-files-found: error
-        retention-days: 1
-        compression-level: 0
-
   # This lane holds unique broader host evidence for both candidate and
   # post-merge Build runs. It is independent of host-tests and build.
   extended-host-tests:
@@ -815,25 +775,26 @@ jobs:
   # This separate job is the sole publisher. Its event guard excludes pull
   # requests before secrets are materialized; it consumes BASEROM_URL only
   # through curl's environment expansion and never prints or persists it. A
-  # fresh hosted runner consumes only the build job's inert transferred files;
-  # no candidate process or environment state crosses the job boundary.
+  # fresh hosted runner builds the exact pushed tree before materializing the
+  # secret, then destroys every candidate process and state boundary before
+  # the private base can exist.
   patch-release:
-    needs: [event-identity, build]
-    if: ${{ always() && needs.event-identity.result == 'success' && needs.build.result == 'success' && github.event_name == 'push' && needs.event-identity.outputs.previous_sha != '' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha }}
+    needs: [event-identity]
+    if: ${{ always() && needs.event-identity.result == 'success' && github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       PATCH_COMMIT: ${{ needs.event-identity.outputs.fallback_sha }}
-      PREVIOUS_MASTER_SHA: ${{ needs.event-identity.outputs.previous_sha }}
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        ref: ${{ needs.event-identity.outputs.previous_sha }}
-        fetch-depth: 1
+        ref: ${{ needs.event-identity.outputs.fallback_sha }}
+        fetch-depth: 0
+        submodules: recursive
         persist-credentials: false
 
-    - name: Verify and stage trusted previous-master producer
+    - name: Verify exact candidate and stage trusted producer
       env:
         BASH_ENV: ''
         CDPATH: ''
@@ -870,23 +831,12 @@ jobs:
         set -euo pipefail
         ACTUAL_SHA="$(/usr/bin/git rev-parse HEAD)"
         printf 'patch.producer.sha=%s\n' "$ACTUAL_SHA"
-        [[ "$PREVIOUS_MASTER_SHA" =~ ^[0-9a-f]{40}$ ]]
         [[ "$PATCH_COMMIT" =~ ^[0-9a-f]{40}$ ]]
-        test "$PREVIOUS_MASTER_SHA" != 0000000000000000000000000000000000000000
-        test "$PREVIOUS_MASTER_SHA" != "$PATCH_COMMIT"
-        test "$ACTUAL_SHA" = "$PREVIOUS_MASTER_SHA"
-        shallow_file="$(/usr/bin/git rev-parse --git-path shallow)"
-        if [ -f "$shallow_file" ]; then
-          /usr/bin/git fetch --quiet --no-tags --unshallow \
-            origin "$PATCH_COMMIT"
-        else
-          /usr/bin/git fetch --quiet --no-tags origin "$PATCH_COMMIT"
-        fi
-        test "$(/usr/bin/git rev-parse FETCH_HEAD^{commit})" = "$PATCH_COMMIT"
-        /usr/bin/git merge-base --is-ancestor \
-          "$PREVIOUS_MASTER_SHA" "$PATCH_COMMIT"
-        /usr/bin/git rev-list --first-parent "$PATCH_COMMIT" \
-          | /usr/bin/grep -Fqx "$PREVIOUS_MASTER_SHA"
+        test "$PATCH_COMMIT" != 0000000000000000000000000000000000000000
+        test "$ACTUAL_SHA" = "$PATCH_COMMIT"
+        test "$(/usr/bin/git rev-parse --verify "$PATCH_COMMIT^{commit}")" = \
+          "$PATCH_COMMIT"
+        test "$(/usr/bin/git cat-file -t "$PATCH_COMMIT")" = commit
         /bin/rm -rf -- "$PATCH_RUNTIME_ROOT" "$PATCH_TOOL_ROOT"
         /usr/bin/install -d -m 0700 "$PATCH_RUNTIME_ROOT" \
           "$PATCH_TOOL_ROOT" "$PATCH_TOOL_ROOT/scripts" \
@@ -897,19 +847,15 @@ jobs:
         do
           test -f "$source"
           test ! -L "$source"
+          test "$(/usr/bin/stat -c %F "$source")" = "regular file"
+          test "$(/usr/bin/stat -c %h "$source")" = 1
           /usr/bin/install -m 0444 "$source" \
             "$PATCH_TOOL_ROOT/$source"
         done
         /bin/chmod 0555 "$PATCH_TOOL_ROOT" "$PATCH_TOOL_ROOT/scripts" \
           "$PATCH_TOOL_ROOT/scripts/modernize"
 
-    - name: Download inert patch-release inputs
-      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-      with:
-        name: patch-input-${{ needs.event-identity.outputs.fallback_sha }}
-        path: ${{ runner.temp }}/patch-input
-
-    - name: Validate inert patch-release inputs
+    - name: Install trusted isolated-build dependencies
       shell: /bin/bash --noprofile --norc -euo pipefail {0}
       env:
         BASH_ENV: ''
@@ -939,30 +885,280 @@ jobs:
         LD_LIBRARY_PATH: ''
         LD_PRELOAD: ''
         PATH: /usr/bin:/bin
-        PATCH_INPUT_ROOT: ${{ runner.temp }}/patch-input
         PATCH_RUNTIME_ROOT: ${{ runner.temp }}/patch-runtime
+        PATCH_WHEELHOUSE: ${{ runner.temp }}/patch-wheelhouse
         PYTHONPATH: ''
         SHELLOPTS: ''
       run: |
-        test -d "$PATCH_INPUT_ROOT"
-        test ! -L "$PATCH_INPUT_ROOT"
-        entries="$(/usr/bin/find "$PATCH_INPUT_ROOT" -mindepth 1 -maxdepth 1 \
-          -printf '%f\n' | /usr/bin/sort)"
-        test "$entries" = "$(printf '%s\n' metadata.json target.gba)"
-        test -f "$PATCH_INPUT_ROOT/target.gba"
-        test ! -L "$PATCH_INPUT_ROOT/target.gba"
-        test -f "$PATCH_INPUT_ROOT/metadata.json"
-        test ! -L "$PATCH_INPUT_ROOT/metadata.json"
-        test "$(/usr/bin/stat -c %s "$PATCH_INPUT_ROOT/target.gba")" = 33554432
-        metadata_size="$(/usr/bin/stat -c %s "$PATCH_INPUT_ROOT/metadata.json")"
+        /usr/bin/sudo /usr/bin/apt-get update
+        /usr/bin/sudo /usr/bin/apt-get install -y build-essential binutils-arm-none-eabi gcc-arm-none-eabi libmgba-dev libnewlib-arm-none-eabi libpng-dev pkg-config python3-venv
+        /bin/rm -rf -- "$PATCH_WHEELHOUSE"
+        /usr/bin/install -d -m 0700 "$PATCH_WHEELHOUSE"
+        /usr/bin/env -i HOME="$PATCH_RUNTIME_ROOT" LC_ALL=C PATH=/usr/bin:/bin PIP_CONFIG_FILE=/dev/null /usr/bin/python3 -I -m pip download --require-hashes --only-binary=:all: --no-deps -r .github/requirements/build.txt --dest "$PATCH_WHEELHOUSE"
+
+    - name: Build candidate in isolated namespace and stage public inputs
+      shell: /bin/bash --noprofile --norc -euo pipefail {0}
+      env:
+        BASH_ENV: ''
+        CDPATH: ''
+        ENV: ''
+        GLOBIGNORE: ''
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        HOME: ${{ runner.temp }}/patch-runtime
+        LD_LIBRARY_PATH: ''
+        LD_PRELOAD: ''
+        PATH: /usr/bin:/bin
+        BUILDER_ROOT: ${{ runner.temp }}/patch-builder
+        GITHUB_WORKSPACE_PATH: ${{ github.workspace }}
+        PATCH_INPUT_ROOT: ${{ runner.temp }}/patch-input
+        PATCH_RUNTIME_ROOT: ${{ runner.temp }}/patch-runtime
+        PATCH_WHEELHOUSE: ${{ runner.temp }}/patch-wheelhouse
+        PYTHONPATH: ''
+        SHELLOPTS: ''
+      run: |
+        builder_user=ci-patch-builder
+        builder_uid=""
+        builder_gid=""
+        builder_pgid=""
+        builder_supervisor_pid=""
+        builder_root_owned=0
+        builder_user_created=0
+        wheelhouse_owned=0
+        shell_pgid="$(/usr/bin/ps -o pgid= -p "$$" | /usr/bin/tr -d ' ')"
+        builder_group_pids() {
+          /usr/bin/ps -eo pgid=,pid= \
+            | /usr/bin/awk -v pgid="$1" '$1 == pgid {print $2}'
+        }
+        builder_uid_pids() {
+          /usr/bin/ps -eo uid=,pid= \
+            | /usr/bin/awk -v uid="$1" '$1 == uid {print $2}'
+        }
+        terminate_builder_processes() {
+          cleanup_failed=0
+          if [ -n "$builder_pgid" ]; then
+            if [ "$builder_pgid" = "$shell_pgid" ]; then
+              cleanup_failed=1
+            else
+              remaining_group="$(builder_group_pids "$builder_pgid")"
+              if [ -n "$remaining_group" ]; then
+                /usr/bin/sudo /bin/kill -TERM -- "-$builder_pgid" \
+                  2>/dev/null || true
+                /bin/sleep 1
+                remaining_group="$(builder_group_pids "$builder_pgid")"
+              fi
+              if [ -n "$remaining_group" ]; then
+                /usr/bin/sudo /bin/kill -KILL -- "-$builder_pgid" \
+                  2>/dev/null || true
+                /bin/sleep 1
+              fi
+              test -z "$(builder_group_pids "$builder_pgid")" \
+                || cleanup_failed=1
+            fi
+          fi
+          if [ -n "$builder_uid" ]; then
+            remaining_pids="$(builder_uid_pids "$builder_uid")"
+            if [ -n "$remaining_pids" ]; then
+              while IFS= read -r pid; do
+                /usr/bin/sudo /bin/kill -TERM "$pid" \
+                  2>/dev/null || true
+              done <<< "$remaining_pids"
+              /bin/sleep 1
+              remaining_pids="$(builder_uid_pids "$builder_uid")"
+            fi
+            if [ -n "$remaining_pids" ]; then
+              while IFS= read -r pid; do
+                /usr/bin/sudo /bin/kill -KILL "$pid" \
+                  2>/dev/null || true
+              done <<< "$remaining_pids"
+              /bin/sleep 1
+            fi
+            test -z "$(builder_uid_pids "$builder_uid")" \
+              || cleanup_failed=1
+          fi
+          return "$cleanup_failed"
+        }
+        remove_builder_state() {
+          cleanup_failed=0
+          if [ "$builder_user_created" = 1 ]; then
+            if /usr/bin/getent passwd "$builder_user" > /dev/null; then
+              if /usr/bin/sudo /usr/sbin/userdel "$builder_user"; then
+                builder_user_created=0
+              else
+                cleanup_failed=1
+              fi
+            else
+              builder_user_created=0
+            fi
+          fi
+          if [ "$builder_root_owned" = 1 ]; then
+            if /bin/rm -rf -- "$BUILDER_ROOT"; then
+              builder_root_owned=0
+            else
+              cleanup_failed=1
+            fi
+          fi
+          if [ "$wheelhouse_owned" = 1 ]; then
+            if /bin/rm -rf -- "$PATCH_WHEELHOUSE"; then
+              wheelhouse_owned=0
+            else
+              cleanup_failed=1
+            fi
+          fi
+          test -z "$(/usr/bin/getent passwd "$builder_user" || true)" \
+            || cleanup_failed=1
+          test ! -e "$BUILDER_ROOT" || cleanup_failed=1
+          test ! -e "$PATCH_WHEELHOUSE" || cleanup_failed=1
+          return "$cleanup_failed"
+        }
+        cleanup_builder() {
+          status="$?"
+          trap - EXIT INT TERM
+          set +e
+          terminate_builder_processes
+          process_cleanup="$?"
+          if [ -n "$builder_supervisor_pid" ]; then
+            wait "$builder_supervisor_pid" 2>/dev/null
+          fi
+          remove_builder_state
+          state_cleanup="$?"
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          if [ "$process_cleanup" -ne 0 ] || [ "$state_cleanup" -ne 0 ]; then
+            exit 1
+          fi
+          exit 0
+        }
+        trap cleanup_builder EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+        test ! -e "$BUILDER_ROOT"
+        test -d "$PATCH_WHEELHOUSE"
+        test ! -L "$PATCH_WHEELHOUSE"
+        wheelhouse_owned=1
+        test -z "$(/usr/bin/getent passwd "$builder_user" || true)"
+        /usr/bin/install -d -m 0700 "$BUILDER_ROOT"
+        builder_root_owned=1
+        /usr/bin/install -d -m 0700 \
+          "$BUILDER_ROOT/home" "$BUILDER_ROOT/source" \
+          "$BUILDER_ROOT/tmp" "$BUILDER_ROOT/wheelhouse"
+        /bin/cp -a -- "$GITHUB_WORKSPACE_PATH/." "$BUILDER_ROOT/source/"
+        /bin/cp -a -- "$PATCH_WHEELHOUSE/." "$BUILDER_ROOT/wheelhouse/"
+        builder_uid=60000
+        while [ "$builder_uid" -ge 50000 ]; do
+          if ! /usr/bin/getent passwd "$builder_uid" > /dev/null && \
+             [ -z "$(builder_uid_pids "$builder_uid")" ]; then
+            break
+          fi
+          builder_uid="$((builder_uid - 1))"
+        done
+        test "$builder_uid" -ge 50000
+        /usr/bin/sudo /usr/sbin/useradd --no-create-home --no-user-group \
+          --gid nogroup --uid "$builder_uid" \
+          --home-dir "$BUILDER_ROOT/home" --shell /usr/sbin/nologin \
+          "$builder_user"
+        builder_user_created=1
+        test "$(/usr/bin/id -u "$builder_user")" = "$builder_uid"
+        builder_gid="$(/usr/bin/id -g "$builder_user")"
+        test -z "$(builder_uid_pids "$builder_uid")"
+        /usr/bin/sudo /bin/chown -R "$builder_uid:$builder_gid" "$BUILDER_ROOT"
+        /usr/bin/setsid --wait /usr/bin/timeout --signal=TERM \
+          --kill-after=30s 55m /usr/bin/sudo /usr/bin/unshare --fork \
+          --kill-child=KILL --mount --pid --mount-proc --net --ipc --uts \
+          /usr/bin/setpriv --reuid="$builder_uid" --regid="$builder_gid" \
+          --clear-groups --no-new-privs --bounding-set=-all \
+          /usr/bin/env -i HOME="$BUILDER_ROOT/home" \
+          GITHUB_WORKSPACE="$BUILDER_ROOT/source" \
+          LC_ALL=C PATH=/usr/bin:/bin PIP_CONFIG_FILE=/dev/null \
+          RUNNER_TEMP="$BUILDER_ROOT/tmp" TMPDIR="$BUILDER_ROOT/tmp" \
+          WHEELHOUSE="$BUILDER_ROOT/wheelhouse" \
+          HANDOFF="$BUILDER_ROOT/handoff" \
+          /bin/bash --noprofile --norc -euo pipefail -c \
+          '/usr/bin/python3 -m venv "$HOME/venv"; "$HOME/venv/bin/python3" -m pip install --no-index --find-links="$WHEELHOUSE" --require-hashes --only-binary=:all: --no-deps -r "$GITHUB_WORKSPACE/.github/requirements/build.txt"; cd "$GITHUB_WORKSPACE"; ./build_tools.sh; make expansion-modern-map-menu-presentation-check -j1; /usr/bin/install -d -m 0700 "$HANDOFF"; /usr/bin/install -m 0400 build/expansion-modern-all-locales-all-features/release/aapcs/fireemblem8.gba "$HANDOFF/target.gba"; /usr/bin/install -m 0400 build/expansion-modern-all-locales-all-features/release/aapcs/generated/expansion_build_metadata.json "$HANDOFF/metadata.json"' &
+        builder_supervisor_pid="$!"
+        builder_pgid="$(/usr/bin/ps -o pgid= -p "$builder_supervisor_pid" \
+          | /usr/bin/tr -d ' ')"
+        [[ "$builder_pgid" =~ ^[1-9][0-9]*$ ]]
+        test "$builder_pgid" = "$builder_supervisor_pid"
+        test "$builder_pgid" != "$shell_pgid"
+        wait "$builder_supervisor_pid"
+        builder_supervisor_pid=""
+        test -z "$(builder_group_pids "$builder_pgid")"
+        test -z "$(builder_uid_pids "$builder_uid")"
+        handoff_root="$BUILDER_ROOT/handoff"
+        test -d "$handoff_root"
+        test ! -L "$handoff_root"
+        test "$(/usr/bin/stat -c %u "$handoff_root")" = "$builder_uid"
+        test "$(/usr/bin/realpath "$handoff_root")" = "$handoff_root"
+        handoff_names="$(/usr/bin/find "$handoff_root" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C /usr/bin/sort)"
+        test "$handoff_names" = "$(printf 'metadata.json\ntarget.gba')"
+        target_source="$handoff_root/target.gba"
+        metadata_source="$handoff_root/metadata.json"
+        for source in "$target_source" "$metadata_source"; do
+          test -f "$source"
+          test ! -L "$source"
+          test "$(/usr/bin/stat -c %F "$source")" = "regular file"
+          test "$(/usr/bin/stat -c %h "$source")" = 1
+          test "$(/usr/bin/stat -c %u "$source")" = "$builder_uid"
+          case "$(/usr/bin/realpath "$source")" in
+            "$handoff_root"/*) ;;
+            *) echo "builder output escaped isolated handoff" >&2; exit 1 ;;
+          esac
+        done
+        test "$(/usr/bin/stat -c %s "$target_source")" = 33554432
+        metadata_size="$(/usr/bin/stat -c %s "$metadata_source")"
         test "$metadata_size" -gt 0
         test "$metadata_size" -le 1048576
+        /bin/rm -rf -- "$PATCH_INPUT_ROOT"
+        /usr/bin/install -d -m 0700 "$PATCH_INPUT_ROOT"
+        /usr/bin/install -m 0400 "$target_source" \
+          "$PATCH_INPUT_ROOT/target.gba"
+        /usr/bin/install -m 0400 "$metadata_source" \
+          "$PATCH_INPUT_ROOT/metadata.json"
+        /usr/bin/find "$GITHUB_WORKSPACE_PATH" -mindepth 1 -delete
+        test -z "$(/usr/bin/find "$GITHUB_WORKSPACE_PATH" -mindepth 1 -print -quit)"
+        terminate_builder_processes
+        remove_builder_state
+        trap - EXIT INT TERM
+        test -z "$(builder_group_pids "$builder_pgid")"
+        test -z "$(builder_uid_pids "$builder_uid")"
+        test -z "$(/usr/bin/getent passwd "$builder_user" || true)"
+        test ! -e "$BUILDER_ROOT"
+        test ! -e "$PATCH_WHEELHOUSE"
+        input_names="$(/usr/bin/find "$PATCH_INPUT_ROOT" -mindepth 1 \
+          -maxdepth 1 -printf '%f\n' | LC_ALL=C /usr/bin/sort)"
+        test "$input_names" = "$(printf 'metadata.json\ntarget.gba')"
+        for input in "$PATCH_INPUT_ROOT/target.gba" \
+          "$PATCH_INPUT_ROOT/metadata.json"
+        do
+          test -f "$input"
+          test ! -L "$input"
+          test "$(/usr/bin/stat -c %F "$input")" = "regular file"
+          test "$(/usr/bin/stat -c %h "$input")" = 1
+          test "$(/usr/bin/stat -c %a "$input")" = 400
+        done
         /usr/bin/env -i HOME="$PATCH_RUNTIME_ROOT" PATH=/usr/bin:/bin LC_ALL=C \
           /usr/bin/python3 -I -S -c \
           'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")); assert isinstance(value, dict); assert value.get("build_commit") == sys.argv[2]' \
           "$PATCH_INPUT_ROOT/metadata.json" "$PATCH_COMMIT"
-        /bin/chmod 0400 "$PATCH_INPUT_ROOT/target.gba" \
-          "$PATCH_INPUT_ROOT/metadata.json"
 
     - name: Download private base image
       id: private-base
@@ -1026,6 +1222,8 @@ jobs:
         /bin/chmod 0400 "$base_image"
         test -f "$base_image"
         test ! -L "$base_image"
+        test "$(/usr/bin/stat -c %F "$base_image")" = "regular file"
+        test "$(/usr/bin/stat -c %h "$base_image")" = 1
         test "$(/usr/bin/stat -c %a "$private_dir")" = 700
         test "$(/usr/bin/stat -c %a "$base_image")" = 400
         test "$(/usr/bin/stat -c %s "$base_image")" = 16777216
@@ -1101,12 +1299,22 @@ jobs:
         esac
         test -f "$BASE_IMAGE"
         test ! -L "$BASE_IMAGE"
+        test "$(/usr/bin/stat -c %F "$BASE_IMAGE")" = "regular file"
+        test "$(/usr/bin/stat -c %h "$BASE_IMAGE")" = 1
         test "$(/usr/bin/stat -c %a "$BASE_IMAGE")" = 400
         test "$(/usr/bin/stat -c %s "$BASE_IMAGE")" = 16777216
-        test -f "$PATCH_INPUT_ROOT/target.gba"
-        test ! -L "$PATCH_INPUT_ROOT/target.gba"
-        test -f "$PATCH_INPUT_ROOT/metadata.json"
-        test ! -L "$PATCH_INPUT_ROOT/metadata.json"
+        input_names="$(/usr/bin/find "$PATCH_INPUT_ROOT" -mindepth 1 \
+          -maxdepth 1 -printf '%f\n' | LC_ALL=C /usr/bin/sort)"
+        test "$input_names" = "$(printf 'metadata.json\ntarget.gba')"
+        for input in "$PATCH_INPUT_ROOT/target.gba" \
+          "$PATCH_INPUT_ROOT/metadata.json"
+        do
+          test -f "$input"
+          test ! -L "$input"
+          test "$(/usr/bin/stat -c %F "$input")" = "regular file"
+          test "$(/usr/bin/stat -c %h "$input")" = 1
+          test "$(/usr/bin/stat -c %a "$input")" = 400
+        done
         cd "$PATCH_RUNTIME_ROOT"
         /usr/bin/env -i HOME="$PATCH_RUNTIME_ROOT" PATH=/usr/bin:/bin LC_ALL=C \
           /usr/bin/python3 -I -S -c \
@@ -1125,12 +1333,21 @@ jobs:
           --artifact-dir "$PATCH_ARTIFACT_DIR"
         LC_ALL=C
         export LC_ALL
-        /usr/bin/find "$PATCH_ARTIFACT_DIR" -maxdepth 1 -type f -printf '%f\n' \
-          | /usr/bin/sort \
-          | /usr/bin/diff -u \
-            <(printf '%s\n' README.txt \
-              fireemblem8-expansion-all-locales-all-features-aapcs.bps \
-              manifest.json | /usr/bin/sort) -
+        artifact_names="$(/usr/bin/find "$PATCH_ARTIFACT_DIR" -mindepth 1 \
+          -maxdepth 1 -printf '%f\n' | /usr/bin/sort)"
+        test "$artifact_names" = \
+          "$(printf '%s\n' README.txt \
+            fireemblem8-expansion-all-locales-all-features-aapcs.bps \
+            manifest.json | /usr/bin/sort)"
+        for artifact in "$PATCH_ARTIFACT_DIR/README.txt" \
+          "$PATCH_ARTIFACT_DIR/fireemblem8-expansion-all-locales-all-features-aapcs.bps" \
+          "$PATCH_ARTIFACT_DIR/manifest.json"
+        do
+          test -f "$artifact"
+          test ! -L "$artifact"
+          test "$(/usr/bin/stat -c %F "$artifact")" = "regular file"
+          test "$(/usr/bin/stat -c %h "$artifact")" = 1
+        done
 
     - name: Cleanup and verify private base
       if: always()

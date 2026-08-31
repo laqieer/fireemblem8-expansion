@@ -1408,7 +1408,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 (
                         "patch-release",
                         "needs",
-                        "    needs: [event-identity, build]",
+                        "    needs: [event-identity]",
                         "    needs: [event-classifier]",
                 ),
                 (
@@ -1427,7 +1427,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 (
                         "patch-release",
                         "revision",
-                        '        test "$ACTUAL_SHA" = "$PREVIOUS_MASTER_SHA"',
+                        '        test "$ACTUAL_SHA" = "$PATCH_COMMIT"',
                         "        true",
                 ),
                 (
@@ -1439,8 +1439,9 @@ class VerifyCliCwdTests(unittest.TestCase):
                 (
                         "patch-release",
                         "step",
-                        "    - name: Validate inert patch-release inputs",
-                        "    - name: Skip inert patch-release validation",
+                        "    - name: Build candidate in isolated namespace "
+                        "and stage public inputs",
+                        "    - name: Skip isolated candidate build",
                 ),
                 (
                         "patch-release",
@@ -1450,9 +1451,9 @@ class VerifyCliCwdTests(unittest.TestCase):
                 ),
                 (
                         "patch-release",
-                        "download-action",
-                        verify_mod._DOWNLOAD_USES,
-                        "actions/download-artifact@" + "0" * 40,
+                        "isolation",
+                        "/usr/bin/unshare --fork",
+                        "/bin/bash",
                 ),
                 (
                         "patch-release",

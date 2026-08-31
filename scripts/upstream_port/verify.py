@@ -69,12 +69,10 @@ _CLASSIFIER_CHECKOUT_WITH = (
     ),
 )
 _PATCH_CHECKOUT_WITH = (
-    ("fetch-depth", "1"),
+    ("fetch-depth", "0"),
     ("persist-credentials", "false"),
-    ("ref", "${{ needs.event-identity.outputs.previous_sha }}"),
-)
-_DOWNLOAD_USES = (
-    "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"
+    ("ref", "${{ needs.event-identity.outputs.fallback_sha }}"),
+    ("submodules", "recursive"),
 )
 _UPLOAD_USES = (
     "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
@@ -88,17 +86,6 @@ _UPLOAD_WITH = (
     ),
     ("path", "${{ runner.temp }}/patch-artifact"),
     ("retention-days", "30"),
-)
-_PATCH_INPUT_UPLOAD_WITH = (
-    ("compression-level", "0"),
-    ("if-no-files-found", "error"),
-    ("name", "patch-input-${{ needs.event-identity.outputs.fallback_sha }}"),
-    ("path", "${{ runner.temp }}/patch-input"),
-    ("retention-days", "1"),
-)
-_PATCH_INPUT_DOWNLOAD_WITH = (
-    ("name", "patch-input-${{ needs.event-identity.outputs.fallback_sha }}"),
-    ("path", "${{ runner.temp }}/patch-input"),
 )
 _EXPECTED_BUILD_SHA_EXPRESSION = (
     "${{ (needs.event-classifier.result == 'success' && "
@@ -149,17 +136,7 @@ _WORKER_CONDITION = (
 )
 _PUBLISHER_CONDITION = (
     "${{ always() && needs.event-identity.result == 'success' && "
-    "needs.build.result == 'success' && "
     "github.event_name == 'push' && "
-    "needs.event-identity.outputs.previous_sha != '' && "
-    "needs.event-identity.outputs.fallback_kind == 'push' && "
-    "needs.event-identity.outputs.fallback_sha == github.event.after && "
-    "needs.event-identity.outputs.fallback_sha == github.sha }}"
-)
-_PATCH_INPUT_CONDITION = (
-    "${{ github.event_name == 'push' && "
-    "needs.event-identity.result == 'success' && "
-    "needs.event-identity.outputs.previous_sha != '' && "
     "needs.event-identity.outputs.fallback_kind == 'push' && "
     "needs.event-identity.outputs.fallback_sha == github.event.after && "
     "needs.event-identity.outputs.fallback_sha == github.sha }}"
@@ -187,7 +164,6 @@ _IDENTITY_COMMANDS = (
     ("classifier_ref=refs/heads/$DEFAULT_BRANCH",),
     ("fallback_kind=none",),
     ("fallback_sha=",),
-    ("previous_sha=",),
     ("/usr/bin/git", "check-ref-format", "$classifier_ref"),
     ("if", "[[", "$EVENT_NAME", "=", "pull_request", "]];", "then"),
     ("if", "is_lower_sha", "$PR_BASE_SHA", "$PR_BASE_SHA_JSON;", "then"),
@@ -245,28 +221,12 @@ _IDENTITY_COMMANDS = (
     ("classifier_ref=$PUSH_SHA",),
     ("fallback_kind=push",),
     ("fallback_sha=$PUSH_SHA",),
-    (
-        "if",
-        "is_lower_sha",
-        "$BEFORE_SHA",
-        "$BEFORE_SHA_JSON",
-        "&&",
-        "[[",
-        "$BEFORE_SHA",
-        "!=",
-        "0000000000000000000000000000000000000000",
-        "]];",
-        "then",
-    ),
-    ("previous_sha=$BEFORE_SHA",),
-    ("fi",),
     ("fi",),
     ("{",),
     ("echo", "classifier_expected_sha=$classifier_expected_sha"),
     ("echo", "classifier_ref=$classifier_ref"),
     ("echo", "fallback_kind=$fallback_kind"),
     ("echo", "fallback_sha=$fallback_sha"),
-    ("echo", "previous_sha=$previous_sha"),
     ("}", ">>", "$GITHUB_OUTPUT"),
 )
 _CLASSIFIER_VERIFY_COMMANDS = (
@@ -635,7 +595,6 @@ _EXPECTED_JOB_OUTPUTS = {
         ("classifier_ref", "${{ steps.identity.outputs.classifier_ref }}"),
         ("fallback_kind", "${{ steps.identity.outputs.fallback_kind }}"),
         ("fallback_sha", "${{ steps.identity.outputs.fallback_sha }}"),
-        ("previous_sha", "${{ steps.identity.outputs.previous_sha }}"),
     ),
     "event-router": (
         ("classification", "${{ steps.classify.outputs.classification }}"),
@@ -661,8 +620,6 @@ _EXPECTED_JOB_OUTPUTS = {
 _EXPECTED_JOB_ENV = {
     "event-identity": (
         ("BASH_ENV", "''"),
-        ("BEFORE_SHA", "${{ github.event.before }}"),
-        ("BEFORE_SHA_JSON", "${{ toJSON(github.event.before) }}"),
         ("DEFAULT_BRANCH", "${{ github.event.repository.default_branch }}"),
         ("ENV", "''"),
         ("EVENT_NAME", "${{ github.event_name }}"),
@@ -735,7 +692,6 @@ _EXPECTED_JOB_ENV = {
     ),
     "patch-release": (
         ("PATCH_COMMIT", "${{ needs.event-identity.outputs.fallback_sha }}"),
-        ("PREVIOUS_MASTER_SHA", "${{ needs.event-identity.outputs.previous_sha }}"),
     ),
     "summary": (
         ("BUILD_RESULT", "${{ needs.build.result }}"),
@@ -886,8 +842,6 @@ _EXPECTED_STEP_ROLES = {
             "Build and verify all-locales/all-features map menu "
             "(issues #49/#168)",
         ),
-        ("setup", "Stage inert patch-release inputs"),
-        ("setup", "Upload inert patch-release inputs"),
     ),
     "extended-host-tests": (
         ("setup", None),
@@ -909,9 +863,12 @@ _EXPECTED_STEP_ROLES = {
     ),
     "patch-release": (
         ("publisher", None),
-        ("publisher", "Verify and stage trusted previous-master producer"),
-        ("publisher", "Download inert patch-release inputs"),
-        ("publisher", "Validate inert patch-release inputs"),
+        ("publisher", "Verify exact candidate and stage trusted producer"),
+        ("publisher", "Install trusted isolated-build dependencies"),
+        (
+            "publisher",
+            "Build candidate in isolated namespace and stage public inputs",
+        ),
         ("publisher", "Download private base image"),
         ("publisher", "Create and verify patch artifact"),
         ("publisher", "Cleanup and verify private base"),
@@ -1301,9 +1258,7 @@ def _parse_job_context(job_name, body):
         elif name == "needs":
             expected = (
                 "[event-identity]"
-                if job_name == "event-router"
-                else "[event-identity, build]"
-                if job_name == "patch-release"
+                if job_name in {"event-router", "patch-release"}
                 else "[event-identity, event-router]"
                 if job_name == "event-classifier"
                 else "[event-identity, event-classifier]"
@@ -1569,34 +1524,14 @@ def _parse_step(block, job_name, index):
         ):
             raise ValueError(f"{step_label} mode verification differs")
         role = "setup"
-    elif job_name == "build" and name == "Stage inert patch-release inputs":
-        if (
-            set(values) != {"env", "if", "name", "run"}
-            or values["if"] != _PATCH_INPUT_CONDITION
-            or values["env"]
-            != (("PATCH_INPUT_ROOT", "${{ runner.temp }}/patch-input"),)
-        ):
-            raise ValueError(f"{step_label} inert patch staging differs")
-        role = "setup"
-    elif job_name == "build" and name == "Upload inert patch-release inputs":
-        if (
-            set(values) != {"if", "name", "uses", "with"}
-            or values["if"] != _PATCH_INPUT_CONDITION
-            or values["uses"] != _UPLOAD_USES
-            or values["with"] != _PATCH_INPUT_UPLOAD_WITH
-        ):
-            raise ValueError(f"{step_label} inert patch upload differs")
-        role = "setup"
     elif job_name == "patch-release":
         expected_fields = (
             {"uses", "with"}
             if index in {0, 7}
-            else {"name", "uses", "with"}
-            if index == 2
             else {"id", "name", "shell", "env", "run"}
             if index == 4
             else {"name", "shell", "env", "run"}
-            if index in {3, 5}
+            if index in {2, 3, 5}
             else {"if", "name", "shell", "env", "run"}
             if index == 6
             else {"name", "env", "run"}
@@ -1604,9 +1539,9 @@ def _parse_step(block, job_name, index):
             else set()
         )
         expected_name = {
-            1: "Verify and stage trusted previous-master producer",
-            2: "Download inert patch-release inputs",
-            3: "Validate inert patch-release inputs",
+            1: "Verify exact candidate and stage trusted producer",
+            2: "Install trusted isolated-build dependencies",
+            3: "Build candidate in isolated namespace and stage public inputs",
             4: "Download private base image",
             5: "Create and verify patch artifact",
             6: "Cleanup and verify private base",
@@ -1619,19 +1554,40 @@ def _parse_step(block, job_name, index):
         ):
             raise ValueError(f"{step_label} checkout action differs")
         if index == 1 and (
-            ("test", "$ACTUAL_SHA", "=", "$PREVIOUS_MASTER_SHA")
+            ("test", "$ACTUAL_SHA", "=", "$PATCH_COMMIT")
             not in values["run"]
-            or "/usr/bin/git"
-            not in {token for command in values["run"] for token in command}
+            or "/usr/bin/git cat-file -t $PATCH_COMMIT"
+            not in " ".join(token for command in values["run"] for token in command)
+            or "PREVIOUS_MASTER_SHA"
+            in " ".join(token for command in values["run"] for token in command)
             or "sha256sum"
             in " ".join(token for command in values["run"] for token in command)
         ):
             raise ValueError(f"{step_label} trusted producer verification differs")
         if index == 2 and (
-            values["uses"] != _DOWNLOAD_USES
-            or values["with"] != _PATCH_INPUT_DOWNLOAD_WITH
+            values["shell"]
+            != "/bin/bash --noprofile --norc -euo pipefail {0}"
+            or values["env"]
+            != tuple(
+                sorted(
+                    _PRIVATE_STEP_ENV
+                    + (
+                        ("PATCH_RUNTIME_ROOT", "${{ runner.temp }}/patch-runtime"),
+                        (
+                            "PATCH_WHEELHOUSE",
+                            "${{ runner.temp }}/patch-wheelhouse",
+                        ),
+                    )
+                )
+            )
+            or "/usr/bin/env"
+            not in {token for command in values["run"] for token in command}
+            or "/usr/bin/python3"
+            not in {token for command in values["run"] for token in command}
+            or "PIP_CONFIG_FILE=/dev/null"
+            not in {token for command in values["run"] for token in command}
         ):
-            raise ValueError(f"{step_label} inert patch download differs")
+            raise ValueError(f"{step_label} isolated dependency setup differs")
         if index == 3 and (
             values["shell"]
             != "/bin/bash --noprofile --norc -euo pipefail {0}"
@@ -1640,15 +1596,39 @@ def _parse_step(block, job_name, index):
                 sorted(
                     _PRIVATE_STEP_ENV
                     + (
+                        ("BUILDER_ROOT", "${{ runner.temp }}/patch-builder"),
+                        ("GITHUB_WORKSPACE_PATH", "${{ github.workspace }}"),
                         ("PATCH_INPUT_ROOT", "${{ runner.temp }}/patch-input"),
                         ("PATCH_RUNTIME_ROOT", "${{ runner.temp }}/patch-runtime"),
+                        (
+                            "PATCH_WHEELHOUSE",
+                            "${{ runner.temp }}/patch-wheelhouse",
+                        ),
                     )
                 )
             )
-            or ("test", "!", "-L", "$PATCH_INPUT_ROOT/target.gba")
+            or "/usr/bin/unshare"
+            not in {token for command in values["run"] for token in command}
+            or "--net"
+            not in {token for command in values["run"] for token in command}
+            or "--kill-child=KILL"
+            not in {token for command in values["run"] for token in command}
+            or ("test", "-z", "$(builder_uid_pids $builder_uid)")
             not in values["run"]
+            or ("test", "-z", "$(builder_group_pids $builder_pgid)")
+            not in values["run"]
+            or "builder_user_created=0"
+            not in {token for command in values["run"] for token in command}
+            or "builder_root_owned=0"
+            not in {token for command in values["run"] for token in command}
+            or ("test", "!", "-e", "$BUILDER_ROOT") not in values["run"]
+            or ("test", "!", "-e", "$PATCH_WHEELHOUSE") not in values["run"]
+            or "pkill"
+            in " ".join(token for command in values["run"] for token in command)
+            or "killall"
+            in " ".join(token for command in values["run"] for token in command)
         ):
-            raise ValueError(f"{step_label} inert patch validation differs")
+            raise ValueError(f"{step_label} isolated candidate build differs")
         if index == 4 and (
             values["id"] != "private-base"
             or values["shell"]

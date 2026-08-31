@@ -110,7 +110,7 @@ class BuildCiCheckoutContractTests(unittest.TestCase):
         )
         self.assertIn("needs.event-identity.outputs.fallback_sha", EXPECTED_SHA)
         self.assertIn(
-            "ref: ${{ needs.event-identity.outputs.previous_sha }}",
+            "ref: ${{ needs.event-identity.outputs.fallback_sha }}",
             text,
         )
         for raw_ref in (

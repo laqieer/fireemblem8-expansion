@@ -45,17 +45,25 @@ The publisher checks size, both hashes, every header value, and recomputed
 checksum before creating a patch. Missing, malformed, wrong, or modified
 inputs fail before an artifact is created. The trusted workflow may obtain its
 local input from a protected secret, but no URL, base bytes, or base image is
-published, cached, or logged. The non-secret build job transfers its inert
-already-built target ROM and metadata through an exact-after-named, one-day
-internal Actions artifact to a fresh publisher; that transfer is never the
-final downloadable release artifact.
+published, cached, or logged. No complete target ROM is uploaded to or
+downloaded from an Actions artifact, cache, release, or log.
 
-The publisher verifies its exact commit and completes all repository-controlled
-setup/build work in the non-secret `build` job, which transfers only that inert
-already-built target ROM and metadata. A fresh publisher verifies and stages the
-producer from exact nonzero `github.event.before`, requires that previous
-master commit on the pushed commit's first-parent ancestry, and uses no
-whole-file source hash ledger. The curl-only secret step creates an
+The fresh publisher checks out and verifies the exact validated master-push
+after SHA. It stages the producer from that same immutable commit with no
+whole-file source hash ledger. Before any secret or base exists, the candidate
+tree is copied to a disposable workspace owned by a dedicated unprivileged
+UID and built inside mount, PID, network, IPC, and UTS namespaces with no
+network, capabilities, secrets, `BASH_ENV`, or `GITHUB_ENV`. Hash-locked wheels
+are fetched by the trusted host before isolation and installed offline inside
+it. The trusted host admits only a regular, nonsymlink, single-link 32 MiB ROM
+and bounded metadata from an exact two-file handoff; devices, escaped paths,
+and unexpected outputs fail. It terminates the exact builder process group,
+proves no process with the builder UID remains, validates the metadata against
+the after SHA, copies only those public inputs into runner-owned `0400`
+staging, and removes the builder user, tree, wheelhouse, and candidate
+checkout.
+
+Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.
 The immediately following step runs only the staged tool through absolute
 isolated Python from an empty runtime CWD/environment. No repository command
