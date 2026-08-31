@@ -20,6 +20,113 @@ ORACLE_PATH = ROOT / reporter.PROBE_ORACLE_PATH
 SCRATCH_ROOT = ROOT / "build" / "test-artifacts" / "validation-ownership"
 
 
+def write_make_v4_registry(
+    path,
+    *,
+    defaults=(),
+    undefined=(),
+    explicit_domains=(),
+    tracked_domains=(),
+):
+    registry = {
+        "schema_version": 4,
+        "contracts": [],
+        "ambient_inputs": {
+            "allowed_names": sorted(defaults),
+            "undefined_names": sorted(undefined),
+            "trusted_builtins": [
+                {
+                    "name": "CURDIR",
+                    "authority": "repository-root",
+                    "value": "<trusted-builtin:CURDIR>",
+                },
+                {
+                    "name": "MAKE",
+                    "authority": "recursive-make",
+                    "value": "<trusted-builtin:MAKE>",
+                },
+                {
+                    "name": "MAKEFLAGS",
+                    "authority": "guarded-execution-flags",
+                    "value": "<trusted-builtin:MAKEFLAGS>",
+                },
+                {
+                    "name": "MAKECMDGOALS",
+                    "authority": "requested-goals",
+                    "value": "<trusted-builtin:MAKECMDGOALS>",
+                },
+            ],
+            "scoped_variables": [
+                {
+                    "name": "t",
+                    "authority": "foreach-iteration",
+                    "value": "<scoped-variable:t>",
+                }
+            ],
+            "escaped_literals": [
+                {
+                    "name": "sort",
+                    "authority": "escaped-shell-literal",
+                    "value": "<escaped-shell-literal:sort>",
+                }
+            ],
+            "allowed_sources": [
+                "command-line",
+                "process-environment",
+            ],
+            "value_policy": "symbolic-no-host-value",
+            "provenance": "gnu-make-import-before-default",
+            "evidence_binding": "consuming-make-target",
+        },
+        "execution_controls": {
+            "scrubbed_variables": [
+                "GNUMAKEFLAGS",
+                "MAKEFLAGS",
+                "MAKEOVERRIDES",
+                "MFLAGS",
+            ],
+            "allowed_flag_patterns": [
+                "--jobserver-auth=*",
+                "--jobserver-fds=*",
+                "--no-print-directory",
+                "-j*",
+                "j*",
+            ],
+            "forbidden_modes": [
+                "dry-run",
+                "ignore-errors",
+                "question",
+                "silent",
+                "touch",
+                "unmodeled",
+            ],
+            "override_policy": "reject-nonempty",
+        },
+        "prerequisite_domains": {
+            "tracked_fallback_names": sorted(tracked_domains),
+            "explicit": [
+                {
+                    "name": name,
+                    "values": sorted(values),
+                }
+                for name, values in sorted(explicit_domains)
+            ],
+            "generated_paths": [],
+            "max_variants": 4096,
+            "max_words": 20000,
+            "value_policy": "finite-exact-or-tracked-fallback",
+            "target_policy": "defined-pattern-or-tracked-tree",
+        },
+        "seal": "",
+    }
+    registry["seal"] = reporter._sha256(
+        reporter.MAKE_DYNAMIC_SEAL_DOMAIN,
+        reporter.canonical_make_dynamic_payload(registry),
+    )
+    path.write_bytes(reporter.normalized_json(registry))
+    return registry
+
+
 class OwnershipGraphTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -1764,88 +1871,11 @@ class OwnershipGraphTests(unittest.TestCase):
             registry_path.parent.mkdir(parents=True)
 
             def write_registry(names, undefined_names=()):
-                registry = {
-                    "schema_version": 3,
-                    "contracts": [],
-                    "ambient_inputs": {
-                        "allowed_names": sorted(names),
-                        "undefined_names": sorted(undefined_names),
-                        "trusted_builtins": [
-                            {
-                                "name": "CURDIR",
-                                "authority": "repository-root",
-                                "value": "<trusted-builtin:CURDIR>",
-                            },
-                            {
-                                "name": "MAKE",
-                                "authority": "recursive-make",
-                                "value": "<trusted-builtin:MAKE>",
-                            },
-                            {
-                                "name": "MAKEFLAGS",
-                                "authority": "guarded-execution-flags",
-                                "value": "<trusted-builtin:MAKEFLAGS>",
-                            },
-                            {
-                                "name": "MAKECMDGOALS",
-                                "authority": "requested-goals",
-                                "value": "<trusted-builtin:MAKECMDGOALS>",
-                            },
-                        ],
-                        "scoped_variables": [
-                            {
-                                "name": "t",
-                                "authority": "foreach-iteration",
-                                "value": "<scoped-variable:t>",
-                            }
-                        ],
-                        "escaped_literals": [
-                            {
-                                "name": "sort",
-                                "authority": "escaped-shell-literal",
-                                "value": "<escaped-shell-literal:sort>",
-                            }
-                        ],
-                        "allowed_sources": [
-                            "command-line",
-                            "process-environment",
-                        ],
-                        "value_policy": "symbolic-no-host-value",
-                        "provenance": "gnu-make-import-before-default",
-                        "evidence_binding": "consuming-make-target",
-                    },
-                    "execution_controls": {
-                        "scrubbed_variables": [
-                            "GNUMAKEFLAGS",
-                            "MAKEFLAGS",
-                            "MAKEOVERRIDES",
-                            "MFLAGS",
-                        ],
-                        "allowed_flag_patterns": [
-                            "--jobserver-auth=*",
-                            "--jobserver-fds=*",
-                            "--no-print-directory",
-                            "-j*",
-                            "j*",
-                        ],
-                        "forbidden_modes": [
-                            "dry-run",
-                            "ignore-errors",
-                            "question",
-                            "silent",
-                            "touch",
-                            "unmodeled",
-                        ],
-                        "override_policy": "reject-nonempty",
-                    },
-                    "seal": "",
-                }
-                registry["seal"] = reporter._sha256(
-                    reporter.MAKE_DYNAMIC_SEAL_DOMAIN,
-                    reporter.canonical_make_dynamic_payload(registry),
+                return write_make_v4_registry(
+                    registry_path,
+                    defaults=names,
+                    undefined=undefined_names,
                 )
-                registry_path.write_bytes(reporter.normalized_json(registry))
-                return registry
 
             entries = {
                 path: reporter.GitTreeEntry(
@@ -2304,6 +2334,441 @@ class OwnershipGraphTests(unittest.TestCase):
             ):
                 expander.expand(expression)
 
+    def test_prerequisite_domains_traverse_every_external_variant(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            scratch = Path(directory)
+            makefile = scratch / "Makefile"
+            registry_path = scratch / reporter.MAKE_DYNAMIC_PATH
+            registry_path.parent.mkdir(parents=True)
+
+            def entries(*extra):
+                return {
+                    path: reporter.GitTreeEntry(
+                        path, "100644", "blob", "0" * 40
+                    )
+                    for path in (
+                        "Makefile",
+                        reporter.MAKE_DYNAMIC_PATH.as_posix(),
+                        *extra,
+                    )
+                }
+
+            def parse(text, target="all", extra=()):
+                makefile.write_text(text, encoding="ascii")
+                return reporter._parse_make_authorities(
+                    reporter.AuthorityLoader(scratch, entries(*extra)),
+                    {target},
+                    require_dynamic_contracts=True,
+                )[target]
+
+            def run(text, *, env=None, variables=()):
+                makefile.write_text(text, encoding="ascii")
+                return subprocess.run(
+                    [
+                        "make",
+                        "--no-print-directory",
+                        "-s",
+                        *variables,
+                        "all",
+                    ],
+                    cwd=scratch,
+                    env=env,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+
+            clean_environment = dict(os.environ)
+            clean_environment.pop("DEP", None)
+            ambient_environment = {
+                **clean_environment,
+                "DEP": "child",
+            }
+            write_make_v4_registry(
+                registry_path,
+                undefined={"DEP"},
+                explicit_domains=(("DEP", ("", "child")),),
+            )
+            one = (
+                ".PHONY: all child unrelated\n"
+                "all: $(DEP)\n"
+                "child:\n\t@printf 'one\\n'\n"
+                "unrelated:\n\t@printf 'stable\\n'\n"
+            )
+            two = one.replace("printf 'one", "printf 'two")
+            self.assertEqual(run(one, env=clean_environment).stdout, "")
+            self.assertEqual(run(one, env=ambient_environment).stdout, "one\n")
+            self.assertEqual(
+                run(
+                    one,
+                    env=clean_environment,
+                    variables=("DEP=child",),
+                ).stdout,
+                "one\n",
+            )
+            one_authority = parse(one)
+            two_authority = parse(two)
+            self.assertNotEqual(one_authority, two_authority)
+            self.assertEqual(
+                {
+                    item["target"]
+                    for item in one_authority["transitive"]
+                },
+                {"child"},
+            )
+            variants = one_authority["record"]["prerequisite_variants"]
+            self.assertEqual(
+                {
+                    source
+                    for variant in variants
+                    for selector in variant["selectors"]
+                    for source in selector["sources"]
+                },
+                {"command-line", "process-environment", "undefined"},
+            )
+            self.assertEqual(
+                {
+                    target
+                    for variant in variants
+                    for target in variant["targets"]
+                },
+                {"child"},
+            )
+            self.assertEqual(
+                parse(one, "unrelated"),
+                parse(two, "unrelated"),
+            )
+
+            multiple = (
+                ".PHONY: all first second\n"
+                "all: $(DEP)\n"
+                "first:\n\t@printf 'first\\n'\n"
+                "second:\n\t@printf 'second\\n'\n"
+            )
+            write_make_v4_registry(
+                registry_path,
+                undefined={"DEP"},
+                explicit_domains=(("DEP", ("", "first second")),),
+            )
+            self.assertEqual(
+                {
+                    item["target"]
+                    for item in parse(multiple)["transitive"]
+                },
+                {"first", "second"},
+            )
+
+            (scratch / "sample.in").write_text("tracked\n", encoding="ascii")
+            pattern = (
+                ".PHONY: all\n"
+                "all: $(addsuffix .out,$(DEP))\n"
+                "%.out: %.in\n\t@printf 'pattern\\n'\n"
+            )
+            write_make_v4_registry(
+                registry_path,
+                undefined={"DEP"},
+                explicit_domains=(("DEP", ("", "sample")),),
+            )
+            self.assertEqual(
+                run(
+                    pattern,
+                    env={
+                        **clean_environment,
+                        "DEP": "sample",
+                    },
+                ).stdout,
+                "pattern\n",
+            )
+            self.assertIn(
+                "%.out",
+                {
+                    item["target"]
+                    for item in parse(
+                        pattern,
+                        extra=("sample.in",),
+                    )["transitive"]
+                },
+            )
+
+            nested = (
+                "DEP ?=\n"
+                "override SELECT = $(strip $(addsuffix .out,$(DEP)))\n"
+                ".PHONY: all first.out second.out\n"
+                "all: $(SELECT)\n"
+                "first.out:\n\t@printf 'first\\n'\n"
+                "second.out:\n\t@printf 'second\\n'\n"
+            )
+            write_make_v4_registry(
+                registry_path,
+                defaults={"DEP"},
+                explicit_domains=(("DEP", ("", "first second")),),
+            )
+            self.assertEqual(
+                run(
+                    nested,
+                    env={
+                        **clean_environment,
+                        "DEP": "first second",
+                    },
+                ).stdout,
+                "first\nsecond\n",
+            )
+            self.assertEqual(
+                {
+                    item["target"]
+                    for item in parse(nested)["transitive"]
+                },
+                {"first.out", "second.out"},
+            )
+            self.assertEqual(
+                parse(nested)["prerequisite_domain_census"]["used"],
+                ["DEP"],
+            )
+
+            escaped = (
+                ".SECONDEXPANSION:\n"
+                ".PHONY: all child\n"
+                "all: $$(DEP)\n"
+                "child:\n\t@printf 'escaped\\n'\n"
+            )
+            write_make_v4_registry(
+                registry_path,
+                undefined={"DEP"},
+                explicit_domains=(("DEP", ("", "child")),),
+            )
+            self.assertEqual(
+                run(
+                    escaped,
+                    env=ambient_environment,
+                ).stdout,
+                "escaped\n",
+            )
+            self.assertIn(
+                "child",
+                {
+                    item["target"]
+                    for item in parse(escaped)["transitive"]
+                },
+            )
+
+            builtin = (
+                ".PHONY: all child\n"
+                "all: $(if $(MAKECMDGOALS),child,)\n"
+                "child:\n\t@printf 'builtin\\n'\n"
+            )
+            write_make_v4_registry(
+                registry_path,
+                explicit_domains=(("MAKECMDGOALS", ("", "all")),),
+            )
+            self.assertEqual(
+                run(builtin, env=clean_environment).stdout,
+                "builtin\n",
+            )
+            builtin_authority = parse(builtin)
+            self.assertIn(
+                "child",
+                {
+                    item["target"]
+                    for item in builtin_authority["transitive"]
+                },
+            )
+            self.assertEqual(
+                {
+                    source
+                    for variant in builtin_authority["record"][
+                        "prerequisite_variants"
+                    ]
+                    for selector in variant["selectors"]
+                    for source in selector["sources"]
+                },
+                {"trusted-builtin"},
+            )
+
+            static_pattern = (
+                ".PHONY: all sample.in\n"
+                "all: sample.out\n"
+                "sample.out: %.out: $(DEP)\n"
+                "\t@printf 'output\\n'\n"
+                "sample.in:\n\t@printf 'input\\n'\n"
+            )
+            write_make_v4_registry(
+                registry_path,
+                undefined={"DEP"},
+                explicit_domains=(("DEP", ("", "%.in")),),
+            )
+            self.assertEqual(
+                run(
+                    static_pattern,
+                    env=clean_environment,
+                    variables=("DEP=%.in",),
+                ).stdout,
+                "input\noutput\n",
+            )
+            self.assertIn(
+                "sample.in",
+                {
+                    item["target"]
+                    for item in parse(static_pattern)["transitive"]
+                },
+            )
+
+            target_specific = (
+                ".PHONY: all child\n"
+                "all: DEP ?=\n"
+                "all: $(DEP)\n"
+                "child:\n\t@printf 'target\\n'\n"
+            )
+            write_make_v4_registry(
+                registry_path,
+                defaults={"DEP"},
+                explicit_domains=(("DEP", ("", "child")),),
+            )
+            self.assertEqual(
+                run(
+                    target_specific,
+                    env=ambient_environment,
+                ).stdout,
+                "target\n",
+            )
+            self.assertIn(
+                "child",
+                {
+                    item["target"]
+                    for item in parse(target_specific)["transitive"]
+                },
+            )
+
+            tracked = (
+                "DEP := child\n"
+                ".PHONY: all child\n"
+                "all: $(DEP)\n"
+                "child:\n\t@true\n"
+            )
+            write_make_v4_registry(
+                registry_path,
+                tracked_domains={"DEP"},
+            )
+            tracked_authority = parse(tracked)
+            self.assertEqual(
+                tracked_authority["prerequisite_domain_census"]["used"],
+                ["DEP"],
+            )
+
+            failures = (
+                (
+                    "unconstrained",
+                    one,
+                    {"undefined": {"DEP"}},
+                    "lack finite domains",
+                ),
+                (
+                    "escaping",
+                    one,
+                    {
+                        "undefined": {"DEP"},
+                        "explicit_domains": (("DEP", ("", "../escape")),),
+                    },
+                    "confined repository-relative path",
+                ),
+                (
+                    "dynamic",
+                    one,
+                    {
+                        "undefined": {"DEP"},
+                        "explicit_domains": (("DEP", ("", "$(BAD)")),),
+                    },
+                    "remains dynamic",
+                ),
+                (
+                    "unknown",
+                    one,
+                    {
+                        "undefined": {"DEP"},
+                        "explicit_domains": (("DEP", ("", "unknown")),),
+                    },
+                    "unknown target",
+                ),
+            )
+            for label, text, registry_args, error in failures:
+                with self.subTest(domain=label):
+                    write_make_v4_registry(
+                        registry_path,
+                        **registry_args,
+                    )
+                    with self.assertRaisesRegex(
+                        reporter.OwnershipError,
+                        error,
+                    ):
+                        parse(text)
+
+            cyclic = (
+                "DEP = $(OTHER)\n"
+                "OTHER = $(DEP)\n"
+                ".PHONY: all\n"
+                "all: $(DEP)\n"
+            )
+            write_make_v4_registry(
+                registry_path,
+                tracked_domains={"DEP"},
+            )
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "cyclic",
+            ):
+                parse(cyclic)
+
+            large_values = tuple(
+                f"target-{index}"
+                for index in range(4097)
+            )
+            write_make_v4_registry(
+                registry_path,
+                undefined={"DEP"},
+                explicit_domains=(("DEP", large_values),),
+            )
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "domain is malformed",
+            ):
+                parse(one)
+
+            write_make_v4_registry(
+                registry_path,
+                undefined={"DEP"},
+                explicit_domains=(
+                    (
+                        "DEP",
+                        (
+                            "",
+                            " ".join(
+                                f"word-{index}"
+                                for index in range(20001)
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "domain is malformed",
+            ):
+                parse(one)
+
+            many = tuple(f"value-{index}" for index in range(65))
+            write_make_v4_registry(
+                registry_path,
+                undefined={"A", "B"},
+                explicit_domains=(
+                    ("A", many),
+                    ("B", many),
+                ),
+            )
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "variants.*exceed bound",
+            ):
+                parse(".PHONY: all\nall: $(addprefix $(A),$(B))\n")
+
     def test_dynamic_target_declarations_are_registered_or_rejected(self):
         with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
             scratch = Path(directory)
@@ -2556,6 +3021,10 @@ class OwnershipGraphTests(unittest.TestCase):
         for authority in authorities.values():
             for key in census:
                 census[key].update(authority["variable_census"][key])
+            self.assertEqual(
+                authority["prerequisite_domain_census"]["unconstrained"],
+                [],
+            )
         self.assertEqual(
             census["ambient_undefined"],
             {
@@ -2586,29 +3055,60 @@ class OwnershipGraphTests(unittest.TestCase):
             "t",
         }
         self.assertTrue(original_seven <= census["handled_names"])
+        self.assertEqual(
+            {
+                name
+                for authority in authorities.values()
+                for name in authority["prerequisite_domain_census"]["used"]
+            },
+            set(
+                reporter.load_make_prerequisite_domains(
+                    loader,
+                    required=True,
+                )
+            ),
+        )
         registry_path = self.fixture_root / reporter.MAKE_DYNAMIC_PATH
         original = registry_path.read_bytes()
         try:
-            registry = json.loads(original)
-            registry["ambient_inputs"]["undefined_names"].append(
-                "STALE_AMBIENT"
-            )
-            registry["ambient_inputs"]["undefined_names"].sort()
-            registry["seal"] = reporter._sha256(
-                reporter.MAKE_DYNAMIC_SEAL_DOMAIN,
-                reporter.canonical_make_dynamic_payload(registry),
-            )
-            registry_path.write_bytes(reporter.normalized_json(registry))
-            with self.assertRaisesRegex(
-                reporter.OwnershipError,
-                "variable authority census",
+            for label, error in (
+                ("ambient", "variable authority census"),
+                ("domain", "prerequisite domain census"),
             ):
-                reporter.validate_graph(
-                    graph,
-                    schema,
-                    reporter.AuthorityLoader(self.fixture_root, entries),
-                    entries,
-                )
+                with self.subTest(stale_contract=label):
+                    registry = json.loads(original)
+                    if label == "ambient":
+                        registry["ambient_inputs"]["undefined_names"].append(
+                            "STALE_AMBIENT"
+                        )
+                        registry["ambient_inputs"]["undefined_names"].sort()
+                    else:
+                        registry["prerequisite_domains"][
+                            "tracked_fallback_names"
+                        ].append("STALE_SELECTOR")
+                        registry["prerequisite_domains"][
+                            "tracked_fallback_names"
+                        ].sort()
+                    registry["seal"] = reporter._sha256(
+                        reporter.MAKE_DYNAMIC_SEAL_DOMAIN,
+                        reporter.canonical_make_dynamic_payload(registry),
+                    )
+                    registry_path.write_bytes(
+                        reporter.normalized_json(registry)
+                    )
+                    with self.assertRaisesRegex(
+                        reporter.OwnershipError,
+                        error,
+                    ):
+                        reporter.validate_graph(
+                            graph,
+                            schema,
+                            reporter.AuthorityLoader(
+                                self.fixture_root,
+                                entries,
+                            ),
+                            entries,
+                        )
         finally:
             registry_path.write_bytes(original)
 

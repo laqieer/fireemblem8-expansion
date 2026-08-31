@@ -604,6 +604,19 @@ fail during Makefile parsing. `-j2 --no-print-directory` must execute and pass.
 The Build step and exact 30-gate mirror scrub all four Make control variables
 before the gate, without changing gate count or mixed-goal precedence.
 
+Prerequisite-domain fixtures seal DEP to exact empty/child values and prove
+clean fallback, process-environment, and command-line runs. The aggregate
+authority traverses the child recipe even when its canonical fallback is
+empty, so a one/two child mutation changes the aggregate while an unrelated
+target remains stable. Multiple-word values, nested pure functions, pattern
+rules, static-pattern stems, escaped secondary prerequisites, trusted
+built-ins, and target-specific selectors expand across every provenance
+variant. Each distinct exact value is traversed once with its complete source
+set attached, so duplicate provenance cannot multiply equivalent graph work.
+Missing/unbounded, malformed, escaping, dynamic, unknown, untracked, cyclic,
+over-4096-variant, and over-20000-word domains reject. The real graph seals
+every used domain and reports zero unconstrained selectors.
+
 Target-specific recursive values and appends are evaluated at target use and
 inherited by prerequisite recipes; simple target values remain immediate.
 Recipe variables and escaped secondary prerequisites use those target-local

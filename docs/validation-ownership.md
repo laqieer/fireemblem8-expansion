@@ -261,6 +261,21 @@ empty `MAKEFLAGS`, `MFLAGS`, `MAKEOVERRIDES`, and `GNUMAKEFLAGS`; the reviewed
 step environment independently pins the same four values. The mixed-goal
 rejection remains earlier than this guard.
 
+Symbolic variants cannot select prerequisites. Registry schema v4 requires
+each external selector to have either a finite list of exact values or an
+exact tracked-fallback domain. Every admitted environment, command-line,
+undefined, or built-in variant is expanded through nested pure functions and
+variable fallbacks, escaped secondary prerequisites, and static-pattern stems,
+then traversed into each known target or pattern recipe. Equivalent exact
+values share one traversal while retaining every admitted provenance source in
+authority. Tracked blobs/trees, exact gitlink-contained paths, build-local
+paths derived from tracked fallback values, and the source-bound
+`tools/gbagfx/gbagfx` output are terminal authorities. Escaping, dynamic,
+unknown, non-blob, oversized, cyclic, malformed, missing, or stale domains
+reject. The strict public graph seals the exact live selector census and zero
+unconstrained selectors; non-strict diagnostic parsing reports rather than
+silently discarding any unconstrained selector.
+
 Target-specific recursive `=` and recursive `+=` resolve at target use, so
 they observe later global/target values and are inherited by prerequisites;
 target-specific `:=`/`::=` and append to a simple value remain immediate.

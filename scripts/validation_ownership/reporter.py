@@ -11,6 +11,7 @@ import hashlib
 import importlib
 import itertools
 import json
+import math
 import os
 import posixpath
 import re
@@ -959,6 +960,20 @@ def canonical_make_dynamic_payload(data: dict[str, Any]) -> dict[str, Any]:
         ):
             execution_controls[field] = sorted(execution_controls[field])
         result["execution_controls"] = execution_controls
+    if data["schema_version"] >= 4:
+        prerequisite_domains = copy.deepcopy(data["prerequisite_domains"])
+        prerequisite_domains["tracked_fallback_names"] = sorted(
+            prerequisite_domains["tracked_fallback_names"]
+        )
+        for domain in prerequisite_domains["explicit"]:
+            domain["values"] = sorted(domain["values"])
+        prerequisite_domains["explicit"].sort(key=lambda item: item["name"])
+        for generated in prerequisite_domains["generated_paths"]:
+            generated["authority_files"] = sorted(generated["authority_files"])
+        prerequisite_domains["generated_paths"].sort(
+            key=lambda item: item["path"]
+        )
+        result["prerequisite_domains"] = prerequisite_domains
     return result
 
 
@@ -1003,15 +1018,17 @@ def load_make_dynamic_contracts(
         "contracts",
         "seal",
     }
-    if schema_version in {2, 3}:
+    if schema_version in {2, 3, 4}:
         expected_fields.add("ambient_inputs")
     if schema_version == 3:
         expected_fields.add("execution_controls")
+    if schema_version == 4:
+        expected_fields.update({"execution_controls", "prerequisite_domains"})
     if set(data) != expected_fields:
         raise OwnershipError("Make dynamic dependency registry has invalid fields")
-    if schema_version not in {1, 2, 3} or not isinstance(data["contracts"], list):
+    if schema_version not in {1, 2, 3, 4} or not isinstance(data["contracts"], list):
         raise OwnershipError("Make dynamic dependency registry schema is invalid")
-    if schema_version in {2, 3}:
+    if schema_version in {2, 3, 4}:
         ambient = data["ambient_inputs"]
         ambient_fields = {
             "allowed_names",
@@ -1020,7 +1037,7 @@ def load_make_dynamic_contracts(
             "provenance",
             "evidence_binding",
         }
-        if schema_version == 3:
+        if schema_version >= 3:
             ambient_fields.update(
                 {
                     "undefined_names",
@@ -1058,7 +1075,7 @@ def load_make_dynamic_contracts(
             raise OwnershipError("Make ambient input provenance is invalid")
         if ambient["evidence_binding"] != "consuming-make-target":
             raise OwnershipError("Make ambient input evidence binding is invalid")
-        if schema_version == 3:
+        if schema_version >= 3:
             undefined_names = ambient["undefined_names"]
             if (
                 not isinstance(undefined_names, list)
@@ -1159,6 +1176,96 @@ def load_make_dynamic_contracts(
             if controls["override_policy"] != "reject-nonempty":
                 raise OwnershipError(
                     "Make execution control override policy is invalid"
+                )
+        if schema_version >= 4:
+            domains = data["prerequisite_domains"]
+            if not isinstance(domains, dict) or set(domains) != {
+                "tracked_fallback_names",
+                "explicit",
+                "generated_paths",
+                "max_variants",
+                "max_words",
+                "value_policy",
+                "target_policy",
+            }:
+                raise OwnershipError("Make prerequisite domains are invalid")
+            tracked = domains["tracked_fallback_names"]
+            if (
+                not isinstance(tracked, list)
+                or tracked != sorted(set(tracked))
+                or not all(
+                    isinstance(name, str)
+                    and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name)
+                    for name in tracked
+                )
+            ):
+                raise OwnershipError(
+                    "Make tracked-fallback prerequisite names are invalid"
+                )
+            explicit = domains["explicit"]
+            if not isinstance(explicit, list):
+                raise OwnershipError(
+                    "Make explicit prerequisite domains are invalid"
+                )
+            explicit_names = set()
+            for domain in explicit:
+                if (
+                    not isinstance(domain, dict)
+                    or set(domain) != {"name", "values"}
+                    or not isinstance(domain["name"], str)
+                    or not re.fullmatch(
+                        r"[A-Za-z_][A-Za-z0-9_]*",
+                        domain["name"],
+                    )
+                    or domain["name"] in explicit_names
+                    or domain["name"] in tracked
+                    or not isinstance(domain["values"], list)
+                    or domain["values"] != sorted(set(domain["values"]))
+                    or not all(isinstance(value, str) for value in domain["values"])
+                    or len(domain["values"]) < 2
+                    or len(domain["values"]) > 4096
+                    or sum(
+                        len(value.split())
+                        for value in domain["values"]
+                    )
+                    > 20000
+                ):
+                    raise OwnershipError(
+                        "Make explicit prerequisite domain is malformed"
+                    )
+                explicit_names.add(domain["name"])
+            generated_paths = domains["generated_paths"]
+            if (
+                    not isinstance(generated_paths, list)
+                    or any(
+                        not isinstance(item, dict)
+                        or set(item) != {"path", "authority_files"}
+                        or not isinstance(item["path"], str)
+                        or not isinstance(item["authority_files"], list)
+                        or not item["authority_files"]
+                        or item["authority_files"]
+                        != sorted(set(item["authority_files"]))
+                        for item in generated_paths
+                    )
+                    or len({item["path"] for item in generated_paths})
+                    != len(generated_paths)
+            ):
+                    raise OwnershipError(
+                        "Make generated prerequisite paths are malformed"
+                    )
+            if (
+                not isinstance(domains["max_variants"], int)
+                or isinstance(domains["max_variants"], bool)
+                or domains["max_variants"] != 4096
+                or not isinstance(domains["max_words"], int)
+                or isinstance(domains["max_words"], bool)
+                or domains["max_words"] != 20000
+                or domains["value_policy"] != "finite-exact-or-tracked-fallback"
+                or domains["target_policy"]
+                != "defined-pattern-or-tracked-tree"
+            ):
+                raise OwnershipError(
+                    "Make prerequisite domain bounds or policy are invalid"
                 )
     seal = data["seal"]
     if not isinstance(seal, str) or not re.fullmatch(r"[0-9a-f]{64}", seal):
@@ -1309,6 +1416,86 @@ def load_make_typed_variable_contracts(
             "escaped_literals",
         )
     )
+
+
+def load_make_prerequisite_domains(
+    loader: AuthorityLoader,
+    *,
+    required: bool,
+) -> dict[str, dict[str, Any]]:
+    path = MAKE_DYNAMIC_PATH.as_posix()
+    if path not in loader.entries:
+        if required:
+            raise OwnershipError("Make prerequisite domain registry is not tracked")
+        return {}
+    data = loader.read_json(MAKE_DYNAMIC_PATH, "Make prerequisite domain registry")
+    load_make_dynamic_contracts(loader, required=required)
+    if data["schema_version"] < 4:
+        return {}
+    domains = data["prerequisite_domains"]
+    result = {
+        name: {
+            "name": name,
+            "kind": "tracked-fallback",
+        }
+        for name in domains["tracked_fallback_names"]
+    }
+    result.update(
+        {
+            domain["name"]: {
+                "name": domain["name"],
+                "kind": "explicit",
+                "values": domain["values"],
+            }
+            for domain in domains["explicit"]
+        }
+    )
+    return result
+
+
+def load_make_generated_prerequisite_paths(
+    loader: AuthorityLoader,
+    *,
+    required: bool,
+) -> dict[str, dict[str, Any]]:
+    path = MAKE_DYNAMIC_PATH.as_posix()
+    if path not in loader.entries:
+        if required:
+            raise OwnershipError("Make generated prerequisite registry is not tracked")
+        return {}
+    data = loader.read_json(MAKE_DYNAMIC_PATH, "Make generated prerequisite registry")
+    load_make_dynamic_contracts(loader, required=required)
+    if data["schema_version"] < 4:
+        return {}
+    result = {}
+    for item in data["prerequisite_domains"]["generated_paths"]:
+        generated_path = _validate_relative_path(
+            item["path"],
+            "Make generated prerequisite path",
+        )
+        authorities = []
+        for authority_path in item["authority_files"]:
+            authority_path = _validate_relative_path(
+                authority_path,
+                "Make generated prerequisite authority",
+            )
+            authorities.append(
+                {
+                    "path": authority_path,
+                    "semantics": _source_semantics(
+                        authority_path,
+                        loader.read_blob(
+                            authority_path,
+                            "Make generated prerequisite authority",
+                        ),
+                    ),
+                }
+            )
+        result[generated_path] = {
+            "path": generated_path,
+            "authority_files": authorities,
+        }
+    return result
 
 
 def _split_make_words(value: str) -> tuple[str, ...]:
@@ -2327,6 +2514,11 @@ class SafeMakeExpander:
         end = self._reference_end(value, start + 2)
         prefix = value[:start]
         suffix = value[end + 1:]
+        suffix_separator = (
+            " "
+            if suffix[:1].isspace()
+            else ""
+        )
         referenced = self._reference(
             value[start + 2:end],
             local,
@@ -2341,7 +2533,9 @@ class SafeMakeExpander:
         )
         return self._bounded(
             (
-                _normalize_make_expression(prefix + middle + tail).replace(
+                _normalize_make_expression(
+                    prefix + middle + suffix_separator + tail
+                ).replace(
                     "\0",
                     "$",
                 )
@@ -2414,6 +2608,14 @@ def _parse_make_authorities(
         scoped_variables,
         escaped_literals,
     ) = load_make_typed_variable_contracts(
+        loader,
+        required=require_dynamic_contracts,
+    )
+    prerequisite_domains = load_make_prerequisite_domains(
+        loader,
+        required=require_dynamic_contracts,
+    )
+    generated_prerequisite_paths = load_make_generated_prerequisite_paths(
         loader,
         required=require_dynamic_contracts,
     )
@@ -2691,10 +2893,20 @@ def _parse_make_authorities(
                 current_targets = target_names
                 continue
             normal, marker, order_only = declaration.partition("|")
+            prerequisites = _split_make_words(normal)
+            static_pattern = None
+            if (
+                prerequisites
+                and prerequisites[0].endswith(":")
+                and "%" in prerequisites[0]
+            ):
+                static_pattern = prerequisites[0][:-1]
+                prerequisites = prerequisites[1:]
             record = {
                 "kind": "rule",
-                "prerequisites": _split_make_words(normal),
+                "prerequisites": prerequisites,
                 "order_only": _split_make_words(order_only) if marker else (),
+                "static_pattern": static_pattern,
                 "context": tuple(conditional_stack),
                 "_sequence": parse_sequence,
             }
@@ -3430,7 +3642,9 @@ def _parse_make_authorities(
             active_declarations,
         )
         prerequisite_values = [
-            " ".join(declaration["prerequisites"])
+            (declaration["static_pattern"] or "")
+            + " "
+            + " ".join(declaration["prerequisites"])
             + " | "
             + " ".join(declaration["order_only"])
             + " "
@@ -3567,36 +3781,289 @@ def _parse_make_authorities(
         }
 
     pattern_targets = [target for target in direct if "%" in target]
-    prerequisite_cache: dict[tuple[str, tuple[tuple[str, str], ...]], list[str]] = {}
+    unconstrained_selectors = set()
 
-    def expand_prerequisite(token: str, local: dict[str, str]) -> list[str]:
-        token = token.replace("$$(", "$(")
-        cache_key = token, tuple(sorted(local.items()))
-        if cache_key in prerequisite_cache:
-            return prerequisite_cache[cache_key]
-        candidates = [
-            word
-            for expanded in expander.expand(token, local)
-            for word in expanded.split()
-        ]
-        result = []
-        for candidate in candidates:
-            if candidate in direct:
-                result.append(candidate)
+    def prerequisite_selector_semantics(
+        record: dict[str, Any],
+        name: str,
+    ) -> tuple[list[str], dict[str, Any]]:
+        if name in record["target_variables"]:
+            semantics = record["target_variables"][name]
+            values = [semantics["effective_value"]]
+        else:
+            semantics = expander.variable_semantics(name)
+            values = semantics["effective_values"]
+        if semantics.get("unbound_names"):
+            raise OwnershipError(
+                f"prerequisite selector {name!r} has undeclared ambient "
+                f"influence {semantics['unbound_names']}"
+            )
+        return values, semantics
+
+    def prerequisite_selector_bindings(
+        record: dict[str, Any],
+        expressions: Iterable[str],
+    ) -> dict[str, tuple[list[str], dict[str, Any]]]:
+        pending = set(_make_variable_refs(expressions))
+        for expression in expressions:
+            for call in expander.call_semantics(expression):
+                pending.update(call["macros"])
+        bindings = {}
+        while pending:
+            name = pending.pop()
+            if name in bindings:
+                continue
+            values, semantics = prerequisite_selector_semantics(record, name)
+            bindings[name] = values, semantics
+            nested_expressions = [
+                value
+                for value in (
+                    semantics.get("raw_value"),
+                    semantics.get("append_value"),
+                )
+                if isinstance(value, str)
+            ]
+            global_base = semantics.get("global_base")
+            if isinstance(global_base, dict):
+                nested_expressions.extend(
+                    value
+                    for value in (
+                        global_base.get("raw_value"),
+                        global_base.get("append_value"),
+                    )
+                    if isinstance(value, str)
+                )
+            pending.update(_make_variable_refs(nested_expressions))
+            for expression in nested_expressions:
+                for call in expander.call_semantics(expression):
+                    pending.update(call["macros"])
+            pending.update(
+                contract["name"]
+                for field in (
+                    "ambient_input_contracts",
+                    "fallback_ambient_inputs",
+                    "trusted_builtin_contracts",
+                )
+                for contract in semantics.get(field, ())
+            )
+        return bindings
+
+    def is_external_selector(name: str, semantics: dict[str, Any]) -> bool:
+        return (
+            any(
+                variant["source"]
+                not in {"tracked-fallback", "tracked-make", "scoped-variable"}
+                for variant in semantics.get("authority_variants", ())
+            )
+            or any(
+                contract["name"] == name
+                for field in (
+                    "ambient_input_contracts",
+                    "fallback_ambient_inputs",
+                    "trusted_builtin_contracts",
+                )
+                for contract in semantics.get(field, ())
+            )
+        )
+
+    def expand_prerequisite_variants(
+        target: str,
+        token: str,
+        record: dict[str, Any],
+        static_pattern: str | None,
+    ) -> tuple[list[str], list[dict[str, Any]]]:
+        selector_options = {}
+        local = dict(record["_target_values"])
+        expanded_token = token.replace("$$(", "$(")
+        selector_expressions = [expanded_token]
+        if static_pattern is not None:
+            selector_expressions.append(static_pattern.replace("$$(", "$("))
+        bindings = prerequisite_selector_bindings(
+            record,
+            selector_expressions,
+        )
+        for name in sorted(bindings):
+            values, semantics = bindings[name]
+            if not is_external_selector(name, semantics):
+                continue
+            domain = prerequisite_domains.get(name)
+            if domain is None:
+                unconstrained_selectors.add(name)
+                domain = {
+                    "name": name,
+                    "kind": "tracked-fallback",
+                }
+            if domain["kind"] == "explicit":
+                domain_values = domain["values"]
+            else:
+                if len(values) != 1:
+                    raise OwnershipError(
+                        f"tracked prerequisite selector {name!r} is ambiguous"
+                    )
+                domain_values = values
+            sources = {
+                variant["source"]
+                for variant in semantics.get("authority_variants", ())
+            } or {"tracked-make"}
+            selector_options[name] = [
+                {
+                    "domain": domain["kind"],
+                    "name": name,
+                    "sources": sorted(sources),
+                    "value": value,
+                }
+                for value in domain_values
+            ]
+        option_count = math.prod(
+            len(options)
+            for options in selector_options.values()
+        )
+        if option_count > SafeMakeExpander.MAX_VARIANTS:
+            raise OwnershipError(
+                f"Make prerequisite variants for {target!r} exceed bound"
+            )
+        combinations = (
+            itertools.product(*selector_options.values())
+            if selector_options
+            else [()]
+        )
+        children = []
+        variant_records = []
+        for combination in combinations:
+            variant_local = dict(local)
+            for selector in combination:
+                variant_local[selector["name"]] = selector["value"]
+            expanded_values = expander.expand(
+                expanded_token,
+                variant_local,
+            )
+            if static_pattern is not None:
+                patterns = expander.expand(static_pattern, variant_local)
+                if (
+                    len(patterns) != 1
+                    or not SafeMakeExpander._pattern_matches(
+                        target,
+                        patterns[0],
+                    )
+                ):
+                    raise OwnershipError(
+                        f"Make static pattern {static_pattern!r} does not "
+                        f"match target {target!r}"
+                    )
+                prefix, suffix = patterns[0].split("%", 1)
+                stem_end = len(target) - len(suffix) if suffix else len(target)
+                stem = target[len(prefix):stem_end]
+                expanded_values = [
+                    value.replace("%", stem)
+                    for value in expanded_values
+                ]
             if (
-                "$" in candidate
-                or "<make-automatic:" in candidate
-                or "<registered-dynamic:" in candidate
+                sum(len(value.split()) for value in expanded_values)
+                > SafeMakeExpander.MAX_WORDS
             ):
                 raise OwnershipError(
-                    f"unsupported dynamic Make prerequisite candidate {candidate!r}"
+                    f"Make prerequisite variants for {target!r} exceed "
+                    "word bound"
                 )
-            for pattern in pattern_targets:
-                if SafeMakeExpander._pattern_matches(candidate, pattern):
-                    result.append(pattern)
-        result = list(dict.fromkeys(result))
-        prerequisite_cache[cache_key] = result
-        return result
+            selected_targets = []
+            tracked_files = []
+            tracked_directories = []
+            tracked_gitlink_paths = []
+            generated_paths = []
+            generated_build_paths = []
+            for candidate in (
+                word
+                for expanded in expanded_values
+                for word in expanded.split()
+            ):
+                if (
+                    "$" in candidate
+                    or "<" in candidate
+                    or ">" in candidate
+                ):
+                    raise OwnershipError(
+                        f"Make prerequisite variant for {target!r} remains "
+                        f"dynamic: {candidate!r}"
+                    )
+                candidate = _validate_relative_path(
+                    candidate,
+                    "Make prerequisite variant",
+                )
+                matches = []
+                if candidate in direct:
+                    matches.append(candidate)
+                matches.extend(
+                    pattern
+                    for pattern in pattern_targets
+                    if SafeMakeExpander._pattern_matches(candidate, pattern)
+                    and pattern not in matches
+                )
+                if matches:
+                    selected_targets.extend(matches)
+                    children.extend(matches)
+                elif candidate in loader.entries:
+                    entry = loader.entries[candidate]
+                    if entry.object_type != "blob":
+                        raise OwnershipError(
+                            f"Make prerequisite variant {candidate!r} is not "
+                            "a tracked blob"
+                        )
+                    tracked_files.append(candidate)
+                elif any(
+                    path.startswith(candidate.rstrip("/") + "/")
+                    for path in loader.entries
+                ):
+                    tracked_directories.append(candidate)
+                elif any(
+                    entry.mode == "160000"
+                    and candidate.startswith(path.rstrip("/") + "/")
+                    for path, entry in loader.entries.items()
+                ):
+                    tracked_gitlink_paths.append(candidate)
+                elif candidate in generated_prerequisite_paths:
+                    generated_paths.append(
+                        generated_prerequisite_paths[candidate]
+                    )
+                elif (
+                    selector_options
+                    and candidate.startswith("build/")
+                    and all(
+                        selector["domain"] == "tracked-fallback"
+                        for selector in combination
+                    )
+                ):
+                    generated_build_paths.append(candidate)
+                elif selector_options:
+                    raise OwnershipError(
+                        f"Make prerequisite variant {candidate!r} for "
+                        f"{target!r} selects an unknown target"
+                    )
+            if selector_options:
+                variant_records.append(
+                    {
+                        "expanded_values": expanded_values,
+                        "selectors": list(combination),
+                        "targets": sorted(set(selected_targets)),
+                        "tracked_files": sorted(set(tracked_files)),
+                        "tracked_directories": sorted(
+                            set(tracked_directories)
+                        ),
+                        "tracked_gitlink_paths": sorted(
+                            set(tracked_gitlink_paths)
+                        ),
+                        "generated_paths": sorted(
+                            {
+                                item["path"]: item
+                                for item in generated_paths
+                            }.values(),
+                            key=lambda item: item["path"],
+                        ),
+                        "generated_build_paths": sorted(
+                            set(generated_build_paths)
+                        ),
+                    }
+                )
+        return list(dict.fromkeys(children)), variant_records
 
     child_cache: dict[
         str,
@@ -3614,15 +4081,33 @@ def _parse_make_authorities(
         local_dynamic = []
         record = direct[target]
         target_local = record["_target_values"]
+        prerequisite_variants = []
         for declaration in record["declarations"]:
             if declaration["kind"] != "rule":
                 continue
+            if declaration["static_pattern"] is not None:
+                patterns = expander.expand(
+                    declaration["static_pattern"],
+                    target_local,
+                )
+                if not any(
+                    SafeMakeExpander._pattern_matches(target, pattern)
+                    for pattern in patterns
+                ):
+                    continue
             for prerequisite in (
                 *declaration["prerequisites"],
                 *declaration["order_only"],
             ):
                 try:
-                    result.extend(expand_prerequisite(prerequisite, target_local))
+                    children, variants = expand_prerequisite_variants(
+                        target,
+                        prerequisite,
+                        record,
+                        declaration["static_pattern"],
+                    )
+                    result.extend(children)
+                    prerequisite_variants.extend(variants)
                 except OwnershipError as error:
                     registered = dynamic_dependency(prerequisite)
                     if registered is None:
@@ -3631,6 +4116,20 @@ def _parse_make_authorities(
                             f"prerequisite {prerequisite!r}: {error}"
                         ) from error
                     local_dynamic.append(registered)
+        def variant_key(variant: dict[str, Any]) -> str:
+            return json.dumps(
+                variant,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+
+        record["prerequisite_variants"] = sorted(
+            {
+                variant_key(variant): variant
+                for variant in prerequisite_variants
+            }.values(),
+            key=variant_key,
+        )
         result = list(dict.fromkeys(result))
         local_dynamic = list(
             {
@@ -3922,6 +4421,28 @@ def _parse_make_authorities(
                 )
             )
         )
+        prerequisite_domain_names = sorted(
+            {
+                selector["name"]
+                for record in (
+                    semantic_root,
+                    *(item["record"] for item in semantic_transitive),
+                )
+                for variant in record.get("prerequisite_variants", ())
+                for selector in variant["selectors"]
+            }
+        )
+        generated_prerequisite_names = sorted(
+            {
+                generated["path"]
+                for record in (
+                    semantic_root,
+                    *(item["record"] for item in semantic_transitive),
+                )
+                for variant in record.get("prerequisite_variants", ())
+                for generated in variant["generated_paths"]
+            }
+        )
 
         def public_value(value: Any) -> Any:
             if isinstance(value, dict):
@@ -3962,6 +4483,11 @@ def _parse_make_authorities(
             ),
             "transitive": public_value(semantic_transitive),
             "variable_census": variable_census,
+            "prerequisite_domain_census": {
+                "used": prerequisite_domain_names,
+                "generated_paths": generated_prerequisite_names,
+                "unconstrained": [],
+            },
             "cycles": sorted(set(cycles)),
             "dynamic_dependencies": sorted(
                 {
@@ -3979,6 +4505,16 @@ def _parse_make_authorities(
         for target in sorted(selected)
         if target in direct
     }
+    if unconstrained_selectors and require_dynamic_contracts:
+        raise OwnershipError(
+            "Make prerequisite selectors lack finite domains: "
+            + ", ".join(sorted(unconstrained_selectors))
+        )
+    if unconstrained_selectors:
+        for authority in result.values():
+            authority["prerequisite_domain_census"]["unconstrained"] = sorted(
+                unconstrained_selectors
+            )
     if len(_MAKE_AUTHORITY_CACHE) >= _MAKE_AUTHORITY_CACHE_LIMIT:
         _MAKE_AUTHORITY_CACHE.pop(next(iter(_MAKE_AUTHORITY_CACHE)))
     _MAKE_AUTHORITY_CACHE[cache_key] = result
@@ -4047,6 +4583,33 @@ def _validate_authorities(
         raise OwnershipError(
             "Make variable authority census does not match the sealed "
             f"registry (actual={actual_census!r}, expected={expected_census!r})"
+        )
+    prerequisite_domains = load_make_prerequisite_domains(loader, required=True)
+    actual_prerequisite_domains = {
+        name
+        for target in make_targets.values()
+        for name in target["prerequisite_domain_census"]["used"]
+    }
+    if actual_prerequisite_domains != set(prerequisite_domains):
+        raise OwnershipError(
+            "Make prerequisite domain census does not match the sealed "
+            f"registry (actual={sorted(actual_prerequisite_domains)}, "
+            f"expected={sorted(prerequisite_domains)})"
+        )
+    generated_prerequisites = load_make_generated_prerequisite_paths(
+        loader,
+        required=True,
+    )
+    actual_generated_prerequisites = {
+        path
+        for target in make_targets.values()
+        for path in target["prerequisite_domain_census"]["generated_paths"]
+    }
+    if actual_generated_prerequisites != set(generated_prerequisites):
+        raise OwnershipError(
+            "Make generated prerequisite census does not match the sealed "
+            f"registry (actual={sorted(actual_generated_prerequisites)}, "
+            f"expected={sorted(generated_prerequisites)})"
         )
     workflow_jobs, workflow_steps = _workflow_authorities(
         loader,
