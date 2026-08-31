@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import os
 import subprocess
 import tempfile
@@ -72,7 +73,7 @@ def _launcher_command(case: dict, event_path: Path, output_path: Path) -> list[s
 class EventClassifierFixtureTests(unittest.TestCase):
     def test_all_fixture_decisions_are_exact_and_deterministic(self):
         fixture = _load_fixture()
-        self.assertEqual(fixture["schema_version"], 2)
+        self.assertEqual(fixture["schema_version"], 3)
         self.assertFalse(fixture["workflow_dispatch_supported"])
         self.assertEqual(
             [case["id"] for case in fixture["cases"]],
@@ -215,6 +216,42 @@ class EventClassifierFixtureTests(unittest.TestCase):
                     self.assertEqual(completed.returncode, 2)
                     self.assertFalse(output_path.exists())
 
+            for float_case in _load_fixture()["strict_float_cases"]:
+                with self.subTest(float_case=float_case["id"]):
+                    event_path = sandbox / f"{float_case['id']}.json"
+                    event_path.write_text(
+                        '{"unused":' + float_case["literal"] + "}\n",
+                        encoding="ascii",
+                    )
+                    if float_case["accepted"]:
+                        parsed = event_classifier.load_event(event_path)
+                        value = parsed["unused"]
+                        self.assertTrue(math.isfinite(value))
+                        if float_case["id"] == "negative-zero":
+                            self.assertEqual(math.copysign(1.0, value), -1.0)
+                    else:
+                        with self.assertRaises(
+                            event_classifier.EventClassificationError
+                        ):
+                            event_classifier.load_event(event_path)
+
+            metadata_overflow = sandbox / "metadata-overflow.json"
+            metadata_payload = json.dumps(case["payload"], sort_keys=True)
+            metadata_overflow.write_text(
+                metadata_payload[:-1] + ',"unused":1e9999}\n',
+                encoding="ascii",
+            )
+            overflow_output = sandbox / "metadata-overflow.out"
+            completed = subprocess.run(
+                _launcher_command(case, metadata_overflow, overflow_output),
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 2)
+            self.assertFalse(overflow_output.exists())
+
             oversized = sandbox / "oversized.json"
             oversized.write_bytes(b" " * (event_classifier.MAX_EVENT_BYTES + 1))
             with self.assertRaisesRegex(
@@ -222,6 +259,10 @@ class EventClassifierFixtureTests(unittest.TestCase):
                 "exceeds 1 MiB",
             ):
                 event_classifier.load_event(oversized)
+            with self.assertRaises(event_classifier.EventClassificationError):
+                event_classifier._ensure_finite_numbers(
+                    {"nested": [1.0, float("inf")]}
+                )
 
     def test_metadata_records_require_real_schema_valid_transitions(self):
         case = next(

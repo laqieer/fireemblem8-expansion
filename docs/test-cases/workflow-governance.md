@@ -315,7 +315,9 @@ The pre-fix trigger-only model selects `host-tests`, `build`,
 despite its unchanged head SHA. The focused suites also reject metadata
 suppression for same-value/spoofed/missing-current/extra-key/nested metadata
 records, invalid title/body values, malformed `changes`, missing PR identity,
-duplicate JSON keys, `NaN`/positive or negative `Infinity`, oversized event
+duplicate JSON keys, `NaN`/positive or negative `Infinity`, positive/negative
+exponent overflow, nonzero-to-zero underflow, huge exponents, an unused
+overflow field on metadata-only input, oversized event
 files, base or mixed edits, merge-SHA fallback, an unverified/mutable
 classifier checkout, classifier output drift, worker conditions that accept
 invalid/stale identity, summary success on missing identity, weakened

@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import stat
 import sys
 from dataclasses import asdict, dataclass
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -254,6 +256,37 @@ def _reject_nonfinite_constant(value: str) -> None:
     raise EventClassificationError(f"event JSON contains non-finite number {value}")
 
 
+def _parse_strict_float(value: str) -> float:
+    if len(value) > 128:
+        raise EventClassificationError("event JSON float literal is too long")
+    try:
+        decimal_value = Decimal(value)
+        float_value = float(decimal_value)
+    except (InvalidOperation, OverflowError, ValueError) as error:
+        raise EventClassificationError(
+            f"event JSON float is invalid: {value}"
+        ) from error
+    if not math.isfinite(float_value):
+        raise EventClassificationError(f"event JSON float overflows: {value}")
+    if decimal_value != 0 and float_value == 0:
+        raise EventClassificationError(f"event JSON float underflows: {value}")
+    return float_value
+
+
+def _ensure_finite_numbers(value: object) -> None:
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise EventClassificationError("event JSON contains non-finite float")
+        return
+    if isinstance(value, dict):
+        for item in value.values():
+            _ensure_finite_numbers(item)
+        return
+    if isinstance(value, list):
+        for item in value:
+            _ensure_finite_numbers(item)
+
+
 def load_event(path: Path) -> object:
     try:
         metadata = path.lstat()
@@ -267,11 +300,14 @@ def load_event(path: Path) -> object:
         raw = path.read_bytes()
         if len(raw) != metadata.st_size:
             raise EventClassificationError("event payload changed while being read")
-        return json.loads(
+        value = json.loads(
             raw.decode("utf-8"),
             object_pairs_hook=_reject_duplicate_keys,
             parse_constant=_reject_nonfinite_constant,
+            parse_float=_parse_strict_float,
         )
+        _ensure_finite_numbers(value)
+        return value
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise EventClassificationError(f"cannot parse event payload: {error}") from error
 

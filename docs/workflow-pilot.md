@@ -116,7 +116,13 @@ base predates the classifier takes an explicit bootstrap full-build path, so
 introducing or reverting the seam cannot silently suppress evidence.
 
 The classifier reads the bounded `GITHUB_EVENT_PATH` JSON file with duplicate
-key and non-finite `NaN`/`Infinity` rejection. An `edited` event suppresses `host-tests`, `build`,
+key and non-finite `NaN`/`Infinity` rejection. JSON floats are converted
+through `Decimal` to finite binary64: positive/negative exponent overflow and
+nonzero values that underflow to zero are rejected, including huge exponents;
+normal finite values, representable subnormals, and signed zero remain valid.
+The parsed tree receives a recursive finite-number check before
+classification, so an unused overflowing field cannot accompany an otherwise
+metadata-only event. An `edited` event suppresses `host-tests`, `build`,
 `extended-host-tests`, and `legacy` only when:
 
 - the event has a complete pull-request base and exact head identity;

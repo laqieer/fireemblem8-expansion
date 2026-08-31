@@ -21,6 +21,8 @@ SKILL_PATH = (
 )
 CONTRIBUTING_PATH = ROOT / "CONTRIBUTING.md"
 PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
+ISSUE_RESOLUTION_POLICY_PATH = ROOT / "docs" / "issue-resolution-policy.md"
+WORKFLOW_PILOT_PATH = ROOT / "docs" / "workflow-pilot.md"
 COPILOT_INSTRUCTIONS_PATH = ROOT / ".github" / "copilot-instructions.md"
 WORKFLOW_GOVERNANCE_PATH = ROOT / "docs" / "test-cases" / "workflow-governance.md"
 TEST_CASE_REGISTRY_PATH = ROOT / "docs" / "test-cases" / "registry.json"
@@ -544,6 +546,21 @@ def candidate_evidence_violations(body, comments):
     if marker_comments != 1 or marker_count != 1:
         violations.append("canonical-comment-marker-count")
     return violations
+
+
+def oracle_evidence_location_violations(text):
+    scan_policy_markdown(text)
+    normalized = normalize_policy(text)
+    stale = (
+        "in the PR description",
+        "in your PR description",
+        "in the pull request description",
+    )
+    return [
+        phrase
+        for phrase in stale
+        if normalize_policy(phrase) in normalized
+    ]
 
 
 def assert_normalized_policy(test_case, surface, text, concepts, forbidden=()):
@@ -2939,6 +2956,51 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 self.assertTrue(
                     candidate_evidence_violations(changed_body, comments)
                 )
+
+    def test_oracle_actuals_use_canonical_comment_across_guidance(self):
+        surfaces = {
+            PR_TEMPLATE_PATH: PR_TEMPLATE_PATH.read_text(encoding="utf-8"),
+            SKILL_PATH: SKILL_PATH.read_text(encoding="utf-8"),
+            CONTRIBUTING_PATH: CONTRIBUTING_PATH.read_text(encoding="utf-8"),
+            ISSUE_RESOLUTION_POLICY_PATH: (
+                ISSUE_RESOLUTION_POLICY_PATH.read_text(encoding="utf-8")
+            ),
+            WORKFLOW_PILOT_PATH: WORKFLOW_PILOT_PATH.read_text(encoding="utf-8"),
+        }
+        for path, text in surfaces.items():
+            with self.subTest(path=path):
+                self.assertEqual(oracle_evidence_location_violations(text), [])
+
+        for path in (CONTRIBUTING_PATH, ISSUE_RESOLUTION_POLICY_PATH):
+            normalized = normalize_policy(surfaces[path])
+            with self.subTest(path=path, contract="frozen-plan"):
+                self.assertIn(
+                    normalize_policy("frozen baseline/fingerprint plan"),
+                    normalized,
+                )
+                self.assertIn(
+                    normalize_policy("canonical marked comment"),
+                    normalized,
+                )
+                self.assertIn(normalize_policy("rationale"), normalized)
+                self.assertIn(
+                    normalize_policy("independent verification"),
+                    normalized,
+                )
+
+        stale_instructions = (
+            "Explain the oracle change in the PR description.",
+            "Record actual fingerprint rationale in your PR description.",
+            "Put baseline verification in the pull request description.",
+        )
+        for path, text in surfaces.items():
+            for stale in stale_instructions:
+                with self.subTest(path=path, stale=stale):
+                    self.assertTrue(
+                        oracle_evidence_location_violations(
+                            text + "\n" + stale
+                        )
+                    )
 
     def test_tester_facing_case_contract_is_integrated(self):
         _, skill = read_skill()

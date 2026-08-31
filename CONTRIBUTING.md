@@ -330,8 +330,10 @@ wherever generic review or closure guidance conflicts with it. In short:
   [`docs/workflow-pilot.md`](docs/workflow-pilot.md#build-event-classification-and-candidate-evidence).
   Never copy that comment's marker into the PR body or template.
 - `reports/baseline/`, `tools/gba-playtest/fingerprints/`, and
-  `scripts/shiftcheck/tas/fingerprint.lua` are reviewed oracles — explain
-  *why* in your PR description if you touch them.
+  `scripts/shiftcheck/tas/fingerprint.lua` are reviewed oracles. Keep only the
+  frozen baseline/fingerprint plan in the PR body. If the candidate actually
+  changes an oracle, put the exact change, rationale, and independent
+  verification in the one canonical marked comment above.
 - `python3 scripts/artifact_guard.py --revision HEAD` rejects tracked
   ROM/ELF/save/savestate/patch/generated-compressed-asset files; it is a
   structural check, **not** a legal/copyright clearance — see

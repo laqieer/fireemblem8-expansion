@@ -608,6 +608,53 @@
       }
     }
   ],
-  "schema_version": 2,
+  "schema_version": 3,
+  "strict_float_cases": [
+    {
+      "accepted": false,
+      "id": "positive-overflow",
+      "literal": "1e9999"
+    },
+    {
+      "accepted": false,
+      "id": "negative-overflow",
+      "literal": "-1e9999"
+    },
+    {
+      "accepted": false,
+      "id": "positive-underflow",
+      "literal": "1e-9999"
+    },
+    {
+      "accepted": false,
+      "id": "negative-underflow",
+      "literal": "-1e-9999"
+    },
+    {
+      "accepted": false,
+      "id": "huge-positive-exponent",
+      "literal": "1e999999999999999999"
+    },
+    {
+      "accepted": false,
+      "id": "huge-negative-exponent",
+      "literal": "1e-999999999999999999"
+    },
+    {
+      "accepted": true,
+      "id": "normal-finite",
+      "literal": "1.25"
+    },
+    {
+      "accepted": true,
+      "id": "negative-zero",
+      "literal": "-0.0"
+    },
+    {
+      "accepted": true,
+      "id": "finite-subnormal",
+      "literal": "5e-324"
+    }
+  ],
   "workflow_dispatch_supported": false
 }
