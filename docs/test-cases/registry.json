@@ -478,7 +478,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/93",
         "https://github.com/laqieer/fireemblem8-expansion/issues/169",
         "https://github.com/laqieer/fireemblem8-expansion/issues/171",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/176"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/176",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/177"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -486,6 +487,7 @@
         "TC-WORKFLOW-CI-WAIT-001",
         "TC-WORKFLOW-MANUAL-HANDOFF-001",
         "TC-WORKFLOW-STACKED-CI-001",
+        "TC-WORKFLOW-BODY-EDIT-001",
         "TC-WORKFLOW-PILOT-BASELINE-001"
       ]
     },
@@ -2217,6 +2219,42 @@
       ]
     },
     {
+      "id": "TC-WORKFLOW-BODY-EDIT-001",
+      "title": "Suppress metadata-only Build workers",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/177"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-body-edit-001-suppress-metadata-only-build-workers",
+      "profiles": [
+        "Clean source checkout with Python 3, parsed GitHub event fixtures, and no live workflow"
+      ],
+      "purpose": "Prove body/title-only edits suppress the four expensive Build workers while base, mixed, unknown/incomplete, source, stacked-base, and master events retain the complete exact-head graph.",
+      "prerequisites": "Start at the repository root with the Build workflow, event classifier, isolated launcher, and event-classification fixture unchanged; no token, ROM, emulator, or remote mutation is required.",
+      "actions": "Run the event-classifier, workflow, and upstream-mirror suites; replay body-only, title-only, both, base-only, mixed, unknown, incomplete, opened, synchronize, reopened, and master-push event files through the isolated output protocol; inspect the stable-body and canonical evidence-comment contract.",
+      "expected_result": "Metadata-only edits select only the verified base-authoritative classifier and successful exact-head summary. Every other supported or uncertain event selects all required workers; master also publishes. Classifier failure runs workers and fails summary. The six issue #176 jobs remain closed, the seventh classifier is setup-only, and the 28 local gates remain exact.",
+      "negative_control": "The pre-fix edited trigger selects all four expensive workers for the unchanged-head body fixture. Malformed/duplicate/oversized/incomplete payloads, base or mixed suppression, mutable authority, non-fail-closed worker conditions, unknown summary output, checkout drift, and source/target mirror drift all fail.",
+      "interactions": "Depends on #176 baseline, isolated launcher, exact checkout, seven-job mirror, and summary authority; #181 depends on it; conflicts with manual labels, pull_request_target, mutable ledgers, head-authored classification, success defaults, or suppressing genuine stack base edits.",
+      "save_compatibility": "Source-only CI selection and evidence-comment governance; no feature flag, save, generated-data, localization, ROM/RAM, modern debug/release output, gameplay, or archival impact.",
+      "cleanup": "Disposable event files stay under ignored build/test-artifacts and are removed automatically; no remote state is read or changed.",
+      "limitations": "The deterministic replay covers GitHub event-file and workflow semantics without dispatching a live event. The current Build workflow has no explicit final-dispatch trigger, and no manual-only criterion applies.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_event_classifier -v",
+          "evidence": "scripts/workflow_pilot/tests/test_event_classifier.py"
+        },
+        {
+          "command": "python3 -m unittest discover -s tests/workflows -p 'test_*.py' -v",
+          "evidence": "tests/workflows/test_build_ci_topology.py"
+        },
+        {
+          "command": "python3 -m unittest tests.upstream_port.test_verify -v",
+          "evidence": "tests/upstream_port/test_verify.py"
+        }
+      ]
+    },
+    {
       "id": "TC-WORKFLOW-PILOT-BASELINE-001",
       "title": "Freeze reproducible pilot baseline and decisions",
       "feature_id": "workflow-governance",
@@ -2230,9 +2268,9 @@
       ],
       "purpose": "Prove the frozen baseline formulas, mandatory real-object-database authority, exact cohort identity seal, Git-tree-bound non-derivable decision schema, explicit unavailable historical resolution boundary, globally coherent workflow runs, derived stack and revert causality, executable artifact lifecycle, and deterministic normalized output before pilot behavior changes.",
       "prerequisites": "Start at the exact Git repository root with the committed workflow-pilot fixture, decision record, expected values, and reporter unchanged; no token, ROM, emulator, or game build is required.",
-      "actions": "Run all suites and reporter determinism; mutate cloned patch-release and summary runners, conditions, needs, permissions, env, steps, commands, actions, containers/defaults, and unknown fields before dry-run; independently inject duplicate Build tools into every combined worker and prove only the intended job changes; retain lifecycle launcher, maximal anchors, target, revert, blob, Git, and proof controls.",
-      "expected_result": "All six jobs participate in complete target/source equivalence. Patch-release retains its master-only condition, exact environment, six publisher steps, scoped secret, and pinned actions; summary retains always(), ordered four-job needs, exact results, and one fail-closed step. Duplicate setup rejection independently covers host, build, extended, and legacy. Every prior authority contract remains exact.",
-      "negative_control": "Any patch/summary runner, if/needs, permission, env, step, command, action, container/default, secret, or unknown-field drift; duplicate setup in any one combined worker; and all prior lifecycle, anchor, execution-context, target, revert, blob, Git, proof, and parser adversaries fail closed.",
+      "actions": "Run all suites and reporter determinism; mutate the classifier and cloned patch-release/summary runners, conditions, needs, outputs, permissions, env, steps, commands, actions, containers/defaults, and unknown fields before dry-run; independently inject duplicate Build tools into every combined worker and prove only the intended job changes; retain lifecycle launcher, maximal anchors, target, revert, blob, Git, and proof controls.",
+      "expected_result": "The seven-job source/target topology preserves all six closed issue #176 jobs and adds only the closed classifier setup root. Patch-release retains its master-only condition, exact environment, six publisher steps, scoped secret, and pinned actions; summary retains always(), classifier plus ordered four-worker needs, exact results, and one fail-closed step. Duplicate setup rejection independently covers host, build, extended, and legacy. Every prior authority contract remains exact, and the local mirror remains 28 gates.",
+      "negative_control": "Any classifier/patch/summary runner, if/needs, output, permission, env, step, command, action, container/default, secret, or unknown-field drift; duplicate setup in any one combined worker; and all prior lifecycle, anchor, execution-context, target, revert, blob, Git, proof, and parser adversaries fail closed.",
       "interactions": "Dependencies none; dependents #177-#181; conflicts none with CI selection, review ordering, merge gates, runtime/configuration/save/generated/localization/archival behavior, and no feature flag.",
       "save_compatibility": "Source-only workflow measurement; no save field, epoch, migration, generated game data, localization, ROM/RAM, modern debug/release, gameplay, or archival impact.",
       "cleanup": "Remove only build/test-artifacts/workflow-pilot if the human procedure created it; reporter-created bounded sandbox children under build/test-artifacts/ are removed automatically, and no remote state is mutated.",

@@ -179,11 +179,12 @@ issue rather than this repository.
 
 ### Expected result
 
-The synthetic non-master-base pull request selects the existing `host-tests`,
-`build`, `extended-host-tests`, `legacy`, and fail-closed `summary` jobs. Every
-candidate worker still checks out and verifies `pull_request.head.sha`. The
-publisher is absent from pull-request execution, while a push to `master`
-selects it and a push to any other branch selects no workflow jobs.
+The synthetic non-master-base pull request selects `event-classifier`, the
+existing `host-tests`, `build`, `extended-host-tests`, `legacy`, and
+fail-closed `summary` jobs. Every candidate worker still checks out and
+verifies `pull_request.head.sha`. The publisher is absent from pull-request
+execution, while a push to `master` selects it and a push to any other branch
+selects no workflow jobs.
 
 The child remains based on its immediate parent while that parent is open, and
 exact-head Build CI and Copilot review run against that genuine base. After the
@@ -238,6 +239,111 @@ temporary base flip solely to trigger CI.
 No cleanup is required. The case evaluates committed workflow and governance
 contracts without dispatching GitHub Actions; it does not prove live service
 availability or grant credentials.
+
+## TC-WORKFLOW-BODY-EDIT-001: Suppress metadata-only Build workers
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #177](https://github.com/laqieer/fireemblem8-expansion/issues/177).
+- **Supported configuration or artifact:** clean source checkout with Python
+  3, the Build workflow, and the committed GitHub event fixture; no token,
+  live pull request, workflow run, ROM, emulator, or game build is required.
+- **Prerequisites and clean starting state:** start at the repository root
+  with `.github/workflows/build.yml`,
+  `scripts/workflow_pilot/event_classifier.py`, the isolated launcher, and
+  `scripts/workflow_pilot/tests/fixtures/event_classification.json` unchanged.
+  The fixture declares that the current workflow has no explicit final
+  dispatch surface.
+
+### Actions
+
+1. Run
+   `python3 -m unittest scripts.workflow_pilot.tests.test_event_classifier -v`.
+2. Run
+   `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`.
+3. Run
+   `python3 -m unittest tests.upstream_port.test_verify -v`.
+4. Inspect the parsed body-only, title-only, body-and-title, base-only,
+   base-plus-body, unknown-field, incomplete-change, `opened`, `synchronize`,
+   `reopened`, and `master`-push cases. Confirm every fixture provides the
+   event name, runner ref/SHA, expected Build SHA, GitHub-shaped payload, exact
+   classifier result, exact selected job set, and exact head.
+5. Inspect the disposable-event replay. It writes each payload beneath ignored
+   `build/test-artifacts/`, invokes the real `/usr/bin/python3 -I` launcher and
+   output-file protocol, parses the resulting job outputs, and removes the
+   sandbox without reading or mutating remote state.
+6. Inspect a pull request's stable body contract and canonical evidence
+   comment protocol in [`../workflow-pilot.md`](../workflow-pilot.md). The
+   comment carries this standalone marker:
+
+   <!-- workflow-pilot-candidate-evidence -->
+
+   Evolving SHA/run/review/budget/preflight values are updated there in place
+   rather than in the body, title, baseline fixture, decision record, or
+   another mutable ledger.
+
+### Expected result
+
+Body-only, title-only, and combined body/title edits select only
+`event-classifier` and `summary`; the four expensive workers do not start.
+The summary succeeds only when classifier status is `success`, the classified
+SHA equals the event's exact `pull_request.head.sha`, suppression is exactly
+false, and all four workers are exactly `skipped`.
+
+Base-only edits, mixed edits, unknown and incomplete edits, `opened`,
+`synchronize`, and `reopened` select the classifier, all four expensive
+workers, and summary at the exact PR head. A `master` push additionally selects
+the existing patch publisher and runs the complete graph. A classifier
+failure or missing/unknown output still starts all expensive workers and makes
+summary fail. The classifier itself executes from the verified current PR
+base SHA; a base without the new classifier uses the explicit full-build
+bootstrap. The current workflow has no `workflow_dispatch`, so the fixture and
+topology test assert that no final-dispatch job selection exists to preserve.
+
+### Negative control
+
+The pre-fix trigger-only model selects `host-tests`, `build`,
+`extended-host-tests`, `legacy`, and `summary` for the same body-only fixture
+despite its unchanged head SHA. The focused suites also reject metadata
+suppression for malformed `changes`, missing PR identity, duplicate JSON keys,
+oversized event files, base or mixed edits, an unverified/mutable classifier
+checkout, classifier output drift, worker conditions that do not run on
+classifier failure, summary success on unknown/skipped full jobs, weakened
+exact-head checkout, and source/target workflow mirror drift.
+
+### Interactions and save compatibility
+
+This confirmed workflow-efficiency fix depends on issue #176's immutable
+baseline, closed workflow mirror, isolated launcher, exact-head checkout, and
+summary authority. Issue #181 depends on this classification. It deliberately
+changes only pull-request metadata-event selection and the evidence-comment
+contract. It conflicts with manual labels, `pull_request_target`, head-authored
+classifier execution, success-shaped defaults, mutable metric ledgers, and
+suppression of genuine stacked-PR base edits. It has no feature flag and no
+game/runtime, modern debug/release output, save, generated-data, localization,
+ROM/RAM, or archival impact.
+
+### Automation
+
+`python3 -m unittest scripts.workflow_pilot.tests.test_event_classifier -v`
+parses every fixture, replays the real isolated event-file/output protocol, and
+exercises malformed and unknown fail-closed controls.
+
+`python3 -m unittest discover -s tests/workflows -p "test_*.py" -v` parses the
+workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
+pin, and environment semantics, including the pre-fix negative selection.
+
+`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 28 local
+gates while requiring complete seven-job source/target equivalence: the six
+issue #176 jobs remain closed and the classifier is a closed setup-only
+seventh job, never a 29th local gate.
+
+### Cleanup and limitations
+
+The disposable sandbox is removed automatically. No remote state is read or
+changed. The local replay proves GitHub's documented event-file semantics and
+the exact workflow graph contract, not live service availability. No
+manual-only criterion applies. Rollback is a normal revert; the prior broad
+`edited` behavior then resumes.
 
 ## TC-WORKFLOW-PILOT-BASELINE-001: Freeze reproducible pilot baseline and decisions
 
@@ -299,13 +405,15 @@ availability or grant credentials.
    in the committed full baseline and that setup remains absent from the 28
    local gates.
 9. Mutate every combined worker with container/services/strategy/permissions/
-   defaults/needs/if/advisory/environment/concurrency/uses/secrets/shell
-   execution context, including spaced, quoted, escaped, tagged, explicit,
-   flow, duplicate, reordered, and wrong-value forms.
+   defaults/advisory/environment/concurrency/uses/secrets/shell execution
+   context, and mutate the exact classifier `needs`/`if` edge, including
+   spaced, quoted, escaped, tagged, explicit, flow, duplicate, reordered, and
+   wrong-value forms.
 10. Place a real `sitecustomize.py` that exits successfully before ordinary
-    Python commands. Confirm normal startup is bypassed while all three
-    `/usr/bin/python3 -I` launcher modes execute, and arbitrary modes,
-    arguments, roots, or launcher/`-I` changes fail.
+    Python commands. Confirm normal startup is bypassed while the three
+    baseline `/usr/bin/python3 -I` launcher modes and the event-classifier mode
+    execute, and arbitrary modes, arguments, roots, or launcher/`-I` changes
+    fail.
 11. Feed the workflow mirror parser a long repeated
     `a\n        ` environment adversary and require bounded completion with
     the same accepted/rejected structural results.
@@ -424,11 +532,12 @@ above. Build CI runs the same command plus the baseline reporter with
 `--repository-root "$GITHUB_WORKSPACE"` in its existing required `host-tests`
 job. Before those reporter commands, CI hydrates the fixture's exact commit
 authority and proves exact `HEAD` and refs are unchanged. The parsed workflow
-topology suite fails if hydration, pre-pilot step order/content, scrubbed
-protected-step environments, ownership, or checked-out-root binding is removed
-or weakened. It also requires each combined worker's exact direct job mapping
-and values; no container or alternate execution context can replace the
-reviewed Ubuntu host.
+topology suite fails if classification, hydration, pre-pilot step
+order/content, scrubbed protected-step environments, ownership, or
+checked-out-root binding is removed or weakened. It also requires the
+classifier and each combined worker's exact direct job mapping and values; no
+container or alternate execution context can replace the reviewed Ubuntu
+host.
 The protected Python steps use the closed isolated launcher, so repository or
 user site customization cannot run before control. The workflow mirror parser
 uses deterministic line/indent parsing rather than an ambiguous multiline
@@ -439,13 +548,16 @@ actions, run argv, `env`/`with` mappings, direct fields, and root execution
 before dry-run or execution. Unnamed non-checkout steps, duplicate setup names,
 complex keys, and extra jobs fail closed. Workflow execution context is
 exactly name/triggers/read-only permissions/jobs with no workflow env,
-defaults, or concurrency. Every combined job is exactly Ubuntu, 60 minutes,
-its allowlisted env, and steps; self-hosted/container/service/strategy/default
-shell or any other execution field fails before dry-run.
+defaults, or concurrency. The classifier is exactly Ubuntu, five minutes, its
+outputs/environment, and three setup steps. Every combined job is exactly its
+classifier edge, Ubuntu, 60 minutes, its allowlisted env, and steps;
+self-hosted/container/service/strategy/default shell or any other execution
+field fails before dry-run.
 Patch publication and summary are also complete semantic structures:
 master-only publication condition, pinned actions, scoped secret/env and six
-publisher steps; then `always()`, exact ordered needs/result env, five-minute
-context, and one fail-closed summary step. Neither is locally executed, but any
+publisher steps; then `always()`, classifier plus exact ordered worker
+needs/result env, five-minute context, and one fail-closed summary step.
+Neither is locally executed, but any
 runner/condition/needs/permission/env/step/command/action/alternate-context
 drift rejects before dry-run.
 

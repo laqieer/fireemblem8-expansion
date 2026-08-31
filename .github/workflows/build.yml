@@ -10,6 +10,77 @@ permissions:
   contents: read
 
 jobs:
+  # Event payloads are classified from the current integration base, never
+  # from mutable PR-head code. A branch whose base predates the classifier
+  # takes the bootstrap full-build path. Classifier failure, missing output,
+  # unknown fields, and malformed/incomplete payloads all select the existing
+  # expensive graph through each worker's fail-closed condition.
+  event-classifier:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      classification: ${{ steps.classify.outputs.classification }}
+      expected_head: ${{ steps.classify.outputs.expected_head }}
+      reason: ${{ steps.classify.outputs.reason }}
+      run_expensive: ${{ steps.classify.outputs.run_expensive }}
+    env:
+      CLASSIFIER_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
+      EXPECTED_BUILD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
+        fetch-depth: 1
+        persist-credentials: false
+
+    - name: Verify classifier authority revision
+      run: |
+        ACTUAL_SHA="$(git rev-parse HEAD)"
+        printf 'classifier.sha=%s\n' "$ACTUAL_SHA"
+        test "$ACTUAL_SHA" = "$CLASSIFIER_REF"
+
+    - name: Classify Build event
+      id: classify
+      env:
+        BASH_ENV: ''
+        ENV: ''
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        PATH: /usr/bin:/bin
+        PYTHONPATH: ''
+      run: |
+        if test -f scripts/workflow_pilot/event_classifier.py; then
+          /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py classify-event \
+            --event-name "$GITHUB_EVENT_NAME" --event-path "$GITHUB_EVENT_PATH" \
+            --github-ref "$GITHUB_REF" --github-sha "$GITHUB_SHA" \
+            --expected-build-sha "$EXPECTED_BUILD_SHA" --output "$GITHUB_OUTPUT"
+        else
+          {
+            echo "classification=full"
+            echo "reason=classifier-bootstrap"
+            echo "run_expensive=true"
+            echo "expected_head=$EXPECTED_BUILD_SHA"
+          } >> "$GITHUB_OUTPUT"
+        fi
+
   # Fast, host-only lane (issues #13 + #12/#15): exercises every
   # tools/gba-playtest host test -- scenario/schema parsing, generators,
   # config, save/migration fixtures, timeouts, retry policy, deterministic
@@ -31,6 +102,8 @@ jobs:
   # runner variance has reached the former 45-minute ceiling.
   # All host test steps are genuine gates (required status), not advisory.
   host-tests:
+    needs: [event-classifier]
+    if: ${{ always() && (needs.event-classifier.result != 'success' || needs.event-classifier.outputs.run_expensive != 'false') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -212,6 +285,8 @@ jobs:
   # archival CI evidence. Per repository policy, this job ends after its
   # target-ROM checks.
   build:
+    needs: [event-classifier]
+    if: ${{ always() && (needs.event-classifier.result != 'success' || needs.event-classifier.outputs.run_expensive != 'false') }}
     runs-on: ubuntu-latest
     # A normal debug+release linker/runtime run is roughly 25 minutes, but
     # shared-runner variance has reached the former 30-minute ceiling.
@@ -350,6 +425,8 @@ jobs:
   # This lane holds unique broader host evidence for both candidate and
   # post-merge Build runs. It is independent of host-tests and build.
   extended-host-tests:
+    needs: [event-classifier]
+    if: ${{ always() && (needs.event-classifier.result != 'success' || needs.event-classifier.outputs.run_expensive != 'false') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -386,6 +463,8 @@ jobs:
   # The archival lane is a combined-gate member for both candidate and master
   # runs, parallel with the supported modern jobs.
   legacy:
+    needs: [event-classifier]
+    if: ${{ always() && (needs.event-classifier.result != 'success' || needs.event-classifier.outputs.run_expensive != 'false') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -511,10 +590,15 @@ jobs:
 
   summary:
     if: always()
-    needs: [host-tests, build, extended-host-tests, legacy]
+    needs: [event-classifier, host-tests, build, extended-host-tests, legacy]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
+      CLASSIFIER_RESULT: ${{ needs.event-classifier.result }}
+      CLASSIFICATION: ${{ needs.event-classifier.outputs.classification }}
+      CLASSIFIED_BUILD_SHA: ${{ needs.event-classifier.outputs.expected_head }}
+      RUN_EXPENSIVE: ${{ needs.event-classifier.outputs.run_expensive }}
+      EXPECTED_BUILD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       HOST_TESTS_RESULT: ${{ needs.host-tests.result }}
       BUILD_RESULT: ${{ needs.build.result }}
       EXTENDED_HOST_TESTS_RESULT: ${{ needs.extended-host-tests.result }}
@@ -528,12 +612,42 @@ jobs:
           echo
           echo "| Job | Conclusion |"
           echo "| --- | --- |"
+          echo "| event-classifier | $CLASSIFIER_RESULT ($CLASSIFICATION) |"
           echo "| host-tests | $HOST_TESTS_RESULT |"
           echo "| build | $BUILD_RESULT |"
           echo "| extended-host-tests | $EXTENDED_HOST_TESTS_RESULT |"
           echo "| legacy | $LEGACY_RESULT |"
         } >> "$GITHUB_STEP_SUMMARY"
 
+        if [ "$CLASSIFIER_RESULT" != "success" ]; then
+          echo "Build event classifier did not succeed: $CLASSIFIER_RESULT" >&2
+          exit 1
+        fi
+        if [ "$CLASSIFIED_BUILD_SHA" != "$EXPECTED_BUILD_SHA" ]; then
+          echo "Build event classifier head mismatch" >&2
+          exit 1
+        fi
+
+        if [ "$CLASSIFICATION" = "metadata-only" ]; then
+          if [ "$RUN_EXPENSIVE" != "false" ]; then
+            echo "metadata-only classification did not suppress workers" >&2
+            exit 1
+          fi
+          for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \
+            "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
+          do
+            if [ "$result" != "skipped" ]; then
+              echo "metadata-only Build worker was not skipped: $result" >&2
+              exit 1
+            fi
+          done
+          exit 0
+        fi
+
+        if [ "$CLASSIFICATION" != "full" ] || [ "$RUN_EXPENSIVE" != "true" ]; then
+          echo "unknown Build event classification output" >&2
+          exit 1
+        fi
         for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" "$EXTENDED_HOST_TESTS_RESULT" \
           "$LEGACY_RESULT"
         do

@@ -100,6 +100,60 @@ input-format/cohort checksum: it detects identity, timestamp, PR/SHA
 association, and relationship substitution that preserves aggregate metrics,
 but does not hash source files, blobs, objects, ROMs, or the repository tree.
 
+## Build event classification and candidate evidence
+
+Issue [#177](https://github.com/laqieer/fireemblem8-expansion/issues/177)
+adds one parsed, fail-closed `event-classifier` job ahead of the four expensive
+workers. For pull requests, that small job checks out the exact current
+`pull_request.base.sha` with the pinned checkout action, no credentials, no
+submodules, and depth one. It verifies that authority checkout before invoking
+the closed `/usr/bin/python3 -I` launcher's `classify-event` mode. A branch
+whose base predates the classifier takes an explicit bootstrap full-build
+path, so introducing or reverting the seam cannot silently suppress evidence.
+
+The classifier reads the bounded `GITHUB_EVENT_PATH` JSON file with duplicate
+key rejection. An `edited` event suppresses `host-tests`, `build`,
+`extended-host-tests`, and `legacy` only when:
+
+- the event has a complete pull-request base and exact head identity;
+- the event head equals the same `pull_request.head.sha` expression used by
+  every expensive worker checkout;
+- the nonempty `changes` key set is exactly `body`, `title`, or both; and
+- each changed metadata field has the documented GitHub `{"from": ...}`
+  shape and a corresponding current pull-request value.
+
+Base-only edits, mixed edits, unknown fields, incomplete identities or change
+records, unknown actions/events, `opened`, `synchronize`, `reopened`, and
+`master` pushes select the complete required graph. Classifier failure or
+missing output also selects all four workers through `always()` conditions,
+then makes `summary` fail. On a metadata-only edit, `summary` succeeds only
+when classification succeeded, the classified head still equals the event
+head, the suppression output is exactly false, and all four worker conclusions
+are exactly `skipped`. On a full event, the previous exact-head checkout,
+worker commands, environments, and success-only summary remain unchanged.
+The current Build workflow has no explicit final-dispatch trigger; if that
+supported surface is introduced later, `workflow_dispatch` classifies as full
+and the trigger/topology contracts must be updated together.
+
+The pull-request body remains the stable frozen scope, non-goals, acceptance,
+dependency, and tester-case contract. Evolving candidate SHA, Build run,
+Copilot review, unresolved-thread, budget, and review-size evidence belongs in
+one canonical PR evidence comment carrying this standalone marker:
+
+<!-- workflow-pilot-candidate-evidence -->
+
+Update that comment in place. Do not append those facts to the body, title,
+decision record, fixture, or another tracked/current-state ledger. Comment
+edits emit no `pull_request: edited` event, while Git, GitHub, and Actions
+remain authoritative for every value.
+
+The issue #176 reporter's duplicate unchanged-SHA formula needs no new state:
+capture the post-pilot Actions cohort with the same inclusive-window and
+identity rules, group Build runs by exact `head_sha`, and compare its
+`sum(group size - 1)` with the frozen pre-pilot value of 51. The canonical
+comment may link the derived before/after report; it does not become reporter
+input or an editable metric source.
+
 `--repository-root` is required and must resolve to the exact checked-out Git
 top level. Before any metric or report section is constructed, the reporter
 requires its `origin` to identify the fixture repository, loads every listed
@@ -178,11 +232,12 @@ safe values and pin `PATH=/usr/bin:/bin`; the isolated launcher removes every
 ambient `GIT_*` name before dispatch. Runner environment files,
 repository/user `sitecustomize.py`, shell startup hooks, and ambient Git
 controls therefore cannot replace either executable or authority root.
-At job scope, every combined worker has a closed direct mapping: exact
-`runs-on: ubuntu-latest`, `timeout-minutes: 60`, its reviewed environment, and
-`steps` only. Host, modern, extended-host, and legacy therefore reject
+At job scope, every combined worker has a closed direct mapping: the exact
+classifier dependency and fail-closed condition, `runs-on: ubuntu-latest`,
+`timeout-minutes: 60`, its reviewed environment, and `steps`. Host, modern,
+extended-host, and legacy therefore reject
 containers, services, matrices/strategies, job permissions/defaults,
-dependencies, conditions/advisory mode, deployment environments, concurrency,
+other dependencies, conditions/advisory mode, deployment environments, concurrency,
 reusable-job `uses`/secrets, custom shell context, unknown fields, duplicate
 keys, reordered keys, and complex key aliases. Patch publication and summary
 retain their separate existing contracts.
@@ -387,8 +442,9 @@ association without copying Git objects or adding a source/ROM identity gate.
 Review-size evidence is deliberately not stored as mutable current-head
 numbers in this document. At each candidate, the coordinator derives the
 changed-file list, per-file numstat, and shortstat from
-`git diff <immediate-base>...HEAD` and publishes that exact-head preflight
-through the canonical remote workflow action.
+`git diff <immediate-base>...HEAD` and publishes that exact-head preflight in
+the canonical evidence comment. Updating that comment never edits the stable
+PR body and never emits a Build-triggering pull-request event.
 
 The unavailable clean-review result is the actual historical boundary, not a
 zero, success, or estimate. It makes that metric ineligible for pilot
@@ -405,7 +461,7 @@ numeric clean-review duration.
 | Relationship | Contract |
 | --- | --- |
 | Dependencies | None |
-| Dependents | Issues #177, #178, #179, #180, and #181 |
+| Dependents | Issue #177 (event classification), plus issues #178, #179, #180, and #181 |
 | Conflicts | None with runtime, configuration, save, generated game data, localization, or archival behavior |
 
 Modern debug impact: none. Modern release impact: none. Archival impact: none.

@@ -67,9 +67,11 @@ class BuildCiCheckoutContractTests(unittest.TestCase):
         self.assertTrue(any("fetch-depth" in error for error in _contract_errors(text)))
 
     def test_merge_ref_fallback_is_rejected(self):
-        text = WORKFLOW.read_text(encoding="utf-8").replace(
-            EXPECTED_SHA, "${{ github.sha }}", 1
-        )
+        text = WORKFLOW.read_text(encoding="utf-8")
+        host = _job_block(text, "host-tests")
+        changed_host = host.replace(EXPECTED_SHA, "${{ github.sha }}", 1)
+        self.assertNotEqual(changed_host, host)
+        text = text.replace(host, changed_host, 1)
         self.assertTrue(any("pull-request head" in error for error in _contract_errors(text)))
 
     def test_checkout_ref_must_use_event_head(self):

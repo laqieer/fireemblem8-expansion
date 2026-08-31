@@ -13,11 +13,19 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from scripts.workflow_pilot import hydrate_authority, reporter
+from scripts.workflow_pilot import event_classifier, hydrate_authority, reporter
 
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
+EVENT_FIXTURE = (
+    ROOT
+    / "scripts"
+    / "workflow_pilot"
+    / "tests"
+    / "fixtures"
+    / "event_classification.json"
+)
 PYTHON_REQUIREMENTS = ROOT / ".github" / "requirements" / "build.txt"
 RETIRED_WORKFLOW_FILENAME = "full" + "-matrix.yml"
 RETIRED_WORKFLOW = ROOT / ".github" / "workflows" / RETIRED_WORKFLOW_FILENAME
@@ -26,8 +34,17 @@ MASTER_PUBLISHER_CONDITION = (
     "${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}"
 )
 COMBINED_WORKERS = ("host-tests", "build", "extended-host-tests", "legacy")
-INDEPENDENT_JOBS = COMBINED_WORKERS + ("patch-release",)
-SUMMARY_NEEDS = "needs: [host-tests, build, extended-host-tests, legacy]"
+CLASSIFIER_JOB = "event-classifier"
+INDEPENDENT_JOBS = ("patch-release",)
+SUMMARY_NEEDS = (
+    "needs: [event-classifier, host-tests, build, extended-host-tests, legacy]"
+)
+WORKER_NEEDS = "needs: [event-classifier]"
+WORKER_CONDITION = (
+    "${{ always() && (needs.event-classifier.result != 'success' || "
+    "needs.event-classifier.outputs.run_expensive != 'false') }}"
+)
+CANDIDATE_FULL_JOBS = set(COMBINED_WORKERS) | {CLASSIFIER_JOB, "summary"}
 HASHED_PIP_INSTALL = (
     "python3 -m pip install --require-hashes --only-binary=:all: --no-deps "
     "-r .github/requirements/build.txt"
@@ -204,19 +221,21 @@ def _push_branches(header: str) -> tuple[str, ...] | None:
 
 
 def _event_branch(event: dict) -> str:
+    payload = event.get("payload", event)
     if event["event_name"] == "pull_request":
-        return event["pull_request"]["base"]["ref"]
+        return payload["pull_request"]["base"]["ref"]
     prefix = "refs/heads/"
-    ref = event["ref"]
+    ref = payload["ref"]
     return ref[len(prefix):] if ref.startswith(prefix) else ref
 
 
 def _triggered_jobs(text: str, event: dict) -> set[str]:
     header = text[: text.index("\njobs:\n")]
+    payload = event.get("payload", event)
     try:
         if event["event_name"] == "pull_request":
             actions = _pull_request_actions(header)
-            if event["action"] not in actions:
+            if payload["action"] not in actions:
                 return set()
             branches = None
         elif event["event_name"] == "push":
@@ -233,9 +252,24 @@ def _triggered_jobs(text: str, event: dict) -> set[str]:
     jobs = set(_job_blocks(text))
     if not (
         event["event_name"] == "push"
-        and event["ref"] == "refs/heads/master"
+        and payload["ref"] == "refs/heads/master"
     ):
         jobs.discard("patch-release")
+    expected_build_sha = event.get("expected_build_sha")
+    if expected_build_sha is None:
+        if event["event_name"] == "pull_request":
+            expected_build_sha = payload["pull_request"]["head"]["sha"]
+        else:
+            expected_build_sha = event.get("sha", payload.get("after"))
+    decision = event_classifier.classify_event(
+        event["event_name"],
+        payload,
+        github_ref=event.get("github_ref", event.get("ref", "")),
+        github_sha=event.get("github_sha", event.get("sha", expected_build_sha)),
+        expected_build_sha=expected_build_sha,
+    )
+    if not decision.run_expensive:
+        jobs.difference_update(COMBINED_WORKERS)
     return jobs
 
 
@@ -575,6 +609,8 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
             continue
         direct_lines.append(line)
     expected_direct = [
+        "    needs: [event-classifier]",
+        f"    if: {WORKER_CONDITION}",
         "    runs-on: ubuntu-latest",
         "    timeout-minutes: 60",
         "    env:",
@@ -600,6 +636,107 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
             entries.append(line)
     if tuple(entries) != COMBINED_JOB_ENV[job_name]:
         errors.append(f"{job_name} env differs from its reviewed exact mapping")
+    return errors
+
+
+def _classifier_contract_errors(job: str) -> list[str]:
+    required = (
+        "    runs-on: ubuntu-latest",
+        "    timeout-minutes: 5",
+        "    outputs:",
+        "      classification: ${{ steps.classify.outputs.classification }}",
+        "      expected_head: ${{ steps.classify.outputs.expected_head }}",
+        "      reason: ${{ steps.classify.outputs.reason }}",
+        "      run_expensive: ${{ steps.classify.outputs.run_expensive }}",
+        "      CLASSIFIER_REF: ${{ github.event_name == 'pull_request' && "
+        "github.event.pull_request.base.sha || github.sha }}",
+        f"      EXPECTED_BUILD_SHA: {EXPECTED_BUILD_SHA_EXPRESSION}",
+        "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+        "        ref: ${{ github.event_name == 'pull_request' && "
+        "github.event.pull_request.base.sha || github.sha }}",
+        "        fetch-depth: 1",
+        "        persist-credentials: false",
+        "    - name: Verify classifier authority revision",
+        '        test "$ACTUAL_SHA" = "$CLASSIFIER_REF"',
+        "    - name: Classify Build event",
+        "      id: classify",
+        "/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py "
+        "classify-event",
+        '--expected-build-sha "$EXPECTED_BUILD_SHA" --output "$GITHUB_OUTPUT"',
+        '            echo "classification=full"',
+        '            echo "reason=classifier-bootstrap"',
+        '            echo "run_expensive=true"',
+        '            echo "expected_head=$EXPECTED_BUILD_SHA"',
+    )
+    errors = [
+        f"event-classifier lacks required closed contract: {item}"
+        for item in required
+        if item not in job
+    ]
+    direct_lines = []
+    for line in job.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 4 and not line.startswith("    -"):
+            direct_lines.append(line)
+    if direct_lines != [
+        "    runs-on: ubuntu-latest",
+        "    timeout-minutes: 5",
+        "    outputs:",
+        "    env:",
+        "    steps:",
+    ]:
+        errors.append("event-classifier direct job mapping differs")
+    if "    needs:" in job or "    if:" in job:
+        errors.append("event-classifier must remain an unconditional root job")
+    if "        submodules:" in job:
+        errors.append("event-classifier authority checkout must not load submodules")
+    steps = _step_blocks(job)
+    if len(steps) != 3:
+        errors.append("event-classifier must have exactly three reviewed steps")
+    else:
+        expected_fields = (
+            ["uses", "with"],
+            ["name", "run"],
+            ["name", "id", "env", "run"],
+        )
+        if any(
+            _direct_step_mapping_fields(step) != fields
+            for step, fields in zip(steps, expected_fields)
+        ):
+            errors.append("event-classifier step mappings differ")
+        if not _step_has_scrubbed_environment(steps[2]):
+            errors.append(
+                "event-classifier must retain its scrubbed isolated environment"
+            )
+        expected_verify = (
+            'ACTUAL_SHA="$(git rev-parse HEAD)"',
+            "printf 'classifier.sha=%s\\n' \"$ACTUAL_SHA\"",
+            'test "$ACTUAL_SHA" = "$CLASSIFIER_REF"',
+        )
+        expected_classify = (
+            "if test -f scripts/workflow_pilot/event_classifier.py; then",
+            "/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py "
+            "classify-event \\",
+            '--event-name "$GITHUB_EVENT_NAME" '
+            '--event-path "$GITHUB_EVENT_PATH" \\',
+            '--github-ref "$GITHUB_REF" --github-sha "$GITHUB_SHA" \\',
+            '--expected-build-sha "$EXPECTED_BUILD_SHA" '
+            '--output "$GITHUB_OUTPUT"',
+            "else",
+            "{",
+            'echo "classification=full"',
+            'echo "reason=classifier-bootstrap"',
+            'echo "run_expensive=true"',
+            'echo "expected_head=$EXPECTED_BUILD_SHA"',
+            '} >> "$GITHUB_OUTPUT"',
+            "fi",
+        )
+        if tuple(_run_block_commands(steps[1])) != expected_verify:
+            errors.append("event-classifier authority verification command differs")
+        if tuple(_run_block_commands(steps[2])) != expected_classify:
+            errors.append("event-classifier command or bootstrap differs")
     return errors
 
 
@@ -683,6 +820,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
 
     jobs = _job_blocks(text)
     expected_jobs = {
+        "event-classifier",
         "host-tests",
         "build",
         "extended-host-tests",
@@ -693,6 +831,8 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     if set(jobs) != expected_jobs:
         errors.append(f"Build job set differs from consolidated contract: {sorted(jobs)}")
         return errors
+
+    errors.extend(_classifier_contract_errors(jobs["event-classifier"]))
 
     for job_name, job in jobs.items():
         for command in _run_block_commands(job):
@@ -721,8 +861,6 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             errors.append(
                 f"{job_name} uses unsupported direct mapping-key syntax"
             )
-        if _has_direct_key(jobs[job_name], indent=4, key="if"):
-            errors.append(f"{job_name} must run for pull-request candidates and master pushes")
         if _has_direct_key(
             jobs[job_name],
             indent=4,
@@ -745,7 +883,23 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         errors.append("summary must run after failed combined jobs on both triggers")
     if SUMMARY_NEEDS not in summary:
         errors.append("summary must depend on every required combined Build job")
-    loop = summary[summary.index("for result") : summary.index("done", summary.index("for result"))]
+    if '"$CLASSIFIER_RESULT" != "success"' not in summary:
+        errors.append("summary must fail when event classification fails")
+    if '"$CLASSIFIED_BUILD_SHA" != "$EXPECTED_BUILD_SHA"' not in summary:
+        errors.append("summary must bind classification to the event head")
+    if (
+        '"$CLASSIFICATION" = "metadata-only"' not in summary
+        or '"$RUN_EXPENSIVE" != "false"' not in summary
+        or '[ "$result" != "skipped" ]' not in summary
+    ):
+        errors.append("summary must accept only exact metadata-only suppression")
+    if (
+        '"$CLASSIFICATION" != "full"' not in summary
+        or '"$RUN_EXPENSIVE" != "true"' not in summary
+    ):
+        errors.append("summary must reject unknown full-build classifier output")
+    loop_start = summary.rindex("for result")
+    loop = summary[loop_start : summary.index("done", loop_start)]
     if '[ "$result" != "success" ]' not in loop:
         errors.append("summary loop must fail closed")
     for result in SUMMARY_RESULTS:
@@ -1040,6 +1194,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 self.assertTrue(
                     any(
                         "protected pre-pilot step sequence differs" in error
+                        or "event-classifier lacks required closed contract" in error
                         for error in _errors(changed, False)
                     )
                 )
@@ -1776,7 +1931,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         }
         self.assertEqual(
             _triggered_jobs(self.text, event),
-            set(COMBINED_WORKERS) | {"summary"},
+            CANDIDATE_FULL_JOBS,
         )
         self.assertNotIn("patch-release", _triggered_jobs(self.text, event))
 
@@ -1829,7 +1984,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 }
                 self.assertEqual(
                     _triggered_jobs(self.text, event),
-                    set(COMBINED_WORKERS) | {"summary"},
+                    CANDIDATE_FULL_JOBS,
                 )
 
         for action in ("closed", "labeled", "unlabeled", "assigned"):
@@ -1843,6 +1998,46 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     },
                 }
                 self.assertEqual(_triggered_jobs(self.text, event), set())
+
+    def test_parsed_event_fixtures_select_exact_jobs_and_heads(self):
+        fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
+        for case in fixture["cases"]:
+            with self.subTest(case=case["id"]):
+                self.assertEqual(
+                    _triggered_jobs(self.text, case),
+                    set(case["expected"]["jobs"]),
+                )
+                decision = event_classifier.classify_event(
+                    case["event_name"],
+                    case["payload"],
+                    github_ref=case["github_ref"],
+                    github_sha=case["github_sha"],
+                    expected_build_sha=case["expected_build_sha"],
+                )
+                self.assertEqual(
+                    decision.expected_head,
+                    case["expected"]["expected_head"],
+                )
+        header = self.text[: self.text.index("\njobs:\n")]
+        self.assertEqual(
+            "workflow_dispatch" in header,
+            fixture["workflow_dispatch_supported"],
+        )
+
+    def test_pre_fix_body_edit_negative_control_selected_every_expensive_worker(self):
+        fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
+        body_only = next(case for case in fixture["cases"] if case["id"] == "body-only")
+        header = self.text[: self.text.index("\njobs:\n")]
+        self.assertIn(body_only["payload"]["action"], _pull_request_actions(header))
+        pre_fix_jobs = set(COMBINED_WORKERS) | {"summary"}
+        self.assertEqual(
+            pre_fix_jobs,
+            {"host-tests", "build", "extended-host-tests", "legacy", "summary"},
+        )
+        self.assertEqual(
+            _triggered_jobs(self.text, body_only),
+            {"event-classifier", "summary"},
+        )
 
     def test_edited_base_change_reruns_exact_head_candidate_without_publisher(self):
         unchanged_head = "4" * 40
@@ -1863,7 +2058,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         }
         self.assertEqual(
             _triggered_jobs(self.text, event),
-            set(COMBINED_WORKERS) | {"summary"},
+            CANDIDATE_FULL_JOBS,
         )
         self.assertNotIn("patch-release", _triggered_jobs(self.text, event))
 
@@ -1885,7 +2080,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         }
         self.assertEqual(
             _triggered_jobs(self.text, child_synchronize),
-            set(COMBINED_WORKERS) | {"summary"},
+            CANDIDATE_FULL_JOBS,
         )
         self.assertNotIn("patch-release", _triggered_jobs(self.text, child_synchronize))
 
@@ -1902,17 +2097,79 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         }
         self.assertEqual(
             _triggered_jobs(self.text, master_push),
-            set(COMBINED_WORKERS) | {"patch-release", "summary"},
+            CANDIDATE_FULL_JOBS | {"patch-release"},
         )
         self.assertEqual(_triggered_jobs(self.text, other_push), set())
 
-    def test_combined_worker_removed_from_pull_request_path_fails(self):
+    def test_combined_worker_classifier_condition_is_exact(self):
         changed = self.text.replace(
             "  extended-host-tests:\n",
             f"  extended-host-tests:\n    if: {MASTER_PUBLISHER_CONDITION}\n",
             1,
         )
-        self.assertTrue(any("must run for pull-request" in error for error in _errors(changed, False)))
+        self.assertTrue(
+            any(
+                "extended-host-tests direct job mapping differs" in error
+                for error in _errors(changed, False)
+            )
+        )
+
+    def test_classifier_authority_and_outputs_fail_closed(self):
+        mutations = (
+            self.text.replace(
+                "      expected_head: ${{ steps.classify.outputs.expected_head }}",
+                "      expected_head: attacker",
+                1,
+            ),
+            self.text.replace(
+                "      CLASSIFIER_REF: ${{ github.event_name == 'pull_request' && "
+                "github.event.pull_request.base.sha || github.sha }}",
+                "      CLASSIFIER_REF: ${{ github.sha }}",
+                1,
+            ),
+            self.text.replace("        fetch-depth: 1", "        fetch-depth: 0", 1),
+            self.text.replace("      id: classify", "      id: attacker", 1),
+            self.text.replace(
+                "/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py "
+                "classify-event",
+                "python3 scripts/workflow_pilot/event_classifier.py",
+                1,
+            ),
+            self.text.replace(
+                '            echo "run_expensive=true"',
+                '            echo "run_expensive=false"',
+                1,
+            ),
+            self.text.replace(
+                "    outputs:\n",
+                "    permissions: write-all\n    outputs:\n",
+                1,
+            ),
+        )
+        for changed in mutations:
+            with self.subTest(mutation=changed[:180]):
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(_classifier_contract_errors(
+                    _job_blocks(changed)["event-classifier"]
+                ))
+
+    def test_combined_workers_run_when_classifier_fails_or_is_unknown(self):
+        for job_name in COMBINED_WORKERS:
+            with self.subTest(job=job_name):
+                job = _job_blocks(self.text)[job_name]
+                changed_job = job.replace(
+                    WORKER_CONDITION,
+                    "${{ needs.event-classifier.outputs.run_expensive == 'true' }}",
+                    1,
+                )
+                self.assertNotEqual(changed_job, job)
+                changed = self.text.replace(job, changed_job, 1)
+                self.assertTrue(
+                    any(
+                        f"{job_name} direct job mapping differs" in error
+                        for error in _errors(changed, False)
+                    )
+                )
 
     def test_combined_workers_reject_spaced_reviewed_job_keys(self):
         for job_name in COMBINED_WORKERS:
@@ -1930,6 +2187,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
     def test_reviewed_job_key_aliases_fail_closed(self):
         allowed = {
+            "needs": "[event-classifier]",
+            "if": WORKER_CONDITION,
             "runs-on": "ubuntu-latest",
             "timeout-minutes": "60",
             "env": "",
@@ -1967,9 +2226,9 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
     def test_every_combined_worker_rejects_spaced_advisory_or_skip_keys(self):
         for job_name in COMBINED_WORKERS:
-            for field, message in (
-                ("if : ${{ false }}", "must run for pull-request"),
-                ("continue-on-error : true", "must not be advisory"),
+            for field in (
+                "if : ${{ false }}",
+                "continue-on-error : true",
             ):
                 with self.subTest(job=job_name, field=field):
                     changed = self.text.replace(
@@ -1978,7 +2237,12 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         1,
                     )
                     self.assertTrue(
-                        any(message in error for error in _errors(changed, False))
+                        any(
+                            f"{job_name} direct job mapping differs" in error
+                            or f"{job_name} uses unsupported" in error
+                            or f"{job_name} must not be advisory" in error
+                            for error in _errors(changed, False)
+                        )
                     )
 
     def test_every_combined_worker_rejects_complex_job_keys(self):
@@ -2732,9 +2996,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 )
 
         changed = self.text.replace(
-            "  host-tests:\n    runs-on: ubuntu-latest\n",
-            "  host-tests:\n    runs-on: ubuntu-latest\n"
-            "    continue-on-error: true\n",
+            "  host-tests:\n",
+            "  host-tests:\n    continue-on-error: true\n",
             1,
         )
         self.assertNotEqual(changed, self.text)
@@ -2760,6 +3023,40 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             1,
         )
         self.assertTrue(any("summary loop must fail closed" in error for error in _errors(changed, False)))
+
+    def test_summary_metadata_and_classifier_results_fail_closed(self):
+        mutations = (
+            (
+                '"$CLASSIFIER_RESULT" != "success"',
+                '"$CLASSIFIER_RESULT" = "failure"',
+                "classification fails",
+            ),
+            (
+                '"$CLASSIFIED_BUILD_SHA" != "$EXPECTED_BUILD_SHA"',
+                '"$CLASSIFIED_BUILD_SHA" != "$CLASSIFIED_BUILD_SHA"',
+                "event head",
+            ),
+            (
+                '[ "$result" != "skipped" ]',
+                '[ "$result" != "success" ]',
+                "metadata-only suppression",
+            ),
+            (
+                '"$CLASSIFICATION" != "full"',
+                '"$CLASSIFICATION" = "full"',
+                "unknown full-build",
+            ),
+        )
+        for old, new, expected_error in mutations:
+            with self.subTest(mutation=old):
+                changed = self.text.replace(old, new, 1)
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        expected_error in error
+                        for error in _errors(changed, False)
+                    )
+                )
 
     def test_comment_text_is_not_treated_as_run_block_evidence(self):
         changed = self.text.replace(

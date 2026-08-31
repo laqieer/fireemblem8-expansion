@@ -25,8 +25,11 @@ none of `scripts/quickstart.sh`, the Makefile, or CI target Windows
 directly.
 
 **Automatic Build CI is the only host this repository re-verifies on every
-push/PR.** A PR candidate uses the complete combined Build gate and Copilot
-review concurrently. The same Build jobs rerun on `master`; only the
+source-changing push/PR.** A PR candidate uses the complete combined Build
+gate and Copilot review concurrently. Parsed body/title-only edits retain only
+the classifier and successful summary; base, mixed, unknown/incomplete,
+opened, synchronize, and reopened events fail closed to the complete graph.
+The same Build jobs rerun on `master`; only the
 technically used patch publisher is master-only. Arch and macOS support is
 exercised by the same script logic but is not re-run in CI; treat regressions
 there as community-reported, not CI-caught.
@@ -116,10 +119,12 @@ no ROM build or network access is required for either.
 
 ### Consolidated Build CI
 
-Prefer focused local checks during iteration. Candidate branches run
-`host-tests`, `build`, `extended-host-tests`, `legacy`, and fail-closed
-`summary` jobs plus Copilot review. A merged `master` push reruns that same
-combined gate and adds only `patch-release`. Unique CJK/font, codec,
+Prefer focused local checks during iteration. A small base-authoritative
+`event-classifier` precedes candidate `host-tests`, `build`,
+`extended-host-tests`, `legacy`, and fail-closed `summary` jobs plus Copilot
+review. Only parsed body/title-only edits skip the four expensive workers. A
+merged `master` push reruns the complete combined gate and adds only
+`patch-release`. Unique CJK/font, codec,
 configuration/budget, and archival evidence stays parallel with Build-owned
 modern debug/release, artifact, documentation, generated-data, and
 localization commands. The expected wall clock is approximately 35–40 minutes,

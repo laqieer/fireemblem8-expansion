@@ -454,7 +454,8 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
 
         for clause in (
             "four combined workers run in parallel",
-            "only serial, fail-closed join",
+            "event classifier precedes the four combined workers",
+            "`summary` is their fail-closed join",
             "install both the supported modern toolchain",
             "explicit archival `make legacy` prerequisites",
             "`verify` has no safe subset switch",
@@ -1029,6 +1030,8 @@ class VerifyCliCwdTests(unittest.TestCase):
                     with self.assertRaisesRegex(
                         ValueError,
                         "target Build workflow gate contract differs|"
+                        "authority checkout differs|"
+                        "classifier mapping differs|"
                         "unreviewed unnamed step|reviewed scrubbed environment|"
                         "workflow job order|step roles and order",
                     ):
@@ -1040,6 +1043,110 @@ class VerifyCliCwdTests(unittest.TestCase):
                 "target Build workflow",
             ):
                 verify_mod.run_gates(target_root, dry_run=True)
+
+    def test_event_classifier_is_closed_but_not_a_29th_local_gate(self):
+        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
+            original = handle.read()
+        structure = verify_mod._parse_workflow_structure_text(original)
+        self.assertEqual(
+            structure[1],
+            (
+                "event-classifier",
+                "host-tests",
+                "build",
+                "extended-host-tests",
+                "legacy",
+                "patch-release",
+                "summary",
+            ),
+        )
+        self.assertEqual(len(verify_mod.gates()), 28)
+        self.assertNotIn(
+            "event-classifier",
+            {
+                job_name
+                for job_name, _, _ in verify_mod._workflow_gate_contract(
+                    structure
+                )
+            },
+        )
+
+        mutations = (
+            original.replace(
+                "      expected_head: ${{ steps.classify.outputs.expected_head }}",
+                "      expected_head: attacker",
+                1,
+            ),
+            original.replace(
+                "      CLASSIFIER_REF: ${{ github.event_name == 'pull_request' && "
+                "github.event.pull_request.base.sha || github.sha }}",
+                "      CLASSIFIER_REF: ${{ github.sha }}",
+                1,
+            ),
+            original.replace(
+                "        fetch-depth: 1",
+                "        fetch-depth: 0",
+                1,
+            ),
+            original.replace(
+                "    - name: Verify classifier authority revision",
+                "    - name: Skip classifier authority verification",
+                1,
+            ),
+            original.replace(
+                "      id: classify",
+                "      id: attacker",
+                1,
+            ),
+            original.replace(
+                "/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py "
+                "classify-event",
+                "python3 scripts/workflow_pilot/event_classifier.py",
+                1,
+            ),
+            original.replace(
+                '            echo "run_expensive=true"',
+                '            echo "run_expensive=false"',
+                1,
+            ),
+        )
+        for changed in mutations:
+            with self.subTest(mutation=changed[:180]):
+                self.assertNotEqual(changed, original)
+                try:
+                    changed_structure = verify_mod._parse_workflow_structure_text(
+                        changed
+                    )
+                except ValueError:
+                    continue
+                self.assertNotEqual(changed_structure, structure)
+
+    def test_every_combined_worker_requires_the_fail_closed_classifier_edge(self):
+        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
+            original = handle.read()
+        for job_name in verify_mod._COMBINED_JOBS:
+            for old, new in (
+                ("    needs: [event-classifier]", "    needs: []"),
+                (
+                    f"    if: {verify_mod._WORKER_CONDITION}",
+                    "    if: ${{ needs.event-classifier.outputs."
+                    "run_expensive == 'true' }}",
+                ),
+            ):
+                with self.subTest(job=job_name, field=old):
+                    changed = self.replace_in_job(
+                        original,
+                        job_name,
+                        old,
+                        new,
+                    )
+                    self.assert_only_job_changed(
+                        original,
+                        changed,
+                        job_name,
+                    )
+                    with self.assertRaises(ValueError):
+                        verify_mod._parse_workflow_structure_text(changed)
 
     def test_unnamed_and_duplicate_setup_steps_reject_in_every_worker(self):
         artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
@@ -1311,7 +1418,8 @@ class VerifyCliCwdTests(unittest.TestCase):
                 (
                         "summary",
                         "needs",
-                        "    needs: [host-tests, build, extended-host-tests, legacy]",
+                        "    needs: [event-classifier, host-tests, build, "
+                        "extended-host-tests, legacy]",
                         "    needs: [build, host-tests, legacy]",
                 ),
                 (

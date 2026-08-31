@@ -7,8 +7,9 @@ or executes the canonical upstream ref/tree. It is a thin, literal mirror of
 the four combined workers in `.github/workflows/build.yml`. Before execution,
 it parses the selected target checkout's workflow as data and requires exact
 semantic equivalence with both the source workflow and this module's reviewed
-gate list; target Python is never imported. Only the master-only publisher and
-serial summary jobs have no local gate equivalent. The one DELIBERATE
+gate list; target Python is never imported. Only the event classifier,
+master-only publisher, and serial summary jobs have no local gate equivalent.
+The one DELIBERATE
 command-level exception is build.yml's
 "Check documentation (issues #7/#17)" step, which remains a required
 standalone workflow gate outside this mirror. Run that standalone command pair
@@ -35,7 +36,11 @@ _SOURCE_ROOT = os.path.realpath(
 )
 _BUILD_WORKFLOW_RELATIVE = os.path.join(".github", "workflows", "build.yml")
 _COMBINED_JOBS = ("host-tests", "build", "extended-host-tests", "legacy")
-_EXPECTED_JOBS = _COMBINED_JOBS + ("patch-release", "summary")
+_EVENT_CLASSIFIER_JOB = "event-classifier"
+_EXPECTED_JOBS = (_EVENT_CLASSIFIER_JOB,) + _COMBINED_JOBS + (
+    "patch-release",
+    "summary",
+)
 _CHECKOUT_USES = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
 _CHECKOUT_WITH = (
     ("fetch-depth", "0"),
@@ -46,6 +51,15 @@ _CHECKOUT_WITH = (
         "github.event.pull_request.head.sha || github.sha }}",
     ),
     ("submodules", "recursive"),
+)
+_CLASSIFIER_CHECKOUT_WITH = (
+    ("fetch-depth", "1"),
+    ("persist-credentials", "false"),
+    (
+        "ref",
+        "${{ github.event_name == 'pull_request' && "
+        "github.event.pull_request.base.sha || github.sha }}",
+    ),
 )
 _PATCH_CHECKOUT_WITH = (
     ("persist-credentials", "false"),
@@ -65,7 +79,61 @@ _EXPECTED_BUILD_SHA_EXPRESSION = (
     "${{ github.event_name == 'pull_request' && "
     "github.event.pull_request.head.sha || github.sha }}"
 )
+_CLASSIFIER_REF_EXPRESSION = (
+    "${{ github.event_name == 'pull_request' && "
+    "github.event.pull_request.base.sha || github.sha }}"
+)
+_WORKER_CONDITION = (
+    "${{ always() && (needs.event-classifier.result != 'success' || "
+    "needs.event-classifier.outputs.run_expensive != 'false') }}"
+)
+_CLASSIFIER_VERIFY_COMMANDS = (
+    ("ACTUAL_SHA=$(git rev-parse HEAD)",),
+    ("printf", "classifier.sha=%s\\n", "$ACTUAL_SHA"),
+    ("test", "$ACTUAL_SHA", "=", "$CLASSIFIER_REF"),
+)
+_CLASSIFIER_COMMANDS = (
+    ("if", "test", "-f", "scripts/workflow_pilot/event_classifier.py;", "then"),
+    (
+        "/usr/bin/python3",
+        "-I",
+        "scripts/workflow_pilot/isolated_launcher.py",
+        "classify-event",
+        "--event-name",
+        "$GITHUB_EVENT_NAME",
+        "--event-path",
+        "$GITHUB_EVENT_PATH",
+        "--github-ref",
+        "$GITHUB_REF",
+        "--github-sha",
+        "$GITHUB_SHA",
+        "--expected-build-sha",
+        "$EXPECTED_BUILD_SHA",
+        "--output",
+        "$GITHUB_OUTPUT",
+    ),
+    ("else",),
+    ("{",),
+    ("echo", "classification=full"),
+    ("echo", "reason=classifier-bootstrap"),
+    ("echo", "run_expensive=true"),
+    ("echo", "expected_head=$EXPECTED_BUILD_SHA"),
+    ("}", ">>", "$GITHUB_OUTPUT"),
+    ("fi",),
+)
+_EXPECTED_JOB_OUTPUTS = {
+    "event-classifier": (
+        ("classification", "${{ steps.classify.outputs.classification }}"),
+        ("expected_head", "${{ steps.classify.outputs.expected_head }}"),
+        ("reason", "${{ steps.classify.outputs.reason }}"),
+        ("run_expensive", "${{ steps.classify.outputs.run_expensive }}"),
+    ),
+}
 _EXPECTED_JOB_ENV = {
+    "event-classifier": (
+        ("CLASSIFIER_REF", _CLASSIFIER_REF_EXPRESSION),
+        ("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),
+    ),
     "host-tests": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
     "build": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
     "extended-host-tests": (
@@ -82,9 +150,17 @@ _EXPECTED_JOB_ENV = {
     "patch-release": (("PATCH_COMMIT", "${{ github.sha }}"),),
     "summary": (
         ("BUILD_RESULT", "${{ needs.build.result }}"),
+        ("CLASSIFICATION", "${{ needs.event-classifier.outputs.classification }}"),
+        (
+            "CLASSIFIED_BUILD_SHA",
+            "${{ needs.event-classifier.outputs.expected_head }}",
+        ),
+        ("CLASSIFIER_RESULT", "${{ needs.event-classifier.result }}"),
+        ("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),
         ("EXTENDED_HOST_TESTS_RESULT", "${{ needs.extended-host-tests.result }}"),
         ("HOST_TESTS_RESULT", "${{ needs.host-tests.result }}"),
         ("LEGACY_RESULT", "${{ needs.legacy.result }}"),
+        ("RUN_EXPENSIVE", "${{ needs.event-classifier.outputs.run_expensive }}"),
     ),
 }
 _NON_GATE_STEP_NAMES = {
@@ -131,6 +207,11 @@ _SCRUBBED_PILOT_ENV = (
     "PYTHONPATH: ''",
 )
 _EXPECTED_STEP_ROLES = {
+    "event-classifier": (
+        ("setup", None),
+        ("setup", "Verify classifier authority revision"),
+        ("setup", "Classify Build event"),
+    ),
     "host-tests": (
         ("setup", None),
         ("setup", "Verify checked-out revision"),
@@ -416,14 +497,14 @@ def _parse_workflow_context(text):
     return tuple((name, values[name]) for name in names)
 
 
-def _parse_job_environment(lines, start, end, job_name):
+def _parse_job_mapping(lines, start, end, job_name, field):
     entries = {}
     for line in lines[start:end]:
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         if len(line) - len(line.lstrip(" ")) != 6:
             raise ValueError(
-                f"job {job_name!r} env uses unsupported indentation"
+                f"job {job_name!r} {field} uses unsupported indentation"
             )
         match = re.fullmatch(
             r"      ([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)",
@@ -431,14 +512,14 @@ def _parse_job_environment(lines, start, end, job_name):
         )
         if match is None:
             raise ValueError(
-                f"job {job_name!r} env uses unsupported key syntax"
+                f"job {job_name!r} {field} uses unsupported key syntax"
             )
         key = match.group(1)
         if key in entries:
-            raise ValueError(f"job {job_name!r} env repeats key {key!r}")
+            raise ValueError(f"job {job_name!r} {field} repeats key {key!r}")
         value = match.group(2).strip()
         if not value:
-            raise ValueError(f"job {job_name!r} env.{key} is empty")
+            raise ValueError(f"job {job_name!r} {field}.{key} is empty")
         entries[key] = value
     return tuple(sorted(entries.items()))
 
@@ -465,8 +546,22 @@ def _parse_job_context(job_name, body):
     if len(names) != len(set(names)):
         raise ValueError(f"job {job_name!r} contains duplicate direct keys")
     expected_names = {
+        "event-classifier": [
+            "runs-on",
+            "timeout-minutes",
+            "outputs",
+            "env",
+            "steps",
+        ],
         **{
-            name: ["runs-on", "timeout-minutes", "env", "steps"]
+            name: [
+                "needs",
+                "if",
+                "runs-on",
+                "timeout-minutes",
+                "env",
+                "steps",
+            ]
             for name in _COMBINED_JOBS
         },
         "patch-release": ["if", "runs-on", "timeout-minutes", "env", "steps"],
@@ -498,22 +593,28 @@ def _parse_job_context(job_name, body):
             if line.strip() and not line.lstrip().startswith("#")
         ]
         if name == "if":
-            expected = {
-                "patch-release": (
-                    "${{ github.event_name == 'push' && "
-                    "github.ref == 'refs/heads/master' }}"
-                ),
-                "summary": "always()",
-            }[job_name]
+            expected = (
+                _WORKER_CONDITION
+                if job_name in _COMBINED_JOBS
+                else {
+                    "patch-release": (
+                        "${{ github.event_name == 'push' && "
+                        "github.ref == 'refs/heads/master' }}"
+                    ),
+                    "summary": "always()",
+                }[job_name]
+            )
             if value != expected or nested:
                 raise ValueError(f"job {job_name!r} if condition differs")
             values[name] = value
         elif name == "needs":
-            if (
-                value
-                != "[host-tests, build, extended-host-tests, legacy]"
-                or nested
-            ):
+            expected = (
+                "[event-classifier]"
+                if job_name in _COMBINED_JOBS
+                else "[event-classifier, host-tests, build, "
+                "extended-host-tests, legacy]"
+            )
+            if value != expected or nested:
                 raise ValueError(f"job {job_name!r} needs differs")
             values[name] = value
         elif name == "runs-on":
@@ -523,28 +624,38 @@ def _parse_job_context(job_name, body):
                 )
             values[name] = value
         elif name == "timeout-minutes":
-            expected = "5" if job_name == "summary" else "60"
+            expected = (
+                "5"
+                if job_name in {"event-classifier", "summary"}
+                else "60"
+            )
             if value != expected or nested:
                 raise ValueError(
                     f"job {job_name!r} timeout-minutes must be {expected}"
                 )
             values[name] = value
-        elif name == "env":
+        elif name in {"env", "outputs"}:
             if value:
                 raise ValueError(
-                    f"job {job_name!r} env must use a block mapping"
+                    f"job {job_name!r} {name} must use a block mapping"
                 )
-            environment = _parse_job_environment(
+            mapping = _parse_job_mapping(
                 lines,
                 line_index + 1,
                 end,
                 job_name,
+                name,
             )
-            if environment != _EXPECTED_JOB_ENV[job_name]:
+            expected = (
+                _EXPECTED_JOB_ENV[job_name]
+                if name == "env"
+                else _EXPECTED_JOB_OUTPUTS[job_name]
+            )
+            if mapping != expected:
                 raise ValueError(
-                    f"job {job_name!r} env differs from its reviewed mapping"
+                    f"job {job_name!r} {name} differs from its reviewed mapping"
                 )
-            values[name] = environment
+            values[name] = mapping
         else:
             if value:
                 raise ValueError(
@@ -653,7 +764,7 @@ def _parse_step(block, job_name, index):
     if len(direct_names) != len(set(direct_names)):
         raise ValueError(f"{step_label} contains duplicate direct fields")
     unknown = sorted(
-        set(direct_names) - {"name", "uses", "run", "env", "with"}
+        set(direct_names) - {"id", "name", "uses", "run", "env", "with"}
     )
     if unknown:
         raise ValueError(
@@ -704,7 +815,43 @@ def _parse_step(block, job_name, index):
             values[name] = scalar
 
     name = values.get("name")
-    if job_name == "patch-release":
+    if job_name == "event-classifier":
+        if index == 0:
+            if (
+                name is not None
+                or set(values) != {"uses", "with"}
+                or values["uses"] != _CHECKOUT_USES
+                or values["with"] != _CLASSIFIER_CHECKOUT_WITH
+            ):
+                raise ValueError(f"{step_label} authority checkout differs")
+        elif index == 1:
+            if (
+                name != "Verify classifier authority revision"
+                or set(values) != {"name", "run"}
+                or values["run"] != _CLASSIFIER_VERIFY_COMMANDS
+            ):
+                raise ValueError(f"{step_label} authority verification differs")
+        elif index == 2:
+            if (
+                name != "Classify Build event"
+                or set(values) != {"id", "name", "env", "run"}
+                or values["id"] != "classify"
+                or values["run"] != _CLASSIFIER_COMMANDS
+                or values["env"]
+                != tuple(
+                    sorted(
+                        tuple(
+                            entry.split(": ", 1)
+                            if ": " in entry
+                            else (entry[:-1], "")
+                        )
+                        for entry in _SCRUBBED_PILOT_ENV
+                    )
+                )
+            ):
+                raise ValueError(f"{step_label} classifier mapping differs")
+        role = "setup"
+    elif job_name == "patch-release":
         expected_fields = (
             {"uses", "with"}
             if index in {0, 5}
@@ -829,7 +976,13 @@ def _parse_job_steps(job_name, body):
     names = [step[1] for step in steps if step[1] is not None]
     if len(names) != len(set(names)):
         raise ValueError(f"job {job_name!r} contains duplicate step names")
-    expected_unnamed = 6 if job_name == "patch-release" else 0 if job_name == "summary" else 1
+    expected_unnamed = (
+        6
+        if job_name == "patch-release"
+        else 0
+        if job_name == "summary"
+        else 1
+    )
     if sum(step[1] is None for step in steps) != expected_unnamed:
         raise ValueError(
             f"job {job_name!r} unnamed step count differs"
