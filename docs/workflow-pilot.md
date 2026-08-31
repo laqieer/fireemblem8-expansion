@@ -251,7 +251,10 @@ procedure freezes creation, opened/full evidence, title-edit and title-restore
 metadata evidence, evaluator input, and complete PR/branch/worktree cleanup.
 Its bounded direct shell helper paginates and excludes all prior IDs, validates
 created/event/branch/head fields before each exact-ID watcher, and installs
-idempotent exact-resource cleanup before remote mutation.
+idempotent compare-and-swap cleanup before remote mutation. The evaluator
+scans all raw REST jobs before normalization: metadata workers are admissible
+only when skipped with no assigned runner, including the documented
+platform-only `started_at` timestamp quirk.
 
 The pull-request body/template remains the stable frozen scope, non-goals,
 classification, dependency, acceptance, tester procedure, and compatibility

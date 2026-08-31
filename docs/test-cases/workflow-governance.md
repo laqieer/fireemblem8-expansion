@@ -459,16 +459,21 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    ```bash
    set -euo pipefail
    source_root="$PWD"
+   repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+   head_owner="${repo%%/*}"
    candidate_branch="${candidate_branch:-agent/issue-177}"
    probe_branch="${probe_branch:-validation/issue-177-title-probe}"
-   probe_worktree="$source_root/../issue-177-title-probe"
+   probe_worktree="$(dirname "$source_root")/issue-177-title-probe"
    probe_file=".github/workflow-probes/issue-177-title-only.json"
    evidence_dir="$source_root/build/test-artifacts/issue-177-live-probe"
    pr=""
+   probe_head_sha=""
    original_title="TC-WORKFLOW-BODY-EDIT-001 validation"
+   probe_title="$original_title [title-only metadata probe]"
    evidence_dir_created=false
-   probe_branch_created=false
-   probe_pushed=false
+   local_ownership_intent=false
+   push_ownership_intent=false
+   pr_ownership_intent=false
 
    list_build_run_ids() {
      gh api --method GET --paginate --slurp \
@@ -524,24 +529,101 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
      return 1
    }
 
+   owned_probe_pr_numbers() {
+     pulls_json="$(gh api --method GET --paginate --slurp \
+       "repos/$repo/pulls" -f state=open -f head="$head_owner:$probe_branch" \
+       -f base="$candidate_branch" -f per_page=100)"
+     PULLS_JSON="$pulls_json" EXPECTED_OWNER="$head_owner" \
+       EXPECTED_BRANCH="$probe_branch" EXPECTED_BASE="$candidate_branch" \
+       EXPECTED_HEAD_SHA="$probe_head_sha" \
+       EXPECTED_BASE_SHA="$candidate_sha" \
+       python3 - <<'PY'
+   import json
+   import os
+
+   records = [
+       record
+       for page in json.loads(os.environ["PULLS_JSON"])
+       for record in page
+   ]
+   matches = [
+       record
+       for record in records
+       if record["state"] == "open"
+       and record["merged_at"] is None
+       and record["head"]["user"]["login"] == os.environ["EXPECTED_OWNER"]
+       and record["head"]["ref"] == os.environ["EXPECTED_BRANCH"]
+       and record["head"]["sha"] == os.environ["EXPECTED_HEAD_SHA"]
+       and record["base"]["ref"] == os.environ["EXPECTED_BASE"]
+       and record["base"]["sha"] == os.environ["EXPECTED_BASE_SHA"]
+   ]
+   for record in matches:
+       print(record["number"])
+   PY
+   }
+
    cleanup_probe() {
-     status="$1"
      cleanup_failed=0
-     trap - EXIT INT TERM
      set +e
-     if [ -n "${pr:-}" ]; then
-       gh api --method PATCH "repos/{owner}/{repo}/pulls/$pr" \
-         -f title="$original_title" > /dev/null 2>&1 || cleanup_failed=1
-       gh pr close "$pr" > /dev/null 2>&1 || true
-       test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .state)" = "closed" \
-         || cleanup_failed=1
+     if [ "${pr_ownership_intent:-false}" = true ]; then
+       matching_prs="$(owned_probe_pr_numbers)"
+       query_status=$?
+       if [ "$query_status" -ne 0 ]; then
+         echo "cannot discover exact validation PR during cleanup" >&2
+         cleanup_failed=1
+       elif [ -n "$matching_prs" ]; then
+         if [ "$(printf '%s\n' "$matching_prs" | grep -c .)" -ne 1 ]; then
+           echo "ambiguous exact validation PRs; preserving all" >&2
+           cleanup_failed=1
+         else
+           cleanup_pr="$matching_prs"
+           cleanup_pr_body="$(gh api "repos/$repo/pulls/$cleanup_pr" \
+             --jq .body)"
+           cleanup_pr_title="$(gh api "repos/$repo/pulls/$cleanup_pr" \
+             --jq .title)"
+           if [ "$cleanup_pr_body" != \
+                "Validation-only disposable PR. Never merge." ] || \
+              { [ "$cleanup_pr_title" != "$original_title" ] && \
+                [ "$cleanup_pr_title" != "$probe_title" ]; }; then
+             echo "validation PR contract changed; preserving it" >&2
+             cleanup_failed=1
+           else
+             if [ "$cleanup_pr_title" != "$original_title" ]; then
+               gh api --method PATCH "repos/$repo/pulls/$cleanup_pr" \
+                 -f title="$original_title" > /dev/null 2>&1 \
+                 || cleanup_failed=1
+             fi
+             gh pr close "$cleanup_pr" > /dev/null 2>&1 || cleanup_failed=1
+             pr_state="$(gh api "repos/$repo/pulls/$cleanup_pr" \
+               --jq '[.state, (.merged_at // "")] | @tsv')"
+             test "$pr_state" = "$(printf 'closed\t')" || cleanup_failed=1
+           fi
+         fi
+       elif [ -n "${pr:-}" ]; then
+         existing_pr_state="$(gh api "repos/$repo/pulls/$pr" \
+           --jq '[.state, (.merged_at // "")] | @tsv')"
+         if [ "$existing_pr_state" != "$(printf 'closed\t')" ]; then
+           echo "recorded validation PR changed or merged; preserving it" >&2
+           cleanup_failed=1
+         fi
+       fi
      fi
-     if [ "${probe_pushed:-false}" = true ]; then
+     if [ "${push_ownership_intent:-false}" = true ]; then
        remote_probe_ref="$(git ls-remote --heads origin \
          "refs/heads/$probe_branch")" || cleanup_failed=1
        if [ -n "$remote_probe_ref" ]; then
-         git push origin --delete "$probe_branch" > /dev/null 2>&1 \
-           || cleanup_failed=1
+         remote_sha="$(printf '%s\n' "$remote_probe_ref" | awk 'NR == 1 {print $1}')"
+         remote_ref="$(printf '%s\n' "$remote_probe_ref" | awk 'NR == 1 {print $2}')"
+         if [ "$(printf '%s\n' "$remote_probe_ref" | grep -c .)" -ne 1 ] || \
+            [ "$remote_ref" != "refs/heads/$probe_branch" ] || \
+            [ -z "$probe_head_sha" ] || [ "$remote_sha" != "$probe_head_sha" ]; then
+           echo "remote probe ref changed; preserving it for inspection" >&2
+           cleanup_failed=1
+         else
+           git push --force-with-lease="refs/heads/$probe_branch:$probe_head_sha" \
+             origin ":refs/heads/$probe_branch" > /dev/null 2>&1 \
+             || cleanup_failed=1
+         fi
        fi
        remote_probe_ref="$(git ls-remote --heads origin \
          "refs/heads/$probe_branch")" || cleanup_failed=1
@@ -549,16 +631,39 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
          cleanup_failed=1
        fi
      fi
-     if [ "${probe_branch_created:-false}" = true ] && \
-        [ -d "$probe_worktree" ]; then
-       git -C "$source_root" worktree remove "$probe_worktree" \
-         || cleanup_failed=1
-     fi
-     if [ "${probe_branch_created:-false}" = true ] && \
-        git -C "$source_root" show-ref --verify --quiet \
-          "refs/heads/$probe_branch"; then
-       git -C "$source_root" branch -D -- "$probe_branch" \
-         || cleanup_failed=1
+     if [ "${local_ownership_intent:-false}" = true ]; then
+       if [ -d "$probe_worktree" ]; then
+         local_head="$(git -C "$probe_worktree" rev-parse HEAD 2>/dev/null)"
+         local_ref="$(git -C "$probe_worktree" symbolic-ref -q HEAD 2>/dev/null)"
+         local_root="$(git -C "$probe_worktree" rev-parse --show-toplevel \
+           2>/dev/null)"
+         local_dirty="$(git -C "$probe_worktree" status --porcelain \
+           --untracked-files=all 2>/dev/null)"
+         if [ -z "$probe_head_sha" ] || [ "$local_head" != "$probe_head_sha" ] || \
+            [ "$local_ref" != "refs/heads/$probe_branch" ] || \
+            [ "$local_root" != "$probe_worktree" ] || [ -n "$local_dirty" ]; then
+           echo "local probe worktree changed or dirty; preserving it" >&2
+           cleanup_failed=1
+         else
+           git -C "$source_root" worktree remove "$probe_worktree" \
+             || cleanup_failed=1
+         fi
+       fi
+       if git -C "$source_root" show-ref --verify --quiet \
+            "refs/heads/$probe_branch"; then
+         local_branch_sha="$(git -C "$source_root" rev-parse \
+           "refs/heads/$probe_branch")"
+         if [ -z "$probe_head_sha" ] || \
+            [ "$local_branch_sha" != "$probe_head_sha" ] || \
+            [ -d "$probe_worktree" ]; then
+           echo "local probe branch changed or remains checked out; preserving it" >&2
+           cleanup_failed=1
+         else
+           git -C "$source_root" update-ref -d \
+             "refs/heads/$probe_branch" "$probe_head_sha" \
+             || cleanup_failed=1
+         fi
+       fi
      fi
      if [ "${evidence_dir_created:-false}" = true ] && \
         [ "$evidence_dir" = \
@@ -567,12 +672,24 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
      elif [ "${evidence_dir_created:-false}" = true ]; then
        cleanup_failed=1
      fi
-     if [ "$status" -ne 0 ]; then
-       return "$status"
-     fi
      return "$cleanup_failed"
    }
-   trap 'cleanup_probe $?' EXIT
+
+   finish_probe() {
+     primary_status="$?"
+     trap - EXIT INT TERM
+     set +e
+     cleanup_probe
+     cleanup_status="$?"
+     if [ "$cleanup_status" -ne 0 ]; then
+       echo "live probe cleanup failed; inspect preserved exact resources" >&2
+     fi
+     if [ "$primary_status" -ne 0 ]; then
+       exit "$primary_status"
+     fi
+     exit "$cleanup_status"
+   }
+   trap finish_probe EXIT
    trap 'exit 130' INT
    trap 'exit 143' TERM
 
@@ -592,8 +709,8 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    mkdir -p "$evidence_dir"
    evidence_dir_created=true
    candidate_sha="$(git rev-parse "$candidate_branch^{commit}")"
+   local_ownership_intent=true
    git worktree add -b "$probe_branch" "$probe_worktree" "$candidate_sha"
-   probe_branch_created=true
    cd "$probe_worktree"
    mkdir -p "$(dirname "$probe_file")"
    printf '{"candidate_sha":"%s","case":"TC-WORKFLOW-BODY-EDIT-001"}\n' \
@@ -603,19 +720,31 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    git commit -m "test(ci): add title-only validation probe" \
      -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
    head_sha="$(git rev-parse HEAD)"
+   probe_head_sha="$head_sha"
    test "$(git rev-parse "$head_sha^")" = "$candidate_sha"
    test "$(git diff-tree --no-commit-id --name-only -r "$head_sha")" = "$probe_file"
    opened_prior_ids="$(list_build_run_ids)"
    opened_created_after="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+   push_ownership_intent=true
    git push -u origin "$probe_branch"
-   probe_pushed=true
+   existing_prs="$(owned_probe_pr_numbers)"
+   test -z "$existing_prs"
+   pr_ownership_intent=true
+   set +e
    pr_url="$(gh pr create --head "$probe_branch" --base "$candidate_branch" \
      --title "$original_title" \
      --body "Validation-only disposable PR. Never merge.")"
-   pr="${pr_url##*/}"
-   case "$pr" in
-     ""|*[!0-9]*) echo "cannot parse disposable PR number" >&2; exit 1 ;;
-   esac
+   create_status="$?"
+   set -e
+   matching_prs="$(owned_probe_pr_numbers)"
+   test "$(printf '%s\n' "$matching_prs" | grep -c .)" -eq 1
+   pr="$matching_prs"
+   test "$(gh api "repos/$repo/pulls/$pr" --jq .title)" = "$original_title"
+   test "$(gh api "repos/$repo/pulls/$pr" --jq .body)" = \
+     "Validation-only disposable PR. Never merge."
+   if [ "$create_status" -ne 0 ]; then
+     echo "PR create response failed; recovered exact validation PR $pr" >&2
+   fi
    base_ref="$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.ref)"
    base_sha="$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)"
    test "$base_ref" = "$candidate_branch"
@@ -633,8 +762,13 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" = "$head_sha"
    test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)" = "$base_sha"
    timeout 90m gh run watch "$opened_run_id" --interval 30 --exit-status
+   test "$(gh run view "$opened_run_id" --json event --jq .event)" = "pull_request"
+   test "$(gh run view "$opened_run_id" --json headSha --jq .headSha)" = "$head_sha"
    gh run view "$opened_run_id" \
-     --json event,headSha,conclusion,jobs,url > "$evidence_dir/opened.json"
+     --json event,headSha,conclusion,url > "$evidence_dir/opened.json"
+   gh api --method GET --paginate --slurp \
+     "repos/$repo/actions/runs/$opened_run_id/jobs" -f per_page=100 \
+     > "$evidence_dir/opened-jobs.json"
    ```
 
    - **Parsed live opened-run job set:** {`event-identity`, `event-router`,
@@ -646,7 +780,6 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    ```bash
    title_prior_ids="$(list_build_run_ids)"
    title_created_after="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-   probe_title="$original_title [title-only metadata probe]"
    gh api --method PATCH "repos/{owner}/{repo}/pulls/$pr" \
      -f title="$probe_title" > /dev/null
    title_run_id="$(discover_build_run "$title_prior_ids" "$title_created_after")"
@@ -654,16 +787,25 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" = "$head_sha"
    test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)" = "$base_sha"
    timeout 90m gh run watch "$title_run_id" --interval 30 --exit-status
+   test "$(gh run view "$title_run_id" --json event --jq .event)" = "pull_request"
+   test "$(gh run view "$title_run_id" --json headSha --jq .headSha)" = "$head_sha"
    gh run view "$title_run_id" \
-     --json event,headSha,conclusion,jobs,url > "$evidence_dir/title.json"
+     --json event,headSha,conclusion,url > "$evidence_dir/title.json"
+   gh api --method GET --paginate --slurp \
+     "repos/$repo/actions/runs/$title_run_id/jobs" -f per_page=100 \
+     > "$evidence_dir/title-jobs.json"
    ```
 
    - **Parsed live title-edit job/check set:** {`event-identity`,
      `event-router`, `metadata-classifier`, `metadata-summary`}.
 
-   Skipped worker records may retain normal or literal unevaluated names and
-   even a success-shaped conclusion, but the evaluator ignores them by stable
-   worker job ID. No expensive worker may have a start timestamp.
+   Every raw REST job record is scanned before normalization. Duplicate API
+   IDs, duplicate names/stable IDs, unknown jobs, or a metadata worker with an
+   assigned `runner_name` or non-`skipped` conclusion fail. GitHub may stamp
+   `started_at` on a platform-skipped record; that timestamp is admissible only
+   when `runner_name` is null and the conclusion is exactly `skipped`. Every
+   known worker record that appears is included with its stable ID and
+   conclusion rather than hidden by the four running metadata names.
 4. Snapshot IDs before restoring the original title through the owner REST
    endpoint. Discover, watch, and save the distinct restore metadata run:
 
@@ -678,8 +820,13 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" = "$head_sha"
    test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)" = "$base_sha"
    timeout 90m gh run watch "$restore_run_id" --interval 30 --exit-status
+   test "$(gh run view "$restore_run_id" --json event --jq .event)" = "pull_request"
+   test "$(gh run view "$restore_run_id" --json headSha --jq .headSha)" = "$head_sha"
    gh run view "$restore_run_id" \
-     --json event,headSha,conclusion,jobs,url > "$evidence_dir/restore.json"
+     --json event,headSha,conclusion,url > "$evidence_dir/restore.json"
+   gh api --method GET --paginate --slurp \
+     "repos/$repo/actions/runs/$restore_run_id/jobs" -f per_page=100 \
+     > "$evidence_dir/restore-jobs.json"
    ```
 
    - **Parsed live title-restore job/check set:** {`event-identity`,
@@ -689,9 +836,10 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
 
    ```bash
    python3 - "$head_sha" "$base_sha" \
-     "$opened_run_id" "$evidence_dir/opened.json" \
-     "$title_run_id" "$evidence_dir/title.json" \
-     "$restore_run_id" "$evidence_dir/restore.json" <<'PY'
+     "$opened_run_id" "$evidence_dir/opened.json" "$evidence_dir/opened-jobs.json" \
+     "$title_run_id" "$evidence_dir/title.json" "$evidence_dir/title-jobs.json" \
+     "$restore_run_id" "$evidence_dir/restore.json" \
+     "$evidence_dir/restore-jobs.json" <<'PY'
    import copy
    import json
    import sys
@@ -700,40 +848,92 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
 
    head_sha, base_sha = sys.argv[1:3]
    run_specs = (
-       ("full", int(sys.argv[3]), sys.argv[4]),
-       ("metadata-only", int(sys.argv[5]), sys.argv[6]),
-       ("metadata-only", int(sys.argv[7]), sys.argv[8]),
+       ("full", int(sys.argv[3]), sys.argv[4], sys.argv[5]),
+       ("metadata-only", int(sys.argv[6]), sys.argv[7], sys.argv[8]),
+       ("metadata-only", int(sys.argv[9]), sys.argv[10], sys.argv[11]),
    )
 
-   def normalize_run(mode, run_id, path):
-       with open(path, encoding="utf-8") as source:
+   def normalize_run(mode, run_id, run_path, jobs_path):
+       with open(run_path, encoding="utf-8") as source:
            raw = json.load(source)
        assert raw["event"] == "pull_request"
        assert raw["headSha"] == head_sha
        assert raw["conclusion"] == "success"
-       jobs = {job["name"]: job for job in raw["jobs"]}
-       names = (
-           (
-               ("event-identity", "event-identity"),
-               ("event-router", "event-router"),
-               ("event-classifier", "event-classifier"),
-               ("host-tests", "host-tests"),
-               ("build", "build"),
-               ("extended-host-tests", "extended-host-tests"),
-               ("legacy", "legacy"),
-               ("summary", "summary"),
-           )
+       with open(jobs_path, encoding="utf-8") as source:
+           pages = json.load(source)
+       raw_jobs = [
+           job
+           for page in pages
+           for job in page["jobs"]
+       ]
+       stable_by_name = {
+           "event-identity": "event-identity",
+           "event-router": "event-router",
+           "event-classifier": "event-classifier",
+           "metadata-classifier": "event-classifier",
+           "host-tests": "host-tests",
+           "build": "build",
+           "extended-host-tests": "extended-host-tests",
+           "legacy": "legacy",
+           "patch-release": "patch-release",
+           "summary": "summary",
+           "metadata-summary": "summary",
+       }
+       workers = {
+           "host-tests",
+           "build",
+           "extended-host-tests",
+           "legacy",
+       }
+       required_names = (
+           {
+               "event-identity",
+               "event-router",
+               "event-classifier",
+               "host-tests",
+               "build",
+               "extended-host-tests",
+               "legacy",
+               "summary",
+           }
            if mode == "full"
-           else (
-               ("event-identity", "event-identity"),
-               ("event-router", "event-router"),
-               ("event-classifier", "metadata-classifier"),
-               ("summary", "metadata-summary"),
-           )
+           else {
+               "event-identity",
+               "event-router",
+               "metadata-classifier",
+               "metadata-summary",
+           }
        )
+       seen_api_ids = set()
+       seen_names = set()
+       seen_stable_ids = set()
        contexts = []
-       for job_id, name in names:
-           job = jobs[name]
+       for job in raw_jobs:
+           api_id = job["id"]
+           name = job["name"]
+           started_at = job["started_at"]
+           assert isinstance(api_id, int) and api_id > 0
+           assert api_id not in seen_api_ids
+           assert isinstance(name, str) and name
+           assert name not in seen_names
+           assert name in stable_by_name
+           job_id = stable_by_name[name]
+           assert job_id not in seen_stable_ids
+           seen_api_ids.add(api_id)
+           seen_names.add(name)
+           seen_stable_ids.add(job_id)
+           if mode == "metadata-only" and job_id in workers:
+               # GitHub may stamp started_at on a skipped job, but a real
+               # runner is never assigned: both facts are required together.
+               assert job["conclusion"] == "skipped"
+               assert job["runner_name"] is None
+               assert started_at is None or isinstance(started_at, str)
+           elif job_id == "patch-release":
+               assert job["conclusion"] == "skipped"
+               assert job["runner_name"] is None
+           else:
+               assert name in required_names
+               assert job["conclusion"] == "success"
            contexts.append(
                {
                    "conclusion": job["conclusion"],
@@ -741,6 +941,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
                    "name": name,
                }
            )
+       assert required_names <= seen_names
        return {
            "base_sha": base_sha,
            "contexts": contexts,
@@ -799,13 +1000,16 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    cleanup automatically on any earlier failure:
 
    ```bash
-   trap - EXIT INT TERM
-   cleanup_probe 0
+   exit 0
    ```
 
    Cleanup restores the original title if necessary, closes without merging,
-   deletes only the exact remote probe branch, removes only the exact isolated
-   worktree/local probe branch, and deletes only the exact evidence directory.
+   deletes the exact remote ref only through a SHA compare-and-swap lease,
+   removes the exact isolated worktree/local ref only when their head/ref match
+   and the worktree is clean, and deletes only the guarded exact evidence
+   directory. A mismatched remote SHA, PR identity, local head/ref/path, or
+   dirty worktree is preserved and reported. The EXIT trap retains the primary
+   failure status while surfacing cleanup failure.
    Architecture/review comments remain unmarked; only the canonical evolving
    evidence comment carries the one marker.
 
