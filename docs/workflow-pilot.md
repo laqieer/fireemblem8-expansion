@@ -240,6 +240,16 @@ The current Build workflow has no explicit final-dispatch trigger; if that
 supported surface is introduced later, `workflow_dispatch` classifies as full
 and the trigger/topology contracts must be updated together.
 
+A live metadata exercise must use a disposable validation-only PR whose base
+is the exact candidate branch containing the classifier and whose head is a
+direct, nonempty, non-merge descendant carrying one deterministic tracked
+probe. Editing an implementation PR whose base predates the classifier
+correctly selects `classifier-bootstrap` and the full graph; it does not test
+metadata suppression. The indexed
+[`TC-WORKFLOW-BODY-EDIT-001`](test-cases/workflow-governance.md#planned-live-title-only-exercise-after-push)
+procedure freezes creation, opened/full evidence, title-edit and title-restore
+metadata evidence, evaluator input, and complete PR/branch/worktree cleanup.
+
 The pull-request body/template remains the stable frozen scope, non-goals,
 classification, dependency, acceptance, tester procedure, and compatibility
 contract. It must contain neither evolving evidence fields nor the canonical

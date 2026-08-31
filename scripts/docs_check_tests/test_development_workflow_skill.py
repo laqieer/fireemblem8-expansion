@@ -588,6 +588,24 @@ def replace_documented_job_set(text, label, names):
     return changed
 
 
+def raw_markdown_section(text, heading):
+    lines = text.splitlines()
+    marker = f"## {heading}"
+    starts = [index for index, line in enumerate(lines) if line == marker]
+    if len(starts) != 1:
+        raise AssertionError(f"expected exactly one raw Markdown section {heading!r}")
+    start = starts[0]
+    end = next(
+        (
+            index
+            for index in range(start + 1, len(lines))
+            if lines[index].startswith("## ")
+        ),
+        len(lines),
+    )
+    return "\n".join(lines[start:end])
+
+
 def workflow_tester_topology_violations(text):
     scan_policy_markdown(text)
     stacked_case = "\n".join(
@@ -608,6 +626,23 @@ def workflow_tester_topology_violations(text):
             }
         ),
         "preserved-pre-fix": workflow_job_ids(PRE_FIX_BUILD_WORKFLOW_PATH),
+        "live-opened-full": current_jobs - {"patch-release"},
+        "live-title-metadata": frozenset(
+            {
+                "event-identity",
+                "event-router",
+                "metadata-classifier",
+                "metadata-summary",
+            }
+        ),
+        "live-restore-metadata": frozenset(
+            {
+                "event-identity",
+                "event-router",
+                "metadata-classifier",
+                "metadata-summary",
+            }
+        ),
     }
     documented = {
         "stacked-full-pr": documented_job_set(
@@ -622,6 +657,18 @@ def workflow_tester_topology_violations(text):
             body_case,
             "Parsed preserved pre-fix body-only job set",
         ),
+        "live-opened-full": documented_job_set(
+            body_case,
+            "Parsed live opened-run job set",
+        ),
+        "live-title-metadata": documented_job_set(
+            body_case,
+            "Parsed live title-edit job/check set",
+        ),
+        "live-restore-metadata": documented_job_set(
+            body_case,
+            "Parsed live title-restore job/check set",
+        ),
     }
     violations = [
         f"{name}-job-set"
@@ -634,6 +681,76 @@ def workflow_tester_topology_violations(text):
     )
     if skipped_names_contract not in normalize_policy(body_case):
         violations.append("skipped-worker-names-are-semantic")
+    return violations
+
+
+def live_title_probe_violations(text):
+    scan_policy_markdown(text)
+    body_case = raw_markdown_section(text, BODY_EDIT_CASE_HEADING)
+    normalized = normalize_policy(body_case)
+    required_text = {
+        "candidate-containing-base": (
+            'candidate_branch="${candidate_branch:-agent/issue-177}"',
+            'gh pr create --head "$probe_branch" --base "$candidate_branch"',
+            'test "$base_ref" = "$candidate_branch"',
+            'test "$base_sha" = "$candidate_sha"',
+        ),
+        "strict-nonempty-descendant": (
+            'git diff --cached --quiet && { echo "probe change is empty" >&2; exit 1; }',
+            'test "$(git rev-parse "$head_sha^")" = "$candidate_sha"',
+            'git diff-tree --no-commit-id --name-only -r "$head_sha"',
+            ".github/workflow-probes/issue-177-title-only.json",
+        ),
+        "title-edit-and-restore": (
+            'gh pr edit "$pr" --title "$original_title [title-only metadata probe]"',
+            'gh pr edit "$pr" --title "$original_title"',
+            'test "$title_run_id" != "$opened_run_id"',
+            'test "$restore_run_id" != "$title_run_id"',
+            "Normalize all three real runs",
+        ),
+        "three-exact-live-runs": (
+            'timeout 90m gh run watch "$opened_run_id" --interval 30 --exit-status',
+            'timeout 90m gh run watch "$title_run_id" --interval 30 --exit-status',
+            'timeout 90m gh run watch "$restore_run_id" --interval 30 --exit-status',
+            'gh run view "$opened_run_id" --json event,headSha,conclusion,jobs,url',
+            'gh run view "$title_run_id" --json event,headSha,conclusion,jobs,url',
+            'gh run view "$restore_run_id" --json event,headSha,conclusion,jobs,url',
+        ),
+        "complete-probe-cleanup": (
+            'gh pr close "$pr"',
+            'git push origin --delete "$probe_branch"',
+            'git worktree remove "$probe_worktree"',
+            'git branch -D "$probe_branch"',
+        ),
+    }
+    violations = []
+    for violation, fragments in required_text.items():
+        if any(fragment not in body_case for fragment in fragments):
+            violations.append(violation)
+    required_policy = {
+        "implementation-pr-bootstrap-negative": (
+            "Do not edit the implementation PR",
+            "base predates event_classifier.py",
+            "classifier-bootstrap",
+            "not a valid metadata-suppression probe",
+            "until the classifier is merged into that base",
+        ),
+        "validation-only-never-merged": (
+            "validation-only",
+            "never merged",
+            "does not implement an independent issue",
+        ),
+        "no-empty-or-merge-commit": (
+            "Never use git commit --allow-empty",
+            "empty commit",
+            "merge commit",
+        ),
+    }
+    for violation, fragments in required_policy.items():
+        if any(normalize_policy(fragment) not in normalized for fragment in fragments):
+            violations.append(violation)
+    if "git commit --allow-empty -m" in body_case:
+        violations.append("no-empty-or-merge-commit")
     return violations
 
 
@@ -3336,6 +3453,18 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "Parsed current metadata-only job/check set",
                 "current-metadata-job-set",
             ),
+            (
+                "Parsed live opened-run job set",
+                "live-opened-full-job-set",
+            ),
+            (
+                "Parsed live title-edit job/check set",
+                "live-title-metadata-job-set",
+            ),
+            (
+                "Parsed live title-restore job/check set",
+                "live-restore-metadata-job-set",
+            ),
         )
         for label, expected_violation in required_setup_sets:
             documented = documented_job_set(governance, label)
@@ -3369,6 +3498,9 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "Parsed full-PR job set",
             "Parsed current metadata-only job/check set",
             pre_fix_label,
+            "Parsed live opened-run job set",
+            "Parsed live title-edit job/check set",
+            "Parsed live title-restore job/check set",
         ):
             reordered = replace_documented_job_set(
                 reordered,
@@ -3390,6 +3522,59 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "skipped-worker-names-are-semantic",
             workflow_tester_topology_violations(semantic_names),
         )
+
+    def test_live_title_probe_contract_is_complete_and_fail_closed(self):
+        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        self.assertEqual(live_title_probe_violations(governance), [])
+
+        mutations = (
+            (
+                "candidate-containing-base",
+                'gh pr create --head "$probe_branch" --base "$candidate_branch"',
+                'gh pr create --head "$probe_branch" --base master',
+            ),
+            (
+                "strict-nonempty-descendant",
+                'test "$(git rev-parse "$head_sha^")" = "$candidate_sha"',
+                'test "$(git rev-parse "$head_sha^")" != "$candidate_sha"',
+            ),
+            (
+                "no-empty-or-merge-commit",
+                'git commit -m "test(ci): add title-only validation probe"',
+                'git commit --allow-empty -m "test(ci): add title-only validation probe"',
+            ),
+            (
+                "title-edit-and-restore",
+                'gh pr edit "$pr" --title "$original_title"',
+                'printf "title restore omitted\\n"',
+            ),
+            (
+                "three-exact-live-runs",
+                'gh run view "$restore_run_id" '
+                "--json event,headSha,conclusion,jobs,url",
+                'printf "restore run not inspected\\n"',
+            ),
+            (
+                "complete-probe-cleanup",
+                'git push origin --delete "$probe_branch"',
+                'printf "remote branch retained\\n"',
+            ),
+            (
+                "implementation-pr-bootstrap-negative",
+                "not a valid\nmetadata-suppression probe",
+                "a valid\nmetadata-suppression probe",
+            ),
+            (
+                "validation-only-never-merged",
+                "The disposable PR is never merged",
+                "The disposable PR may be merged",
+            ),
+        )
+        for expected, old, new in mutations:
+            with self.subTest(mutation=expected):
+                changed = governance.replace(old, new, 1)
+                self.assertNotEqual(changed, governance)
+                self.assertIn(expected, live_title_probe_violations(changed))
 
     def test_tester_facing_case_contract_is_integrated(self):
         _, skill = read_skill()

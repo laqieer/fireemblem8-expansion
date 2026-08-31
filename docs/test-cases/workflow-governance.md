@@ -440,32 +440,121 @@ manual-only criterion applies. Rollback is a normal revert; the prior broad
 
 ### Planned live title-only exercise after push
 
-The owner performs this disposable remote exercise only after the candidate is
-pushed; this local implementation does not perform it.
+The owner performs this validation-only remote exercise only after the
+candidate branch is pushed. The disposable PR is never merged and does not
+implement an independent issue. Do not edit the implementation PR: while its
+base predates `event_classifier.py`, base-authoritative routing correctly
+reports `classifier-bootstrap` and runs the full graph, so it is not a valid
+metadata-suppression probe until the classifier is merged into that base.
 
-1. Set `pr=<disposable-pr-number>` and record
-   `original_title=$(gh pr view "$pr" --json title --jq .title)`,
-   `head_sha=$(gh pr view "$pr" --json headRefOid --jq .headRefOid)`, and
-   `base_sha=$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)`.
-2. Require the latest source-triggered Build for that exact head/base to show
-   successful `event-identity`, `event-router`, `event-classifier`,
-   `host-tests`, `build`,
-   `extended-host-tests`, `legacy`, and `summary` contexts. Record its run ID.
+1. From the issue worktree, choose unused temporary names and create a direct
+   child of the exact candidate branch with one deterministic tracked probe:
+
+   ```bash
+   source_root="$PWD"
+   candidate_branch="${candidate_branch:-agent/issue-177}"
+   probe_branch="${probe_branch:-validation/issue-177-title-probe}"
+   probe_worktree="${probe_worktree:-../issue-177-title-probe}"
+   probe_file=".github/workflow-probes/issue-177-title-only.json"
+   candidate_sha="$(git rev-parse "$candidate_branch^{commit}")"
+   git worktree add -b "$probe_branch" "$probe_worktree" "$candidate_sha"
+   cd "$probe_worktree"
+   mkdir -p "$(dirname "$probe_file")"
+   printf '{"candidate_sha":"%s","case":"TC-WORKFLOW-BODY-EDIT-001"}\n' \
+     "$candidate_sha" > "$probe_file"
+   git add "$probe_file"
+   git diff --cached --quiet && { echo "probe change is empty" >&2; exit 1; }
+   git commit -m "test(ci): add title-only validation probe" \
+     -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+   head_sha="$(git rev-parse HEAD)"
+   test "$(git rev-parse "$head_sha^")" = "$candidate_sha"
+   test "$(git diff-tree --no-commit-id --name-only -r "$head_sha")" = "$probe_file"
+   git push -u origin "$probe_branch"
+   pr_url="$(gh pr create --head "$probe_branch" --base "$candidate_branch" \
+     --title "TC-WORKFLOW-BODY-EDIT-001 validation" \
+     --body "Validation-only disposable PR. Never merge.")"
+   pr="$(gh pr view "$probe_branch" --json number --jq .number)"
+   original_title="$(gh pr view "$pr" --json title --jq .title)"
+   base_ref="$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.ref)"
+   base_sha="$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)"
+   test "$base_ref" = "$candidate_branch"
+   test "$base_sha" = "$candidate_sha"
+   ```
+
+   Never use `git commit --allow-empty`, an empty commit, or a merge commit.
+   The tracked probe is deterministic for the candidate SHA and the direct
+   parent assertion proves the head is a strict nonempty descendant.
+2. Record the opened-event Build run ID and require it to be green at the exact
+   `head_sha` and `base_sha`.
+
+   ```bash
+   opened_run_id="$(gh run list --workflow "Build CI" --event pull_request \
+     --branch "$probe_branch" --limit 1 --json databaseId --jq '.[0].databaseId')"
+   test -n "$opened_run_id"
+   test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" = "$head_sha"
+   test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)" = "$base_sha"
+   timeout 90m gh run watch "$opened_run_id" --interval 30 --exit-status
+   gh run view "$opened_run_id" --json event,headSha,conclusion,jobs,url
+   ```
+
+   - **Parsed live opened-run job set:** {`event-identity`, `event-router`,
+     `event-classifier`, `host-tests`, `build`, `extended-host-tests`, `legacy`,
+     `summary`}.
 3. Run
-   `gh pr edit "$pr" --title "$original_title [title-only metadata probe]"`.
-4. Locate the newly created `pull_request` Build run at the unchanged
-   `head_sha`, then run
-   `gh run view <metadata-run-id> --json event,headSha,conclusion,jobs,url`.
-5. Require running `metadata-classifier` and `metadata-summary`. Permit skipped
-   worker records to retain normal or literal unevaluated names and even a
-   success-shaped conclusion, but require the evaluator to ignore them by
-   stable worker job ID. Require no expensive job to have a start timestamp.
-6. Feed normalized full and metadata job contexts to
+   `gh pr edit "$pr" --title "$original_title [title-only metadata probe]"`,
+   record the new run ID, and require the unchanged exact `head_sha`/`base_sha`.
+
+   ```bash
+   title_run_id="$(gh run list --workflow "Build CI" --event pull_request \
+     --branch "$probe_branch" --limit 1 --json databaseId --jq '.[0].databaseId')"
+   test -n "$title_run_id"
+   test "$title_run_id" != "$opened_run_id"
+   test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" = "$head_sha"
+   test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)" = "$base_sha"
+   timeout 90m gh run watch "$title_run_id" --interval 30 --exit-status
+   gh run view "$title_run_id" --json event,headSha,conclusion,jobs,url
+   ```
+
+   - **Parsed live title-edit job/check set:** {`event-identity`,
+     `event-router`, `metadata-classifier`, `metadata-summary`}.
+
+   Skipped worker records may retain normal or literal unevaluated names and
+   even a success-shaped conclusion, but the evaluator ignores them by stable
+   worker job ID. No expensive worker may have a start timestamp.
+4. Normalize the real opened and title-edit job contexts and pass both runs to
    `scripts.workflow_pilot.candidate_evidence.evaluate_candidate_runs`.
-   Confirm a prior failed/missing full run remains ineligible and that the
-   metadata run itself is rejected as candidate evidence.
-7. Restore the title with `gh pr edit "$pr" --title "$original_title"` and
-   close/delete the disposable PR/branch through the normal owner workflow.
+   Require the opened full run to remain the candidate evidence and the
+   metadata run itself to remain ineligible.
+5. Restore the title with
+   `gh pr edit "$pr" --title "$original_title"`. Record the distinct restore
+   run ID at the unchanged exact head/base and require the restore to be
+   metadata-only too.
+
+   ```bash
+   restore_run_id="$(gh run list --workflow "Build CI" --event pull_request \
+     --branch "$probe_branch" --limit 1 --json databaseId --jq '.[0].databaseId')"
+   test -n "$restore_run_id"
+   test "$restore_run_id" != "$title_run_id"
+   test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" = "$head_sha"
+   test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)" = "$base_sha"
+   timeout 90m gh run watch "$restore_run_id" --interval 30 --exit-status
+   gh run view "$restore_run_id" --json event,headSha,conclusion,jobs,url
+   ```
+
+   - **Parsed live title-restore job/check set:** {`event-identity`,
+     `event-router`, `metadata-classifier`, `metadata-summary`}.
+
+   Normalize all three real runs and repeat the evaluator assertions.
+6. Close without merging and remove every temporary remote and local resource:
+
+   ```bash
+   gh pr close "$pr"
+   git push origin --delete "$probe_branch"
+   cd "$source_root"
+   git worktree remove "$probe_worktree"
+   git branch -D "$probe_branch"
+   ```
+
    Architecture/review comments remain unmarked; only the canonical evolving
    evidence comment carries the one marker.
 
