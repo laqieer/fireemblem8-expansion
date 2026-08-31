@@ -475,21 +475,24 @@ review cycle must use a new owner identity and new handoff rather than
 continuing the closed process.
 
 Each required check names a closed contract rather than shell text. The
-current `git-diff-check` contract derives exact argv from the trusted Git
-executable, worktree, assigned parent, and candidate. Structured execution
-uses no shell and returns a receipt containing check/receipt IDs, argv,
-parent/candidate SHAs, worktree identity, start/completion times, exit code,
-output digest, and receipt seal. Validation re-executes that exact allowlisted
-command and compares its result. Unknown contracts or a caller `command`
-field fail schema validation; passed prose/evidence cannot rescue literal
-`false`, a nonzero safe check, or a stale/wrong-command/SHA/worktree receipt.
-The exact Git argv pins
+current `git-diff-check` contract derives exact isolated-Python argv for the
+reviewed raw-diff checker, worktree, assigned parent, and candidate. Structured
+execution uses no shell and returns a receipt containing check/receipt IDs,
+argv, parent/candidate SHAs, worktree identity, start/completion times, exit
+code, output digest, and receipt seal. Validation re-executes that exact
+allowlisted command and compares its result. Unknown contracts or a caller
+`command` field fail schema validation; passed prose/evidence cannot rescue
+literal `false`, a nonzero safe check, or a
+stale/wrong-command/SHA/worktree receipt. The checker's exact Git argv pins
 `core.whitespace=blank-at-eol,blank-at-eof,space-before-tab`, attributes/color/
 quoting/diff policy, `--no-ext-diff`, `--no-textconv`, and `--text` under the
-minimal Git environment. A nonempty local `.git/info/attributes` rejects.
-Repository-local `core.whitespace=-trailing-space`, diff drivers/textconv,
-aliases, hostile global/system files, or ambient `GIT_EXTERNAL_DIFF` therefore
-cannot change pass/fail or receipt output.
+minimal Git environment. It parses raw added lines and candidate EOF bytes
+itself, so root/nested/macro/negative tracked `whitespace` attributes cannot
+override the policy; benign unrelated attributes remain valid. A nonempty
+local `.git/info/attributes` rejects. Repository-local
+`core.whitespace=-trailing-space`, diff drivers/textconv, aliases, hostile
+global/system files, or ambient `GIT_EXTERNAL_DIFF` therefore cannot change
+pass/fail or receipt output.
 
 The validator mechanically rejects repeated-parent/stale results, result/HEAD
 drift, missing or non-direct commits, wrong parent/worktree/branch, unrelated
@@ -511,14 +514,48 @@ reordering, field/seal tampering, non-ancestral relevant candidates, and a
 closed owner reused in the same issue/PR lifecycle. This is immutable receipt
 history, not a second editable status ledger.
 The document does not choose its own history base. For the exact issue/PR
-lifecycle, a canonical local Git ref under
-`refs/workflow-pilot/handoff-history/` points to a strict normalized authority
-blob containing repository, lifecycle, sequence, and head seal. The document
-must present that exact ref/object and a complete chain ending at its
-sequence/head. Only an explicit sequence-zero/null-head authority permits
-genesis. Ref absence, `prior_handoffs: []` after sequence one, truncation,
-reset, stale object, or caller-selected head rejects. The ref stores one
-canonical head, not a second mutable copy of delivery state.
+lifecycle, a fixed `origin` ref under
+`refs/workflow-pilot/handoff-history/` points to an append-only authority
+commit. Its `authority.json` contains repository, lifecycle, sequence, handoff
+head seal, and previous authority object; the commit has that exact previous
+object as its sole parent. Validation queries `ls-remote`, fetches the named
+ref without writing `FETCH_HEAD` or any local ref, and walks every authority
+parent back to sequence-zero/null-head genesis. A locally reset ref is
+irrelevant. Ref absence, `prior_handoffs: []` after sequence one, truncation,
+replay, ancestry fork, stale object/sequence, or caller-selected head rejects.
+
+Bootstrap and advance planning are deterministic and read-only:
+
+```bash
+python3 -m scripts.workflow_pilot.agent_handoff \
+  --authority-operation bootstrap \
+  --worktree . --repository laqieer/fireemblem8-expansion \
+  --issue 178 --pull-request <pr>
+
+python3 -m scripts.workflow_pilot.agent_handoff \
+  --authority-operation advance \
+  --worktree . --repository laqieer/fireemblem8-expansion \
+  --issue 178 --pull-request <pr> \
+  --expected-object-id <remote-head> --expected-sequence <n> \
+  --new-head-seal <closed-handoff-seal>
+```
+
+The output names the normalized next `authority.json`, exact expected remote
+object, and owner-only `--force-with-lease` CAS. It never creates an object,
+updates a ref, or pushes. Genesis is provisioned once after local review by an
+authenticated repository owner. Each later advance requires the current
+remote object and sequence; a stale plan fails before producing a new plan.
+Normal clones fetch the authority explicitly during validation. Implementation
+owners remain prohibited from every bootstrap/advance/push action.
+
+This remote authority follows the issue #176 admission/lifecycle pattern:
+owner `delivery-coordinator`; executable consumer
+`scripts.workflow_pilot.agent_handoff`; unique decision
+`canonical-closed-handoff-head`; consistency check
+`test_agent_handoff`; bounded one authority commit per close; deletion only
+after issues #178/#181 and every consumer retire the owner-rotation invariant.
+The ref retains the minimal canonical head/ancestry and does not duplicate the
+mutable delivery ledger.
 
 ### Typed delivery dependencies
 

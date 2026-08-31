@@ -106,10 +106,12 @@ availability records the authoritative evaluation time and unattended
 interval. A disable/takeover plan must cover that interval and include
 same-evaluation runtime evidence that both stop triggers are disabled.
 
-The prior-handoff sequence/head comes from the independently read canonical
-Git ref; explicit ref-backed sequence-zero/null-head authority is the only
-genesis. Omitted/truncated history or caller-selected heads reject. Allowed
-Git checks pin whitespace/config behavior in argv under the minimal Git
+The prior-handoff sequence/head comes from the fixed `origin` authority ref,
+queried with `ls-remote` and fetched without updating local refs. Its
+single-parent authority commits are bootstrapped once by the authenticated
+owner and advanced only with expected-head/sequence CAS; local ref resets,
+omitted/truncated history, replay, or caller-selected heads reject. Allowed Git
+checks pin whitespace/config behavior in argv under the minimal Git
 environment and disable external diff, textconv, local attributes, and ambient
 configuration bypasses. After OOM, sent/received/progressing prefixes are
 valid non-eligible replacement progress only when assignment is strictly

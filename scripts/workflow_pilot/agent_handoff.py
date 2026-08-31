@@ -102,6 +102,8 @@ CHECK_RECEIPT_SEAL_DOMAIN = b"workflow-pilot-agent-check-receipt-v1\0"
 HISTORY_RECEIPT_SEAL_DOMAIN = b"workflow-pilot-agent-history-receipt-v1\0"
 ZERO_SEAL = "0" * 64
 HISTORY_REF_PREFIX = "refs/workflow-pilot/handoff-history"
+REPOSITORY_IDENTITY_REF = "refs/workflow-pilot/repository-identity"
+RAW_DIFF_CHECK_PATH = Path(__file__).resolve().with_name("raw_diff_check.py")
 
 
 class HandoffDataError(Exception):
@@ -170,6 +172,26 @@ def run_git(repository_root: Path, *arguments: str) -> bytes:
     return _raise_pilot_error(reporter.run_git, repository_root, *arguments)
 
 
+def run_git_online(repository_root: Path, *arguments: str) -> bytes:
+    try:
+        completed = subprocess.run(
+            reporter.git_command(repository_root, *arguments),
+            cwd=repository_root,
+            env=reporter.git_environment(offline=False),
+            check=False,
+            capture_output=True,
+        )
+    except OSError as error:
+        raise HandoffDataError(f"cannot execute Git: {error}") from error
+    if completed.returncode == 0:
+        return completed.stdout
+    detail = completed.stderr.decode("utf-8", errors="replace").strip()
+    raise HandoffDataError(
+        f"Git {' '.join(arguments)} failed"
+        + (f": {detail}" if detail else "")
+    )
+
+
 def validate_repository_root(repository_root: Path) -> Path:
     return _raise_pilot_error(reporter.validate_repository_root, repository_root)
 
@@ -231,36 +253,23 @@ def _allowed_check_argv(
 ) -> list[str]:
     expect_enum(contract, ALLOWED_CHECK_CONTRACTS, "check contract")
     if contract == "git-diff-check":
-        return list(
-            reporter.git_command(
-                repository_root,
-                "-c",
-                (
-                    "core.whitespace="
-                    "blank-at-eol,blank-at-eof,space-before-tab"
-                ),
-                "-c",
-                "core.attributesFile=/dev/null",
-                "-c",
-                "color.ui=false",
-                "-c",
-                "color.diff=false",
-                "-c",
-                "core.quotePath=true",
-                "-c",
-                "diff.external=",
-                "-c",
-                "diff.wsErrorHighlight=all",
-                "diff",
-                "--no-ext-diff",
-                "--no-textconv",
-                "--text",
-                "--check",
-                parent_sha,
-                candidate_sha,
-                "--",
-            )
-        )
+        try:
+            raw_checker = RAW_DIFF_CHECK_PATH.resolve(strict=True)
+        except OSError as error:
+            raise HandoffDataError(
+                f"raw diff checker is unavailable: {error}"
+            ) from error
+        return [
+            "/usr/bin/python3",
+            "-I",
+            str(raw_checker),
+            "--repository-root",
+            str(repository_root),
+            "--parent",
+            parent_sha,
+            "--candidate",
+            candidate_sha,
+        ]
     raise HandoffDataError(f"unsupported check contract {contract!r}")
 
 
@@ -474,6 +483,255 @@ def history_authority_ref(issue: int, pull_request: int | None) -> str:
     return f"{HISTORY_REF_PREFIX}/issue-{issue}/{pr_component}"
 
 
+def _remote_ref_oid(
+    repository_root: Path,
+    reference: str,
+    *,
+    allow_missing: bool,
+) -> str | None:
+    output = run_git_online(
+        repository_root,
+        "ls-remote",
+        "--refs",
+        "origin",
+        reference,
+    ).decode("ascii")
+    lines = [line for line in output.splitlines() if line]
+    if not lines:
+        if allow_missing:
+            return None
+        raise HandoffDataError(
+            f"remote authority {reference!r} is unavailable; genesis is unknown"
+        )
+    if len(lines) != 1:
+        raise HandoffDataError(
+            f"remote authority {reference!r} is ambiguous"
+        )
+    object_id, returned_ref = lines[0].split("\t", 1)
+    if returned_ref != reference or reporter.SHA_RE.fullmatch(object_id) is None:
+        raise HandoffDataError(
+            f"remote authority {reference!r} returned malformed identity"
+        )
+    return object_id
+
+
+def _fetch_remote_authority(
+    repository_root: Path,
+    reference: str,
+    object_id: str,
+) -> None:
+    head_before = run_git(repository_root, "rev-parse", "HEAD")
+    refs_before = run_git(
+        repository_root,
+        "for-each-ref",
+        "--format=%(refname)%00%(objectname)",
+    )
+    fetch_head_path = Path(
+        run_git(repository_root, "rev-parse", "--git-path", "FETCH_HEAD")
+        .decode("utf-8")
+        .strip()
+    )
+    if not fetch_head_path.is_absolute():
+        fetch_head_path = repository_root / fetch_head_path
+    fetch_head_before = (
+        fetch_head_path.read_bytes() if fetch_head_path.is_file() else None
+    )
+    run_git_online(
+        repository_root,
+        "fetch",
+        "--no-write-fetch-head",
+        "--no-tags",
+        "origin",
+        reference,
+    )
+    if run_git(repository_root, "rev-parse", "HEAD") != head_before:
+        raise HandoffDataError("authority fetch changed HEAD")
+    if run_git(
+        repository_root,
+        "for-each-ref",
+        "--format=%(refname)%00%(objectname)",
+    ) != refs_before:
+        raise HandoffDataError("authority fetch changed local refs")
+    fetch_head_after = (
+        fetch_head_path.read_bytes() if fetch_head_path.is_file() else None
+    )
+    if fetch_head_after != fetch_head_before:
+        raise HandoffDataError("authority fetch changed FETCH_HEAD")
+    fetched_type = (
+        run_git(repository_root, "cat-file", "-t", object_id)
+        .decode("ascii")
+        .strip()
+    )
+    if fetched_type not in {"blob", "commit"}:
+        raise HandoffDataError(
+            f"remote authority {reference!r} has invalid object type"
+        )
+
+
+def _parse_authority_json(
+    raw: bytes,
+    label: str,
+) -> dict[str, Any]:
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise HandoffDataError(f"{label} is not UTF-8") from error
+    return expect_object(
+        _raise_pilot_error(reporter.parse_json, text, label),
+        label,
+    )
+
+
+def read_remote_repository_identity(repository_root: Path) -> str:
+    object_id = _remote_ref_oid(
+        repository_root,
+        REPOSITORY_IDENTITY_REF,
+        allow_missing=False,
+    )
+    _fetch_remote_authority(
+        repository_root,
+        REPOSITORY_IDENTITY_REF,
+        object_id,
+    )
+    if (
+        run_git(repository_root, "cat-file", "-t", object_id)
+        .decode("ascii")
+        .strip()
+        != "blob"
+    ):
+        raise HandoffDataError(
+            "remote repository identity ref must point to a blob"
+        )
+    identity = _parse_authority_json(
+        run_git(repository_root, "cat-file", "blob", object_id),
+        "remote repository identity",
+    )
+    expect_keys(
+        identity,
+        "remote repository identity",
+        ("schema_version", "repository"),
+    )
+    version = expect_int(
+        identity["schema_version"],
+        "remote repository identity.schema_version",
+        1,
+    )
+    if version != 1:
+        raise HandoffDataError(
+            "remote repository identity.schema_version must be 1"
+        )
+    return expect_string(
+        identity["repository"],
+        "remote repository identity.repository",
+    )
+
+
+def _read_history_authority_commit(
+    repository_root: Path,
+    object_id: str,
+    repository: str,
+    issue: int,
+    pull_request: int | None,
+) -> tuple[dict[str, Any], list[str]]:
+    if (
+        run_git(repository_root, "cat-file", "-t", object_id)
+        .decode("ascii")
+        .strip()
+        != "commit"
+    ):
+        raise HandoffDataError(
+            f"history authority object {object_id} must be a commit"
+        )
+    parents = (
+        run_git(repository_root, "show", "-s", "--format=%P", object_id)
+        .decode("ascii")
+        .strip()
+        .split()
+    )
+    authority = _parse_authority_json(
+        run_git(
+            repository_root,
+            "show",
+            f"{object_id}:authority.json",
+        ),
+        f"history authority object {object_id}",
+    )
+    expect_keys(
+        authority,
+        f"history authority object {object_id}",
+        (
+            "schema_version",
+            "repository",
+            "issue",
+            "pull_request",
+            "sequence",
+            "head_seal",
+            "previous_object_id",
+        ),
+    )
+    version = expect_int(
+        authority["schema_version"],
+        f"history authority object {object_id}.schema_version",
+        1,
+    )
+    if version != 1:
+        raise HandoffDataError(
+            f"history authority object {object_id} schema_version must be 1"
+        )
+    if expect_string(
+        authority["repository"],
+        f"history authority object {object_id}.repository",
+    ) != repository:
+        raise HandoffDataError(
+            f"history authority object {object_id} repository mismatch"
+        )
+    if expect_int(
+        authority["issue"],
+        f"history authority object {object_id}.issue",
+        1,
+    ) != issue:
+        raise HandoffDataError(
+            f"history authority object {object_id} issue mismatch"
+        )
+    if authority["pull_request"] is not None:
+        expect_int(
+            authority["pull_request"],
+            f"history authority object {object_id}.pull_request",
+            1,
+        )
+    if authority["pull_request"] != pull_request:
+        raise HandoffDataError(
+            f"history authority object {object_id} pull request mismatch"
+        )
+    sequence = expect_int(
+        authority["sequence"],
+        f"history authority object {object_id}.sequence",
+        0,
+    )
+    if sequence == 0:
+        if (
+            authority["head_seal"] is not None
+            or authority["previous_object_id"] is not None
+            or parents
+        ):
+            raise HandoffDataError(
+                f"history authority object {object_id} has invalid genesis"
+            )
+    else:
+        for field in ("head_seal", "previous_object_id"):
+            value = authority[field]
+            pattern = reporter.SHA256_RE if field == "head_seal" else reporter.SHA_RE
+            if not isinstance(value, str) or pattern.fullmatch(value) is None:
+                raise HandoffDataError(
+                    f"history authority object {object_id} has invalid {field}"
+                )
+        if len(parents) != 1 or parents[0] != authority["previous_object_id"]:
+            raise HandoffDataError(
+                f"history authority object {object_id} forks its commit chain"
+            )
+    return authority, parents
+
+
 def read_history_authority(
     repository_root: Path,
     repository: str,
@@ -482,110 +740,152 @@ def read_history_authority(
 ) -> dict[str, Any]:
     repository_root = validate_repository_root(repository_root)
     reference = history_authority_ref(issue, pull_request)
-    try:
-        object_id = (
-            run_git(
-                repository_root,
-                "show-ref",
-                "--verify",
-                "--hash",
-                reference,
-            )
-            .decode("ascii")
-            .strip()
-        )
-    except HandoffDataError as error:
-        raise HandoffDataError(
-            f"history authority {reference!r} is unavailable; genesis is unknown"
-        ) from error
-    object_type = (
-        run_git(repository_root, "cat-file", "-t", object_id)
-        .decode("ascii")
-        .strip()
+    object_id = _remote_ref_oid(
+        repository_root,
+        reference,
+        allow_missing=False,
     )
-    if object_type != "blob":
-        raise HandoffDataError(
-            f"history authority {reference!r} must point to a blob"
-        )
-    try:
-        raw = run_git(repository_root, "cat-file", "blob", object_id).decode(
-            "utf-8"
-        )
-    except UnicodeDecodeError as error:
-        raise HandoffDataError(
-            f"history authority {reference!r} is not UTF-8"
-        ) from error
-    authority = _raise_pilot_error(
-        reporter.parse_json,
-        raw,
-        f"history authority {reference}",
+    _fetch_remote_authority(repository_root, reference, object_id)
+    authority, parents = _read_history_authority_commit(
+        repository_root,
+        object_id,
+        repository,
+        issue,
+        pull_request,
     )
-    authority = expect_object(authority, f"history authority {reference}")
-    expect_keys(
-        authority,
-        f"history authority {reference}",
-        (
-            "schema_version",
-            "repository",
-            "issue",
-            "pull_request",
-            "sequence",
-            "head_seal",
-        ),
-    )
-    version = expect_int(
-        authority["schema_version"],
-        f"history authority {reference}.schema_version",
-        1,
-    )
-    if version != 1:
-        raise HandoffDataError(
-            f"history authority {reference!r} schema_version must be 1"
-        )
-    expect_string(
-        authority["repository"],
-        f"history authority {reference}.repository",
-    )
-    expect_int(
-        authority["issue"],
-        f"history authority {reference}.issue",
-        1,
-    )
-    if authority["pull_request"] is not None:
-        expect_int(
-            authority["pull_request"],
-            f"history authority {reference}.pull_request",
-            1,
-        )
-    if authority["repository"] != repository:
-        raise HandoffDataError(
-            f"history authority {reference!r} repository mismatch"
-        )
-    if authority["issue"] != issue or authority["pull_request"] != pull_request:
-        raise HandoffDataError(
-            f"history authority {reference!r} lifecycle mismatch"
-        )
-    expect_int(
-        authority["sequence"],
-        f"history authority {reference}.sequence",
-        0,
-    )
-    if authority["sequence"] == 0:
-        if authority["head_seal"] is not None:
+    expected_sequence = authority["sequence"]
+    current_object = object_id
+    current_parents = parents
+    while expected_sequence > 0:
+        if len(current_parents) != 1:
             raise HandoffDataError(
-                f"history authority {reference!r} genesis head must be null"
+                f"history authority {reference!r} truncates its ancestry"
             )
-    elif (
-        not isinstance(authority["head_seal"], str)
-        or reporter.SHA256_RE.fullmatch(authority["head_seal"]) is None
-    ):
-        raise HandoffDataError(
-            f"history authority {reference!r} head_seal is invalid"
+        current_object = current_parents[0]
+        prior, current_parents = _read_history_authority_commit(
+            repository_root,
+            current_object,
+            repository,
+            issue,
+            pull_request,
         )
+        expected_sequence -= 1
+        if prior["sequence"] != expected_sequence:
+            raise HandoffDataError(
+                f"history authority {reference!r} replays or gaps sequence"
+            )
     return {
         "ref": reference,
         "object_id": object_id,
         **authority,
+    }
+
+
+def plan_history_authority(
+    repository_root: Path,
+    repository: str,
+    issue: int,
+    pull_request: int | None,
+    *,
+    operation: str,
+    expected_object_id: str | None = None,
+    expected_sequence: int | None = None,
+    new_head_seal: str | None = None,
+) -> dict[str, Any]:
+    repository_root = validate_repository_root(repository_root)
+    if _repository_from_origin(repository_root) != repository:
+        raise HandoffDataError("history authority plan repository mismatch")
+    reference = history_authority_ref(issue, pull_request)
+    remote_object = _remote_ref_oid(
+        repository_root,
+        reference,
+        allow_missing=True,
+    )
+    if operation == "bootstrap":
+        if remote_object is not None:
+            raise HandoffDataError(
+                "history authority bootstrap requires an absent remote ref"
+            )
+        if any(
+            value is not None
+            for value in (
+                expected_object_id,
+                expected_sequence,
+                new_head_seal,
+            )
+        ):
+            raise HandoffDataError(
+                "history authority bootstrap does not accept prior state"
+            )
+        record = {
+            "schema_version": 1,
+            "repository": repository,
+            "issue": issue,
+            "pull_request": pull_request,
+            "sequence": 0,
+            "head_seal": None,
+            "previous_object_id": None,
+        }
+        expected_remote = None
+    elif operation == "advance":
+        if (
+            expected_object_id is None
+            or expected_sequence is None
+            or new_head_seal is None
+        ):
+            raise HandoffDataError(
+                "history authority advance requires expected head/sequence "
+                "and new handoff seal"
+            )
+        expect_sha(expected_object_id, "expected history authority object")
+        expect_int(expected_sequence, "expected history authority sequence", 0)
+        if (
+            not isinstance(new_head_seal, str)
+            or reporter.SHA256_RE.fullmatch(new_head_seal) is None
+        ):
+            raise HandoffDataError(
+                "new history authority head must be a lowercase SHA-256"
+            )
+        current = read_history_authority(
+            repository_root,
+            repository,
+            issue,
+            pull_request,
+        )
+        if (
+            remote_object != expected_object_id
+            or current["object_id"] != expected_object_id
+            or current["sequence"] != expected_sequence
+        ):
+            raise HandoffDataError(
+                "history authority compare-and-swap expectation is stale"
+            )
+        record = {
+            "schema_version": 1,
+            "repository": repository,
+            "issue": issue,
+            "pull_request": pull_request,
+            "sequence": expected_sequence + 1,
+            "head_seal": new_head_seal,
+            "previous_object_id": expected_object_id,
+        }
+        expected_remote = expected_object_id
+    else:
+        raise HandoffDataError(
+            "history authority operation must be bootstrap or advance"
+        )
+    lease_value = expected_remote or ("0" * 40)
+    return {
+        "operation": operation,
+        "remote": "origin",
+        "ref": reference,
+        "expected_remote_object_id": expected_remote,
+        "record": record,
+        "owner_only": True,
+        "cas_push": (
+            f"git push --force-with-lease={reference}:{lease_value} "
+            f"origin <new-authority-commit>:{reference}"
+        ),
     }
 
 
@@ -885,13 +1185,20 @@ def verify_reporter_record(
 
 
 def _repository_from_origin(repository_root: Path) -> str:
-    origin = run_git(repository_root, "remote", "get-url", "origin")
-    repository = reporter._github_repository_from_remote(  # noqa: SLF001
-        origin.decode("utf-8").strip()
+    origin = (
+        run_git(repository_root, "remote", "get-url", "origin")
+        .decode("utf-8")
+        .strip()
     )
+    repository = reporter._github_repository_from_remote(origin)  # noqa: SLF001
+    if repository is None and (
+        origin.startswith("file://") or Path(origin).is_absolute()
+    ):
+        repository = read_remote_repository_identity(repository_root)
     if repository is None:
         raise HandoffDataError(
-            "worktree origin must identify one GitHub owner/repository"
+            "worktree origin must identify one GitHub repository or "
+            "owner-provisioned local authority"
         )
     return repository
 
@@ -2291,6 +2598,7 @@ def validate_document(raw: Any, repository_root: Path) -> dict[str, Any]:
             "pull_request",
             "sequence",
             "head_seal",
+            "previous_object_id",
         ),
     )
     canonical_authority = read_history_authority(
@@ -2950,19 +3258,57 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "against the exact real Git worktree."
         )
     )
-    parser.add_argument("--fixture", type=Path, required=True)
-    parser.add_argument("--worktree", type=Path, required=True)
+    parser.add_argument("--fixture", type=Path)
+    parser.add_argument("--worktree", type=Path)
+    parser.add_argument(
+        "--authority-operation",
+        choices=("bootstrap", "advance"),
+    )
+    parser.add_argument("--repository")
+    parser.add_argument("--issue", type=int)
+    parser.add_argument("--pull-request", type=int)
+    parser.add_argument("--expected-object-id")
+    parser.add_argument("--expected-sequence", type=int)
+    parser.add_argument("--new-head-seal")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
-        result = validate_document(load_json(args.fixture), args.worktree)
+        if args.authority_operation is not None:
+            if (
+                args.worktree is None
+                or args.repository is None
+                or args.issue is None
+                or args.fixture is not None
+            ):
+                raise HandoffDataError(
+                    "authority planning requires worktree/repository/issue "
+                    "and no fixture"
+                )
+            result = plan_history_authority(
+                args.worktree,
+                args.repository,
+                args.issue,
+                args.pull_request,
+                operation=args.authority_operation,
+                expected_object_id=args.expected_object_id,
+                expected_sequence=args.expected_sequence,
+                new_head_seal=args.new_head_seal,
+            )
+        else:
+            if args.fixture is None or args.worktree is None:
+                raise HandoffDataError(
+                    "handoff validation requires --fixture and --worktree"
+                )
+            result = validate_document(load_json(args.fixture), args.worktree)
     except HandoffDataError as error:
         print(f"workflow-pilot handoff: {error}", file=sys.stderr)
         return 2
     sys.stdout.buffer.write(normalized_json(result))
+    if args.authority_operation is not None:
+        return 0
     return 0 if result["summary"]["trusted_push_eligible"] else 2
 
 

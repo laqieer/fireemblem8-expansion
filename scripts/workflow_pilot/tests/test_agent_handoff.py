@@ -17,6 +17,7 @@ from scripts.workflow_pilot.tests import test_reporter
 ROOT = Path(__file__).resolve().parents[3]
 TEST_ARTIFACTS = ROOT / "build" / "test-artifacts"
 TEST_ARTIFACTS.mkdir(parents=True, exist_ok=True)
+AUTHORITY_OWNERS = {}
 
 
 def git(repository_root, *arguments):
@@ -30,6 +31,59 @@ def git(repository_root, *arguments):
     ).stdout.strip()
 
 
+def git_with_input(repository_root, arguments, value, environment=None):
+    git_environment = reporter.git_environment(offline=True)
+    if environment is not None:
+        git_environment.update(environment)
+    return subprocess.run(
+        reporter.git_command(repository_root, *arguments),
+        cwd=repository_root,
+        env=git_environment,
+        input=value,
+        check=True,
+        capture_output=True,
+    ).stdout.decode("ascii").strip()
+
+
+def owner_write_blob_ref(owner_root, reference, payload):
+    object_id = git_with_input(
+        owner_root,
+        ("hash-object", "-w", "--stdin"),
+        agent_handoff.normalized_json(payload),
+    )
+    git(owner_root, "push", "-q", "origin", f"{object_id}:{reference}")
+    return object_id
+
+
+def owner_create_authority_commit(owner_root, record, parent=None):
+    blob = git_with_input(
+        owner_root,
+        ("hash-object", "-w", "--stdin"),
+        agent_handoff.normalized_json(record),
+    )
+    tree = git_with_input(
+        owner_root,
+        ("mktree",),
+        f"100644 blob {blob}\tauthority.json\n".encode("ascii"),
+    )
+    arguments = ["commit-tree", tree]
+    if parent is not None:
+        arguments.extend(("-p", parent))
+    return git_with_input(
+        owner_root,
+        tuple(arguments),
+        b"workflow-pilot handoff authority\n",
+        {
+            "GIT_AUTHOR_NAME": "Authority Owner",
+            "GIT_AUTHOR_EMAIL": "owner@example.invalid",
+            "GIT_COMMITTER_NAME": "Authority Owner",
+            "GIT_COMMITTER_EMAIL": "owner@example.invalid",
+            "GIT_AUTHOR_DATE": "2026-08-31T00:00:00Z",
+            "GIT_COMMITTER_DATE": "2026-08-31T00:00:00Z",
+        },
+    )
+
+
 def set_history_authority(
     repository_root,
     sequence,
@@ -38,28 +92,70 @@ def set_history_authority(
     issue=178,
     pull_request=200,
 ):
-    payload = {
-        "schema_version": 1,
-        "repository": "example/workflow",
-        "issue": issue,
-        "pull_request": pull_request,
-        "sequence": sequence,
-        "head_seal": head_seal,
-    }
-    hashed = subprocess.run(
-        reporter.git_command(repository_root, "hash-object", "-w", "--stdin"),
-        cwd=repository_root,
-        env=reporter.git_environment(offline=True),
-        input=agent_handoff.normalized_json(payload),
-        check=True,
-        capture_output=True,
+    owner_root = AUTHORITY_OWNERS[str(repository_root)]
+    reference = agent_handoff.history_authority_ref(issue, pull_request)
+    if sequence == 0:
+        plan = agent_handoff.plan_history_authority(
+            repository_root,
+            "example/workflow",
+            issue,
+            pull_request,
+            operation="bootstrap",
+        )
+        if plan != agent_handoff.plan_history_authority(
+            repository_root,
+            "example/workflow",
+            issue,
+            pull_request,
+            operation="bootstrap",
+        ):
+            raise AssertionError("bootstrap plan is not deterministic")
+        parent = None
+    else:
+        current = agent_handoff.read_history_authority(
+            repository_root,
+            "example/workflow",
+            issue,
+            pull_request,
+        )
+        plan = agent_handoff.plan_history_authority(
+            repository_root,
+            "example/workflow",
+            issue,
+            pull_request,
+            operation="advance",
+            expected_object_id=current["object_id"],
+            expected_sequence=current["sequence"],
+            new_head_seal=head_seal,
+        )
+        if plan != agent_handoff.plan_history_authority(
+            repository_root,
+            "example/workflow",
+            issue,
+            pull_request,
+            operation="advance",
+            expected_object_id=current["object_id"],
+            expected_sequence=current["sequence"],
+            new_head_seal=head_seal,
+        ):
+            raise AssertionError("advance plan is not deterministic")
+        parent = current["object_id"]
+    planned_sequence = plan["record"]["sequence"]
+    if planned_sequence != sequence:
+        raise AssertionError("authority test sequence mismatch")
+    object_id = owner_create_authority_commit(
+        owner_root,
+        plan["record"],
+        parent,
     )
-    object_id = hashed.stdout.decode("ascii").strip()
+    lease = plan["expected_remote_object_id"] or ("0" * 40)
     git(
-        repository_root,
-        "update-ref",
-        agent_handoff.history_authority_ref(issue, pull_request),
-        object_id,
+        owner_root,
+        "push",
+        "-q",
+        f"--force-with-lease={reference}:{lease}",
+        "origin",
+        f"{object_id}:{reference}",
     )
     return agent_handoff.read_history_authority(
         repository_root,
@@ -75,7 +171,26 @@ def handoff_repository():
         prefix="agent-handoff-",
         dir=TEST_ARTIFACTS,
     ) as temporary:
-        repository_root = Path(temporary)
+        test_root = Path(temporary)
+        remote_root = test_root / "authority.git"
+        owner_root = test_root / "owner"
+        repository_root = test_root / "implementation"
+        remote_root.mkdir()
+        owner_root.mkdir()
+        repository_root.mkdir()
+        git(remote_root, "init", "-q", "--bare")
+        git(owner_root, "init", "-q", "-b", "master")
+        git(owner_root, "config", "user.name", "Authority Owner")
+        git(owner_root, "config", "user.email", "owner@example.invalid")
+        git(owner_root, "remote", "add", "origin", str(remote_root))
+        owner_write_blob_ref(
+            owner_root,
+            agent_handoff.REPOSITORY_IDENTITY_REF,
+            {
+                "schema_version": 1,
+                "repository": "example/workflow",
+            },
+        )
         git(repository_root, "init", "-q", "-b", "master")
         git(repository_root, "config", "user.name", "Handoff Test")
         git(repository_root, "config", "user.email", "handoff@example.invalid")
@@ -84,8 +199,9 @@ def handoff_repository():
             "remote",
             "add",
             "origin",
-            "https://github.com/example/workflow.git",
+            str(remote_root),
         )
+        AUTHORITY_OWNERS[str(repository_root)] = owner_root
         seed = repository_root / "README.md"
         seed.write_text("base\n", encoding="utf-8")
         git(repository_root, "add", "README.md")
@@ -115,7 +231,10 @@ def handoff_repository():
         )
         result_sha = git(repository_root, "rev-parse", "HEAD")
         set_history_authority(repository_root, 0, None)
-        yield repository_root, base_sha, parent_sha, result_sha
+        try:
+            yield repository_root, base_sha, parent_sha, result_sha
+        finally:
+            del AUTHORITY_OWNERS[str(repository_root)]
 
 
 def timestamped_states(receipt=None):
@@ -1215,6 +1334,122 @@ class ExactHandoffTests(unittest.TestCase):
                     candidate_sha=failing_result,
                 )
 
+    def test_tracked_whitespace_attributes_cannot_disable_raw_check(self):
+        cases = (
+            (
+                ".gitattributes",
+                "*.py whitespace=-trailing-space\n",
+            ),
+            (
+                "scripts/workflow_pilot/.gitattributes",
+                "*.py whitespace=-trailing-space\n",
+            ),
+            (
+                ".gitattributes",
+                "[attr]relaxed whitespace=-trailing-space\n*.py relaxed\n",
+            ),
+            (
+                ".gitattributes",
+                "*.py -whitespace\n",
+            ),
+        )
+        for attribute_path, attribute_text in cases:
+            with self.subTest(
+                attribute_path=attribute_path,
+                attribute_text=attribute_text,
+            ):
+                with handoff_repository() as (root, _base, _parent, result):
+                    path = root / attribute_path
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(attribute_text, encoding="utf-8")
+                    change = root / "scripts" / "workflow_pilot" / "change.py"
+                    change.write_text("TRACKED = True  \n", encoding="utf-8")
+                    git(root, "add", attribute_path)
+                    git(root, "add", "scripts/workflow_pilot/change.py")
+                    git(
+                        root,
+                        "commit",
+                        "-q",
+                        "-m",
+                        "test: hostile whitespace attrs\n\n"
+                        + agent_handoff.COPILOT_TRAILER,
+                    )
+                    candidate = git(root, "rev-parse", "HEAD")
+                    receipt = agent_handoff.execute_allowed_check(
+                        receipt_id="tracked-attrs",
+                        check_id="focused-module",
+                        contract="git-diff-check",
+                        repository_root=root,
+                        parent_sha=result,
+                        candidate_sha=candidate,
+                    )
+                    self.assertNotEqual(receipt["exit_code"], 0)
+
+        with handoff_repository() as (root, _base, _parent, result):
+            (root / ".gitattributes").write_text(
+                "*.py whitespace=-trailing-space\n",
+                encoding="utf-8",
+            )
+            git(root, "add", ".gitattributes")
+            git(
+                root,
+                "commit",
+                "-q",
+                "-m",
+                "test: parent whitespace attrs\n\n"
+                + agent_handoff.COPILOT_TRAILER,
+            )
+            attribute_parent = git(root, "rev-parse", "HEAD")
+            change = root / "scripts" / "workflow_pilot" / "change.py"
+            change.write_text("PARENT_ATTR = True  \n", encoding="utf-8")
+            git(root, "add", "scripts/workflow_pilot/change.py")
+            git(
+                root,
+                "commit",
+                "-q",
+                "-m",
+                "test: parent attrs cannot hide whitespace\n\n"
+                + agent_handoff.COPILOT_TRAILER,
+            )
+            candidate = git(root, "rev-parse", "HEAD")
+            receipt = agent_handoff.execute_allowed_check(
+                receipt_id="parent-attrs",
+                check_id="focused-module",
+                contract="git-diff-check",
+                repository_root=root,
+                parent_sha=attribute_parent,
+                candidate_sha=candidate,
+            )
+            self.assertNotEqual(receipt["exit_code"], 0)
+
+        with handoff_repository() as (root, _base, _parent, result):
+            (root / ".gitattributes").write_text(
+                "*.md text\n",
+                encoding="utf-8",
+            )
+            change = root / "scripts" / "workflow_pilot" / "change.py"
+            change.write_text("BENIGN = True\n", encoding="utf-8")
+            git(root, "add", ".gitattributes")
+            git(root, "add", "scripts/workflow_pilot/change.py")
+            git(
+                root,
+                "commit",
+                "-q",
+                "-m",
+                "test: benign attrs remain allowed\n\n"
+                + agent_handoff.COPILOT_TRAILER,
+            )
+            candidate = git(root, "rev-parse", "HEAD")
+            receipt = agent_handoff.execute_allowed_check(
+                receipt_id="benign-attrs",
+                check_id="focused-module",
+                contract="git-diff-check",
+                repository_root=root,
+                parent_sha=result,
+                candidate_sha=candidate,
+            )
+            self.assertEqual(receipt["exit_code"], 0)
+
     def test_scope_line_resource_protocol_lifetime_and_rss_budgets_reject(self):
         with handoff_repository() as (root, _base, parent, result):
             cases = {}
@@ -1357,7 +1592,62 @@ class ExactHandoffTests(unittest.TestCase):
                 "issue-178-round-1",
             )
             self.assertEqual(first_receipt["candidate_sha"], first_result)
+            genesis = first["history_authority"]
+            expected_plan = agent_handoff.plan_history_authority(
+                root,
+                "example/workflow",
+                178,
+                200,
+                operation="advance",
+                expected_object_id=genesis["object_id"],
+                expected_sequence=0,
+                new_head_seal=first_receipt["seal"],
+            )
+            plan_cli = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "scripts.workflow_pilot.agent_handoff",
+                    "--authority-operation",
+                    "advance",
+                    "--worktree",
+                    str(root),
+                    "--repository",
+                    "example/workflow",
+                    "--issue",
+                    "178",
+                    "--pull-request",
+                    "200",
+                    "--expected-object-id",
+                    genesis["object_id"],
+                    "--expected-sequence",
+                    "0",
+                    "--new-head-seal",
+                    first_receipt["seal"],
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+            )
+            self.assertEqual(plan_cli.returncode, 0, plan_cli.stderr.decode())
+            self.assertEqual(json.loads(plan_cli.stdout), expected_plan)
             set_history_authority(root, 1, first_receipt["seal"])
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "compare-and-swap expectation is stale",
+            ):
+                agent_handoff.plan_history_authority(
+                    root,
+                    "example/workflow",
+                    178,
+                    200,
+                    operation="advance",
+                    expected_object_id=first["history_authority"][
+                        "object_id"
+                    ],
+                    expected_sequence=0,
+                    new_head_seal=first_receipt["seal"],
+                )
 
             change = root / "scripts" / "workflow_pilot" / "change.py"
             change.write_text("HANDOFF = 'second'\n", encoding="utf-8")
@@ -1463,15 +1753,116 @@ class ExactHandoffTests(unittest.TestCase):
                     [second_receipt, first_receipt]
                 )
 
-    def test_history_genesis_requires_independent_canonical_ref(self):
+            current_authority = agent_handoff.read_history_authority(
+                root,
+                "example/workflow",
+                178,
+                200,
+            )
+            owner = AUTHORITY_OWNERS[str(root)]
+            reference = agent_handoff.history_authority_ref(178, 200)
+            fork_commit = owner_create_authority_commit(
+                owner,
+                {
+                    "schema_version": 1,
+                    "repository": "example/workflow",
+                    "issue": 178,
+                    "pull_request": 200,
+                    "sequence": 2,
+                    "head_seal": second_receipt["seal"],
+                    "previous_object_id": genesis["object_id"],
+                },
+                genesis["object_id"],
+            )
+            git(
+                owner,
+                "push",
+                "-q",
+                (
+                    f"--force-with-lease={reference}:"
+                    f"{current_authority['object_id']}"
+                ),
+                "origin",
+                f"{fork_commit}:{reference}",
+            )
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "replays or gaps sequence",
+            ):
+                agent_handoff.read_history_authority(
+                    root,
+                    "example/workflow",
+                    178,
+                    200,
+                )
+
+    def test_local_history_ref_cannot_forge_remote_genesis(self):
         with handoff_repository() as (root, _base, parent, result):
             document = handoff_document(root, parent, result)
+            reference = agent_handoff.history_authority_ref(178, 200)
+            clone_root = root.parent / "normal-clone"
+            subprocess.run(
+                [
+                    reporter.trusted_git_executable(),
+                    "clone",
+                    "--quiet",
+                    "--no-local",
+                    str(root),
+                    str(clone_root),
+                ],
+                env=reporter.git_environment(offline=True),
+                check=True,
+                capture_output=True,
+            )
+            remote_url = git(root, "remote", "get-url", "origin")
+            git(clone_root, "remote", "set-url", "origin", remote_url)
+            before_fetch = subprocess.run(
+                reporter.git_command(
+                    clone_root,
+                    "cat-file",
+                    "-e",
+                    document["history_authority"]["object_id"],
+                ),
+                cwd=clone_root,
+                env=reporter.git_environment(offline=True),
+                check=False,
+                capture_output=True,
+            )
+            self.assertNotEqual(before_fetch.returncode, 0)
+            fetched = agent_handoff.read_history_authority(
+                clone_root,
+                "example/workflow",
+                178,
+                200,
+            )
+            self.assertEqual(
+                fetched["object_id"],
+                document["history_authority"]["object_id"],
+            )
+
+            forged = owner_create_authority_commit(
+                root,
+                {
+                    "schema_version": 1,
+                    "repository": "example/workflow",
+                    "issue": 178,
+                    "pull_request": 200,
+                    "sequence": 0,
+                    "head_seal": None,
+                    "previous_object_id": None,
+                },
+            )
             git(
                 root,
                 "update-ref",
-                "-d",
-                agent_handoff.history_authority_ref(178, 200),
+                reference,
+                forged,
             )
+            report = agent_handoff.validate_document(document, root)
+            self.assertTrue(report["summary"]["trusted_push_eligible"])
+
+            owner = AUTHORITY_OWNERS[str(root)]
+            git(owner, "push", "-q", "origin", f":{reference}")
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
                 "genesis is unknown",

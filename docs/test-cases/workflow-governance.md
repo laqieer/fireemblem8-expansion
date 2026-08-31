@@ -501,9 +501,13 @@ game behavior needs a compensating change.
    unchanged trusted owner push rule remains outside implementation ownership.
    Repeat with login case, `[bot]` suffix case, and immutable numeric-ID
    aliases. Seal two prior handoffs and reject owner reuse, a gap, fork,
-   reorder, changed identity, or broken receipt seal. Advance the canonical
-   Git-ref authority to sequence one, then confirm a new document with
-   `prior_handoffs: []`, a reset head, or no ref rejects independently.
+   reorder, changed identity, or broken receipt seal. With separate local-bare
+   owner and implementation roles, bootstrap the fixed `origin` ref, advance
+   it honestly through expected-head/sequence CAS, and reject a stale CAS.
+   Confirm a new document with `prior_handoffs: []`, a reset local ref, stale
+   authority object, or missing upstream ref cannot forge genesis. Confirm a
+   normal clone explicitly fetches the remote authority without changing
+   local refs.
 5. Reconcile a direct watcher timeout with an authoritative successful
    `github-actions-api` run. Then use an authoritative failed run plus a
    watcher process error and confirm delivery remains failed.
@@ -568,7 +572,9 @@ unattended interval. Casefolded logins, bot aliases, and numeric IDs cannot
 reuse closed owners or hide implementation-owner remote actions. Prior closed
 handoffs remain a sealed contiguous chain rather than a mutable ledger, and
 their exact expected head and sequence come from the independently read
-canonical Git ref. Omitted history cannot reset a non-genesis lifecycle.
+fixed-`origin` authority commit chain. Local ref changes are irrelevant;
+omitted history cannot reset a non-genesis lifecycle, and only owner CAS can
+advance the remote head.
 
 The typed dependency graph reports `child-implement` ready as soon as
 `parent-merge` is done, independently of a healthy running master watcher and
@@ -626,7 +632,9 @@ lane. No feature flag, migration, or manual criterion applies.
 creates bounded temporary repositories below `build/test-artifacts/`, derives
 real ancestry/branch/diff/worktree/trailer facts with the issue #176 clean Git
 boundary, executes only the closed safe check runner, verifies receipts, and
-exercises every fixture listed above. The complete
+uses a local bare remote plus separate owner/implementation repositories to
+exercise deterministic bootstrap/advance plans, explicit fetch, local reset,
+stale CAS, and honest CAS. It performs no GitHub mutation. The complete
 `scripts/workflow_pilot/tests` discovery reruns the frozen issue #176 reporter
 regressions. Parsed task/dependency/watcher fixtures compute readiness and
 required edges rather than asserting policy wording. The workflow-governance
