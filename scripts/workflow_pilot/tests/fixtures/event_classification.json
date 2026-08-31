@@ -848,6 +848,134 @@
       }
     }
   ],
+  "fallback_identity_cases": [
+    {
+      "event_name": "pull_request",
+      "expected_kind": "pull_request",
+      "expected_sha": "1111111111111111111111111111111111111111",
+      "github_ref": "refs/pull/177/merge",
+      "id": "valid-pr-fallback",
+      "pr_head_sha": "1111111111111111111111111111111111111111",
+      "run_publisher": false,
+      "run_workers": true
+    },
+    {
+      "event_name": "pull_request",
+      "expected_kind": "none",
+      "expected_sha": "",
+      "github_ref": "refs/pull/177/merge",
+      "id": "pr-ref-name-head",
+      "pr_head_sha": "refs/heads/attacker",
+      "run_publisher": false,
+      "run_workers": false
+    },
+    {
+      "event_name": "pull_request",
+      "expected_kind": "none",
+      "expected_sha": "",
+      "github_ref": "refs/pull/177/merge",
+      "id": "pr-uppercase-head",
+      "pr_head_sha": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "run_publisher": false,
+      "run_workers": false
+    },
+    {
+      "event_name": "pull_request",
+      "expected_kind": "none",
+      "expected_sha": "",
+      "github_ref": "refs/pull/177/merge",
+      "id": "pr-short-head",
+      "pr_head_sha": "111111111111111111111111111111111111111",
+      "run_publisher": false,
+      "run_workers": false
+    },
+    {
+      "event_name": "pull_request",
+      "expected_kind": "none",
+      "expected_sha": "",
+      "github_ref": "refs/pull/177/merge",
+      "id": "pr-nonhex-head",
+      "pr_head_sha": "gggggggggggggggggggggggggggggggggggggggg",
+      "run_publisher": false,
+      "run_workers": false
+    },
+    {
+      "event_name": "pull_request",
+      "expected_kind": "none",
+      "expected_sha": "",
+      "github_ref": "refs/heads/attacker",
+      "id": "pr-incoherent-event-ref",
+      "pr_head_sha": "1111111111111111111111111111111111111111",
+      "run_publisher": false,
+      "run_workers": false
+    },
+    {
+      "event_name": "push",
+      "expected_kind": "push",
+      "expected_sha": "4444444444444444444444444444444444444444",
+      "github_ref": "refs/heads/master",
+      "id": "valid-push-fallback",
+      "push_sha": "4444444444444444444444444444444444444444",
+      "raw_sha": "4444444444444444444444444444444444444444",
+      "run_publisher": true,
+      "run_workers": true
+    },
+    {
+      "event_name": "push",
+      "expected_kind": "none",
+      "expected_sha": "",
+      "github_ref": "refs/heads/master",
+      "id": "push-ref-name-identity",
+      "push_sha": "refs/heads/attacker",
+      "raw_sha": "refs/heads/attacker",
+      "run_publisher": false,
+      "run_workers": false
+    },
+    {
+      "event_name": "push",
+      "expected_kind": "none",
+      "expected_sha": "",
+      "github_ref": "refs/heads/master",
+      "id": "push-uppercase-identity",
+      "push_sha": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "raw_sha": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "run_publisher": false,
+      "run_workers": false
+    },
+    {
+      "event_name": "push",
+      "expected_kind": "none",
+      "expected_sha": "",
+      "github_ref": "refs/heads/master",
+      "id": "push-short-identity",
+      "push_sha": "444444444444444444444444444444444444444",
+      "raw_sha": "444444444444444444444444444444444444444",
+      "run_publisher": false,
+      "run_workers": false
+    },
+    {
+      "event_name": "push",
+      "expected_kind": "none",
+      "expected_sha": "",
+      "github_ref": "refs/heads/master",
+      "id": "push-nonhex-identity",
+      "push_sha": "gggggggggggggggggggggggggggggggggggggggg",
+      "raw_sha": "gggggggggggggggggggggggggggggggggggggggg",
+      "run_publisher": false,
+      "run_workers": false
+    },
+    {
+      "event_name": "push",
+      "expected_kind": "none",
+      "expected_sha": "",
+      "github_ref": "refs/heads/master",
+      "id": "push-mismatched-identities",
+      "push_sha": "4444444444444444444444444444444444444444",
+      "raw_sha": "5555555555555555555555555555555555555555",
+      "run_publisher": false,
+      "run_workers": false
+    }
+  ],
   "incomplete_base_cases": [
     {
       "base": {
@@ -903,6 +1031,7 @@
     }
   ],
   "infrastructure_jobs": [
+    "event-identity",
     "event-router"
   ],
   "schema_version": 3,

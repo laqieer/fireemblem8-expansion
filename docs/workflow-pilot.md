@@ -103,8 +103,9 @@ but does not hash source files, blobs, objects, ROMs, or the repository tree.
 ## Build event classification and candidate evidence
 
 Issue [#177](https://github.com/laqieer/fireemblem8-expansion/issues/177)
-adds a parsed, fail-closed `event-router` plus a mode-specific classifier check
-ahead of the four expensive workers. For pull requests with complete identity,
+adds a no-checkout `event-identity` validator, parsed fail-closed
+`event-router`, and mode-specific classifier check ahead of the four expensive
+workers. For pull requests with complete identity,
 the router checks out
 the exact current `pull_request.base.sha` with the pinned checkout action, no
 credentials, no submodules, and depth one. A missing PR base uses only the
@@ -119,7 +120,8 @@ The classifier bootstrap may use the trusted default branch when PR base
 identity is missing or unusable; worker checkouts never use a merge/default
 fallback.
 
-Check contexts are mode-separated. `event-router` is common setup only. Full
+Check contexts are mode-separated. `event-identity` and `event-router` are
+common setup only. Full
 candidate runs expose `event-classifier`, `host-tests`, `build`,
 `extended-host-tests`, `legacy`, and `summary`. The running `summary` context
 is the sole candidate attestation; it succeeds only after the same full run's
@@ -173,13 +175,13 @@ Base-only edits, mixed edits, unknown fields, incomplete change records,
 unknown actions, `opened`, `synchronize`, `reopened`, and `master` pushes with
 complete identity select the complete required graph. A classifier
 parser/runtime failure (including malformed, duplicate-key, or non-finite
-JSON) on a PR with a nonempty authoritative event head also runs all four
-workers at that raw `pull_request.head.sha`; it never uses merge `github.sha`.
+JSON) on a PR with a validated authoritative event head also runs all four
+workers at that exact `pull_request.head.sha`; it never uses merge `github.sha`.
 Summary verifies that every fallback worker succeeded, then still fails to
 surface the classifier defect. On a `master` push, classifier failure with a
-nonempty authoritative raw `github.sha` similarly runs all four workers and
-the master-only publisher at that exact push SHA, audits success, then fails
-summary. A classifier failure with no PR/push fallback SHA or another
+validated authoritative `github.sha` similarly runs all four workers and the
+master-only publisher at that exact push SHA, audits success, then fails
+summary. A classifier failure with no validated PR/push fallback SHA or another
 unsupported result starts no worker/publisher and fails summary. Missing
 identity or stale outputs from a successful classifier cannot select a
 fallback worker. Each normal worker runs only when the classifier has a
@@ -198,16 +200,21 @@ incoherent. A syntactically valid direct base SHA remains in
 `expected_base` for diagnostics even when another base component is invalid;
 it never becomes checkout authority. A missing, malformed, stale, or spoofed
 head sets no full fallback, runs no worker, and fails. Failure
-fallback workers check out only the raw nonempty PR head or guarded master-push
-`github.sha`. Both paths retain revision verification, commands, and
-environments. Summary now joins the publisher as well: PR and metadata paths
-require it to be skipped, while master-push paths require success.
+fallback workers check out only the trusted event setup's validated PR/push
+SHA. Both paths retain revision verification, commands, and environments.
+Summary now joins the publisher as well: PR and metadata paths require it to
+be skipped, while master-push paths require success.
 
-Push bootstrap and fallback require all four facts together: event `push`,
-`refs/heads/master`, nonempty event `after`, and raw `github.sha == after`.
-Workers and publisher consume that same exact SHA. Missing, mismatched, or
-non-master push identities select neither workers nor publisher and cannot use
-the PR fallback.
+Trusted event setup accepts a fallback identity only as an exact lowercase
+40-hex SHA. PR fallback also requires a coherent
+`refs/pull/<number>/merge` event ref; push fallback requires event `push`,
+`refs/heads/master`, and equal event `after`/`github.sha`. Workers consume only
+that validated output. Missing, uppercase, short, nonhex, ref-name, mismatched,
+or cross-event identities select no fallback worker or publisher. The
+publisher consumes the same validated push SHA, verifies
+`/usr/bin/git rev-parse HEAD` immediately after checkout, and only then exposes
+`BASEROM_URL` to a minimal curl-only step; candidate code runs later without
+the secret. The minimal secret step runs before any candidate code.
 The current Build workflow has no explicit final-dispatch trigger; if that
 supported surface is introduced later, `workflow_dispatch` classifies as full
 and the trigger/topology contracts must be updated together.

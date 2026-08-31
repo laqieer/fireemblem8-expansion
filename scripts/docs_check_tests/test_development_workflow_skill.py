@@ -589,6 +589,28 @@ def classifier_bootstrap_contract_violations(text):
     no_worker_fallback = normalize_policy(
         "worker checkouts never use a merge/default fallback"
     )
+    fallback_requirements = {
+        "fallback-lowercase-sha": ("exact lowercase 40-hex SHA",),
+        "fallback-pr-coherence": ("refs/pull/<number>/merge",),
+        "fallback-push-coherence": (
+            "refs/heads/master",
+            "event after/github.sha",
+        ),
+        "validated-worker-fallback": ("Workers consume only that validated",),
+        "malformed-fallback-rejection": (
+            "Missing, uppercase, short, nonhex, ref-name, mismatched",
+        ),
+        "publisher-revision-verification": (
+            "verifies /usr/bin/git rev-parse HEAD immediately after checkout",
+        ),
+        "publisher-secret-boundary": (
+            "BASEROM_URL",
+            "minimal curl",
+            "candidate code",
+            "without the secret",
+            "secret step runs before any candidate code",
+        ),
+    }
     if bootstrap not in normalized:
         violations.append("trusted-default-bootstrap")
     if exact_head_workers.search(normalized) is None:
@@ -597,6 +619,9 @@ def classifier_bootstrap_contract_violations(text):
         violations.append("incomplete-base-summary-failure")
     if no_worker_fallback not in normalized:
         violations.append("worker-merge-default-fallback")
+    for violation, phrases in fallback_requirements.items():
+        if any(normalize_policy(phrase) not in normalized for phrase in phrases):
+            violations.append(violation)
     return violations
 
 
@@ -3081,6 +3106,31 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "worker-merge-default-fallback",
                 r"worker checkouts\s+never use a merge/default\s+fallback",
                 "worker checkouts may use a merge/default fallback",
+            ),
+            (
+                "accept-non-sha-fallback",
+                "fallback-lowercase-sha",
+                r"exact lowercase\s+40-hex SHA",
+                "any nonempty ref or identity",
+            ),
+            (
+                "remove-publisher-revision-check",
+                "publisher-revision-verification",
+                r"verifies\s+`/usr/bin/git rev-parse HEAD`\s+"
+                r"immediately after checkout",
+                "trusts the checkout action",
+            ),
+            (
+                "expose-secret-to-candidate",
+                "publisher-secret-boundary",
+                r"candidate code runs (?:later )?without\s+the secret",
+                "candidate code runs with the secret",
+            ),
+            (
+                "run-candidate-before-secret",
+                "publisher-secret-boundary",
+                r"secret step runs before any candidate code",
+                "candidate code runs before the secret step",
             ),
         )
         for path in (

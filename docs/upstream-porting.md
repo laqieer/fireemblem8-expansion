@@ -186,9 +186,9 @@ mirrored verifier gates in fail-fast order. `.github/workflows/build.yml`
 carries the same 28 commands with argv/order preserved across its combined
 host, modern, extended-host, and archival jobs, plus the deliberately
 standalone issues #7/#17 documentation-governance workflow gate described
-below. An event router plus mode-specific classifier check precedes the four
-combined workers in CI; the four combined workers run in parallel after that
-decision, and `summary` is their
+below. A no-checkout event identity validator, event router, and mode-specific
+classifier check precede the four combined workers in CI; the four combined
+workers run in parallel after that decision, and `summary` is their
 fail-closed join. Metadata-only PR edits do not invoke local `verify` or those
 workers. Local `verify` runs the same 28 gates in its
 documented order and therefore does not reproduce CI wall-clock parallelism.
@@ -204,11 +204,13 @@ selected root is both the subprocess working directory and the pilot
 baseline's `--repository-root`; there is no per-step working-directory
 override. Before either a dry run or execution, the source tool parses the
 target checkout's Build workflow as bounded UTF-8 data without importing or
-executing target Python. The event router, mode-specific classifier, and four reviewed worker jobs must have
+executing target Python. The event identity validator, event router,
+mode-specific classifier, and four reviewed worker jobs must have
 the exact same complete ordered step sequences as the source: step count,
 unique required names, setup-versus-gate role, action and immutable SHA, run
 argv, `env`/`with` mappings, direct fields, and no working-directory override.
-The complete job-name order must also match, so extra jobs fail. Both setup jobs are parsed and never become a 29th local gate. The 28 gate
+The complete job-name order must also match, so extra jobs fail. All three
+setup jobs are parsed and never become a 29th local gate. The 28 gate
 commands are then checked against source `gates()`. An unnamed non-checkout
 step, duplicate setup/name, complex key form, or older, newer, missing, added,
 removed, reordered, or changed target step fails closed instead of running
@@ -216,10 +218,10 @@ source-defined evidence against a different checkout contract.
 The same structure closes execution context before step comparison:
 workflow-level keys are exactly reviewed `name`, triggers, read-only
 permissions, and jobs, with workflow `env`, `defaults`, and `concurrency`
-absent. The router and mode-classifier contain only their reviewed names,
-runner, timeout, outputs, environment, dependencies/conditions, and steps.
-Each combined job contains only its classifier dependency and fail-closed
-condition, `runs-on: ubuntu-latest`,
+absent. The identity validator, router, and mode-classifier contain only their
+reviewed names, runner, timeout, outputs, environment,
+dependencies/conditions, and steps. Each combined job contains only its
+identity/classifier dependencies and fail-closed condition, `runs-on: ubuntu-latest`,
 `timeout-minutes: 60`, its exact allowlisted environment, and `steps`.
 Classifier authority uses direct PR-base or push identities, with a
 trusted-default-branch failure bootstrap only when PR base identity is absent
@@ -231,21 +233,26 @@ incomplete/malformed/incoherent base, and check out only that exact nonempty
 head during normal classification. The latter state audits all four workers
 and then fails summary; a valid base SHA may remain diagnostic data but cannot
 authorize a checkout.
-After classifier failure only, a PR with a nonempty direct event head runs the
-same four workers at that raw exact head. A guarded master-push failure uses
-only nonempty raw `github.sha`, runs those workers plus the publisher, and
-never crosses into the PR fallback. Missing event-specific SHA runs no worker
-or publisher. Summary audits worker and publisher conclusions and always fails
-the classifier-failure path even when every fallback job succeeds.
+After classifier failure only, trusted event setup permits fallback solely for
+an exact lowercase 40-hex SHA. PR fallback additionally requires a coherent
+`refs/pull/<number>/merge` event ref; push fallback requires
+`refs/heads/master` and equal event `after`/`github.sha`. Workers consume only
+that validated output, and the publisher consumes only the validated push
+output. Missing, uppercase, short, nonhex, ref-name, mismatched, or cross-event
+identities run no fallback worker or publisher. Summary audits worker and
+publisher conclusions and always fails the classifier-failure path even when
+every validated fallback job succeeds.
 Containers, services, strategies/matrices, permissions, defaults, dependency
 or condition substitutions, deployment environment, concurrency, reusable-job
 `uses`/secrets, custom shell context, unknown fields, and complex, duplicate,
 or reordered keys fail before dry-run.
-The complete eight-job structure preserves the six closed issue #176 jobs and
-adds only the closed, non-mirrored router and mode-classifier setup jobs.
-`patch-release` must retain its master-push-only condition, Ubuntu/60-minute
-context, exact commit env, six ordered publisher steps, pinned checkout/upload
-actions, scoped base-image secret, and upload mapping. `summary` must retain
+The complete nine-job structure preserves the six closed issue #176 jobs and
+adds only the closed, non-mirrored identity/router/mode-classifier setup jobs.
+`patch-release` must retain its validated master-push-only condition,
+Ubuntu/60-minute context, exact commit env, eight ordered publisher steps,
+pinned checkout/upload actions, immediate exact-revision verification,
+curl-only scoped base-image secret after verification, secret-free candidate
+code, and upload mapping. `summary` must retain
 `always()`, its reliably evaluated dynamic summary name, the classifier plus exact ordered
 worker/publisher needs, Ubuntu/five-minute context, exact classifier/result
 env, metadata-skip and full-run validation, and missing/stale identity

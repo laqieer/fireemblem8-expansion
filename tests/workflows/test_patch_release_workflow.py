@@ -71,7 +71,7 @@ def patch_release_download_command(workflow: str) -> list[str]:
         command
         for step in parse_patch_release_run_commands(workflow)
         for command in step
-        if command and command[0] == "curl"
+        if command and command[0] in {"curl", "/usr/bin/curl"}
     ]
     if len(commands) != 1:
         raise AssertionError("publisher job must define exactly one curl download command")
@@ -110,8 +110,25 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
 
     def test_trusted_push_only_and_no_pr_publication(self):
         self.assertIn("github.event_name == 'push'", self.patch_job)
-        self.assertIn("github.ref == 'refs/heads/master'", self.patch_job)
-        self.assertNotIn("needs:", self.patch_job)
+        self.assertIn("needs.event-identity.outputs.fallback_kind == 'push'", self.patch_job)
+        self.assertIn(
+            "needs.event-identity.outputs.fallback_sha == github.event.after",
+            self.patch_job,
+        )
+        self.assertIn(
+            "needs.event-identity.outputs.fallback_sha == github.sha",
+            self.patch_job,
+        )
+        self.assertIn("needs: [event-identity]", self.patch_job)
+        self.assertNotIn("needs: [event-classifier", self.patch_job)
+        self.assertIn(
+            "PATCH_COMMIT: ${{ needs.event-identity.outputs.fallback_sha }}",
+            self.patch_job,
+        )
+        self.assertIn(
+            "ref: ${{ needs.event-identity.outputs.fallback_sha }}",
+            self.patch_job,
+        )
         self.assertNotIn("pull_request_target", self.text)
         self.assertEqual(
             self.patch_job.count(
@@ -128,6 +145,29 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertNotIn("BASEROM_URL:", self.text.split("\n  patch-release:\n", 1)[0])
         self.assertIn("--proto '=https'", self.patch_job)
         self.assertNotIn("set -x", self.patch_job)
+        secret_step = re.search(
+            r"(?ms)^    - name: Download private base image\n"
+            r"(?P<body>.*?)(?=^    - )",
+            self.patch_job,
+        )
+        self.assertIsNotNone(secret_step)
+        secret_body = secret_step.group("body")
+        self.assertIn("/usr/bin/curl", secret_body)
+        for candidate_command in ("python3", "./", "make ", "scripts."):
+            self.assertNotIn(candidate_command, secret_body)
+
+    def test_exact_revision_is_verified_before_code_or_secret_access(self):
+        checkout = self.patch_job.index("uses: actions/checkout@")
+        verification = self.patch_job.index("- name: Verify patch candidate revision")
+        first_candidate_command = self.patch_job.index("sudo apt-get update")
+        secret = self.patch_job.index("BASEROM_URL: ${{ secrets.BASEROM_URL }}")
+        self.assertLess(checkout, verification)
+        self.assertLess(verification, secret)
+        self.assertLess(secret, first_candidate_command)
+        verification_step = self.patch_job[verification:secret]
+        self.assertIn('ACTUAL_SHA="$(/usr/bin/git rev-parse HEAD)"', verification_step)
+        self.assertIn('test "$ACTUAL_SHA" = "$PATCH_COMMIT"', verification_step)
+        self.assertNotIn("BASEROM_URL", verification_step)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)
@@ -176,7 +216,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     if argument in ("--proto", "--proto-redir"):
                         skip_next = True
                         continue
-                    if argument == "$base_image":
+                    if argument in {"$base_image", "$RUNNER_TEMP/base-image"}:
                         command.append(str(output))
                     elif argument == "$BASEROM_URL":
                         command.append(
@@ -227,7 +267,8 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
 
     def test_artifact_is_exactly_named_allowlisted_and_retained_for_30_days(self):
         self.assertIn(
-            "modern-release-all-locales-all-features-aapcs-bps-${{ github.sha }}",
+            "modern-release-all-locales-all-features-aapcs-bps-${{ "
+            "needs.event-identity.outputs.fallback_sha }}",
             self.patch_job,
         )
         self.assertIn("retention-days: 30", self.patch_job)

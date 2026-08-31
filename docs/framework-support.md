@@ -27,21 +27,31 @@ directly.
 **Automatic Build CI is the only host this repository re-verifies on every
 source-changing push/PR.** A PR candidate uses the complete combined Build
 gate and Copilot review concurrently. Parsed body/title-only edits retain the
-router plus distinct running `metadata-classifier` and `metadata-summary`
+identity validator/router plus distinct running `metadata-classifier` and
+`metadata-summary`
 contexts; skipped worker names are non-semantic and inadmissible as candidate
 evidence. Base, mixed, unknown/incomplete,
 opened, synchronize, and reopened events with complete identity fail closed to
 the complete graph. Any missing, malformed, or incoherent base ref/SHA with a
 valid exact PR head also runs the four workers at that head and fails normal
 summary; a valid base SHA may be retained only for diagnostics. Missing,
-malformed, stale, or spoofed head identity runs none. A classifier
-failure with a nonempty PR event head runs
-all four workers at that exact raw head and then fails summary. A master-push
-classifier failure does the same at nonempty raw `github.sha` and audits the
-master-only publisher before failing; without an event-specific fallback SHA,
-it starts no worker or publisher. The classifier bootstrap may use the trusted
+malformed, stale, or spoofed head identity runs none. A classifier failure with
+a validated PR event head runs all four workers at that exact head and then
+fails summary. A master-push classifier failure does the same at validated
+`github.sha` and audits the master-only publisher before failing; without a
+validated event-specific fallback SHA, it starts no worker or publisher. The
+classifier bootstrap may use the trusted
 default branch when PR base identity is missing or unusable; worker checkouts
 never use a merge/default fallback.
+Trusted event setup accepts fallback only as an exact lowercase 40-hex SHA.
+PR fallback also requires a coherent `refs/pull/<number>/merge` event ref;
+push fallback requires `refs/heads/master` and equal event
+`after`/`github.sha`. Workers consume only that validated SHA. Missing,
+uppercase, short, nonhex, ref-name, mismatched, or cross-event identities run
+no fallback worker/publisher. The publisher uses the same validated push SHA,
+verifies `/usr/bin/git rev-parse HEAD` immediately after checkout, and exposes
+`BASEROM_URL` only to the later minimal curl step; candidate code runs without
+the secret. The minimal secret step runs before any candidate code.
 The same Build jobs rerun on `master`; only the
 technically used patch publisher is master-only. Arch and macOS support is
 exercised by the same script logic but is not re-run in CI; treat regressions
@@ -132,10 +142,11 @@ no ROM build or network access is required for either.
 
 ### Consolidated Build CI
 
-Prefer focused local checks during iteration. A base-authoritative
-`event-router` and mode-specific classifier check precede candidate `host-tests`, `build`,
-`extended-host-tests`, `legacy`, and fail-closed `summary` jobs plus Copilot
-review. Metadata uses a distinct running `metadata-summary`; normal `summary`
+Prefer focused local checks during iteration. A no-checkout `event-identity`
+validator, base-authoritative `event-router`, and mode-specific classifier
+check precede candidate `host-tests`, `build`, `extended-host-tests`, `legacy`,
+and fail-closed `summary` jobs plus Copilot review. Metadata uses a distinct
+running `metadata-summary`; normal `summary`
 is the sole candidate attestation and requires all four workers from that same
 full run. Only parsed body/title-only
 edits skip the four expensive workers. A

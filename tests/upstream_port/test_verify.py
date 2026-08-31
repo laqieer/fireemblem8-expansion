@@ -454,7 +454,8 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
 
         for clause in (
             "four combined workers run in parallel",
-            "event router plus mode-specific classifier check precedes the four",
+            "event identity validator, event router, and mode-specific "
+            "classifier check precede the four",
             "`summary` is their fail-closed join",
             "install both the supported modern toolchain",
             "explicit archival `make legacy` prerequisites",
@@ -1044,13 +1045,14 @@ class VerifyCliCwdTests(unittest.TestCase):
             ):
                 verify_mod.run_gates(target_root, dry_run=True)
 
-    def test_event_router_and_mode_are_closed_but_not_local_gates(self):
+    def test_event_setup_router_and_mode_are_closed_but_not_local_gates(self):
         with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
             original = handle.read()
         structure = verify_mod._parse_workflow_structure_text(original)
         self.assertEqual(
             structure[1],
             (
+                "event-identity",
                 "event-router",
                 "event-classifier",
                 "host-tests",
@@ -1069,20 +1071,30 @@ class VerifyCliCwdTests(unittest.TestCase):
             )
         }
         self.assertTrue(
-            {"event-router", "event-classifier"}.isdisjoint(gate_jobs)
+            {"event-identity", "event-router", "event-classifier"}.isdisjoint(
+                gate_jobs
+            )
         )
 
         mutations = (
+            original.replace(
+                '[[ "$1" =~ ^[0-9a-f]{40}$ && "$2" = "\\"$1\\"" ]]',
+                '[[ -n "$1" ]]',
+                1,
+            ),
+            original.replace(
+                '"$EVENT_REF" =~ ^refs/pull/[1-9][0-9]*/merge$',
+                '-n "$EVENT_REF"',
+                1,
+            ),
             original.replace(
                 "      expected_head: ${{ steps.classify.outputs.expected_head }}",
                 "      expected_head: attacker",
                 1,
             ),
             original.replace(
-                "      CLASSIFIER_REF: ${{ (github.event_name == 'pull_request' && "
-                "(github.event.pull_request.base.sha || format('refs/heads/{0}', "
-                "github.event.repository.default_branch))) || "
-                "(github.event_name == 'push' && github.event.after) || '' }}",
+                "      CLASSIFIER_REF: ${{ "
+                "needs.event-identity.outputs.classifier_ref }}",
                 "      CLASSIFIER_REF: ${{ github.sha }}",
                 1,
             ),
@@ -1134,7 +1146,10 @@ class VerifyCliCwdTests(unittest.TestCase):
             original = handle.read()
         for job_name in verify_mod._COMBINED_JOBS:
             for old, new in (
-                ("    needs: [event-classifier]", "    needs: []"),
+                (
+                    "    needs: [event-identity, event-classifier]",
+                    "    needs: [event-classifier]",
+                ),
                 (
                     f"    if: {verify_mod._WORKER_CONDITION}",
                     "    if: ${{ needs.event-classifier.outputs."
@@ -1382,18 +1397,28 @@ class VerifyCliCwdTests(unittest.TestCase):
             for job_name, label, old, new in (
                 (
                         "patch-release",
+                        "needs",
+                        "    needs: [event-identity]",
+                        "    needs: [event-classifier]",
+                ),
+                (
+                        "patch-release",
                         "if",
-                        "    if: ${{ github.event_name == 'push' && "
-                        "github.ref == 'refs/heads/master' && "
-                        "github.event.after != '' && "
-                        "github.sha == github.event.after }}",
+                        f"    if: {verify_mod._PUBLISHER_CONDITION}",
                         "    if: always()",
                 ),
                 (
                         "patch-release",
                         "env",
-                        "      PATCH_COMMIT: ${{ github.sha }}",
+                        "      PATCH_COMMIT: ${{ "
+                        "needs.event-identity.outputs.fallback_sha }}",
                         "      PATCH_COMMIT: attacker",
+                ),
+                (
+                        "patch-release",
+                        "revision",
+                        '        test "$ACTUAL_SHA" = "$PATCH_COMMIT"',
+                        "        true",
                 ),
                 (
                         "patch-release",
@@ -1428,7 +1453,8 @@ class VerifyCliCwdTests(unittest.TestCase):
                 (
                         "summary",
                         "needs",
-                        "    needs: [event-classifier, host-tests, build, "
+                        "    needs: [event-identity, event-classifier, "
+                        "host-tests, build, "
                         "extended-host-tests, legacy, patch-release]",
                         "    needs: [build, host-tests, legacy]",
                 ),

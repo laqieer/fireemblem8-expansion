@@ -7,9 +7,9 @@ or executes the canonical upstream ref/tree. It is a thin, literal mirror of
 the four combined workers in `.github/workflows/build.yml`. Before execution,
 it parses the selected target checkout's workflow as data and requires exact
 semantic equivalence with both the source workflow and this module's reviewed
-gate list; target Python is never imported. Only the event classifier,
-master-only publisher, and serial summary jobs have no local gate equivalent.
-The one DELIBERATE
+gate list; target Python is never imported. The event identity, router,
+classifier, master-only publisher, and serial summary jobs have no local gate
+equivalent. The one DELIBERATE
 command-level exception is build.yml's
 "Check documentation (issues #7/#17)" step, which remains a required
 standalone workflow gate outside this mirror. Run that standalone command pair
@@ -36,9 +36,14 @@ _SOURCE_ROOT = os.path.realpath(
 )
 _BUILD_WORKFLOW_RELATIVE = os.path.join(".github", "workflows", "build.yml")
 _COMBINED_JOBS = ("host-tests", "build", "extended-host-tests", "legacy")
+_EVENT_IDENTITY_JOB = "event-identity"
 _EVENT_ROUTER_JOB = "event-router"
 _EVENT_CLASSIFIER_JOB = "event-classifier"
-_EXPECTED_JOBS = (_EVENT_ROUTER_JOB, _EVENT_CLASSIFIER_JOB) + _COMBINED_JOBS + (
+_EXPECTED_JOBS = (
+    _EVENT_IDENTITY_JOB,
+    _EVENT_ROUTER_JOB,
+    _EVENT_CLASSIFIER_JOB,
+) + _COMBINED_JOBS + (
     "patch-release",
     "summary",
 )
@@ -51,12 +56,7 @@ _CHECKOUT_WITH = (
         "${{ (needs.event-classifier.result == 'success' && "
         "needs.event-classifier.outputs.expected_head) || "
         "(needs.event-classifier.result == 'failure' && "
-        "github.event_name == 'pull_request' && "
-        "github.event.pull_request.head.sha) || "
-        "(needs.event-classifier.result == 'failure' && "
-        "github.event_name == 'push' && github.ref == 'refs/heads/master' && "
-        "github.event.after != '' && github.sha == github.event.after && "
-        "github.sha) || '' }}",
+        "needs.event-identity.outputs.fallback_sha) || '' }}",
     ),
     ("submodules", "recursive"),
 )
@@ -65,15 +65,12 @@ _CLASSIFIER_CHECKOUT_WITH = (
     ("persist-credentials", "false"),
     (
         "ref",
-        "${{ (github.event_name == 'pull_request' && "
-        "(github.event.pull_request.base.sha || format('refs/heads/{0}', "
-        "github.event.repository.default_branch))) || "
-        "(github.event_name == 'push' && github.event.after) || '' }}",
+        "${{ needs.event-identity.outputs.classifier_ref }}",
     ),
 )
 _PATCH_CHECKOUT_WITH = (
     ("persist-credentials", "false"),
-    ("ref", "${{ github.sha }}"),
+    ("ref", "${{ needs.event-identity.outputs.fallback_sha }}"),
     ("submodules", "recursive"),
 )
 _UPLOAD_USES = (
@@ -81,7 +78,11 @@ _UPLOAD_USES = (
 )
 _UPLOAD_WITH = (
     ("if-no-files-found", "error"),
-    ("name", "modern-release-all-locales-all-features-aapcs-bps-${{ github.sha }}"),
+    (
+        "name",
+        "modern-release-all-locales-all-features-aapcs-bps-${{ "
+        "needs.event-identity.outputs.fallback_sha }}",
+    ),
     ("path", "${{ runner.temp }}/patch-artifact"),
     ("retention-days", "30"),
 )
@@ -89,23 +90,13 @@ _EXPECTED_BUILD_SHA_EXPRESSION = (
     "${{ (needs.event-classifier.result == 'success' && "
     "needs.event-classifier.outputs.expected_head) || "
     "(needs.event-classifier.result == 'failure' && "
-    "github.event_name == 'pull_request' && "
-    "github.event.pull_request.head.sha) || "
-    "(needs.event-classifier.result == 'failure' && "
-    "github.event_name == 'push' && github.ref == 'refs/heads/master' && "
-    "github.event.after != '' && github.sha == github.event.after && "
-    "github.sha) || '' }}"
+    "needs.event-identity.outputs.fallback_sha) || '' }}"
 )
 _CLASSIFIER_REF_EXPRESSION = (
-    "${{ (github.event_name == 'pull_request' && "
-    "(github.event.pull_request.base.sha || format('refs/heads/{0}', "
-    "github.event.repository.default_branch))) || "
-    "(github.event_name == 'push' && github.event.after) || '' }}"
+    "${{ needs.event-identity.outputs.classifier_ref }}"
 )
 _CLASSIFIER_EXPECTED_SHA_EXPRESSION = (
-    "${{ (github.event_name == 'pull_request' && "
-    "github.event.pull_request.base.sha) || "
-    "(github.event_name == 'push' && github.event.after) || '' }}"
+    "${{ needs.event-identity.outputs.classifier_expected_sha }}"
 )
 _WORKER_CONDITION = (
     "${{ always() && ((needs.event-classifier.result == 'success' && "
@@ -124,10 +115,22 @@ _WORKER_CONDITION = (
     "needs.event-classifier.outputs.expected_base == '' && "
     "github.event.after != ''))) || "
     "(needs.event-classifier.result == 'failure' && "
+    "needs.event-identity.result == 'success' && "
     "((github.event_name == 'pull_request' && "
-    "github.event.pull_request.head.sha != '') || "
-    "(github.event_name == 'push' && github.ref == 'refs/heads/master' && "
-    "github.event.after != '' && github.sha == github.event.after)))) }}"
+    "needs.event-identity.outputs.fallback_kind == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "github.event.pull_request.head.sha) || "
+    "(github.event_name == 'push' && "
+    "needs.event-identity.outputs.fallback_kind == 'push' && "
+    "needs.event-identity.outputs.fallback_sha == github.event.after && "
+    "needs.event-identity.outputs.fallback_sha == github.sha)))) }}"
+)
+_PUBLISHER_CONDITION = (
+    "${{ always() && needs.event-identity.result == 'success' && "
+    "github.event_name == 'push' && "
+    "needs.event-identity.outputs.fallback_kind == 'push' && "
+    "needs.event-identity.outputs.fallback_sha == github.event.after && "
+    "needs.event-identity.outputs.fallback_sha == github.sha }}"
 )
 _DYNAMIC_JOB_NAMES = {
     "event-classifier": (
@@ -141,14 +144,81 @@ _DYNAMIC_JOB_NAMES = {
         "&& 'metadata-summary' || 'summary' }}"
     ),
 }
+_IDENTITY_COMMANDS = (
+    ("is_lower_sha()", "{"),
+    ("[[", "$1", "=~", "^[0-9a-f]{40}$", "&&", "$2", "=", '"$1"', "]]"),
+    ("}",),
+    ("classifier_expected_sha=",),
+    ("classifier_ref=refs/heads/$DEFAULT_BRANCH",),
+    ("fallback_kind=none",),
+    ("fallback_sha=",),
+    ("/usr/bin/git", "check-ref-format", "$classifier_ref"),
+    ("if", "[[", "$EVENT_NAME", "=", "pull_request", "]];", "then"),
+    ("if", "is_lower_sha", "$PR_BASE_SHA", "$PR_BASE_SHA_JSON;", "then"),
+    ("classifier_expected_sha=$PR_BASE_SHA",),
+    ("classifier_ref=$PR_BASE_SHA",),
+    ("fi",),
+    (
+        "if",
+        "[[",
+        "$EVENT_REF",
+        "=~",
+        "^refs/pull/[1-9][0-9]*/merge$",
+        "]]",
+        "&&",
+        "is_lower_sha",
+        "$PR_HEAD_SHA",
+        "$PR_HEAD_SHA_JSON;",
+        "then",
+    ),
+    ("fallback_kind=pull_request",),
+    ("fallback_sha=$PR_HEAD_SHA",),
+    ("fi",),
+    (
+        "elif",
+        "[[",
+        "$EVENT_NAME",
+        "=",
+        "push",
+        "&&",
+        "$EVENT_REF",
+        "=",
+        "refs/heads/master",
+        "]]",
+        "&&",
+        "is_lower_sha",
+        "$PUSH_SHA",
+        "$PUSH_SHA_JSON",
+        "&&",
+        "is_lower_sha",
+        "$RAW_SHA",
+        "$RAW_SHA_JSON",
+        "&&",
+        "[[",
+        "$RAW_SHA",
+        "=",
+        "$PUSH_SHA",
+        "]];",
+        "then",
+    ),
+    ("classifier_expected_sha=$PUSH_SHA",),
+    ("classifier_ref=$PUSH_SHA",),
+    ("fallback_kind=push",),
+    ("fallback_sha=$PUSH_SHA",),
+    ("fi",),
+    ("{",),
+    ("echo", "classifier_expected_sha=$classifier_expected_sha"),
+    ("echo", "classifier_ref=$classifier_ref"),
+    ("echo", "fallback_kind=$fallback_kind"),
+    ("echo", "fallback_sha=$fallback_sha"),
+    ("}", ">>", "$GITHUB_OUTPUT"),
+)
 _CLASSIFIER_VERIFY_COMMANDS = (
     ("ACTUAL_SHA=$(git rev-parse HEAD)",),
     ("printf", "classifier.sha=%s\\n", "$ACTUAL_SHA"),
     ("if", "[", "-n", "$CLASSIFIER_EXPECTED_SHA", "];", "then"),
     ("test", "$ACTUAL_SHA", "=", "$CLASSIFIER_EXPECTED_SHA"),
     ("else",),
-    ("test", "$GITHUB_EVENT_NAME", "=", "pull_request"),
-    ("test", "-z", "$PR_BASE_SHA"),
     ("test", "$CLASSIFIER_REF", "=", "refs/heads/$DEFAULT_BRANCH"),
     ("fi",),
 )
@@ -189,6 +259,10 @@ _CLASSIFIER_COMMANDS = (
         "$PR_BASE_SHA",
         "=~",
         "^[0-9a-f]{40}$",
+        "&&",
+        "$PR_BASE_SHA_JSON",
+        "=",
+        '"$PR_BASE_SHA"',
         "]];",
         "then",
     ),
@@ -197,13 +271,17 @@ _CLASSIFIER_COMMANDS = (
     (
         "if",
         "[[",
+        "$VALIDATED_FALLBACK_KIND",
+        "=",
+        "pull_request",
+        "&&",
+        "$VALIDATED_FALLBACK_SHA",
+        "=",
         "$PR_HEAD_SHA",
-        "=~",
-        "^[0-9a-f]{40}$",
         "]];",
         "then",
     ),
-    ("expected_head=$PR_HEAD_SHA",),
+    ("expected_head=$VALIDATED_FALLBACK_SHA",),
     ("head_valid=true",),
     ("fi",),
     (
@@ -231,25 +309,17 @@ _CLASSIFIER_COMMANDS = (
     (
         "elif",
         "[[",
-        "$GITHUB_EVENT_NAME",
+        "$VALIDATED_FALLBACK_KIND",
         "=",
         "push",
         "&&",
-        "$GITHUB_REF",
-        "=",
-        "refs/heads/master",
-        "&&",
-        "$PUSH_SHA",
-        "=~",
-        "^[0-9a-f]{40}$",
-        "&&",
-        "$RAW_PUSH_SHA",
+        "$VALIDATED_FALLBACK_SHA",
         "=",
         "$PUSH_SHA",
         "]];",
         "then",
     ),
-    ("expected_head=$PUSH_SHA",),
+    ("expected_head=$VALIDATED_FALLBACK_SHA",),
     ("head_valid=true",),
     ("identity_valid=true",),
     ("fi",),
@@ -385,6 +455,15 @@ _MODE_COMMANDS = (
     ("fi",),
 )
 _EXPECTED_JOB_OUTPUTS = {
+    "event-identity": (
+        (
+            "classifier_expected_sha",
+            "${{ steps.identity.outputs.classifier_expected_sha }}",
+        ),
+        ("classifier_ref", "${{ steps.identity.outputs.classifier_ref }}"),
+        ("fallback_kind", "${{ steps.identity.outputs.fallback_kind }}"),
+        ("fallback_sha", "${{ steps.identity.outputs.fallback_sha }}"),
+    ),
     "event-router": (
         ("classification", "${{ steps.classify.outputs.classification }}"),
         ("expected_base", "${{ steps.classify.outputs.expected_base }}"),
@@ -407,6 +486,22 @@ _EXPECTED_JOB_OUTPUTS = {
     ),
 }
 _EXPECTED_JOB_ENV = {
+    "event-identity": (
+        ("BASH_ENV", "''"),
+        ("DEFAULT_BRANCH", "${{ github.event.repository.default_branch }}"),
+        ("ENV", "''"),
+        ("EVENT_NAME", "${{ github.event_name }}"),
+        ("EVENT_REF", "${{ github.ref }}"),
+        ("PATH", "/usr/bin:/bin"),
+        ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
+        ("PR_BASE_SHA_JSON", "${{ toJSON(github.event.pull_request.base.sha) }}"),
+        ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
+        ("PR_HEAD_SHA_JSON", "${{ toJSON(github.event.pull_request.head.sha) }}"),
+        ("PUSH_SHA", "${{ github.event.after }}"),
+        ("PUSH_SHA_JSON", "${{ toJSON(github.event.after) }}"),
+        ("RAW_SHA", "${{ github.sha }}"),
+        ("RAW_SHA_JSON", "${{ toJSON(github.sha) }}"),
+    ),
     "event-router": (
         ("CLASSIFIER_EXPECTED_SHA", _CLASSIFIER_EXPECTED_SHA_EXPRESSION),
         ("CLASSIFIER_REF", _CLASSIFIER_REF_EXPRESSION),
@@ -414,9 +509,17 @@ _EXPECTED_JOB_ENV = {
         ("PR_BASE_REF", "${{ github.event.pull_request.base.ref }}"),
         ("PR_BASE_REF_JSON", "${{ toJSON(github.event.pull_request.base.ref) }}"),
         ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
+        ("PR_BASE_SHA_JSON", "${{ toJSON(github.event.pull_request.base.sha) }}"),
         ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
         ("PUSH_SHA", "${{ github.event.after }}"),
-        ("RAW_PUSH_SHA", "${{ github.sha }}"),
+        (
+            "VALIDATED_FALLBACK_KIND",
+            "${{ needs.event-identity.outputs.fallback_kind }}",
+        ),
+        (
+            "VALIDATED_FALLBACK_SHA",
+            "${{ needs.event-identity.outputs.fallback_sha }}",
+        ),
     ),
     "event-classifier": (
         ("CLASSIFICATION", "${{ needs.event-router.outputs.classification }}"),
@@ -439,7 +542,9 @@ _EXPECTED_JOB_ENV = {
             "63b22f3eb8a8051af30bd80c4795b355e439e7ef",
         ),
     ),
-    "patch-release": (("PATCH_COMMIT", "${{ github.sha }}"),),
+    "patch-release": (
+        ("PATCH_COMMIT", "${{ needs.event-identity.outputs.fallback_sha }}"),
+    ),
     "summary": (
         ("BUILD_RESULT", "${{ needs.build.result }}"),
         ("CLASSIFICATION", "${{ needs.event-classifier.outputs.classification }}"),
@@ -453,6 +558,9 @@ _EXPECTED_JOB_ENV = {
         ),
         ("CLASSIFIER_RESULT", "${{ needs.event-classifier.result }}"),
         ("EXTENDED_HOST_TESTS_RESULT", "${{ needs.extended-host-tests.result }}"),
+        ("FALLBACK_IDENTITY_RESULT", "${{ needs.event-identity.result }}"),
+        ("FALLBACK_KIND", "${{ needs.event-identity.outputs.fallback_kind }}"),
+        ("FALLBACK_SHA", "${{ needs.event-identity.outputs.fallback_sha }}"),
         ("FULL_FALLBACK", "${{ needs.event-classifier.outputs.full_fallback }}"),
         ("HEAD_VALID", "${{ needs.event-classifier.outputs.head_valid }}"),
         ("HOST_TESTS_RESULT", "${{ needs.host-tests.result }}"),
@@ -510,6 +618,9 @@ _SCRUBBED_PILOT_ENV = (
     "PYTHONPATH: ''",
 )
 _EXPECTED_STEP_ROLES = {
+    "event-identity": (
+        ("setup", "Validate trusted event identities"),
+    ),
     "event-router": (
         ("setup", None),
         ("setup", "Verify classifier authority revision"),
@@ -571,7 +682,16 @@ _EXPECTED_STEP_ROLES = {
         ("gate", "Build archival lane without a copyrighted baserom"),
         ("gate", "Validate pinned archival payload identities"),
     ),
-    "patch-release": (("publisher", None),) * 6,
+    "patch-release": (
+        ("publisher", None),
+        ("publisher", "Verify patch candidate revision"),
+        ("publisher", "Download private base image"),
+        ("publisher", None),
+        ("publisher", None),
+        ("publisher", None),
+        ("publisher", "Create and verify patch artifact"),
+        ("publisher", None),
+    ),
     "summary": (("summary", "Render fail-closed combined Build summary"),),
 }
 
@@ -852,8 +972,18 @@ def _parse_job_context(job_name, body):
     if len(names) != len(set(names)):
         raise ValueError(f"job {job_name!r} contains duplicate direct keys")
     expected_names = {
+        "event-identity": [
+            "name",
+            "runs-on",
+            "timeout-minutes",
+            "outputs",
+            "env",
+            "steps",
+        ],
         "event-router": [
             "name",
+            "if",
+            "needs",
             "runs-on",
             "timeout-minutes",
             "outputs",
@@ -881,7 +1011,14 @@ def _parse_job_context(job_name, body):
             ]
             for name in _COMBINED_JOBS
         },
-        "patch-release": ["if", "runs-on", "timeout-minutes", "env", "steps"],
+        "patch-release": [
+            "needs",
+            "if",
+            "runs-on",
+            "timeout-minutes",
+            "env",
+            "steps",
+        ],
         "summary": [
             "name",
             "if",
@@ -912,8 +1049,8 @@ def _parse_job_context(job_name, body):
         ]
         if name == "name":
             expected = (
-                "event-router"
-                if job_name == "event-router"
+                job_name
+                if job_name in {"event-identity", "event-router"}
                 else _DYNAMIC_JOB_NAMES[job_name]
             )
             if value != expected or nested:
@@ -924,13 +1061,12 @@ def _parse_job_context(job_name, body):
                 _WORKER_CONDITION
                 if job_name in _COMBINED_JOBS
                 else {
-                    "event-classifier": "always()",
-                    "patch-release": (
-                        "${{ github.event_name == 'push' && "
-                        "github.ref == 'refs/heads/master' && "
-                        "github.event.after != '' && "
-                        "github.sha == github.event.after }}"
+                    "event-router": (
+                        "${{ always() && "
+                        "needs.event-identity.result == 'success' }}"
                     ),
+                    "event-classifier": "always()",
+                    "patch-release": _PUBLISHER_CONDITION,
                     "summary": "always()",
                 }[job_name]
             )
@@ -939,12 +1075,13 @@ def _parse_job_context(job_name, body):
             values[name] = value
         elif name == "needs":
             expected = (
-                "[event-router]"
+                "[event-identity]"
+                if job_name in {"event-router", "patch-release"}
+                else "[event-router]"
                 if job_name == "event-classifier"
-                else
-                "[event-classifier]"
+                else "[event-identity, event-classifier]"
                 if job_name in _COMBINED_JOBS
-                else "[event-classifier, host-tests, build, "
+                else "[event-identity, event-classifier, host-tests, build, "
                 "extended-host-tests, legacy, patch-release]"
             )
             if value != expected or nested:
@@ -959,7 +1096,8 @@ def _parse_job_context(job_name, body):
         elif name == "timeout-minutes":
             expected = (
                 "5"
-                if job_name in {"event-router", "event-classifier", "summary"}
+                if job_name
+                in {"event-identity", "event-router", "event-classifier", "summary"}
                 else "60"
             )
             if value != expected or nested:
@@ -1148,7 +1286,17 @@ def _parse_step(block, job_name, index):
             values[name] = scalar
 
     name = values.get("name")
-    if job_name == "event-router":
+    if job_name == "event-identity":
+        if (
+            index != 0
+            or name != "Validate trusted event identities"
+            or set(values) != {"id", "name", "run"}
+            or values["id"] != "identity"
+            or values["run"] != _IDENTITY_COMMANDS
+        ):
+            raise ValueError(f"{step_label} trusted identity setup differs")
+        role = "setup"
+    elif job_name == "event-router":
         if index == 0:
             if (
                 name is not None
@@ -1196,28 +1344,86 @@ def _parse_step(block, job_name, index):
     elif job_name == "patch-release":
         expected_fields = (
             {"uses", "with"}
-            if index in {0, 5}
-            else {"run", "env"}
-            if index == 4
+            if index in {0, 7}
+            else {"name", "env", "run"}
+            if index in {1, 2, 6}
             else {"run"}
         )
-        if name is not None or set(values) != expected_fields:
+        expected_name = {
+            1: "Verify patch candidate revision",
+            2: "Download private base image",
+            6: "Create and verify patch artifact",
+        }.get(index)
+        if name != expected_name or set(values) != expected_fields:
             raise ValueError(f"{step_label} publisher mapping differs")
         if index == 0 and (
             values["uses"] != _CHECKOUT_USES
             or values["with"] != _PATCH_CHECKOUT_WITH
         ):
             raise ValueError(f"{step_label} checkout action differs")
-        if index == 4 and values["env"] != (
-            ("BASEROM_URL", "${{ secrets.BASEROM_URL }}"),
+        if index == 1 and (
+            values["env"]
+            != (
+                ("BASH_ENV", "''"),
+                ("ENV", "''"),
+                ("GIT_CONFIG_COUNT", "'0'"),
+                ("GIT_CONFIG_GLOBAL", "/dev/null"),
+                ("GIT_CONFIG_NOSYSTEM", "'1'"),
+                ("GIT_CONFIG_SYSTEM", "/dev/null"),
+                ("GIT_NO_LAZY_FETCH", "'1'"),
+                ("GIT_NO_REPLACE_OBJECTS", "'1'"),
+                ("PATH", "/usr/bin:/bin"),
+            )
+            or values["run"]
+            != (
+                ("ACTUAL_SHA=$(/usr/bin/git rev-parse HEAD)",),
+                ("printf", "patch.checkout.sha=%s\\n", "$ACTUAL_SHA"),
+                ("test", "$ACTUAL_SHA", "=", "$PATCH_COMMIT"),
+            )
+        ):
+            raise ValueError(f"{step_label} exact revision verification differs")
+        if index == 2 and (
+            values["env"]
+            != (
+                ("BASEROM_URL", "${{ secrets.BASEROM_URL }}"),
+                ("BASH_ENV", "''"),
+                ("ENV", "''"),
+                ("PATH", "/usr/bin:/bin"),
+            )
+            or values["run"]
+            != (
+                ("set", "-euo", "pipefail"),
+                ("test", "-n", "$BASEROM_URL"),
+                (
+                    "/usr/bin/curl",
+                    "--fail",
+                    "--silent",
+                    "--location",
+                    "--proto",
+                    "=https",
+                    "--proto-redir",
+                    "=https",
+                    "--tlsv1.2",
+                    "--output",
+                    "$RUNNER_TEMP/base-image",
+                    "$BASEROM_URL",
+                ),
+            )
+        ):
+            raise ValueError(f"{step_label} secret download boundary differs")
+        if index == 6 and values["env"] != (
             ("PATCH_ARTIFACT_DIR", "${{ runner.temp }}/patch-artifact"),
         ):
-            raise ValueError(f"{step_label} publication environment differs")
-        if index == 5 and (
+            raise ValueError(f"{step_label} patch environment differs")
+        if index == 7 and (
             values["uses"] != _UPLOAD_USES
             or values["with"] != _UPLOAD_WITH
         ):
             raise ValueError(f"{step_label} upload action differs")
+        if index == 2 and "scripts." in " ".join(
+            token for command in values["run"] for token in command
+        ):
+            raise ValueError(f"{step_label} secret step executes candidate code")
         role = "publisher"
     elif job_name == "summary":
         if (
@@ -1319,10 +1525,10 @@ def _parse_job_steps(job_name, body):
     if len(names) != len(set(names)):
         raise ValueError(f"job {job_name!r} contains duplicate step names")
     expected_unnamed = (
-        6
+        5
         if job_name == "patch-release"
         else 0
-        if job_name in {"event-classifier", "summary"}
+        if job_name in {"event-identity", "event-classifier", "summary"}
         else 1
     )
     if sum(step[1] is None for step in steps) != expected_unnamed:

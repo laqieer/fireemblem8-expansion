@@ -298,10 +298,10 @@ availability or grant credentials.
 ### Expected result
 
 Body-only, title-only, and combined body/title edits select only
-`event-router`, `metadata-classifier`, and `metadata-summary`; the four
-expensive workers do not start. Skipped worker names and success-shaped
-records are ignored by stable job identity; only the running metadata
-classifier/summary establish metadata mode.
+`event-identity`, `event-router`, `metadata-classifier`, and
+`metadata-summary`; the four expensive workers do not start. Skipped worker
+names and success-shaped records are ignored by stable job identity; only the
+running metadata classifier/summary establish metadata mode.
 The summary succeeds only when classifier status is `success`, the classified
 SHA equals the event's exact `pull_request.head.sha`, suppression is exactly
 false, and all four workers are exactly `skipped`.
@@ -310,11 +310,11 @@ Base-only edits, mixed edits, unknown and incomplete change records, `opened`,
 `synchronize`, and `reopened` select the classifier, all four expensive
 workers, and summary at the exact PR head. A `master` push additionally selects
 the existing patch publisher and runs the complete graph from its separate
-push SHA. Malformed/duplicate/non-finite JSON or another classifier failure
-with a nonempty authoritative PR head runs all four workers at that exact raw
-head, then summary still fails to expose the classifier defect. A classifier
-failure on a master push with nonempty raw `github.sha` runs all four workers
-and the publisher at that exact push SHA, then summary still fails. Any
+push SHA. Malformed/duplicate/non-finite JSON or another classifier failure with a
+validated authoritative PR head runs all four workers at that exact head, then
+summary still fails to expose the classifier defect. A classifier failure on a
+master push with validated `github.sha` runs all four workers and the publisher
+at that exact push SHA, then summary still fails. Any
 missing, empty, malformed, or event-mismatched base ref/SHA with a valid exact
 PR head runs all four workers at that head and fails normal summary; a
 syntactically valid direct base SHA may remain diagnostic output but is never
@@ -332,6 +332,15 @@ that no final-dispatch job selection exists to preserve.
 The classifier bootstrap may use the trusted default branch when PR base
 identity is missing or unusable; worker checkouts never use a merge/default
 fallback.
+Trusted event setup accepts fallback only as an exact lowercase 40-hex SHA.
+PR fallback also requires a coherent `refs/pull/<number>/merge` event ref;
+push fallback requires `refs/heads/master` and equal event
+`after`/`github.sha`. Workers consume only that validated SHA. Missing,
+uppercase, short, nonhex, ref-name, mismatched, or cross-event identities run
+no fallback worker/publisher. The publisher uses the same validated push SHA,
+verifies `/usr/bin/git rev-parse HEAD` immediately after checkout, and exposes
+`BASEROM_URL` only to the later minimal curl step; candidate code runs without
+the secret. The minimal secret step runs before any candidate code.
 
 ### Negative control
 
@@ -345,7 +354,8 @@ workers or produce a successful summary,
 duplicate JSON keys, `NaN`/positive or negative `Infinity`, positive/negative
 exponent overflow, nonzero-to-zero underflow, huge exponents, an unused
 overflow field on metadata-only input, oversized event
-files, base or mixed edits, merge-SHA fallback, an unverified/mutable
+files, base or mixed edits, merge-SHA fallback, malformed fallback identities,
+an unverified/mutable
 classifier checkout, classifier output drift, worker conditions that accept
 invalid/stale identity, worker skipping after classifier exit 2 with a valid
 PR/push head, cross-event fallback, worker/publisher execution after classifier
@@ -381,9 +391,9 @@ workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
 pin, and environment semantics, including the pre-fix negative selection.
 
 `python3 -m unittest tests.upstream_port.test_verify -v` preserves the 28 local
-gates while requiring complete eight-job source/target equivalence: the six
-issue #176 jobs remain closed and the router/classifier are closed setup-only
-jobs, never 29th/30th local gates.
+gates while requiring complete nine-job source/target equivalence: the six
+issue #176 jobs remain closed and the identity/router/classifier are closed
+setup-only jobs, never 29th/30th/31st local gates.
 
 `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
 parses the frozen PR template/body and comment collection, requiring exactly
@@ -408,7 +418,8 @@ pushed; this local implementation does not perform it.
    `head_sha=$(gh pr view "$pr" --json headRefOid --jq .headRefOid)`, and
    `base_sha=$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)`.
 2. Require the latest source-triggered Build for that exact head/base to show
-   successful `event-router`, `event-classifier`, `host-tests`, `build`,
+   successful `event-identity`, `event-router`, `event-classifier`,
+   `host-tests`, `build`,
    `extended-host-tests`, `legacy`, and `summary` contexts. Record its run ID.
 3. Run
    `gh pr edit "$pr" --title "$original_title [title-only metadata probe]"`.
@@ -621,7 +632,8 @@ checked-out-root binding is removed or weakened. It also requires the
 router, mode-classifier, and each combined worker's exact direct job mapping and values; no
 container or alternate execution context can replace the reviewed Ubuntu
 host.
-The protected Python steps use the closed isolated launcher, so repository or
+The no-checkout identity validator and protected Python steps use only closed
+trusted setup, so repository or
 user site customization cannot run before control. The workflow mirror parser
 uses deterministic line/indent parsing rather than an ambiguous multiline
 regular expression. Cross-checkout verification parses target workflow data
@@ -631,15 +643,18 @@ actions, run argv, `env`/`with` mappings, direct fields, and root execution
 before dry-run or execution. Unnamed non-checkout steps, duplicate setup names,
 complex keys, and extra jobs fail closed. Workflow execution context is
 exactly name/triggers/read-only permissions/jobs with no workflow env,
-defaults, or concurrency. The router is exactly Ubuntu, five minutes, its
-outputs/environment, and three setup steps; the mode-classifier is a separate
-five-minute one-step check. Every combined job is exactly its
-classifier edge, Ubuntu, 60 minutes, its allowlisted env, and steps;
+defaults, or concurrency. The identity validator is exactly Ubuntu, five minutes, its
+outputs/environment, and one trusted shell step. The router is exactly Ubuntu,
+five minutes, its outputs/environment, and three setup steps; the
+mode-classifier is a separate five-minute one-step check. Every combined job
+has exact identity/classifier edges, Ubuntu, 60 minutes, its allowlisted env,
+and steps;
 self-hosted/container/service/strategy/default shell or any other execution
 field fails before dry-run.
 Patch publication and summary are also complete semantic structures:
-master-only publication condition, pinned actions, scoped secret/env and six
-publisher steps; then `always()`, classifier plus exact ordered
+validated master-only publication condition, pinned actions, immediate exact
+revision verification, curl-only scoped secret, and eight publisher steps;
+then `always()`, identity/classifier plus exact ordered
 worker/publisher needs/result env, dynamic full/metadata summary name, five-minute
 context, and one fail-closed summary step.
 Neither is locally executed, but any

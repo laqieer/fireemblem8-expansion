@@ -37,17 +37,19 @@ RETIRED_WORKFLOW_FILENAME = "full" + "-matrix.yml"
 RETIRED_WORKFLOW = ROOT / ".github" / "workflows" / RETIRED_WORKFLOW_FILENAME
 MAKEFILE = ROOT / "Makefile"
 MASTER_PUBLISHER_CONDITION = (
-    "${{ github.event_name == 'push' && github.ref == 'refs/heads/master' "
-    "&& github.event.after != '' && github.sha == github.event.after }}"
+    "${{ always() && needs.event-identity.result == 'success' && "
+    "github.event_name == 'push' && "
+    "needs.event-identity.outputs.fallback_kind == 'push' && "
+    "needs.event-identity.outputs.fallback_sha == github.event.after && "
+    "needs.event-identity.outputs.fallback_sha == github.sha }}"
 )
 COMBINED_WORKERS = ("host-tests", "build", "extended-host-tests", "legacy")
 CLASSIFIER_JOB = "event-classifier"
-INDEPENDENT_JOBS = ("patch-release",)
 SUMMARY_NEEDS = (
-    "needs: [event-classifier, host-tests, build, extended-host-tests, legacy, "
-    "patch-release]"
+    "needs: [event-identity, event-classifier, host-tests, build, "
+    "extended-host-tests, legacy, patch-release]"
 )
-WORKER_NEEDS = "needs: [event-classifier]"
+WORKER_NEEDS = "needs: [event-identity, event-classifier]"
 WORKER_CONDITION = (
     "${{ always() && ((needs.event-classifier.result == 'success' && "
     "needs.event-classifier.outputs.classification == 'full' && "
@@ -65,12 +67,18 @@ WORKER_CONDITION = (
     "needs.event-classifier.outputs.expected_base == '' && "
     "github.event.after != ''))) || "
     "(needs.event-classifier.result == 'failure' && "
+    "needs.event-identity.result == 'success' && "
     "((github.event_name == 'pull_request' && "
-    "github.event.pull_request.head.sha != '') || "
-    "(github.event_name == 'push' && github.ref == 'refs/heads/master' && "
-    "github.event.after != '' && github.sha == github.event.after)))) }}"
+    "needs.event-identity.outputs.fallback_kind == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "github.event.pull_request.head.sha) || "
+    "(github.event_name == 'push' && "
+    "needs.event-identity.outputs.fallback_kind == 'push' && "
+    "needs.event-identity.outputs.fallback_sha == github.event.after && "
+    "needs.event-identity.outputs.fallback_sha == github.sha)))) }}"
 )
 CANDIDATE_FULL_JOBS = set(COMBINED_WORKERS) | {
+    "event-identity",
     "event-router",
     CLASSIFIER_JOB,
     "summary",
@@ -126,12 +134,7 @@ EXPECTED_BUILD_SHA_EXPRESSION = (
     "${{ (needs.event-classifier.result == 'success' && "
     "needs.event-classifier.outputs.expected_head) || "
     "(needs.event-classifier.result == 'failure' && "
-    "github.event_name == 'pull_request' && "
-    "github.event.pull_request.head.sha) || "
-    "(needs.event-classifier.result == 'failure' && "
-    "github.event_name == 'push' && github.ref == 'refs/heads/master' && "
-    "github.event.after != '' && github.sha == github.event.after && "
-    "github.sha) || '' }}"
+    "needs.event-identity.outputs.fallback_sha) || '' }}"
 )
 HOST_ENV_LINE = f"      EXPECTED_BUILD_SHA: {EXPECTED_BUILD_SHA_EXPRESSION}"
 COMBINED_JOB_ENV = {
@@ -266,6 +269,10 @@ def _event_branch(event: dict) -> str:
     return ref[len(prefix):] if ref.startswith(prefix) else ref
 
 
+def _is_lower_sha(value: object) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value) is not None
+
+
 def _triggered_jobs(text: str, event: dict) -> set[str]:
     header = text[: text.index("\njobs:\n")]
     payload = event.get("payload", event)
@@ -292,14 +299,14 @@ def _triggered_jobs(text: str, event: dict) -> set[str]:
         "github_sha",
         event.get("github_sha", event.get("sha", "")),
     )
-    if not (
+    push_fallback = (
         event["event_name"] == "push"
         and payload["ref"] == "refs/heads/master"
-        and isinstance(payload.get("after"), str)
-        and bool(payload["after"])
-        and isinstance(raw_github_sha, str)
+        and _is_lower_sha(payload.get("after"))
+        and _is_lower_sha(raw_github_sha)
         and raw_github_sha == payload["after"]
-    ):
+    )
+    if not push_fallback:
         jobs.discard("patch-release")
     pull_request = payload.get("pull_request", {})
     base = pull_request.get("base", {}) if isinstance(pull_request, dict) else {}
@@ -318,19 +325,14 @@ def _triggered_jobs(text: str, event: dict) -> set[str]:
     )
     classifier_result = event.get("classifier_result", "success")
     if classifier_result == "failure":
+        github_ref = runner.get("github_ref", event.get("github_ref", ""))
         pr_fallback = (
             event["event_name"] == "pull_request"
-            and isinstance(pr_head_sha, str)
-            and bool(pr_head_sha)
+            and isinstance(github_ref, str)
+            and re.fullmatch(r"refs/pull/[1-9][0-9]*/merge", github_ref) is not None
+            and _is_lower_sha(pr_head_sha)
         )
-        push_fallback = (
-            event["event_name"] == "push"
-            and payload["ref"] == "refs/heads/master"
-            and isinstance(push_sha, str)
-            and bool(push_sha)
-            and isinstance(raw_github_sha, str)
-            and raw_github_sha == push_sha
-        )
+        push_fallback = push_fallback and push_sha == raw_github_sha
         if not (pr_fallback or push_fallback):
             jobs.difference_update(COMBINED_WORKERS)
         return jobs
@@ -762,7 +764,7 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
             continue
         direct_lines.append(line)
     expected_direct = [
-        "    needs: [event-classifier]",
+        f"    {WORKER_NEEDS}",
         f"    if: {WORKER_CONDITION}",
         "    runs-on: ubuntu-latest",
         "    timeout-minutes: 60",
@@ -792,9 +794,81 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
     return errors
 
 
+def _identity_contract_errors(job: str) -> list[str]:
+    required = (
+        "    name: event-identity",
+        "    runs-on: ubuntu-latest",
+        "    timeout-minutes: 5",
+        "      classifier_expected_sha: ${{ "
+        "steps.identity.outputs.classifier_expected_sha }}",
+        "      classifier_ref: ${{ steps.identity.outputs.classifier_ref }}",
+        "      fallback_kind: ${{ steps.identity.outputs.fallback_kind }}",
+        "      fallback_sha: ${{ steps.identity.outputs.fallback_sha }}",
+        "      BASH_ENV: ''",
+        "      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}",
+        "      EVENT_NAME: ${{ github.event_name }}",
+        "      EVENT_REF: ${{ github.ref }}",
+        "      PR_BASE_SHA_JSON: ${{ "
+        "toJSON(github.event.pull_request.base.sha) }}",
+        "      PR_HEAD_SHA_JSON: ${{ "
+        "toJSON(github.event.pull_request.head.sha) }}",
+        "      PUSH_SHA_JSON: ${{ toJSON(github.event.after) }}",
+        "      RAW_SHA_JSON: ${{ toJSON(github.sha) }}",
+        "    - name: Validate trusted event identities",
+        "      id: identity",
+        '          [[ "$1" =~ ^[0-9a-f]{40}$ && "$2" = "\\"$1\\"" ]]',
+        '        classifier_ref="refs/heads/$DEFAULT_BRANCH"',
+        '        /usr/bin/git check-ref-format "$classifier_ref"',
+        '          if [[ "$EVENT_REF" =~ '
+        "^refs/pull/[1-9][0-9]*/merge$ ]] && \\",
+        '             is_lower_sha "$PR_HEAD_SHA" "$PR_HEAD_SHA_JSON"; then',
+        '        elif [[ "$EVENT_NAME" = "push" && '
+        '"$EVENT_REF" = "refs/heads/master" ]] && \\',
+        '             is_lower_sha "$PUSH_SHA" "$PUSH_SHA_JSON" && \\',
+        '             is_lower_sha "$RAW_SHA" "$RAW_SHA_JSON" && \\',
+        '             [[ "$RAW_SHA" = "$PUSH_SHA" ]]; then',
+        '          echo "fallback_kind=$fallback_kind"',
+        '          echo "fallback_sha=$fallback_sha"',
+    )
+    errors = [
+        f"event-identity lacks required closed contract: {item}"
+        for item in required
+        if item not in job
+    ]
+    direct = [
+        line
+        for line in job.splitlines()
+        if line.strip()
+        and not line.lstrip().startswith("#")
+        and len(line) - len(line.lstrip(" ")) == 4
+        and not line.startswith("    -")
+    ]
+    if direct != [
+        "    name: event-identity",
+        "    runs-on: ubuntu-latest",
+        "    timeout-minutes: 5",
+        "    outputs:",
+        "    env:",
+        "    steps:",
+    ]:
+        errors.append("event-identity direct job mapping differs")
+    steps = _step_blocks(job)
+    if (
+        len(steps) != 1
+        or _direct_step_mapping_fields(steps[0]) != ["name", "id", "run"]
+        or _step_name(steps[0]) != "Validate trusted event identities"
+    ):
+        errors.append("event-identity must contain only its trusted validation step")
+    if "uses:" in job or "actions/checkout" in job:
+        errors.append("event-identity must not read candidate-controlled repository content")
+    return errors
+
+
 def _classifier_contract_errors(job: str) -> list[str]:
     required = (
         "    name: event-router",
+        "    if: ${{ always() && needs.event-identity.result == 'success' }}",
+        "    needs: [event-identity]",
         "    runs-on: ubuntu-latest",
         "    timeout-minutes: 5",
         "    outputs:",
@@ -806,24 +880,21 @@ def _classifier_contract_errors(job: str) -> list[str]:
         "      identity_valid: ${{ steps.classify.outputs.identity_valid }}",
         "      reason: ${{ steps.classify.outputs.reason }}",
         "      run_expensive: ${{ steps.classify.outputs.run_expensive }}",
-        "      CLASSIFIER_EXPECTED_SHA: ${{ (github.event_name == "
-        "'pull_request' && github.event.pull_request.base.sha) || "
-        "(github.event_name == 'push' && github.event.after) || '' }}",
-        "      CLASSIFIER_REF: ${{ (github.event_name == 'pull_request' && "
-        "(github.event.pull_request.base.sha || format('refs/heads/{0}', "
-        "github.event.repository.default_branch))) || "
-        "(github.event_name == 'push' && github.event.after) || '' }}",
+        "      CLASSIFIER_EXPECTED_SHA: ${{ "
+        "needs.event-identity.outputs.classifier_expected_sha }}",
+        "      CLASSIFIER_REF: ${{ needs.event-identity.outputs.classifier_ref }}",
         "      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}",
         "      PR_BASE_REF: ${{ github.event.pull_request.base.ref }}",
         "      PR_BASE_REF_JSON: ${{ toJSON(github.event.pull_request.base.ref) }}",
+        "      PR_BASE_SHA_JSON: ${{ toJSON(github.event.pull_request.base.sha) }}",
         "      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}",
         "      PUSH_SHA: ${{ github.event.after }}",
-        "      RAW_PUSH_SHA: ${{ github.sha }}",
+        "      VALIDATED_FALLBACK_KIND: ${{ "
+        "needs.event-identity.outputs.fallback_kind }}",
+        "      VALIDATED_FALLBACK_SHA: ${{ "
+        "needs.event-identity.outputs.fallback_sha }}",
         "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-        "        ref: ${{ (github.event_name == 'pull_request' && "
-        "(github.event.pull_request.base.sha || format('refs/heads/{0}', "
-        "github.event.repository.default_branch))) || "
-        "(github.event_name == 'push' && github.event.after) || '' }}",
+        "        ref: ${{ needs.event-identity.outputs.classifier_ref }}",
         "        fetch-depth: 1",
         "        persist-credentials: false",
         "    - name: Verify classifier authority revision",
@@ -857,6 +928,8 @@ def _classifier_contract_errors(job: str) -> list[str]:
             direct_lines.append(line)
     if direct_lines != [
         "    name: event-router",
+        "    if: ${{ always() && needs.event-identity.result == 'success' }}",
+        "    needs: [event-identity]",
         "    runs-on: ubuntu-latest",
         "    timeout-minutes: 5",
         "    outputs:",
@@ -864,8 +937,6 @@ def _classifier_contract_errors(job: str) -> list[str]:
         "    steps:",
     ]:
         errors.append("event-router direct job mapping differs")
-    if "    needs:" in job or "    if:" in job:
-        errors.append("event-router must remain an unconditional root job")
     if "|| github.sha" in job:
         errors.append("event-router must never fall back to the merge SHA")
     if "        submodules:" in job:
@@ -894,8 +965,6 @@ def _classifier_contract_errors(job: str) -> list[str]:
             'if [ -n "$CLASSIFIER_EXPECTED_SHA" ]; then',
             'test "$ACTUAL_SHA" = "$CLASSIFIER_EXPECTED_SHA"',
             "else",
-            'test "$GITHUB_EVENT_NAME" = "pull_request"',
-            'test -z "$PR_BASE_SHA"',
             'test "$CLASSIFIER_REF" = "refs/heads/$DEFAULT_BRANCH"',
             "fi",
         )
@@ -915,11 +984,13 @@ def _classifier_contract_errors(job: str) -> list[str]:
             "head_valid=false",
             "identity_valid=false",
             'if [[ "$GITHUB_EVENT_NAME" = "pull_request" ]]; then',
-            'if [[ "$PR_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then',
+            'if [[ "$PR_BASE_SHA" =~ ^[0-9a-f]{40}$ && \\',
+            '"$PR_BASE_SHA_JSON" = "\\"$PR_BASE_SHA\\"" ]]; then',
             'expected_base="$PR_BASE_SHA"',
             "fi",
-            'if [[ "$PR_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then',
-            'expected_head="$PR_HEAD_SHA"',
+            'if [[ "$VALIDATED_FALLBACK_KIND" = "pull_request" && \\',
+            '"$VALIDATED_FALLBACK_SHA" = "$PR_HEAD_SHA" ]]; then',
+            'expected_head="$VALIDATED_FALLBACK_SHA"',
             "head_valid=true",
             "fi",
             'if [[ -n "$expected_base" && -n "$expected_head" && \\',
@@ -928,11 +999,9 @@ def _classifier_contract_errors(job: str) -> list[str]:
             'elif [[ "$head_valid" = true ]]; then',
             "full_fallback=true",
             "fi",
-            'elif [[ "$GITHUB_EVENT_NAME" = "push" && \\',
-            '"$GITHUB_REF" = "refs/heads/master" && \\',
-            '"$PUSH_SHA" =~ ^[0-9a-f]{40}$ && \\',
-            '"$RAW_PUSH_SHA" = "$PUSH_SHA" ]]; then',
-            'expected_head="$PUSH_SHA"',
+            'elif [[ "$VALIDATED_FALLBACK_KIND" = "push" && \\',
+            '"$VALIDATED_FALLBACK_SHA" = "$PUSH_SHA" ]]; then',
+            'expected_head="$VALIDATED_FALLBACK_SHA"',
             "head_valid=true",
             "identity_valid=true",
             "fi",
@@ -1086,6 +1155,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
 
     jobs = _job_blocks(text)
     expected_jobs = {
+        "event-identity",
         "event-router",
         "event-classifier",
         "host-tests",
@@ -1099,6 +1169,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         errors.append(f"Build job set differs from consolidated contract: {sorted(jobs)}")
         return errors
 
+    errors.extend(_identity_contract_errors(jobs["event-identity"]))
     errors.extend(_classifier_contract_errors(jobs["event-router"]))
     errors.extend(_mode_contract_errors(jobs["event-classifier"]))
 
@@ -1149,15 +1220,13 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
 
     if f"if: {MASTER_PUBLISHER_CONDITION}" not in jobs["patch-release"]:
         errors.append("patch-release must remain master-push-only")
+    if "    needs: [event-identity]" not in jobs["patch-release"]:
+        errors.append("patch-release must depend only on trusted event identity")
     if (
         "github.event_name == 'pull_request' && "
         "github.event.pull_request.head.sha || github.sha"
     ) in text:
         errors.append("Build must never substitute the merge SHA for a PR head")
-    for job_name in INDEPENDENT_JOBS:
-        if "needs:" in jobs[job_name]:
-            errors.append(f"{job_name} must not create a serial Build critical path")
-
     summary = jobs["summary"]
     if (
         "    name: ${{ needs.event-classifier.result == 'success' && "
@@ -1173,8 +1242,12 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         errors.append("summary must fail when event classification fails")
     if (
         '"$CLASSIFIER_RESULT" = "failure"' not in summary
-        or '[ "$GITHUB_EVENT_NAME" = "pull_request" ]' not in summary
-        or '[ -n "$PR_HEAD_SHA" ]' not in summary
+        or '[ "$FALLBACK_IDENTITY_RESULT" = "success" ]' not in summary
+        or '[ "$FALLBACK_KIND" = "pull_request" ]' not in summary
+        or '[ "$FALLBACK_SHA" = "$PR_HEAD_SHA" ]' not in summary
+        or '[ "$FALLBACK_KIND" = "push" ]' not in summary
+        or '[ "$FALLBACK_SHA" = "$PUSH_SHA" ]' not in summary
+        or '[ "$FALLBACK_SHA" = "$RAW_PUSH_SHA" ]' not in summary
         or "classifier-fallback Build worker did not succeed" not in summary
         or "classifier-fallback publisher did not succeed" not in summary
         or "classifier failed after exact-head fallback workers completed"
@@ -1183,7 +1256,8 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         not in summary
         or "classifier failure without an exact fallback SHA started a worker"
         not in summary
-        or "classifier failure without a raw SHA ran publisher" not in summary
+        or "classifier failure without a validated fallback SHA ran publisher"
+        not in summary
     ):
         errors.append("summary must audit classifier-failure worker topology")
     if (
@@ -2390,7 +2464,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         self.assertNotIn("event-classifier", pre_fix_jobs)
         self.assertEqual(
             _triggered_jobs(self.text, body_only),
-            {"event-router", "event-classifier", "summary"},
+            {"event-identity", "event-router", "event-classifier", "summary"},
         )
 
     def test_incomplete_base_fixtures_run_exact_head_full_fallback(self):
@@ -2489,11 +2563,128 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             EXPECTED_BUILD_SHA_EXPRESSION,
         )
         self.assertIn(
-            "github.event.pull_request.head.sha",
+            "needs.event-identity.outputs.fallback_sha",
             EXPECTED_BUILD_SHA_EXPRESSION,
         )
-        self.assertIn("github.sha", EXPECTED_BUILD_SHA_EXPRESSION)
-        self.assertIn("github.event_name == 'push'", EXPECTED_BUILD_SHA_EXPRESSION)
+        self.assertNotIn("github.event.pull_request.head.sha", EXPECTED_BUILD_SHA_EXPRESSION)
+        self.assertNotIn("github.sha", EXPECTED_BUILD_SHA_EXPRESSION)
+
+    def test_fallback_identity_fixtures_gate_workers_and_publisher(self):
+        fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
+        identity_step = _step_blocks(_job_blocks(self.text)["event-identity"])[0]
+        script = _literal_run_script(identity_step)
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="workflow-fallback-identity-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            for case in fixture["fallback_identity_cases"]:
+                with self.subTest(case=case["id"]):
+                    event_name = case["event_name"]
+                    pr_head_sha = case.get("pr_head_sha", "")
+                    push_sha = case.get("push_sha", "")
+                    raw_sha = case.get("raw_sha", "a" * 40)
+                    payload = (
+                        {
+                            "action": "edited",
+                            "pull_request": {
+                                "base": {"ref": "master", "sha": "2" * 40},
+                                "head": {"sha": pr_head_sha},
+                            },
+                        }
+                        if event_name == "pull_request"
+                        else {
+                            "after": push_sha,
+                            "ref": case["github_ref"],
+                        }
+                    )
+                    event = {
+                        "classifier_result": "failure",
+                        "event_name": event_name,
+                        "payload": payload,
+                        "runner": {
+                            "github_ref": case["github_ref"],
+                            "github_sha": raw_sha,
+                            "pr_base_sha": "2" * 40 if event_name == "pull_request" else "",
+                            "pr_head_sha": pr_head_sha,
+                            "push_sha": push_sha,
+                        },
+                    }
+                    selected = _triggered_jobs(self.text, event)
+                    expected_jobs = {
+                        "event-identity",
+                        "event-router",
+                        "event-classifier",
+                        "summary",
+                    }
+                    if case["run_workers"]:
+                        expected_jobs.update(COMBINED_WORKERS)
+                    if case["run_publisher"]:
+                        expected_jobs.add("patch-release")
+                    self.assertEqual(selected, expected_jobs)
+                    self.assertEqual(
+                        set(COMBINED_WORKERS) <= selected,
+                        case["run_workers"],
+                    )
+                    self.assertEqual(
+                        "patch-release" in selected,
+                        case["run_publisher"],
+                    )
+
+                    output = sandbox / f"{case['id']}.out"
+                    completed = subprocess.run(
+                        ["/bin/bash", "-c", script],
+                        cwd=sandbox,
+                        env={
+                            **os.environ,
+                            "DEFAULT_BRANCH": "master",
+                            "EVENT_NAME": event_name,
+                            "EVENT_REF": case["github_ref"],
+                            "GITHUB_OUTPUT": str(output),
+                            "PR_BASE_SHA": "2" * 40
+                            if event_name == "pull_request"
+                            else "",
+                            "PR_BASE_SHA_JSON": json.dumps(
+                                "2" * 40 if event_name == "pull_request" else None
+                            ),
+                            "PR_HEAD_SHA": pr_head_sha,
+                            "PR_HEAD_SHA_JSON": json.dumps(
+                                pr_head_sha if event_name == "pull_request" else None
+                            ),
+                            "PUSH_SHA": push_sha,
+                            "PUSH_SHA_JSON": json.dumps(
+                                push_sha if event_name == "push" else None
+                            ),
+                            "RAW_SHA": raw_sha,
+                            "RAW_SHA_JSON": json.dumps(raw_sha),
+                        },
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    outputs = dict(
+                        line.split("=", 1)
+                        for line in output.read_text(encoding="ascii").splitlines()
+                    )
+                    self.assertEqual(outputs["fallback_kind"], case["expected_kind"])
+                    self.assertEqual(outputs["fallback_sha"], case["expected_sha"])
+                    expected_classifier_ref = (
+                        "2" * 40
+                        if event_name == "pull_request"
+                        else case["expected_sha"]
+                        if case["run_publisher"]
+                        else "refs/heads/master"
+                    )
+                    self.assertEqual(
+                        outputs["classifier_ref"],
+                        expected_classifier_ref,
+                    )
+                    self.assertNotEqual(outputs["fallback_sha"], "refs/heads/attacker")
+                    if "attacker" in push_sha:
+                        self.assertNotEqual(outputs["classifier_ref"], push_sha)
 
     def test_edited_base_change_reruns_exact_head_candidate_without_publisher(self):
         unchanged_head = "4" * 40
@@ -2618,17 +2809,14 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 1,
             ),
             self.text.replace(
-                "      CLASSIFIER_REF: ${{ (github.event_name == 'pull_request' && "
-                "(github.event.pull_request.base.sha || format('refs/heads/{0}', "
-                "github.event.repository.default_branch))) || "
-                "(github.event_name == 'push' && github.event.after) || '' }}",
+                "      CLASSIFIER_REF: ${{ "
+                "needs.event-identity.outputs.classifier_ref }}",
                 "      CLASSIFIER_REF: ${{ github.sha }}",
                 1,
             ),
             self.text.replace(
-                "(github.event.pull_request.base.sha || "
-                "format('refs/heads/{0}', github.event.repository.default_branch))",
-                "github.event.pull_request.base.sha || github.sha",
+                "        ref: ${{ needs.event-identity.outputs.classifier_ref }}",
+                "        ref: ${{ github.sha }}",
                 1,
             ),
             self.text.replace("        fetch-depth: 1", "        fetch-depth: 0", 1),
@@ -2645,8 +2833,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 1,
             ),
             self.text.replace(
-                "    outputs:\n",
-                "    permissions: write-all\n    outputs:\n",
+                "    name: event-router\n",
+                "    name: event-router\n    permissions: write-all\n",
                 1,
             ),
         )
@@ -2658,6 +2846,37 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         _job_blocks(changed)["event-router"]
                     )
                 )
+
+    def test_trusted_fallback_identity_contract_rejects_weakened_validation(self):
+        identity = _job_blocks(self.text)["event-identity"]
+        for name, old, new in (
+            (
+                "nonempty-instead-of-sha",
+                '[[ "$1" =~ ^[0-9a-f]{40}$ && "$2" = "\\"$1\\"" ]]',
+                '[[ -n "$1" ]]',
+            ),
+            (
+                "arbitrary-pr-ref",
+                '"$EVENT_REF" =~ ^refs/pull/[1-9][0-9]*/merge$',
+                '-n "$EVENT_REF"',
+            ),
+            (
+                "mismatched-push",
+                '[[ "$RAW_SHA" = "$PUSH_SHA" ]]',
+                '[[ -n "$RAW_SHA" ]]',
+            ),
+            (
+                "candidate-checkout",
+                "    steps:\n",
+                "    steps:\n"
+                "    - uses: actions/checkout@"
+                "3d3c42e5aac5ba805825da76410c181273ba90b1\n",
+            ),
+        ):
+            with self.subTest(mutation=name):
+                changed_identity = identity.replace(old, new, 1)
+                self.assertNotEqual(changed_identity, identity)
+                self.assertTrue(_identity_contract_errors(changed_identity))
 
     def test_combined_workers_require_valid_fresh_classifier_identity(self):
         for job_name in COMBINED_WORKERS:
@@ -2693,7 +2912,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
     def test_reviewed_job_key_aliases_fail_closed(self):
         allowed = {
-            "needs": "[event-classifier]",
+            "needs": "[event-identity, event-classifier]",
             "if": WORKER_CONDITION,
             "runs-on": "ubuntu-latest",
             "timeout-minutes": "60",
@@ -2957,20 +3176,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         changed = self.text.replace(PUSH_TRIGGER, 'push:\n    branches: [ "other" ]', 1)
         self.assertTrue(any("restricted to master" in error for error in _errors(changed, False)))
 
-    def test_independent_jobs_reject_serial_dependencies(self):
-        for job_name in INDEPENDENT_JOBS:
-            with self.subTest(job_name=job_name):
-                changed = self.text.replace(
-                    f"  {job_name}:\n",
-                    f"  {job_name}:\n    needs: [host-tests]\n",
-                    1,
-                )
-                self.assertTrue(
-                    any(
-                        f"{job_name} must not create a serial Build critical path" in error
-                        for error in _errors(changed, False)
-                    )
-                )
+    def test_publisher_depends_only_on_trusted_event_identity(self):
+        patch_release = _job_blocks(self.text)["patch-release"]
+        self.assertIn("    needs: [event-identity]", patch_release)
+        self.assertNotIn("event-classifier", patch_release)
+        self.assertNotIn("host-tests", patch_release)
 
     def test_every_libpng_install_lane_declares_pkg_config(self):
         for job_name, job in _job_blocks(self.text).items():
@@ -3597,6 +3807,9 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "CLASSIFIED_BUILD_SHA": "1" * 40,
             "CLASSIFIER_RESULT": "success",
             "EXTENDED_HOST_TESTS_RESULT": "success",
+            "FALLBACK_IDENTITY_RESULT": "success",
+            "FALLBACK_KIND": "pull_request",
+            "FALLBACK_SHA": "1" * 40,
             "FULL_FALLBACK": "false",
             "GITHUB_EVENT_NAME": "pull_request",
             "GITHUB_REF": "refs/pull/177/merge",
@@ -3626,6 +3839,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "CLASSIFIED_BUILD_SHA": "3" * 40,
             "GITHUB_EVENT_NAME": "push",
             "GITHUB_REF": "refs/heads/master",
+            "FALLBACK_KIND": "push",
+            "FALLBACK_SHA": "3" * 40,
             "PR_BASE_SHA": "",
             "PR_HEAD_SHA": "",
             "PUSH_SHA": "3" * 40,
@@ -3696,6 +3911,20 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     **skipped,
                     "CLASSIFIER_RESULT": "failure",
                     "PR_HEAD_SHA": "",
+                    "FALLBACK_KIND": "none",
+                    "FALLBACK_SHA": "",
+                },
+                1,
+                "failed without an exact fallback SHA",
+            ),
+            (
+                "classifier-failed-ref-name-head",
+                {
+                    **skipped,
+                    "CLASSIFIER_RESULT": "failure",
+                    "FALLBACK_KIND": "none",
+                    "FALLBACK_SHA": "",
+                    "PR_HEAD_SHA": "refs/heads/attacker",
                 },
                 1,
                 "failed without an exact fallback SHA",
@@ -3717,6 +3946,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     "GITHUB_EVENT_NAME": "push",
                     "GITHUB_REF": "refs/heads/master",
                     "PATCH_RELEASE_RESULT": "skipped",
+                    "FALLBACK_KIND": "none",
+                    "FALLBACK_SHA": "",
                     "PR_BASE_SHA": "",
                     "PR_HEAD_SHA": "",
                     "PUSH_SHA": "",
@@ -3733,10 +3964,30 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     "GITHUB_EVENT_NAME": "push",
                     "GITHUB_REF": "refs/heads/master",
                     "PATCH_RELEASE_RESULT": "skipped",
+                    "FALLBACK_KIND": "none",
+                    "FALLBACK_SHA": "",
                     "PR_BASE_SHA": "",
                     "PR_HEAD_SHA": "",
                     "PUSH_SHA": "3" * 40,
                     "RAW_PUSH_SHA": "4" * 40,
+                },
+                1,
+                "failed without an exact fallback SHA",
+            ),
+            (
+                "classifier-failed-push-ref-name",
+                {
+                    **skipped,
+                    "CLASSIFIER_RESULT": "failure",
+                    "FALLBACK_KIND": "none",
+                    "FALLBACK_SHA": "",
+                    "GITHUB_EVENT_NAME": "push",
+                    "GITHUB_REF": "refs/heads/master",
+                    "PATCH_RELEASE_RESULT": "skipped",
+                    "PR_BASE_SHA": "",
+                    "PR_HEAD_SHA": "",
+                    "PUSH_SHA": "refs/heads/attacker",
+                    "RAW_PUSH_SHA": "refs/heads/attacker",
                 },
                 1,
                 "failed without an exact fallback SHA",
@@ -3749,6 +4000,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     "GITHUB_EVENT_NAME": "push",
                     "GITHUB_REF": "refs/heads/other",
                     "PATCH_RELEASE_RESULT": "skipped",
+                    "FALLBACK_KIND": "none",
+                    "FALLBACK_SHA": "",
                     "PR_BASE_SHA": "",
                     "PR_HEAD_SHA": "",
                     "PUSH_SHA": "3" * 40,
@@ -4002,9 +4255,17 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                             "PR_BASE_SHA": base,
                             "PR_BASE_REF": base_ref,
                             "PR_BASE_REF_JSON": base_ref_json,
+                            "PR_BASE_SHA_JSON": json.dumps(base),
                             "PR_HEAD_SHA": head,
                             "PUSH_SHA": push_sha,
-                            "RAW_PUSH_SHA": raw_push_sha,
+                            "VALIDATED_FALLBACK_KIND": (
+                                "pull_request"
+                                if event_name == "pull_request" and expected_head
+                                else "push"
+                                if event_name == "push" and expected_head
+                                else "none"
+                            ),
+                            "VALIDATED_FALLBACK_SHA": expected_head,
                         },
                         check=False,
                         capture_output=True,

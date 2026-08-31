@@ -14,12 +14,7 @@ EXPECTED_SHA = (
     "${{ (needs.event-classifier.result == 'success' && "
     "needs.event-classifier.outputs.expected_head) || "
     "(needs.event-classifier.result == 'failure' && "
-    "github.event_name == 'pull_request' && "
-    "github.event.pull_request.head.sha) || "
-    "(needs.event-classifier.result == 'failure' && "
-    "github.event_name == 'push' && github.ref == 'refs/heads/master' && "
-    "github.event.after != '' && github.sha == github.event.after && "
-    "github.sha) || '' }}"
+    "needs.event-identity.outputs.fallback_sha) || '' }}"
 )
 MERGE_SHA_FALLBACK = (
     "github.event_name == 'pull_request' && "
@@ -83,6 +78,11 @@ class BuildCiCheckoutContractTests(unittest.TestCase):
     def test_merge_ref_fallback_is_rejected(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertNotIn(MERGE_SHA_FALLBACK, text)
+        self.assertNotIn(
+            "needs.event-classifier.result == 'failure' && "
+            "github.event.pull_request.head.sha",
+            EXPECTED_SHA,
+        )
         host = _job_block(text, "host-tests")
         changed_host = host.replace(EXPECTED_SHA, "${{ github.sha }}", 1)
         self.assertNotEqual(changed_host, host)
@@ -101,6 +101,24 @@ class BuildCiCheckoutContractTests(unittest.TestCase):
             1,
         )
         self.assertTrue(any("checkout must pin" in error for error in _contract_errors(text)))
+
+    def test_fallback_checkouts_never_consume_raw_event_refs(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(
+            "ref: ${{ needs.event-identity.outputs.classifier_ref }}",
+            text,
+        )
+        self.assertIn(
+            "ref: ${{ needs.event-identity.outputs.fallback_sha }}",
+            text,
+        )
+        for raw_ref in (
+            "ref: ${{ github.sha }}",
+            "ref: ${{ github.event.after }}",
+            "ref: ${{ github.event.pull_request.head.sha }}",
+        ):
+            with self.subTest(raw_ref=raw_ref):
+                self.assertNotIn(raw_ref, text)
 
     def test_missing_checkout_verification_is_rejected(self):
         verification = (
