@@ -186,7 +186,7 @@ The synthetic non-master-base pull request selects the mandatory
 
 - **Parsed full-PR job set:** {`event-identity`, `event-router`,
   `event-classifier`, `host-tests`, `build`, `extended-host-tests`, `legacy`,
-  `summary`}.
+  `patch-release`, `summary`}.
 
 Every candidate worker still checks out and verifies
 `pull_request.head.sha`. The publisher is absent from pull-request execution,
@@ -303,10 +303,11 @@ availability or grant credentials.
    - **Parsed preserved pre-fix body-only job set:** {`host-tests`, `build`,
      `extended-host-tests`, `legacy`, `summary`}.
    - **Parsed current metadata-only job/check set:** {`event-identity`,
-     `event-router`, `metadata-classifier`, `metadata-summary`}.
+     `event-router`, `metadata-classifier`, `patch-release`,
+     `metadata-summary`}.
    The pre-fix graph therefore starts all four expensive workers and summary;
-   the current graph retains both mandatory setup contexts and only the
-   running metadata classifier/summary checks.
+   the current graph retains both mandatory setup contexts, canonical skipped
+   patch publication, and only the running metadata classifier/summary checks.
 
 ### Expected result
 
@@ -411,6 +412,12 @@ No whole-file source hash pins are used.
 Before the base exists, the fresh hosted publisher proves that no
 candidate-written `GITHUB_ENV`, `BASH_ENV`, background process, checkout, or
 executable state can survive the builder teardown.
+Default-branch validation is deferred until classifier bootstrap is actually
+needed. A missing or malformed default branch never invalidates an
+independently valid PR-head or push fallback. With no classifier authority,
+the router performs no checkout and fails safely, the classifier fails, exact
+fallback workers plus any guarded push publisher run, and summary remains
+fail-closed.
 
 ### Negative control
 
@@ -574,6 +581,57 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
      echo "timed out waiting for one unseen exact Build CI run" >&2
      return 1
    }
+
+   watch_build_run() {
+     run_id="$1"
+     case "$run_id" in
+       ''|*[!0-9]*) echo "invalid Build run ID" >&2; return 1 ;;
+     esac
+     set +e
+     timeout 90m gh run watch "$run_id" --interval 30 --exit-status
+     watch_status="$?"
+     set -e
+     if [ "$watch_status" -ne 124 ]; then
+       return "$watch_status"
+     fi
+
+     run_state="$(gh run view "$run_id" --json status,conclusion \
+       --jq '[.status, (.conclusion // "")] | @tsv')"
+     run_status="${run_state%%$'\t'*}"
+     run_conclusion="${run_state#*$'\t'}"
+     case "$run_status" in
+       queued|in_progress|waiting)
+         test -z "$run_conclusion"
+         set +e
+         timeout 90m gh run watch "$run_id" --interval 30 --exit-status
+         watch_status="$?"
+         set -e
+         if [ "$watch_status" -eq 124 ]; then
+           echo "second watcher timed out for exact Build run" >&2
+           return 124
+         fi
+         return "$watch_status"
+         ;;
+       completed)
+         if [ "$run_conclusion" = success ]; then
+           return 0
+         fi
+         test -n "$run_conclusion"
+         echo "exact Build run completed unsuccessfully" >&2
+         return 1
+         ;;
+       *)
+         echo "exact Build run has unsupported status" >&2
+         return 1
+         ;;
+     esac
+   }
+
+   # Each exact run uses watch_build_run. A first watcher timeout (124)
+   # triggers exactly one status/conclusion query for that run. Only queued,
+   # in_progress, or waiting re-arms one final 90-minute watcher; a terminal
+   # result is consumed immediately, any terminal failure is preserved, and a
+   # second timeout fails.
 
    owned_probe_pr_numbers() {
      pulls_json="$(gh api --method GET --paginate --slurp \
@@ -807,7 +865,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
      "$opened_prior_ids" "$opened_created_after")"
    test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" = "$head_sha"
    test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)" = "$base_sha"
-   timeout 90m gh run watch "$opened_run_id" --interval 30 --exit-status
+   watch_build_run "$opened_run_id"
    test "$(gh run view "$opened_run_id" --json event --jq .event)" = "pull_request"
    test "$(gh run view "$opened_run_id" --json headSha --jq .headSha)" = "$head_sha"
    gh run view "$opened_run_id" \
@@ -819,7 +877,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
 
    - **Parsed live opened-run job set:** {`event-identity`, `event-router`,
      `event-classifier`, `host-tests`, `build`, `extended-host-tests`, `legacy`,
-     `summary`}.
+     `patch-release`, `summary`}.
 3. Snapshot prior IDs, apply the title-only mutation through the owner REST
    endpoint, then discover, watch, and save its distinct metadata run:
 
@@ -832,7 +890,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    test "$title_run_id" != "$opened_run_id"
    test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" = "$head_sha"
    test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)" = "$base_sha"
-   timeout 90m gh run watch "$title_run_id" --interval 30 --exit-status
+   watch_build_run "$title_run_id"
    test "$(gh run view "$title_run_id" --json event --jq .event)" = "pull_request"
    test "$(gh run view "$title_run_id" --json headSha --jq .headSha)" = "$head_sha"
    gh run view "$title_run_id" \
@@ -843,7 +901,8 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    ```
 
    - **Parsed live title-edit job/check set:** {`event-identity`,
-     `event-router`, `metadata-classifier`, `metadata-summary`}.
+     `event-router`, `metadata-classifier`, `patch-release`,
+     `metadata-summary`}.
 
    Every raw REST job record is scanned before normalization. Duplicate API
    IDs, duplicate names/stable IDs, unknown jobs, or a metadata worker with an
@@ -852,6 +911,10 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    when `runner_name` is null and the conclusion is exactly `skipped`. Every
    known worker record that appears is included with its stable ID and
    conclusion rather than hidden by the four running metadata names.
+   `patch-release` is mandatory in every pull-request run and must have exact
+   stable ID/name `patch-release`, conclusion `skipped`, and no runner.
+   Missing, successful, failed, renamed, or duplicate publisher context
+   rejects both full and metadata evidence.
 4. Snapshot IDs before restoring the original title through the owner REST
    endpoint. Discover, watch, and save the distinct restore metadata run:
 
@@ -865,7 +928,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    test "$restore_run_id" != "$title_run_id"
    test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" = "$head_sha"
    test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)" = "$base_sha"
-   timeout 90m gh run watch "$restore_run_id" --interval 30 --exit-status
+   watch_build_run "$restore_run_id"
    test "$(gh run view "$restore_run_id" --json event --jq .event)" = "pull_request"
    test "$(gh run view "$restore_run_id" --json headSha --jq .headSha)" = "$head_sha"
    gh run view "$restore_run_id" \
@@ -876,7 +939,8 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    ```
 
    - **Parsed live title-restore job/check set:** {`event-identity`,
-     `event-router`, `metadata-classifier`, `metadata-summary`}.
+     `event-router`, `metadata-classifier`, `patch-release`,
+     `metadata-summary`}.
 5. Normalize all three real runs and execute the candidate evaluator's full,
    metadata-only, combined, failed-full, and missing-full assertions:
 
@@ -940,6 +1004,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
                "build",
                "extended-host-tests",
                "legacy",
+               "patch-release",
                "summary",
            }
            if mode == "full"
@@ -947,6 +1012,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
                "event-identity",
                "event-router",
                "metadata-classifier",
+               "patch-release",
                "metadata-summary",
            }
        )
@@ -1266,9 +1332,10 @@ exactly name/triggers/read-only permissions/jobs with no workflow env,
 defaults, or concurrency. The identity validator is exactly Ubuntu, five minutes, its
 outputs/environment, and one trusted shell step. The router is exactly Ubuntu,
 five minutes, its outputs/environment, and three setup steps; the
-mode-classifier is a separate five-minute one-step check. Every combined job
-has exact identity/classifier edges, Ubuntu, 60 minutes, its allowlisted env,
-and steps;
+mode-classifier is a separate five-minute one-step check. The comprehensive
+`build` job has exact identity/classifier edges, Ubuntu, 90 minutes, its
+allowlisted env, and steps; host, extended-host, legacy, and patch publication
+remain 60 minutes, while identity/router/classifier and summary remain 5;
 self-hosted/container/service/strategy/default shell or any other execution
 field fails before dry-run.
 Patch publication and summary are also complete semantic structures:

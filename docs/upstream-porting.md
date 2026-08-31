@@ -254,6 +254,12 @@ output. Missing, uppercase, short, nonhex, ref-name, mismatched, or cross-event
 identities run no fallback worker or publisher. Summary audits worker and
 publisher conclusions and always fails the classifier-failure path even when
 every validated fallback job succeeds.
+Default-branch validation occurs only when PR classifier bootstrap actually
+needs it. Missing/malformed default-branch data cannot discard a separately
+validated PR-head or push fallback. With no classifier authority, router
+checkout/classification are suppressed behind an explicit guard, the router
+and classifier fail, exact fallback workers and any guarded push publisher run,
+and summary stays fail-closed.
 Containers, services, strategies/matrices, permissions, defaults, dependency
 or condition substitutions, deployment environment, concurrency, reusable-job
 `uses`/secrets, custom shell context, unknown fields, and complex, duplicate,

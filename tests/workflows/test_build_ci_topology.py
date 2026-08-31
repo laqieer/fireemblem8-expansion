@@ -827,6 +827,8 @@ def _identity_contract_errors(job: str) -> list[str]:
         "    name: event-identity",
         "    runs-on: ubuntu-latest",
         "    timeout-minutes: 5",
+        "      classifier_available: ${{ "
+        "steps.identity.outputs.classifier_available }}",
         "      classifier_expected_sha: ${{ "
         "steps.identity.outputs.classifier_expected_sha }}",
         "      classifier_ref: ${{ steps.identity.outputs.classifier_ref }}",
@@ -848,8 +850,8 @@ def _identity_contract_errors(job: str) -> list[str]:
         "      id: identity",
         '          [[ "$1" =~ ^[0-9a-f]{40}$ && "$2" = "\\"$1\\"" ]]',
         '          [[ "$1" =~ ^[1-9][0-9]*$ && "$2" = "$1" ]]',
-        '        classifier_ref="refs/heads/$DEFAULT_BRANCH"',
-        '        /usr/bin/git check-ref-format "$classifier_ref"',
+        "        classifier_available=false",
+        '        classifier_ref=""',
         '          if is_pr_number "$PR_NUMBER" "$PR_NUMBER_JSON" && \\',
         '             [[ "$EVENT_REF" = "refs/pull/$PR_NUMBER/merge" ]] && \\',
         '             is_lower_sha "$PR_HEAD_SHA" "$PR_HEAD_SHA_JSON"; then',
@@ -858,6 +860,13 @@ def _identity_contract_errors(job: str) -> list[str]:
         '             is_lower_sha "$PUSH_SHA" "$PUSH_SHA_JSON" && \\',
         '             is_lower_sha "$RAW_SHA" "$RAW_SHA_JSON" && \\',
         '             [[ "$RAW_SHA" = "$PUSH_SHA" ]]; then',
+        '          elif [[ -n "$DEFAULT_BRANCH" ]]; then',
+        '            bootstrap_ref="refs/heads/$DEFAULT_BRANCH"',
+        '            if /usr/bin/git check-ref-format "$bootstrap_ref" \\',
+        '              classifier_ref="$bootstrap_ref"',
+        '        if [[ -n "$classifier_ref" ]]; then',
+        "          classifier_available=true",
+        '          echo "classifier_available=$classifier_available"',
         '          echo "fallback_kind=$fallback_kind"',
         '          echo "fallback_sha=$fallback_sha"',
     )
@@ -892,6 +901,13 @@ def _identity_contract_errors(job: str) -> list[str]:
         errors.append("event-identity must contain only its trusted validation step")
     if "uses:" in job or "actions/checkout" in job:
         errors.append("event-identity must not read candidate-controlled repository content")
+    if (
+        'classifier_ref="refs/heads/$DEFAULT_BRANCH"' in job
+        or '/usr/bin/git check-ref-format "$classifier_ref"' in job
+    ):
+        errors.append(
+            "event-identity must defer optional default-branch validation"
+        )
     return errors
 
 
@@ -911,6 +927,8 @@ def _classifier_contract_errors(job: str) -> list[str]:
         "      identity_valid: ${{ steps.classify.outputs.identity_valid }}",
         "      reason: ${{ steps.classify.outputs.reason }}",
         "      run_expensive: ${{ steps.classify.outputs.run_expensive }}",
+        "      CLASSIFIER_AVAILABLE: ${{ "
+        "needs.event-identity.outputs.classifier_available }}",
         "      CLASSIFIER_EXPECTED_SHA: ${{ "
         "needs.event-identity.outputs.classifier_expected_sha }}",
         "      CLASSIFIER_REF: ${{ needs.event-identity.outputs.classifier_ref }}",
@@ -924,7 +942,13 @@ def _classifier_contract_errors(job: str) -> list[str]:
         "needs.event-identity.outputs.fallback_kind }}",
         "      VALIDATED_FALLBACK_SHA: ${{ "
         "needs.event-identity.outputs.fallback_sha }}",
+        "    - name: Require classifier authority",
+        "      if: ${{ "
+        "needs.event-identity.outputs.classifier_available != 'true' }}",
+        '        echo "Build classifier authority is unavailable" >&2',
         "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+        "      if: ${{ "
+        "needs.event-identity.outputs.classifier_available == 'true' }}",
         "        ref: ${{ needs.event-identity.outputs.classifier_ref }}",
         "        fetch-depth: 1",
         "        persist-credentials: false",
@@ -974,20 +998,21 @@ def _classifier_contract_errors(job: str) -> list[str]:
     if "        submodules:" in job:
         errors.append("event-router authority checkout must not load submodules")
     steps = _step_blocks(job)
-    if len(steps) != 3:
-        errors.append("event-router must have exactly three reviewed steps")
+    if len(steps) != 4:
+        errors.append("event-router must have exactly four reviewed steps")
     else:
         expected_fields = (
-            ["uses", "with"],
-            ["name", "run"],
-            ["name", "id", "env", "run"],
+            ["name", "if", "run"],
+            ["uses", "if", "with"],
+            ["name", "if", "run"],
+            ["name", "id", "if", "env", "run"],
         )
         if any(
             _direct_step_mapping_fields(step) != fields
             for step, fields in zip(steps, expected_fields)
         ):
             errors.append("event-router step mappings differ")
-        if not _step_has_scrubbed_environment(steps[2]):
+        if not _step_has_scrubbed_environment(steps[3]):
             errors.append(
                 "event-router must retain its scrubbed isolated environment"
             )
@@ -1058,9 +1083,14 @@ def _classifier_contract_errors(job: str) -> list[str]:
             '} >> "$GITHUB_OUTPUT"',
             "fi",
         )
-        if tuple(_run_block_commands(steps[1])) != expected_verify:
+        if tuple(_run_block_commands(steps[0])) != (
+            'echo "Build classifier authority is unavailable" >&2',
+            "exit 1",
+        ):
+            errors.append("event-router unavailable-authority guard differs")
+        if tuple(_run_block_commands(steps[2])) != expected_verify:
             errors.append("event-router authority verification command differs")
-        if tuple(_run_block_commands(steps[2])) != expected_classify:
+        if tuple(_run_block_commands(steps[3])) != expected_classify:
             errors.append("event-router command or bootstrap differs")
     return errors
 
@@ -2764,13 +2794,17 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 with self.subTest(case=case["id"]):
                     event_name = case["event_name"]
                     pr_head_sha = case.get("pr_head_sha", "")
+                    pr_base_sha = case.get(
+                        "pr_base_sha",
+                        "2" * 40 if event_name == "pull_request" else "",
+                    )
                     push_sha = case.get("push_sha", "")
                     raw_sha = case.get("raw_sha", "a" * 40)
                     payload = (
                         {
                             "action": "edited",
                             "pull_request": {
-                                "base": {"ref": "master", "sha": "2" * 40},
+                                "base": {"ref": "master", "sha": pr_base_sha},
                                 "head": {"sha": pr_head_sha},
                             },
                         }
@@ -2788,7 +2822,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         "runner": {
                             "github_ref": case["github_ref"],
                             "github_sha": raw_sha,
-                            "pr_base_sha": "2" * 40 if event_name == "pull_request" else "",
+                            "pr_base_sha": pr_base_sha,
                             "pr_head_sha": pr_head_sha,
                             "pr_number": case.get("pr_number", 177),
                             "push_sha": push_sha,
@@ -2821,15 +2855,15 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         cwd=sandbox,
                         env={
                             **os.environ,
-                            "DEFAULT_BRANCH": "master",
+                            "DEFAULT_BRANCH": case.get("default_branch", "master"),
                             "EVENT_NAME": event_name,
                             "EVENT_REF": case["github_ref"],
                             "GITHUB_OUTPUT": str(output),
-                            "PR_BASE_SHA": "2" * 40
-                            if event_name == "pull_request"
-                            else "",
+                            "PR_BASE_SHA": pr_base_sha,
                             "PR_BASE_SHA_JSON": json.dumps(
-                                "2" * 40 if event_name == "pull_request" else None
+                                pr_base_sha
+                                if event_name == "pull_request"
+                                else None
                             ),
                             "PR_HEAD_SHA": pr_head_sha,
                             "PR_HEAD_SHA_JSON": json.dumps(
@@ -2863,16 +2897,26 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     )
                     self.assertEqual(outputs["fallback_kind"], case["expected_kind"])
                     self.assertEqual(outputs["fallback_sha"], case["expected_sha"])
-                    expected_classifier_ref = (
-                        "2" * 40
+                    expected_classifier_ref = case.get(
+                        "expected_classifier_ref",
+                        pr_base_sha
                         if event_name == "pull_request"
                         else case["expected_sha"]
                         if case["run_publisher"]
-                        else "refs/heads/master"
+                        else "",
                     )
                     self.assertEqual(
                         outputs["classifier_ref"],
                         expected_classifier_ref,
+                    )
+                    self.assertEqual(
+                        outputs["classifier_available"],
+                        str(
+                            case.get(
+                                "expected_classifier_available",
+                                bool(expected_classifier_ref),
+                            )
+                        ).lower(),
                     )
                     self.assertNotEqual(outputs["fallback_sha"], "refs/heads/attacker")
                     if "attacker" in push_sha:
@@ -4717,7 +4761,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
     def test_classifier_bootstrap_preserves_incomplete_pr_identity(self):
         classifier_steps = _step_blocks(_job_blocks(self.text)["event-router"])
-        script = _literal_run_script(classifier_steps[2])
+        script = _literal_run_script(classifier_steps[3])
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
@@ -4860,7 +4904,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
     def test_classifier_bootstrap_base_refs_match_parsed_fixture(self):
         classifier_steps = _step_blocks(_job_blocks(self.text)["event-router"])
-        script = _literal_run_script(classifier_steps[2])
+        script = _literal_run_script(classifier_steps[3])
         fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
         ref_cases = list(fixture["base_ref_validation_cases"]) + [
             {

@@ -224,6 +224,12 @@ fallback workers check out only the trusted event setup's validated PR/push
 SHA. Both paths retain revision verification, commands, and environments.
 Summary now joins the publisher as well: PR and metadata paths require it to
 be skipped, while master-push paths require success.
+Default-branch ref validation is deferred until a missing/unusable PR base
+actually needs classifier bootstrap. Missing or malformed default-branch data
+does not abort an independently valid PR-head or push fallback. If classifier
+authority is unavailable, router checkout/classification never runs, router
+and classifier fail, exact fallback workers plus any guarded push publisher
+run, and summary remains failed.
 
 Trusted event setup accepts an event identity only as an exact lowercase
 40-hex SHA. A PR additionally requires its numeric event number and exact

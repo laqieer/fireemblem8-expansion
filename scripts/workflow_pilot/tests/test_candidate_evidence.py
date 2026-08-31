@@ -37,6 +37,7 @@ def _run(run_id, contexts):
 
 def _full_run(run_id, summary="success"):
     contexts = [_context("event-identity"), _context("event-router")]
+    contexts.append(_context("patch-release", conclusion="skipped"))
     contexts.append(_context("event-classifier"))
     contexts.extend(
         _context(job_id)
@@ -48,6 +49,7 @@ def _full_run(run_id, summary="success"):
 
 def _metadata_run(run_id, worker_conclusion="skipped"):
     contexts = [_context("event-identity"), _context("event-router")]
+    contexts.append(_context("patch-release", conclusion="skipped"))
     contexts.append(
         _context("event-classifier", candidate_evidence.METADATA_CLASSIFIER)
     )
@@ -232,6 +234,43 @@ class CandidateEvidenceTests(unittest.TestCase):
         )
         duplicate_router["contexts"].append(copy.deepcopy(router_context))
         mutations.append(duplicate_router)
+        run_id += 2
+
+        for mode, factory in (
+            ("full", _full_run),
+            ("metadata", _metadata_run),
+        ):
+            for conclusion in ("missing", "success", "failure"):
+                patch = factory(run_id)
+                patch_context = next(
+                    context
+                    for context in patch["contexts"]
+                    if context["job_id"] == "patch-release"
+                )
+                if conclusion == "missing":
+                    patch["contexts"].remove(patch_context)
+                else:
+                    patch_context["conclusion"] = conclusion
+                mutations.append(patch)
+                run_id += 1
+
+        renamed_patch = _full_run(run_id)
+        next(
+            context
+            for context in renamed_patch["contexts"]
+            if context["job_id"] == "patch-release"
+        )["name"] = "patch-publisher"
+        mutations.append(renamed_patch)
+        run_id += 1
+
+        duplicate_patch = _metadata_run(run_id)
+        patch_context = next(
+            context
+            for context in duplicate_patch["contexts"]
+            if context["job_id"] == "patch-release"
+        )
+        duplicate_patch["contexts"].append(copy.deepcopy(patch_context))
+        mutations.append(duplicate_patch)
 
         for mutation in mutations:
             with self.subTest(contexts=mutation["contexts"]):

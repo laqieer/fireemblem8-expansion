@@ -108,6 +108,10 @@ def _validate_mode_contexts(
         raise CandidateEvidenceError(
             "run lacks successful canonical event-router setup"
         )
+    if contexts.get("patch-release") != ("patch-release", "skipped"):
+        raise CandidateEvidenceError(
+            "run lacks canonical skipped patch-release context"
+        )
     if mode == "metadata-only":
         for job_id in WORKER_JOB_IDS:
             if job_id not in contexts:

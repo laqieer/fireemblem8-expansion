@@ -160,16 +160,12 @@ _IDENTITY_COMMANDS = (
     ("is_pr_number()", "{"),
     ("[[", "$1", "=~", "^[1-9][0-9]*$", "&&", "$2", "=", "$1", "]]"),
     ("}",),
+    ("classifier_available=false",),
     ("classifier_expected_sha=",),
-    ("classifier_ref=refs/heads/$DEFAULT_BRANCH",),
+    ("classifier_ref=",),
     ("fallback_kind=none",),
     ("fallback_sha=",),
-    ("/usr/bin/git", "check-ref-format", "$classifier_ref"),
     ("if", "[[", "$EVENT_NAME", "=", "pull_request", "]];", "then"),
-    ("if", "is_lower_sha", "$PR_BASE_SHA", "$PR_BASE_SHA_JSON;", "then"),
-    ("classifier_expected_sha=$PR_BASE_SHA",),
-    ("classifier_ref=$PR_BASE_SHA",),
-    ("fi",),
     (
         "if",
         "is_pr_number",
@@ -189,6 +185,24 @@ _IDENTITY_COMMANDS = (
     ),
     ("fallback_kind=pull_request",),
     ("fallback_sha=$PR_HEAD_SHA",),
+    ("fi",),
+    ("if", "is_lower_sha", "$PR_BASE_SHA", "$PR_BASE_SHA_JSON;", "then"),
+    ("classifier_expected_sha=$PR_BASE_SHA",),
+    ("classifier_ref=$PR_BASE_SHA",),
+    ("elif", "[[", "-n", "$DEFAULT_BRANCH", "]];", "then"),
+    ("bootstrap_ref=refs/heads/$DEFAULT_BRANCH",),
+    (
+        "if",
+        "/usr/bin/git",
+        "check-ref-format",
+        "$bootstrap_ref",
+        ">",
+        "/dev/null",
+        "2>&1;",
+        "then",
+    ),
+    ("classifier_ref=$bootstrap_ref",),
+    ("fi",),
     ("fi",),
     (
         "elif",
@@ -222,7 +236,11 @@ _IDENTITY_COMMANDS = (
     ("fallback_kind=push",),
     ("fallback_sha=$PUSH_SHA",),
     ("fi",),
+    ("if", "[[", "-n", "$classifier_ref", "]];", "then"),
+    ("classifier_available=true",),
+    ("fi",),
     ("{",),
+    ("echo", "classifier_available=$classifier_available"),
     ("echo", "classifier_expected_sha=$classifier_expected_sha"),
     ("echo", "classifier_ref=$classifier_ref"),
     ("echo", "fallback_kind=$fallback_kind"),
@@ -589,6 +607,10 @@ _MODE_COMMANDS = (
 _EXPECTED_JOB_OUTPUTS = {
     "event-identity": (
         (
+            "classifier_available",
+            "${{ steps.identity.outputs.classifier_available }}",
+        ),
+        (
             "classifier_expected_sha",
             "${{ steps.identity.outputs.classifier_expected_sha }}",
         ),
@@ -637,6 +659,10 @@ _EXPECTED_JOB_ENV = {
         ("RAW_SHA_JSON", "${{ toJSON(github.sha) }}"),
     ),
     "event-router": (
+        (
+            "CLASSIFIER_AVAILABLE",
+            "${{ needs.event-identity.outputs.classifier_available }}",
+        ),
         ("CLASSIFIER_EXPECTED_SHA", _CLASSIFIER_EXPECTED_SHA_EXPRESSION),
         ("CLASSIFIER_REF", _CLASSIFIER_REF_EXPRESSION),
         ("DEFAULT_BRANCH", "${{ github.event.repository.default_branch }}"),
@@ -801,6 +827,7 @@ _EXPECTED_STEP_ROLES = {
         ("setup", "Validate trusted event identities"),
     ),
     "event-router": (
+        ("setup", "Require classifier authority"),
         ("setup", None),
         ("setup", "Verify classifier authority revision"),
         ("setup", "Classify Build event"),
@@ -1485,24 +1512,53 @@ def _parse_step(block, job_name, index):
     elif job_name == "event-router":
         if index == 0:
             if (
-                name is not None
-                or set(values) != {"uses", "with"}
-                or values["uses"] != _CHECKOUT_USES
-                or values["with"] != _CLASSIFIER_CHECKOUT_WITH
+                name != "Require classifier authority"
+                or set(values) != {"if", "name", "run"}
+                or values["if"]
+                != "${{ needs.event-identity.outputs.classifier_available "
+                "!= 'true' }}"
+                or values["run"]
+                != (
+                    (
+                        "echo",
+                        "Build classifier authority is unavailable",
+                        ">&2",
+                    ),
+                    ("exit", "1"),
+                )
             ):
-                raise ValueError(f"{step_label} authority checkout differs")
+                raise ValueError(
+                    f"{step_label} unavailable classifier guard differs"
+                )
         elif index == 1:
             if (
+                name is not None
+                or set(values) != {"if", "uses", "with"}
+                or values["uses"] != _CHECKOUT_USES
+                or values["with"] != _CLASSIFIER_CHECKOUT_WITH
+                or values["if"]
+                != "${{ needs.event-identity.outputs.classifier_available "
+                "== 'true' }}"
+            ):
+                raise ValueError(f"{step_label} authority checkout differs")
+        elif index == 2:
+            if (
                 name != "Verify classifier authority revision"
-                or set(values) != {"name", "run"}
+                or set(values) != {"if", "name", "run"}
+                or values["if"]
+                != "${{ needs.event-identity.outputs.classifier_available "
+                "== 'true' }}"
                 or values["run"] != _CLASSIFIER_VERIFY_COMMANDS
             ):
                 raise ValueError(f"{step_label} authority verification differs")
-        elif index == 2:
+        elif index == 3:
             if (
                 name != "Classify Build event"
-                or set(values) != {"id", "name", "env", "run"}
+                or set(values) != {"env", "id", "if", "name", "run"}
                 or values["id"] != "classify"
+                or values["if"]
+                != "${{ needs.event-identity.outputs.classifier_available "
+                "== 'true' }}"
                 or values["run"] != _CLASSIFIER_COMMANDS
                 or values["env"]
                 != tuple(

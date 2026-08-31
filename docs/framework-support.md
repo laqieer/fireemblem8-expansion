@@ -43,6 +43,11 @@ validated event-specific fallback SHA, it starts no worker or publisher. The
 classifier bootstrap may use the trusted
 default branch when PR base identity is missing or unusable; worker checkouts
 never use a merge/default fallback.
+Default-branch validation is deferred until that bootstrap is needed. A
+missing or malformed default branch never invalidates an independently valid
+PR-head or push fallback. If no classifier authority remains, the router fails
+without checkout, the classifier fails, exact fallback workers (and the push
+publisher) still run, and summary remains failed.
 Base refs are bounded to 1024 UTF-8 bytes and must satisfy full
 `git check-ref-format refs/heads/<base.ref>` semantics; `--branch` shorthand
 is not used, and lone `@` is rejected. Python applies the equivalent grammar

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import copy
 import json
+import os
 import posixpath
 from pathlib import Path
 import re
@@ -620,22 +621,24 @@ def workflow_tester_topology_violations(text):
     )
     current_jobs = workflow_job_ids(BUILD_WORKFLOW_PATH)
     expected = {
-        "stacked-full-pr": current_jobs - {"patch-release"},
+        "stacked-full-pr": current_jobs,
         "current-metadata": frozenset(
             {
                 "event-identity",
                 "event-router",
                 "metadata-classifier",
+                "patch-release",
                 "metadata-summary",
             }
         ),
         "preserved-pre-fix": workflow_job_ids(PRE_FIX_BUILD_WORKFLOW_PATH),
-        "live-opened-full": current_jobs - {"patch-release"},
+        "live-opened-full": current_jobs,
         "live-title-metadata": frozenset(
             {
                 "event-identity",
                 "event-router",
                 "metadata-classifier",
+                "patch-release",
                 "metadata-summary",
             }
         ),
@@ -644,6 +647,7 @@ def workflow_tester_topology_violations(text):
                 "event-identity",
                 "event-router",
                 "metadata-classifier",
+                "patch-release",
                 "metadata-summary",
             }
         ),
@@ -716,15 +720,27 @@ def live_title_probe_violations(text):
             "Normalize all three real runs",
         ),
         "three-exact-live-runs": (
-            'timeout 90m gh run watch "$opened_run_id" --interval 30 --exit-status',
-            'timeout 90m gh run watch "$title_run_id" --interval 30 --exit-status',
-            'timeout 90m gh run watch "$restore_run_id" --interval 30 --exit-status',
+            'watch_build_run "$opened_run_id"',
+            'watch_build_run "$title_run_id"',
+            'watch_build_run "$restore_run_id"',
             'gh run view "$opened_run_id" --json event,headSha,conclusion,url',
             'gh run view "$title_run_id" --json event,headSha,conclusion,url',
             'gh run view "$restore_run_id" --json event,headSha,conclusion,url',
             '"repos/$repo/actions/runs/$opened_run_id/jobs"',
             '"repos/$repo/actions/runs/$title_run_id/jobs"',
             '"repos/$repo/actions/runs/$restore_run_id/jobs"',
+        ),
+        "bounded-exact-run-watcher": (
+            "watch_build_run()",
+            'timeout 90m gh run watch "$run_id" --interval 30 --exit-status',
+            'if [ "$watch_status" -ne 124 ]',
+            'gh run view "$run_id" --json status,conclusion',
+            "queued|in_progress|waiting)",
+            'if [ "$watch_status" -eq 124 ]',
+            "second watcher timed out for exact Build run",
+            'return "$watch_status"',
+            'if [ "$run_conclusion" = success ]',
+            "exact Build run completed unsuccessfully",
         ),
         "bounded-unseen-run-discovery": (
             'while [ "$attempt" -lt 60 ]',
@@ -807,6 +823,23 @@ def live_title_probe_violations(text):
     for violation, fragments in required_text.items():
         if any(fragment not in commands for fragment in fragments):
             violations.append(violation)
+    watcher = 'timeout 90m gh run watch "$run_id" --interval 30 --exit-status'
+    if (
+        commands.count(watcher) != 2
+        or commands.count(
+            'gh run view "$run_id" --json status,conclusion'
+        )
+        != 1
+        or any(
+            commands.count(f'watch_build_run "${variable}"') != 1
+            for variable in (
+                "opened_run_id",
+                "title_run_id",
+                "restore_run_id",
+            )
+        )
+    ):
+        violations.append("bounded-exact-run-watcher")
     required_policy = {
         "implementation-pr-bootstrap-negative": (
             "Do not edit the implementation PR",
@@ -896,7 +929,7 @@ def live_title_probe_violations(text):
         violations.append("fail-fast-trapped-cleanup")
     for variable in ("opened_run_id", "title_run_id", "restore_run_id"):
         discovery = commands.find(f'{variable}="$(discover_build_run')
-        watch = commands.find(f'gh run watch "${variable}"')
+        watch = commands.find(f'watch_build_run "${variable}"')
         if discovery < 0 or watch < 0 or discovery > watch:
             violations.append("bounded-unseen-run-discovery")
             break
@@ -4047,6 +4080,23 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 'printf "restore run not inspected\\n"',
             ),
             (
+                "bounded-exact-run-watcher",
+                'gh run view "$run_id" --json status,conclusion \\\n'
+                "       --jq '[.status, (.conclusion // \"\")] | @tsv'",
+                'printf "status query omitted\\n"',
+            ),
+            (
+                "bounded-exact-run-watcher",
+                '         timeout 90m gh run watch "$run_id" '
+                "--interval 30 --exit-status",
+                "         return 124",
+            ),
+            (
+                "bounded-exact-run-watcher",
+                'timeout 90m gh run watch "$run_id" --interval 30 --exit-status',
+                'timeout 89m gh run watch "$run_id" --interval 30 --exit-status',
+            ),
+            (
                 "actual-evaluator-assertions",
                 "candidate_evidence.evaluate_candidate_runs(",
                 "candidate_evidence.CandidateEvidence(",
@@ -4145,6 +4195,105 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     self.assertIn(
                         "three-run-head-base-identity",
                         live_title_probe_violations(changed),
+                    )
+
+    def test_live_watcher_queries_once_and_rearms_once(self):
+        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        body_case = raw_markdown_section(governance, BODY_EDIT_CASE_HEADING)
+        bash_source = "\n".join(
+            textwrap.dedent(match.group("body"))
+            for match in re.finditer(
+                r"^[ ]*```bash\n(?P<body>.*?)^[ ]*```",
+                body_case,
+                re.DOTALL | re.MULTILINE,
+            )
+        )
+        match = re.search(
+            r"(?ms)^watch_build_run\(\) \{\n.*?^\}",
+            bash_source,
+        )
+        self.assertIsNotNone(match)
+        watcher = match.group(0)
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+
+        cases = (
+            ("first-success", 0, 0, "completed", "success", 0, 1, 0),
+            ("first-failure", 1, 0, "completed", "failure", 1, 1, 0),
+            ("queued-rearm-success", 124, 0, "queued", "", 0, 2, 1),
+            ("active-rearm-failure", 124, 1, "in_progress", "", 1, 2, 1),
+            ("waiting-second-timeout", 124, 124, "waiting", "", 124, 2, 1),
+            ("terminal-after-timeout", 124, 0, "completed", "success", 0, 1, 1),
+            ("failed-after-timeout", 124, 0, "completed", "failure", 1, 1, 1),
+        )
+        with tempfile.TemporaryDirectory(
+            prefix="live-watcher-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            for (
+                name,
+                first,
+                second,
+                status,
+                conclusion,
+                expected_result,
+                expected_watches,
+                expected_queries,
+            ) in cases:
+                with self.subTest(name=name):
+                    watch_count = sandbox / f"{name}-watch"
+                    query_count = sandbox / f"{name}-query"
+                    watch_count.write_text("", encoding="ascii")
+                    query_count.write_text("", encoding="ascii")
+                    harness = (
+                        watcher
+                        + "\n"
+                        + r'''
+timeout() {
+  printf 'watch\n' >> "$WATCH_COUNT"
+  count="$(wc -l < "$WATCH_COUNT")"
+  if [ "$count" -eq 1 ]; then
+    return "$FIRST_STATUS"
+  fi
+  return "$SECOND_STATUS"
+}
+gh() {
+  test "$1" = run
+  test "$2" = view
+  test "$3" = 123
+  printf 'query\n' >> "$QUERY_COUNT"
+  printf '%s\t%s\n' "$RUN_STATUS" "$RUN_CONCLUSION"
+}
+if watch_build_run 123; then
+  result=0
+else
+  result="$?"
+fi
+printf '%s\t%s\t%s\n' "$result" \
+  "$(wc -l < "$WATCH_COUNT")" "$(wc -l < "$QUERY_COUNT")"
+'''
+                    )
+                    completed = subprocess.run(
+                        ["/bin/bash", "-c", harness],
+                        env={
+                            **os.environ,
+                            "FIRST_STATUS": str(first),
+                            "QUERY_COUNT": str(query_count),
+                            "RUN_CONCLUSION": conclusion,
+                            "RUN_STATUS": status,
+                            "SECOND_STATUS": str(second),
+                            "WATCH_COUNT": str(watch_count),
+                        },
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(
+                        completed.stdout.strip(),
+                        f"{expected_result}\t{expected_watches}\t"
+                        f"{expected_queries}",
                     )
 
     def test_tester_facing_case_contract_is_integrated(self):
