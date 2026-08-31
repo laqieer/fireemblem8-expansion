@@ -756,6 +756,103 @@ def _make_logical_lines(text: str) -> list[tuple[bool, str]]:
     return result
 
 
+MAKE_DEFINE_RE = re.compile(
+    r"^((?:(?:override|private|export)\s+)*)define(?:\s+(.*))?$"
+)
+MAKE_DEFINE_NAME_RE = re.compile(
+    r"^([A-Za-z_][A-Za-z0-9_]*)(?:\s*(::=|:=|\?=|\+=|=))?\s*$"
+)
+
+
+def _make_statements(text: str, path: str) -> list[tuple[str, Any]]:
+    result: list[tuple[str, Any]] = []
+    logical_source = []
+    lines = text.splitlines(keepends=True)
+    index = 0
+
+    def flush_logical_source() -> None:
+        if not logical_source:
+            return
+        result.extend(
+            ("recipe" if recipe else "line", line)
+            for recipe, line in _make_logical_lines("".join(logical_source))
+        )
+        logical_source.clear()
+
+    while index < len(lines):
+        physical = lines[index]
+        raw = physical.rstrip("\r\n")
+        directive = _strip_make_comment(raw).strip()
+        if not raw.startswith("\t") and (
+            directive == "endef" or directive.startswith("endef ")
+        ):
+            raise OwnershipError(f"Make authority {path!r} has unmatched endef")
+        define = None if raw.startswith("\t") else MAKE_DEFINE_RE.match(directive)
+        if define is None:
+            logical_source.append(physical)
+            index += 1
+            continue
+        flush_logical_source()
+        modifiers = tuple(define.group(1).split())
+        if modifiers:
+            raise OwnershipError(
+                f"Make authority {path!r} define uses unsupported modifiers "
+                f"{modifiers}"
+            )
+        header = define.group(2)
+        parsed_header = (
+            None if header is None else MAKE_DEFINE_NAME_RE.fullmatch(header)
+        )
+        if parsed_header is None:
+            raise OwnershipError(
+                f"Make authority {path!r} has malformed define {directive!r}"
+            )
+        body_lines = []
+        index += 1
+        while index < len(lines):
+            body_physical = lines[index]
+            body_raw = body_physical.rstrip("\r\n")
+            body_directive = _strip_make_comment(body_raw).strip()
+            if not body_raw.startswith("\t") and MAKE_DEFINE_RE.match(
+                body_directive
+            ):
+                raise OwnershipError(
+                    f"Make authority {path!r} has nested define"
+                )
+            if not body_raw.startswith("\t") and (
+                body_directive == "endef"
+                or body_directive.startswith("endef ")
+            ):
+                if body_directive != "endef":
+                    raise OwnershipError(
+                        f"Make authority {path!r} has malformed endef "
+                        f"{body_directive!r}"
+                    )
+                break
+            body_lines.append(body_physical)
+            index += 1
+        else:
+            raise OwnershipError(f"Make authority {path!r} has unclosed define")
+        body = "".join(body_lines)
+        if body.endswith("\r\n"):
+            body = body[:-2]
+        elif body.endswith("\n"):
+            body = body[:-1]
+        result.append(
+            (
+                "define",
+                {
+                    "name": parsed_header.group(1),
+                    "operator": parsed_header.group(2) or "=",
+                    "value": body,
+                },
+            )
+        )
+        index += 1
+    flush_logical_source()
+    return result
+
+
 def _make_variable_refs(values: Iterable[str]) -> set[str]:
     return {
         match.group(1)
@@ -980,6 +1077,7 @@ class SafeMakeExpander:
         "addsuffix",
         "and",
         "basename",
+        "call",
         "dir",
         "filter",
         "filter-out",
@@ -1087,7 +1185,8 @@ class SafeMakeExpander:
         if name in local:
             return [local[name]]
         cache_key = name, before_sequence
-        if cache_key in self.cache:
+        cacheable = not local
+        if cacheable and cache_key in self.cache:
             return self.cache[cache_key]
         records = [
             record
@@ -1096,6 +1195,7 @@ class SafeMakeExpander:
             or record["_sequence"] < before_sequence
         ]
         flavor = None
+        preserve_whitespace = False
         value = ""
         active_records = []
         for record in records:
@@ -1132,15 +1232,21 @@ class SafeMakeExpander:
             else:
                 rhs = record["value"]
             if operator == "+=":
-                value = _normalize_make_expression(value + " " + rhs)
+                if preserve_whitespace or record.get("syntax") == "define":
+                    value = value + (" " if value and rhs else "") + rhs
+                else:
+                    value = _normalize_make_expression(value + " " + rhs)
                 if flavor is None:
                     flavor = "recursive"
+                preserve_whitespace |= record.get("syntax") == "define"
             elif operator in {":=", "::="}:
                 value = rhs
                 flavor = "simple"
+                preserve_whitespace = record.get("syntax") == "define"
             else:
                 value = rhs
                 flavor = "recursive"
+                preserve_whitespace = record.get("syntax") == "define"
         if flavor is None:
             result = [""]
         elif flavor == "simple":
@@ -1153,13 +1259,14 @@ class SafeMakeExpander:
                 before_sequence,
             )
         result = self._bounded(result, name)
-        self.cache[cache_key] = result
-        self.binding_semantics[cache_key] = {
-            "flavor": flavor,
-            "raw_value": value,
-            "effective_values": result,
-            "assignments": active_records,
-        }
+        if cacheable:
+            self.cache[cache_key] = result
+            self.binding_semantics[cache_key] = {
+                "flavor": flavor,
+                "raw_value": value,
+                "effective_values": result,
+                "assignments": active_records,
+            }
         return result
 
     def variable_semantics(self, name: str) -> dict[str, Any]:
@@ -1303,6 +1410,54 @@ class SafeMakeExpander:
         before_sequence: int | None,
     ) -> list[str]:
         arguments = self._split_arguments(raw_arguments)
+        if name == "call":
+            if not arguments or not arguments[0].strip():
+                raise OwnershipError("call Make function requires a macro name")
+            macro_names = self.expand(
+                arguments[0],
+                local,
+                stack,
+                before_sequence,
+            )
+            argument_values = [
+                self.expand(argument, local, stack, before_sequence)
+                for argument in arguments[1:]
+            ]
+            results = []
+            for macro_name, *parameters in itertools.product(
+                macro_names,
+                *argument_values,
+            ):
+                macro_name = macro_name.strip()
+                if not re.fullmatch(
+                    r"[A-Za-z_][A-Za-z0-9_]*",
+                    macro_name,
+                ):
+                    raise OwnershipError(
+                        f"call Make function has invalid macro {macro_name!r}"
+                    )
+                if macro_name not in self.assignments:
+                    raise OwnershipError(
+                        f"call Make function references undefined macro "
+                        f"{macro_name!r}"
+                    )
+                scoped = dict(local)
+                scoped["0"] = macro_name
+                scoped.update(
+                    {
+                        str(index): parameter
+                        for index, parameter in enumerate(parameters, 1)
+                    }
+                )
+                results.extend(
+                    self.variable(
+                        macro_name,
+                        scoped,
+                        stack,
+                        before_sequence,
+                    )
+                )
+            return self._bounded(results, "call " + arguments[0])
         if name == "foreach":
             if len(arguments) != 3:
                 raise OwnershipError("foreach Make prerequisite requires three arguments")
@@ -1526,7 +1681,7 @@ class SafeMakeExpander:
                     before_sequence,
                 )
             ]
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", content):
+        if not re.fullmatch(r"(?:[A-Za-z_][A-Za-z0-9_]*|[0-9]+)", content):
             raise OwnershipError(
                 f"unsupported dynamic Make prerequisite expression {content!r}"
             )
@@ -1576,6 +1731,49 @@ class SafeMakeExpander:
             ),
             value,
         )
+
+    def call_semantics(
+        self,
+        value: str,
+        before_sequence: int | None = None,
+    ) -> list[dict[str, Any]]:
+        result = []
+        index = 0
+        while True:
+            start = value.find("$(call", index)
+            if start < 0:
+                break
+            if (
+                (start and value[start - 1] == "$")
+                or start + 6 >= len(value)
+                or not value[start + 6].isspace()
+            ):
+                index = start + 6
+                continue
+            end = self._reference_end(value, start + 2)
+            content = value[start + 2:end]
+            arguments = self._split_arguments(content[5:].lstrip())
+            macro_names = self.expand(
+                arguments[0],
+                before_sequence=before_sequence,
+            )
+            result.append(
+                {
+                    "expression": value[start:end + 1],
+                    "macros": {
+                        name.strip(): self.assignments.get(name.strip(), ())
+                        for name in macro_names
+                    },
+                    "effective_values": self._reference(
+                        content,
+                        {},
+                        (),
+                        before_sequence,
+                    ),
+                }
+            )
+            index = end + 1
+        return result
 
 
 def _parse_make_authorities(
@@ -1673,19 +1871,22 @@ def _parse_make_authorities(
             raise OwnershipError(f"Make authority {relative!r} is not UTF-8") from error
         current_targets: list[str] = []
         conditional_stack = list(inherited_context)
-        define_depth = 0
-        for recipe, raw_line in _make_logical_lines(text):
-            stripped_raw = raw_line.strip()
-            if define_depth:
-                if stripped_raw.startswith("define "):
-                    define_depth += 1
-                elif stripped_raw == "endef":
-                    define_depth -= 1
+        for statement_kind, statement in _make_statements(text, relative):
+            if statement_kind == "define":
+                current_targets = []
+                variables[statement["name"]].append(
+                    {
+                        "operator": statement["operator"],
+                        "value": statement["value"],
+                        "context": tuple(conditional_stack),
+                        "syntax": "define",
+                        "_sequence": parse_sequence,
+                    }
+                )
+                parse_sequence += 1
                 continue
-            if not recipe and stripped_raw.startswith("define "):
-                define_depth = 1
-                continue
-            if recipe:
+            raw_line = statement
+            if statement_kind == "recipe":
                 command = raw_line.strip()
                 if command and not command.startswith("#"):
                     for target in current_targets:
@@ -1810,8 +2011,6 @@ def _parse_make_authorities(
             raise OwnershipError(
                 f"Make authority {relative!r} has unclosed conditional"
             )
-        if define_depth:
-            raise OwnershipError(f"Make authority {relative!r} has unclosed define")
 
     parse_file("Makefile")
     expander = SafeMakeExpander(loader, variables, dynamic_contracts)
@@ -2177,6 +2376,21 @@ def _parse_make_authorities(
             recipe["command"] + " " + " ".join(recipe["context"])
             for recipe in active_recipes
         ]
+        recipe_calls = [
+            call
+            for recipe in active_recipes
+            for call in expander.call_semantics(recipe["command"])
+        ]
+        prerequisite_calls = [
+            call
+            for declaration in active_declarations
+            if declaration["kind"] == "rule"
+            for prerequisite in (
+                *declaration["prerequisites"],
+                *declaration["order_only"],
+            )
+            for call in expander.call_semantics(prerequisite)
+        ]
         prerequisite_refs = _make_variable_refs(prerequisite_values)
         recipe_refs = _make_variable_refs(recipe_values) - prerequisite_refs
         target_variable_names = set(target_semantics)
@@ -2212,6 +2426,8 @@ def _parse_make_authorities(
             "_prerequisite_refs": sorted(prerequisite_refs),
             "_target_values": target_values,
             "target_variables": target_semantics,
+            "prerequisite_calls": prerequisite_calls,
+            "recipe_calls": recipe_calls,
             "recipe_variables": {
                 name: recipe_variable_semantics(name)
                 for name in sorted(recipe_refs)

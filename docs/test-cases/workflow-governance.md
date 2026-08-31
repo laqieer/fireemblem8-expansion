@@ -558,6 +558,17 @@ reject their first over-limit input. The live linker closure must report zero
 unowned dynamic prerequisites; removing a registration or changing a bound
 tool/input invalidates the exact consuming evidence.
 
+Multiline `define` assignments preserve their authored bodies and GNU Make
+flavor/timing. Synthetic direct and nested `call` fixtures bind positional
+arguments in recipes and prerequisites; one/two body mutations propagate only
+through their consuming aggregate. Malformed, nested, modified, undefined,
+unsupported, cyclic, and 65-level macro forms plus word/variant overflow fail
+closed. In the real tree, removing the content-disabled ROM, symbol, and
+`gItemData` assertions from `modern_starter_content_disabled_negative` changes
+the starter-hook record and the seven exact linker-owner edges reached by
+`expansion-modern-linker-check`, while its invocation and unrelated authority
+remain unchanged.
+
 Target-specific recursive values and appends are evaluated at target use and
 inherited by prerequisite recipes; simple target values remain immediate.
 Recipe variables and escaped secondary prerequisites use those target-local

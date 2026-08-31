@@ -1030,6 +1030,279 @@ class OwnershipGraphTests(unittest.TestCase):
             self.assertEqual(cycle_record, parse(cycle, "all"))
             self.assertTrue(cycle_record["cycles"])
 
+    def test_make_define_and_call_semantics_match_gnu_make(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            scratch = Path(directory)
+            makefile = scratch / "Makefile"
+            loader = reporter.AuthorityLoader(
+                scratch,
+                {
+                    "Makefile": reporter.GitTreeEntry(
+                        "Makefile", "100644", "blob", "0" * 40
+                    )
+                },
+            )
+
+            def parse(text, target="all"):
+                makefile.write_text(text, encoding="ascii")
+                return reporter._parse_make_authorities(loader, {target})[target]
+
+            def run(text, target="all"):
+                makefile.write_text(text, encoding="ascii")
+                return subprocess.run(
+                    ["make", "--no-print-directory", "-s", target],
+                    cwd=scratch,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+
+            define_one = (
+                "define emit\n"
+                "@printf '%s' '$(1)'\n"
+                "@printf '%s\\n' '-one'\n"
+                "endef\n"
+                "all:\n"
+                "\t$(call emit,arg)\n"
+                "unrelated:\n"
+                "\t@true\n"
+            )
+            define_two = define_one.replace("'-one'", "'-two'")
+            self.assertEqual(run(define_one).stdout, "arg-one\n")
+            self.assertEqual(run(define_two).stdout, "arg-two\n")
+            parsed_one = parse(define_one)
+            parsed_two = parse(define_two)
+            self.assertNotEqual(parsed_one, parsed_two)
+            self.assertEqual(
+                parsed_one,
+                parse("# unrelated comment\n" + define_one),
+            )
+            self.assertEqual(
+                parsed_one["record"]["recipe_calls"][0]["macros"]["emit"][0][
+                    "value"
+                ],
+                "@printf '%s' '$(1)'\n@printf '%s\\n' '-one'",
+            )
+            makefile.write_text(define_one, encoding="ascii")
+            all_one = reporter._parse_make_authorities(loader)
+            makefile.write_text(define_two, encoding="ascii")
+            all_two = reporter._parse_make_authorities(loader)
+            self.assertEqual(all_one["unrelated"], all_two["unrelated"])
+
+            recursive = (
+                "BASE = old\n"
+                "define VALUE\n"
+                "$(BASE)\n"
+                "endef\n"
+                "BASE = new\n"
+                "all:\n"
+                "\t@printf '%s\\n' '$(VALUE)'\n"
+            )
+            recursive_later = recursive.replace("BASE = new", "BASE = later")
+            immediate = recursive.replace("define VALUE", "define VALUE :=")
+            immediate_later = recursive_later.replace(
+                "define VALUE",
+                "define VALUE :=",
+            )
+            immediate_posix = recursive.replace(
+                "define VALUE",
+                "define VALUE ::=",
+            )
+            self.assertEqual(run(recursive).stdout, "new\n")
+            self.assertEqual(run(recursive_later).stdout, "later\n")
+            self.assertNotEqual(parse(recursive), parse(recursive_later))
+            self.assertEqual(run(immediate).stdout, "old\n")
+            self.assertEqual(run(immediate_later).stdout, "old\n")
+            self.assertEqual(parse(immediate), parse(immediate_later))
+            self.assertEqual(run(immediate_posix).stdout, "old\n")
+
+            nested = (
+                "define inner\n"
+                "@printf '%s\\n' '$(0):$(1):$(2)'\n"
+                "endef\n"
+                "define outer\n"
+                "$(call inner,$(1),tail)\n"
+                "endef\n"
+                "all:\n"
+                "\t$(call outer,head)\n"
+            )
+            self.assertEqual(run(nested).stdout, "inner:head:tail\n")
+            nested_authority = parse(nested)
+            self.assertEqual(
+                nested_authority["record"]["recipe_calls"][0][
+                    "effective_values"
+                ],
+                ["@printf '%s\\n' 'inner:head:tail'"],
+            )
+
+            append_default = (
+                "DEFAULT = kept\n"
+                "define VALUE\n"
+                "one\n"
+                "endef\n"
+                "define VALUE +=\n"
+                "two\n"
+                "endef\n"
+                "define DEFAULT ?=\n"
+                "replaced\n"
+                "endef\n"
+                "all:\n"
+                "\t@printf '%s|%s\\n' '$(VALUE)' '$(DEFAULT)'\n"
+            )
+            self.assertEqual(run(append_default).stdout, "one two|kept\n")
+            append_record = parse(append_default)["record"]["recipe_variables"]
+            self.assertEqual(append_record["VALUE"]["effective_values"], ["one two"])
+            self.assertEqual(append_record["DEFAULT"]["effective_values"], ["kept"])
+
+            prerequisite_one = (
+                "define dependency\n"
+                "child\n"
+                "endef\n"
+                "all: $(call dependency)\n"
+                "child:\n"
+                "\t@printf 'one\\n'\n"
+            )
+            prerequisite_two = prerequisite_one.replace(
+                "define dependency\nchild",
+                "define dependency\nother",
+            ).replace(
+                "child:\n\t@printf 'one",
+                "other:\n\t@printf 'two",
+            )
+            self.assertEqual(run(prerequisite_one).stdout, "one\n")
+            self.assertEqual(run(prerequisite_two).stdout, "two\n")
+            self.assertNotEqual(
+                parse(prerequisite_one),
+                parse(prerequisite_two),
+            )
+            self.assertEqual(
+                {
+                    item["target"]
+                    for item in parse(prerequisite_one)["transitive"]
+                },
+                {"child"},
+            )
+
+    def test_make_define_and_call_fail_closed(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            scratch = Path(directory)
+            makefile = scratch / "Makefile"
+            loader = reporter.AuthorityLoader(
+                scratch,
+                {
+                    "Makefile": reporter.GitTreeEntry(
+                        "Makefile", "100644", "blob", "0" * 40
+                    )
+                },
+            )
+
+            malformed = {
+                "missing-name": "define\nvalue\nendef\nall:\n\t@true\n",
+                "unsupported-operator": (
+                    "define VALUE !=\nvalue\nendef\nall:\n\t@true\n"
+                ),
+                "unsupported-modifier": (
+                    "override define VALUE\nvalue\nendef\nall:\n\t@true\n"
+                ),
+                "nested": (
+                    "define OUTER\ndefine INNER\nvalue\nendef\nendef\n"
+                    "all:\n\t@true\n"
+                ),
+                "unmatched": "endef\nall:\n\t@true\n",
+                "unclosed": "define VALUE\nvalue\n",
+            }
+            for label, text in malformed.items():
+                with self.subTest(definition=label):
+                    makefile.write_text(text, encoding="ascii")
+                    with self.assertRaises(reporter.OwnershipError):
+                        reporter._parse_make_authorities(loader, {"all"})
+
+            cyclic = (
+                "define A\n$(call B)\nendef\n"
+                "define B\n$(call A)\nendef\n"
+                "all:\n\t$(call A)\n"
+            )
+            makefile.write_text(cyclic, encoding="ascii")
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "cyclic dynamic Make prerequisite variables",
+            ):
+                reporter._parse_make_authorities(loader, {"all"})
+
+            for label, text, error in (
+                (
+                    "undefined",
+                    "all:\n\t$(call MISSING)\n",
+                    "undefined macro",
+                ),
+                (
+                    "unsupported-body",
+                    "define MACRO\n$(unsupported value)\nendef\n"
+                    "all:\n\t$(call MACRO)\n",
+                    "unsupported dynamic Make prerequisite function",
+                ),
+            ):
+                with self.subTest(reachable_call=label):
+                    makefile.write_text(text, encoding="ascii")
+                    with self.assertRaisesRegex(
+                        reporter.OwnershipError,
+                        error,
+                    ):
+                        reporter._parse_make_authorities(loader, {"all"})
+
+            def call_chain(length):
+                definitions = []
+                for index in range(1, length + 1):
+                    body = (
+                        "@true"
+                        if index == length
+                        else f"$(call M{index + 1})"
+                    )
+                    definitions.append(
+                        f"define M{index}\n{body}\nendef\n"
+                    )
+                return "".join(definitions) + "all:\n\t$(call M1)\n"
+
+            makefile.write_text(call_chain(64), encoding="ascii")
+            self.assertIn(
+                "all",
+                reporter._parse_make_authorities(loader, {"all"}),
+            )
+            makefile.write_text(call_chain(65), encoding="ascii")
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "expansion exceeds depth bound",
+            ):
+                reporter._parse_make_authorities(loader, {"all"})
+
+            expander = reporter.SafeMakeExpander(
+                loader,
+                {
+                    "MACRO": [
+                        {
+                            "operator": "=",
+                            "value": "one two three",
+                            "context": (),
+                            "syntax": "define",
+                            "_sequence": 0,
+                        }
+                    ]
+                },
+            )
+            expander.MAX_WORDS = 2
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "word bound",
+            ):
+                expander.expand("$(call MACRO)")
+            expander.MAX_WORDS = reporter.SafeMakeExpander.MAX_WORDS
+            expander.MAX_VARIANTS = 0
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "variant bound",
+            ):
+                expander.expand("$(call MACRO)")
+
     def test_make_expansion_rejects_unsupported_cycles_and_bounds(self):
         with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
             scratch = Path(directory)
@@ -1466,6 +1739,119 @@ class OwnershipGraphTests(unittest.TestCase):
             self.assertNotEqual(
                 before["expansion-modern-linker-check"],
                 after["expansion-modern-linker-check"],
+            )
+            self.assertEqual(
+                before["expansion-modern-all"],
+                after["expansion-modern-all"],
+            )
+            model = reporter.validate_graph(
+                graph,
+                schema,
+                loader,
+                entries,
+            )
+            self.assertEqual(
+                reporter._authority_changed_edges(
+                    graph,
+                    prior_graph,
+                    model,
+                    loader,
+                    base_loader,
+                ),
+                {
+                    "configuration.link",
+                    "generated-schema.link",
+                    "generated.link",
+                    "localization.consumer",
+                    "localization.link",
+                    "manual.link",
+                    "runtime.link",
+                },
+            )
+        finally:
+            modern_mk.write_bytes(original)
+
+    def test_real_starter_macro_mutation_invalidates_exact_link_edges(self):
+        entries, _, graph, schema = self.fixture_authority()
+        modern_mk = self.fixture_root / "modern.mk"
+        original = modern_mk.read_bytes()
+        base_loader = reporter.AuthorityLoader(
+            self.fixture_root,
+            entries,
+            "HEAD",
+        )
+        prior_graph = reporter._prior_graph(base_loader)
+        self.assertIsNotNone(prior_graph)
+        loader = reporter.AuthorityLoader(self.fixture_root, entries)
+        requested = {
+            "expansion-modern-all",
+            "expansion-modern-linker-check",
+            "expansion-modern-starter-hook-check",
+        }
+        before = reporter._parse_make_authorities(loader, requested)
+
+        def transitive_record(authority, target):
+            return next(
+                item["record"]
+                for item in authority["transitive"]
+                if item["target"] == target
+            )
+
+        before_starter = transitive_record(
+            before["expansion-modern-linker-check"],
+            "expansion-modern-starter-hook-check",
+        )
+        macro_records = before_starter["recipe_variables"][
+            "modern_starter_content_disabled_negative"
+        ]["assignments"]
+        self.assertEqual(len(macro_records), 1)
+        for required_check in (
+            "ExpansionStarterContentCharmEvade",
+            "grep -a -q",
+            "gItemData",
+        ):
+            self.assertIn(required_check, macro_records[0]["value"])
+        invocation = b"\t$(modern_starter_content_disabled_negative)\n"
+        self.assertEqual(original.count(invocation), 2)
+        start = b"define modern_starter_content_disabled_negative\n"
+        end = b"\nendef\n\n# Fail loudly"
+        prefix, separator, remainder = original.partition(start)
+        self.assertEqual(separator, start)
+        _, separator, suffix = remainder.partition(end)
+        self.assertEqual(separator, end)
+        mutated = (
+            prefix
+            + start
+            + b"\t@printf 'fixture disables content artifact checks\\n'"
+            + end
+            + suffix
+        )
+        self.assertEqual(mutated.count(invocation), 2)
+        mutated_body = mutated.partition(start)[2].partition(end)[0]
+        for disabled_check in (
+            b"ExpansionStarterContentCharmEvade",
+            b"grep -a -q",
+            b"gItemData",
+        ):
+            self.assertNotIn(disabled_check, mutated_body)
+        try:
+            modern_mk.write_bytes(mutated)
+            loader = reporter.AuthorityLoader(self.fixture_root, entries)
+            after = reporter._parse_make_authorities(loader, requested)
+            self.assertNotEqual(
+                before["expansion-modern-starter-hook-check"],
+                after["expansion-modern-starter-hook-check"],
+            )
+            self.assertNotEqual(
+                before["expansion-modern-linker-check"],
+                after["expansion-modern-linker-check"],
+            )
+            self.assertNotEqual(
+                before_starter,
+                transitive_record(
+                    after["expansion-modern-linker-check"],
+                    "expansion-modern-starter-hook-check",
+                ),
             )
             self.assertEqual(
                 before["expansion-modern-all"],

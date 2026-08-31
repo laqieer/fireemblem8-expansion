@@ -194,6 +194,18 @@ timing. A later `BASE` reassignment therefore cannot change an earlier
 `OBJECT := $(BASE)`, while it does affect `OBJECT = $(BASE)`. GNU Make fixtures
 pin global, target-specific, append, and conditional variants.
 
+`define` blocks participate in the same ordered assignment sequence. Their
+exact multiline bodies are retained, default and explicit recursive flavor
+remain deferred, and `:=`, `::=`, `+=`, and `?=` retain GNU Make timing.
+Recipe and prerequisite `$(call macro,arg...)` uses bind bounded positional
+variables (`$(0)`, `$(1)`, and later arguments), including nested calls, and
+carry the exact definition into every consuming target authority. Malformed or
+nested definitions, unsupported definition modifiers/operators, undefined or
+unsupported reachable calls, cycles, and call depth/word/variant overflow fail
+closed. The real linker closure includes the starter-hook content-disabled
+artifact-check macro, so removing its ROM, symbol, or `gItemData` checks
+invalidates the exact link-owner edges even though its invocation is unchanged.
+
 Target-specific recursive `=` and recursive `+=` resolve at target use, so
 they observe later global/target values and are inherited by prerequisites;
 target-specific `:=`/`::=` and append to a simple value remain immediate.
