@@ -123,17 +123,61 @@ static int log_event(
     return close(fd);
 }
 
+static const char *canonical_program(const char *program)
+{
+    if (strcmp(program, "/usr/bin/find") == 0)
+        return "find";
+    if (strcmp(program, "/usr/bin/printf") == 0)
+        return "printf";
+    if (strcmp(program, "/usr/bin/python3") == 0)
+        return "python3";
+    if (strcmp(program, "/usr/bin/uname") == 0)
+        return "uname";
+    if (strcmp(program, "/bin/vo-make") == 0)
+        return "/usr/bin/make";
+    return program;
+}
+
+static char *direct_command(int argc, char **argv)
+{
+    size_t size = strlen(canonical_program(argv[0])) + 1;
+    char *result;
+    int index;
+
+    for (index = 1; index < argc; ++index)
+        size += strlen(argv[index]) + 4;
+    result = malloc(size);
+    if (result == NULL)
+        return NULL;
+    strcpy(result, canonical_program(argv[0]));
+    for (index = 1; index < argc; ++index)
+    {
+        strcat(result, " ");
+        if (argv[index][0] == '\0')
+            strcat(result, "\"\"");
+        else
+            strcat(result, argv[index]);
+    }
+    return result;
+}
+
 int main(int argc, char **argv)
 {
     const char *count_text = getenv("VO_COMMAND_COUNT");
     const char *map_dir = getenv("VO_MAP_DIR");
     const char *command = NULL;
+    char *owned_command = NULL;
     unsigned long count = 0;
     int32_t match = -1;
     uint64_t command_hash = 0;
 
-    if (argc == 3 && strcmp(argv[1], "-c") == 0)
-        command = argv[2];
+    if (argc >= 3 && strcmp(argv[argc - 2], "-c") == 0)
+        command = argv[argc - 1];
+    else if (argc >= 1)
+    {
+        owned_command = direct_command(argc, argv);
+        command = owned_command;
+    }
     if (count_text != NULL)
         count = strtoul(count_text, NULL, 10);
     if (command != NULL && map_dir != NULL)
@@ -192,5 +236,6 @@ int main(int argc, char **argv)
         }
         free(output);
     }
+    free(owned_command);
     return 0;
 }

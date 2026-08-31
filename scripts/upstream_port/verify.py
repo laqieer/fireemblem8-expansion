@@ -90,6 +90,7 @@ _EXPECTED_JOB_ENV = {
 _NON_GATE_STEP_NAMES = {
     "Verify checked-out revision",
     "Hydrate workflow-pilot Git authority",
+    "Validate ownership with exact PR-base verifier",
     "Install host-only dependencies (no arm-none-eabi toolchain)",
     "Install dependencies",
     "Build tools",
@@ -110,6 +111,9 @@ _VALIDATION_OWNERSHIP_TEST_STEP_NAME = (
 )
 _VALIDATION_OWNERSHIP_CHECK_STEP_NAME = (
     "Validate validation ownership graph (issue #180)"
+)
+_VALIDATION_OWNERSHIP_BASE_STEP_NAME = (
+    "Validate ownership with exact PR-base verifier"
 )
 _SCRUBBED_PILOT_ENV = (
     "BASH_ENV: ''",
@@ -140,6 +144,14 @@ _SCRUBBED_PILOT_ENV = (
     "PATH: /usr/bin:/bin",
     "PYTHONPATH: ''",
 )
+_BASE_VERIFIER_ENV = (
+    *_SCRUBBED_PILOT_ENV,
+    "BUILD_EVENT_NAME: ${{ github.event_name }}",
+    "EXPECTED_BASE_SHA: ${{ github.event_name == 'pull_request' && "
+    "github.event.pull_request.base.sha || '' }}",
+    "EXPECTED_CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && "
+    "github.event.pull_request.head.sha || github.sha }}",
+)
 _EXPECTED_STEP_ROLES = {
     "host-tests": (
         ("setup", None),
@@ -151,6 +163,7 @@ _EXPECTED_STEP_ROLES = {
         ("gate", "Run workflow contract test suite"),
         ("gate", _WORKFLOW_PILOT_TEST_STEP_NAME),
         ("gate", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
+        ("setup", _VALIDATION_OWNERSHIP_BASE_STEP_NAME),
         ("gate", _VALIDATION_OWNERSHIP_TEST_STEP_NAME),
         ("gate", _VALIDATION_OWNERSHIP_CHECK_STEP_NAME),
         ("gate", "Run localization host test suite (issue #18)"),
@@ -769,6 +782,7 @@ def _parse_step(block, job_name, index):
                 _WORKFLOW_PILOT_BASELINE_STEP_NAME,
                 _VALIDATION_OWNERSHIP_TEST_STEP_NAME,
                 _VALIDATION_OWNERSHIP_CHECK_STEP_NAME,
+                _VALIDATION_OWNERSHIP_BASE_STEP_NAME,
                 "Hydrate workflow-pilot Git authority",
             }
             else {"name", "run"}
@@ -778,6 +792,11 @@ def _parse_step(block, job_name, index):
                 f"{step_label} must contain exactly "
                 f"{', '.join(sorted(expected_fields))}"
             )
+        expected_environment = (
+            _BASE_VERIFIER_ENV
+            if name == _VALIDATION_OWNERSHIP_BASE_STEP_NAME
+            else _SCRUBBED_PILOT_ENV
+        )
         if "env" in values and values["env"] != tuple(
             sorted(
                 tuple(
@@ -785,7 +804,7 @@ def _parse_step(block, job_name, index):
                     if ": " in entry
                     else (entry[:-1], "")
                 )
-                for entry in _SCRUBBED_PILOT_ENV
+                for entry in expected_environment
             )
         ):
             raise ValueError(

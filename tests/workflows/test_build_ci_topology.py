@@ -82,6 +82,30 @@ VALIDATION_OWNERSHIP_CHECK_GATE = (
     "MAKEFLAGS= MFLAGS= MAKEOVERRIDES= GNUMAKEFLAGS= "
     "make validation-ownership-check"
 )
+VALIDATION_OWNERSHIP_BASE_STEP = (
+    "Validate ownership with exact PR-base verifier"
+)
+VALIDATION_OWNERSHIP_BASE_SHA_ENV = (
+    "        EXPECTED_BASE_SHA: ${{ github.event_name == 'pull_request' && "
+    "github.event.pull_request.base.sha || '' }}"
+)
+VALIDATION_OWNERSHIP_CANDIDATE_SHA_ENV = (
+    "        EXPECTED_CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && "
+    "github.event.pull_request.head.sha || github.sha }}"
+)
+VALIDATION_OWNERSHIP_BASE_CONTRACT = (
+    "        BUILD_EVENT_NAME: ${{ github.event_name }}",
+    VALIDATION_OWNERSHIP_BASE_SHA_ENV,
+    VALIDATION_OWNERSHIP_CANDIDATE_SHA_ENV,
+    'if [ "$BUILD_EVENT_NAME" != pull_request ]; then',
+    '/usr/bin/git archive --format=tar "$EXPECTED_BASE_SHA"',
+    '"$trusted_root/scripts/validation_ownership/ci_gate.mk"',
+    'VO_TRUSTED_ROOT="$trusted_root"',
+    'VO_REPOSITORY_ROOT="$GITHUB_WORKSPACE"',
+    'VO_BASE_SHA="$EXPECTED_BASE_SHA"',
+    'VO_CANDIDATE_SHA="$EXPECTED_CANDIDATE_SHA"',
+    "validation-ownership: bootstrap-not-authoritative",
+)
 EXPECTED_BUILD_SHA_EXPRESSION = (
     "${{ github.event_name == 'pull_request' && "
     "github.event.pull_request.head.sha || github.sha }}"
@@ -380,6 +404,29 @@ def _step_has_scrubbed_environment(step: str) -> bool:
         if line.strip() and not line.lstrip().startswith("#"):
             entries.append(line)
     return tuple(entries) == SCRUBBED_STEP_ENV
+
+
+def _base_step_has_scrubbed_environment(step: str) -> bool:
+    lines = step.splitlines()
+    try:
+        env_index = lines.index("      env:")
+    except ValueError:
+        return False
+    entries = []
+    for line in lines[env_index + 1 :]:
+        if line.strip() and len(line) - len(line.lstrip(" ")) <= 6:
+            break
+        if line.strip() and not line.lstrip().startswith("#"):
+            entries.append(line)
+    expected = (
+        SCRUBBED_STEP_ENV[0],
+        "        BUILD_EVENT_NAME: ${{ github.event_name }}",
+        SCRUBBED_STEP_ENV[1],
+        VALIDATION_OWNERSHIP_BASE_SHA_ENV,
+        VALIDATION_OWNERSHIP_CANDIDATE_SHA_ENV,
+        *SCRUBBED_STEP_ENV[2:],
+    )
+    return tuple(entries) == expected
 
 
 def _step_name(step: str) -> str | None:
@@ -804,6 +851,21 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
                 f"candidate host lost exact validation ownership evidence: {command}"
             )
     host_steps = _step_blocks(jobs["host-tests"])
+    base_steps = [
+        step
+        for step in host_steps
+        if f"    - name: {VALIDATION_OWNERSHIP_BASE_STEP}\n" in step
+    ]
+    if (
+        len(base_steps) != 1
+        or any(item not in base_steps[0] for item in VALIDATION_OWNERSHIP_BASE_CONTRACT)
+        or "scripts/validation_ownership/ci_verifier.py"
+        not in base_steps[0]
+        or not _base_step_has_scrubbed_environment(base_steps[0])
+    ):
+        errors.append(
+            "candidate host lost exact PR-base validation ownership authority"
+        )
     for name in (
         "Run validation ownership regression suite (issue #180)",
         "Validate validation ownership graph (issue #180)",
@@ -2412,6 +2474,48 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 self.assertTrue(
                     any(
                         "candidate host lost exact validation ownership evidence"
+                        in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_validation_ownership_verifier_is_exact_base_pinned(self):
+        host_tests = _job_blocks(self.text)["host-tests"]
+        self.assertLess(
+            host_tests.index(VALIDATION_OWNERSHIP_BASE_STEP),
+            host_tests.index(
+                "Run validation ownership regression suite (issue #180)"
+            ),
+        )
+        mutations = (
+            (
+                '"$trusted_root/scripts/validation_ownership/ci_gate.mk"',
+                '"scripts/validation_ownership/ci_gate.mk"',
+            ),
+            (
+                '/usr/bin/git archive --format=tar "$EXPECTED_BASE_SHA"',
+                '/usr/bin/git archive --format=tar "$EXPECTED_CANDIDATE_SHA"',
+            ),
+            (
+                'VO_BASE_SHA="$EXPECTED_BASE_SHA"',
+                'VO_BASE_SHA="$EXPECTED_CANDIDATE_SHA"',
+            ),
+            (
+                "validation-ownership: bootstrap-not-authoritative",
+                "validation-ownership: candidate-authoritative",
+            ),
+            (
+                'if [ "$BUILD_EVENT_NAME" != pull_request ]; then',
+                'if [ "$BUILD_EVENT_NAME" = pull_request ]; then',
+            ),
+        )
+        for original, replacement in mutations:
+            with self.subTest(original=original):
+                changed = self.text.replace(original, replacement, 1)
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "lost exact PR-base validation ownership authority"
                         in error
                         for error in _errors(changed, False)
                     )

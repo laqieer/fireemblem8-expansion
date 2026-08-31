@@ -181,6 +181,14 @@ The superproject and gitlink trees are read-only mounts. Only the ignored
 scratch `build` overlay and command-control directory are writable. Missing
 namespace support, the fixed absolute tools, the exact gitlink object, or the
 statically built command interceptor fails before Make starts.
+The launcher first probes unprivileged user namespaces. On runners that block
+them, it permits only exact passwordless `/usr/bin/sudo -n /usr/bin/unshare`;
+after mounting and chrooting, the trusted launcher clears supplementary
+groups, the capability bounding/permitted/effective sets, and keep-caps, drops
+to the frozen original runner UID/GID, sets no-new-privileges, and only then
+executes candidate Make. Candidate code never runs as host root. The selected
+launcher mode, absolute binaries, versions, and executable digests are part of
+authority; if both paths fail, the probe fails closed.
 
 The probe binds the SHA-256 and version of `/usr/bin/make`, its normalized
 argv, empty/scrubbed environment, `C` locale, UTC timezone, fixed source-date
@@ -221,9 +229,12 @@ command is logged. A command must match exactly one sealed registry regex.
 Fixed commands receive their registered output; source-dependent commands run
 once in a second networkless read-only `/usr` + exact-tree command sandbox,
 with only the scratch build overlay writable, and their concrete output digest
-is fingerprinted. Normal recipes are never run; recursive/dry-run recipes that
-GNU Make insists on invoking are intercepted and recorded as suppressed.
-Unknown direct recipe expansion, unregistered shell/eager assignment,
+is fingerprinted. Normal `-n` recipes produce no interceptor event. Any
+include-remake, recursive, eager, or direct expansion that GNU Make does
+attempt is authorized only when the concrete command matches exactly one
+sealed contract; the same text appearing in trace output, a recipe, or
+normalized multiline output grants no authority. Unknown direct recipe
+expansion, unregistered shell/eager assignment,
 ambiguous command registration, nonconvergence, or sandbox failure rejects.
 
 Every Make include observed by GNU Make must be the primary `Makefile`, a
@@ -243,6 +254,21 @@ goal parses no normal build includes. Consequently `MAKECMDGOALS= -n` and
 `AUTOTOOLS_CONFIG_MK=/dev/stdin SHELL=...` cannot hide or replace the checker,
 while `make validation-ownership-check` either executes the isolated checker
 or fails during trusted bootstrap.
+
+Candidate CI does not use these candidate-authored modules as its own trust
+root. On pull requests, `host-tests` first checks the exact GitHub PR-base
+commit for `ci_verifier.py` and `ci_gate.mk`. When present, it archives the
+complete clean base tree, invokes the base gate, verifies every staged verifier
+package file and every loaded transitive `scripts.*` module against base Git
+objects, excludes the candidate checkout from `sys.path`, and overlays the
+base validation package/schema/oracle while reading all other graph and Make
+authority from the exact candidate commit. Candidate modifications to
+`reporter.py`, `make_probe.py`, the interceptor, or their tests therefore
+cannot authorize themselves. This introducing PR's base lacks that package,
+so CI emits `bootstrap-not-authoritative`; candidate tests and the public gate
+still run, but direct adversarial review is the introduction evidence. After
+merge, every ordinary PR enters `exact-base-pinned` mode. Git remains the
+identity authority; no source-hash ledger is committed.
 
 Domain-separated seals continue to cover the strict schema, probe oracle,
 complete graph, resolved edges, and live evidence-authority fingerprints.

@@ -17,6 +17,7 @@ from typing import Any, Iterable
 
 MAKE = Path("/usr/bin/make")
 UNSHARE = Path("/usr/bin/unshare")
+SUDO = Path("/usr/bin/sudo")
 PYTHON = Path("/usr/bin/python3")
 CC = Path("/usr/bin/cc")
 LIBC = Path("/lib/x86_64-linux-gnu/libc.so.6")
@@ -52,6 +53,116 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+_NAMESPACE_LAUNCHER: dict[str, Any] | None = None
+
+
+def _namespace_probe_command(*, sudo: bool) -> list[str]:
+    command = [
+        str(UNSHARE),
+        "--mount",
+        "--net",
+        "--pid",
+        "--fork",
+        "--kill-child",
+        "--propagation",
+        "private",
+        "/usr/bin/true",
+    ]
+    if sudo:
+        return [str(SUDO), "-n", *command]
+    return [
+        str(UNSHARE),
+        "--user",
+        "--map-root-user",
+        *command[1:],
+    ]
+
+
+def _tool_version(path: Path) -> str:
+    completed = subprocess.run(
+        [str(path), "--version"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env={
+            "HOME": "/nonexistent",
+            "LANG": "C",
+            "LC_ALL": "C",
+            "PATH": "/usr/bin:/bin",
+            "TZ": "UTC",
+        },
+    )
+    output = completed.stdout or completed.stderr
+    if completed.returncode != 0 or not output.strip():
+        raise MakeProbeError(f"cannot identify trusted tool {path}")
+    return output.splitlines()[0]
+
+
+def _select_namespace_launcher(*, refresh: bool = False) -> dict[str, Any]:
+    global _NAMESPACE_LAUNCHER
+    if _NAMESPACE_LAUNCHER is not None and not refresh:
+        return _NAMESPACE_LAUNCHER
+    probe_environment = {
+        "HOME": "/nonexistent",
+        "LANG": "C",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+        "TZ": "UTC",
+    }
+    user_probe = subprocess.run(
+        _namespace_probe_command(sudo=False),
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        env=probe_environment,
+    )
+    if user_probe.returncode == 0:
+        mode = "user-namespace"
+        prefix = _namespace_probe_command(sudo=False)[:-1]
+    else:
+        if not SUDO.is_file():
+            raise MakeProbeError(
+                "unprivileged user namespaces are unavailable and "
+                "/usr/bin/sudo is absent"
+            )
+        sudo_probe = subprocess.run(
+            _namespace_probe_command(sudo=True),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            env=probe_environment,
+        )
+        if sudo_probe.returncode != 0:
+            raise MakeProbeError(
+                "neither unprivileged nor passwordless-sudo namespace "
+                "confinement is available"
+            )
+        mode = "sudo-drop"
+        prefix = _namespace_probe_command(sudo=True)[:-1]
+    result = {
+        "argv_prefix": prefix,
+        "mode": mode,
+        "runner_gid": os.getgid(),
+        "runner_uid": os.getuid(),
+        "unshare": str(UNSHARE),
+        "unshare_sha256": _sha256_file(UNSHARE),
+        "unshare_version": _tool_version(UNSHARE),
+    }
+    if mode == "sudo-drop":
+        result.update(
+            {
+                "sudo": str(SUDO),
+                "sudo_sha256": _sha256_file(SUDO),
+                "sudo_version": _tool_version(SUDO),
+            }
+        )
+    _NAMESPACE_LAUNCHER = result
+    return result
+
+
 def _ensure_tools() -> dict[str, Any]:
     required = (MAKE, UNSHARE, PYTHON, CC, LIBC, LOADER)
     missing = [str(path) for path in required if not path.is_file()]
@@ -79,8 +190,7 @@ def _ensure_tools() -> dict[str, Any]:
         "make": str(MAKE),
         "make_sha256": _sha256_file(MAKE),
         "make_version": completed.stdout.splitlines()[0],
-        "unshare": str(UNSHARE),
-        "unshare_sha256": _sha256_file(UNSHARE),
+        "namespace_launcher": _select_namespace_launcher(),
     }
 
 
@@ -113,6 +223,9 @@ def _sandbox_run(
             for source, target in read_only
         ],
         "root": str(root.resolve(strict=True)),
+        "sudo_drop": _select_namespace_launcher()["mode"] == "sudo-drop",
+        "runner_gid": _select_namespace_launcher()["runner_gid"],
+        "runner_uid": _select_namespace_launcher()["runner_uid"],
         "writable": [
             [str(source.resolve(strict=True)), target]
             for source, target in (
@@ -127,16 +240,7 @@ def _sandbox_run(
         encoding="utf-8",
     )
     command = [
-        str(UNSHARE),
-        "--user",
-        "--map-root-user",
-        "--mount",
-        "--net",
-        "--pid",
-        "--fork",
-        "--kill-child",
-        "--propagation",
-        "private",
+        *_select_namespace_launcher()["argv_prefix"],
         str(PYTHON),
         "-I",
         str((read_only[0][0] / SANDBOX_EXEC).resolve(strict=True)),
@@ -337,6 +441,49 @@ def _read_events(path: Path) -> list[dict[str, Any]]:
     return result
 
 
+def _event_command(event: dict[str, Any]) -> str | None:
+    arguments = event["arguments"]
+    if (
+        len(arguments) == 3
+        and arguments[1] == "-c"
+    ):
+        return arguments[2]
+    if (
+        len(arguments) == 4
+        and arguments[1:3] == ["-eu", "-c"]
+    ):
+        return arguments[3]
+    if not arguments:
+        return None
+    aliases = {
+        "/usr/bin/find": "find",
+        "/usr/bin/printf": "printf",
+        "/usr/bin/python3": "python3",
+        "/usr/bin/uname": "uname",
+        "/bin/vo-make": "/usr/bin/make",
+    }
+    return " ".join(
+        [
+            aliases.get(arguments[0], arguments[0]),
+            *(
+                '""' if not argument else argument
+                for argument in arguments[1:]
+            ),
+        ]
+    )
+
+
+def _event_direct_arguments(event: dict[str, Any]) -> list[str] | None:
+    arguments = event["arguments"]
+    if (
+        len(arguments) >= 3
+        and arguments[-2] == "-c"
+        and arguments[0] in {"/bin/sh", "/bin/bash"}
+    ):
+        return None
+    return arguments or None
+
+
 def _write_mapping(work: Path, mappings: list[dict[str, Any]]) -> None:
     directory = work / "map"
     if directory.exists():
@@ -399,7 +546,26 @@ def _prepare_make_root(
     ):
         (root / directory).mkdir(parents=True, exist_ok=True)
     shutil.copy2(interceptor, root / "bin/sh")
+    shutil.copy2(interceptor, root / "bin/bash")
+    shutil.copy2(interceptor, root / "bin/vo-make")
     shutil.copy2(interceptor, root / "bin/vo-shell")
+    for name in (
+        "arm-none-eabi-as",
+        "arm-none-eabi-gcc",
+        "cc",
+        "find",
+        "g++",
+        "gcc",
+        "iconv",
+        "mkdir",
+        "mv",
+        "printf",
+        "python3",
+        "rm",
+        "sed",
+        "uname",
+    ):
+        shutil.copy2(interceptor, root / "usr/bin" / name)
     shutil.copy2(MAKE, root / "usr/bin/make")
     shutil.copy2(LIBC, root / "lib/x86_64-linux-gnu/libc.so.6")
     shutil.copy2(LOADER, root / "lib64/ld-linux-x86-64.so.2")
@@ -524,11 +690,14 @@ def _execute_registered_command(
     contract: dict[str, Any],
     *,
     base: Path,
+    direct_arguments: list[str] | None,
     tree: Path,
     work: Path,
     environment: dict[str, str],
 ) -> bytes:
     if contract["resolved_value"] is not None:
+        if not contract["resolved_value"]:
+            return b""
         return (contract["resolved_value"] + "\n").encode("utf-8")
     executed = command
     if contract["id"] == "banim-scaninc-inputs":
@@ -541,10 +710,36 @@ def _execute_registered_command(
     root = base / "command-root"
     if not root.exists():
         root = _prepare_command_root(base)
+    if direct_arguments is None:
+        argv = ["/usr/bin/bash", "-c", executed]
+    else:
+        executable_aliases = {
+            "arm-none-eabi-as": "/usr/bin/arm-none-eabi-as",
+            "arm-none-eabi-gcc": "/usr/bin/arm-none-eabi-gcc",
+            "cc": "/usr/bin/cc",
+            "find": "/usr/bin/find",
+            "g++": "/usr/bin/g++",
+            "gcc": "/usr/bin/gcc",
+            "iconv": "/usr/bin/iconv",
+            "mkdir": "/usr/bin/mkdir",
+            "mv": "/usr/bin/mv",
+            "printf": "/usr/bin/printf",
+            "python3": "/usr/bin/python3",
+            "rm": "/usr/bin/rm",
+            "sed": "/usr/bin/sed",
+            "uname": "/usr/bin/uname",
+        }
+        argv = [
+            executable_aliases.get(
+                direct_arguments[0],
+                direct_arguments[0],
+            ),
+            *direct_arguments[1:],
+        ]
     completed = _sandbox_run(
         root,
         work,
-        argv=["/usr/bin/bash", "-c", executed],
+        argv=argv,
         environment={
             "HOME": "/nonexistent",
             "LANG": "C",
@@ -574,6 +769,7 @@ def _execute_registered_command(
 
 
 def _normalize(text: str) -> str:
+    text = text.replace("/bin/vo-make", "/usr/bin/make")
     text = text.replace("/repo/", "")
     text = text.replace("/repo", ".")
     text = text.replace("/work", "<WORK>")
@@ -798,6 +994,18 @@ def run_probe(
         interceptor_authority = _compile_interceptor(tree, interceptor)
         root, read_only = _prepare_make_root(base, interceptor)
         read_only.append((tree, "/repo"))
+        if (tree / "tools/scaninc").is_dir():
+            scaninc_target = tree / "tools/scaninc/scaninc"
+            scaninc_target.touch()
+            scaninc_target.chmod(0o755)
+            read_only.append((interceptor, "/repo/tools/scaninc/scaninc"))
+        if (tree / "scripts/arm_compressing_linker.py").is_file():
+            read_only.append(
+                (
+                    interceptor,
+                    "/repo/scripts/arm_compressing_linker.py",
+                )
+            )
         gbagfx_authority = None
         if (tree / "tools/gbagfx/main.c").is_file():
             gbagfx = base / "gbagfx"
@@ -817,9 +1025,23 @@ def run_probe(
             " ".join(tracked_inputs[index:index + 100]) + ": ;"
             for index in range(0, len(tracked_inputs), 100)
         )
+        tracked_directories = sorted(
+            {
+                parent.as_posix()
+                for path in tracked_inputs
+                for parent in Path(path).parents
+                if parent.as_posix() != "."
+            }
+        )
+        tracked_directory_rules = "\n".join(
+            " ".join(tracked_directories[index:index + 100]) + ": ;"
+            for index in range(0, len(tracked_directories), 100)
+        )
         probe_file.write_text(
             "/work/probe.mk: ;\n"
             + tracked_input_rules
+            + "\n"
+            + tracked_directory_rules
             + "\n"
             + ".PHONY: __validation_ownership_domain_probe\n"
             + "__validation_ownership_domain_probe: ;\n"
@@ -831,7 +1053,6 @@ def run_probe(
             encoding="ascii",
         )
         mappings: list[dict[str, Any]] = []
-        suppressed_commands: set[str] = set()
         _write_mapping(work, mappings)
         event_path = work / "events.bin"
         normal_targets = sorted(
@@ -883,7 +1104,7 @@ def run_probe(
                     "Makefile",
                     "-f",
                     "/work/probe.mk",
-                    "SHELL=/bin/vo-shell",
+                    "MAKE=/bin/vo-make",
                 ]
             if cli is not None:
                 argv.append(f"{cli[0]}={cli[1]}")
@@ -913,17 +1134,12 @@ def run_probe(
                     event
                     for event in events
                     if event["match"] < 0
-                    and (
-                        len(event["arguments"]) != 3
-                        or event["arguments"][2] not in suppressed_commands
-                    )
                 ]
                 if public_gate:
                     public_commands = [
-                        event["arguments"][2]
+                        _event_command(event)
                         for event in events
-                        if len(event["arguments"]) == 3
-                        and event["arguments"][1] == "-c"
+                        if _event_command(event) is not None
                     ]
                     if (
                         len(public_commands) != 1
@@ -942,29 +1158,14 @@ def run_probe(
                         )
                 if not unknown or public_gate:
                     break
-                added = False
-                observed_output = completed.stdout + "\n" + completed.stderr
-                observed_recipes = _trace_records(observed_output)
-                traced_commands = {
-                    " ".join(command.split())
-                    for record in observed_recipes.values()
-                    for command in (
-                        *record["commands"],
-                        "\n".join(record["commands"]),
-                    )
-                    if command
-                }
-                canonical_output = " ".join(
-                    _normalize(observed_output).split()
-                )
+                replay = False
                 for event in unknown:
-                    arguments = event["arguments"]
-                    if len(arguments) != 3 or arguments[1] != "-c":
+                    command = _event_command(event)
+                    if command is None:
                         raise MakeProbeError(
                             "GNU Make used an unsupported shell invocation: "
                             + repr(event)
                         )
-                    command = arguments[2]
                     matches = [
                         contract
                         for contract in dynamic_contracts.values()
@@ -974,62 +1175,37 @@ def run_probe(
                             re.DOTALL,
                         )
                     ]
-                    if len(matches) > 1:
+                    if len(matches) != 1:
                         raise MakeProbeError(
-                            "GNU Make command matches multiple sealed contracts: "
-                            + repr(command)
+                            "GNU Make attempted command execution without "
+                            "exactly one sealed contract: " + repr(event)
                         )
                     if any(item["command"] == command for item in mappings):
-                        canonical_command = " ".join(command.split())
-                        if (
-                            canonical_command in traced_commands
-                            or canonical_command in canonical_output
-                        ):
-                            suppressed_commands.add(command)
-                            added = True
-                            continue
-                        raise MakeProbeError(
-                            "registered Make command did not converge: "
-                            + repr(event)
-                        )
-                    if not matches:
-                        canonical_command = " ".join(command.split())
-                        if (
-                            canonical_command not in traced_commands
-                            and canonical_command not in canonical_output
-                        ):
-                            raise MakeProbeError(
-                                "GNU Make attempted unregistered command "
-                                "execution: " + repr(event)
-                            )
-                        suppressed_commands.add(command)
-                        added = True
                         continue
                     contract = matches[0]
-                    if contract["id"] == "modern-banim-dry-run-guard":
-                        suppressed_commands.add(command)
-                        added = True
-                        continue
+                    output = _execute_registered_command(
+                        command,
+                        contract,
+                        base=base,
+                        direct_arguments=_event_direct_arguments(event),
+                        tree=tree,
+                        work=work,
+                        environment=extra_environment,
+                    )
                     mappings.append(
                         {
                             "command": command,
                             "contract": contract,
-                            "output": _execute_registered_command(
-                                command,
-                                contract,
-                                base=base,
-                                tree=tree,
-                                work=work,
-                                environment=extra_environment,
-                            ),
+                            "output": output,
                             "suppressed_recipe": False,
                         }
                     )
-                    added = True
-                if not added:
-                    raise MakeProbeError(
-                        "GNU Make command interception made no progress"
+                    replay |= (
+                        contract["resolved_value"] is None
+                        or bool(output)
                     )
+                if not replay:
+                    break
             else:
                 raise MakeProbeError(
                     "GNU Make dynamic command expansion exceeds pass bound"
@@ -1224,7 +1400,7 @@ def run_probe(
                     "generated_gbagfx": gbagfx_authority,
                     "dynamic_commands": [
                         {
-                            "authority": mapping["contract"],
+                            "authority_id": mapping["contract"]["id"],
                             "command": _normalize(mapping["command"]),
                             "output_sha256": hashlib.sha256(
                                 mapping["output"]

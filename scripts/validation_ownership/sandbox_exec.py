@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import ctypes
+import errno
 import json
 import os
 import sys
@@ -18,6 +19,24 @@ MS_BIND = 4096
 MS_REC = 16384
 MS_REMOUNT = 32
 PR_SET_NO_NEW_PRIVS = 38
+PR_SET_KEEPCAPS = 8
+PR_CAPBSET_DROP = 24
+LINUX_CAPABILITY_VERSION_3 = 0x20080522
+
+
+class _CapabilityHeader(ctypes.Structure):
+    _fields_ = [
+        ("version", ctypes.c_uint32),
+        ("pid", ctypes.c_int),
+    ]
+
+
+class _CapabilityData(ctypes.Structure):
+    _fields_ = [
+        ("effective", ctypes.c_uint32),
+        ("permitted", ctypes.c_uint32),
+        ("inheritable", ctypes.c_uint32),
+    ]
 
 
 def _mount(
@@ -49,6 +68,34 @@ def _bind(source: Path, target: Path, *, read_only: bool) -> None:
         )
 
 
+def _drop_sudo_privileges(uid: int, gid: int) -> None:
+    if uid <= 0 or gid <= 0:
+        raise RuntimeError("sudo sandbox requires a non-root runner identity")
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(PR_SET_KEEPCAPS, 0, 0, 0, 0) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), "prctl(PR_SET_KEEPCAPS)")
+    for capability in range(64):
+        if libc.prctl(PR_CAPBSET_DROP, capability, 0, 0, 0) != 0:
+            error = ctypes.get_errno()
+            if error != errno.EINVAL:
+                raise OSError(
+                    error,
+                    os.strerror(error),
+                    "prctl(PR_CAPBSET_DROP)",
+                )
+    os.setgroups([])
+    os.setgid(gid)
+    os.setuid(uid)
+    header = _CapabilityHeader(LINUX_CAPABILITY_VERSION_3, 0)
+    data = (_CapabilityData * 2)()
+    if libc.capset(ctypes.byref(header), ctypes.byref(data)) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), "capset")
+    if os.getuid() != uid or os.getgid() != gid or os.getgroups():
+        raise RuntimeError("sudo sandbox did not drop the runner identity")
+
+
 def main() -> int:
     if not sys.flags.isolated or len(sys.argv) != 2:
         raise SystemExit("sandbox_exec requires isolated Python and one config")
@@ -60,6 +107,9 @@ def main() -> int:
         "environment",
         "read_only",
         "root",
+        "runner_gid",
+        "runner_uid",
+        "sudo_drop",
         "writable",
     }:
         raise SystemExit("sandbox_exec config has unexpected fields")
@@ -82,6 +132,11 @@ def main() -> int:
 
     os.chroot(root)
     os.chdir(config["cwd"])
+    if config["sudo_drop"]:
+        _drop_sudo_privileges(
+            config["runner_uid"],
+            config["runner_gid"],
+        )
     libc = ctypes.CDLL(None, use_errno=True)
     if libc.prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
         error = ctypes.get_errno()

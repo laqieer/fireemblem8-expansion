@@ -99,6 +99,67 @@
       ]
     },
     {
+      "id": "scaninc-build-dry-run-recipe",
+      "expression": "$(shell <scaninc-build-dry-run-recipe>)",
+      "tool": "tools/scaninc/Makefile",
+      "input_files": [
+        "tools/scaninc/asm_file.cpp",
+        "tools/scaninc/c_file.cpp",
+        "tools/scaninc/scaninc.cpp",
+        "tools/scaninc/source_file.cpp"
+      ],
+      "input_variables": [
+        "MAKE"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^/usr/bin/make -C tools/scaninc$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "preproc-build-dry-run-recipe",
+      "expression": "$(shell <preproc-build-dry-run-recipe>)",
+      "tool": "tools/preproc/Makefile",
+      "input_files": [
+        "tools/preproc/preproc.cpp"
+      ],
+      "input_variables": [
+        "MAKE"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^/usr/bin/make -C tools/preproc$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "scaninc-check-dry-run-recipe",
+      "expression": "$(shell <scaninc-check-dry-run-recipe>)",
+      "tool": "tools/scaninc/Makefile",
+      "input_files": [],
+      "input_variables": [
+        "MODERN_SCANINC"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^if \\[ ! -x \"tools/scaninc/scaninc\" \\]; then[\\s\\S]+fi$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
       "id": "generated-item-cap-resolution",
       "expression": "$(shell FE8_ITEM_ID_CAP=$(GENERATED_DATA_ITEM_CAP_SHELL_ARG) $(PYTHON) -c \"import scripts.generated_data.idspace as i; print('0x%02X' % i.resolve_item_id_cap())\" 2>/dev/null)",
       "tool": "scripts/generated_data/idspace.py",
@@ -344,7 +405,28 @@
       ],
       "automatic_inputs": [],
       "resolved_value": null,
-      "command_regex": "^find texts -type f -name \"\\*\\.txt\"$",
+      "command_regex": "^find texts -type f -name [\"']?\\*\\.txt[\"']?$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "legacy-text-dry-run-recipe",
+      "expression": "$(shell <legacy-text-dry-run-recipe>)",
+      "tool": "scripts/texttools/textprocess.py",
+      "input_files": [
+        "texts/textdefs.txt",
+        "texts/texts.txt"
+      ],
+      "input_variables": [
+        "PYTHON"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^python3 scripts/texttools/textprocess\\.py texts/texts\\.txt texts/textdefs\\.txt src/msg_data\\.c include/constants/msg\\.h utf8$",
       "owning_evidence_ids": [
         "owner.compile-modern",
         "owner.link-modern",
@@ -360,7 +442,7 @@
       "input_variables": [],
       "automatic_inputs": [],
       "resolved_value": null,
-      "command_regex": "^find scripts/assets -type f -name '\\*\\.py' -print$",
+      "command_regex": "^find scripts/assets -type f -name [\"']?\\*\\.py[\"']? -print$",
       "owning_evidence_ids": [
         "owner.compile-modern",
         "owner.link-modern",
@@ -380,6 +462,278 @@
       "automatic_inputs": [],
       "resolved_value": null,
       "command_regex": "^mkdir -p \"build/[A-Za-z0-9_./-]+/\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-include-remake-directory",
+      "expression": "$(shell <generated-include-remake-directory>)",
+      "tool": "generated_data.mk",
+      "input_files": [],
+      "input_variables": [
+        "GENERATED_DATA_OUT_DIR"
+      ],
+      "automatic_inputs": [
+        "$(@D)"
+      ],
+      "resolved_value": null,
+      "command_regex": "^mkdir -p build/[A-Za-z0-9_./-]+$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.consumer-generated",
+        "owner.drift-generated",
+        "owner.generator-generated",
+        "owner.host-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-input-dependency-remakes",
+      "expression": "$(shell <generated-input-dependency-remakes>)",
+      "tool": "generated_data.mk",
+      "input_files": [
+        "scripts/generated_data/autoplaystrategies/deps.py",
+        "scripts/generated_data/chapterobjectives/deps.py",
+        "scripts/generated_data/eventlists/deps.py",
+        "src/data/autoplay_strategies.json",
+        "src/data/chapter_objectives.json"
+      ],
+      "input_variables": [
+        "GENERATED_DATA_OUT_DIR",
+        "PYTHON"
+      ],
+      "automatic_inputs": [
+        "$@"
+      ],
+      "resolved_value": null,
+      "command_regex": "^python3 -m scripts\\.generated_data\\.(?:autoplaystrategies|chapterobjectives|eventlists)\\.deps[\\s\\S]+--depfile \"build/generated/data/(?:autoplaystrategies|chapterobjectives|eventlists)\\.inputs\\.mk\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.consumer-generated",
+        "owner.drift-generated",
+        "owner.generator-generated",
+        "owner.host-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-eventlist-validation-dry-run-recipe",
+      "expression": "$(shell <generated-eventlist-validation-dry-run-recipe>)",
+      "tool": "generated_data.mk",
+      "input_files": [
+        "scripts/generated_data/eventlists/generate.py"
+      ],
+      "input_variables": [
+        "GENERATED_DATA_CH2_EVENTLISTS_C",
+        "GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP",
+        "MAKE"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^if \\[ ! -e \"build/generated/data/data_ch2_eventlists\\.c\" \\]; then[\\s\\S]+(?:/bin/vo-make|/usr/bin/make) --no-print-directory \"build/generated/data/\\.ch2-eventlists\\.validated\";[\\s\\S]+fi$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.consumer-generated",
+        "owner.drift-generated",
+        "owner.generator-generated",
+        "owner.host-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-default-goal-dry-run-recipe",
+      "expression": "$(shell <generated-default-goal-dry-run-recipe>)",
+      "tool": "generated_data.mk",
+      "input_files": [
+        "Makefile"
+      ],
+      "input_variables": [
+        "MAKE"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^probe=\\$\\((?:/bin/vo-make|/usr/bin/make) --no-print-directory -rR -p __generated_data_link_check_default_goal_probe__[\\s\\S]+bare 'make -n'[\\s\\S]+fi$",
+      "owning_evidence_ids": [
+        "owner.consumer-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "generated-link-check-dry-run-recipe",
+      "expression": "$(shell <generated-link-check-dry-run-recipe>)",
+      "tool": "generated_data.mk",
+      "input_files": [
+        "ldscript.txt"
+      ],
+      "input_variables": [
+        "MAKE"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^(?:(?:backup=generated-data-link-check\\.objects_lst\\.backup\\.tmp;|rm -f build/generated/data/data_classes\\.c build/generated/data/data_items\\.c)[\\s\\S]+|(?:/bin/vo-make|/usr/bin/make) --no-print-directory -j4 build/generated/data/[\\s\\S]+)$",
+      "owning_evidence_ids": [
+        "owner.consumer-generated",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-output-dry-run-directory",
+      "expression": "$(shell <modern-output-dry-run-directory>)",
+      "tool": "modern.mk",
+      "input_files": [],
+      "input_variables": [
+        "MODERN_BUILD_ROOT",
+        "MODERN_OUTPUT_DIR"
+      ],
+      "automatic_inputs": [
+        "$(@D)"
+      ],
+      "resolved_value": "",
+      "command_regex": "^mkdir -p \"build/[A-Za-z0-9_./-]*[^/]\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-header-scan-dry-run-recipes",
+      "expression": "$(shell <modern-header-scan-dry-run-recipes>)",
+      "tool": "modern.mk",
+      "input_files": [
+        "include/global.h"
+      ],
+      "input_variables": [
+        "MODERN_CC",
+        "MODERN_CFLAGS",
+        "MODERN_OUTPUT_DIR"
+      ],
+      "automatic_inputs": [
+        "$<",
+        "$@"
+      ],
+      "resolved_value": "",
+      "command_regex": "^\"arm-none-eabi-gcc\"[\\s\\S]+ -MM -MG -MT \"build/[^\"]+\\.o\" \"src/[^\"]+\\.c\" > \"build/[^\"]+\\.headers\\.d\\.tmp\" \\|\\| \\{[\\s\\S]+\\}$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-header-filter-dry-run-recipes",
+      "expression": "$(shell <modern-header-filter-dry-run-recipes>)",
+      "tool": "modern.mk",
+      "input_files": [],
+      "input_variables": [
+        "MODERN_OUTPUT_DIR"
+      ],
+      "automatic_inputs": [
+        "$<",
+        "$@"
+      ],
+      "resolved_value": "",
+      "command_regex": "^sed -E '[^'\\n]+' \"build/[^\"]+\\.headers\\.d\\.tmp\" > \"build/[^\"]+\\.headers\\.d\\.tmp2\" \\|\\| \\{[\\s\\S]+\\}$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-header-clean-dry-run-recipes",
+      "expression": "$(shell <modern-header-clean-dry-run-recipes>)",
+      "tool": "modern.mk",
+      "input_files": [],
+      "input_variables": [
+        "MODERN_OUTPUT_DIR"
+      ],
+      "automatic_inputs": [
+        "$@"
+      ],
+      "resolved_value": "",
+      "command_regex": "^rm -f \"build/[^\"]+\\.headers\\.d\\.tmp\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-header-move-dry-run-recipes",
+      "expression": "$(shell <modern-header-move-dry-run-recipes>)",
+      "tool": "modern.mk",
+      "input_files": [],
+      "input_variables": [
+        "MODERN_OUTPUT_DIR"
+      ],
+      "automatic_inputs": [
+        "$@"
+      ],
+      "resolved_value": "",
+      "command_regex": "^mv -f \"build/[^\"]+\\.headers\\.d\\.tmp2\" \"build/[^\"]+\\.headers\\.d\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-asset-dependency-dry-run-recipes",
+      "expression": "$(shell <modern-asset-dependency-dry-run-recipes>)",
+      "tool": "modern.mk",
+      "input_files": [
+        "tools/scaninc/Makefile"
+      ],
+      "input_variables": [
+        "MODERN_OUTPUT_DIR",
+        "MODERN_SCANINC"
+      ],
+      "automatic_inputs": [
+        "$<",
+        "$@"
+      ],
+      "resolved_value": "",
+      "command_regex": "^assets=\\$\\(\"tools/scaninc/scaninc\"[\\s\\S]+ > \"build/[^\"]+\\.assets\\.d\\.tmp\"$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-asset-dependency-move-dry-run-recipes",
+      "expression": "$(shell <modern-asset-dependency-move-dry-run-recipes>)",
+      "tool": "modern.mk",
+      "input_files": [],
+      "input_variables": [
+        "MODERN_OUTPUT_DIR"
+      ],
+      "automatic_inputs": [
+        "$@"
+      ],
+      "resolved_value": "",
+      "command_regex": "^mv -f \"build/[^\"]+\\.assets\\.d\\.tmp\" \"build/[^\"]+\\.assets\\.d\"$",
       "owning_evidence_ids": [
         "owner.compile-modern",
         "owner.link-modern",
@@ -533,8 +887,76 @@
       ],
       "automatic_inputs": [],
       "resolved_value": "",
-      "command_regex": "^dry_run=0;[\\s\\S]+for flag in [\\s\\S]+if \\[ ! -f \"[^\"]+\" \\] && \\[ \"\\$dry_run\" = 0 \\]; then[\\s\\S]+/usr/bin/make -B \"[^\"]+\";[\\s\\S]+fi$",
+      "command_regex": "^dry_run=0;[\\s\\S]+for flag in [\\s\\S]+if \\[ ! -f \"[^\"]+\" \\] && \\[ \"\\$dry_run\" = 0 \\]; then[\\s\\S]+(?:/bin/vo-make|/usr/bin/make) -B \"[^\"]+\";[\\s\\S]+fi$",
       "owning_evidence_ids": [
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-recursive-dry-run-recipes",
+      "expression": "$(shell <modern-recursive-dry-run-recipes>)",
+      "tool": "modern.mk",
+      "input_files": [],
+      "input_variables": [
+        "MAKE",
+        "MAKEFLAGS"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^(?:/bin/vo-make|/usr/bin/make)(?: --no-print-directory)? expansion-modern-[a-z0-9-]+[\\s\\S]*$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-localization",
+        "owner.runtime-modern",
+        "owner.runtime-visual"
+      ]
+    },
+    {
+      "id": "legacy-object-recursive-dry-run-recipe",
+      "expression": "$(shell <legacy-object-recursive-dry-run-recipe>)",
+      "tool": "modern.mk",
+      "input_files": [],
+      "input_variables": [
+        "MAKE",
+        "MAKEFLAGS"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^/usr/bin/make NODEP=0(?: [A-Za-z0-9_./-]+\\.o)+$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
+      "id": "modern-toolchain-dry-run-recipe",
+      "expression": "$(shell <modern-toolchain-dry-run-recipe>)",
+      "tool": "modern.mk",
+      "input_files": [
+        "include/global.h"
+      ],
+      "input_variables": [
+        "MAKEFLAGS",
+        "MODERN_ABI",
+        "MODERN_ARCH_FLAGS",
+        "MODERN_CC",
+        "MODERN_CONFIG",
+        "MODERN_DEFINE_FLAGS",
+        "MODERN_DRIVER_FLAGS",
+        "MODERN_INCLUDE_FLAGS",
+        "MODERN_LANGUAGE_FLAGS"
+      ],
+      "automatic_inputs": [],
+      "resolved_value": "",
+      "command_regex": "^set -eu;[\\s\\S]*Modern flags:[\\s\\S]*$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
         "owner.link-modern",
         "owner.negative-localization",
         "owner.runtime-modern"
@@ -924,5 +1346,5 @@
     "value_policy": "finite-exact-or-tracked-fallback",
     "target_policy": "defined-pattern-or-tracked-tree"
   },
-  "seal": "d2045b7e913a61974e59b2ca1dad8806bade3375ece2c36c30ca7896e8107823"
+  "seal": "1295baf5fd6c7a5115ad7166fdea3cfb194074d03d70ee07af9e1d545c3da392"
 }

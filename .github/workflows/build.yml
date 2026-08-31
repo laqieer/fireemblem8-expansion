@@ -183,6 +183,75 @@ jobs:
         PYTHONPATH: ''
       run: /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py baseline --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json > /dev/null
 
+    # A candidate must not supply the verifier that authorizes its own graph.
+    # Once the exact PR base contains issue #180's base verifier, extract that
+    # complete tree and enter only its gate/package against the checked-out
+    # candidate commit. This introducing PR has no such base package, so it
+    # emits the explicit non-authoritative bootstrap state instead; the
+    # candidate regression/public checks below still run, and direct
+    # adversarial review is the introduction evidence.
+    - name: Validate ownership with exact PR-base verifier
+      env:
+        BASH_ENV: ''
+        BUILD_EVENT_NAME: ${{ github.event_name }}
+        ENV: ''
+        EXPECTED_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        EXPECTED_CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        GNUMAKEFLAGS: ''
+        MAKEFLAGS: ''
+        MAKEOVERRIDES: ''
+        MFLAGS: ''
+        PATH: /usr/bin:/bin
+        PYTHONPATH: ''
+      run: |
+        set -euo pipefail
+        if [ "$BUILD_EVENT_NAME" != pull_request ]; then
+          printf 'validation-ownership: exact-base verifier not applicable to %s\n' \
+            "$BUILD_EVENT_NAME"
+          exit 0
+        fi
+        trusted_root="$GITHUB_WORKSPACE/build/test-artifacts/validation-ownership-base"
+        rm -rf -- "$trusted_root"
+        mkdir -p "$trusted_root"
+        test "$(/usr/bin/git rev-parse HEAD)" = "$EXPECTED_CANDIDATE_SHA"
+        /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA^{commit}"
+        if /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA:scripts/validation_ownership/ci_verifier.py" &&
+           /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA:scripts/validation_ownership/ci_gate.mk"; then
+          /usr/bin/git archive --format=tar "$EXPECTED_BASE_SHA" |
+            /usr/bin/tar -xf - -C "$trusted_root"
+          BASH_ENV= ENV= GNUMAKEFLAGS= MAKEFLAGS= MAKEOVERRIDES= MFLAGS= \
+            PYTHONPATH= \
+            VO_TRUSTED_ROOT="$trusted_root" \
+            VO_REPOSITORY_ROOT="$GITHUB_WORKSPACE" \
+            VO_BASE_SHA="$EXPECTED_BASE_SHA" \
+            VO_CANDIDATE_SHA="$EXPECTED_CANDIDATE_SHA" \
+            /usr/bin/make -f \
+              "$trusted_root/scripts/validation_ownership/ci_gate.mk" \
+              validation-ownership-check
+        else
+          printf 'validation-ownership: bootstrap-not-authoritative base=%s candidate=%s\n' \
+            "$EXPECTED_BASE_SHA" "$EXPECTED_CANDIDATE_SHA"
+        fi
+
     - name: Run validation ownership regression suite (issue #180)
       env:
         BASH_ENV: ''

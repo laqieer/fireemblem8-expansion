@@ -29,10 +29,13 @@ class OwnershipGraphTests(unittest.TestCase):
         cls.oracle = reporter.load_json(ORACLE_PATH)
         cls.entries = reporter.git_tree_entries(ROOT)
         for path in (
+            "scripts/validation_ownership/ci_gate.mk",
+            "scripts/validation_ownership/ci_verifier.py",
             "scripts/validation_ownership/make_probe.py",
             "scripts/validation_ownership/sandbox_exec.py",
             "scripts/validation_ownership/shell_interceptor.c",
             "scripts/validation_ownership/tests/test_make_probe.py",
+            "scripts/validation_ownership/tests/test_ci_verifier.py",
         ):
             if path not in cls.entries and (ROOT / path).is_file():
                 cls.entries[path] = reporter.GitTreeEntry(

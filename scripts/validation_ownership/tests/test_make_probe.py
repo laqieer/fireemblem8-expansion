@@ -6,8 +6,9 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from scripts.validation_ownership import make_probe, reporter
+from scripts.validation_ownership import make_probe, reporter, sandbox_exec
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -139,6 +140,80 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 },
             )
             self.assertIn("printf 'two", self.actual_make(root, "MODE=two").stdout)
+            self.assertEqual(
+                authority["record"]["probe_tools"]["namespace_launcher"]["mode"],
+                "user-namespace",
+            )
+
+    def test_namespace_launcher_falls_back_to_exact_passwordless_sudo(self):
+        calls = []
+
+        def run(command, **kwargs):
+            del kwargs
+            calls.append(command)
+            if command == make_probe._namespace_probe_command(sudo=False):
+                return subprocess.CompletedProcess(command, 1, "", "blocked")
+            if command == make_probe._namespace_probe_command(sudo=True):
+                return subprocess.CompletedProcess(command, 0, "", "")
+            return subprocess.CompletedProcess(command, 0, "tool 1.0\n", "")
+
+        original = make_probe._NAMESPACE_LAUNCHER
+        try:
+            make_probe._NAMESPACE_LAUNCHER = None
+            with mock.patch.object(
+                make_probe,
+                "SUDO",
+                Path("/usr/bin/true"),
+            ), mock.patch.object(make_probe.subprocess, "run", side_effect=run):
+                selected = make_probe._select_namespace_launcher(refresh=True)
+            self.assertEqual(selected["mode"], "sudo-drop")
+            self.assertEqual(
+                selected["argv_prefix"][:3],
+                ["/usr/bin/true", "-n", "/usr/bin/unshare"],
+            )
+            self.assertIn(
+                make_probe._namespace_probe_command(sudo=False),
+                calls,
+            )
+        finally:
+            make_probe._NAMESPACE_LAUNCHER = original
+
+    def test_sudo_sandbox_drops_groups_ids_and_capabilities(self):
+        libc = mock.Mock()
+        libc.prctl.return_value = 0
+        libc.capset.return_value = 0
+        with mock.patch.object(
+            sandbox_exec.ctypes,
+            "CDLL",
+            return_value=libc,
+        ), mock.patch.object(
+            sandbox_exec.os,
+            "setgroups",
+        ) as setgroups, mock.patch.object(
+            sandbox_exec.os,
+            "setgid",
+        ) as setgid, mock.patch.object(
+            sandbox_exec.os,
+            "setuid",
+        ) as setuid, mock.patch.object(
+            sandbox_exec.os,
+            "getuid",
+            return_value=1001,
+        ), mock.patch.object(
+            sandbox_exec.os,
+            "getgid",
+            return_value=1002,
+        ), mock.patch.object(
+            sandbox_exec.os,
+            "getgroups",
+            return_value=[],
+        ):
+            sandbox_exec._drop_sudo_privileges(1001, 1002)
+        setgroups.assert_called_once_with([])
+        setgid.assert_called_once_with(1002)
+        setuid.assert_called_once_with(1001)
+        self.assertEqual(libc.prctl.call_count, 65)
+        libc.capset.assert_called_once()
 
     def test_eval_patterns_automatic_and_variable_spellings(self):
         makefile = (
@@ -223,13 +298,21 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         cases = (
             "all:\n\t@printf '%s\\n' '$(shell printf direct)'\n",
             "UNUSED != printf eager\nall:\n\t@true\n",
+            "VALUE != printf eager\n"
+            "all:\n\t@printf eager\n",
+            "VALUE != printf 'eager\\n'\n"
+            "all:\n\t@printf 'eager\\n'\n",
+            "VALUE != printf '%s\\n' 'eager'\n"
+            "all:\n"
+            "\t@printf '%s\\n' \\\n"
+            "\t\t'eager'\n",
         )
         for index, makefile in enumerate(cases):
             with self.subTest(index=index):
                 directory, root, entries = self.fixture(makefile)
                 with directory, self.assertRaisesRegex(
                     make_probe.MakeProbeError,
-                    "unregistered command execution",
+                    "without exactly one sealed contract",
                 ):
                     self.probe(root, entries)
 
@@ -249,8 +332,19 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 dynamic={"$(shell fixture)": contract},
             )
             command = authority["record"]["dynamic_commands"][0]
-            self.assertEqual(command["authority"]["id"], "fixture-eager")
+            self.assertEqual(command["authority_id"], "fixture-eager")
             self.assertEqual(command["command"], "printf eager")
+
+    def test_normal_dry_run_recipe_produces_no_execution_event(self):
+        directory, root, entries = self.fixture(
+            "all:\n\t@printf ordinary\n"
+        )
+        with directory:
+            authority = self.probe(root, entries)
+            self.assertEqual(
+                authority["record"]["dynamic_commands"],
+                [],
+            )
 
     def test_absolute_and_untracked_includes_reject(self):
         for include in ("/dev/stdin", "missing-untracked.mk"):

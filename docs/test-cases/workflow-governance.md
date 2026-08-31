@@ -475,8 +475,9 @@ game behavior needs a compensating change.
 - **Prerequisites and clean starting state:** start at the exact repository
   root with `.github/validation-ownership-graph.json`, its strict schema,
   reporter, generated-data and tester-case registries, Build workflow,
-  Makefiles, `/usr/bin/make`, `/usr/bin/unshare` with user/mount/network/PID
-  namespace support, a static-capable `/usr/bin/cc`, and the manual-handoff
+  Makefiles, `/usr/bin/make`, `/usr/bin/unshare` with mount/network/PID
+  namespaces plus either user namespaces or passwordless exact
+  `/usr/bin/sudo`, a static-capable `/usr/bin/cc`, and the manual-handoff
   contract unchanged. No token, ROM, emulator, or remote workflow is required.
 
 ### Actions
@@ -561,14 +562,37 @@ Unbounded/unregistered domains, malformed or oversized values, cyclic/dynamic/
 escaping/unknown targets, and stale symbolic recipe classifications reject.
 
 The Make sandbox exposes no executable shell other than the static
-interceptor. Unknown direct `$(shell)` in a recipe, an unused eager `!=`,
+interceptor. Trace or normalized recipe text never authorizes an interceptor
+event. Unknown direct `$(shell)` in a recipe, an unused eager `!=` (including
+the exact same or normalized multiline command as a printed recipe),
 unregistered include-remake command, ambiguous registry regex, output
 nonconvergence, or any attempted unsandboxed process rejects. Registered
 source-dependent commands execute only in the second networkless exact-tree
 command sandbox and bind their concrete output hash plus tool/input authority.
-Normal and forced-recursive recipes are intercepted and never execute.
+Normal `-n` recipes emit no event; forced-recursive/include-remake commands
+must match one sealed contract and are intercepted rather than executed by
+Make.
 Absolute `/dev/stdin`, dynamic, escaping, symlink, and untracked includes
 reject; confined generated `build/` includes are rebuilt from an empty overlay.
+
+The namespace launcher uses unprivileged user/mount/network/PID namespaces
+when available. A mocked Ubuntu-24.04 control blocks that probe and admits only
+passwordless `/usr/bin/sudo -n /usr/bin/unshare`; before Make starts, the
+launcher clears groups/capabilities, drops to the original runner UID/GID, and
+sets no-new-privileges. The local positive control selects user-namespace mode.
+Loss of both modes, a different sudo/unshare path, or retained root identity
+rejects.
+
+For pull requests whose exact base contains the verifier package, host CI
+archives the clean base and invokes its `ci_gate.mk`/`ci_verifier.py` against
+the exact candidate Git tree. Every trusted package and loaded module identity
+comes from base Git objects, and candidate paths never enter verifier
+`sys.path`; compromised candidate reporter/interceptor fixtures remain data,
+not authority. This introducing PR emits the explicit
+`bootstrap-not-authoritative` state because its base lacks the package, while
+candidate tests/public checks continue and direct adversarial review supplies
+introduction evidence. Missing/changed base staging, candidate gate paths,
+candidate-as-base SHA substitution, or loss of the bootstrap state rejects.
 
 The root Makefile rejects command-line ownership of `MAKECMDGOALS` before
 reading any include. `MAKECMDGOALS= -n`, all dry-run/touch/question/silent/
