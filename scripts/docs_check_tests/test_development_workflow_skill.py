@@ -1008,7 +1008,8 @@ def classifier_bootstrap_contract_violations(text):
             "BASEROM_URL",
             "All repository/candidate-controlled commands finish before "
             "private download",
-            "hash-pinned",
+            "previous protected-branch commit",
+            "no whole-file source hash pins",
             "unpredictable",
             "mode-restricted",
             "absolute isolated Python",
@@ -1016,6 +1017,9 @@ def classifier_bootstrap_contract_violations(text):
             "No candidate command runs while the base exists",
             "success/failure",
             "Cleanup is verified before upload",
+            "fresh hosted publisher",
+            "no candidate-written GITHUB_ENV",
+            "background process",
         ),
         "candidate-common-identity": (
             "canonical successful event-identity context",
@@ -3560,6 +3564,24 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 r"All repository/candidate-controlled commands finish before "
                 r"private download",
                 "Private download happens before candidate-controlled commands",
+            ),
+            (
+                "trust-candidate-producer",
+                "publisher-secret-boundary",
+                r"previous\s+protected-branch commit",
+                "pushed candidate commit",
+            ),
+            (
+                "add-source-hash-ledger",
+                "publisher-secret-boundary",
+                r"(?i:No\s+whole-file\s+source\s+hash\s+pins)",
+                "whole-file source hash pins",
+            ),
+            (
+                "reuse-candidate-runner",
+                "publisher-secret-boundary",
+                r"fresh\s+hosted\s+publisher",
+                "reused candidate runner",
             ),
             (
                 "drop-pr-number-coherence",

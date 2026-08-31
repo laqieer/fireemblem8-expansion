@@ -235,8 +235,9 @@ SHA. The
 publisher consumes the same validated push SHA, verifies
 `/usr/bin/git rev-parse HEAD` immediately after checkout, then completes every
 repository/candidate-controlled setup and build command before private-base
-download. A hash-pinned three-file patch tool and already-built public inputs
-are staged first. The minimal `BASEROM_URL` step creates an unpredictable,
+download. A three-file patch tool is staged from the verified previous
+protected-branch commit without a source-content ledger; the already-built
+public inputs arrive separately. The minimal `BASEROM_URL` step creates an unpredictable,
 mode-restricted private path and exposes only that path through trusted output.
 The immediately following step runs the staged tool with absolute isolated
 Python, an empty runtime CWD/environment, and no repository import path. No
@@ -245,6 +246,12 @@ or failure, cleanup is verified before upload, and later steps see only the
 patch artifact.
 All repository/candidate-controlled commands finish before private download.
 Cleanup is verified before upload.
+The trusted producer comes from the exact nonzero `github.event.before` commit,
+which must be verified as the checked-out previous master and as an ancestor on
+the pushed commit's first-parent history.
+No whole-file source hash pins are used.
+The fresh hosted publisher has no candidate-written `GITHUB_ENV`, background
+process, checkout, or executable state.
 The current Build workflow has no explicit final-dispatch trigger; if that
 supported surface is introduced later, `workflow_dispatch` classifies as full
 and the trigger/topology contracts must be updated together.

@@ -2,8 +2,10 @@
 
 These procedures cover issue [#49](https://github.com/laqieer/fireemblem8-expansion/issues/49)'s
 transient BPS-only Actions artifact and the equivalent source profile. They
-never distribute, commit, upload, cache, or request publication of a base or
-patched ROM.
+never distribute, commit, cache, or request publication of a private base. The
+non-secret build job may transfer one exact target ROM plus metadata in a
+one-day internal Actions artifact to the fresh publisher; the final retained
+artifact remains BPS/manifest/README only.
 
 ## TC-CI-PATCH-049-001: Validate and write a trusted BPS artifact locally
 
@@ -135,9 +137,11 @@ inputs fail closed. A wrong source never writes the requested BPS output, the
 workflow is trusted `push` to `master` only, pull requests receive no base
 secret or artifact upload, and diagnostics expose no protected base content.
 The publisher finishes every repository-controlled command before download,
-uses an unpredictable mode-restricted base path, invokes only the hash-pinned
-staged tool through absolute isolated Python while the base exists, removes it
-on success/failure, verifies cleanup, and uploads only the patch artifact.
+transfers only inert ROM/metadata from the non-secret build job, stages its
+tool from the verified previous-master commit without source hash pins, uses an
+unpredictable mode-restricted base path, invokes only that staged tool through
+absolute isolated Python while the base exists, removes it on success/failure,
+verifies cleanup, and uploads only the patch artifact.
 
 ### Negative control
 
@@ -163,8 +167,9 @@ archival-lane behavior changes.
 - `python3 -m unittest tests.workflows.test_patch_release_workflow -v` —
   `tests/workflows/test_patch_release_workflow.py` maps the trusted event,
   secret scope, no-PR publication, candidate-before-download ordering,
-  hash-pinned isolated tool, unpredictable private path, cleanup-before-upload,
-  mutation controls, artifact allowlist, and profile/verifier requirements.
+  previous-master isolated tool, inert transfer, unpredictable private path,
+  cleanup-before-upload, mutation controls, artifact allowlist, and
+  profile/verifier requirements.
 
 ### Cleanup and limitations
 

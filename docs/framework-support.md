@@ -63,14 +63,22 @@ contexts. Workers consume only that validated SHA. The publisher uses the same
 validated push SHA,
 verifies `/usr/bin/git rev-parse HEAD` immediately after checkout, and exposes
 `BASEROM_URL` only after every repository/candidate-controlled setup and build
-command has finished. It stages a hash-pinned patch tool and public inputs,
-downloads to an unpredictable mode-restricted path, invokes only absolute
+command has finished. It stages the patch tool from the verified previous
+protected-branch commit without whole-file source hash pins, downloads inert
+public inputs, then downloads the base to an unpredictable mode-restricted
+path and invokes only absolute
 isolated Python from an empty runtime CWD/environment while the base exists,
 deletes the base on success/failure, verifies cleanup, and only then uploads
 the patch artifact.
 All repository/candidate-controlled commands finish before private download.
 No candidate command runs while the base exists. Cleanup is verified before
 upload.
+The previous SHA must be exact lowercase nonzero `github.event.before`,
+checked out and verified independently, and present on the pushed commit's
+first-parent ancestry.
+No whole-file source hash pins are used.
+The fresh hosted publisher has no candidate-written `GITHUB_ENV`, background
+process, checkout, or executable state.
 The same Build jobs rerun on `master`; only the
 technically used patch publisher is master-only. Arch and macOS support is
 exercised by the same script logic but is not re-run in CI; treat regressions

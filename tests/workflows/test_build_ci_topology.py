@@ -38,7 +38,9 @@ RETIRED_WORKFLOW = ROOT / ".github" / "workflows" / RETIRED_WORKFLOW_FILENAME
 MAKEFILE = ROOT / "Makefile"
 MASTER_PUBLISHER_CONDITION = (
     "${{ always() && needs.event-identity.result == 'success' && "
+    "needs.build.result == 'success' && "
     "github.event_name == 'push' && "
+    "needs.event-identity.outputs.previous_sha != '' && "
     "needs.event-identity.outputs.fallback_kind == 'push' && "
     "needs.event-identity.outputs.fallback_sha == github.event.after && "
     "needs.event-identity.outputs.fallback_sha == github.sha }}"
@@ -314,7 +316,12 @@ def _triggered_jobs(text: str, event: dict) -> set[str]:
         and _is_lower_sha(raw_github_sha)
         and raw_github_sha == payload["after"]
     )
-    if not push_fallback:
+    previous_sha = payload.get("before", "")
+    previous_valid = (
+        _is_lower_sha(previous_sha)
+        and previous_sha != "0" * 40
+    )
+    if not (push_fallback and previous_valid):
         jobs.discard("patch-release")
     pull_request = payload.get("pull_request", {})
     base = pull_request.get("base", {}) if isinstance(pull_request, dict) else {}
@@ -830,7 +837,10 @@ def _identity_contract_errors(job: str) -> list[str]:
         "      classifier_ref: ${{ steps.identity.outputs.classifier_ref }}",
         "      fallback_kind: ${{ steps.identity.outputs.fallback_kind }}",
         "      fallback_sha: ${{ steps.identity.outputs.fallback_sha }}",
+        "      previous_sha: ${{ steps.identity.outputs.previous_sha }}",
         "      BASH_ENV: ''",
+        "      BEFORE_SHA: ${{ github.event.before }}",
+        "      BEFORE_SHA_JSON: ${{ toJSON(github.event.before) }}",
         "      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}",
         "      EVENT_NAME: ${{ github.event_name }}",
         "      EVENT_REF: ${{ github.ref }}",
@@ -856,8 +866,11 @@ def _identity_contract_errors(job: str) -> list[str]:
         '             is_lower_sha "$PUSH_SHA" "$PUSH_SHA_JSON" && \\',
         '             is_lower_sha "$RAW_SHA" "$RAW_SHA_JSON" && \\',
         '             [[ "$RAW_SHA" = "$PUSH_SHA" ]]; then',
+        '             [[ "$BEFORE_SHA" != '
+        "0000000000000000000000000000000000000000 ]]; then",
         '          echo "fallback_kind=$fallback_kind"',
         '          echo "fallback_sha=$fallback_sha"',
+        '          echo "previous_sha=$previous_sha"',
     )
     errors = [
         f"event-identity lacks required closed contract: {item}"
@@ -1232,7 +1245,7 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             for command in _run_block_commands(job)
             for _match in PIP_INVOCATION_RE.finditer(command)
         ]
-        if job_name in ("build", "patch-release"):
+        if job_name == "build":
             if len(pip_invocations) != 1 or _normalise(pip_invocations[0]) != _normalise(
                 HASHED_PIP_INSTALL
             ):
@@ -1269,8 +1282,10 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
 
     if f"if: {MASTER_PUBLISHER_CONDITION}" not in jobs["patch-release"]:
         errors.append("patch-release must remain master-push-only")
-    if "    needs: [event-identity]" not in jobs["patch-release"]:
-        errors.append("patch-release must depend only on trusted event identity")
+    if "    needs: [event-identity, build]" not in jobs["patch-release"]:
+        errors.append(
+            "patch-release must depend on trusted event identity and inert build inputs"
+        )
     if (
         "github.event_name == 'pull_request' && "
         "github.event.pull_request.head.sha || github.sha"
@@ -2703,6 +2718,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         if event_name == "pull_request"
                         else {
                             "after": push_sha,
+                            "before": "3" * 40,
                             "ref": case["github_ref"],
                         }
                     )
@@ -2746,6 +2762,12 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         cwd=sandbox,
                         env={
                             **os.environ,
+                            "BEFORE_SHA": "3" * 40
+                            if event_name == "push"
+                            else "",
+                            "BEFORE_SHA_JSON": json.dumps(
+                                "3" * 40 if event_name == "push" else None
+                            ),
                             "DEFAULT_BRANCH": "master",
                             "EVENT_NAME": event_name,
                             "EVENT_REF": case["github_ref"],
@@ -2788,6 +2810,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     )
                     self.assertEqual(outputs["fallback_kind"], case["expected_kind"])
                     self.assertEqual(outputs["fallback_sha"], case["expected_sha"])
+                    self.assertEqual(
+                        outputs["previous_sha"],
+                        "3" * 40 if case["run_publisher"] else "",
+                    )
                     expected_classifier_ref = (
                         "2" * 40
                         if event_name == "pull_request"
@@ -2918,6 +2944,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "ref": "refs/heads/master",
             "sha": "2" * 40,
             "after": "2" * 40,
+            "before": "1" * 40,
         }
         other_push = {
             "event_name": "push",
@@ -2929,6 +2956,27 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             CANDIDATE_FULL_JOBS | {"patch-release"},
         )
         self.assertEqual(_triggered_jobs(self.text, other_push), set())
+
+        for name, before in (
+            ("missing", ""),
+            ("zero", "0" * 40),
+            ("uppercase", "A" * 40),
+        ):
+            with self.subTest(previous=name):
+                invalid = {
+                    **master_push,
+                    "before": before,
+                }
+                selected = _triggered_jobs(self.text, invalid)
+                self.assertEqual(selected, CANDIDATE_FULL_JOBS)
+                self.assertNotIn("patch-release", selected)
+
+        nonancestor = {
+            **master_push,
+            "before": "1" * 40,
+            "before_ancestor": False,
+        }
+        self.assertIn("patch-release", _triggered_jobs(self.text, nonancestor))
 
     def test_combined_worker_classifier_condition_is_exact(self):
         changed = self.text.replace(
@@ -3369,9 +3417,9 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         changed = self.text.replace(PUSH_TRIGGER, 'push:\n    branches: [ "other" ]', 1)
         self.assertTrue(any("restricted to master" in error for error in _errors(changed, False)))
 
-    def test_publisher_depends_only_on_trusted_event_identity(self):
+    def test_publisher_depends_only_on_identity_and_inert_build_inputs(self):
         patch_release = _job_blocks(self.text)["patch-release"]
-        self.assertIn("    needs: [event-identity]", patch_release)
+        self.assertIn("    needs: [event-identity, build]", patch_release)
         self.assertNotIn("event-classifier", patch_release)
         self.assertNotIn("host-tests", patch_release)
 

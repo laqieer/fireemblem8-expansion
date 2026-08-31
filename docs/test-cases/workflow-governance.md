@@ -365,8 +365,9 @@ unknown setup contexts reject the run. Workers consume only that validated
 SHA. The publisher uses the same validated push SHA,
 verifies `/usr/bin/git rev-parse HEAD` immediately after checkout, and exposes
 `BASEROM_URL` only after every repository/candidate-controlled setup and build
-command has finished. A hash-pinned three-file patch tool and already-built
-public inputs are staged first. The minimal secret step creates an
+command has finished. The three-file patch tool comes from the verified
+previous protected-branch commit without whole-file source hash pins; inert
+already-built public inputs are transferred separately. The minimal secret step creates an
 unpredictable mode-restricted path and exposes only its trusted output. The
 next step uses absolute isolated Python from an empty runtime CWD/environment;
 no candidate command runs while the base exists. Cleanup traps delete the base
@@ -374,6 +375,12 @@ on success/failure, cleanup is verified, and only the patch artifact reaches
 upload.
 All repository/candidate-controlled commands finish before private download.
 Cleanup is verified before upload.
+The previous SHA is exact lowercase nonzero `github.event.before`, checked out
+and verified as previous master, and required on the pushed commit's
+first-parent ancestry.
+No whole-file source hash pins are used.
+The fresh hosted publisher has no candidate-written `GITHUB_ENV`, background
+process, checkout, or executable state.
 
 ### Negative control
 
@@ -1235,9 +1242,10 @@ self-hosted/container/service/strategy/default shell or any other execution
 field fails before dry-run.
 Patch publication and summary are also complete semantic structures:
 validated master-only publication condition, pinned actions, immediate exact
-revision verification, candidate work before download, staged hash-pinned
-tool/public inputs, unpredictable private path, immediate isolated patch tool,
-verified cleanup before upload, and ten publisher steps;
+revision verification, candidate work before download, previous-master trusted
+tool plus the build job's two inert-input steps, unpredictable private path,
+immediate isolated patch tool, verified cleanup before upload, and eight
+fresh-job publisher steps;
 then `always()`, identity/classifier plus exact ordered
 worker/publisher needs/result env, dynamic full/metadata summary name, five-minute
 context, and one fail-closed summary step.

@@ -44,14 +44,19 @@ Sacred Stones (USA), revision 0** / FE8U image:
 The publisher checks size, both hashes, every header value, and recomputed
 checksum before creating a patch. Missing, malformed, wrong, or modified
 inputs fail before an artifact is created. The trusted workflow may obtain its
-local input from a protected secret, but no URL, base bytes, base image, ROM,
-ELF, map, save, or savestate is published, cached, or logged.
+local input from a protected secret, but no URL, base bytes, or base image is
+published, cached, or logged. The non-secret build job transfers its inert
+already-built target ROM and metadata through an exact-after-named, one-day
+internal Actions artifact to a fresh publisher; that transfer is never the
+final downloadable release artifact.
 
 The publisher verifies its exact commit and completes all repository-controlled
-setup/build work before obtaining the private base. It stages the current
-audited producer plus dependencies under three reviewed SHA-256 pins and copies
-the already-built ROM/metadata to owner-controlled inputs. The curl-only secret
-step creates an unpredictable `0700` directory and `0400` regular 16 MiB file.
+setup/build work in the non-secret `build` job, which transfers only that inert
+already-built target ROM and metadata. A fresh publisher verifies and stages the
+producer from exact nonzero `github.event.before`, requires that previous
+master commit on the pushed commit's first-parent ancestry, and uses no
+whole-file source hash ledger. The curl-only secret step creates an
+unpredictable `0700` directory and `0400` regular 16 MiB file.
 The immediately following step runs only the staged tool through absolute
 isolated Python from an empty runtime CWD/environment. No repository command
 runs while the base exists. Success/failure traps remove the base and its

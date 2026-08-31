@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import ast
-import hashlib
 import http.server
+import json
 import os
 import re
 import shlex
@@ -24,17 +24,11 @@ ARTIFACT_FILENAMES = (
     "fireemblem8-expansion-all-locales-all-features-aapcs.bps",
     "manifest.json",
 )
-AUDITED_PATCH_TOOL_HASHES = {
-    "scripts/modernize/patch_release.py": (
-        "b78a076dfe393980af3695bc19a189fb1e850bb252618a8320f0527a708c5072"
-    ),
-    "scripts/modernize/bps_patch.py": (
-        "da2c9bd2248c340ecb84830bad7993a276b8daf5e8e5ebdadb0e4d268c0cd29c"
-    ),
-    "scripts/modernize/verify_rom_header.py": (
-        "9c13ae7713cc3eb87006b04b8aaebe7c4f829aeccd7d9fa1b199c22ac58d9bf7"
-    ),
-}
+AUDITED_PATCH_TOOL_FILES = (
+    "scripts/modernize/patch_release.py",
+    "scripts/modernize/bps_patch.py",
+    "scripts/modernize/verify_rom_header.py",
+)
 
 
 def parse_patch_release_run_commands(workflow: str) -> list[list[list[str]]]:
@@ -110,6 +104,20 @@ def patch_release_step_blocks(workflow: str) -> list[str]:
     ]
 
 
+def named_step_run_script(workflow: str, name: str) -> str:
+    steps = patch_release_step_blocks(workflow)
+    matches = [
+        step for step in steps if f"    - name: {name}\n" in step
+    ]
+    if len(matches) != 1:
+        raise AssertionError(f"expected one publisher step named {name!r}")
+    lines = matches[0].splitlines()
+    run_index = lines.index("      run: |")
+    return "\n".join(
+        line[8:] for line in lines[run_index + 1:] if line.startswith("        ")
+    )
+
+
 def patch_release_download_command(workflow: str) -> list[str]:
     commands = [
         command
@@ -129,24 +137,54 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         for step in steps
     ]
     errors = []
+    build = re.search(
+        r"(?ms)^  build:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+        workflow,
+    ).group("body")
+    if "BASEROM_URL" in build or "patch-private." in build:
+        errors.append("private base can enter candidate build job")
     required = (
-        "Verify patch candidate revision",
-        "Stage audited patch tool and public inputs",
+        "Verify and stage trusted previous-master producer",
+        "Download inert patch-release inputs",
+        "Validate inert patch-release inputs",
         "Download private base image",
         "Create and verify patch artifact",
         "Cleanup and verify private base",
     )
     if any(names.count(name) != 1 for name in required):
         return ["publisher boundary steps differ"]
-    verify, stage, download, create, cleanup = (names.index(name) for name in required)
-    if not (verify < stage < download and create == download + 1 and cleanup == create + 1):
+    verify, inert_download, inert_validate, download, create, cleanup = (
+        names.index(name) for name in required
+    )
+    if not (
+        verify < inert_download
+        and inert_validate == inert_download + 1
+        and download == inert_validate + 1
+        and create == download + 1
+        and cleanup == create + 1
+    ):
         errors.append("private base lifetime ordering differs")
     if cleanup != len(steps) - 2:
         errors.append("private cleanup must immediately precede upload")
     candidate_markers = ("sudo apt-get", "./build_tools.sh", "make expansion-modern")
     for index, step in enumerate(steps):
-        if any(marker in step for marker in candidate_markers) and index >= download:
-            errors.append("candidate command can run while private base exists")
+        if any(marker in step for marker in candidate_markers):
+            errors.append("candidate command exists in fresh publisher job")
+    producer_step = steps[verify]
+    inert_step = steps[inert_validate]
+    if (
+        "ref: ${{ needs.event-identity.outputs.previous_sha }}" not in steps[0]
+        or 'test "$ACTUAL_SHA" = "$PREVIOUS_MASTER_SHA"' not in producer_step
+        or "/usr/bin/git merge-base --is-ancestor" not in producer_step
+        or "sha256sum" in producer_step
+    ):
+        errors.append("previous-master producer boundary differs")
+    if (
+        'test ! -L "$PATCH_INPUT_ROOT/target.gba"' not in inert_step
+        or 'test ! -L "$PATCH_INPUT_ROOT/metadata.json"' not in inert_step
+        or "build_commit" not in inert_step
+    ):
+        errors.append("inert candidate artifact validation differs")
     secret_step = steps[download]
     create_step = steps[create]
     cleanup_step = steps[cleanup]
@@ -219,14 +257,16 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "needs.event-identity.outputs.fallback_sha == github.sha",
             self.patch_job,
         )
-        self.assertIn("needs: [event-identity]", self.patch_job)
+        self.assertIn("needs: [event-identity, build]", self.patch_job)
+        self.assertIn("needs.build.result == 'success'", self.patch_job)
+        self.assertIn("needs.event-identity.outputs.previous_sha != ''", self.patch_job)
         self.assertNotIn("needs: [event-classifier", self.patch_job)
         self.assertIn(
             "PATCH_COMMIT: ${{ needs.event-identity.outputs.fallback_sha }}",
             self.patch_job,
         )
         self.assertIn(
-            "ref: ${{ needs.event-identity.outputs.fallback_sha }}",
+            "ref: ${{ needs.event-identity.outputs.previous_sha }}",
             self.patch_job,
         )
         self.assertNotIn("pull_request_target", self.text)
@@ -259,8 +299,20 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             secret_body,
         )
         secret_env = secret_body.split("      run: |", 1)[0]
-        self.assertEqual(secret_env.count("\n        "), 1)
         self.assertIn("BASEROM_URL: ${{ secrets.BASEROM_URL }}", secret_env)
+        for cleared in (
+            "BASH_ENV: ''",
+            "CDPATH: ''",
+            "ENV: ''",
+            "GLOBIGNORE: ''",
+            "LD_LIBRARY_PATH: ''",
+            "LD_PRELOAD: ''",
+            "PYTHONPATH: ''",
+            "SHELLOPTS: ''",
+            "GIT_CONFIG_GLOBAL: /dev/null",
+            "GIT_CONFIG_NOSYSTEM: '1'",
+        ):
+            self.assertIn(cleared, secret_env)
         for candidate_command in ("python3", "./", "make ", "scripts."):
             self.assertNotIn(candidate_command, secret_body)
         self.assertIn(
@@ -284,20 +336,68 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
 
     def test_exact_revision_is_verified_before_code_or_secret_access(self):
         checkout = self.patch_job.index("uses: actions/checkout@")
-        verification = self.patch_job.index("- name: Verify patch candidate revision")
-        first_candidate_command = self.patch_job.index("sudo apt-get update")
-        last_candidate_command = self.patch_job.index(
-            "Stage audited patch tool and public inputs"
+        verification = self.patch_job.index(
+            "- name: Verify and stage trusted previous-master producer"
+        )
+        artifact_download = self.patch_job.index(
+            "- name: Download inert patch-release inputs"
+        )
+        artifact_validation = self.patch_job.index(
+            "- name: Validate inert patch-release inputs"
         )
         secret = self.patch_job.index("BASEROM_URL: ${{ secrets.BASEROM_URL }}")
         self.assertLess(checkout, verification)
-        self.assertLess(verification, first_candidate_command)
-        self.assertLess(first_candidate_command, last_candidate_command)
-        self.assertLess(last_candidate_command, secret)
+        self.assertLess(verification, artifact_download)
+        self.assertLess(artifact_download, artifact_validation)
+        self.assertLess(artifact_validation, secret)
         verification_step = self.patch_job[verification:secret]
         self.assertIn('ACTUAL_SHA="$(/usr/bin/git rev-parse HEAD)"', verification_step)
-        self.assertIn('test "$ACTUAL_SHA" = "$PATCH_COMMIT"', verification_step)
+        self.assertIn('test "$ACTUAL_SHA" = "$PREVIOUS_MASTER_SHA"', verification_step)
+        self.assertIn("/usr/bin/git merge-base --is-ancestor", verification_step)
+        self.assertIn("/usr/bin/git rev-list --first-parent", verification_step)
         self.assertNotIn("BASEROM_URL", verification_step)
+
+    def test_secret_publisher_is_a_fresh_candidate_free_job(self):
+        build = re.search(
+            r"(?ms)^  build:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+            self.text,
+        ).group("body")
+        self.assertIn("Stage inert patch-release inputs", build)
+        self.assertIn("Upload inert patch-release inputs", build)
+        self.assertIn("retention-days: 1", build)
+        self.assertIn(
+            "name: patch-input-${{ needs.event-identity.outputs.fallback_sha }}",
+            build,
+        )
+        inert_stage = build[
+            build.index("- name: Stage inert patch-release inputs"):
+            build.index("- name: Upload inert patch-release inputs")
+        ]
+        self.assertIn('"$PATCH_INPUT_ROOT/target.gba"', inert_stage)
+        self.assertIn('"$PATCH_INPUT_ROOT/metadata.json"', inert_stage)
+        for source in AUDITED_PATCH_TOOL_FILES:
+            self.assertNotIn(source, inert_stage)
+        for candidate_marker in (
+            "sudo apt-get",
+            "./build_tools.sh",
+            "make expansion-modern-all-locales-all-features-check",
+            "$GITHUB_ENV",
+            "$GITHUB_PATH",
+        ):
+            self.assertNotIn(candidate_marker, self.patch_job)
+
+        attack = (
+            "\n    - name: Candidate persistence attack\n"
+            "      run: |\n"
+            "        echo 'BASH_ENV=attacker' >> \"$GITHUB_ENV\"\n"
+            "        (while true; do test -e \"$RUNNER_TEMP/base\"; done) &\n"
+        )
+        changed = self.text.replace("\n  extended-host-tests:\n", attack + "\n  extended-host-tests:\n", 1)
+        changed_patch = re.search(
+            r"(?ms)^  patch-release:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+            changed,
+        ).group("body")
+        self.assertEqual(changed_patch, self.patch_job)
 
     def test_private_base_lifetime_is_fixed_and_candidate_free(self):
         self.assertEqual(publisher_boundary_errors(self.text), [])
@@ -337,15 +437,47 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("      if: always()", steps[cleanup])
         self.assertNotIn("BASE_IMAGE", steps[-1])
 
+    def test_every_private_boundary_step_scrubs_ambient_execution_state(self):
+        steps = patch_release_step_blocks(self.text)
+        for step_name in (
+            "Verify and stage trusted previous-master producer",
+            "Validate inert patch-release inputs",
+            "Download private base image",
+            "Create and verify patch artifact",
+            "Cleanup and verify private base",
+        ):
+            with self.subTest(step=step_name):
+                step = next(item for item in steps if f"- name: {step_name}" in item)
+                for cleared in (
+                    "BASH_ENV: ''",
+                    "CDPATH: ''",
+                    "ENV: ''",
+                    "GLOBIGNORE: ''",
+                    "LD_LIBRARY_PATH: ''",
+                    "LD_PRELOAD: ''",
+                    "PYTHONPATH: ''",
+                    "SHELLOPTS: ''",
+                    "GIT_ALTERNATE_OBJECT_DIRECTORIES: ''",
+                    "GIT_CONFIG_GLOBAL: /dev/null",
+                    "GIT_CONFIG_NOSYSTEM: '1'",
+                    "GIT_CONFIG_SYSTEM: /dev/null",
+                    "GIT_NO_REPLACE_OBJECTS: '1'",
+                ):
+                    self.assertIn(cleared, step)
+
     def test_private_base_boundary_mutations_fail(self):
         steps = patch_release_step_blocks(self.text)
         download = next(step for step in steps if "Download private base image" in step)
         create = next(step for step in steps if "Create and verify patch artifact" in step)
         cleanup = next(step for step in steps if "Cleanup and verify private base" in step)
-        candidate = next(step for step in steps if "sudo apt-get update" in step)
-        moved_early = self.text.replace(download, "", 1).replace(
-            candidate,
-            download + candidate,
+        moved_early = self.text.replace(
+            "    - name: Install dependencies\n",
+            "    - name: Candidate-job private download\n"
+            "      env:\n"
+            "        BASEROM_URL: ${{ secrets.BASEROM_URL }}\n"
+            "      run: /usr/bin/curl \"$BASEROM_URL\" "
+            "\"$RUNNER_TEMP/patch-private.base\"\n\n"
+            "    - name: Install dependencies\n",
             1,
         )
         inserted_candidate = self.text.replace(
@@ -389,7 +521,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 self.assertNotEqual(changed, self.text)
                 self.assertTrue(publisher_boundary_errors(changed))
 
-    def test_audited_patch_tool_hashes_and_imports_are_closed(self):
+    def test_previous_master_patch_tool_imports_are_closed(self):
         allowed_import_roots = {
             "__future__",
             "argparse",
@@ -403,11 +535,18 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "typing",
             "zlib",
         }
-        for relative, expected_hash in AUDITED_PATCH_TOOL_HASHES.items():
+        self.assertNotRegex(
+            self.patch_job,
+            r"[0-9a-f]{64}\s+scripts/modernize/",
+        )
+        self.assertIn(
+            "ref: ${{ needs.event-identity.outputs.previous_sha }}",
+            self.patch_job,
+        )
+        for relative in AUDITED_PATCH_TOOL_FILES:
             with self.subTest(relative=relative):
                 data = (ROOT / relative).read_bytes()
-                self.assertEqual(hashlib.sha256(data).hexdigest(), expected_hash)
-                self.assertIn(expected_hash, self.patch_job)
+                self.assertIn(relative, self.patch_job)
                 tree = ast.parse(data, filename=relative)
                 imports = {
                     alias.name.split(".", 1)[0]
@@ -433,7 +572,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             runtime_root = sandbox / "runtime"
             (tool_root / "scripts" / "modernize").mkdir(parents=True)
             runtime_root.mkdir()
-            for relative in AUDITED_PATCH_TOOL_HASHES:
+            for relative in AUDITED_PATCH_TOOL_FILES:
                 target = tool_root / relative
                 target.write_bytes((ROOT / relative).read_bytes())
             base = sandbox / "base.gba"
@@ -476,6 +615,195 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 1)
             self.assertIn("base validation failed: size mismatch", completed.stderr)
+
+    def test_previous_master_relationship_is_proven_before_staging(self):
+        script = named_step_run_script(
+            self.text,
+            "Verify and stage trusted previous-master producer",
+        )
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="previous-master-producer-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            origin = sandbox / "origin"
+            checkout = sandbox / "checkout"
+            subprocess.run(
+                ["/usr/bin/git", "init", "-q", "-b", "master", str(origin)],
+                check=True,
+            )
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(origin), "config", "user.name", "test"],
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "/usr/bin/git",
+                    "-C",
+                    str(origin),
+                    "config",
+                    "user.email",
+                    "test@example.invalid",
+                ],
+                check=True,
+            )
+            for relative in AUDITED_PATCH_TOOL_FILES:
+                target = origin / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes((ROOT / relative).read_bytes())
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(origin), "add", "."],
+                check=True,
+            )
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(origin), "commit", "-q", "-m", "before"],
+                check=True,
+            )
+            before = subprocess.check_output(
+                ["/usr/bin/git", "-C", str(origin), "rev-parse", "HEAD"],
+                text=True,
+            ).strip()
+            (origin / "marker").write_text("after\n", encoding="ascii")
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(origin), "add", "marker"],
+                check=True,
+            )
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(origin), "commit", "-q", "-m", "after"],
+                check=True,
+            )
+            after = subprocess.check_output(
+                ["/usr/bin/git", "-C", str(origin), "rev-parse", "HEAD"],
+                text=True,
+            ).strip()
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(origin), "checkout", "-q", "--orphan", "unrelated"],
+                check=True,
+            )
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(origin), "rm", "-q", "-rf", "."],
+                check=True,
+            )
+            (origin / "unrelated").write_text("unrelated\n", encoding="ascii")
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(origin), "add", "unrelated"],
+                check=True,
+            )
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(origin), "commit", "-q", "-m", "unrelated"],
+                check=True,
+            )
+            unrelated = subprocess.check_output(
+                ["/usr/bin/git", "-C", str(origin), "rev-parse", "HEAD"],
+                text=True,
+            ).strip()
+            subprocess.run(
+                ["/usr/bin/git", "clone", "-q", str(origin), str(checkout)],
+                check=True,
+            )
+            subprocess.run(
+                ["/usr/bin/git", "-C", str(checkout), "checkout", "-q", before],
+                check=True,
+            )
+
+            def verify(previous_sha, patch_commit, expected):
+                case_root = sandbox / f"case-{len(list(sandbox.glob('case-*')))}"
+                environment = {
+                    **os.environ,
+                    "PATCH_COMMIT": patch_commit,
+                    "PATCH_RUNTIME_ROOT": str(case_root / "runtime"),
+                    "PATCH_TOOL_ROOT": str(case_root / "tool"),
+                    "PREVIOUS_MASTER_SHA": previous_sha,
+                    "RUNNER_TEMP": str(case_root),
+                }
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", script],
+                    cwd=checkout,
+                    env=environment,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, expected, completed.stderr)
+
+            verify(before, after, 0)
+            verify("0" * 40, after, 1)
+            verify("A" * 40, after, 1)
+            verify(after, after, 1)
+            verify(before, before, 1)
+            verify(before, unrelated, 1)
+
+    def test_inert_candidate_artifact_is_validated_without_execution(self):
+        script = named_step_run_script(
+            self.text,
+            "Validate inert patch-release inputs",
+        )
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="inert-patch-input-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            runtime = sandbox / "runtime"
+            runtime.mkdir()
+
+            def make_input(name):
+                input_root = sandbox / name
+                input_root.mkdir()
+                with (input_root / "target.gba").open("wb") as target:
+                    target.truncate(32 * 1024 * 1024)
+                (input_root / "metadata.json").write_text(
+                    json.dumps({"build_commit": "1" * 40}),
+                    encoding="ascii",
+                )
+                return input_root
+
+            def validate(input_root):
+                return subprocess.run(
+                    [
+                        "/bin/bash",
+                        "--noprofile",
+                        "--norc",
+                        "-euo",
+                        "pipefail",
+                        "-c",
+                        script,
+                    ],
+                    cwd=runtime,
+                    env={
+                        **os.environ,
+                        "PATCH_COMMIT": "1" * 40,
+                        "PATCH_INPUT_ROOT": str(input_root),
+                        "PATCH_RUNTIME_ROOT": str(runtime),
+                    },
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+
+            valid = make_input("valid")
+            self.assertEqual(validate(valid).returncode, 0)
+
+            symlink = make_input("symlink")
+            (symlink / "target.gba").unlink()
+            (symlink / "target.gba").symlink_to(valid / "target.gba")
+            self.assertNotEqual(validate(symlink).returncode, 0)
+
+            nested = make_input("nested")
+            (nested / "traversal").mkdir()
+            self.assertNotEqual(validate(nested).returncode, 0)
+
+            code_like = make_input("code-like")
+            marker = sandbox / "must-not-exist"
+            (code_like / "metadata.json").write_text(
+                f'__import__("pathlib").Path({str(marker)!r}).touch()\n',
+                encoding="ascii",
+            )
+            self.assertNotEqual(validate(code_like).returncode, 0)
+            self.assertFalse(marker.exists())
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)
@@ -624,7 +952,16 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     child.rmdir()
 
     def test_profile_and_local_verifier_are_required_before_upload(self):
-        self.assertIn("make expansion-modern-all-locales-all-features-check -j1", self.patch_job)
+        build = re.search(
+            r"(?ms)^  build:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+            self.text,
+        ).group("body")
+        self.assertIn("make expansion-modern-map-menu-presentation-check -j1", build)
+        self.assertIn(
+            "build/expansion-modern-all-locales-all-features/release/aapcs/"
+            "fireemblem8.gba",
+            build,
+        )
         self.assertEqual(self.patch_job.count("from scripts.modernize.patch_release import main"), 2)
         self.assertIn('"$PATCH_TOOL_ROOT" create', self.patch_job)
         self.assertIn('"$PATCH_TOOL_ROOT" verify', self.patch_job)
@@ -647,7 +984,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     ]:
                         publisher_interpreters.add(command[index])
 
-        self.assertEqual(install_interpreters, {"python3"})
+        self.assertEqual(install_interpreters, set())
         self.assertEqual(publisher_interpreters, {"/usr/bin/python3"})
 
 

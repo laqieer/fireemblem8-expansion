@@ -1408,7 +1408,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 (
                         "patch-release",
                         "needs",
-                        "    needs: [event-identity]",
+                        "    needs: [event-identity, build]",
                         "    needs: [event-classifier]",
                 ),
                 (
@@ -1427,7 +1427,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                 (
                         "patch-release",
                         "revision",
-                        '        test "$ACTUAL_SHA" = "$PATCH_COMMIT"',
+                        '        test "$ACTUAL_SHA" = "$PREVIOUS_MASTER_SHA"',
                         "        true",
                 ),
                 (
@@ -1439,14 +1439,20 @@ class VerifyCliCwdTests(unittest.TestCase):
                 (
                         "patch-release",
                         "step",
-                        "    - run: make expansion-modern-all-locales-all-features-check -j1\n",
-                        "",
+                        "    - name: Validate inert patch-release inputs",
+                        "    - name: Skip inert patch-release validation",
                 ),
                 (
                         "patch-release",
                         "command",
-                        "    - run: ./build_tools.sh",
-                        "    - run: exit 1",
+                        "/usr/bin/python3 -I -S -c",
+                        "python3 -c",
+                ),
+                (
+                        "patch-release",
+                        "download-action",
+                        verify_mod._DOWNLOAD_USES,
+                        "actions/download-artifact@" + "0" * 40,
                 ),
                 (
                         "patch-release",

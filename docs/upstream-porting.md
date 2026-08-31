@@ -259,10 +259,12 @@ or reordered keys fail before dry-run.
 The complete nine-job structure preserves the six closed issue #176 jobs and
 adds only the closed, non-mirrored identity/router/mode-classifier setup jobs.
 `patch-release` must retain its validated master-push-only condition,
-Ubuntu/60-minute context, exact commit env, ten ordered publisher steps,
-pinned checkout/upload actions, immediate exact-revision verification, all
-candidate setup/build work before private download, hash-pinned staged tool
-and public inputs, unpredictable mode-restricted curl output, immediate
+Ubuntu/60-minute context, exact commit env, eight ordered fresh-job publisher
+steps plus the build job's two inert-input transfer steps, pinned
+checkout/download/upload actions, verified nonzero previous-master producer
+ancestry without whole-file source hash pins, all candidate setup/build work
+before private download, validated inert public inputs, unpredictable
+mode-restricted curl output, immediate
 absolute isolated patch creation, guaranteed base cleanup and cleanup
 verification before upload, and the exact upload mapping. `summary` must retain
 `always()`, its reliably evaluated dynamic summary name, the classifier plus exact ordered
