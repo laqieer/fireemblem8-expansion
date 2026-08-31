@@ -57,10 +57,13 @@ event `after`/`github.sha`. Every successful full/metadata classification,
 worker, and summary binds to that kind and SHA. Missing, uppercase, short,
 nonhex, ref-name, ref-number-mismatched, malformed, or cross-event identities
 run no worker and cannot produce a successful summary. Candidate normalization
-requires one canonical successful `event-identity` context in both modes and
-rejects missing, failed, skipped, renamed, duplicate, or unknown setup
-contexts. Workers consume only that validated SHA. The publisher uses the same
-validated push SHA,
+requires successful common identity and router setup in both modes and rejects
+missing, failed, skipped, renamed, duplicate, or unknown setup contexts.
+A canonical successful `event-identity` context is mandatory in both modes.
+A canonical successful `event-router` context is mandatory in both modes.
+Metadata-only mode is PR-only; push-shaped metadata output
+fails into the validated full fallback. Workers consume only that validated
+SHA. The publisher uses the same validated push SHA,
 verifies `/usr/bin/git rev-parse HEAD` immediately after checkout, and exposes
 `BASEROM_URL` only after every repository/candidate-controlled setup and build
 command has finished. It stages the patch tool from the verified previous

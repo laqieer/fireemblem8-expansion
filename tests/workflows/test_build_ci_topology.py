@@ -1098,6 +1098,8 @@ def _mode_contract_errors(job: str) -> list[str]:
         '        case "$FULL_FALLBACK" in',
         '            echo "classified PR head lacks coherent trusted event identity" >&2',
         '            echo "classified push head lacks coherent trusted event identity" >&2',
+        '          if [ "$EVENT_NAME" != "pull_request" ] || \\',
+        '             [ "$TRUSTED_EVENT_KIND" != "pull_request" ] || \\',
         '          echo "full fallback mode is not authoritative" >&2',
         "    - name: Verify authoritative Build event mode",
     )
@@ -4427,6 +4429,53 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 1,
             ),
             (
+                "push-metadata-router-output",
+                {
+                    "CLASSIFICATION": "metadata-only",
+                    "CLASSIFIED_HEAD": "3" * 40,
+                    "EVENT_NAME": "push",
+                    "EVENT_SHA": "3" * 40,
+                    "FULL_FALLBACK": "false",
+                    "HEAD_VALID": "true",
+                    "IDENTITY_VALID": "true",
+                    "PR_HEAD_SHA": "",
+                    "PUSH_SHA": "3" * 40,
+                    "ROUTER_RESULT": "success",
+                    "RUN_EXPENSIVE": "false",
+                    "TRUSTED_EVENT_KIND": "push",
+                    "TRUSTED_EVENT_SHA": "3" * 40,
+                },
+                1,
+            ),
+            (
+                "pr-metadata-cross-event-kind",
+                {
+                    "CLASSIFICATION": "metadata-only",
+                    "FULL_FALLBACK": "false",
+                    "HEAD_VALID": "true",
+                    "IDENTITY_VALID": "true",
+                    "ROUTER_RESULT": "success",
+                    "RUN_EXPENSIVE": "false",
+                    "TRUSTED_EVENT_KIND": "push",
+                },
+                1,
+            ),
+            (
+                "unsupported-event-metadata-router-output",
+                {
+                    "CLASSIFICATION": "metadata-only",
+                    "EVENT_NAME": "schedule",
+                    "FULL_FALLBACK": "false",
+                    "HEAD_VALID": "true",
+                    "IDENTITY_VALID": "true",
+                    "ROUTER_RESULT": "success",
+                    "RUN_EXPENSIVE": "false",
+                    "TRUSTED_EVENT_KIND": "none",
+                    "TRUSTED_EVENT_SHA": "",
+                },
+                1,
+            ),
+            (
                 "successful-full-stale-trusted-head",
                 {
                     "CLASSIFICATION": "full",
@@ -4499,6 +4548,101 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     text=True,
                 )
                 self.assertEqual(completed.returncode, expected, completed.stderr)
+
+    def test_push_metadata_router_output_falls_back_full_and_fails_summary(self):
+        jobs = _job_blocks(self.text)
+        mode_script = _literal_run_script(_step_blocks(jobs["event-classifier"])[0])
+        push_sha = "3" * 40
+        mode = subprocess.run(
+            ["/bin/bash", "-c", mode_script],
+            cwd=ROOT,
+            env={
+                **os.environ,
+                "CLASSIFICATION": "metadata-only",
+                "CLASSIFIED_HEAD": push_sha,
+                "EVENT_IDENTITY_RESULT": "success",
+                "EVENT_NAME": "push",
+                "EVENT_SHA": push_sha,
+                "FULL_FALLBACK": "false",
+                "HEAD_VALID": "true",
+                "IDENTITY_VALID": "true",
+                "PR_HEAD_SHA": "",
+                "PUSH_SHA": push_sha,
+                "ROUTER_RESULT": "success",
+                "RUN_EXPENSIVE": "false",
+                "TRUSTED_EVENT_KIND": "push",
+                "TRUSTED_EVENT_SHA": push_sha,
+            },
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(mode.returncode, 1)
+        self.assertIn("metadata event mode is not authoritative", mode.stderr)
+
+        event = {
+            "classifier_result": "failure",
+            "event_name": "push",
+            "payload": {
+                "after": push_sha,
+                "before": "2" * 40,
+                "ref": "refs/heads/master",
+            },
+            "runner": {
+                "github_ref": "refs/heads/master",
+                "github_sha": push_sha,
+                "pr_base_sha": "",
+                "pr_head_sha": "",
+                "push_sha": push_sha,
+            },
+        }
+        self.assertEqual(
+            _triggered_jobs(self.text, event),
+            CANDIDATE_FULL_JOBS | {"patch-release"},
+        )
+
+        summary_script = _literal_run_script(_step_blocks(jobs["summary"])[0])
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="push-metadata-summary-",
+            dir=artifact_root,
+        ) as temporary:
+            summary = subprocess.run(
+                ["/bin/bash", "-c", summary_script],
+                cwd=ROOT,
+                env={
+                    **os.environ,
+                    "BUILD_RESULT": "success",
+                    "CLASSIFICATION": "metadata-only",
+                    "CLASSIFIED_BASE_SHA": "",
+                    "CLASSIFIED_BUILD_SHA": push_sha,
+                    "CLASSIFIER_RESULT": "failure",
+                    "EXTENDED_HOST_TESTS_RESULT": "success",
+                    "FALLBACK_IDENTITY_RESULT": "success",
+                    "FALLBACK_KIND": "push",
+                    "FALLBACK_SHA": push_sha,
+                    "FULL_FALLBACK": "false",
+                    "GITHUB_EVENT_NAME": "push",
+                    "GITHUB_REF": "refs/heads/master",
+                    "GITHUB_STEP_SUMMARY": str(Path(temporary) / "summary.md"),
+                    "HEAD_VALID": "true",
+                    "HOST_TESTS_RESULT": "success",
+                    "IDENTITY_VALID": "true",
+                    "LEGACY_RESULT": "success",
+                    "PATCH_RELEASE_RESULT": "success",
+                    "PR_BASE_SHA": "",
+                    "PR_HEAD_SHA": "",
+                    "PUSH_SHA": push_sha,
+                    "RAW_PUSH_SHA": push_sha,
+                    "RUN_EXPENSIVE": "false",
+                },
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(summary.returncode, 1)
+        self.assertIn("exact-push fallback jobs completed", summary.stderr)
 
     def test_classifier_bootstrap_preserves_incomplete_pr_identity(self):
         classifier_steps = _step_blocks(_job_blocks(self.text)["event-router"])

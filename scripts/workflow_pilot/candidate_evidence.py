@@ -104,6 +104,10 @@ def _validate_mode_contexts(
         raise CandidateEvidenceError(
             "run lacks successful canonical event-identity setup"
         )
+    if contexts.get("event-router") != ("event-router", "success"):
+        raise CandidateEvidenceError(
+            "run lacks successful canonical event-router setup"
+        )
     if mode == "metadata-only":
         for job_id in WORKER_JOB_IDS:
             if job_id not in contexts:

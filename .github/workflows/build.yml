@@ -305,7 +305,9 @@ jobs:
           *) echo "Build event router returned invalid identity validity" >&2; exit 1 ;;
         esac
         if [ "$CLASSIFICATION" = "metadata-only" ]; then
-          if [ "$FULL_FALLBACK" != "false" ] || [ "$HEAD_VALID" != "true" ] || \
+          if [ "$EVENT_NAME" != "pull_request" ] || \
+             [ "$TRUSTED_EVENT_KIND" != "pull_request" ] || \
+             [ "$FULL_FALLBACK" != "false" ] || [ "$HEAD_VALID" != "true" ] || \
              [ "$IDENTITY_VALID" != "true" ] || \
              [ "$RUN_EXPENSIVE" != "false" ]; then
             echo "metadata event mode is not authoritative" >&2

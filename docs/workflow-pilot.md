@@ -122,8 +122,9 @@ fallback.
 
 Check contexts are mode-separated. `event-identity` and `event-router` are
 common setup only. Every normalized full or metadata run must contain exactly
-one canonical successful `event-identity` context; missing, failed, skipped,
-renamed, duplicate, or unknown setup contexts are invalid. Full candidate runs
+one successful identity context and one successful router setup context;
+missing, failed, skipped, renamed, duplicate, or
+unknown setup contexts are invalid. Full candidate runs
 expose `event-classifier`, `host-tests`, `build`,
 `extended-host-tests`, `legacy`, and `summary`. The running `summary` context
 is the sole candidate attestation; it succeeds only after the same full run's
@@ -144,8 +145,10 @@ exact-head/exact-base full run as one unit. A metadata-only run is never
 candidate evidence. A failed full run followed by green metadata remains
 ineligible; a prior successful full run remains eligible because metadata
 contexts are distinct rather than replacements. Both modes require the same
-successful common identity setup before their running attestations are
-admissible.
+successful common identity and router setup before their running attestations
+are admissible.
+A canonical successful `event-identity` context is mandatory in both modes.
+A canonical successful `event-router` context is mandatory in both modes.
 
 The classifier reads the bounded `GITHUB_EVENT_PATH` JSON file with duplicate
 key and non-finite `NaN`/`Infinity` rejection. JSON floats are converted
@@ -228,6 +231,9 @@ Trusted event setup accepts an event identity only as an exact lowercase
 `refs/heads/master`, and equal event `after`/`github.sha`. Successful full and
 metadata classifications, normal workers, and summary must all bind their
 classified head to that same kind and SHA. Missing, uppercase, short, nonhex,
+Metadata-only classification is accepted only for a coherently bound
+`pull_request`; metadata-shaped router output on push or another event fails
+the classifier and takes the validated full fallback path. Missing, uppercase, short, nonhex,
 ref-name, ref-number-mismatched, malformed, or cross-event identities select
 no worker and cannot produce a successful summary. Classifier-failure workers
 also consume only that validated output. Workers consume only that validated

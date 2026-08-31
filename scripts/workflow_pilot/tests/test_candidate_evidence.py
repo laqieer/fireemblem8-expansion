@@ -196,6 +196,42 @@ class CandidateEvidenceTests(unittest.TestCase):
             if context["job_id"] == "event-identity"
         )["name"] = "trusted-setup"
         mutations.append(renamed_identity)
+        run_id += 1
+
+        for mode, factory in (
+            ("full", _full_run),
+            ("metadata", _metadata_run),
+        ):
+            for conclusion in ("missing", "failure", "skipped"):
+                router = factory(run_id)
+                router_context = next(
+                    context
+                    for context in router["contexts"]
+                    if context["job_id"] == "event-router"
+                )
+                if conclusion == "missing":
+                    router["contexts"].remove(router_context)
+                else:
+                    router_context["conclusion"] = conclusion
+                mutations.append(router)
+                run_id += 1
+
+        renamed_router = _metadata_run(run_id)
+        next(
+            context
+            for context in renamed_router["contexts"]
+            if context["job_id"] == "event-router"
+        )["name"] = "router-setup"
+        mutations.append(renamed_router)
+
+        duplicate_router = _full_run(run_id + 1)
+        router_context = next(
+            context
+            for context in duplicate_router["contexts"]
+            if context["job_id"] == "event-router"
+        )
+        duplicate_router["contexts"].append(copy.deepcopy(router_context))
+        mutations.append(duplicate_router)
 
         for mutation in mutations:
             with self.subTest(contexts=mutation["contexts"]):

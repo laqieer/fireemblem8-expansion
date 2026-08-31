@@ -1023,6 +1023,7 @@ def classifier_bootstrap_contract_violations(text):
         ),
         "candidate-common-identity": (
             "canonical successful event-identity context",
+            "canonical successful event-router context",
             "missing, failed, skipped, renamed, duplicate, or unknown",
         ),
         "base-ref-git-grammar": (
@@ -3594,6 +3595,12 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "candidate-common-identity",
                 r"canonical successful\s+`event-identity`\s+context",
                 "optional event-identity context",
+            ),
+            (
+                "make-common-router-optional",
+                "candidate-common-identity",
+                r"canonical\s+successful\s+`event-router`\s+context",
+                "optional event-router context",
             ),
             (
                 "remove-base-ref-bound",

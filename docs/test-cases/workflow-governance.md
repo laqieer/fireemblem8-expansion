@@ -359,11 +359,18 @@ event `after`/`github.sha`. Successful full/metadata classifications, workers,
 and summary all bind to that same kind and SHA. Missing, uppercase, short,
 nonhex, ref-name, ref-number-mismatched, malformed, or cross-event identities
 run no worker and cannot produce a successful summary. Candidate normalization
-requires exactly one canonical successful `event-identity` context for both
-full and metadata modes; missing, failed, skipped, renamed, duplicate, or
-unknown setup contexts reject the run. Workers consume only that validated
-SHA. The publisher uses the same validated push SHA,
-verifies `/usr/bin/git rev-parse HEAD` immediately after checkout, and exposes
+requires exactly one successful identity context for both full and metadata
+modes and exactly one successful router setup
+context; missing, failed, skipped, renamed, duplicate, or unknown setup
+contexts reject the run.
+A canonical successful `event-identity` context is mandatory in both modes.
+A canonical successful `event-router` context is mandatory in both modes.
+Metadata-only mode is accepted only for a coherently
+bound pull request. Push-shaped or cross-event metadata output fails the
+classifier, runs the validated full fallback workers/publisher, and leaves
+normal summary failed. Workers consume only that validated SHA. The publisher
+uses the same validated push SHA, verifies `/usr/bin/git rev-parse HEAD`
+immediately after checkout, and exposes
 `BASEROM_URL` only after every repository/candidate-controlled setup and build
 command has finished. The three-file patch tool comes from the verified
 previous protected-branch commit without whole-file source hash pins; inert
@@ -399,7 +406,8 @@ exponent overflow, nonzero-to-zero underflow, huge exponents, an unused
 overflow field on metadata-only input, oversized event
 files, base or mixed edits, merge-SHA fallback, malformed fallback identities,
 successful classification with a cross-event/malformed/number-mismatched ref,
-missing/failed/skipped/renamed/duplicate/unknown event-identity evidence,
+missing/failed/skipped/renamed/duplicate event-identity or event-router
+evidence, push-shaped metadata router output,
 an unverified/mutable
 classifier checkout, classifier output drift, worker conditions that accept
 invalid/stale identity, worker skipping after classifier exit 2 with a valid
