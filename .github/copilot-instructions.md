@@ -103,19 +103,27 @@ event. One root owner exists for each issue authority. A closed commit may
 have one nonoverlapping `review_successor`; an interrupted current owner may
 have one `oom_replacement`. Both edges are linear, causal, fresh-owner
 transitions. Reporter v2 separates live eligibility from historical metrics:
-it verifies the original asymmetric attestation and authority/anchor ancestry
-without requiring the old worktree HEAD or a fresh live receipt.
+an external finalize operation signs the complete canonical source document,
+validation result, summary, outcomes, and verified metrics. The unkeyed result
+hash is integrity-only. Historical verification requires that signature and
+authority/anchor ancestry without the old worktree HEAD.
 
 Create the issue-scoped protected authority branch before a PR exists and
 never rename or reset it at PR creation. Bind the eventual PR by appending an
-immutable, externally signed GitHub PR API response containing repository,
-number, base/head branches and OIDs, head repository, creation/observation
-times, and coordinator numeric ID. Every authority and independent anchor
+immutable, externally signed GitHub PR API response containing state `OPEN`,
+unmerged status, repository, number, base/head branches and OIDs, head
+repository, creation/observation times, and coordinator numeric ID. Compare it
+to independent delivery values frozen in protected genesis/root assignment
+and the pre-observation publication request, never to fields copied from the
+response itself. Every authority and independent anchor
 update is one normal `git push --atomic` transaction after atomic-capability
 preflight; both commits directly parent the observed pair. Split or stale
 plans reject. A terminal signed GitHub ruleset API response must prove active
 exact-branch targeting, restricted updates/non-fast-forwards/deletion, and
-only the expected numeric bypass actors. Bounded
+only expected GitHub `User` bypass records whose `actor_id` and `database_id`
+both equal the frozen coordinator user ID with exact `always` mode.
+`RepositoryRole` IDs are roles, not users; other types require a separately
+typed frozen authorization and default to rejection. Bounded
 remote-OID-before/fetch/remote-OID-after reads and a final dual-ref
 observation check reject replay, rollback, and ABA.
 
@@ -130,11 +138,14 @@ Remote-action, availability, resource, OOM snapshot, RSS, lifetime,
 coordination-turn, dependency graph, handoff, run, and watcher evidence comes
 only from an asymmetric attestation signed by an isolated external service
 whose private key is absent from the implementation namespace. Local HMACs
-and permission modes establish no trust. The single-use operation terminates
+and permission modes establish no trust. The external service maintains a
+monotonic consume sequence/anchor and spent-nonce store. One atomic operation terminates
 the implementation process, performs final timeline/run/ref/audit collection
-through the eligibility instant, and signs the complete immutable document;
-there is no post-receipt mutation window. Incomplete GitHub coverage requires
-a credentialless, network-denied process.
+through the consume instant, decides, spends the nonce, and returns the signed
+decision; a second call fails before authority publication. Local receipt-age
+checks cannot turn a preissued receipt into eligibility, and any after-sign
+remote mutation invalidates the decision. Incomplete coverage requires a
+credentialless, network-denied process.
 
 OOM history stores content-bearing file bytes, modes, hashes, original
 assignment/scope/criteria/checks/budgets, and status in the protected

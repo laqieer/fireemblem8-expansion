@@ -514,10 +514,15 @@ game behavior needs a compensating change.
    issue authority and independent anchor branches against deletion and
    non-fast-forward updates. Bootstrap before a PR, append a handoff, then
    append only an externally signed GitHub PR API response with exact
-   repository/base/head/OIDs/times/actor. Reject invented fields, rebinding,
+   repository, PR number, `OPEN`/unmerged state, base/head/OIDs/times/user.
+   Compare it to protected frozen delivery/root/publication inputs. Reject
+   invented, closed, merged, self-consistent-but-wrong fields, rebinding,
    same-owner reuse, stale state, rollback, replay, and ABA. Confirm one
    preflighted `git push --atomic` publishes both refs; split/two-coordinator
    plans and servers without atomic capability reject without partial state.
+   Model the 2026 ruleset response with `actor_type: User`, equal frozen
+   `actor_id`/`database_id`, and `bypass_mode: always`; reject a
+   `RepositoryRole` masquerading as the user.
 5. Reconcile a direct watcher timeout with an authoritative successful
    `github-actions-api` run. Then use an authoritative failed run plus a
    watcher process error and confirm delivery remains failed.
@@ -535,7 +540,10 @@ game behavior needs a compensating change.
    trigger. Accept only a fresh observation made before assignment and valid
    through the validation/lifecycle cutoff and unattended interval.
    Confirm no HMAC/private key exists in the implementation namespace and
-   permission modes grant no trust. Mutating scope, graph, handoffs/successors,
+   permission modes grant no trust. The external consume store must advance
+   its sequence/anchor, spend the nonce before authority push, and reject the
+   same nonce's second call. An after-sign push invalidates the decision; local
+   receipt-age checking provides no eligibility. Mutating scope, graph, handoffs/successors,
    metrics, PR/ruleset data, runs, watchers, or coverage invalidates the
    external asymmetric attestation.
 8. Parse the typed delivery graph. Confirm a merged parent makes child
@@ -551,10 +559,13 @@ game behavior needs a compensating change.
    or done status relabels, and missing/duplicate relationships/tasks.
 9. Exercise reporter fixture schema version 2 with sequential root and
    review-successor bundles. Confirm original asymmetric attestation plus
-   authority/anchor ancestry, accepted/rejected,
+   authority/anchor ancestry and the external one-time finalize signature over
+   canonical source, result, outcomes, summary, and verified metrics,
+   accepted/rejected,
    stale-response, lifetime, RSS, coordination-turn, and recovery-minute
-   metrics without requiring old HEAD or live freshness. Reject hand-authored,
-   tampered, and nonancestor rows. Confirm frozen version 1 stays exact.
+   metrics without requiring old HEAD. Change RSS/outcomes/summary, recompute
+   every unkeyed hash, and require signature failure. Reject hand-authored,
+   double-finalized, tampered, and nonancestor rows.
 10. Run
    `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`,
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`,
@@ -639,7 +650,8 @@ hand-authored reporter rows, owner-history chain mutation, missing/mixed actor
 IDs, omitted remote events, incomplete source coverage, claim tampering,
 future/stale availability, local HMAC/self-attestation, post-coverage events,
 allowed-scope/run/watcher mutation, unrelated ruleset IDs, wrong patterns,
-unexpected bypass actors, invented PR observations, split/non-atomic
+unexpected or role-typed user bypasses, invented/closed/merged PR observations,
+replayed consume nonce, after-sign pushes, rehashed result metrics, split/non-atomic
 publication, overlapping review successors, lost recovery bytes, zero-impact
 linker claims, nonancestor history, and unverified protection reject
 independently. A missing/reset canonical authority or anchor branch, hostile

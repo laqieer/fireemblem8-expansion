@@ -3,6 +3,7 @@ import copy
 import hashlib
 import json
 import os
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -22,6 +23,7 @@ TEST_ARTIFACTS.mkdir(parents=True, exist_ok=True)
 AUTHORITY_OWNERS = {}
 COORDINATOR_INSTALLATIONS = {}
 SIGNER_SERVICES = {}
+SIGNER_CONSUME_STATES = {}
 
 SIGNER_SERVICE = r"""
 import base64
@@ -29,6 +31,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timezone
 
 private_path = sys.argv[1]
 modulus = subprocess.run(
@@ -43,8 +46,74 @@ private_fd = os.memfd_create("workflow-pilot-external-signer", flags=0)
 os.write(private_fd, private_bytes)
 os.lseek(private_fd, 0, os.SEEK_SET)
 print(json.dumps({"modulus_hex": modulus, "exponent": 65537}), flush=True)
+spent = set()
+consumed = {}
+finalized = set()
+store_sequence = 0
+store_anchor = "0" * 64
 for line in sys.stdin:
-    payload = base64.b64decode(line)
+    request = json.loads(line)
+    payload = base64.b64decode(request["payload"])
+    mode = request["mode"]
+    if mode == "consume":
+        nonce = request["nonce"]
+        sequence = request["sequence"]
+        previous_anchor = request["previous_anchor"]
+        expected_anchor = request["anchor"]
+        if nonce in spent or sequence != store_sequence + 1 or previous_anchor != store_anchor:
+            print(json.dumps({"error": "nonce-spent-or-nonmonotonic"}), flush=True)
+            continue
+        actual_anchor = __import__("hashlib").sha256(
+            (
+                previous_anchor
+                + ":"
+                + str(sequence)
+                + ":"
+                + nonce
+            ).encode()
+        ).hexdigest()
+        if expected_anchor != actual_anchor:
+            print(json.dumps({"error": "anchor-mismatch"}), flush=True)
+            continue
+        document = json.loads(payload.split(b"\0", 1)[1])
+        receipt = document["coordinator_receipt"]
+        operation = receipt["operation"]
+        if (
+            operation["nonce"] != nonce
+            or operation["consume_store_id"] != "test-external-monotonic-store"
+            or operation["consume_sequence"] != sequence
+            or operation["consume_previous_anchor"] != previous_anchor
+            or operation["consume_anchor"] != actual_anchor
+            or not operation["implementation_terminated"]
+            or not operation["single_use"]
+            or receipt["issued_at"] != operation["collected_through"]
+            or operation["collected_through"] != operation["eligibility_instant"]
+            or receipt["remote_coverage"]["interval_end"]
+            != operation["eligibility_instant"]
+            or any(
+                source["observed_at"] != operation["eligibility_instant"]
+                for source in receipt["remote_coverage"]["sources"]
+            )
+        ):
+            print(json.dumps({"error": "terminal-consume-contract"}), flush=True)
+            continue
+        consume_time = datetime.fromisoformat(
+            operation["eligibility_instant"].replace("Z", "+00:00")
+        )
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        if consume_time > now or (now - consume_time).total_seconds() > 2:
+            print(json.dumps({"error": "consume-time-not-current"}), flush=True)
+            continue
+        spent.add(nonce)
+        consumed[nonce] = (sequence, actual_anchor)
+        store_sequence = sequence
+        store_anchor = actual_anchor
+    elif mode == "finalize":
+        nonce = request["nonce"]
+        if nonce not in spent or nonce in finalized or request["anchor"] != store_anchor:
+            print(json.dumps({"error": "result-not-consumable"}), flush=True)
+            continue
+        finalized.add(nonce)
     signature = subprocess.run(
         [
             "openssl",
@@ -58,7 +127,16 @@ for line in sys.stdin:
         capture_output=True,
         pass_fds=(private_fd,),
     ).stdout
-    print(base64.b64encode(signature).decode("ascii"), flush=True)
+    print(
+        json.dumps(
+            {
+                "signature": base64.b64encode(signature).decode("ascii"),
+                "sequence": store_sequence,
+                "anchor": store_anchor,
+            }
+        ),
+        flush=True,
+    )
 """
 
 
@@ -87,14 +165,89 @@ def git_with_input(repository_root, arguments, value, environment=None):
     ).stdout.decode("ascii").strip()
 
 
-def external_sign(repository_root, payload):
+def signer_request(repository_root, request):
     service = SIGNER_SERVICES[str(repository_root)]
-    service.stdin.write(base64.b64encode(payload).decode("ascii") + "\n")
+    service.stdin.write(json.dumps(request) + "\n")
     service.stdin.flush()
-    signature = service.stdout.readline().strip()
-    if not signature:
-        raise AssertionError("external signer did not return a signature")
-    return signature
+    response = json.loads(service.stdout.readline())
+    if "error" in response:
+        raise ValueError(response["error"])
+    return response
+
+
+def external_sign(repository_root, payload):
+    return signer_request(
+        repository_root,
+        {
+            "mode": "sign",
+            "payload": base64.b64encode(payload).decode("ascii"),
+        },
+    )["signature"]
+
+
+def consume_sign(repository_root, document):
+    state = SIGNER_CONSUME_STATES[str(repository_root)]
+    operation = document["coordinator_receipt"]["operation"]
+    sequence = state["sequence"] + 1
+    previous_anchor = state["anchor"]
+    anchor = hashlib.sha256(
+        (
+            previous_anchor
+            + ":"
+            + str(sequence)
+            + ":"
+            + operation["nonce"]
+        ).encode()
+    ).hexdigest()
+    operation["consume_store_id"] = state["store_id"]
+    operation["consume_sequence"] = sequence
+    operation["consume_previous_anchor"] = previous_anchor
+    operation["consume_anchor"] = anchor
+    payload = agent_handoff.coordinator_attestation_payload(document)
+    response = signer_request(
+        repository_root,
+        {
+            "mode": "consume",
+            "payload": base64.b64encode(payload).decode("ascii"),
+            "nonce": operation["nonce"],
+            "sequence": sequence,
+            "previous_anchor": previous_anchor,
+            "anchor": anchor,
+        },
+    )
+    state["sequence"] = response["sequence"]
+    state["anchor"] = response["anchor"]
+    document["coordinator_receipt"]["signature"] = response["signature"]
+
+
+def finalize_result_attestation(repository_root, document, result):
+    operation = document["coordinator_receipt"]["operation"]
+    payload = agent_handoff.result_attestation_payload(document, result)
+    response = signer_request(
+        repository_root,
+        {
+            "mode": "finalize",
+            "payload": base64.b64encode(payload).decode("ascii"),
+            "nonce": operation["nonce"],
+            "anchor": operation["consume_anchor"],
+        },
+    )
+    return {
+        "signer_key_id": document["history_authority"]["signer"]["key_id"],
+        "operation_nonce": operation["nonce"],
+        "consume_store_id": operation["consume_store_id"],
+        "consume_sequence": operation["consume_sequence"],
+        "consume_anchor": operation["consume_anchor"],
+        "signature": response["signature"],
+    }
+
+
+def reporter_record(repository_root, document, result):
+    return agent_handoff.reporter_record(
+        document,
+        result,
+        finalize_result_attestation(repository_root, document, result),
+    )
 
 
 def ruleset_response(issue=178):
@@ -112,8 +265,9 @@ def ruleset_response(issue=178):
         "deletion_restricted": True,
         "bypass_actors": [
             {
+                "actor_type": "User",
+                "actor_id": 9001,
                 "database_id": 9001,
-                "actor_type": "RepositoryRole",
                 "bypass_mode": "always",
             }
         ],
@@ -130,6 +284,7 @@ def publication_attestation(
     new_head_seal=None,
     history_receipt=None,
     pr_observation=None,
+    binding_expectation=None,
 ):
     if operation is None:
         operation = (
@@ -162,6 +317,7 @@ def publication_attestation(
             if pr_observation is not None
             else None
         ),
+        "binding_expectation": binding_expectation,
         "observed_at": datetime.now(timezone.utc)
         .replace(microsecond=0)
         .isoformat()
@@ -193,6 +349,8 @@ def pull_request_observation(
         "repository_id": 7001,
         "repository_full_name": "example/workflow",
         "pull_request": pull_request,
+        "state": "OPEN",
+        "merged": False,
         "base_branch": base_branch,
         "head_branch": head_branch,
         "head_repository_full_name": "example/workflow",
@@ -226,12 +384,39 @@ def pull_request_observation(
     return record
 
 
+def frozen_binding_expectation(authority, pull_request=200):
+    delivery = authority["delivery_expectation"]
+    return {
+        "repository_id": delivery["repository_id"],
+        "repository_full_name": delivery["repository_full_name"],
+        "pull_request": pull_request,
+        "state": "OPEN",
+        "merged": False,
+        "base_branch": delivery["immediate_base_branch"],
+        "base_oid": delivery["immediate_base_oid"],
+        "head_branch": authority["history_events"][0]["assignment"][
+            "expected_branch"
+        ],
+        "head_repository_full_name": delivery[
+            "head_repository_full_name"
+        ],
+        "head_oid": authority["history_events"][-1]["candidate_sha"],
+        "coordinator_database_id": 9001,
+    }
+
+
 def sign_coordinator_document(document, repository_root):
     document["coordinator_receipt"].pop("signature", None)
-    document["coordinator_receipt"]["signature"] = external_sign(
-        repository_root,
-        agent_handoff.coordinator_attestation_payload(document),
-    )
+    operation = document["coordinator_receipt"]["operation"]
+    operation["nonce"] = secrets.token_hex(32)
+    for field in (
+        "consume_store_id",
+        "consume_sequence",
+        "consume_previous_anchor",
+        "consume_anchor",
+    ):
+        operation.pop(field, None)
+    consume_sign(repository_root, document)
 
 
 def owner_write_blob_ref(owner_root, reference, payload):
@@ -334,8 +519,15 @@ def set_history_authority(
                     "root" if current["handoff_sequence"] == 0 else "review_successor"
                 ),
                 "lifecycle_state": "handed_off",
+                "candidate_sha": "a" * 40,
+                "closed_at": "2026-08-31T00:00:00Z",
                 "operation_nonce": hashlib.sha256(
                     f"synthetic-operation:{sequence}".encode()
+                ).hexdigest(),
+                "consume_store_id": "synthetic-store",
+                "consume_sequence": sequence,
+                "consume_anchor": hashlib.sha256(
+                    f"synthetic-anchor:{sequence}".encode()
                 ).hexdigest(),
                 "assignment": {"synthetic": sequence},
                 "interruption_snapshot": None,
@@ -442,6 +634,10 @@ def bind_history_authority(
         issue=issue,
         operation="bind",
         pr_observation=pr_observation,
+        binding_expectation=frozen_binding_expectation(
+            current,
+            pull_request,
+        ),
     )
     plan = agent_handoff.plan_history_authority(
         repository_root,
@@ -589,6 +785,11 @@ def handoff_repository():
             )
         ).hexdigest()
         SIGNER_SERVICES[str(repository_root)] = signer_service
+        SIGNER_CONSUME_STATES[str(repository_root)] = {
+            "store_id": "test-external-monotonic-store",
+            "sequence": 0,
+            "anchor": "0" * 64,
+        }
         AUTHORITY_OWNERS[str(repository_root)] = owner_root
         bootstrap_validator = installation_root / "raw_diff_check.py"
         bootstrap_validator.write_bytes(
@@ -611,6 +812,7 @@ def handoff_repository():
                             "database_id": 9001,
                         }
                     ],
+                    "authorized_non_user_bypass_actors": [],
                     "authority_protection": {
                         "mode": "bare-remote-config",
                         "ruleset_id": 77,
@@ -623,6 +825,11 @@ def handoff_repository():
                         ),
                         "force_pushes_allowed": False,
                         "deletions_allowed": False,
+                    },
+                    "delivery": {
+                        "immediate_base_branch": "master",
+                        "delivery_branch": "agent/issue-178",
+                        "head_repository_full_name": "example/workflow",
                     },
                     "bootstrap_validator": {
                         "path": str(bootstrap_validator),
@@ -701,6 +908,7 @@ def handoff_repository():
             del AUTHORITY_OWNERS[str(repository_root)]
             del COORDINATOR_INSTALLATIONS[str(repository_root)]
             del SIGNER_SERVICES[str(repository_root)]
+            del SIGNER_CONSUME_STATES[str(repository_root)]
 
 
 def timestamped_states(receipt=None):
@@ -1018,12 +1226,7 @@ def coordinator_receipt(
         "collector_database_id": 9000,
         "issued_at": issued_at.isoformat().replace("+00:00", "Z"),
         "operation": {
-            "nonce": hashlib.sha256(
-                (
-                    f"eligibility:{issued_at.isoformat()}:"
-                    + ",".join(handoff["id"] for handoff in document["handoffs"])
-                ).encode()
-            ).hexdigest(),
+            "nonce": secrets.token_hex(32),
             "started_at": (
                 assignment_start - timedelta(seconds=2)
             ).isoformat().replace("+00:00", "Z"),
@@ -1655,7 +1858,7 @@ class ExactHandoffTests(unittest.TestCase):
                 ROOT / agent_handoff.HANDOFF_SCHEMA_REPOSITORY_PATH
             ).read_text(encoding="utf-8")
         )
-        self.assertEqual(schema["protocol_version"], 3)
+        self.assertEqual(schema["protocol_version"], 5)
         self.assertEqual(schema["properties"]["schema_version"]["const"], 2)
         self.assertIn(
             "coordinator_receipt",
@@ -2589,6 +2792,25 @@ class ExactHandoffTests(unittest.TestCase):
 
     def test_ruleset_response_is_exact_and_has_no_unexpected_bypass(self):
         with handoff_repository() as (root, _base, parent, result):
+            accepted = handoff_document(root, parent, result)
+            self.assertTrue(
+                agent_handoff.validate_document(accepted, root)[
+                    "summary"
+                ]["trusted_push_eligible"]
+            )
+            self.assertEqual(
+                accepted["coordinator_receipt"]["authority_protection"][
+                    "response"
+                ]["bypass_actors"],
+                [
+                    {
+                        "actor_type": "User",
+                        "actor_id": 9001,
+                        "database_id": 9001,
+                        "bypass_mode": "always",
+                    }
+                ],
+            )
             mutations = {
                 "unrelated-id": lambda response: response.update(id=78),
                 "wrong-include": lambda response: response[
@@ -2621,17 +2843,17 @@ class ExactHandoffTests(unittest.TestCase):
                 "response"
             ]["bypass_actors"].append(
                 {
-                    "database_id": 9999,
                     "actor_type": "RepositoryRole",
+                    "actor_id": 5,
                     "bypass_mode": "always",
                 }
             )
             sign_coordinator_document(extra_bypass, root)
-            report = agent_handoff.validate_document(extra_bypass, root)
-            self.assertIn(
-                "authority-ruleset-bypass-mismatch",
-                report["summary"]["rejection_codes"],
-            )
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "unauthorized typed bypass",
+            ):
+                agent_handoff.validate_document(extra_bypass, root)
 
             current = agent_handoff.read_history_authority(
                 root,
@@ -2868,23 +3090,34 @@ class ExactHandoffTests(unittest.TestCase):
                 )
 
     def test_pr_binding_requires_exact_signed_api_response(self):
-        with handoff_repository() as (root, _base, _parent, _result):
+        with handoff_repository() as (root, _base, parent, result):
+            document = handoff_document(root, parent, result)
+            report = agent_handoff.validate_document(document, root)
+            history = agent_handoff.make_history_receipt(
+                document,
+                report,
+                "issue-178-round-1",
+            )
+            set_history_authority(
+                root,
+                1,
+                history["seal"],
+                history_receipt=history,
+            )
             current = agent_handoff.read_history_authority(
                 root,
                 "example/workflow",
                 178,
                 None,
             )
-            publication = publication_attestation(
-                root,
-                current["object_id"],
-                current["anchor_object_id"],
-            )
             for field, value, message in (
                 ("repository_id", 999, "repository mismatch"),
                 ("head_repository_full_name", "fork/repo", "repository mismatch"),
-                ("head_oid", "f" * 40, "not current"),
+                ("base_oid", "e" * 40, "frozen delivery inputs"),
+                ("head_oid", "f" * 40, "frozen delivery inputs"),
                 ("delivery_branch", "other", "handoff/delivery branch"),
+                ("state", "CLOSED", "OPEN and unmerged"),
+                ("merged", True, "OPEN and unmerged"),
             ):
                 with self.subTest(field=field):
                     observation = pull_request_observation(root, current)
@@ -2894,6 +3127,16 @@ class ExactHandoffTests(unittest.TestCase):
                         agent_handoff.signed_record_payload(
                             agent_handoff.PR_OBSERVATION_DOMAIN,
                             observation,
+                        ),
+                    )
+                    publication = publication_attestation(
+                        root,
+                        current["object_id"],
+                        current["anchor_object_id"],
+                        operation="bind",
+                        pr_observation=observation,
+                        binding_expectation=frozen_binding_expectation(
+                            current,
                         ),
                     )
                     with self.assertRaisesRegex(
@@ -2914,6 +3157,17 @@ class ExactHandoffTests(unittest.TestCase):
 
             invented = pull_request_observation(root, current)
             invented["pull_request"] = 201
+            publication = publication_attestation(
+                root,
+                current["object_id"],
+                current["anchor_object_id"],
+                operation="bind",
+                pr_observation=invented,
+                binding_expectation=frozen_binding_expectation(
+                    current,
+                    201,
+                ),
+            )
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
                 "does not verify|wrong pull request",
@@ -3001,9 +3255,60 @@ class ExactHandoffTests(unittest.TestCase):
                         wrong_report["summary"]["rejection_codes"],
             )
 
-    def test_terminal_collection_rejects_post_coverage_events(self):
+    def test_terminal_consume_rejects_double_validation_and_after_sign_push(self):
         with handoff_repository() as (root, _base, parent, result):
             document = handoff_document(root, parent, result)
+            operation = document["coordinator_receipt"]["operation"]
+            with self.assertRaisesRegex(
+                ValueError,
+                "nonce-spent-or-nonmonotonic",
+            ):
+                signer_request(
+                    root,
+                    {
+                        "mode": "consume",
+                        "payload": base64.b64encode(
+                            agent_handoff.coordinator_attestation_payload(
+                                document
+                            )
+                        ).decode("ascii"),
+                        "nonce": operation["nonce"],
+                        "sequence": operation["consume_sequence"],
+                        "previous_anchor": operation[
+                            "consume_previous_anchor"
+                        ],
+                        "anchor": operation["consume_anchor"],
+                    },
+                )
+
+            after_sign = copy.deepcopy(document)
+            late_push = {
+                "id": "after-sign:push",
+                "handoff_id": "issue-178-round-1",
+                "actor_login": "owner-1",
+                "actor_database_id": 101,
+                "action": "push",
+                "occurred_at": operation["eligibility_instant"],
+                "source": "git-refs",
+            }
+            refs_source = next(
+                source
+                for source in after_sign["coordinator_receipt"][
+                    "remote_coverage"
+                ]["sources"]
+                if source["name"] == "git-refs"
+            )
+            refs_source["events"].append(copy.deepcopy(late_push))
+            refs_source["total_count"] += 1
+            after_sign["coordinator_receipt"]["remote_coverage"][
+                "observed_actions"
+            ].append(late_push)
+            after_report = agent_handoff.validate_document(after_sign, root)
+            self.assertIn(
+                "invalid-coordinator-attestation",
+                after_report["summary"]["rejection_codes"],
+            )
+
             eligibility = datetime.fromisoformat(
                         document["coordinator_receipt"]["operation"][
                             "eligibility_instant"
@@ -3827,12 +4132,11 @@ class ExactHandoffTests(unittest.TestCase):
             ]
             for source in receipt["remote_coverage"]["sources"]:
                 source["observed_at"] = receipt["issued_at"]
-            sign_coordinator_document(future, root)
             with self.assertRaisesRegex(
-                agent_handoff.HandoffDataError,
-                "terminal, single-use, and atomic|future-dated or stale",
+                ValueError,
+                "consume-time-not-current",
             ):
-                agent_handoff.validate_document(future, root)
+                sign_coordinator_document(future, root)
 
             stale = copy.deepcopy(document)
             receipt = stale["coordinator_receipt"]
@@ -3841,12 +4145,11 @@ class ExactHandoffTests(unittest.TestCase):
                 microsecond=0
             ).isoformat().replace("+00:00", "Z")
             receipt["remote_coverage"]["interval_end"] = receipt["issued_at"]
-            sign_coordinator_document(stale, root)
             with self.assertRaisesRegex(
-                agent_handoff.HandoffDataError,
-                "terminal, single-use, and atomic|future-dated or stale",
+                ValueError,
+                "terminal-consume-contract|consume-time-not-current",
             ):
-                agent_handoff.validate_document(stale, root)
+                sign_coordinator_document(stale, root)
 
             late = copy.deepcopy(
                 document["coordinator_receipt"]["availability"]
@@ -3943,10 +4246,17 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 first_document,
                 root,
             )
-            first_record = agent_handoff.reporter_record(
+            first_record = reporter_record(
+                root,
                 first_document,
                 first_result_report,
             )
+            with self.assertRaisesRegex(ValueError, "result-not-consumable"):
+                finalize_result_attestation(
+                    root,
+                    first_document,
+                    first_result_report,
+                )
             first_history = agent_handoff.make_history_receipt(
                 first_document,
                 first_result_report,
@@ -3996,7 +4306,8 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 second_document,
                 root,
             )
-            second_record = agent_handoff.reporter_record(
+            second_record = reporter_record(
+                root,
                 second_document,
                 second_result_report,
             )
@@ -4050,6 +4361,8 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                     "issue",
                     "signer",
                     "ruleset_id",
+                    "authorized_bypass_actors",
+                    "delivery_expectation",
                 )
             }
             alternate_record.update(
@@ -4070,7 +4383,12 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                         "handoff_id": None,
                         "handoff_kind": None,
                         "lifecycle_state": None,
+                        "candidate_sha": None,
+                        "closed_at": None,
                         "operation_nonce": None,
+                        "consume_store_id": None,
+                        "consume_sequence": None,
+                        "consume_anchor": None,
                         "assignment": None,
                         "interruption_snapshot": None,
                     },
@@ -4126,7 +4444,8 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 accepted_document,
                 root,
             )
-            accepted = agent_handoff.reporter_record(
+            accepted = reporter_record(
+                root,
                 accepted_document,
                 accepted_result,
             )
@@ -4152,7 +4471,8 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 stale_document,
                 root,
             )
-            stale = agent_handoff.reporter_record(
+            stale = reporter_record(
+                root,
                 stale_document,
                 stale_result,
             )
@@ -4169,6 +4489,18 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 authoritative_fixture,
                 authority_root,
             ):
+                for bundle in authoritative_fixture[
+                    "implementation_handoffs"
+                ]:
+                    self.assertEqual(
+                        bundle["input_seal"],
+                        hashlib.sha256(
+                            agent_handoff.INPUT_SEAL_DOMAIN
+                            + agent_handoff.normalized_json(
+                                bundle["document"]
+                            )
+                        ).hexdigest(),
+                    )
                 report = reporter.build_report(
                     authoritative_fixture,
                     decisions,
@@ -4249,6 +4581,22 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             "result seal does not verify",
         ):
             reporter.validate_fixture(tampered)
+
+        rehashed = copy.deepcopy(fixture)
+        bundle = rehashed["implementation_handoffs"][0]
+        bundle["result"]["summary"]["max_peak_rss_bytes"] = 1
+        bundle["result"]["handoffs"][0]["peak_rss_bytes"] = 1
+        bundle["result"]["summary"]["accepted_handoffs"] = 0
+        bundle["result"]["handoffs"][0]["outcome"] = "rejected"
+        bundle["result"]["result_seal"] = agent_handoff.seal_handoff_result(
+            bundle["result"]
+        )
+        bundle["result_seal"] = bundle["result"]["result_seal"]
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "result signature does not verify",
+        ):
+            reporter.validate_fixture(rehashed)
 
     def test_frozen_version_one_schema_remains_closed_and_unchanged(self):
         baseline = reporter.load_json(test_reporter.BASELINE)

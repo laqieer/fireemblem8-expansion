@@ -502,10 +502,15 @@ def git_authority(fixture):
                     .strip()
                 )
                 pending.remove(old_sha)
-        yield (
-            _replace_commit_identities(fixture, replacements),
-            repository_root,
+        authoritative_fixture = _replace_commit_identities(
+            fixture,
+            replacements,
         )
+        if "implementation_handoffs" in fixture:
+            authoritative_fixture["implementation_handoffs"] = copy.deepcopy(
+                fixture["implementation_handoffs"]
+            )
+        yield authoritative_fixture, repository_root
 
 
 def authoritative_report(fixture, decisions, repository_root=None):

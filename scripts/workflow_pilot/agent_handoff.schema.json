@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/laqieer/fireemblem8-expansion/blob/master/scripts/workflow_pilot/agent_handoff.schema.json",
   "title": "Workflow pilot agent handoff",
-  "protocol_version": 3,
+  "protocol_version": 5,
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -134,6 +134,8 @@
         "pr_binding",
         "signer",
         "ruleset_id",
+        "authorized_bypass_actors",
+        "delivery_expectation",
         "publication_attestation",
         "event",
         "previous_object_id",
@@ -165,6 +167,9 @@
         "git_seal",
         "result_seal",
         "operation_nonce",
+        "consume_store_id",
+        "consume_sequence",
+        "consume_anchor",
         "assignment",
         "seal"
       ]

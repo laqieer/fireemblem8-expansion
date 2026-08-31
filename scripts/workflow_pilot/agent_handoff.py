@@ -110,6 +110,7 @@ PR_OBSERVATION_DOMAIN = b"workflow-pilot-github-pr-observation-v1\0"
 PUBLICATION_ATTESTATION_DOMAIN = (
     b"workflow-pilot-authority-publication-v1\0"
 )
+RESULT_ATTESTATION_DOMAIN = b"workflow-pilot-canonical-result-v1\0"
 HISTORY_OBSERVATION_SEAL_DOMAIN = (
     b"workflow-pilot-agent-history-observation-v2\0"
 )
@@ -290,6 +291,15 @@ def _parse_actor(
 
 def _actors_match(left: dict[str, Any], right: dict[str, Any]) -> bool:
     return left["database_id"] == right["database_id"]
+
+
+def user_bypass_actor(database_id: int) -> dict[str, Any]:
+    return {
+        "actor_type": "User",
+        "actor_id": database_id,
+        "database_id": database_id,
+        "bypass_mode": "always",
+    }
 
 
 def _parse_signer_public(raw: Any, label: str) -> dict[str, Any]:
@@ -492,7 +502,9 @@ def load_coordinator_installation(
             "repository_database_id",
             "collector",
             "authorized_coordinators",
+            "authorized_non_user_bypass_actors",
             "authority_protection",
+            "delivery",
             "bootstrap_validator",
             "signer_public",
         ),
@@ -553,6 +565,45 @@ def load_coordinator_installation(
         (actor["database_id"] for actor in authorized),
         "coordinator installation authorized database IDs",
     )
+    non_user_bypass = []
+    for index, raw_bypass in enumerate(
+        expect_list(
+            manifest["authorized_non_user_bypass_actors"],
+            "coordinator installation.authorized_non_user_bypass_actors",
+        )
+    ):
+        label = (
+            "coordinator installation.authorized_non_user_bypass_actors"
+            f"[{index}]"
+        )
+        bypass = expect_object(raw_bypass, label)
+        expect_keys(
+            bypass,
+            label,
+            ("actor_type", "actor_id", "bypass_mode"),
+        )
+        if bypass["actor_type"] not in {
+            "Integration",
+            "OrganizationAdmin",
+            "DeployKey",
+            "RepositoryRole",
+        }:
+            raise HandoffDataError(
+                f"{label}.actor_type is not an explicit non-user type"
+            )
+        expect_int(bypass["actor_id"], f"{label}.actor_id", 1)
+        if bypass["bypass_mode"] != "always":
+            raise HandoffDataError(
+                f"{label}.bypass_mode must be always"
+            )
+        non_user_bypass.append(bypass)
+    expect_unique(
+        (
+            (item["actor_type"], item["actor_id"])
+            for item in non_user_bypass
+        ),
+        "coordinator installation non-user bypass actors",
+    )
     protection = expect_object(
         manifest["authority_protection"],
         "coordinator installation.authority_protection",
@@ -600,6 +651,28 @@ def load_coordinator_installation(
         protection["deletions_allowed"],
         "coordinator installation.authority_protection.deletions_allowed",
     )
+    delivery = expect_object(
+        manifest["delivery"],
+        "coordinator installation.delivery",
+    )
+    expect_keys(
+        delivery,
+        "coordinator installation.delivery",
+        (
+            "immediate_base_branch",
+            "delivery_branch",
+            "head_repository_full_name",
+        ),
+    )
+    for field in (
+        "immediate_base_branch",
+        "delivery_branch",
+        "head_repository_full_name",
+    ):
+        expect_string(
+            delivery[field],
+            f"coordinator installation.delivery.{field}",
+        )
     bootstrap = expect_object(
         manifest["bootstrap_validator"],
         "coordinator installation.bootstrap_validator",
@@ -640,6 +713,7 @@ def load_coordinator_installation(
         "_root": installation_root,
         "_collector": parsed_collector,
         "_authorized": authorized,
+        "_authorized_non_user_bypass": non_user_bypass,
         "_bootstrap_validator": bootstrap_path,
         "_signer": signer,
     }
@@ -1180,6 +1254,8 @@ def _read_history_authority_commit(
             "pr_binding",
             "signer",
             "ruleset_id",
+            "authorized_bypass_actors",
+            "delivery_expectation",
             "publication_attestation",
             "event",
             "previous_object_id",
@@ -1229,6 +1305,44 @@ def _read_history_authority_commit(
         f"history authority object {object_id}.ruleset_id",
         1,
     )
+    delivery = expect_object(
+        authority["delivery_expectation"],
+        f"history authority object {object_id}.delivery_expectation",
+    )
+    expect_keys(
+        delivery,
+        f"history authority object {object_id}.delivery_expectation",
+        (
+            "repository_id",
+            "repository_full_name",
+            "immediate_base_branch",
+            "immediate_base_oid",
+            "delivery_branch",
+            "head_repository_full_name",
+        ),
+    )
+    expect_int(
+        delivery["repository_id"],
+        f"history authority object {object_id}."
+        "delivery_expectation.repository_id",
+        1,
+    )
+    for field in (
+        "repository_full_name",
+        "immediate_base_branch",
+        "delivery_branch",
+        "head_repository_full_name",
+    ):
+        expect_string(
+            delivery[field],
+            f"history authority object {object_id}."
+            f"delivery_expectation.{field}",
+        )
+    expect_sha(
+        delivery["immediate_base_oid"],
+        f"history authority object {object_id}."
+        "delivery_expectation.immediate_base_oid",
+    )
     publication = expect_object(
         authority["publication_attestation"],
         f"history authority object {object_id}.publication_attestation",
@@ -1250,7 +1364,7 @@ def _read_history_authority_commit(
         authority_object_id=authority["previous_object_id"],
         anchor_object_id=publication.get("anchor_object_id"),
         ruleset_id=authority["ruleset_id"],
-        authorized_actor_ids=[publication_actor_id],
+        authorized_bypass_actors=authority["authorized_bypass_actors"],
     )
     if binding is not None:
         binding = expect_object(
@@ -1265,6 +1379,8 @@ def _read_history_authority_commit(
                 "repository_id",
                 "repository_full_name",
                 "pull_request",
+                "state",
+                "merged",
                 "base_branch",
                 "head_branch",
                 "head_repository_full_name",
@@ -1361,7 +1477,12 @@ def _read_history_authority_commit(
             "handoff_id",
             "handoff_kind",
             "lifecycle_state",
+            "candidate_sha",
+            "closed_at",
             "operation_nonce",
+            "consume_store_id",
+            "consume_sequence",
+            "consume_anchor",
             "assignment",
             "interruption_snapshot",
         ),
@@ -1416,7 +1537,12 @@ def _read_history_authority_commit(
                     "handoff_id",
                     "handoff_kind",
                     "lifecycle_state",
+                    "candidate_sha",
+                    "closed_at",
                     "operation_nonce",
+                    "consume_store_id",
+                    "consume_sequence",
+                    "consume_anchor",
                     "assignment",
                     "interruption_snapshot",
                 )
@@ -1449,7 +1575,11 @@ def _read_history_authority_commit(
                 or event["handoff_id"] is None
                 or event["handoff_kind"] is None
                 or event["lifecycle_state"] is None
+                or event["closed_at"] is None
                 or event["operation_nonce"] is None
+                or event["consume_store_id"] is None
+                or event["consume_sequence"] is None
+                or event["consume_anchor"] is None
                 or event["assignment"] is None
             ):
                 raise HandoffDataError(
@@ -1465,7 +1595,12 @@ def _read_history_authority_commit(
                         "handoff_id",
                         "handoff_kind",
                         "lifecycle_state",
+                        "candidate_sha",
+                        "closed_at",
                         "operation_nonce",
+                        "consume_store_id",
+                        "consume_sequence",
+                        "consume_anchor",
                         "assignment",
                         "interruption_snapshot",
                     )
@@ -1810,6 +1945,10 @@ def read_history_authority(
                 or prior["pr_binding"] != current["pr_binding"]
                 or prior["signer"] != current["signer"]
                 or prior["ruleset_id"] != current["ruleset_id"]
+                or prior["authorized_bypass_actors"]
+                != current["authorized_bypass_actors"]
+                or prior["delivery_expectation"]
+                != current["delivery_expectation"]
             ):
                 raise HandoffDataError(
                     f"history authority {reference!r} has invalid handoff "
@@ -1823,6 +1962,10 @@ def read_history_authority(
                 or current["pr_binding"] is None
                 or prior["signer"] != current["signer"]
                 or prior["ruleset_id"] != current["ruleset_id"]
+                or prior["authorized_bypass_actors"]
+                != current["authorized_bypass_actors"]
+                or prior["delivery_expectation"]
+                != current["delivery_expectation"]
             ):
                 raise HandoffDataError(
                     f"history authority {reference!r} has invalid PR binding "
@@ -1931,6 +2074,7 @@ def plan_history_authority(
             (remote_anchor or preflight_object, anchor_reference),
         ],
     )
+    expected_binding = None
     if operation == "bootstrap":
         if remote_object is not None or remote_anchor is not None:
             raise HandoffDataError(
@@ -1963,13 +2107,50 @@ def plan_history_authority(
             "pr_binding": None,
             "signer": installation["_signer"],
             "ruleset_id": installation["authority_protection"]["ruleset_id"],
+            "authorized_bypass_actors": [
+                *(
+                    user_bypass_actor(actor["database_id"])
+                    for actor in installation["_authorized"]
+                ),
+                *installation["_authorized_non_user_bypass"],
+            ],
+            "delivery_expectation": {
+                "repository_id": installation["repository_database_id"],
+                "repository_full_name": repository,
+                "immediate_base_branch": installation["delivery"][
+                    "immediate_base_branch"
+                ],
+                "immediate_base_oid": (
+                    run_git(
+                        repository_root,
+                        "rev-parse",
+                        "refs/heads/"
+                        + installation["delivery"][
+                            "immediate_base_branch"
+                        ],
+                    )
+                    .decode("ascii")
+                    .strip()
+                ),
+                "delivery_branch": installation["delivery"][
+                    "delivery_branch"
+                ],
+                "head_repository_full_name": installation["delivery"][
+                    "head_repository_full_name"
+                ],
+            },
             "event": {
                 "kind": "genesis",
                 "handoff_seal": None,
                 "handoff_id": None,
                 "handoff_kind": None,
                 "lifecycle_state": None,
+                "candidate_sha": None,
+                "closed_at": None,
                 "operation_nonce": None,
+                "consume_store_id": None,
+                "consume_sequence": None,
+                "consume_anchor": None,
                 "assignment": None,
                 "interruption_snapshot": None,
             },
@@ -2047,13 +2228,22 @@ def plan_history_authority(
                 "pr_binding": current["pr_binding"],
                 "signer": current["signer"],
                 "ruleset_id": current["ruleset_id"],
+                "authorized_bypass_actors": current[
+                    "authorized_bypass_actors"
+                ],
+                "delivery_expectation": current["delivery_expectation"],
                 "event": {
                     "kind": "handoff",
                     "handoff_seal": new_head_seal,
                     "handoff_id": closed["handoff_id"],
                     "handoff_kind": closed["handoff_kind"],
                     "lifecycle_state": closed["lifecycle_state"],
+                    "candidate_sha": closed["candidate_sha"],
+                    "closed_at": closed["closed_at"],
                     "operation_nonce": closed["operation_nonce"],
+                    "consume_store_id": closed["consume_store_id"],
+                    "consume_sequence": closed["consume_sequence"],
+                    "consume_anchor": closed["consume_anchor"],
                     "assignment": closed["assignment"],
                     "interruption_snapshot": closed[
                         "interruption_snapshot"
@@ -2074,6 +2264,41 @@ def plan_history_authority(
             if current["pr_binding"] is not None:
                 raise HandoffDataError(
                     "history authority PR binding is immutable"
+                )
+            if not current["history_events"]:
+                raise HandoffDataError(
+                    "PR binding requires a protected root handoff"
+                )
+            root_assignment = current["history_events"][0]["assignment"]
+            latest_handoff = current["history_events"][-1]
+            delivery = current["delivery_expectation"]
+            frozen_user_ids = [
+                item["database_id"]
+                for item in current["authorized_bypass_actors"]
+                if item["actor_type"] == "User"
+            ]
+            if len(frozen_user_ids) != 1:
+                raise HandoffDataError(
+                    "PR binding requires one frozen coordinator user"
+                )
+            expected_binding = {
+                "repository_id": delivery["repository_id"],
+                "repository_full_name": delivery["repository_full_name"],
+                "pull_request": pull_request,
+                "state": "OPEN",
+                "merged": False,
+                "base_branch": delivery["immediate_base_branch"],
+                "base_oid": delivery["immediate_base_oid"],
+                "head_branch": root_assignment["expected_branch"],
+                "head_repository_full_name": delivery[
+                    "head_repository_full_name"
+                ],
+                "head_oid": latest_handoff["candidate_sha"],
+                "coordinator_database_id": frozen_user_ids[0],
+            }
+            if latest_handoff["candidate_sha"] is None:
+                raise HandoffDataError(
+                    "PR binding requires a committed handoff head"
                 )
             observation = parse_pull_request_observation(
                 pull_request_observation,
@@ -2121,9 +2346,14 @@ def plan_history_authority(
             if (
                 observation["base_oid"] != actual_base_oid
                 or observation["head_oid"] != actual_head_oid
+                or any(
+                    observation[field] != expected
+                    for field, expected in expected_binding.items()
+                )
             ):
                 raise HandoffDataError(
-                    "GitHub PR observation OIDs are not current"
+                    "GitHub PR observation does not match frozen delivery "
+                    "inputs"
                 )
             binding = copy.deepcopy(observation)
             if not any(
@@ -2143,13 +2373,22 @@ def plan_history_authority(
                 "pr_binding": binding,
                 "signer": current["signer"],
                 "ruleset_id": current["ruleset_id"],
+                "authorized_bypass_actors": current[
+                    "authorized_bypass_actors"
+                ],
+                "delivery_expectation": current["delivery_expectation"],
                 "event": {
                     "kind": "pr_binding",
                     "handoff_seal": None,
                     "handoff_id": None,
                     "handoff_kind": None,
                     "lifecycle_state": None,
+                    "candidate_sha": None,
+                    "closed_at": None,
                     "operation_nonce": None,
+                    "consume_store_id": None,
+                    "consume_sequence": None,
+                    "consume_anchor": None,
                     "assignment": None,
                     "interruption_snapshot": None,
                 },
@@ -2177,9 +2416,7 @@ def plan_history_authority(
         authority_object_id=expected_remote,
         anchor_object_id=expected_anchor,
         ruleset_id=record["ruleset_id"],
-        authorized_actor_ids=sorted(
-            actor["database_id"] for actor in installation["_authorized"]
-        ),
+        authorized_bypass_actors=record["authorized_bypass_actors"],
         live=True,
     )
     expected_history_digest = (
@@ -2201,6 +2438,7 @@ def plan_history_authority(
         != expected_history_digest
         or parsed_publication["pull_request_observation_digest"]
         != expected_pr_digest
+        or parsed_publication["binding_expectation"] != expected_binding
     ):
         raise HandoffDataError(
             "authority publication attestation does not bind the plan"
@@ -2279,6 +2517,9 @@ def validate_prior_handoffs(raw_history: Any) -> list[dict[str, Any]]:
         "git_seal",
         "result_seal",
         "operation_nonce",
+        "consume_store_id",
+        "consume_sequence",
+        "consume_anchor",
         "assignment",
         "seal",
     )
@@ -2332,6 +2573,22 @@ def validate_prior_handoffs(raw_history: Any) -> list[dict[str, Any]]:
                 f"{label}.operation_nonce must be a SHA-256"
             )
         operation_nonces.append(operation_nonce)
+        expect_string(
+            receipt["consume_store_id"],
+            f"{label}.consume_store_id",
+        )
+        expect_int(
+            receipt["consume_sequence"],
+            f"{label}.consume_sequence",
+            1,
+        )
+        if (
+            not isinstance(receipt["consume_anchor"], str)
+            or reporter.SHA256_RE.fullmatch(receipt["consume_anchor"]) is None
+        ):
+            raise HandoffDataError(
+                f"{label}.consume_anchor must be a SHA-256"
+            )
         assignment = expect_object(
             receipt["assignment"],
             f"{label}.assignment",
@@ -2574,6 +2831,15 @@ def make_history_receipt(
         "operation_nonce": document["coordinator_receipt"]["operation"][
             "nonce"
         ],
+        "consume_store_id": document["coordinator_receipt"]["operation"][
+            "consume_store_id"
+        ],
+        "consume_sequence": document["coordinator_receipt"]["operation"][
+            "consume_sequence"
+        ],
+        "consume_anchor": document["coordinator_receipt"]["operation"][
+            "consume_anchor"
+        ],
         "assignment": {
             field: copy.deepcopy(source[field])
             for field in (
@@ -2605,6 +2871,7 @@ def make_history_receipt(
 def reporter_record(
     document: dict[str, Any],
     result: dict[str, Any],
+    result_attestation: dict[str, Any],
 ) -> dict[str, Any]:
     record = {
         "source_handoff_ids": sorted(
@@ -2615,6 +2882,7 @@ def reporter_record(
         "git_seal": result["git_seal"],
         "result_seal": result["result_seal"],
         "result": copy.deepcopy(result),
+        "result_attestation": copy.deepcopy(result_attestation),
     }
     verify_reporter_record(record, revalidate_git=False)
     return record
@@ -2636,6 +2904,7 @@ def verify_reporter_record(
             "git_seal",
             "result_seal",
             "result",
+            "result_attestation",
         ),
     )
     source_handoff_ids = expect_list(
@@ -2729,6 +2998,46 @@ def verify_reporter_record(
         raise HandoffDataError(
             "handoff reporter record result seal does not verify"
         )
+    result_attestation = expect_object(
+        record["result_attestation"],
+        "handoff reporter result attestation",
+    )
+    expect_keys(
+        result_attestation,
+        "handoff reporter result attestation",
+        (
+            "signer_key_id",
+            "operation_nonce",
+            "consume_store_id",
+            "consume_sequence",
+            "consume_anchor",
+            "signature",
+        ),
+    )
+    operation = document["coordinator_receipt"]["operation"]
+    original_signer = _parse_signer_public(
+        document["history_authority"]["signer"],
+        "handoff reporter original signer",
+    )
+    if (
+        result_attestation["signer_key_id"] != original_signer["key_id"]
+        or result_attestation["operation_nonce"] != operation["nonce"]
+        or result_attestation["consume_store_id"]
+        != operation["consume_store_id"]
+        or result_attestation["consume_sequence"]
+        != operation["consume_sequence"]
+        or result_attestation["consume_anchor"]
+        != operation["consume_anchor"]
+    ):
+        raise HandoffDataError(
+            "handoff reporter result attestation identity mismatch"
+        )
+    verify_external_signature(
+        original_signer,
+        result_attestation_payload(document, result),
+        result_attestation["signature"],
+        "handoff reporter result signature",
+    )
     source_worktrees = {
         handoff["allowed_worktree"]
         for handoff in document["handoffs"]
@@ -2747,10 +3056,7 @@ def verify_reporter_record(
         "handoff reporter original authority",
     )
     verify_external_signature(
-        _parse_signer_public(
-            original_authority["signer"],
-            "handoff reporter original signer",
-        ),
+        original_signer,
         coordinator_attestation_payload(document),
         receipt["signature"],
         "handoff reporter coordinator signature",
@@ -3475,19 +3781,20 @@ def _public_action(action: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def coordinator_attestation_payload(document: dict[str, Any]) -> bytes:
-    def public(value: Any) -> Any:
-        if isinstance(value, dict):
-            return {
-                key: public(item)
-                for key, item in value.items()
-                if not key.startswith("_")
-            }
-        if isinstance(value, list):
-            return [public(item) for item in value]
-        return value
+def _public_json(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _public_json(item)
+            for key, item in value.items()
+            if not key.startswith("_")
+        }
+    if isinstance(value, list):
+        return [_public_json(item) for item in value]
+    return value
 
-    payload = public(document)
+
+def coordinator_attestation_payload(document: dict[str, Any]) -> bytes:
+    payload = _public_json(document)
     receipt = expect_object(
         payload["coordinator_receipt"],
         "coordinator_receipt",
@@ -3496,6 +3803,23 @@ def coordinator_attestation_payload(document: dict[str, Any]) -> bytes:
     return (
         COORDINATOR_RECEIPT_SEAL_DOMAIN
         + normalized_json(payload)
+    )
+
+
+def result_attestation_payload(
+    document: dict[str, Any],
+    result: dict[str, Any],
+) -> bytes:
+    operation = document["coordinator_receipt"]["operation"]
+    return RESULT_ATTESTATION_DOMAIN + normalized_json(
+        {
+            "document": _public_json(document),
+            "result": _public_json(result),
+            "operation_nonce": operation["nonce"],
+            "consume_store_id": operation["consume_store_id"],
+            "consume_sequence": operation["consume_sequence"],
+            "consume_anchor": operation["consume_anchor"],
+        }
     )
 
 
@@ -3519,6 +3843,8 @@ def parse_pull_request_observation(
             "repository_id",
             "repository_full_name",
             "pull_request",
+            "state",
+            "merged",
             "base_branch",
             "head_branch",
             "head_repository_full_name",
@@ -3554,6 +3880,13 @@ def parse_pull_request_observation(
     ):
         raise HandoffDataError("GitHub PR observation repository mismatch")
     expect_int(observation["pull_request"], f"{label}.pull_request", 1)
+    if (
+        observation["state"] != "OPEN"
+        or expect_bool(observation["merged"], f"{label}.merged")
+    ):
+        raise HandoffDataError(
+            "GitHub PR observation must be OPEN and unmerged"
+        )
     for field in (
         "base_branch",
         "head_branch",
@@ -3622,7 +3955,7 @@ def parse_publication_attestation(
     authority_object_id: str | None,
     anchor_object_id: str | None,
     ruleset_id: int,
-    authorized_actor_ids: list[int],
+    authorized_bypass_actors: list[dict[str, Any]],
     live: bool = False,
 ) -> dict[str, Any]:
     label = "authority publication attestation"
@@ -3643,6 +3976,7 @@ def parse_publication_attestation(
             "new_head_seal",
             "history_receipt_digest",
             "pull_request_observation_digest",
+            "binding_expectation",
             "observed_at",
             "coordinator_database_id",
             "ruleset_response",
@@ -3724,7 +4058,12 @@ def parse_publication_attestation(
         f"{label}.coordinator_database_id",
         1,
     )
-    if coordinator_id not in authorized_actor_ids:
+    authorized_user_ids = {
+        item["database_id"]
+        for item in authorized_bypass_actors
+        if item["actor_type"] == "User"
+    }
+    if coordinator_id not in authorized_user_ids:
         raise HandoffDataError(
             "authority publication actor is not authorized"
         )
@@ -3747,7 +4086,7 @@ def parse_publication_attestation(
             "bypass_actors",
         ),
     )
-    bypass_ids = []
+    bypass_actors = []
     for index, raw_bypass in enumerate(
         expect_list(
             ruleset["bypass_actors"],
@@ -3759,22 +4098,39 @@ def parse_publication_attestation(
         expect_keys(
             bypass,
             bypass_label,
-            ("database_id", "actor_type", "bypass_mode"),
-        )
-        if (
-            bypass["actor_type"] != "RepositoryRole"
-            or bypass["bypass_mode"] != "always"
-        ):
-            raise HandoffDataError(
-                "authority publication has unexpected bypass authority"
+            (
+                "actor_type",
+                "actor_id",
+                "database_id",
+                "bypass_mode",
             )
-        bypass_ids.append(
-            expect_int(
+            if bypass.get("actor_type") == "User"
+            else ("actor_type", "actor_id", "bypass_mode"),
+        )
+        actor_id = expect_int(
+            bypass["actor_id"],
+            f"{bypass_label}.actor_id",
+            1,
+        )
+        if bypass["bypass_mode"] != "always":
+            raise HandoffDataError(
+                "authority publication has unexpected bypass mode"
+            )
+        if bypass["actor_type"] == "User":
+            database_id = expect_int(
                 bypass["database_id"],
                 f"{bypass_label}.database_id",
                 1,
             )
-        )
+            if actor_id != database_id:
+                raise HandoffDataError(
+                    "GitHub User bypass actor IDs do not match"
+                )
+        elif bypass not in authorized_bypass_actors:
+            raise HandoffDataError(
+                "authority publication has an unauthorized typed bypass"
+            )
+        bypass_actors.append(bypass)
     include_refs = expect_list(
         ruleset["include_refs"],
         f"{label}.ruleset_response.include_refs",
@@ -3808,7 +4164,12 @@ def parse_publication_attestation(
             ruleset["deletion_restricted"],
             f"{label}.ruleset_response.deletion_restricted",
         )
-        or sorted(bypass_ids) != sorted(authorized_actor_ids)
+        or sorted(
+            normalized_json(item) for item in bypass_actors
+        )
+        != sorted(
+            normalized_json(item) for item in authorized_bypass_actors
+        )
     ):
         raise HandoffDataError(
             "authority publication ruleset is unrelated or incomplete"
@@ -3827,8 +4188,6 @@ def _parse_coordinator_receipt(
     *,
     document: dict[str, Any],
     canonical_authority: dict[str, Any],
-    validation_time: datetime,
-    live: bool,
 ) -> dict[str, Any]:
     receipt = copy.deepcopy(
         expect_object(raw_receipt, "coordinator_receipt")
@@ -3911,6 +4270,10 @@ def _parse_coordinator_receipt(
             "eligibility_instant",
             "implementation_terminated",
             "single_use",
+            "consume_store_id",
+            "consume_sequence",
+            "consume_previous_anchor",
+            "consume_anchor",
         ),
     )
     nonce = operation["nonce"]
@@ -3920,6 +4283,41 @@ def _parse_coordinator_receipt(
     ):
         raise HandoffDataError(
             "coordinator_receipt.operation.nonce must be a SHA-256"
+        )
+    consume_store_id = expect_string(
+        operation["consume_store_id"],
+        "coordinator_receipt.operation.consume_store_id",
+    )
+    consume_sequence = expect_int(
+        operation["consume_sequence"],
+        "coordinator_receipt.operation.consume_sequence",
+        1,
+    )
+    consume_previous_anchor = operation["consume_previous_anchor"]
+    consume_anchor = operation["consume_anchor"]
+    for field, value in (
+        ("consume_previous_anchor", consume_previous_anchor),
+        ("consume_anchor", consume_anchor),
+    ):
+        if (
+            not isinstance(value, str)
+            or reporter.SHA256_RE.fullmatch(value) is None
+        ):
+            raise HandoffDataError(
+                f"coordinator_receipt.operation.{field} must be a SHA-256"
+            )
+    expected_consume_anchor = hashlib.sha256(
+        (
+            consume_previous_anchor
+            + ":"
+            + str(consume_sequence)
+            + ":"
+            + nonce
+        ).encode()
+    ).hexdigest()
+    if consume_anchor != expected_consume_anchor:
+        raise HandoffDataError(
+            "coordinator consume-store anchor does not verify"
         )
     operation_started = parse_time(
         operation["started_at"],
@@ -3954,15 +4352,6 @@ def _parse_coordinator_receipt(
         raise HandoffDataError(
             "coordinator operation is not terminal, single-use, and atomic"
         )
-    if live:
-        now = validation_time.replace(microsecond=0)
-        if (
-            eligibility_instant > now
-            or (now - eligibility_instant).total_seconds() > 2
-        ):
-            raise HandoffDataError(
-                "coordinator receipt is future-dated or stale"
-            )
 
     protection = expect_object(
         receipt["authority_protection"],
@@ -4107,23 +4496,55 @@ def _parse_coordinator_receipt(
         expect_keys(
             bypass,
             label,
-            ("database_id", "actor_type", "bypass_mode"),
-        )
-        if (
-            bypass["actor_type"] != "RepositoryRole"
-            or bypass["bypass_mode"] != "always"
-        ):
-            raise HandoffDataError(
-                "authority ruleset has an unexpected bypass actor"
+            (
+                "actor_type",
+                "actor_id",
+                "database_id",
+                "bypass_mode",
             )
-        bypass_actors.append(
-            expect_int(
+            if bypass.get("actor_type") == "User"
+            else ("actor_type", "actor_id", "bypass_mode"),
+        )
+        actor_id = expect_int(
+            bypass["actor_id"],
+            f"{label}.actor_id",
+            1,
+        )
+        if bypass["bypass_mode"] != "always":
+            raise HandoffDataError(
+                "authority ruleset has an unexpected bypass mode"
+            )
+        if bypass["actor_type"] == "User":
+            database_id = expect_int(
                 bypass["database_id"],
                 f"{label}.database_id",
                 1,
             )
+            if actor_id != database_id:
+                raise HandoffDataError(
+                    "GitHub User bypass actor IDs do not match"
+                )
+        elif bypass not in canonical_authority["authorized_bypass_actors"]:
+            raise HandoffDataError(
+                "authority ruleset has an unauthorized typed bypass"
+            )
+        bypass_actors.append(bypass)
+    expect_unique(
+        (
+            (item["actor_type"], item["actor_id"])
+            for item in bypass_actors
+        ),
+        "authority ruleset bypass actors",
+    )
+    if sorted(
+        normalized_json(item) for item in bypass_actors
+    ) != sorted(
+        normalized_json(item)
+        for item in canonical_authority["authorized_bypass_actors"]
+    ):
+        raise HandoffDataError(
+            "authority ruleset bypass actors do not match frozen authority"
         )
-    expect_unique(bypass_actors, "authority ruleset bypass actor IDs")
 
     pull_request_observation = receipt["pull_request_observation"]
     if canonical_authority["pr_binding"] is None:
@@ -4627,12 +5048,16 @@ def _parse_coordinator_receipt(
         "attestation_valid": attestation_valid,
         "operation": operation,
         "operation_nonce": nonce,
+        "consume_store_id": consume_store_id,
+        "consume_sequence": consume_sequence,
+        "consume_previous_anchor": consume_previous_anchor,
+        "consume_anchor": consume_anchor,
         "implementation_terminated_at": implementation_terminated_at,
         "eligibility_instant": eligibility_instant,
         "issued_at": issued_at,
         "protection": protection,
         "ruleset": ruleset,
-        "bypass_actor_ids": bypass_actors,
+        "bypass_actors": bypass_actors,
         "pull_request_observation": parsed_pr_observation,
         "availability": availability,
         "coverage_start": coverage_start,
@@ -5428,7 +5853,6 @@ def validate_document(
     *,
     authority_hook=None,
     coordinator_installation: Path | None = None,
-    validation_time: datetime | None = None,
 ) -> dict[str, Any]:
     document = copy.deepcopy(expect_object(raw, "handoff document"))
     expect_keys(
@@ -5474,11 +5898,6 @@ def validate_document(
             "handoff document.repository does not match coordinator "
             "installation"
         )
-    if validation_time is None:
-        validation_time = datetime.now(timezone.utc)
-    elif validation_time.tzinfo is None:
-        raise HandoffDataError("validation_time must be timezone-aware")
-    validation_time = validation_time.astimezone(timezone.utc)
     input_seal = hashlib.sha256(
         INPUT_SEAL_DOMAIN + normalized_json(document)
     ).hexdigest()
@@ -5531,6 +5950,8 @@ def validate_document(
             "pr_binding",
             "signer",
             "ruleset_id",
+            "authorized_bypass_actors",
+            "delivery_expectation",
             "publication_attestation",
             "event",
             "previous_object_id",
@@ -5549,15 +5970,7 @@ def validate_document(
         document["coordinator_receipt"],
         document=document,
         canonical_authority=canonical_authority,
-        validation_time=validation_time,
-        live=True,
     )
-    if coordinator_receipt["operation_nonce"] in {
-        prior["operation_nonce"] for prior in prior_handoffs
-    }:
-        raise HandoffDataError(
-            "coordinator operation nonce was already consumed"
-        )
     if supplied_authority != canonical_authority:
         raise HandoffDataError(
             "handoff history authority does not match the canonical Git ref"
@@ -5614,7 +6027,12 @@ def validate_document(
             "handoff_id": prior["handoff_id"],
             "handoff_kind": prior["handoff_kind"],
             "lifecycle_state": prior["lifecycle_state"],
+            "candidate_sha": prior["candidate_sha"],
+            "closed_at": prior["closed_at"],
             "operation_nonce": prior["operation_nonce"],
+            "consume_store_id": prior["consume_store_id"],
+            "consume_sequence": prior["consume_sequence"],
+            "consume_anchor": prior["consume_anchor"],
             "assignment": prior["assignment"],
             "interruption_snapshot": prior["interruption_snapshot"],
         }
@@ -5646,11 +6064,27 @@ def validate_document(
         if handoff_id is not None:
             handoff_rejections[handoff_id].add(code)
 
-    expected_bypass_ids = sorted(
-        coordinator["_actor"]["database_id"]
+    for handoff in handoffs:
+        if (
+            handoff["expected_branch"]
+            != canonical_authority["delivery_expectation"][
+                "delivery_branch"
+            ]
+        ):
+            reject("unrelated-branch", handoff["id"])
+
+    expected_user_bypass = sorted(
+        normalized_json(
+            user_bypass_actor(coordinator["_actor"]["database_id"])
+        )
         for coordinator in coordinators
     )
-    if sorted(coordinator_receipt["bypass_actor_ids"]) != expected_bypass_ids:
+    frozen_user_bypass = sorted(
+        normalized_json(item)
+        for item in canonical_authority["authorized_bypass_actors"]
+        if item["actor_type"] == "User"
+    )
+    if expected_user_bypass != frozen_user_bypass:
         for handoff in handoffs:
             reject("authority-ruleset-bypass-mismatch", handoff["id"])
     if not coordinator_receipt["attestation_valid"]:

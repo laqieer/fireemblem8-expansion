@@ -657,9 +657,12 @@ replay, or owner reuse across PR binding reject.
 Create one stable issue-scoped protected branch under
 `refs/heads/workflow-pilot/authority/` before any PR exists. PR creation
 appends the exact externally signed GitHub PR API response: repository ID/full
-name, actual PR number, base/head branches and OIDs, head repository,
-creation/observation times, and authorized numeric actor. It never creates a
-new namespace or genesis. A second independently protected branch under
+name, actual PR number, `OPEN`/unmerged state, base/head branches and OIDs,
+head repository, creation/observation times, and authorized numeric actor.
+Compare every field to delivery inputs independently frozen in protected
+genesis/root assignment and in the publication request before the observation
+is signed. Never validate an observation against copies of its own fields.
+It never creates a new namespace or genesis. A second protected branch under
 `refs/heads/workflow-pilot/authority-anchor/` binds every authority head and
 sequence. One preflighted normal `git push --atomic` publishes both
 direct-parent commits or neither. Separate/split pushes, stale coordinator
@@ -670,8 +673,12 @@ The terminal coordinator attestation includes the normalized live GitHub
 ruleset API response. It must name the authority's ruleset ID, active branch
 enforcement, the exact two included refs and no excludes, restricted updates,
 non-fast-forwards, and deletion, plus exactly the expected numeric bypass
-actors with no additional bypass. Unrelated or incomplete rulesets fail
-closed.
+actors with no additional bypass. Each coordinator user is represented as
+GitHub REST `actor_type: User`, `actor_id` and `database_id` both equal to the
+frozen numeric user ID, and exact `bypass_mode: always`. A `RepositoryRole`
+number is a typed role, not a user ID. Non-user actors require an explicit
+separately typed frozen authorization; the default is rejection. Unrelated or
+incomplete rulesets fail closed.
 
 Every read is a bounded before/fetch/after transaction over both protected
 branches. It fetches exact objects without moving local refs or `FETCH_HEAD`,
@@ -692,12 +699,14 @@ The trusted coordinator collector is an isolated external asymmetric signer;
 its private key is absent from the implementation namespace and only its
 public verification material is pinned in protected authority history.
 Same-UID HMAC keys, candidate digests, and filesystem permission modes provide
-no trust. One single-use nonce operation terminates the implementation
-process, performs final GitHub timeline/Actions/ref/audit collection through
-the exact eligibility instant, then signs the complete assignment, dependency
-graph, handoffs, successors, metrics, PR/ruleset observations, runs, watchers,
-and coverage. Any mutation or event after coverage invalidates eligibility.
-Incomplete GitHub coverage requires a credentialless, network-denied process.
+no trust. The external service owns a monotonic consume sequence/anchor and
+spent-nonce store. One atomic consume terminates and attests the implementation
+process, collects GitHub timeline/Actions/ref/audit state through that exact
+instant, decides, marks the nonce spent, and returns a signed decision. A
+second call with that nonce rejects before any authority push. Local
+validation never treats a preissued receipt as freshly eligible; an after-sign
+remote mutation or document change invalidates the decision. Incomplete
+coverage requires a credentialless, network-denied process.
 
 After evidenced SIGKILL/OOM, protected authority history stores content-bearing
 bytes, path/mode/hash identities, exact status, and the full original
@@ -714,8 +723,10 @@ first assignment timestamp must be strictly later than the interruption;
 equal, predated, or multiple replacements reject.
 
 Workflow-pilot reporter schema v2 carries the complete source handoff document
-plus its input, Git, check, coordinator, and result seals. Before metrics, the
-reporter verifies the original asymmetric attestation and proves the original
+and an external finalize signature over the byte-identical canonical
+validation result, outcomes, summary, and verified metrics. The unkeyed
+`result_seal` is integrity-only and never authenticates history. The reporter
+verifies the finalize signature and proves the original
 authority/anchor OIDs remain ancestors of current protected heads. Historical
 metrics do not require the old worktree HEAD or live-receipt freshness, so
 sequential successors remain aggregatable. Line usage comes from Git;

@@ -478,8 +478,9 @@ runs, watchers, availability, process policy, and resource receipts.
 `--coordinator-installation` (or
 `WORKFLOW_PILOT_COORDINATOR_INSTALLATION`) points outside the candidate
 worktree to public configuration and the external bootstrap validator. Its
-`installation.json` contains repository IDs, authorized coordinator IDs,
-expected branch/ruleset identities, and public signer material only. Same-UID
+`installation.json` contains repository IDs, authorized coordinator users,
+explicit separately typed non-user bypasses, frozen delivery/base branches,
+expected ruleset identities, and public signer material only. Same-UID
 HMAC secrets, candidate-authored digests, and permission modes do not establish
 trust. Missing external asymmetric attestation fails closed.
 
@@ -543,10 +544,13 @@ binding, gaps, replay, or tampering reject.
 The document cannot choose its history base. One stable protected branch at
 `refs/heads/workflow-pilot/authority/issue-<n>` exists from the first no-PR
 handoff. PR creation appends the exact externally signed GitHub PR API
-observation: repository ID/full name, PR number, base/head branches and OIDs,
-head repository, creation and observation times, coordinator numeric ID, and
-the authority/anchor state observed before publication. Invented, stale,
-wrong-repository, wrong-branch, or wrong-OID binding rejects.
+observation: repository ID/full name, PR number, `OPEN`/unmerged state,
+base/head branches and OIDs, head repository, creation/observation times,
+coordinator user ID, and authority/anchor state. Compare it to independent
+delivery/base values frozen in protected genesis, the root assignment
+branch/result, and the pre-observation publication request. Never validate it
+against copied observation fields. Invented, closed, merged, stale, wrong-repo,
+wrong-branch, or wrong-OID binding rejects.
 
 Every authority commit directly parents the remotely observed head and
 advances its sequence. The independently protected branch
@@ -554,8 +558,11 @@ advances its sequence. The independently protected branch
 and records the exact authority object and sequence. The signed live GitHub
 ruleset response must prove active enforcement, exact inclusion of both
 branches with no excludes, update/non-fast-forward/deletion restrictions, and
-exactly the authorized numeric bypass actors. An unrelated ruleset ID or
-unexpected bypass rejects.
+exactly authorized bypass actors. A coordinator uses the 2026 REST user shape:
+`actor_type: User`, identical frozen `actor_id`/`database_id`, and
+`bypass_mode: always`. `RepositoryRole` numbers cannot represent users.
+Non-user types require explicit separately typed frozen authorization and
+default to rejection. An unrelated ruleset ID or unexpected bypass rejects.
 
 Publication is one normal `git push --atomic` containing both direct-parent
 commits. The coordinator first preflights remote atomic capability. A split
@@ -680,10 +687,12 @@ normalized action list must equal the complete union of source events, so an
 omitted push, comment, review request, or CI dispatch rejects. If any source
 is unavailable or incomplete, each implementation process needs a sealed
 credentialless, network-denied launcher interval covering its entire
-lifecycle. The single coordinator operation terminates that process first,
-collects every source through the exact eligibility instant, then signs and
-atomically consumes one nonce. A preissued/stale receipt or any later event or
-document/run/watcher mutation rejects; there is no five-minute grace window.
+lifecycle. The external service owns a monotonic consume sequence/anchor and
+spent-nonce store. One atomic operation terminates that process, collects every
+source through the consume instant, decides, marks the nonce spent, and returns
+the signed decision. The same nonce's second call rejects before authority
+publication. Local validation cannot make a preissued receipt freshly
+eligible; any after-sign event or document/run/watcher mutation invalidates it.
 
 An interrupted owner has the exact `assignment_sent` ->
 `assignment_received` -> `progressing` -> `interrupted` sequence. SIGKILL/OOM
@@ -716,8 +725,11 @@ version 1 and rejects a handoff field. Version 2 is an additive operational
 fixture schema that requires normalized `implementation_handoffs` records from
 the validator. Each record contains the complete source document, source
 handoff identities, and matching input/Git/check/coordinator/result seals. The
-reporter separates live eligibility from historical verification. It verifies
-the original asymmetric document signature and proves its original
+reporter separates live eligibility from historical verification. The
+external service finalizes once and signs the complete canonical
+source-plus-result payload, including outcomes, reporter summary, RSS, and all
+verified metrics. The unkeyed result hash is integrity-only. Historical
+verification requires the finalize signature and proves the original
 authority/anchor OIDs remain ancestors of current protected heads. It does not
 require the old worktree HEAD or live-receipt freshness, so sequential root,
 OOM-replacement, and review-successor metrics remain aggregatable. A
