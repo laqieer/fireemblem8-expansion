@@ -137,17 +137,23 @@ metadata-only event. An `edited` event suppresses `host-tests`, `build`,
 
 Base-only edits, mixed edits, unknown fields, incomplete change records,
 unknown actions, `opened`, `synchronize`, `reopened`, and `master` pushes with
-complete identity select the complete required graph. Missing PR head/base,
-malformed JSON, classifier failure, or missing/stale output starts no worker
-at a merge/default ref and makes `summary` fail. Each worker runs only when
-the classifier has a valid full-build decision whose head and base still equal
-the direct event identities. On a metadata-only edit, `summary` succeeds only
+complete identity select the complete required graph. A classifier
+parser/runtime failure (including malformed, duplicate-key, or non-finite
+JSON) on a PR with a nonempty authoritative event head also runs all four
+workers at that raw `pull_request.head.sha`; it never uses merge `github.sha`.
+Summary verifies that every fallback worker succeeded, then still fails to
+surface the classifier defect. A classifier failure with no PR head, on a push,
+or with another unsupported result starts no worker and fails summary. Missing
+identity or stale outputs from a successful classifier likewise cannot select
+a fallback worker. Each normal worker runs only when the classifier has a
+valid full-build decision whose head and base still equal the direct event
+identities. On a metadata-only edit, `summary` succeeds only
 when classification succeeded, the classified head still equals the event
 head, the classified base still equals the event base, suppression is exactly
 false, and all four worker conclusions are exactly `skipped`. On a full event,
-all workers check out only the classifier's exact nonempty head output and
-retain their revision verification, commands, environments, and success-only
-summary.
+normal workers check out the classifier's exact nonempty head output; failure
+fallback workers check out only the raw nonempty PR event head. Both paths
+retain revision verification, commands, and environments.
 The current Build workflow has no explicit final-dispatch trigger; if that
 supported surface is introduced later, `workflow_dispatch` classifies as full
 and the trigger/topology contracts must be updated together.

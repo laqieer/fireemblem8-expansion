@@ -1,4 +1,164 @@
 {
+  "classifier_failure_cases": [
+    {
+      "classifier_result": "failure",
+      "event_name": "pull_request",
+      "expected_jobs": [
+        "build",
+        "event-classifier",
+        "extended-host-tests",
+        "host-tests",
+        "legacy",
+        "summary"
+      ],
+      "expected_summary_success": false,
+      "expected_worker_head": "1111111111111111111111111111111111111111",
+      "id": "nan-valid-head",
+      "payload": {
+        "action": "edited",
+        "pull_request": {
+          "base": {
+            "ref": "master",
+            "sha": "2222222222222222222222222222222222222222"
+          },
+          "head": {
+            "sha": "1111111111111111111111111111111111111111"
+          }
+        }
+      },
+      "raw_kind": "nan",
+      "runner": {
+        "github_ref": "refs/pull/177/merge",
+        "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pr_base_sha": "2222222222222222222222222222222222222222",
+        "pr_head_sha": "1111111111111111111111111111111111111111",
+        "push_sha": ""
+      }
+    },
+    {
+      "classifier_result": "failure",
+      "event_name": "pull_request",
+      "expected_jobs": [
+        "build",
+        "event-classifier",
+        "extended-host-tests",
+        "host-tests",
+        "legacy",
+        "summary"
+      ],
+      "expected_summary_success": false,
+      "expected_worker_head": "1111111111111111111111111111111111111111",
+      "id": "duplicate-valid-head",
+      "payload": {
+        "action": "edited",
+        "pull_request": {
+          "base": {
+            "ref": "master",
+            "sha": "2222222222222222222222222222222222222222"
+          },
+          "head": {
+            "sha": "1111111111111111111111111111111111111111"
+          }
+        }
+      },
+      "raw_kind": "duplicate",
+      "runner": {
+        "github_ref": "refs/pull/177/merge",
+        "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pr_base_sha": "2222222222222222222222222222222222222222",
+        "pr_head_sha": "1111111111111111111111111111111111111111",
+        "push_sha": ""
+      }
+    },
+    {
+      "classifier_result": "failure",
+      "event_name": "pull_request",
+      "expected_jobs": [
+        "build",
+        "event-classifier",
+        "extended-host-tests",
+        "host-tests",
+        "legacy",
+        "summary"
+      ],
+      "expected_summary_success": false,
+      "expected_worker_head": "1111111111111111111111111111111111111111",
+      "id": "malformed-valid-head",
+      "payload": {
+        "action": "edited",
+        "pull_request": {
+          "base": {
+            "ref": "master",
+            "sha": "2222222222222222222222222222222222222222"
+          },
+          "head": {
+            "sha": "1111111111111111111111111111111111111111"
+          }
+        }
+      },
+      "raw_kind": "malformed",
+      "runner": {
+        "github_ref": "refs/pull/177/merge",
+        "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pr_base_sha": "2222222222222222222222222222222222222222",
+        "pr_head_sha": "1111111111111111111111111111111111111111",
+        "push_sha": ""
+      }
+    },
+    {
+      "classifier_result": "failure",
+      "event_name": "pull_request",
+      "expected_jobs": [
+        "event-classifier",
+        "summary"
+      ],
+      "expected_summary_success": false,
+      "expected_worker_head": "",
+      "id": "malformed-missing-head",
+      "payload": {
+        "action": "edited",
+        "pull_request": {
+          "base": {
+            "ref": "master",
+            "sha": "2222222222222222222222222222222222222222"
+          },
+          "head": {}
+        }
+      },
+      "raw_kind": "malformed",
+      "runner": {
+        "github_ref": "refs/pull/177/merge",
+        "github_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "pr_base_sha": "2222222222222222222222222222222222222222",
+        "pr_head_sha": "",
+        "push_sha": ""
+      }
+    },
+    {
+      "classifier_result": "failure",
+      "event_name": "push",
+      "expected_jobs": [
+        "event-classifier",
+        "patch-release",
+        "summary"
+      ],
+      "expected_summary_success": false,
+      "expected_worker_head": "",
+      "id": "malformed-push",
+      "payload": {
+        "after": "4444444444444444444444444444444444444444",
+        "ref": "refs/heads/master"
+      },
+      "raw_kind": "malformed",
+      "runner": {
+        "github_ref": "refs/heads/master",
+        "github_sha": "4444444444444444444444444444444444444444",
+        "pr_base_sha": "",
+        "pr_head_sha": "",
+        "push_sha": "4444444444444444444444444444444444444444"
+      }
+    }
+  ],
   "cases": [
     {
       "event_name": "pull_request",

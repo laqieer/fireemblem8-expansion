@@ -45,7 +45,14 @@ _CHECKOUT_USES = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
 _CHECKOUT_WITH = (
     ("fetch-depth", "0"),
     ("persist-credentials", "false"),
-    ("ref", "${{ needs.event-classifier.outputs.expected_head }}"),
+    (
+        "ref",
+        "${{ (needs.event-classifier.result == 'success' && "
+        "needs.event-classifier.outputs.expected_head) || "
+        "(needs.event-classifier.result == 'failure' && "
+        "github.event_name == 'pull_request' && "
+        "github.event.pull_request.head.sha) || '' }}",
+    ),
     ("submodules", "recursive"),
 )
 _CLASSIFIER_CHECKOUT_WITH = (
@@ -74,7 +81,11 @@ _UPLOAD_WITH = (
     ("retention-days", "30"),
 )
 _EXPECTED_BUILD_SHA_EXPRESSION = (
-    "${{ needs.event-classifier.outputs.expected_head }}"
+    "${{ (needs.event-classifier.result == 'success' && "
+    "needs.event-classifier.outputs.expected_head) || "
+    "(needs.event-classifier.result == 'failure' && "
+    "github.event_name == 'pull_request' && "
+    "github.event.pull_request.head.sha) || '' }}"
 )
 _CLASSIFIER_REF_EXPRESSION = (
     "${{ (github.event_name == 'pull_request' && "
@@ -88,7 +99,7 @@ _CLASSIFIER_EXPECTED_SHA_EXPRESSION = (
     "(github.event_name == 'push' && github.event.after) || '' }}"
 )
 _WORKER_CONDITION = (
-    "${{ needs.event-classifier.result == 'success' && "
+    "${{ always() && ((needs.event-classifier.result == 'success' && "
     "needs.event-classifier.outputs.identity_valid == 'true' && "
     "needs.event-classifier.outputs.run_expensive == 'true' && "
     "((github.event_name == 'pull_request' && "
@@ -101,7 +112,10 @@ _WORKER_CONDITION = (
     "(github.event_name == 'push' && "
     "needs.event-classifier.outputs.expected_head == github.event.after && "
     "needs.event-classifier.outputs.expected_base == '' && "
-    "github.event.after != '')) }}"
+    "github.event.after != ''))) || "
+    "(needs.event-classifier.result == 'failure' && "
+    "github.event_name == 'pull_request' && "
+    "github.event.pull_request.head.sha != '')) }}"
 )
 _CLASSIFIER_VERIFY_COMMANDS = (
     ("ACTUAL_SHA=$(git rev-parse HEAD)",),

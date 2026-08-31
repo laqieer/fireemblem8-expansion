@@ -224,7 +224,11 @@ Classifier authority uses direct PR-base or push identities, with a
 trusted-default-branch failure bootstrap only when PR base identity is absent;
 neither classifier nor worker can substitute the pull-request merge
 `github.sha`. Workers accept only a complete, current classifier head/base
-pair and check out that exact nonempty head.
+pair and check out that exact nonempty head during normal classification.
+After classifier failure only, a PR with a nonempty direct event head runs the
+same four workers at that raw exact head; missing-head and push failures run no
+combined worker. Summary audits those conclusions and always fails the
+classifier-failure path even when every fallback worker succeeds.
 Containers, services, strategies/matrices, permissions, defaults, dependency
 or condition substitutions, deployment environment, concurrency, reusable-job
 `uses`/secrets, custom shell context, unknown fields, and complex, duplicate,

@@ -196,6 +196,7 @@ class EventClassifierFixtureTests(unittest.TestCase):
                 "duplicate": '{"action":"edited","action":"opened"}\n',
                 "nan": '{"value":NaN}\n',
                 "infinity": '{"value":Infinity}\n',
+                "malformed": '{"action":"edited"\n',
                 "negative-infinity": '{"value":-Infinity}\n',
             }
             case = _load_fixture()["cases"][0]
@@ -208,6 +209,28 @@ class EventClassifierFixtureTests(unittest.TestCase):
                         event_classifier.load_event(event_path)
                     completed = subprocess.run(
                         _launcher_command(case, event_path, output_path),
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 2)
+                    self.assertFalse(output_path.exists())
+
+            for failure_case in _load_fixture()["classifier_failure_cases"]:
+                with self.subTest(failure_case=failure_case["id"]):
+                    event_path = sandbox / f"{failure_case['id']}.json"
+                    output_path = sandbox / f"{failure_case['id']}.out"
+                    event_path.write_text(
+                        invalid[failure_case["raw_kind"]],
+                        encoding="ascii",
+                    )
+                    completed = subprocess.run(
+                        _launcher_command(
+                            failure_case,
+                            event_path,
+                            output_path,
+                        ),
                         cwd=ROOT,
                         check=False,
                         capture_output=True,

@@ -11,7 +11,11 @@ sys.path.insert(0, str(ROOT))
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
 CHECKOUT_PIN = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
 EXPECTED_SHA = (
-    "${{ needs.event-classifier.outputs.expected_head }}"
+    "${{ (needs.event-classifier.result == 'success' && "
+    "needs.event-classifier.outputs.expected_head) || "
+    "(needs.event-classifier.result == 'failure' && "
+    "github.event_name == 'pull_request' && "
+    "github.event.pull_request.head.sha) || '' }}"
 )
 MERGE_SHA_FALLBACK = (
     "github.event_name == 'pull_request' && "

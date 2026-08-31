@@ -300,8 +300,11 @@ Base-only edits, mixed edits, unknown and incomplete change records, `opened`,
 `synchronize`, and `reopened` select the classifier, all four expensive
 workers, and summary at the exact PR head. A `master` push additionally selects
 the existing patch publisher and runs the complete graph from its separate
-push SHA. Missing PR head/base, malformed JSON, classifier failure, and
-missing/stale output start no worker at a fallback ref and make summary fail.
+push SHA. Malformed/duplicate/non-finite JSON or another classifier failure
+with a nonempty authoritative PR head runs all four workers at that exact raw
+head, then summary still fails to expose the classifier defect. A classifier
+failure with a missing PR head or on a push starts no combined worker and
+fails summary. Missing/stale successful output cannot select a fallback ref.
 The classifier executes from the verified current PR base SHA; a missing base
 uses the trusted default branch only to report invalid identity, while a base
 without the new classifier uses the explicit strict bootstrap. The current
@@ -320,7 +323,9 @@ exponent overflow, nonzero-to-zero underflow, huge exponents, an unused
 overflow field on metadata-only input, oversized event
 files, base or mixed edits, merge-SHA fallback, an unverified/mutable
 classifier checkout, classifier output drift, worker conditions that accept
-invalid/stale identity, summary success on missing identity, weakened
+invalid/stale identity, worker skipping after classifier exit 2 with a valid
+PR head, worker execution after classifier failure with no PR head, summary
+success after any classifier failure, weakened
 exact-head checkout, body/template evolving evidence or marker placement, and
 source/target workflow mirror drift.
 
