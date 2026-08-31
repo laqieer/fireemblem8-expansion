@@ -2043,6 +2043,13 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "same-evaluation runtime evidence",
             "complete source handoff document",
             "reporter revalidates the source document",
+            "pins its complete behavior-affecting `-c` policy",
+            "Local attributes are forbidden",
+            "canonical Git ref",
+            "sequence zero and a null head",
+            "omitted/truncated prior list",
+            "Replacement lifecycle prefixes",
+            "strictly later than the interruption",
             "TC-WORKFLOW-AGENT-HANDOFF-001",
         ):
             with self.subTest(requirement=requirement):
@@ -2063,6 +2070,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "sealed prior-handoff chain",
             "complete source document and input/Git/result/check seals",
             "authoritative evaluation time and unattended interval",
+            "independently read canonical Git ref",
+            "Omitted/truncated history",
+            "pin whitespace/config behavior in argv",
+            "sent/received/progressing prefixes",
+            "strictly later than interruption",
         ):
             with self.subTest(project_requirement=requirement):
                 self.assertIn(

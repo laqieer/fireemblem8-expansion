@@ -106,6 +106,15 @@ availability records the authoritative evaluation time and unattended
 interval. A disable/takeover plan must cover that interval and include
 same-evaluation runtime evidence that both stop triggers are disabled.
 
+The prior-handoff sequence/head comes from the independently read canonical
+Git ref; explicit ref-backed sequence-zero/null-head authority is the only
+genesis. Omitted/truncated history or caller-selected heads reject. Allowed
+Git checks pin whitespace/config behavior in argv under the minimal Git
+environment and disable external diff, textconv, local attributes, and ambient
+configuration bypasses. After OOM, sent/received/progressing prefixes are
+valid non-eligible replacement progress only when assignment is strictly
+later than interruption; equal, predated, or multiple replacements reject.
+
 Implementation subagents validate and commit locally but do not push. The
 orchestrator pushes the exact commit under repository-owner context so Build
 does not become `action_required`. If an already-pushed run for that same SHA

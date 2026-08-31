@@ -591,6 +591,11 @@ re-executes only the allowlisted non-shell command and compares the receipt.
 It never executes a caller-authored command. A passed label cannot make
 literal `false`, a failed safe check, or a stale/wrong-command/SHA/worktree
 receipt pass.
+Each Git check uses the reporter's minimal environment, pins its complete
+behavior-affecting `-c` policy in argv, and disables external diff, textconv,
+and binary/attribute bypasses. Local attributes are forbidden. Local, global,
+system, alias, and ambient `GIT_*` configuration cannot weaken `diff --check`;
+trailing whitespace still fails when local `core.whitespace` disables it.
 
 Dependency edges have explicit semantics. A child issue with a
 `code_contract` dependency becomes implementation-ready when the parent
@@ -639,6 +644,12 @@ covering sequence, previous seal, handoff, owner, lifecycle, issue, PR,
 candidate, input, Git, and result identities. Chain gaps, forks, reordering,
 tampering, or reuse of a closed owner in the same delivery lifecycle reject;
 this receipt chain is not a second mutable status ledger.
+The expected sequence/head comes independently from the lifecycle's canonical
+Git ref, which points to one strict normalized authority blob. A document must
+present that exact ref/object/head/sequence and the complete matching chain.
+Genesis is valid only when the ref explicitly records sequence zero and a null
+head. A missing ref, omitted/truncated prior list, reset genesis, stale object,
+or caller-selected head rejects.
 
 There is exactly one delivery coordinator and at most one direct watcher for
 an exact run identity. A watcher timeout or process error is transport
@@ -657,6 +668,11 @@ The availability record uses an authoritative evaluation time and pending
 unattended interval. The plan must cover both and carry same-evaluation runtime
 evidence that both stop triggers are disabled; an expired or merely asserted
 plan remains unavailable.
+Replacement lifecycle prefixes containing only `assignment_sent`, then
+optional `assignment_received` and `progressing`, are valid `in_progress`
+states and are never trusted-push or delivery eligible. The replacement's
+first assignment timestamp must be strictly later than the interruption;
+equal, predated, or multiple replacements reject.
 
 Workflow-pilot reporter schema v2 carries the complete source handoff document
 plus its input, Git, check-receipt, and result seals. Before metrics, the

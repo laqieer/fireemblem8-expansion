@@ -489,6 +489,10 @@ game behavior needs a compensating change.
    Confirm required checks use the closed non-shell contract and a sealed
    receipt bound to exact argv, check ID, parent/candidate, worktree,
    timestamps, exit code, and output digest.
+   Set local `core.whitespace=-trailing-space`, hostile diff/textconv/alias
+   config, ambient global/system/external-diff controls, and tracked diff
+   attributes; trailing whitespace must still fail under the pinned argv.
+   Confirm nonempty local `.git/info/attributes` rejects.
 3. Exercise the repeated-parent/stale, wrong-parent, unrelated-branch, dirty,
    incomplete, missing-evidence, missing-trailer, out-of-scope, line-budget,
    ROM-budget, RAM-budget, protocol-budget, lifetime, and RSS fixtures.
@@ -497,7 +501,9 @@ game behavior needs a compensating change.
    unchanged trusted owner push rule remains outside implementation ownership.
    Repeat with login case, `[bot]` suffix case, and immutable numeric-ID
    aliases. Seal two prior handoffs and reject owner reuse, a gap, fork,
-   reorder, changed identity, or broken receipt seal.
+   reorder, changed identity, or broken receipt seal. Advance the canonical
+   Git-ref authority to sequence one, then confirm a new document with
+   `prior_handoffs: []`, a reset head, or no ref rejects independently.
 5. Reconcile a direct watcher timeout with an authoritative successful
    `github-actions-api` run. Then use an authoritative failed run plus a
    watcher process error and confirm delivery remains failed.
@@ -505,7 +511,10 @@ game behavior needs a compensating change.
    the interrupted check remains incomplete, an allowlisted uncommitted file
    remains in the exact conflict-free worktree, no host process action occurs,
    and exactly one differently identified bounded replacement receives the
-   same issue/parent/branch/worktree context.
+   same issue/parent/branch/worktree context. Confirm sent-only,
+   sent/received, and sent/received/progressing prefixes report `in_progress`
+   without trusted/delivery eligibility. Equal, predated, and multiple
+   replacement assignments reject.
 7. Exercise the local coordinator with autostop and stop-on-disconnect enabled
    but no availability plan. Confirm trusted push fails before unattended
    delivery relies on that coordinator. At a 2026-08-31 evaluation, reject a
@@ -545,7 +554,8 @@ Git, and result seals are deterministic. Required checks execute only a closed
 structured contract; passed labels do not replace its exact receipt or rerun.
 The actual safe pass fixture succeeds, while the safe trailing-whitespace
 failure plus literal `false`, stale/wrong-command/SHA/worktree/timestamp
-receipts reject.
+receipts reject. Hostile local/global/system/env Git configuration cannot
+change that outcome.
 
 The watcher timeout records process failure while preserving authoritative CI
 success. The true failed run records authoritative failure and cannot become
@@ -556,7 +566,9 @@ coordinator is unavailable without a time-bounded disable/takeover plan.
 The plan is accepted only with current runtime evidence covering the pending
 unattended interval. Casefolded logins, bot aliases, and numeric IDs cannot
 reuse closed owners or hide implementation-owner remote actions. Prior closed
-handoffs remain a sealed contiguous chain rather than a mutable ledger.
+handoffs remain a sealed contiguous chain rather than a mutable ledger, and
+their exact expected head and sequence come from the independently read
+canonical Git ref. Omitted history cannot reset a non-genesis lifecycle.
 
 The typed dependency graph reports `child-implement` ready as soon as
 `parent-merge` is done, independently of a healthy running master watcher and
@@ -595,7 +607,10 @@ merge edge, watcher-as-todo dependency, missing parent post-merge gate, or
 terminal failure without active fix-forward/revert also rejects. Issue/task/
 status relabeling, arbitrary commands, forged or stale check receipts,
 hand-authored reporter rows, owner-history chain mutation, actor aliases, and
-expired or ineffective availability evidence reject independently.
+expired or ineffective availability evidence reject independently. A
+missing/reset canonical history ref, hostile Git config or local attributes,
+incomplete-prefix rejection, and equal/predated/multiple OOM replacement also
+fail their dedicated controls.
 
 ### Interactions and save compatibility
 

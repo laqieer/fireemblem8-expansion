@@ -483,6 +483,13 @@ output digest, and receipt seal. Validation re-executes that exact allowlisted
 command and compares its result. Unknown contracts or a caller `command`
 field fail schema validation; passed prose/evidence cannot rescue literal
 `false`, a nonzero safe check, or a stale/wrong-command/SHA/worktree receipt.
+The exact Git argv pins
+`core.whitespace=blank-at-eol,blank-at-eof,space-before-tab`, attributes/color/
+quoting/diff policy, `--no-ext-diff`, `--no-textconv`, and `--text` under the
+minimal Git environment. A nonempty local `.git/info/attributes` rejects.
+Repository-local `core.whitespace=-trailing-space`, diff drivers/textconv,
+aliases, hostile global/system files, or ambient `GIT_EXTERNAL_DIFF` therefore
+cannot change pass/fail or receipt output.
 
 The validator mechanically rejects repeated-parent/stale results, result/HEAD
 drift, missing or non-direct commits, wrong parent/worktree/branch, unrelated
@@ -503,6 +510,15 @@ closure, input, Git, and result identities. The validator rejects gaps, forks,
 reordering, field/seal tampering, non-ancestral relevant candidates, and a
 closed owner reused in the same issue/PR lifecycle. This is immutable receipt
 history, not a second editable status ledger.
+The document does not choose its own history base. For the exact issue/PR
+lifecycle, a canonical local Git ref under
+`refs/workflow-pilot/handoff-history/` points to a strict normalized authority
+blob containing repository, lifecycle, sequence, and head seal. The document
+must present that exact ref/object and a complete chain ending at its
+sequence/head. Only an explicit sequence-zero/null-head authority permits
+genesis. Ref absence, `prior_handoffs: []` after sequence one, truncation,
+reset, stale object, or caller-selected head rejects. The ref stores one
+canonical head, not a second mutable copy of delivery state.
 
 ### Typed delivery dependencies
 
@@ -568,6 +584,12 @@ cost, and exactly one differently identified replacement handoff with the same
 issue, parent, branch, and worktree. Tests create only ordinary temporary Git
 repositories and fixture text; they do not exhaust memory, signal a process,
 or kill any host process.
+The replacement may validly report only `assignment_sent`, then optionally
+`assignment_received` and `progressing`; these exact prefixes produce
+`in_progress` without an incomplete-lifecycle error and can never become
+trusted-push or delivery eligible. Its `assignment_sent` timestamp must be
+strictly later than the interruption. Equal, predated, missing, or multiple
+replacement assignments reject.
 
 An `always_on` coordinator has neither autostop nor stop-on-disconnect risk.
 A local coordinator with either risk needs an explicit time-bounded

@@ -191,6 +191,7 @@ HANDOFF_REJECTION_CODES = {
     "prior-handoff-history-fork",
     "ram-bytes-budget-exceeded",
     "replacement-context-mismatch",
+    "replacement-assignment-not-causal",
     "replacement-owner-count",
     "replacement-owner-reused",
     "required-check-failed",
@@ -637,6 +638,7 @@ def validate_repository_root(repository_root: Path) -> Path:
         )
     for relative, label in (
         ("info/grafts", "graft file"),
+        ("info/attributes", "local attributes file"),
         ("objects/info/alternates", "alternate object store"),
         ("objects/info/http-alternates", "HTTP alternate object store"),
     ):

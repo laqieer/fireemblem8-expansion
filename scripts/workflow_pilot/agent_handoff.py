@@ -58,6 +58,11 @@ INTERRUPTED_STATE_SEQUENCE = (
     "progressing",
     "interrupted",
 )
+IN_PROGRESS_STATE_PREFIXES = {
+    COMPLETE_STATE_SEQUENCE[:1],
+    COMPLETE_STATE_SEQUENCE[:2],
+    COMPLETE_STATE_SEQUENCE[:3],
+}
 RUN_STATUSES = {"completed", "in_progress", "queued"}
 RUN_CONCLUSIONS = {
     "action_required",
@@ -96,6 +101,7 @@ GIT_SEAL_DOMAIN = b"workflow-pilot-agent-handoff-git-v1\0"
 CHECK_RECEIPT_SEAL_DOMAIN = b"workflow-pilot-agent-check-receipt-v1\0"
 HISTORY_RECEIPT_SEAL_DOMAIN = b"workflow-pilot-agent-history-receipt-v1\0"
 ZERO_SEAL = "0" * 64
+HISTORY_REF_PREFIX = "refs/workflow-pilot/handoff-history"
 
 
 class HandoffDataError(Exception):
@@ -228,10 +234,31 @@ def _allowed_check_argv(
         return list(
             reporter.git_command(
                 repository_root,
+                "-c",
+                (
+                    "core.whitespace="
+                    "blank-at-eol,blank-at-eof,space-before-tab"
+                ),
+                "-c",
+                "core.attributesFile=/dev/null",
+                "-c",
+                "color.ui=false",
+                "-c",
+                "color.diff=false",
+                "-c",
+                "core.quotePath=true",
+                "-c",
+                "diff.external=",
+                "-c",
+                "diff.wsErrorHighlight=all",
                 "diff",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--text",
                 "--check",
                 parent_sha,
                 candidate_sha,
+                "--",
             )
         )
     raise HandoffDataError(f"unsupported check contract {contract!r}")
@@ -439,6 +466,129 @@ def seal_history_receipt(receipt: dict[str, Any]) -> str:
     ).hexdigest()
 
 
+def history_authority_ref(issue: int, pull_request: int | None) -> str:
+    expect_int(issue, "history authority issue", 1)
+    if pull_request is not None:
+        expect_int(pull_request, "history authority pull request", 1)
+    pr_component = f"pr-{pull_request}" if pull_request is not None else "no-pr"
+    return f"{HISTORY_REF_PREFIX}/issue-{issue}/{pr_component}"
+
+
+def read_history_authority(
+    repository_root: Path,
+    repository: str,
+    issue: int,
+    pull_request: int | None,
+) -> dict[str, Any]:
+    repository_root = validate_repository_root(repository_root)
+    reference = history_authority_ref(issue, pull_request)
+    try:
+        object_id = (
+            run_git(
+                repository_root,
+                "show-ref",
+                "--verify",
+                "--hash",
+                reference,
+            )
+            .decode("ascii")
+            .strip()
+        )
+    except HandoffDataError as error:
+        raise HandoffDataError(
+            f"history authority {reference!r} is unavailable; genesis is unknown"
+        ) from error
+    object_type = (
+        run_git(repository_root, "cat-file", "-t", object_id)
+        .decode("ascii")
+        .strip()
+    )
+    if object_type != "blob":
+        raise HandoffDataError(
+            f"history authority {reference!r} must point to a blob"
+        )
+    try:
+        raw = run_git(repository_root, "cat-file", "blob", object_id).decode(
+            "utf-8"
+        )
+    except UnicodeDecodeError as error:
+        raise HandoffDataError(
+            f"history authority {reference!r} is not UTF-8"
+        ) from error
+    authority = _raise_pilot_error(
+        reporter.parse_json,
+        raw,
+        f"history authority {reference}",
+    )
+    authority = expect_object(authority, f"history authority {reference}")
+    expect_keys(
+        authority,
+        f"history authority {reference}",
+        (
+            "schema_version",
+            "repository",
+            "issue",
+            "pull_request",
+            "sequence",
+            "head_seal",
+        ),
+    )
+    version = expect_int(
+        authority["schema_version"],
+        f"history authority {reference}.schema_version",
+        1,
+    )
+    if version != 1:
+        raise HandoffDataError(
+            f"history authority {reference!r} schema_version must be 1"
+        )
+    expect_string(
+        authority["repository"],
+        f"history authority {reference}.repository",
+    )
+    expect_int(
+        authority["issue"],
+        f"history authority {reference}.issue",
+        1,
+    )
+    if authority["pull_request"] is not None:
+        expect_int(
+            authority["pull_request"],
+            f"history authority {reference}.pull_request",
+            1,
+        )
+    if authority["repository"] != repository:
+        raise HandoffDataError(
+            f"history authority {reference!r} repository mismatch"
+        )
+    if authority["issue"] != issue or authority["pull_request"] != pull_request:
+        raise HandoffDataError(
+            f"history authority {reference!r} lifecycle mismatch"
+        )
+    expect_int(
+        authority["sequence"],
+        f"history authority {reference}.sequence",
+        0,
+    )
+    if authority["sequence"] == 0:
+        if authority["head_seal"] is not None:
+            raise HandoffDataError(
+                f"history authority {reference!r} genesis head must be null"
+            )
+    elif (
+        not isinstance(authority["head_seal"], str)
+        or reporter.SHA256_RE.fullmatch(authority["head_seal"]) is None
+    ):
+        raise HandoffDataError(
+            f"history authority {reference!r} head_seal is invalid"
+        )
+    return {
+        "ref": reference,
+        "object_id": object_id,
+        **authority,
+    }
+
+
 def seal_git_authority(authority: dict[str, Any]) -> str:
     return hashlib.sha256(
         GIT_SEAL_DOMAIN + normalized_json(authority)
@@ -641,6 +791,7 @@ def verify_reporter_record(
             "schema_version",
             "repository",
             "prior_handoffs",
+            "history_authority",
             "delivery_graph",
             "coordinators",
             "handoffs",
@@ -2066,6 +2217,7 @@ def validate_document(raw: Any, repository_root: Path) -> dict[str, Any]:
             "schema_version",
             "repository",
             "prior_handoffs",
+            "history_authority",
             "delivery_graph",
             "coordinators",
             "handoffs",
@@ -2115,6 +2267,62 @@ def validate_document(raw: Any, repository_root: Path) -> dict[str, Any]:
     remote_actions = _parse_remote_actions(document["remote_actions"])
     delivery_graph = evaluate_delivery_graph(document["delivery_graph"])
     prior_handoffs = validate_prior_handoffs(document["prior_handoffs"])
+    lifecycles = {
+        (handoff["issue"], handoff["pull_request"]) for handoff in handoffs
+    }
+    if len(lifecycles) != 1:
+        raise HandoffDataError(
+            "one handoff document must cover exactly one issue/PR lifecycle"
+        )
+    issue, pull_request = next(iter(lifecycles))
+    supplied_authority = expect_object(
+        document["history_authority"],
+        "handoff document.history_authority",
+    )
+    expect_keys(
+        supplied_authority,
+        "handoff document.history_authority",
+        (
+            "ref",
+            "object_id",
+            "schema_version",
+            "repository",
+            "issue",
+            "pull_request",
+            "sequence",
+            "head_seal",
+        ),
+    )
+    canonical_authority = read_history_authority(
+        repository_root,
+        repository,
+        issue,
+        pull_request,
+    )
+    if supplied_authority != canonical_authority:
+        raise HandoffDataError(
+            "handoff history authority does not match the canonical Git ref"
+        )
+    if any(
+        prior["issue"] != issue or prior["pull_request"] != pull_request
+        for prior in prior_handoffs
+    ):
+        raise HandoffDataError(
+            "prior handoff history crosses issue/PR lifecycles"
+        )
+    if canonical_authority["sequence"] == 0:
+        if prior_handoffs or canonical_authority["head_seal"] is not None:
+            raise HandoffDataError(
+                "history authority genesis contradicts prior handoffs"
+            )
+    elif (
+        len(prior_handoffs) != canonical_authority["sequence"]
+        or not prior_handoffs
+        or prior_handoffs[-1]["seal"] != canonical_authority["head_seal"]
+    ):
+        raise HandoffDataError(
+            "prior handoff history is reset, truncated, or not at canonical head"
+        )
 
     global_rejections = set()
     handoff_rejections = {handoff["id"]: set() for handoff in handoffs}
@@ -2522,7 +2730,7 @@ def validate_document(raw: Any, repository_root: Path) -> dict[str, Any]:
         else:
             if state_names == COMPLETE_STATE_SEQUENCE:
                 reject("missing-commit", handoff_id)
-            else:
+            elif state_names not in IN_PROGRESS_STATE_PREFIXES:
                 reject("incomplete-lifecycle", handoff_id)
 
     replacements_by_parent: dict[str, list[dict[str, Any]]] = {}
@@ -2544,6 +2752,17 @@ def validate_document(raw: Any, repository_root: Path) -> dict[str, Any]:
             reject("replacement-owner-count", handoff["id"])
             continue
         replacement = replacements[0]
+        replacement_sent = parse_time(
+            replacement["_states"][0]["at"],
+            f"handoff {replacement['id']}.assignment_sent",
+        )
+        interrupted_at = parse_time(
+            interruption["occurred_at"],
+            f"handoff {handoff['id']}.interruption.occurred_at",
+        )
+        if replacement_sent <= interrupted_at:
+            reject("replacement-assignment-not-causal", handoff["id"])
+            reject("replacement-assignment-not-causal", replacement["id"])
         if _actors_match(replacement["_owner"], handoff["_owner"]):
             reject("replacement-owner-reused", handoff["id"])
         for field in (
