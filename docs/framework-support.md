@@ -25,8 +25,103 @@ none of `scripts/quickstart.sh`, the Makefile, or CI target Windows
 directly.
 
 **Automatic Build CI is the only host this repository re-verifies on every
-push/PR.** A PR candidate uses the complete combined Build gate and Copilot
-review concurrently. The same Build jobs rerun on `master`; only the
+source-changing push/PR.** A PR candidate uses the complete combined Build
+gate and Copilot review concurrently. Parsed body/title-only edits retain the
+identity validator/router plus distinct running `metadata-classifier` and
+`metadata-summary`
+contexts; skipped worker names are non-semantic and inadmissible as candidate
+evidence. Base, mixed, unknown/incomplete,
+opened, synchronize, and reopened events with complete identity fail closed to
+the complete graph. Any missing, malformed, or incoherent base ref/SHA with a
+valid exact PR head also runs the four workers at that head and fails normal
+summary; a valid base SHA may be retained only for diagnostics. Missing,
+malformed, stale, or spoofed head identity runs none. A classifier failure with
+a validated PR event head runs all four workers at that exact head and then
+fails summary. A master-push classifier failure does the same at validated
+`github.sha` and audits the master-only publisher before failing; without a
+validated event-specific fallback SHA, it starts no worker or publisher. The
+classifier bootstrap may use the trusted
+default branch when PR base identity is missing or unusable; worker checkouts
+never use a merge/default fallback.
+Default-branch validation is deferred until that bootstrap is needed. A
+missing or malformed default branch never invalidates an independently valid
+PR-head or push fallback. If no classifier authority remains, the router fails
+without checkout, the classifier fails, exact fallback workers (and the push
+publisher) still run, and summary remains failed.
+Base refs are bounded to 1024 UTF-8 bytes and must satisfy full
+`git check-ref-format refs/heads/<base.ref>` semantics; `--branch` shorthand
+is not used, and lone `@` is rejected. Python applies the equivalent grammar
+without a subprocess, while trusted bootstrap quotes the full ref to system
+Git and never checks it out. Invalid base refs are incomplete identity: a
+valid exact head runs all four workers and fails summary; an invalid head runs
+none.
+Trusted event setup accepts identity only as an exact lowercase 40-hex SHA. A
+PR also requires its numeric event number and exact
+`refs/pull/<number>/merge` ref; a push requires `refs/heads/master` and equal
+event `after`/`github.sha`. Every successful full/metadata classification,
+worker, and summary binds to that kind and SHA. Missing, uppercase, short,
+nonhex, ref-name, ref-number-mismatched, malformed, or cross-event identities
+run no worker and cannot produce a successful summary. Candidate normalization
+requires successful common identity and router setup in both modes and rejects
+missing, failed, skipped, renamed, duplicate, or unknown setup contexts.
+A canonical successful `event-identity` context is mandatory in both modes.
+A canonical successful `event-router` context is mandatory in both modes.
+Metadata-only mode is PR-only; push-shaped metadata output
+fails into the validated full fallback. Workers consume only that validated
+SHA. The publisher uses the same validated push SHA,
+verifies `/usr/bin/git rev-parse HEAD` immediately after checkout, and exposes
+`BASEROM_URL` only after the exact validated after tree has been built in a
+fresh hosted publisher as a dedicated unprivileged UID inside mount, PID, and
+network namespaces with no network, capabilities, secrets, `BASH_ENV`, or
+`GITHUB_ENV`. Private mount propagation and recursively read-only host root,
+`/usr/share`, and `/opt` leave only private candidate source, home,
+temporary, and handoff mounts writable. Private `/tmp`, `/run`, `/proc`,
+`/dev`, and `/dev/shm` mounts hide host D-Bus, Docker, containerd, systemd,
+snap, and other service/runtime sockets. Every builder descendant remains in
+one exact cgroup v2. The trusted host stops that cgroup and the exact process
+group, verifies `cgroup.procs` is empty, proves no builder-UID process remains,
+and removes only the
+owned cgroup, then admits exactly one regular, nonsymlink, single-link 32 MiB
+target ROM plus bounded nonexecuting metadata. Devices, escaped paths, and
+unexpected handoff outputs fail. It removes the builder user, tree,
+wheelhouse, and candidate checkout before private download. No complete target
+ROM enters an Actions artifact, cache, release, or log. The three-file patch
+producer is staged from that exact validated after commit with no whole-file
+source hash pins.
+Before `/sys` is masked, the exact owned cgroup is bound read-only below a
+root-only `0700` `/mnt/supervisor`; the candidate cannot traverse it. The
+wrapper reads that supervisor view after `/sys` is masked and permits handoff
+only when its own PID is the sole member. Host-side kill/removal still uses the
+actual cgroup path.
+Unavailable mount/cgroup features fail closed, and cleanup sends no UID-wide
+signal.
+Before candidate code starts, a trusted child launcher closes inherited file descriptors
+above 2, redirects stdin/stdout/stderr permanently to private `/dev/null`, and
+passes no GitHub workflow command-file paths.
+Candidate output is never replayed, logged, or uploaded; the trusted host emits
+only fixed status text with a numeric exit classification. Arbitrary output
+volume cannot change an otherwise successful build. All other writable roots
+and regular files retain tmpfs/ulimit bounds; no output sink exists.
+The comprehensive `build` job alone has a 90-minute ceiling for observed
+shared-runner compile variance. Host, extended-host, legacy, and patch
+publication remain 60 minutes; identity/router/classifier and summary remain
+5. No Build content or required gate changes. A coordinator running
+`timeout 90m gh run watch <run-id> --interval 30 --exit-status` may reach its
+own limit near the job ceiling; it queries that exact run once and re-arms one
+watcher once only if the run is still nonterminal.
+The base is then downloaded to an unpredictable mode-restricted path and only
+absolute isolated Python from an empty runtime CWD/environment may consume the
+staged producer, target, and base. The base is deleted on success/failure,
+cleanup is verified, and only then is the patch artifact uploaded.
+The exact BPS/manifest/README regular-file allowlist is revalidated after
+private cleanup and immediately before upload.
+All repository/candidate-controlled commands finish before private download.
+No candidate command runs while the base exists. Cleanup is verified before
+upload.
+Before the base exists, that publisher proves that no
+candidate-written `GITHUB_ENV`, `BASH_ENV`, background process, checkout, or
+executable state can survive the builder teardown.
+The same Build jobs rerun on `master`; only the
 technically used patch publisher is master-only. Arch and macOS support is
 exercised by the same script logic but is not re-run in CI; treat regressions
 there as community-reported, not CI-caught.
@@ -116,10 +211,16 @@ no ROM build or network access is required for either.
 
 ### Consolidated Build CI
 
-Prefer focused local checks during iteration. Candidate branches run
-`host-tests`, `build`, `extended-host-tests`, `legacy`, and fail-closed
-`summary` jobs plus Copilot review. A merged `master` push reruns that same
-combined gate and adds only `patch-release`. Unique CJK/font, codec,
+Prefer focused local checks during iteration. A no-checkout `event-identity`
+validator, base-authoritative `event-router`, and mode-specific classifier
+check precede candidate `host-tests`, `build`, `extended-host-tests`, `legacy`,
+and fail-closed `summary` jobs plus Copilot review. Metadata uses a distinct
+running `metadata-summary`; normal `summary`
+is the sole candidate attestation and requires all four workers from that same
+full run. Only parsed body/title-only
+edits skip the four expensive workers. A
+merged `master` push reruns the complete combined gate and adds only
+`patch-release`. Unique CJK/font, codec,
 configuration/budget, and archival evidence stays parallel with Build-owned
 modern debug/release, artifact, documentation, generated-data, and
 localization commands. The expected wall clock is approximately 35–40 minutes,

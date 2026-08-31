@@ -186,8 +186,11 @@ mirrored verifier gates in fail-fast order. `.github/workflows/build.yml`
 carries the same 30 commands with argv/order preserved across its combined
 host, modern, extended-host, and archival jobs, plus the deliberately
 standalone issues #7/#17 documentation-governance workflow gate described
-below. The four combined workers run in parallel in CI; `summary` is their
-only serial, fail-closed join. Local `verify` runs the same 30 gates in its
+below. A no-checkout event identity validator, event router, and mode-specific
+classifier check precede the four combined workers in CI; the four combined
+workers run in parallel after that decision, and `summary` is their
+fail-closed join. Metadata-only PR edits do not invoke local `verify` or those
+workers. Local `verify` runs the same 30 gates in its
 documented order and therefore does not reproduce CI wall-clock parallelism.
 Every mirrored command uses repository-relative argv, so all 30 subprocesses
 run at one resolved target repository root. Launch the source-tree module from
@@ -201,11 +204,13 @@ selected root is both the subprocess working directory and the pilot
 baseline's `--repository-root`; there is no per-step working-directory
 override. Before either a dry run or execution, the source tool parses the
 target checkout's Build workflow as bounded UTF-8 data without importing or
-executing target Python. The four reviewed worker jobs must have
+executing target Python. The event identity validator, event router,
+mode-specific classifier, and four reviewed worker jobs must have
 the exact same complete ordered step sequences as the source: step count,
 unique required names, setup-versus-gate role, action and immutable SHA, run
 argv, `env`/`with` mappings, direct fields, and no working-directory override.
-The complete job-name order must also match, so extra jobs fail. The 30 gate
+The complete job-name order must also match, so extra jobs fail. All three
+setup jobs are parsed and never become an additional local gate. The 30 gate
 commands are then checked against source `gates()`. An unnamed non-checkout
 step, duplicate setup/name, complex key form, or older, newer, missing, added,
 removed, reordered, or changed target step fails closed instead of running
@@ -213,21 +218,96 @@ source-defined evidence against a different checkout contract.
 The same structure closes execution context before step comparison:
 workflow-level keys are exactly reviewed `name`, triggers, read-only
 permissions, and jobs, with workflow `env`, `defaults`, and `concurrency`
-absent. Each combined job contains only ordered `runs-on: ubuntu-latest`,
-`timeout-minutes: 60`, its exact allowlisted environment, and `steps`.
+absent. The identity validator, router, and mode-classifier contain only their
+reviewed names, runner, timeout, outputs, environment,
+dependencies/conditions, and steps. Each combined job contains only its
+identity/classifier dependencies and fail-closed condition, `runs-on: ubuntu-latest`,
+its exact allowlisted environment, and `steps`. The comprehensive `build` job
+has `timeout-minutes: 90`; `host-tests`, `extended-host-tests`, and `legacy`
+remain 60 minutes, while identity/router/classifier and summary remain 5.
+Classifier authority uses direct PR-base or push identities, with a
+trusted-default-branch failure bootstrap only when PR base identity is absent
+or unusable;
+neither classifier nor worker can substitute the pull-request merge
+`github.sha`. Every successful PR classification requires the identity
+validator's numeric event number, exact `refs/pull/<number>/merge` ref, and
+lowercase 40-hex SHA to match both the classifier and direct PR head; successful
+push classification requires the corresponding validated push kind/SHA.
+Workers accept either a complete current classifier head/base pair or the
+explicit fail-closed state for a valid exact PR head with an
+incomplete/malformed/incoherent base, and check out only that exact validated
+head during normal classification. The latter state audits all four workers
+and then fails summary; a valid base SHA may remain diagnostic data but cannot
+authorize a checkout.
+Base refs are bounded to 1024 UTF-8 bytes. Python applies grammar equivalent to
+full `git check-ref-format refs/heads/<base.ref>` without a subprocess; the
+trusted bootstrap invokes `/usr/bin/git check-ref-format` with the quoted full
+ref, no `--branch` shorthand, explicit lone-`@` rejection, and no ref checkout.
+Invalid refs retain a validated head only for the incomplete-base worker path
+whose summary fails.
+After classifier failure only, trusted event setup permits fallback solely for
+an exact lowercase 40-hex SHA. PR fallback additionally requires its numeric
+event number and exact `refs/pull/<number>/merge` event ref; push fallback requires
+`refs/heads/master` and equal event `after`/`github.sha`. Workers consume only
+that validated output, and the publisher consumes only the validated push
+output. Missing, uppercase, short, nonhex, ref-name, mismatched, or cross-event
+identities run no fallback worker or publisher. Summary audits worker and
+publisher conclusions and always fails the classifier-failure path even when
+every validated fallback job succeeds.
+Default-branch validation occurs only when PR classifier bootstrap actually
+needs it. Missing/malformed default-branch data cannot discard a separately
+validated PR-head or push fallback. With no classifier authority, router
+checkout/classification are suppressed behind an explicit guard, the router
+and classifier fail, exact fallback workers and any guarded push publisher run,
+and summary stays fail-closed.
 Containers, services, strategies/matrices, permissions, defaults, dependency
-or condition controls, deployment environment, concurrency, reusable-job
+or condition substitutions, deployment environment, concurrency, reusable-job
 `uses`/secrets, custom shell context, unknown fields, and complex, duplicate,
 or reordered keys fail before dry-run.
-The same six-job structure includes the non-mirrored terminal jobs.
-`patch-release` must retain its master-push-only condition, Ubuntu/60-minute
-context, exact commit env, six ordered publisher steps, pinned checkout/upload
-actions, scoped base-image secret, and upload mapping. `summary` must retain
-`always()`, the exact four ordered needs, Ubuntu/five-minute context, exact
-result env, and its single fail-closed command. Runner, condition, needs,
+The complete nine-job structure preserves the six closed issue #176 jobs and
+adds only the closed, non-mirrored identity/router/mode-classifier setup jobs.
+`patch-release` must retain its validated master-push-only condition,
+Ubuntu/60-minute context, exact commit env, nine ordered fresh-job publisher
+steps, pinned checkout/upload actions, exact-after producer without whole-file
+source hash pins, dedicated-UID private-mount/PID/network isolation, recursively
+read-only host paths, private runtime mounts, masked service sockets, offline
+hash-locked dependencies, exact cgroup-v2/process teardown, and an exact
+two-file regular/single-link handoff. Complete target ROM bytes never enter an
+Actions artifact, cache, release, or log. All candidate work finishes and its
+cgroup/user/tree/process state is removed before the unpredictable
+mode-restricted private download; immediate absolute isolated patch creation,
+guaranteed base cleanup, cleanup verification, post-cleanup BPS/manifest/README
+revalidation, and the exact patch-only upload mapping remain mandatory.
+Candidate stdin/stdout/stderr must permanently target private `/dev/null`, and
+an isolated trusted child launcher must close inherited descriptors above 2
+before executing `setpriv` with the candidate script held in Bash `-c` argv.
+GitHub workflow command-file paths
+stay absent, output is never replayed, arbitrary output volume cannot alter a
+successful exit, no output sink exists, and only fixed trusted status text plus
+a numeric exit classification reaches the workflow log. Other writable roots
+and regular files retain tmpfs/ulimit bounds.
+Before `/sys` masking, the exact owned cgroup must be bound read-only under
+root-only mode-`0700` `/mnt/supervisor`. The candidate must not traverse it or
+inherit an FD; the wrapper must use that surviving view to require itself as
+the sole post-build member while host kill/removal retains the actual cgroup
+path.
+The larger `build` ceiling covers observed shared-runner compile variance
+without removing or weakening a gate. The delivery coordinator still uses
+`timeout 90m gh run watch <run-id> --interval 30 --exit-status`; because that
+watch may expire near the job ceiling, it queries the exact run status once and
+re-arms one watcher once only when the run is still nonterminal.
+`summary` must retain
+`always()`, its reliably evaluated dynamic summary name, the classifier plus exact ordered
+worker/publisher needs, Ubuntu/five-minute context, exact classifier/result
+env, metadata-skip and full-run validation, and missing/stale identity
+failure, plus its single fail-closed command. Runner, condition, needs,
 permission, env, step, command, action, container/default, or unknown-field
 drift in either job fails before local dry-run even though neither job becomes
 one of the 30 locally executed gates.
+Candidate-evidence normalization independently requires one canonical
+successful `event-identity` job context in both full and metadata runs;
+missing, failed, skipped, renamed, duplicate, or unknown setup contexts reject
+the run before eligibility evaluation.
 
 CI additionally hydrates commit authority before the workflow-pilot tests with
 the strict fixture-derived helper. It derives the minimal maximal commit tips,

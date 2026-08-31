@@ -7,8 +7,9 @@ or executes the canonical upstream ref/tree. It is a thin, literal mirror of
 the four combined workers in `.github/workflows/build.yml`. Before execution,
 it parses the selected target checkout's workflow as data and requires exact
 semantic equivalence with both the source workflow and this module's reviewed
-gate list; target Python is never imported. Only the master-only publisher and
-serial summary jobs have no local gate equivalent. The one DELIBERATE
+gate list; target Python is never imported. The event identity, router,
+classifier, master-only publisher, and serial summary jobs have no local gate
+equivalent. The one DELIBERATE
 command-level exception is build.yml's
 "Check documentation (issues #7/#17)" step, which remains a required
 standalone workflow gate outside this mirror. Run that standalone command pair
@@ -35,21 +36,42 @@ _SOURCE_ROOT = os.path.realpath(
 )
 _BUILD_WORKFLOW_RELATIVE = os.path.join(".github", "workflows", "build.yml")
 _COMBINED_JOBS = ("host-tests", "build", "extended-host-tests", "legacy")
-_EXPECTED_JOBS = _COMBINED_JOBS + ("patch-release", "summary")
+_EVENT_IDENTITY_JOB = "event-identity"
+_EVENT_ROUTER_JOB = "event-router"
+_EVENT_CLASSIFIER_JOB = "event-classifier"
+_EXPECTED_JOBS = (
+    _EVENT_IDENTITY_JOB,
+    _EVENT_ROUTER_JOB,
+    _EVENT_CLASSIFIER_JOB,
+) + _COMBINED_JOBS + (
+    "patch-release",
+    "summary",
+)
 _CHECKOUT_USES = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
 _CHECKOUT_WITH = (
     ("fetch-depth", "0"),
     ("persist-credentials", "false"),
     (
         "ref",
-        "${{ github.event_name == 'pull_request' && "
-        "github.event.pull_request.head.sha || github.sha }}",
+        "${{ (needs.event-classifier.result == 'success' && "
+        "needs.event-classifier.outputs.expected_head) || "
+        "(needs.event-classifier.result == 'failure' && "
+        "needs.event-identity.outputs.fallback_sha) || '' }}",
     ),
     ("submodules", "recursive"),
 )
-_PATCH_CHECKOUT_WITH = (
+_CLASSIFIER_CHECKOUT_WITH = (
+    ("fetch-depth", "1"),
     ("persist-credentials", "false"),
-    ("ref", "${{ github.sha }}"),
+    (
+        "ref",
+        "${{ needs.event-identity.outputs.classifier_ref }}",
+    ),
+)
+_PATCH_CHECKOUT_WITH = (
+    ("fetch-depth", "0"),
+    ("persist-credentials", "false"),
+    ("ref", "${{ needs.event-identity.outputs.fallback_sha }}"),
     ("submodules", "recursive"),
 )
 _UPLOAD_USES = (
@@ -57,15 +79,630 @@ _UPLOAD_USES = (
 )
 _UPLOAD_WITH = (
     ("if-no-files-found", "error"),
-    ("name", "modern-release-all-locales-all-features-aapcs-bps-${{ github.sha }}"),
+    (
+        "name",
+        "modern-release-all-locales-all-features-aapcs-bps-${{ "
+        "needs.event-identity.outputs.fallback_sha }}",
+    ),
     ("path", "${{ runner.temp }}/patch-artifact"),
     ("retention-days", "30"),
 )
 _EXPECTED_BUILD_SHA_EXPRESSION = (
-    "${{ github.event_name == 'pull_request' && "
-    "github.event.pull_request.head.sha || github.sha }}"
+    "${{ (needs.event-classifier.result == 'success' && "
+    "needs.event-classifier.outputs.expected_head) || "
+    "(needs.event-classifier.result == 'failure' && "
+    "needs.event-identity.outputs.fallback_sha) || '' }}"
 )
+_CLASSIFIER_REF_EXPRESSION = (
+    "${{ needs.event-identity.outputs.classifier_ref }}"
+)
+_CLASSIFIER_EXPECTED_SHA_EXPRESSION = (
+    "${{ needs.event-identity.outputs.classifier_expected_sha }}"
+)
+_WORKER_CONDITION = (
+    "${{ always() && ((needs.event-classifier.result == 'success' && "
+    "needs.event-identity.result == 'success' && "
+    "needs.event-classifier.outputs.classification == 'full' && "
+    "needs.event-classifier.outputs.head_valid == 'true' && "
+    "needs.event-classifier.outputs.run_expensive == 'true' && "
+    "((github.event_name == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_kind == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "needs.event-classifier.outputs.expected_head && "
+    "needs.event-classifier.outputs.expected_head == "
+    "github.event.pull_request.head.sha && "
+    "github.event.pull_request.head.sha != '' && "
+    "(needs.event-classifier.outputs.identity_valid == 'true' || "
+    "needs.event-classifier.outputs.full_fallback == 'true')) || "
+    "(github.event_name == 'push' && "
+    "needs.event-identity.outputs.fallback_kind == 'push' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "needs.event-classifier.outputs.expected_head && "
+    "needs.event-identity.outputs.fallback_sha == github.sha && "
+    "needs.event-classifier.outputs.identity_valid == 'true' && "
+    "needs.event-classifier.outputs.expected_head == github.event.after && "
+    "needs.event-classifier.outputs.expected_base == '' && "
+    "github.event.after != ''))) || "
+    "(needs.event-classifier.result == 'failure' && "
+    "needs.event-identity.result == 'success' && "
+    "((github.event_name == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_kind == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "github.event.pull_request.head.sha) || "
+    "(github.event_name == 'push' && "
+    "needs.event-identity.outputs.fallback_kind == 'push' && "
+    "needs.event-identity.outputs.fallback_sha == github.event.after && "
+    "needs.event-identity.outputs.fallback_sha == github.sha)))) }}"
+)
+_PUBLISHER_CONDITION = (
+    "${{ always() && needs.event-identity.result == 'success' && "
+    "github.event_name == 'push' && "
+    "needs.event-identity.outputs.fallback_kind == 'push' && "
+    "needs.event-identity.outputs.fallback_sha == github.event.after && "
+    "needs.event-identity.outputs.fallback_sha == github.sha }}"
+)
+_DYNAMIC_JOB_NAMES = {
+    "event-classifier": (
+        "${{ needs.event-router.result == 'success' && "
+        "needs.event-router.outputs.classification == 'metadata-only' && "
+        "'metadata-classifier' || 'event-classifier' }}"
+    ),
+    "summary": (
+        "${{ needs.event-classifier.result == 'success' && "
+        "needs.event-classifier.outputs.classification == 'metadata-only' "
+        "&& 'metadata-summary' || 'summary' }}"
+    ),
+}
+_IDENTITY_COMMANDS = (
+    ("is_lower_sha()", "{"),
+    ("[[", "$1", "=~", "^[0-9a-f]{40}$", "&&", "$2", "=", '"$1"', "]]"),
+    ("}",),
+    ("is_pr_number()", "{"),
+    ("[[", "$1", "=~", "^[1-9][0-9]*$", "&&", "$2", "=", "$1", "]]"),
+    ("}",),
+    ("classifier_available=false",),
+    ("classifier_expected_sha=",),
+    ("classifier_ref=",),
+    ("fallback_kind=none",),
+    ("fallback_sha=",),
+    ("if", "[[", "$EVENT_NAME", "=", "pull_request", "]];", "then"),
+    (
+        "if",
+        "is_pr_number",
+        "$PR_NUMBER",
+        "$PR_NUMBER_JSON",
+        "&&",
+        "[[",
+        "$EVENT_REF",
+        "=",
+        "refs/pull/$PR_NUMBER/merge",
+        "]]",
+        "&&",
+        "is_lower_sha",
+        "$PR_HEAD_SHA",
+        "$PR_HEAD_SHA_JSON;",
+        "then",
+    ),
+    ("fallback_kind=pull_request",),
+    ("fallback_sha=$PR_HEAD_SHA",),
+    ("fi",),
+    ("if", "is_lower_sha", "$PR_BASE_SHA", "$PR_BASE_SHA_JSON;", "then"),
+    ("classifier_expected_sha=$PR_BASE_SHA",),
+    ("classifier_ref=$PR_BASE_SHA",),
+    ("elif", "[[", "-n", "$DEFAULT_BRANCH", "]];", "then"),
+    ("bootstrap_ref=refs/heads/$DEFAULT_BRANCH",),
+    (
+        "if",
+        "/usr/bin/git",
+        "check-ref-format",
+        "$bootstrap_ref",
+        ">",
+        "/dev/null",
+        "2>&1;",
+        "then",
+    ),
+    ("classifier_ref=$bootstrap_ref",),
+    ("fi",),
+    ("fi",),
+    (
+        "elif",
+        "[[",
+        "$EVENT_NAME",
+        "=",
+        "push",
+        "&&",
+        "$EVENT_REF",
+        "=",
+        "refs/heads/master",
+        "]]",
+        "&&",
+        "is_lower_sha",
+        "$PUSH_SHA",
+        "$PUSH_SHA_JSON",
+        "&&",
+        "is_lower_sha",
+        "$RAW_SHA",
+        "$RAW_SHA_JSON",
+        "&&",
+        "[[",
+        "$RAW_SHA",
+        "=",
+        "$PUSH_SHA",
+        "]];",
+        "then",
+    ),
+    ("classifier_expected_sha=$PUSH_SHA",),
+    ("classifier_ref=$PUSH_SHA",),
+    ("fallback_kind=push",),
+    ("fallback_sha=$PUSH_SHA",),
+    ("fi",),
+    ("if", "[[", "-n", "$classifier_ref", "]];", "then"),
+    ("classifier_available=true",),
+    ("fi",),
+    ("{",),
+    ("echo", "classifier_available=$classifier_available"),
+    ("echo", "classifier_expected_sha=$classifier_expected_sha"),
+    ("echo", "classifier_ref=$classifier_ref"),
+    ("echo", "fallback_kind=$fallback_kind"),
+    ("echo", "fallback_sha=$fallback_sha"),
+    ("}", ">>", "$GITHUB_OUTPUT"),
+)
+_CLASSIFIER_VERIFY_COMMANDS = (
+    ("ACTUAL_SHA=$(git rev-parse HEAD)",),
+    ("printf", "classifier.sha=%s\\n", "$ACTUAL_SHA"),
+    ("if", "[", "-n", "$CLASSIFIER_EXPECTED_SHA", "];", "then"),
+    ("test", "$ACTUAL_SHA", "=", "$CLASSIFIER_EXPECTED_SHA"),
+    ("else",),
+    ("test", "$CLASSIFIER_REF", "=", "refs/heads/$DEFAULT_BRANCH"),
+    ("fi",),
+)
+_CLASSIFIER_COMMANDS = (
+    ("if", "test", "-f", "scripts/workflow_pilot/event_classifier.py;", "then"),
+    (
+        "/usr/bin/python3",
+        "-I",
+        "scripts/workflow_pilot/isolated_launcher.py",
+        "classify-event",
+        "--event-name",
+        "$GITHUB_EVENT_NAME",
+        "--event-path",
+        "$GITHUB_EVENT_PATH",
+        "--github-ref",
+        "$GITHUB_REF",
+        "--github-sha",
+        "$GITHUB_SHA",
+        "--pr-base-sha",
+        "$PR_BASE_SHA",
+        "--pr-head-sha",
+        "$PR_HEAD_SHA",
+        "--push-sha",
+        "$PUSH_SHA",
+        "--output",
+        "$GITHUB_OUTPUT",
+    ),
+    ("else",),
+    ("base_ref_valid=false",),
+    ("expected_base=",),
+    ("expected_head=",),
+    ("full_fallback=false",),
+    ("head_valid=false",),
+    ("identity_valid=false",),
+    ("if", "[[", "$GITHUB_EVENT_NAME", "=", "pull_request", "]];", "then"),
+    ("LC_ALL=C",),
+    ("export", "LC_ALL"),
+    (
+        "if",
+        "[[",
+        "$PR_BASE_REF",
+        "!=",
+        "@",
+        "&&",
+        "$PR_BASE_REF_JSON",
+        "=",
+        '"*"',
+        "&&",
+        "${#PR_BASE_REF}",
+        "-le",
+        "1024",
+        "]]",
+        "&&",
+        "/usr/bin/git",
+        "check-ref-format",
+        "refs/heads/$PR_BASE_REF",
+        ">",
+        "/dev/null",
+        "2>&1;",
+        "then",
+    ),
+    ("base_ref_valid=true",),
+    ("fi",),
+    (
+        "if",
+        "[[",
+        "$PR_BASE_SHA",
+        "=~",
+        "^[0-9a-f]{40}$",
+        "&&",
+        "$PR_BASE_SHA_JSON",
+        "=",
+        '"$PR_BASE_SHA"',
+        "]];",
+        "then",
+    ),
+    ("expected_base=$PR_BASE_SHA",),
+    ("fi",),
+    (
+        "if",
+        "[[",
+        "$VALIDATED_FALLBACK_KIND",
+        "=",
+        "pull_request",
+        "&&",
+        "$VALIDATED_FALLBACK_SHA",
+        "=",
+        "$PR_HEAD_SHA",
+        "]];",
+        "then",
+    ),
+    ("expected_head=$VALIDATED_FALLBACK_SHA",),
+    ("head_valid=true",),
+    ("fi",),
+    (
+        "if",
+        "[[",
+        "-n",
+        "$expected_base",
+        "&&",
+        "-n",
+        "$expected_head",
+        "&&",
+        "$base_ref_valid",
+        "=",
+        "true",
+        "]];",
+        "then",
+    ),
+    ("identity_valid=true",),
+    ("elif", "[[", "$head_valid", "=", "true", "]];", "then"),
+    ("full_fallback=true",),
+    ("fi",),
+    (
+        "elif",
+        "[[",
+        "$VALIDATED_FALLBACK_KIND",
+        "=",
+        "push",
+        "&&",
+        "$VALIDATED_FALLBACK_SHA",
+        "=",
+        "$PUSH_SHA",
+        "]];",
+        "then",
+    ),
+    ("expected_head=$VALIDATED_FALLBACK_SHA",),
+    ("head_valid=true",),
+    ("identity_valid=true",),
+    ("fi",),
+    ("{",),
+    ("echo", "classification=full"),
+    ("echo", "reason=classifier-bootstrap"),
+    ("echo", "expected_base=$expected_base"),
+    ("echo", "expected_head=$expected_head"),
+    ("echo", "full_fallback=$full_fallback"),
+    ("echo", "head_valid=$head_valid"),
+    ("echo", "identity_valid=$identity_valid"),
+    ("echo", "run_expensive=true"),
+    ("}", ">>", "$GITHUB_OUTPUT"),
+    ("fi",),
+)
+_MODE_COMMANDS = (
+    ("if", "[", "$ROUTER_RESULT", "!=", "success", "];", "then"),
+    ("echo", "Build event router did not succeed: $ROUTER_RESULT", ">&2"),
+    ("exit", "1"),
+    ("fi",),
+    ("if", "[", "$EVENT_IDENTITY_RESULT", "!=", "success", "];", "then"),
+    (
+        "echo",
+        "trusted Build event identity did not succeed: $EVENT_IDENTITY_RESULT",
+        ">&2",
+    ),
+    ("exit", "1"),
+    ("fi",),
+    ("if", "[", "$EVENT_NAME", "=", "pull_request", "];", "then"),
+    (
+        "if",
+        "[",
+        "$TRUSTED_EVENT_KIND",
+        "!=",
+        "pull_request",
+        "]",
+        "||",
+        "[",
+        "-z",
+        "$TRUSTED_EVENT_SHA",
+        "]",
+        "||",
+        "[",
+        "$TRUSTED_EVENT_SHA",
+        "!=",
+        "$PR_HEAD_SHA",
+        "]",
+        "||",
+        "[",
+        "$TRUSTED_EVENT_SHA",
+        "!=",
+        "$CLASSIFIED_HEAD",
+        "];",
+        "then",
+    ),
+    ("echo", "classified PR head lacks coherent trusted event identity", ">&2"),
+    ("exit", "1"),
+    ("fi",),
+    ("elif", "[", "$EVENT_NAME", "=", "push", "];", "then"),
+    (
+        "if",
+        "[",
+        "$TRUSTED_EVENT_KIND",
+        "!=",
+        "push",
+        "]",
+        "||",
+        "[",
+        "-z",
+        "$TRUSTED_EVENT_SHA",
+        "]",
+        "||",
+        "[",
+        "$TRUSTED_EVENT_SHA",
+        "!=",
+        "$PUSH_SHA",
+        "]",
+        "||",
+        "[",
+        "$TRUSTED_EVENT_SHA",
+        "!=",
+        "$EVENT_SHA",
+        "]",
+        "||",
+        "[",
+        "$TRUSTED_EVENT_SHA",
+        "!=",
+        "$CLASSIFIED_HEAD",
+        "];",
+        "then",
+    ),
+    ("echo", "classified push head lacks coherent trusted event identity", ">&2"),
+    ("exit", "1"),
+    ("fi",),
+    ("else",),
+    ("echo", "classified event has no trusted identity mode", ">&2"),
+    ("exit", "1"),
+    ("fi",),
+    ("case", "$HEAD_VALID", "in"),
+    ("true|false)", ";;"),
+    (
+        "*)",
+        "echo",
+        "Build event router returned invalid head validity",
+        ">&2;",
+        "exit",
+        "1",
+        ";;",
+    ),
+    ("esac",),
+    ("case", "$FULL_FALLBACK", "in"),
+    ("true|false)", ";;"),
+    (
+        "*)",
+        "echo",
+        "Build event router returned invalid full fallback",
+        ">&2;",
+        "exit",
+        "1",
+        ";;",
+    ),
+    ("esac",),
+    ("case", "$IDENTITY_VALID", "in"),
+    ("true|false)", ";;"),
+    (
+        "*)",
+        "echo",
+        "Build event router returned invalid identity validity",
+        ">&2;",
+        "exit",
+        "1",
+        ";;",
+    ),
+    ("esac",),
+    ("if", "[", "$CLASSIFICATION", "=", "metadata-only", "];", "then"),
+    (
+        "if",
+        "[",
+        "$EVENT_NAME",
+        "!=",
+        "pull_request",
+        "]",
+        "||",
+        "[",
+        "$TRUSTED_EVENT_KIND",
+        "!=",
+        "pull_request",
+        "]",
+        "||",
+        "[",
+        "$FULL_FALLBACK",
+        "!=",
+        "false",
+        "]",
+        "||",
+        "[",
+        "$HEAD_VALID",
+        "!=",
+        "true",
+        "]",
+        "||",
+        "[",
+        "$IDENTITY_VALID",
+        "!=",
+        "true",
+        "]",
+        "||",
+        "[",
+        "$RUN_EXPENSIVE",
+        "!=",
+        "false",
+        "];",
+        "then",
+    ),
+    ("echo", "metadata event mode is not authoritative", ">&2"),
+    ("exit", "1"),
+    ("fi",),
+    ("exit", "0"),
+    ("fi",),
+    (
+        "if",
+        "[",
+        "$CLASSIFICATION",
+        "!=",
+        "full",
+        "]",
+        "||",
+        "[",
+        "$RUN_EXPENSIVE",
+        "!=",
+        "true",
+        "];",
+        "then",
+    ),
+    ("echo", "full Build event mode is not authoritative", ">&2"),
+    ("exit", "1"),
+    ("fi",),
+    (
+        "if",
+        "[",
+        "$FULL_FALLBACK",
+        "=",
+        "true",
+        "]",
+        "&&",
+        "{",
+        "[",
+        "$HEAD_VALID",
+        "!=",
+        "true",
+        "]",
+        "||",
+        "[",
+        "$IDENTITY_VALID",
+        "!=",
+        "false",
+        "];",
+        "};",
+        "then",
+    ),
+    ("echo", "full fallback mode is not authoritative", ">&2"),
+    ("exit", "1"),
+    ("fi",),
+)
+_EXPECTED_JOB_OUTPUTS = {
+    "event-identity": (
+        (
+            "classifier_available",
+            "${{ steps.identity.outputs.classifier_available }}",
+        ),
+        (
+            "classifier_expected_sha",
+            "${{ steps.identity.outputs.classifier_expected_sha }}",
+        ),
+        ("classifier_ref", "${{ steps.identity.outputs.classifier_ref }}"),
+        ("fallback_kind", "${{ steps.identity.outputs.fallback_kind }}"),
+        ("fallback_sha", "${{ steps.identity.outputs.fallback_sha }}"),
+    ),
+    "event-router": (
+        ("classification", "${{ steps.classify.outputs.classification }}"),
+        ("expected_base", "${{ steps.classify.outputs.expected_base }}"),
+        ("expected_head", "${{ steps.classify.outputs.expected_head }}"),
+        ("full_fallback", "${{ steps.classify.outputs.full_fallback }}"),
+        ("head_valid", "${{ steps.classify.outputs.head_valid }}"),
+        ("identity_valid", "${{ steps.classify.outputs.identity_valid }}"),
+        ("reason", "${{ steps.classify.outputs.reason }}"),
+        ("run_expensive", "${{ steps.classify.outputs.run_expensive }}"),
+    ),
+    "event-classifier": (
+        ("classification", "${{ needs.event-router.outputs.classification }}"),
+        ("expected_base", "${{ needs.event-router.outputs.expected_base }}"),
+        ("expected_head", "${{ needs.event-router.outputs.expected_head }}"),
+        ("full_fallback", "${{ needs.event-router.outputs.full_fallback }}"),
+        ("head_valid", "${{ needs.event-router.outputs.head_valid }}"),
+        ("identity_valid", "${{ needs.event-router.outputs.identity_valid }}"),
+        ("reason", "${{ needs.event-router.outputs.reason }}"),
+        ("run_expensive", "${{ needs.event-router.outputs.run_expensive }}"),
+    ),
+}
 _EXPECTED_JOB_ENV = {
+    "event-identity": (
+        ("BASH_ENV", "''"),
+        ("DEFAULT_BRANCH", "${{ github.event.repository.default_branch }}"),
+        ("ENV", "''"),
+        ("EVENT_NAME", "${{ github.event_name }}"),
+        ("EVENT_REF", "${{ github.ref }}"),
+        ("PATH", "/usr/bin:/bin"),
+        ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
+        ("PR_BASE_SHA_JSON", "${{ toJSON(github.event.pull_request.base.sha) }}"),
+        ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
+        ("PR_HEAD_SHA_JSON", "${{ toJSON(github.event.pull_request.head.sha) }}"),
+        ("PR_NUMBER", "${{ github.event.number }}"),
+        ("PR_NUMBER_JSON", "${{ toJSON(github.event.number) }}"),
+        ("PUSH_SHA", "${{ github.event.after }}"),
+        ("PUSH_SHA_JSON", "${{ toJSON(github.event.after) }}"),
+        ("RAW_SHA", "${{ github.sha }}"),
+        ("RAW_SHA_JSON", "${{ toJSON(github.sha) }}"),
+    ),
+    "event-router": (
+        (
+            "CLASSIFIER_AVAILABLE",
+            "${{ needs.event-identity.outputs.classifier_available }}",
+        ),
+        ("CLASSIFIER_EXPECTED_SHA", _CLASSIFIER_EXPECTED_SHA_EXPRESSION),
+        ("CLASSIFIER_REF", _CLASSIFIER_REF_EXPRESSION),
+        ("DEFAULT_BRANCH", "${{ github.event.repository.default_branch }}"),
+        ("PR_BASE_REF", "${{ github.event.pull_request.base.ref }}"),
+        ("PR_BASE_REF_JSON", "${{ toJSON(github.event.pull_request.base.ref) }}"),
+        ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
+        ("PR_BASE_SHA_JSON", "${{ toJSON(github.event.pull_request.base.sha) }}"),
+        ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
+        ("PUSH_SHA", "${{ github.event.after }}"),
+        (
+            "VALIDATED_FALLBACK_KIND",
+            "${{ needs.event-identity.outputs.fallback_kind }}",
+        ),
+        (
+            "VALIDATED_FALLBACK_SHA",
+            "${{ needs.event-identity.outputs.fallback_sha }}",
+        ),
+    ),
+    "event-classifier": (
+        ("CLASSIFICATION", "${{ needs.event-router.outputs.classification }}"),
+        ("CLASSIFIED_HEAD", "${{ needs.event-router.outputs.expected_head }}"),
+        ("EVENT_IDENTITY_RESULT", "${{ needs.event-identity.result }}"),
+        ("EVENT_NAME", "${{ github.event_name }}"),
+        ("EVENT_SHA", "${{ github.sha }}"),
+        ("FULL_FALLBACK", "${{ needs.event-router.outputs.full_fallback }}"),
+        ("HEAD_VALID", "${{ needs.event-router.outputs.head_valid }}"),
+        ("IDENTITY_VALID", "${{ needs.event-router.outputs.identity_valid }}"),
+        ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
+        ("PUSH_SHA", "${{ github.event.after }}"),
+        ("ROUTER_RESULT", "${{ needs.event-router.result }}"),
+        ("RUN_EXPENSIVE", "${{ needs.event-router.outputs.run_expensive }}"),
+        (
+            "TRUSTED_EVENT_KIND",
+            "${{ needs.event-identity.outputs.fallback_kind }}",
+        ),
+        (
+            "TRUSTED_EVENT_SHA",
+            "${{ needs.event-identity.outputs.fallback_sha }}",
+        ),
+    ),
     "host-tests": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
     "build": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
     "extended-host-tests": (
@@ -79,12 +716,36 @@ _EXPECTED_JOB_ENV = {
             "63b22f3eb8a8051af30bd80c4795b355e439e7ef",
         ),
     ),
-    "patch-release": (("PATCH_COMMIT", "${{ github.sha }}"),),
+    "patch-release": (
+        ("PATCH_COMMIT", "${{ needs.event-identity.outputs.fallback_sha }}"),
+    ),
     "summary": (
         ("BUILD_RESULT", "${{ needs.build.result }}"),
+        ("CLASSIFICATION", "${{ needs.event-classifier.outputs.classification }}"),
+        (
+            "CLASSIFIED_BASE_SHA",
+            "${{ needs.event-classifier.outputs.expected_base }}",
+        ),
+        (
+            "CLASSIFIED_BUILD_SHA",
+            "${{ needs.event-classifier.outputs.expected_head }}",
+        ),
+        ("CLASSIFIER_RESULT", "${{ needs.event-classifier.result }}"),
         ("EXTENDED_HOST_TESTS_RESULT", "${{ needs.extended-host-tests.result }}"),
+        ("FALLBACK_IDENTITY_RESULT", "${{ needs.event-identity.result }}"),
+        ("FALLBACK_KIND", "${{ needs.event-identity.outputs.fallback_kind }}"),
+        ("FALLBACK_SHA", "${{ needs.event-identity.outputs.fallback_sha }}"),
+        ("FULL_FALLBACK", "${{ needs.event-classifier.outputs.full_fallback }}"),
+        ("HEAD_VALID", "${{ needs.event-classifier.outputs.head_valid }}"),
         ("HOST_TESTS_RESULT", "${{ needs.host-tests.result }}"),
+        ("IDENTITY_VALID", "${{ needs.event-classifier.outputs.identity_valid }}"),
         ("LEGACY_RESULT", "${{ needs.legacy.result }}"),
+        ("PATCH_RELEASE_RESULT", "${{ needs.patch-release.result }}"),
+        ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
+        ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
+        ("PUSH_SHA", "${{ github.event.after }}"),
+        ("RAW_PUSH_SHA", "${{ github.sha }}"),
+        ("RUN_EXPENSIVE", "${{ needs.event-classifier.outputs.run_expensive }}"),
     ),
 }
 _NON_GATE_STEP_NAMES = {
@@ -152,7 +813,50 @@ _BASE_VERIFIER_ENV = (
     "EXPECTED_CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && "
     "github.event.pull_request.head.sha || github.sha }}",
 )
+_PRIVATE_STEP_ENV = (
+    ("BASH_ENV", "''"),
+    ("CDPATH", "''"),
+    ("ENV", "''"),
+    ("GLOBIGNORE", "''"),
+    ("GIT_ALTERNATE_OBJECT_DIRECTORIES", "''"),
+    ("GIT_CEILING_DIRECTORIES", "''"),
+    ("GIT_COMMON_DIR", "''"),
+    ("GIT_CONFIG_COUNT", "'0'"),
+    ("GIT_CONFIG_GLOBAL", "/dev/null"),
+    ("GIT_CONFIG_KEY_0", "''"),
+    ("GIT_CONFIG_NOSYSTEM", "'1'"),
+    ("GIT_CONFIG_PARAMETERS", "''"),
+    ("GIT_CONFIG_SYSTEM", "/dev/null"),
+    ("GIT_CONFIG_VALUE_0", "''"),
+    ("GIT_DIR", "''"),
+    ("GIT_EXEC_PATH", "''"),
+    ("GIT_INDEX_FILE", "''"),
+    ("GIT_NAMESPACE", "''"),
+    ("GIT_NO_LAZY_FETCH", "'1'"),
+    ("GIT_NO_REPLACE_OBJECTS", "'1'"),
+    ("GIT_OBJECT_DIRECTORY", "''"),
+    ("GIT_REPLACE_REF_BASE", "''"),
+    ("GIT_WORK_TREE", "''"),
+    ("HOME", "${{ runner.temp }}/patch-runtime"),
+    ("LD_LIBRARY_PATH", "''"),
+    ("LD_PRELOAD", "''"),
+    ("PATH", "/usr/bin:/bin"),
+    ("PYTHONPATH", "''"),
+    ("SHELLOPTS", "''"),
+)
 _EXPECTED_STEP_ROLES = {
+    "event-identity": (
+        ("setup", "Validate trusted event identities"),
+    ),
+    "event-router": (
+        ("setup", "Require classifier authority"),
+        ("setup", None),
+        ("setup", "Verify classifier authority revision"),
+        ("setup", "Classify Build event"),
+    ),
+    "event-classifier": (
+        ("setup", "Verify authoritative Build event mode"),
+    ),
     "host-tests": (
         ("setup", None),
         ("setup", "Verify checked-out revision"),
@@ -209,7 +913,20 @@ _EXPECTED_STEP_ROLES = {
         ("gate", "Build archival lane without a copyrighted baserom"),
         ("gate", "Validate pinned archival payload identities"),
     ),
-    "patch-release": (("publisher", None),) * 6,
+    "patch-release": (
+        ("publisher", None),
+        ("publisher", "Verify exact candidate and stage trusted producer"),
+        ("publisher", "Install trusted isolated-build dependencies"),
+        (
+            "publisher",
+            "Build candidate in isolated namespace and stage public inputs",
+        ),
+        ("publisher", "Download private base image"),
+        ("publisher", "Create and verify patch artifact"),
+        ("publisher", "Cleanup and verify private base"),
+        ("publisher", "Revalidate patch-only upload"),
+        ("publisher", None),
+    ),
     "summary": (("summary", "Render fail-closed combined Build summary"),),
 }
 
@@ -441,14 +1158,14 @@ def _parse_workflow_context(text):
     return tuple((name, values[name]) for name in names)
 
 
-def _parse_job_environment(lines, start, end, job_name):
+def _parse_job_mapping(lines, start, end, job_name, field):
     entries = {}
     for line in lines[start:end]:
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         if len(line) - len(line.lstrip(" ")) != 6:
             raise ValueError(
-                f"job {job_name!r} env uses unsupported indentation"
+                f"job {job_name!r} {field} uses unsupported indentation"
             )
         match = re.fullmatch(
             r"      ([A-Za-z_][A-Za-z0-9_-]*):[ \t]*(.*)",
@@ -456,14 +1173,14 @@ def _parse_job_environment(lines, start, end, job_name):
         )
         if match is None:
             raise ValueError(
-                f"job {job_name!r} env uses unsupported key syntax"
+                f"job {job_name!r} {field} uses unsupported key syntax"
             )
         key = match.group(1)
         if key in entries:
-            raise ValueError(f"job {job_name!r} env repeats key {key!r}")
+            raise ValueError(f"job {job_name!r} {field} repeats key {key!r}")
         value = match.group(2).strip()
         if not value:
-            raise ValueError(f"job {job_name!r} env.{key} is empty")
+            raise ValueError(f"job {job_name!r} {field}.{key} is empty")
         entries[key] = value
     return tuple(sorted(entries.items()))
 
@@ -490,12 +1207,55 @@ def _parse_job_context(job_name, body):
     if len(names) != len(set(names)):
         raise ValueError(f"job {job_name!r} contains duplicate direct keys")
     expected_names = {
+        "event-identity": [
+            "name",
+            "runs-on",
+            "timeout-minutes",
+            "outputs",
+            "env",
+            "steps",
+        ],
+        "event-router": [
+            "name",
+            "if",
+            "needs",
+            "runs-on",
+            "timeout-minutes",
+            "outputs",
+            "env",
+            "steps",
+        ],
+        "event-classifier": [
+            "name",
+            "if",
+            "needs",
+            "runs-on",
+            "timeout-minutes",
+            "outputs",
+            "env",
+            "steps",
+        ],
         **{
-            name: ["runs-on", "timeout-minutes", "env", "steps"]
+            name: [
+                "needs",
+                "if",
+                "runs-on",
+                "timeout-minutes",
+                "env",
+                "steps",
+            ]
             for name in _COMBINED_JOBS
         },
-        "patch-release": ["if", "runs-on", "timeout-minutes", "env", "steps"],
+        "patch-release": [
+            "needs",
+            "if",
+            "runs-on",
+            "timeout-minutes",
+            "env",
+            "steps",
+        ],
         "summary": [
+            "name",
             "if",
             "needs",
             "runs-on",
@@ -522,23 +1282,44 @@ def _parse_job_context(job_name, body):
             for line in lines[line_index + 1 : end]
             if line.strip() and not line.lstrip().startswith("#")
         ]
-        if name == "if":
-            expected = {
-                "patch-release": (
-                    "${{ github.event_name == 'push' && "
-                    "github.ref == 'refs/heads/master' }}"
-                ),
-                "summary": "always()",
-            }[job_name]
+        if name == "name":
+            expected = (
+                job_name
+                if job_name in {"event-identity", "event-router"}
+                else _DYNAMIC_JOB_NAMES[job_name]
+            )
+            if value != expected or nested:
+                raise ValueError(f"job {job_name!r} name differs")
+            values[name] = value
+        elif name == "if":
+            expected = (
+                _WORKER_CONDITION
+                if job_name in _COMBINED_JOBS
+                else {
+                    "event-router": (
+                        "${{ always() && "
+                        "needs.event-identity.result == 'success' }}"
+                    ),
+                    "event-classifier": "always()",
+                    "patch-release": _PUBLISHER_CONDITION,
+                    "summary": "always()",
+                }[job_name]
+            )
             if value != expected or nested:
                 raise ValueError(f"job {job_name!r} if condition differs")
             values[name] = value
         elif name == "needs":
-            if (
-                value
-                != "[host-tests, build, extended-host-tests, legacy]"
-                or nested
-            ):
+            expected = (
+                "[event-identity]"
+                if job_name in {"event-router", "patch-release"}
+                else "[event-identity, event-router]"
+                if job_name == "event-classifier"
+                else "[event-identity, event-classifier]"
+                if job_name in _COMBINED_JOBS
+                else "[event-identity, event-classifier, host-tests, build, "
+                "extended-host-tests, legacy, patch-release]"
+            )
+            if value != expected or nested:
                 raise ValueError(f"job {job_name!r} needs differs")
             values[name] = value
         elif name == "runs-on":
@@ -548,28 +1329,41 @@ def _parse_job_context(job_name, body):
                 )
             values[name] = value
         elif name == "timeout-minutes":
-            expected = "5" if job_name == "summary" else "60"
+            expected = (
+                "5"
+                if job_name
+                in {"event-identity", "event-router", "event-classifier", "summary"}
+                else "90"
+                if job_name == "build"
+                else "60"
+            )
             if value != expected or nested:
                 raise ValueError(
                     f"job {job_name!r} timeout-minutes must be {expected}"
                 )
             values[name] = value
-        elif name == "env":
+        elif name in {"env", "outputs"}:
             if value:
                 raise ValueError(
-                    f"job {job_name!r} env must use a block mapping"
+                    f"job {job_name!r} {name} must use a block mapping"
                 )
-            environment = _parse_job_environment(
+            mapping = _parse_job_mapping(
                 lines,
                 line_index + 1,
                 end,
                 job_name,
+                name,
             )
-            if environment != _EXPECTED_JOB_ENV[job_name]:
+            expected = (
+                _EXPECTED_JOB_ENV[job_name]
+                if name == "env"
+                else _EXPECTED_JOB_OUTPUTS[job_name]
+            )
+            if mapping != expected:
                 raise ValueError(
-                    f"job {job_name!r} env differs from its reviewed mapping"
+                    f"job {job_name!r} {name} differs from its reviewed mapping"
                 )
-            values[name] = environment
+            values[name] = mapping
         else:
             if value:
                 raise ValueError(
@@ -678,7 +1472,8 @@ def _parse_step(block, job_name, index):
     if len(direct_names) != len(set(direct_names)):
         raise ValueError(f"{step_label} contains duplicate direct fields")
     unknown = sorted(
-        set(direct_names) - {"name", "uses", "run", "env", "with"}
+        set(direct_names)
+        - {"id", "if", "name", "uses", "run", "shell", "env", "with"}
     )
     if unknown:
         raise ValueError(
@@ -729,27 +1524,364 @@ def _parse_step(block, job_name, index):
             values[name] = scalar
 
     name = values.get("name")
-    if job_name == "patch-release":
+    if job_name == "event-identity":
+        if (
+            index != 0
+            or name != "Validate trusted event identities"
+            or set(values) != {"id", "name", "run"}
+            or values["id"] != "identity"
+            or values["run"] != _IDENTITY_COMMANDS
+        ):
+            raise ValueError(f"{step_label} trusted identity setup differs")
+        role = "setup"
+    elif job_name == "event-router":
+        if index == 0:
+            if (
+                name != "Require classifier authority"
+                or set(values) != {"if", "name", "run"}
+                or values["if"]
+                != "${{ needs.event-identity.outputs.classifier_available "
+                "!= 'true' }}"
+                or values["run"]
+                != (
+                    (
+                        "echo",
+                        "Build classifier authority is unavailable",
+                        ">&2",
+                    ),
+                    ("exit", "1"),
+                )
+            ):
+                raise ValueError(
+                    f"{step_label} unavailable classifier guard differs"
+                )
+        elif index == 1:
+            if (
+                name is not None
+                or set(values) != {"if", "uses", "with"}
+                or values["uses"] != _CHECKOUT_USES
+                or values["with"] != _CLASSIFIER_CHECKOUT_WITH
+                or values["if"]
+                != "${{ needs.event-identity.outputs.classifier_available "
+                "== 'true' }}"
+            ):
+                raise ValueError(f"{step_label} authority checkout differs")
+        elif index == 2:
+            if (
+                name != "Verify classifier authority revision"
+                or set(values) != {"if", "name", "run"}
+                or values["if"]
+                != "${{ needs.event-identity.outputs.classifier_available "
+                "== 'true' }}"
+                or values["run"] != _CLASSIFIER_VERIFY_COMMANDS
+            ):
+                raise ValueError(f"{step_label} authority verification differs")
+        elif index == 3:
+            if (
+                name != "Classify Build event"
+                or set(values) != {"env", "id", "if", "name", "run"}
+                or values["id"] != "classify"
+                or values["if"]
+                != "${{ needs.event-identity.outputs.classifier_available "
+                "== 'true' }}"
+                or values["run"] != _CLASSIFIER_COMMANDS
+                or values["env"]
+                != tuple(
+                    sorted(
+                        tuple(
+                            entry.split(": ", 1)
+                            if ": " in entry
+                            else (entry[:-1], "")
+                        )
+                        for entry in _SCRUBBED_PILOT_ENV
+                    )
+                )
+            ):
+                raise ValueError(f"{step_label} classifier mapping differs")
+        role = "setup"
+    elif job_name == "event-classifier":
+        if (
+            index != 0
+            or name != "Verify authoritative Build event mode"
+            or set(values) != {"name", "run"}
+            or values["run"] != _MODE_COMMANDS
+        ):
+            raise ValueError(f"{step_label} mode verification differs")
+        role = "setup"
+    elif job_name == "patch-release":
         expected_fields = (
             {"uses", "with"}
-            if index in {0, 5}
-            else {"run", "env"}
+            if index in {0, 8}
+            else {"id", "name", "shell", "env", "run"}
             if index == 4
-            else {"run"}
+            else {"name", "shell", "env", "run"}
+            if index in {2, 3, 5, 7}
+            else {"if", "name", "shell", "env", "run"}
+            if index == 6
+            else {"name", "env", "run"}
+            if index == 1
+            else set()
         )
-        if name is not None or set(values) != expected_fields:
+        expected_name = {
+            1: "Verify exact candidate and stage trusted producer",
+            2: "Install trusted isolated-build dependencies",
+            3: "Build candidate in isolated namespace and stage public inputs",
+            4: "Download private base image",
+            5: "Create and verify patch artifact",
+            6: "Cleanup and verify private base",
+            7: "Revalidate patch-only upload",
+        }.get(index)
+        if name != expected_name or set(values) != expected_fields:
             raise ValueError(f"{step_label} publisher mapping differs")
         if index == 0 and (
             values["uses"] != _CHECKOUT_USES
             or values["with"] != _PATCH_CHECKOUT_WITH
         ):
             raise ValueError(f"{step_label} checkout action differs")
-        if index == 4 and values["env"] != (
-            ("BASEROM_URL", "${{ secrets.BASEROM_URL }}"),
-            ("PATCH_ARTIFACT_DIR", "${{ runner.temp }}/patch-artifact"),
+        if index == 1 and (
+            ("test", "$ACTUAL_SHA", "=", "$PATCH_COMMIT")
+            not in values["run"]
+            or "/usr/bin/git cat-file -t $PATCH_COMMIT"
+            not in " ".join(token for command in values["run"] for token in command)
+            or "PREVIOUS_MASTER_SHA"
+            in " ".join(token for command in values["run"] for token in command)
+            or "sha256sum"
+            in " ".join(token for command in values["run"] for token in command)
         ):
-            raise ValueError(f"{step_label} publication environment differs")
+            raise ValueError(f"{step_label} trusted producer verification differs")
+        if index == 2 and (
+            values["shell"]
+            != "/bin/bash --noprofile --norc -euo pipefail {0}"
+            or values["env"]
+            != tuple(
+                sorted(
+                    _PRIVATE_STEP_ENV
+                    + (
+                        ("PATCH_RUNTIME_ROOT", "${{ runner.temp }}/patch-runtime"),
+                        (
+                            "PATCH_WHEELHOUSE",
+                            "${{ runner.temp }}/patch-wheelhouse",
+                        ),
+                    )
+                )
+            )
+            or "/usr/bin/env"
+            not in {token for command in values["run"] for token in command}
+            or "/usr/bin/python3"
+            not in {token for command in values["run"] for token in command}
+            or "PIP_CONFIG_FILE=/dev/null"
+            not in {token for command in values["run"] for token in command}
+        ):
+            raise ValueError(f"{step_label} isolated dependency setup differs")
+        if index == 3 and (
+            values["shell"]
+            != "/bin/bash --noprofile --norc -euo pipefail {0}"
+            or values["env"]
+            != tuple(
+                sorted(
+                    _PRIVATE_STEP_ENV
+                    + (
+                        ("BUILDER_ROOT", "${{ runner.temp }}/patch-builder"),
+                        ("GITHUB_WORKSPACE_PATH", "${{ github.workspace }}"),
+                        ("PATCH_INPUT_ROOT", "${{ runner.temp }}/patch-input"),
+                        ("PATCH_RUNTIME_ROOT", "${{ runner.temp }}/patch-runtime"),
+                        (
+                            "PATCH_WHEELHOUSE",
+                            "${{ runner.temp }}/patch-wheelhouse",
+                        ),
+                    )
+                )
+            )
+            or "/usr/bin/unshare"
+            not in {token for command in values["run"] for token in command}
+            or "--net"
+            not in {token for command in values["run"] for token in command}
+            or "--kill-child=KILL"
+            not in {token for command in values["run"] for token in command}
+            or "/usr/bin/mount"
+            not in {token for command in values["run"] for token in command}
+            or "--make-rprivate"
+            not in {token for command in values["run"] for token in command}
+            or "hidepid=2"
+            not in " ".join(token for command in values["run"] for token in command)
+            or ("/usr/bin/mkdir", "-m", "0700", "/mnt/supervisor")
+            not in values["run"]
+            or (
+                "/usr/bin/mount",
+                "--bind",
+                "$cgroup_path",
+                "/mnt/supervisor/cgroup",
+            )
+            not in values["run"]
+            or "supervisor_cgroup=/mnt/supervisor/cgroup"
+            not in {token for command in values["run"] for token in command}
+            or ("test", "!", "-r", "/mnt/supervisor") not in values["run"]
+            or not any(
+                command
+                and command[0].startswith("cgroup_members=")
+                and "$supervisor_cgroup/cgroup.procs" in command[0]
+                for command in values["run"]
+            )
+            or any(
+                command
+                and command[0].startswith("cgroup_members=")
+                and "$cgroup_path/cgroup.procs" in command[0]
+                for command in values["run"]
+            )
+            or "/sys/fs/cgroup/cgroup.controllers"
+            not in {token for command in values["run"] for token in command}
+            or "$builder_cgroup/cgroup.kill"
+            not in {token for command in values["run"] for token in command}
+            or "close_inherited_fds()"
+            in {token for command in values["run"] for token in command}
+            or "/proc/$$/fd"
+            in " ".join(token for command in values["run"] for token in command)
+            or "candidate-launcher.py"
+            not in " ".join(token for command in values["run"] for token in command)
+            or "os.closerange(3,"
+            not in " ".join(token for command in values["run"] for token in command)
+            or "os.execve(candidate_argv[0],"
+            not in " ".join(token for command in values["run"] for token in command)
+            or "MAX_FD = 1_048_576"
+            not in " ".join(token for command in values["run"] for token in command)
+            or "fcntl.F_GETFD"
+            not in " ".join(token for command in values["run"] for token in command)
+            or values["run"].count(
+                ("exec", "<", "/dev/null", ">", "/dev/null", "2>&1")
+            )
+            != 2
+            or "candidate-output.log"
+            in " ".join(token for command in values["run"] for token in command)
+            or ("ulimit", "-f", "131072") not in values["run"]
+            or ("test", "$cgroup_members", "=", "$$") not in values["run"]
+            or "candidate build failed: exit=%d"
+            not in " ".join(token for command in values["run"] for token in command)
+            or "< /dev/null > /dev/null 2>&1 &"
+            not in " ".join(token for command in values["run"] for token in command)
+            or "GITHUB_STEP_SUMMARY-"
+            not in " ".join(token for command in values["run"] for token in command)
+            or ("test", "-z", "$(builder_cgroup_pids)")
+            not in values["run"]
+            or ("test", "-z", "$(builder_group_pids $builder_pgid)")
+            not in values["run"]
+            or "builder_user_created=0"
+            not in {token for command in values["run"] for token in command}
+            or "builder_root_owned=0"
+            not in {token for command in values["run"] for token in command}
+            or ("test", "!", "-e", "$BUILDER_ROOT") not in values["run"]
+            or ("test", "!", "-e", "$PATCH_WHEELHOUSE") not in values["run"]
+            or "pkill"
+            in " ".join(token for command in values["run"] for token in command)
+            or "killall"
+            in " ".join(token for command in values["run"] for token in command)
+            or any(
+                token == "$pid"
+                for command in values["run"]
+                if "/bin/kill" in command
+                for token in command
+            )
+        ):
+            raise ValueError(f"{step_label} isolated candidate build differs")
+        if index == 4 and (
+            values["id"] != "private-base"
+            or values["shell"]
+            != "/bin/bash --noprofile --norc -euo pipefail {0}"
+            or values["env"]
+            != tuple(
+                sorted(
+                    _PRIVATE_STEP_ENV
+                    + (("BASEROM_URL", "${{ secrets.BASEROM_URL }}"),)
+                )
+            )
+            or "/usr/bin/curl"
+            not in {token for command in values["run"] for token in command}
+            or "/usr/bin/mktemp"
+            not in " ".join(token for command in values["run"] for token in command)
+            or "scripts."
+            in " ".join(token for command in values["run"] for token in command)
+        ):
+            raise ValueError(f"{step_label} secret download boundary differs")
         if index == 5 and (
+            values["shell"]
+            != "/bin/bash --noprofile --norc -euo pipefail {0}"
+            or values["env"]
+            != tuple(
+                sorted(
+                    _PRIVATE_STEP_ENV
+                    + (
+                        (
+                            "BASE_IMAGE",
+                            "${{ steps.private-base.outputs.base_path }}",
+                        ),
+                        (
+                            "PATCH_ARTIFACT_DIR",
+                            "${{ runner.temp }}/patch-artifact",
+                        ),
+                        ("PATCH_INPUT_ROOT", "${{ runner.temp }}/patch-input"),
+                        ("PATCH_RUNTIME_ROOT", "${{ runner.temp }}/patch-runtime"),
+                        ("PATCH_TOOL_ROOT", "${{ runner.temp }}/patch-tool"),
+                    )
+                )
+            )
+            or "/usr/bin/python3"
+            not in {token for command in values["run"] for token in command}
+            or "-S" not in {token for command in values["run"] for token in command}
+            or "/usr/bin/env"
+            not in {token for command in values["run"] for token in command}
+            or "cleanup_private_base()"
+            not in {token for command in values["run"] for token in command}
+        ):
+            raise ValueError(f"{step_label} audited patch boundary differs")
+        if index == 6 and (
+            values["if"] != "always()"
+            or values["shell"]
+            != "/bin/bash --noprofile --norc -euo pipefail {0}"
+            or values["env"]
+            != tuple(
+                sorted(
+                    _PRIVATE_STEP_ENV
+                    + (
+                        (
+                            "BASE_IMAGE",
+                            "${{ steps.private-base.outputs.base_path }}",
+                        ),
+                    )
+                )
+            )
+            or "/bin/rm"
+            not in {token for command in values["run"] for token in command}
+            or ("test", "!", "-e", "$BASE_IMAGE") not in values["run"]
+            or ("test", "!", "-e", "$private_dir") not in values["run"]
+        ):
+            raise ValueError(f"{step_label} private cleanup verification differs")
+        if index == 7 and (
+            values["shell"]
+            != "/bin/bash --noprofile --norc -euo pipefail {0}"
+            or values["env"]
+            != tuple(
+                sorted(
+                    _PRIVATE_STEP_ENV
+                    + (
+                        (
+                            "PATCH_ARTIFACT_DIR",
+                            "${{ runner.temp }}/patch-artifact",
+                        ),
+                    )
+                )
+            )
+            or "artifact_names="
+            not in " ".join(token for command in values["run"] for token in command)
+            or ("test", "!", "-L", "$artifact") not in values["run"]
+            or (
+                "test",
+                "$(/usr/bin/stat -c %F $artifact)",
+                "=",
+                "regular file",
+            )
+            not in values["run"]
+        ):
+            raise ValueError(f"{step_label} upload revalidation differs")
+        if index == 8 and (
             values["uses"] != _UPLOAD_USES
             or values["with"] != _UPLOAD_WITH
         ):
@@ -862,7 +1994,13 @@ def _parse_job_steps(job_name, body):
     names = [step[1] for step in steps if step[1] is not None]
     if len(names) != len(set(names)):
         raise ValueError(f"job {job_name!r} contains duplicate step names")
-    expected_unnamed = 6 if job_name == "patch-release" else 0 if job_name == "summary" else 1
+    expected_unnamed = (
+        2
+        if job_name == "patch-release"
+        else 0
+        if job_name in {"event-identity", "event-classifier", "summary"}
+        else 1
+    )
     if sum(step[1] is None for step in steps) != expected_unnamed:
         raise ValueError(
             f"job {job_name!r} unnamed step count differs"

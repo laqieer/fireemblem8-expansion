@@ -1,9 +1,13 @@
 from dataclasses import dataclass
 import copy
 import json
+import os
 import posixpath
 from pathlib import Path
 import re
+import subprocess
+import tempfile
+import textwrap
 from typing import FrozenSet, Tuple
 import unittest
 
@@ -21,13 +25,50 @@ SKILL_PATH = (
 )
 CONTRIBUTING_PATH = ROOT / "CONTRIBUTING.md"
 PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
+ISSUE_RESOLUTION_POLICY_PATH = ROOT / "docs" / "issue-resolution-policy.md"
+WORKFLOW_PILOT_PATH = ROOT / "docs" / "workflow-pilot.md"
+FRAMEWORK_SUPPORT_PATH = ROOT / "docs" / "framework-support.md"
 COPILOT_INSTRUCTIONS_PATH = ROOT / ".github" / "copilot-instructions.md"
 WORKFLOW_GOVERNANCE_PATH = ROOT / "docs" / "test-cases" / "workflow-governance.md"
+BUILD_WORKFLOW_PATH = ROOT / ".github" / "workflows" / "build.yml"
+PRE_FIX_BUILD_WORKFLOW_PATH = (
+    ROOT
+    / "scripts"
+    / "workflow_pilot"
+    / "tests"
+    / "fixtures"
+    / "pre_fix_build.yml"
+)
 TEST_CASE_REGISTRY_PATH = ROOT / "docs" / "test-cases" / "registry.json"
 MANUAL_HANDOFF_CONTRACT_PATH = ROOT / ".github" / "manual-testing-handoff.json"
 MANUAL_HANDOFF_CASE_HEADING = (
     "TC-WORKFLOW-MANUAL-HANDOFF-001: "
     "Surface actionable manual testing and resume automatically"
+)
+STACKED_CI_CASE_HEADING = (
+    "TC-WORKFLOW-STACKED-CI-001: "
+    "Run exact Build CI on a genuine stacked PR base"
+)
+BODY_EDIT_CASE_HEADING = (
+    "TC-WORKFLOW-BODY-EDIT-001: Suppress metadata-only Build workers"
+)
+CANDIDATE_EVIDENCE_MARKER = "<!-- workflow-pilot-candidate-evidence -->"
+EVOLVING_PR_BODY_FIELDS = (
+    "## Validation commands",
+    "Validation results:",
+    "Tester actual results:",
+    "actual result:",
+    "## Review-size preflight",
+    "Changed files:",
+    "Additions:",
+    "Deletions:",
+    "Total changed lines:",
+    "current SHA:",
+    "Candidate SHA:",
+    "run ID:",
+    "Candidate Build CI",
+    "Copilot review ran",
+    "security checks passed",
 )
 MANUAL_HANDOFF_POLICY_HEADING = "Actionable manual-testing handoff"
 MANUAL_HANDOFF_SUMMARY_HEADING = "Lifecycle summary"
@@ -498,6 +539,589 @@ def scan_policy_markdown(text):
 
 def normalize_policy(text):
     return " ".join(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def workflow_job_ids(path):
+    text = path.read_text(encoding="utf-8")
+    jobs = text.split("\njobs:\n", 1)
+    if len(jobs) != 2:
+        raise AssertionError(f"{path} lacks a jobs mapping")
+    names = re.findall(r"^  ([A-Za-z][A-Za-z0-9_-]*):\s*$", jobs[1], re.MULTILINE)
+    if not names or len(names) != len(set(names)):
+        raise AssertionError(f"{path} has missing or duplicate job IDs")
+    return frozenset(names)
+
+
+def documented_job_set(text, label):
+    pattern = re.compile(
+        rf"- \*\*{re.escape(label)}:\*\*\s+\{{(?P<body>.*?)\}}\.",
+        re.DOTALL,
+    )
+    matches = list(pattern.finditer(text))
+    if len(matches) != 1:
+        raise AssertionError(
+            f"expected exactly one documented job set {label!r}"
+        )
+    entries = [entry.strip() for entry in matches[0].group("body").split(",")]
+    names = []
+    for entry in entries:
+        match = re.fullmatch(r"`([A-Za-z][A-Za-z0-9_-]*)`", entry)
+        if match is None:
+            raise AssertionError(
+                f"documented job set {label!r} has malformed entry {entry!r}"
+            )
+        names.append(match.group(1))
+    if len(names) != len(set(names)):
+        raise AssertionError(f"documented job set {label!r} has duplicates")
+    return frozenset(names)
+
+
+def replace_documented_job_set(text, label, names):
+    pattern = re.compile(
+        rf"- \*\*{re.escape(label)}:\*\*\s+\{{(?P<body>.*?)\}}\.",
+        re.DOTALL,
+    )
+    replacement = (
+        f"- **{label}:** "
+        + "{"
+        + ", ".join(f"`{name}`" for name in names)
+        + "}."
+    )
+    changed, count = pattern.subn(replacement, text, count=1)
+    if count != 1:
+        raise AssertionError(f"cannot replace documented job set {label!r}")
+    return changed
+
+
+def raw_markdown_section(text, heading):
+    lines = text.splitlines()
+    marker = f"## {heading}"
+    starts = [index for index, line in enumerate(lines) if line == marker]
+    if len(starts) != 1:
+        raise AssertionError(f"expected exactly one raw Markdown section {heading!r}")
+    start = starts[0]
+    end = next(
+        (
+            index
+            for index in range(start + 1, len(lines))
+            if lines[index].startswith("## ")
+        ),
+        len(lines),
+    )
+    return "\n".join(lines[start:end])
+
+
+def workflow_tester_topology_violations(text):
+    scan_policy_markdown(text)
+    stacked_case = "\n".join(
+        read_markdown_section(text, STACKED_CI_CASE_HEADING)
+    )
+    body_case = "\n".join(
+        read_markdown_section(text, BODY_EDIT_CASE_HEADING)
+    )
+    current_jobs = workflow_job_ids(BUILD_WORKFLOW_PATH)
+    selected_full_pr_jobs = current_jobs - {"patch-release"}
+    expected = {
+        "stacked-full-pr": selected_full_pr_jobs,
+        "current-metadata": frozenset(
+            {
+                "event-identity",
+                "event-router",
+                "metadata-classifier",
+                "patch-release",
+                "metadata-summary",
+            }
+        ),
+        "preserved-pre-fix": workflow_job_ids(PRE_FIX_BUILD_WORKFLOW_PATH),
+        "live-opened-full": current_jobs,
+        "live-title-metadata": frozenset(
+            {
+                "event-identity",
+                "event-router",
+                "metadata-classifier",
+                "patch-release",
+                "metadata-summary",
+            }
+        ),
+        "live-restore-metadata": frozenset(
+            {
+                "event-identity",
+                "event-router",
+                "metadata-classifier",
+                "patch-release",
+                "metadata-summary",
+            }
+        ),
+    }
+    documented = {
+        "stacked-full-pr": documented_job_set(
+            stacked_case,
+            "Parsed full-PR job set",
+        ),
+        "current-metadata": documented_job_set(
+            body_case,
+            "Parsed current metadata-only job/check set",
+        ),
+        "preserved-pre-fix": documented_job_set(
+            body_case,
+            "Parsed preserved pre-fix body-only job set",
+        ),
+        "live-opened-full": documented_job_set(
+            body_case,
+            "Parsed live opened-run job set",
+        ),
+        "live-title-metadata": documented_job_set(
+            body_case,
+            "Parsed live title-edit job/check set",
+        ),
+        "live-restore-metadata": documented_job_set(
+            body_case,
+            "Parsed live title-restore job/check set",
+        ),
+    }
+    violations = [
+        f"{name}-job-set"
+        for name in expected
+        if documented[name] != expected[name]
+    ]
+    skipped_names_contract = normalize_policy(
+        "Skipped worker names and success-shaped records are ignored by "
+        "stable job identity"
+    )
+    if skipped_names_contract not in normalize_policy(body_case):
+        violations.append("skipped-worker-names-are-semantic")
+    return violations
+
+
+def live_title_probe_violations(text):
+    scan_policy_markdown(text)
+    body_case = raw_markdown_section(text, BODY_EDIT_CASE_HEADING)
+    commands = " ".join(body_case.replace("\\\n", " ").split())
+    normalized = normalize_policy(body_case)
+    required_text = {
+        "candidate-containing-base": (
+            'candidate_branch="${candidate_branch:-agent/issue-177}"',
+            'gh pr create --head "$probe_branch" --base "$candidate_branch"',
+            'test "$base_ref" = "$candidate_branch"',
+            'test "$base_sha" = "$candidate_sha"',
+        ),
+        "strict-nonempty-descendant": (
+            'git diff --cached --quiet && { echo "probe change is empty" >&2; exit 1; }',
+            'test "$(git rev-parse "$head_sha^")" = "$candidate_sha"',
+            'git diff-tree --no-commit-id --name-only -r "$head_sha"',
+            ".github/workflow-probes/issue-177-title-only.json",
+        ),
+        "title-edit-and-restore": (
+            'gh api --method PATCH "repos/{owner}/{repo}/pulls/$pr" '
+            '-f title="$probe_title" > /dev/null',
+            'gh api --method PATCH "repos/{owner}/{repo}/pulls/$pr" '
+            '-f title="$original_title" > /dev/null',
+            'test "$title_run_id" != "$opened_run_id"',
+            'test "$restore_run_id" != "$title_run_id"',
+            "Normalize all three real runs",
+        ),
+        "three-exact-live-runs": (
+            'watch_build_run "$opened_run_id"',
+            'watch_build_run "$title_run_id"',
+            'watch_build_run "$restore_run_id"',
+            'gh run view "$opened_run_id" --json event,headSha,conclusion,url',
+            'gh run view "$title_run_id" --json event,headSha,conclusion,url',
+            'gh run view "$restore_run_id" --json event,headSha,conclusion,url',
+            '"repos/$repo/actions/runs/$opened_run_id/jobs"',
+            '"repos/$repo/actions/runs/$title_run_id/jobs"',
+            '"repos/$repo/actions/runs/$restore_run_id/jobs"',
+        ),
+        "bounded-exact-run-watcher": (
+            "watch_build_run()",
+            'timeout 90m gh run watch "$run_id" --interval 30 --exit-status',
+            'if [ "$watch_status" -ne 124 ]',
+            'gh run view "$run_id" --json status,conclusion',
+            "queued|in_progress|waiting)",
+            'if [ "$watch_status" -eq 124 ]',
+            "second watcher timed out for exact Build run",
+            'return "$watch_status"',
+            'if [ "$run_conclusion" = success ]',
+            "exact Build run completed unsuccessfully",
+        ),
+        "bounded-unseen-run-discovery": (
+            'while [ "$attempt" -lt 60 ]',
+            "sleep 5",
+            "gh api --method GET --paginate --slurp",
+            'for page in json.loads(os.environ["RUNS_JSON"])',
+            'str(record["id"]) not in prior',
+            'record["name"] == "Build CI"',
+            'record["event"] == "pull_request"',
+            'record["head_branch"] == os.environ["EXPECTED_BRANCH"]',
+            'record["head_sha"] == os.environ["EXPECTED_HEAD"]',
+            'record["created_at"] >= os.environ["EXPECTED_CREATED_AFTER"]',
+            "if len(matches) != 1",
+            'opened_run_id="$(discover_build_run',
+            'title_run_id="$(discover_build_run',
+            'restore_run_id="$(discover_build_run',
+        ),
+        "fail-fast-trapped-cleanup": (
+            "set -euo pipefail",
+            "trap finish_probe EXIT",
+            "trap 'exit 130' INT",
+            "trap 'exit 143' TERM",
+            'primary_status="$?"',
+            'cleanup_status="$?"',
+            'exit "$primary_status"',
+            'exit "$cleanup_status"',
+            "exit 0",
+        ),
+        "complete-probe-cleanup": (
+            "evidence_dir_created=false",
+            "local_ownership_intent=false",
+            "push_ownership_intent=false",
+            "pr_ownership_intent=false",
+            'gh api --method PATCH "repos/{owner}/{repo}/pulls/$pr" '
+            '-f title="$original_title"',
+            'gh api --method PATCH "repos/$repo/pulls/$cleanup_pr" '
+            '-f title="$original_title"',
+            'gh pr close "$cleanup_pr"',
+            'git push --force-with-lease="refs/heads/$probe_branch:$probe_head_sha"',
+            'origin ":refs/heads/$probe_branch"',
+            'git -C "$source_root" worktree remove "$probe_worktree"',
+            'git -C "$source_root" update-ref -d '
+            '"refs/heads/$probe_branch" "$probe_head_sha"',
+            '[ "$evidence_dir" = '
+            '"$source_root/build/test-artifacts/issue-177-live-probe"',
+        ),
+        "cleanup-ownership-cas": (
+            'remote_sha" != "$probe_head_sha"',
+            "remote probe ref changed; preserving it for inspection",
+            'local_head" != "$probe_head_sha"',
+            'local_ref" != "refs/heads/$probe_branch"',
+            'local_dirty"',
+            "local probe worktree changed or dirty; preserving it",
+            "ambiguous exact validation PRs; preserving all",
+            'record["head"]["user"]["login"] == os.environ["EXPECTED_OWNER"]',
+            'record["head"]["ref"] == os.environ["EXPECTED_BRANCH"]',
+            'record["head"]["sha"] == os.environ["EXPECTED_HEAD_SHA"]',
+            'record["base"]["ref"] == os.environ["EXPECTED_BASE"]',
+            'record["base"]["sha"] == os.environ["EXPECTED_BASE_SHA"]',
+            "validation PR contract changed; preserving it",
+            'cleanup_pr_body" != '
+            '"Validation-only disposable PR. Never merge."',
+        ),
+        "raw-job-scan": (
+            "for job in raw_jobs",
+            "assert api_id not in seen_api_ids",
+            "assert name not in seen_names",
+            "assert name in stable_by_name",
+            "assert job_id not in seen_stable_ids",
+            "contexts.append(",
+            "assert required_names <= seen_names",
+        ),
+        "metadata-worker-no-start": (
+            'started_at = job["started_at"]',
+            'assert job["conclusion"] == "skipped"',
+            "assert started_at is None or isinstance(started_at, str)",
+        ),
+    }
+    violations = []
+    for violation, fragments in required_text.items():
+        if any(fragment not in commands for fragment in fragments):
+            violations.append(violation)
+    watcher = 'timeout 90m gh run watch "$run_id" --interval 30 --exit-status'
+    if (
+        commands.count(watcher) != 2
+        or commands.count(
+            'gh run view "$run_id" --json status,conclusion'
+        )
+        != 1
+        or any(
+            commands.count(f'watch_build_run "${variable}"') != 1
+            for variable in (
+                "opened_run_id",
+                "title_run_id",
+                "restore_run_id",
+            )
+        )
+    ):
+        violations.append("bounded-exact-run-watcher")
+    required_policy = {
+        "implementation-pr-bootstrap-negative": (
+            "Do not edit the implementation PR",
+            "base predates event_classifier.py",
+            "classifier-bootstrap",
+            "not a valid metadata-suppression probe",
+            "until the classifier is merged into that base",
+        ),
+        "validation-only-never-merged": (
+            "validation-only",
+            "never merged",
+            "does not implement an independent issue",
+        ),
+        "no-empty-or-merge-commit": (
+            "Never use git commit --allow-empty",
+            "empty commit",
+            "merge commit",
+        ),
+    }
+    for violation, fragments in required_policy.items():
+        if any(normalize_policy(fragment) not in normalized for fragment in fragments):
+            violations.append(violation)
+    if "git commit --allow-empty -m" in body_case:
+        violations.append("no-empty-or-merge-commit")
+    head_assertion = (
+        'test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" '
+        '= "$head_sha"'
+    )
+    base_assertion = (
+        'test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)" '
+        '= "$base_sha"'
+    )
+    event_assertions = tuple(
+        f'test "$(gh run view "${variable}" --json event --jq .event)" '
+        '= "pull_request"'
+        for variable in ("opened_run_id", "title_run_id", "restore_run_id")
+    )
+    run_head_assertions = tuple(
+        f'test "$(gh run view "${variable}" --json headSha --jq .headSha)" '
+        '= "$head_sha"'
+        for variable in ("opened_run_id", "title_run_id", "restore_run_id")
+    )
+    if (
+        commands.count(head_assertion) != 3
+        or commands.count(base_assertion) != 3
+        or any(assertion not in commands for assertion in event_assertions)
+        or any(assertion not in commands for assertion in run_head_assertions)
+    ):
+        violations.append("three-run-head-base-identity")
+    restore_title = (
+        'gh api --method PATCH "repos/{owner}/{repo}/pulls/$pr" '
+        '-f title="$original_title"'
+    )
+    cleanup_restore_title = (
+        'gh api --method PATCH "repos/$repo/pulls/$cleanup_pr" '
+        '-f title="$original_title"'
+    )
+    if (
+        commands.count(restore_title) != 1
+        or commands.count(cleanup_restore_title) != 1
+    ):
+        violations.append("title-edit-and-restore")
+    if commands.count("candidate_evidence.evaluate_candidate_runs") != 7:
+        violations.append("actual-evaluator-assertions")
+    if commands.count('assert job["runner_name"] is None') != 2:
+        violations.append("metadata-worker-no-start")
+    evaluator_assertions = (
+        "assert opened_result.eligible and opened_result.run_id == opened[\"run_id\"]",
+        "assert not title_result.eligible and title_result.mode == \"metadata-only\"",
+        "assert full_title_result.eligible",
+        "assert full_title_result.run_id == opened[\"run_id\"]",
+        "assert not failed_result.eligible",
+        "assert all_runs_result.eligible",
+        "assert all_runs_result.run_id == opened[\"run_id\"]",
+        "assert not restore_result.eligible and restore_result.mode == \"metadata-only\"",
+        "assert not failed_restore_result.eligible",
+    )
+    if any(assertion not in commands for assertion in evaluator_assertions):
+        violations.append("actual-evaluator-assertions")
+    if re.search(r"--limit\s+1(?:\s|$)", commands):
+        violations.append("bounded-unseen-run-discovery")
+    if "git push origin --delete" in commands or "git branch -D" in commands:
+        violations.append("cleanup-ownership-cas")
+    trap_index = commands.find("trap finish_probe EXIT")
+    push_index = commands.find('git push -u origin "$probe_branch"')
+    if trap_index < 0 or push_index < 0 or trap_index > push_index:
+        violations.append("fail-fast-trapped-cleanup")
+    for variable in ("opened_run_id", "title_run_id", "restore_run_id"):
+        discovery = commands.find(f'{variable}="$(discover_build_run')
+        watch = commands.find(f'watch_build_run "${variable}"')
+        if discovery < 0 or watch < 0 or discovery > watch:
+            violations.append("bounded-unseen-run-discovery")
+            break
+    ownership_pairs = (
+        ("local_ownership_intent=true", 'git worktree add -b "$probe_branch"'),
+        ("push_ownership_intent=true", 'git push -u origin "$probe_branch"'),
+        ("pr_ownership_intent=true", 'gh pr create --head "$probe_branch"'),
+    )
+    for intent, side_effect in ownership_pairs:
+        intent_index = commands.find(intent)
+        effect_index = commands.find(side_effect)
+        if intent_index < 0 or effect_index < 0 or intent_index > effect_index:
+            violations.append("cleanup-ownership-cas")
+            break
+    return violations
+
+
+def candidate_evidence_violations(body, comments):
+    scan_policy_markdown(body)
+    violations = []
+    if CANDIDATE_EVIDENCE_MARKER in body:
+        violations.append("body-marker")
+    folded = body.casefold()
+    for field in EVOLVING_PR_BODY_FIELDS:
+        if field.casefold() in folded:
+            violations.append(f"evolving-body-field:{field}")
+
+    marker_comments = 0
+    marker_count = 0
+    for comment in comments:
+        lines = comment.splitlines()
+        exact = sum(
+            line.strip() == CANDIDATE_EVIDENCE_MARKER
+            for line in lines
+        )
+        occurrences = comment.count(CANDIDATE_EVIDENCE_MARKER)
+        if occurrences != exact:
+            violations.append("non-standalone-comment-marker")
+        if exact:
+            marker_comments += 1
+            marker_count += exact
+    if marker_comments != 1 or marker_count != 1:
+        violations.append("canonical-comment-marker-count")
+    return violations
+
+
+def oracle_evidence_location_violations(text):
+    scan_policy_markdown(text)
+    normalized = normalize_policy(text)
+    stale = (
+        "in the PR description",
+        "in your PR description",
+        "in the pull request description",
+    )
+    return [
+        phrase
+        for phrase in stale
+        if normalize_policy(phrase) in normalized
+    ]
+
+
+def classifier_bootstrap_contract_violations(text):
+    scan_policy_markdown(text)
+    normalized = normalize_policy(text)
+    violations = []
+    bootstrap = normalize_policy(
+        "classifier bootstrap may use the trusted default branch when PR "
+        "base identity is missing or unusable"
+    )
+    incomplete_base = (
+        r"missing (?:empty )?malformed or "
+        r"(?:incoherent|event mismatched) base ref sha with a valid exact "
+        r"pr head"
+    )
+    exact_head_workers = re.compile(
+        incomplete_base
+        + r" .*?(?:all four workers|the four workers) .*?"
+        r"(?:that exact head|that head)"
+    )
+    failed_summary = re.compile(
+        incomplete_base
+        + r" .*?(?:fails normal summary|normal summary audits them and fails)"
+    )
+    no_worker_fallback = normalize_policy(
+        "worker checkouts never use a merge/default fallback"
+    )
+    fallback_requirements = {
+        "fallback-lowercase-sha": ("exact lowercase 40-hex SHA",),
+        "fallback-pr-coherence": ("refs/pull/<number>/merge",),
+        "fallback-pr-number": ("numeric event number",),
+        "fallback-push-coherence": (
+            "refs/heads/master",
+            "event after/github.sha",
+        ),
+        "validated-worker-fallback": ("Workers consume only that validated",),
+        "malformed-fallback-rejection": (
+            "Missing",
+            "uppercase",
+            "short",
+            "nonhex",
+            "ref-name",
+            "ref-number-mismatched",
+            "malformed",
+            "cross-event",
+        ),
+        "publisher-revision-verification": (
+            "verifies /usr/bin/git rev-parse HEAD immediately after checkout",
+        ),
+        "publisher-secret-boundary": (
+            "BASEROM_URL",
+            "All repository/candidate-controlled commands finish before "
+            "private download",
+            "exact validated after commit",
+            "no whole-file source hash pins",
+            "No complete target ROM enters an Actions artifact, cache, "
+            "release, or log",
+            "dedicated unprivileged UID",
+            "mount, PID, and network namespaces",
+            "no network",
+            "BASH_ENV",
+            "regular, nonsymlink, single-link",
+            "unexpected",
+            "exact process group",
+            "builder-UID process remains",
+            "private mount propagation",
+            "recursively read-only",
+            "D-Bus",
+            "cgroup v2",
+            "cgroup.procs",
+            "Unavailable mount/cgroup features fail closed",
+            "no UID-wide signal",
+            "closes inherited file descriptors above 2",
+            "stdin/stdout/stderr permanently to private /dev/null",
+            "no GitHub workflow command-file paths",
+            "Candidate output is never replayed, logged, or uploaded",
+            "fixed status text with a numeric exit classification",
+            "Arbitrary output volume cannot",
+            "tmpfs/ulimit bounds",
+            "no output sink exists",
+            "root-only 0700 /mnt/supervisor",
+            "candidate cannot traverse it",
+            "after /sys is masked",
+            "sole member",
+            "builder user, tree, wheelhouse, and candidate checkout",
+            "unpredictable",
+            "mode-restricted",
+            "absolute isolated Python",
+            "runtime CWD/environment",
+            "No candidate command runs while the base exists",
+            "success/failure",
+            "Cleanup is verified before upload",
+            "BPS/manifest/README",
+            "immediately before upload",
+            "fresh hosted publisher",
+            "no candidate-written GITHUB_ENV",
+            "background process",
+        ),
+        "candidate-common-identity": (
+            "canonical successful event-identity context",
+            "canonical successful event-router context",
+            "missing, failed, skipped, renamed, duplicate, or unknown",
+        ),
+        "base-ref-git-grammar": (
+            "1024 UTF-8 bytes",
+            "git check-ref-format refs/heads/<base.ref>",
+            "--branch shorthand",
+            "lone @",
+        ),
+    }
+    if bootstrap not in normalized:
+        violations.append("trusted-default-bootstrap")
+    if exact_head_workers.search(normalized) is None:
+        violations.append("incomplete-base-exact-head-workers")
+    if failed_summary.search(normalized) is None:
+        violations.append("incomplete-base-summary-failure")
+    if no_worker_fallback not in normalized:
+        violations.append("worker-merge-default-fallback")
+    for violation, phrases in fallback_requirements.items():
+        if any(normalize_policy(phrase) not in normalized for phrase in phrases):
+            violations.append(violation)
+    successful_identity_phrases = (
+        "successful full and metadata classifications",
+        "successful full/metadata classification",
+        "successful full/metadata classifications",
+    )
+    if not any(
+        normalize_policy(phrase) in normalized
+        for phrase in successful_identity_phrases
+    ):
+        violations.append("successful-classification-event-identity")
+    return violations
 
 
 def assert_normalized_policy(test_case, surface, text, concepts, forbidden=()):
@@ -2819,25 +3443,859 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             with self.subTest(normalized_requirement=requirement):
                 self.assertIn(normalize_policy(requirement), normalize_policy(text))
 
-    def test_pull_request_template_records_boundary_stack_and_size(self):
+    def test_pull_request_template_keeps_only_frozen_contract(self):
         text = PR_TEMPLATE_PATH.read_text(encoding="utf-8")
         required_contract = (
             "exactly one independent issue",
+            "Frozen classification and relationships",
             "Immediate base branch",
             "Stack position",
             "Depends on",
             "Known dependents",
             "explicit dependent",
             "sub-issues",
-            "git diff --name-only <base>...HEAD",
-            "Total changed lines",
-            "20,000-line hard ceiling",
-            "Indivisible-change exception and alternative evidence",
+            "Frozen acceptance criteria",
+            "Tester-facing procedure",
+            "Compatibility impact",
+            "Canonical candidate evidence",
+            "canonical marked-comment protocol",
+            "do not copy its marker or evolving fields",
         )
 
         for requirement in required_contract:
             with self.subTest(requirement=requirement):
                 self.assertIn(requirement, text)
+        self.assertNotIn(CANDIDATE_EVIDENCE_MARKER, text)
+        self.assertNotIn("- [ ]", text)
+        self.assertEqual(
+            candidate_evidence_violations(
+                text,
+                [CANDIDATE_EVIDENCE_MARKER],
+            ),
+            [],
+        )
+
+    def test_candidate_evidence_requires_one_canonical_comment(self):
+        body = PR_TEMPLATE_PATH.read_text(encoding="utf-8")
+        canonical_comment = (
+            f"{CANDIDATE_EVIDENCE_MARKER}\n"
+            "Candidate evidence is maintained here.\n"
+        )
+        architecture_comment = (
+            "Architecture hold: metadata-only contexts cannot replace "
+            "candidate evidence.\n"
+        )
+        self.assertEqual(
+            candidate_evidence_violations(
+                body,
+                [canonical_comment, architecture_comment],
+            ),
+            [],
+        )
+        self.assertNotIn(CANDIDATE_EVIDENCE_MARKER, architecture_comment)
+
+        for field in EVOLVING_PR_BODY_FIELDS:
+            with self.subTest(field=field):
+                self.assertTrue(
+                    candidate_evidence_violations(
+                        body + f"\n{field} evolving\n",
+                        [canonical_comment],
+                    )
+                )
+        for changed_body, comments in (
+            (body + f"\n{CANDIDATE_EVIDENCE_MARKER}\n", [canonical_comment]),
+            (body, []),
+            (body, [canonical_comment, canonical_comment]),
+            (
+                body,
+                [
+                    CANDIDATE_EVIDENCE_MARKER
+                    + " inline text\n",
+                ],
+            ),
+            (
+                body,
+                [
+                    f"{CANDIDATE_EVIDENCE_MARKER}\n"
+                    f"{CANDIDATE_EVIDENCE_MARKER}\n",
+                ],
+            ),
+        ):
+            with self.subTest(body=changed_body[-80:], comments=comments):
+                self.assertTrue(
+                    candidate_evidence_violations(changed_body, comments)
+                )
+
+    def test_oracle_actuals_use_canonical_comment_across_guidance(self):
+        surfaces = {
+            PR_TEMPLATE_PATH: PR_TEMPLATE_PATH.read_text(encoding="utf-8"),
+            SKILL_PATH: SKILL_PATH.read_text(encoding="utf-8"),
+            CONTRIBUTING_PATH: CONTRIBUTING_PATH.read_text(encoding="utf-8"),
+            ISSUE_RESOLUTION_POLICY_PATH: (
+                ISSUE_RESOLUTION_POLICY_PATH.read_text(encoding="utf-8")
+            ),
+            WORKFLOW_PILOT_PATH: WORKFLOW_PILOT_PATH.read_text(encoding="utf-8"),
+        }
+        for path, text in surfaces.items():
+            with self.subTest(path=path):
+                self.assertEqual(oracle_evidence_location_violations(text), [])
+
+        for path in (CONTRIBUTING_PATH, ISSUE_RESOLUTION_POLICY_PATH):
+            normalized = normalize_policy(surfaces[path])
+            with self.subTest(path=path, contract="frozen-plan"):
+                self.assertIn(
+                    normalize_policy("frozen baseline/fingerprint plan"),
+                    normalized,
+                )
+                self.assertIn(
+                    normalize_policy("canonical marked comment"),
+                    normalized,
+                )
+                self.assertIn(normalize_policy("rationale"), normalized)
+                self.assertIn(
+                    normalize_policy("independent verification"),
+                    normalized,
+                )
+
+        stale_instructions = (
+            "Explain the oracle change in the PR description.",
+            "Record actual fingerprint rationale in your PR description.",
+            "Put baseline verification in the pull request description.",
+        )
+        for path, text in surfaces.items():
+            for stale in stale_instructions:
+                with self.subTest(path=path, stale=stale):
+                    self.assertTrue(
+                        oracle_evidence_location_violations(
+                            text + "\n" + stale
+                        )
+                    )
+
+    def test_classifier_bootstrap_and_worker_fallback_are_distinct_in_docs(self):
+        mutations = (
+            (
+                "reverse-bootstrap-authority",
+                "trusted-default-bootstrap",
+                r"classifier bootstrap may use the trusted\s+default branch "
+                r"when PR base\s+identity is missing or unusable",
+                "classifier bootstrap must fail when PR base identity is unusable",
+            ),
+            (
+                "remove-incomplete-base-path",
+                "incomplete-base-exact-head-workers",
+                r"missing,\s+(?:empty,\s+)?malformed,\s+or\s+"
+                r"(?:incoherent|event-mismatched)\s+base ref/SHA",
+                "complete and coherent base ref/SHA",
+            ),
+            (
+                "replace-exact-head",
+                "incomplete-base-exact-head-workers",
+                r"valid exact\s+PR head",
+                "pull-request merge ref",
+            ),
+            (
+                "reverse-summary-failure",
+                "incomplete-base-summary-failure",
+                r"(?:fails normal\s+summary|normal\s+`summary`\s+audits them "
+                r"and fails)",
+                "normal summary succeeds",
+            ),
+            (
+                "allow-worker-fallback",
+                "worker-merge-default-fallback",
+                r"worker checkouts\s+never use a merge/default\s+fallback",
+                "worker checkouts may use a merge/default fallback",
+            ),
+            (
+                "accept-non-sha-fallback",
+                "fallback-lowercase-sha",
+                r"exact lowercase\s+40-hex SHA",
+                "any nonempty ref or identity",
+            ),
+            (
+                "remove-publisher-revision-check",
+                "publisher-revision-verification",
+                r"verifies\s+`/usr/bin/git rev-parse HEAD`\s+"
+                r"immediately after checkout",
+                "trusts the checkout action",
+            ),
+            (
+                "run-candidate-with-private-base",
+                "publisher-secret-boundary",
+                r"(?i:No\s+candidate\s+command\s+runs\s+while\s+the\s+"
+                r"base\s+exists)",
+                "A candidate command runs while the base exists",
+            ),
+            (
+                "download-before-candidate-work",
+                "publisher-secret-boundary",
+                r"All repository/candidate-controlled commands finish before "
+                r"private download",
+                "Private download happens before candidate-controlled commands",
+            ),
+            (
+                "lag-producer-one-revision",
+                "publisher-secret-boundary",
+                r"exact\s+validated\s+after\s+commit",
+                "previous protected-branch commit",
+            ),
+            (
+                "transfer-complete-rom",
+                "publisher-secret-boundary",
+                r"No\s+complete\s+target\s+ROM\s+enters\s+an\s+Actions\s+"
+                r"artifact,\s+cache,\s+release,\s+or\s+log",
+                "The complete target ROM enters an Actions artifact",
+            ),
+            (
+                "reuse-runner-user",
+                "publisher-secret-boundary",
+                r"dedicated\s+unprivileged\s+UID",
+                "runner account",
+            ),
+            (
+                "drop-builder-network-isolation",
+                "publisher-secret-boundary",
+                r"mount,\s+PID,\s+and\s+network\s+namespaces",
+                "mount and PID namespaces",
+            ),
+            (
+                "drop-builder-process-teardown",
+                "publisher-secret-boundary",
+                r"exact\s+process\s+group",
+                "best-effort process cleanup",
+            ),
+            (
+                "share-builder-mount-propagation",
+                "publisher-secret-boundary",
+                r"(?i:private\s+mount\s+propagation)",
+                "shared mount propagation",
+            ),
+            (
+                "make-host-paths-writable",
+                "publisher-secret-boundary",
+                r"recursively\s+read-only",
+                "writable",
+            ),
+            (
+                "allow-uid-wide-kill",
+                "publisher-secret-boundary",
+                r"no\s+UID-wide\s+signal",
+                "a UID-wide signal",
+            ),
+            (
+                "retain-candidate-log-fds",
+                "publisher-secret-boundary",
+                r"closes\s+inherited\s+file\s+descriptors\s+above\s+2",
+                "inherits workflow log descriptors",
+            ),
+            (
+                "replay-candidate-output",
+                "publisher-secret-boundary",
+                r"(?i:Candidate\s+output\s+is\s+never\s+replayed,\s+"
+                r"logged,\s+or\s+uploaded)",
+                "Candidate output is replayed to the workflow log",
+            ),
+            (
+                "restore-volume-dependent-output-file",
+                "publisher-secret-boundary",
+                r"stdin/stdout/stderr\s+permanently\s+to\s+private\s+"
+                r"`/dev/null`",
+                "stdin/stdout/stderr to a bounded regular sink",
+            ),
+            (
+                "drop-supervisor-cgroup-view",
+                "publisher-secret-boundary",
+                r"root-only\s+`0700`\s+`/mnt/supervisor`",
+                "candidate-visible supervisor path",
+            ),
+            (
+                "allow-unexpected-handoff",
+                "publisher-secret-boundary",
+                r"regular,\s+nonsymlink,\s+single-link",
+                "ordinary outputs",
+            ),
+            (
+                "add-source-hash-ledger",
+                "publisher-secret-boundary",
+                r"(?i:No\s+whole-file\s+source\s+hash\s+pins)",
+                "whole-file source hash pins",
+            ),
+            (
+                "reuse-candidate-runner",
+                "publisher-secret-boundary",
+                r"fresh\s+hosted\s+publisher",
+                "reused candidate runner",
+            ),
+            (
+                "drop-pr-number-coherence",
+                "fallback-pr-number",
+                r"numeric event number",
+                "unvalidated event label",
+            ),
+            (
+                "make-common-identity-optional",
+                "candidate-common-identity",
+                r"canonical successful\s+`event-identity`\s+context",
+                "optional event-identity context",
+            ),
+            (
+                "make-common-router-optional",
+                "candidate-common-identity",
+                r"canonical\s+successful\s+`event-router`\s+context",
+                "optional event-router context",
+            ),
+            (
+                "remove-base-ref-bound",
+                "base-ref-git-grammar",
+                r"bounded to 1024 UTF-8 bytes",
+                "accepted at any size",
+            ),
+            (
+                "replace-full-ref-oracle",
+                "base-ref-git-grammar",
+                r"`git check-ref-format refs/heads/<base\.ref>`",
+                "`git check-ref-format --branch <base.ref>`",
+            ),
+        )
+        for path in (
+            FRAMEWORK_SUPPORT_PATH,
+            WORKFLOW_PILOT_PATH,
+            WORKFLOW_GOVERNANCE_PATH,
+        ):
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(path=path):
+                self.assertEqual(
+                    classifier_bootstrap_contract_violations(text),
+                    [],
+                )
+            for name, expected_violation, pattern, replacement in mutations:
+                with self.subTest(path=path, mutation=name):
+                    changed, count = re.subn(pattern, replacement, text, count=1)
+                    self.assertEqual(count, 1)
+                    self.assertNotEqual(changed, text)
+                    self.assertIn(
+                        expected_violation,
+                        classifier_bootstrap_contract_violations(changed),
+                    )
+
+    def test_workflow_tester_topologies_match_parsed_job_sets(self):
+        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        self.assertEqual(workflow_tester_topology_violations(governance), [])
+
+        required_setup_sets = (
+            (
+                "Parsed full-PR job set",
+                "stacked-full-pr-job-set",
+            ),
+            (
+                "Parsed current metadata-only job/check set",
+                "current-metadata-job-set",
+            ),
+            (
+                "Parsed live opened-run job set",
+                "live-opened-full-job-set",
+            ),
+            (
+                "Parsed live title-edit job/check set",
+                "live-title-metadata-job-set",
+            ),
+            (
+                "Parsed live title-restore job/check set",
+                "live-restore-metadata-job-set",
+            ),
+        )
+        for label, expected_violation in required_setup_sets:
+            documented = documented_job_set(governance, label)
+            for job_id in ("event-identity", "event-router"):
+                with self.subTest(label=label, omitted=job_id):
+                    changed = replace_documented_job_set(
+                        governance,
+                        label,
+                        sorted(documented - {job_id}),
+                    )
+                    self.assertNotEqual(changed, governance)
+                    self.assertIn(
+                        expected_violation,
+                        workflow_tester_topology_violations(changed),
+                    )
+
+        pre_fix_label = "Parsed preserved pre-fix body-only job set"
+        pre_fix = documented_job_set(governance, pre_fix_label)
+        changed = replace_documented_job_set(
+            governance,
+            pre_fix_label,
+            sorted(pre_fix - {"host-tests"}),
+        )
+        self.assertIn(
+            "preserved-pre-fix-job-set",
+            workflow_tester_topology_violations(changed),
+        )
+
+        reordered = governance
+        for label in (
+            "Parsed full-PR job set",
+            "Parsed current metadata-only job/check set",
+            pre_fix_label,
+            "Parsed live opened-run job set",
+            "Parsed live title-edit job/check set",
+            "Parsed live title-restore job/check set",
+        ):
+            reordered = replace_documented_job_set(
+                reordered,
+                label,
+                sorted(documented_job_set(reordered, label), reverse=True),
+            )
+        self.assertEqual(workflow_tester_topology_violations(reordered), [])
+
+        semantic_names, count = re.subn(
+            r"Skipped worker\s+names and success-shaped\s+records are ignored "
+            r"by stable job identity",
+            "Skipped worker names determine metadata mode",
+            governance,
+            1,
+        )
+        self.assertEqual(count, 1)
+        self.assertNotEqual(semantic_names, governance)
+        self.assertIn(
+            "skipped-worker-names-are-semantic",
+            workflow_tester_topology_violations(semantic_names),
+        )
+
+    def test_live_title_probe_contract_is_complete_and_fail_closed(self):
+        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        self.assertEqual(live_title_probe_violations(governance), [])
+        body_case = raw_markdown_section(governance, BODY_EDIT_CASE_HEADING)
+        bash_blocks = [
+            textwrap.dedent(match.group("body"))
+            for match in re.finditer(
+                r"^[ ]*```bash\n(?P<body>.*?)^[ ]*```",
+                body_case,
+                re.DOTALL | re.MULTILINE,
+            )
+        ]
+        self.assertTrue(bash_blocks)
+        parsed = subprocess.run(
+            ["/bin/bash", "-n"],
+            input="\n".join(bash_blocks),
+            text=True,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(parsed.returncode, 0, parsed.stderr)
+        embedded_python = re.findall(
+            r"<<'PY'\n(?P<body>.*?)\nPY",
+            "\n".join(bash_blocks),
+            re.DOTALL,
+        )
+        self.assertEqual(len(embedded_python), 3)
+        for index, source in enumerate(embedded_python):
+            with self.subTest(embedded_python=index):
+                compile(source, f"<live-title-probe-{index}>", "exec")
+        evaluator_source = textwrap.dedent(embedded_python[-1])
+        head_sha = "1" * 40
+        base_sha = "2" * 40
+
+        def run_record():
+            return {
+                "conclusion": "success",
+                "event": "pull_request",
+                "headSha": head_sha,
+                "url": "https://example.invalid/run",
+            }
+
+        def job_record(
+            job_id,
+            name,
+            conclusion="success",
+            runner_name="GitHub Actions 1",
+            started_at="2026-08-31T00:00:00Z",
+        ):
+            return {
+                "conclusion": conclusion,
+                "id": job_id,
+                "name": name,
+                "runner_name": runner_name,
+                "started_at": started_at,
+            }
+
+        full_names = (
+            "event-identity",
+            "event-router",
+            "event-classifier",
+            "host-tests",
+            "build",
+            "extended-host-tests",
+            "legacy",
+            "summary",
+        )
+        metadata_running = (
+            "event-identity",
+            "event-router",
+            "metadata-classifier",
+            "metadata-summary",
+        )
+        worker_names = (
+            "host-tests",
+            "build",
+            "extended-host-tests",
+            "legacy",
+            "patch-release",
+        )
+        full_jobs = [
+            job_record(index, name)
+            for index, name in enumerate(full_names, start=100)
+        ]
+        full_jobs.append(
+            job_record(
+                199,
+                "patch-release",
+                conclusion="skipped",
+                runner_name=None,
+                started_at=None,
+            )
+        )
+        metadata_jobs = [
+            job_record(index, name)
+            for index, name in enumerate(metadata_running, start=200)
+        ]
+        metadata_jobs.extend(
+            job_record(
+                index,
+                name,
+                conclusion="skipped",
+                runner_name=None,
+                # GitHub may stamp this even when no runner executes the job.
+                started_at="2026-08-31T00:00:00Z",
+            )
+            for index, name in enumerate(worker_names, start=300)
+        )
+
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="live-title-probe-json-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            paths = {}
+            for stem, run_id, jobs in (
+                ("opened", 1, full_jobs),
+                ("title", 2, metadata_jobs),
+                ("restore", 3, metadata_jobs),
+            ):
+                run_path = sandbox / f"{stem}.json"
+                jobs_path = sandbox / f"{stem}-jobs.json"
+                run_path.write_text(
+                    json.dumps(run_record()),
+                    encoding="utf-8",
+                )
+                jobs_path.write_text(
+                    json.dumps([{"jobs": jobs}]),
+                    encoding="utf-8",
+                )
+                paths[stem] = (run_id, run_path, jobs_path)
+
+            evaluator_command = [
+                "/usr/bin/python3",
+                "-",
+                head_sha,
+                base_sha,
+                *[
+                    value
+                    for stem in ("opened", "title", "restore")
+                    for value in (
+                        str(paths[stem][0]),
+                        str(paths[stem][1]),
+                        str(paths[stem][2]),
+                    )
+                ],
+            ]
+            accepted = subprocess.run(
+                evaluator_command,
+                cwd=ROOT,
+                input=evaluator_source,
+                text=True,
+                check=False,
+                capture_output=True,
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+
+            for worker_name in (
+                "host-tests",
+                "build",
+                "extended-host-tests",
+                "legacy",
+            ):
+                with self.subTest(started_worker=worker_name):
+                    adversarial_jobs = copy.deepcopy(metadata_jobs)
+                    started_worker = next(
+                        job
+                        for job in adversarial_jobs
+                        if job["name"] == worker_name
+                    )
+                    started_worker["conclusion"] = "success"
+                    started_worker["runner_name"] = "GitHub Actions attacker"
+                    started_worker["started_at"] = "2026-08-31T00:00:01Z"
+                    paths["title"][2].write_text(
+                        json.dumps([{"jobs": adversarial_jobs}]),
+                        encoding="utf-8",
+                    )
+                    rejected = subprocess.run(
+                        evaluator_command,
+                        cwd=ROOT,
+                        input=evaluator_source,
+                        text=True,
+                        check=False,
+                        capture_output=True,
+                    )
+                    self.assertNotEqual(rejected.returncode, 0)
+
+        mutations = (
+            (
+                "candidate-containing-base",
+                'gh pr create --head "$probe_branch" --base "$candidate_branch"',
+                'gh pr create --head "$probe_branch" --base master',
+            ),
+            (
+                "strict-nonempty-descendant",
+                'test "$(git rev-parse "$head_sha^")" = "$candidate_sha"',
+                'test "$(git rev-parse "$head_sha^")" != "$candidate_sha"',
+            ),
+            (
+                "no-empty-or-merge-commit",
+                'git commit -m "test(ci): add title-only validation probe"',
+                'git commit --allow-empty -m "test(ci): add title-only validation probe"',
+            ),
+            (
+                "title-edit-and-restore",
+                '-f title="$original_title" > /dev/null\n'
+                '   restore_run_id="$(discover_build_run',
+                '-f title="$probe_title" > /dev/null\n'
+                '   restore_run_id="$(discover_build_run',
+            ),
+            (
+                "three-exact-live-runs",
+                'gh run view "$restore_run_id" \\\n'
+                '     '
+                "--json event,headSha,conclusion,url",
+                'printf "restore run not inspected\\n"',
+            ),
+            (
+                "bounded-exact-run-watcher",
+                'gh run view "$run_id" --json status,conclusion \\\n'
+                "       --jq '[.status, (.conclusion // \"\")] | @tsv'",
+                'printf "status query omitted\\n"',
+            ),
+            (
+                "bounded-exact-run-watcher",
+                '         timeout 90m gh run watch "$run_id" '
+                "--interval 30 --exit-status",
+                "         return 124",
+            ),
+            (
+                "bounded-exact-run-watcher",
+                'timeout 90m gh run watch "$run_id" --interval 30 --exit-status',
+                'timeout 89m gh run watch "$run_id" --interval 30 --exit-status',
+            ),
+            (
+                "actual-evaluator-assertions",
+                "candidate_evidence.evaluate_candidate_runs(",
+                "candidate_evidence.CandidateEvidence(",
+            ),
+            (
+                "bounded-unseen-run-discovery",
+                'str(record["id"]) not in prior',
+                "True",
+            ),
+            (
+                "fail-fast-trapped-cleanup",
+                "set -euo pipefail",
+                "set -u",
+            ),
+            (
+                "fail-fast-trapped-cleanup",
+                "trap finish_probe EXIT",
+                "true # cleanup trap omitted",
+            ),
+            (
+                "complete-probe-cleanup",
+                'git push --force-with-lease='
+                '"refs/heads/$probe_branch:$probe_head_sha"',
+                'printf "remote branch retained\\n"',
+            ),
+            (
+                "cleanup-ownership-cas",
+                "push_ownership_intent=true",
+                "push_ownership_intent=false",
+            ),
+            (
+                "raw-job-scan",
+                "for job in raw_jobs:",
+                "for job in []:",
+            ),
+            (
+                "metadata-worker-no-start",
+                'assert job["runner_name"] is None',
+                "assert True",
+            ),
+            (
+                "implementation-pr-bootstrap-negative",
+                "not a valid\nmetadata-suppression probe",
+                "a valid\nmetadata-suppression probe",
+            ),
+            (
+                "validation-only-never-merged",
+                "The disposable PR is never merged",
+                "The disposable PR may be merged",
+            ),
+        )
+        for expected, old, new in mutations:
+            with self.subTest(mutation=expected):
+                changed = governance.replace(old, new, 1)
+                self.assertNotEqual(changed, governance)
+                self.assertIn(expected, live_title_probe_violations(changed))
+
+        identity_assertions = (
+            'test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" '
+            '= "$head_sha"',
+            'test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)" '
+            '= "$base_sha"',
+        )
+        for assertion in identity_assertions:
+            positions = [
+                match.start()
+                for match in re.finditer(re.escape(assertion), governance)
+            ]
+            self.assertEqual(len(positions), 3)
+            for run_index, position in enumerate(positions):
+                with self.subTest(assertion=assertion, run=run_index):
+                    changed = (
+                        governance[:position]
+                        + "true # run identity assertion omitted"
+                        + governance[position + len(assertion):]
+                    )
+                    self.assertIn(
+                        "three-run-head-base-identity",
+                        live_title_probe_violations(changed),
+                    )
+        for variable in ("opened_run_id", "title_run_id", "restore_run_id"):
+            run_assertions = (
+                f'test "$(gh run view "${variable}" --json event --jq .event)" '
+                '= "pull_request"',
+                f'test "$(gh run view "${variable}" --json headSha --jq .headSha)" '
+                '= "$head_sha"',
+            )
+            for assertion in run_assertions:
+                with self.subTest(assertion=assertion):
+                    self.assertIn(assertion, governance)
+                    changed = governance.replace(
+                        assertion,
+                        "true # exact run identity assertion omitted",
+                        1,
+                    )
+                    self.assertIn(
+                        "three-run-head-base-identity",
+                        live_title_probe_violations(changed),
+                    )
+
+    def test_live_watcher_queries_once_and_rearms_once(self):
+        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        body_case = raw_markdown_section(governance, BODY_EDIT_CASE_HEADING)
+        bash_source = "\n".join(
+            textwrap.dedent(match.group("body"))
+            for match in re.finditer(
+                r"^[ ]*```bash\n(?P<body>.*?)^[ ]*```",
+                body_case,
+                re.DOTALL | re.MULTILINE,
+            )
+        )
+        match = re.search(
+            r"(?ms)^watch_build_run\(\) \{\n.*?^\}",
+            bash_source,
+        )
+        self.assertIsNotNone(match)
+        watcher = match.group(0)
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+
+        cases = (
+            ("first-success", 0, 0, "completed", "success", 0, 1, 0),
+            ("first-failure", 1, 0, "completed", "failure", 1, 1, 0),
+            ("queued-rearm-success", 124, 0, "queued", "", 0, 2, 1),
+            ("active-rearm-failure", 124, 1, "in_progress", "", 1, 2, 1),
+            ("waiting-second-timeout", 124, 124, "waiting", "", 124, 2, 1),
+            ("terminal-after-timeout", 124, 0, "completed", "success", 0, 1, 1),
+            ("failed-after-timeout", 124, 0, "completed", "failure", 1, 1, 1),
+        )
+        with tempfile.TemporaryDirectory(
+            prefix="live-watcher-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            for (
+                name,
+                first,
+                second,
+                status,
+                conclusion,
+                expected_result,
+                expected_watches,
+                expected_queries,
+            ) in cases:
+                with self.subTest(name=name):
+                    watch_count = sandbox / f"{name}-watch"
+                    query_count = sandbox / f"{name}-query"
+                    watch_count.write_text("", encoding="ascii")
+                    query_count.write_text("", encoding="ascii")
+                    harness = (
+                        watcher
+                        + "\n"
+                        + r'''
+timeout() {
+  printf 'watch\n' >> "$WATCH_COUNT"
+  count="$(wc -l < "$WATCH_COUNT")"
+  if [ "$count" -eq 1 ]; then
+    return "$FIRST_STATUS"
+  fi
+  return "$SECOND_STATUS"
+}
+gh() {
+  test "$1" = run
+  test "$2" = view
+  test "$3" = 123
+  printf 'query\n' >> "$QUERY_COUNT"
+  printf '%s\t%s\n' "$RUN_STATUS" "$RUN_CONCLUSION"
+}
+if watch_build_run 123; then
+  result=0
+else
+  result="$?"
+fi
+printf '%s\t%s\t%s\n' "$result" \
+  "$(wc -l < "$WATCH_COUNT")" "$(wc -l < "$QUERY_COUNT")"
+'''
+                    )
+                    completed = subprocess.run(
+                        ["/bin/bash", "-c", harness],
+                        env={
+                            **os.environ,
+                            "FIRST_STATUS": str(first),
+                            "QUERY_COUNT": str(query_count),
+                            "RUN_CONCLUSION": conclusion,
+                            "RUN_STATUS": status,
+                            "SECOND_STATUS": str(second),
+                            "WATCH_COUNT": str(watch_count),
+                        },
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(
+                        completed.stdout.strip(),
+                        f"{expected_result}\t{expected_watches}\t"
+                        f"{expected_queries}",
+                    )
 
     def test_tester_facing_case_contract_is_integrated(self):
         _, skill = read_skill()
@@ -2880,14 +4338,15 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
 
         template = PR_TEMPLATE_PATH.read_text(encoding="utf-8")
         template_contract = (
-            "Tester-facing cases",
-            "Case IDs exercised",
+            "Tester-facing procedure",
+            "Stable case IDs",
             "Definition/catalog links",
-            "Exact configuration/profile or artifact",
-            "Positive procedure and actual result",
-            "pre-fix negative control and actual result",
+            "Supported configuration/profile or artifact",
+            "Exact actions or inputs",
+            "Observable expected result",
+            "pre-fix negative control",
             "feature interactions, and save expectations",
-            "Automation mapping and result, or precise manual-only reason",
+            "Automation mapping, or precise manual-only reason",
             "Reset/cleanup, known limitations, and unsupported configurations",
             "visual, audio, or UX judgment",
         )
@@ -2956,6 +4415,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "TC-WORKFLOW-CI-WAIT-001",
             "TC-WORKFLOW-MANUAL-HANDOFF-001",
             "TC-WORKFLOW-STACKED-CI-001",
+            "TC-WORKFLOW-BODY-EDIT-001",
             "TC-WORKFLOW-PILOT-BASELINE-001",
             "TC-WORKFLOW-GATE-OWNERSHIP-001",
         ]
