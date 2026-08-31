@@ -47,6 +47,17 @@ inputs fail before an artifact is created. The trusted workflow may obtain its
 local input from a protected secret, but no URL, base bytes, base image, ROM,
 ELF, map, save, or savestate is published, cached, or logged.
 
+The publisher verifies its exact commit and completes all repository-controlled
+setup/build work before obtaining the private base. It stages the current
+audited producer plus dependencies under three reviewed SHA-256 pins and copies
+the already-built ROM/metadata to owner-controlled inputs. The curl-only secret
+step creates an unpredictable `0700` directory and `0400` regular 16 MiB file.
+The immediately following step runs only the staged tool through absolute
+isolated Python from an empty runtime CWD/environment. No repository command
+runs while the base exists. Success/failure traps remove the base and its
+directory, a separate step verifies absence, and only then may the three-file
+patch artifact be uploaded.
+
 ## Artifact contents and verification
 
 Only a successful trusted `push` to `master` can upload

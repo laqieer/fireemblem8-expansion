@@ -1006,10 +1006,16 @@ def classifier_bootstrap_contract_violations(text):
         ),
         "publisher-secret-boundary": (
             "BASEROM_URL",
-            "minimal curl",
-            "candidate code",
-            "without the secret",
-            "secret step runs before any candidate code",
+            "All repository/candidate-controlled commands finish before "
+            "private download",
+            "hash-pinned",
+            "unpredictable",
+            "mode-restricted",
+            "absolute isolated Python",
+            "runtime CWD/environment",
+            "No candidate command runs while the base exists",
+            "success/failure",
+            "Cleanup is verified before upload",
         ),
         "candidate-common-identity": (
             "canonical successful event-identity context",
@@ -3542,16 +3548,18 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "trusts the checkout action",
             ),
             (
-                "expose-secret-to-candidate",
+                "run-candidate-with-private-base",
                 "publisher-secret-boundary",
-                r"candidate code runs (?:later )?without\s+the secret",
-                "candidate code runs with the secret",
+                r"(?i:No\s+candidate\s+command\s+runs\s+while\s+the\s+"
+                r"base\s+exists)",
+                "A candidate command runs while the base exists",
             ),
             (
-                "run-candidate-before-secret",
+                "download-before-candidate-work",
                 "publisher-secret-boundary",
-                r"secret step runs before any candidate code",
-                "candidate code runs before the secret step",
+                r"All repository/candidate-controlled commands finish before "
+                r"private download",
+                "Private download happens before candidate-controlled commands",
             ),
             (
                 "drop-pr-number-coherence",

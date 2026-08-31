@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ast
+import hashlib
 import http.server
 import os
 import re
@@ -22,6 +24,17 @@ ARTIFACT_FILENAMES = (
     "fireemblem8-expansion-all-locales-all-features-aapcs.bps",
     "manifest.json",
 )
+AUDITED_PATCH_TOOL_HASHES = {
+    "scripts/modernize/patch_release.py": (
+        "b78a076dfe393980af3695bc19a189fb1e850bb252618a8320f0527a708c5072"
+    ),
+    "scripts/modernize/bps_patch.py": (
+        "da2c9bd2248c340ecb84830bad7993a276b8daf5e8e5ebdadb0e4d268c0cd29c"
+    ),
+    "scripts/modernize/verify_rom_header.py": (
+        "9c13ae7713cc3eb87006b04b8aaebe7c4f829aeccd7d9fa1b199c22ac58d9bf7"
+    ),
+}
 
 
 def parse_patch_release_run_commands(workflow: str) -> list[list[list[str]]]:
@@ -53,17 +66,48 @@ def parse_patch_release_run_commands(workflow: str) -> list[list[list[str]]]:
                 continue
             value = match.group("value")
             if value == "|":
-                run = [
+                physical = [
                     following[8:]
                     for following in step[index + 1:]
                     if following.startswith("        ")
                 ]
+                run = []
+                continued = ""
+                for line in physical:
+                    logical = continued + line.strip()
+                    if logical.endswith("\\"):
+                        continued = logical[:-1] + " "
+                        continue
+                    run.append(logical)
+                    continued = ""
+                if continued:
+                    raise AssertionError("publisher run block has dangling continuation")
             else:
                 run = [value]
             break
         if run is not None:
             commands.append([shlex.split(line) for line in run if line])
     return commands
+
+
+def patch_release_step_blocks(workflow: str) -> list[str]:
+    job = re.search(
+        r"(?ms)^  patch-release:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+        workflow,
+    )
+    if job is None:
+        raise AssertionError("workflow must define a jobs.patch-release job")
+    steps = job.group("body").split("\n    steps:\n", 1)
+    if len(steps) != 2:
+        raise AssertionError("publisher job must define a steps sequence")
+    lines = steps[1].splitlines(keepends=True)
+    starts = [
+        index for index, line in enumerate(lines) if re.match(r"^    - ", line)
+    ]
+    return [
+        "".join(lines[start : starts[index + 1] if index + 1 < len(starts) else len(lines)])
+        for index, start in enumerate(starts)
+    ]
 
 
 def patch_release_download_command(workflow: str) -> list[str]:
@@ -76,6 +120,62 @@ def patch_release_download_command(workflow: str) -> list[str]:
     if len(commands) != 1:
         raise AssertionError("publisher job must define exactly one curl download command")
     return commands[0]
+
+
+def publisher_boundary_errors(workflow: str) -> list[str]:
+    steps = patch_release_step_blocks(workflow)
+    names = [
+        match.group(1) if (match := re.search(r"^    - name: (.+)$", step, re.MULTILINE)) else None
+        for step in steps
+    ]
+    errors = []
+    required = (
+        "Verify patch candidate revision",
+        "Stage audited patch tool and public inputs",
+        "Download private base image",
+        "Create and verify patch artifact",
+        "Cleanup and verify private base",
+    )
+    if any(names.count(name) != 1 for name in required):
+        return ["publisher boundary steps differ"]
+    verify, stage, download, create, cleanup = (names.index(name) for name in required)
+    if not (verify < stage < download and create == download + 1 and cleanup == create + 1):
+        errors.append("private base lifetime ordering differs")
+    if cleanup != len(steps) - 2:
+        errors.append("private cleanup must immediately precede upload")
+    candidate_markers = ("sudo apt-get", "./build_tools.sh", "make expansion-modern")
+    for index, step in enumerate(steps):
+        if any(marker in step for marker in candidate_markers) and index >= download:
+            errors.append("candidate command can run while private base exists")
+    secret_step = steps[download]
+    create_step = steps[create]
+    cleanup_step = steps[cleanup]
+    if (
+        "BASEROM_URL: ${{ secrets.BASEROM_URL }}" not in secret_step
+        or "/usr/bin/mktemp -d" not in secret_step
+        or '>> "$GITHUB_OUTPUT"' not in secret_step
+        or "$RUNNER_TEMP/base-image" in secret_step
+    ):
+        errors.append("private download boundary differs")
+    if (
+        "BASE_IMAGE: ${{ steps.private-base.outputs.base_path }}" not in create_step
+        or "/usr/bin/env -i" not in create_step
+        or "/usr/bin/python3 -I -S -c" not in create_step
+        or "cleanup_private_base" not in create_step
+        or '/bin/rm -f -- "$BASE_IMAGE"' not in create_step
+        or any(marker in create_step for marker in candidate_markers)
+        or "BASEROM_URL" in create_step
+    ):
+        errors.append("audited patch boundary differs")
+    if (
+        "      if: always()" not in cleanup_step
+        or
+        'test ! -e "$BASE_IMAGE"' not in cleanup_step
+        or "BASEROM_URL" in cleanup_step
+        or "BASE_IMAGE" in steps[-1]
+    ):
+        errors.append("private cleanup boundary differs")
+    return errors
 
 
 def artifact_filename_set_check(directory: Path, inherited_locale: str) -> subprocess.CompletedProcess:
@@ -153,21 +253,229 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertIsNotNone(secret_step)
         secret_body = secret_step.group("body")
         self.assertIn("/usr/bin/curl", secret_body)
+        self.assertIn("id: private-base", self.patch_job)
+        self.assertIn(
+            "shell: /bin/bash --noprofile --norc -euo pipefail {0}",
+            secret_body,
+        )
+        secret_env = secret_body.split("      run: |", 1)[0]
+        self.assertEqual(secret_env.count("\n        "), 1)
+        self.assertIn("BASEROM_URL: ${{ secrets.BASEROM_URL }}", secret_env)
         for candidate_command in ("python3", "./", "make ", "scripts."):
             self.assertNotIn(candidate_command, secret_body)
+        self.assertIn(
+            '/usr/bin/mktemp -d "$RUNNER_TEMP/patch-private.XXXXXXXXXX"',
+            secret_body,
+        )
+        self.assertIn('test ! -L "$base_image"', secret_body)
+        self.assertIn(
+            'test "$(/usr/bin/stat -c %a "$base_image")" = 400',
+            secret_body,
+        )
+        self.assertIn(
+            'test "$(/usr/bin/stat -c %s "$base_image")" = 16777216',
+            secret_body,
+        )
+        self.assertIn(
+            'printf \'base_path=%s\\n\' "$base_image" >> "$GITHUB_OUTPUT"',
+            secret_body,
+        )
+        self.assertNotIn("$RUNNER_TEMP/base-image", self.patch_job)
 
     def test_exact_revision_is_verified_before_code_or_secret_access(self):
         checkout = self.patch_job.index("uses: actions/checkout@")
         verification = self.patch_job.index("- name: Verify patch candidate revision")
         first_candidate_command = self.patch_job.index("sudo apt-get update")
+        last_candidate_command = self.patch_job.index(
+            "Stage audited patch tool and public inputs"
+        )
         secret = self.patch_job.index("BASEROM_URL: ${{ secrets.BASEROM_URL }}")
         self.assertLess(checkout, verification)
-        self.assertLess(verification, secret)
-        self.assertLess(secret, first_candidate_command)
+        self.assertLess(verification, first_candidate_command)
+        self.assertLess(first_candidate_command, last_candidate_command)
+        self.assertLess(last_candidate_command, secret)
         verification_step = self.patch_job[verification:secret]
         self.assertIn('ACTUAL_SHA="$(/usr/bin/git rev-parse HEAD)"', verification_step)
         self.assertIn('test "$ACTUAL_SHA" = "$PATCH_COMMIT"', verification_step)
         self.assertNotIn("BASEROM_URL", verification_step)
+
+    def test_private_base_lifetime_is_fixed_and_candidate_free(self):
+        self.assertEqual(publisher_boundary_errors(self.text), [])
+        steps = patch_release_step_blocks(self.text)
+        names = [
+            re.search(r"^    - name: (.+)$", step, re.MULTILINE).group(1)
+            if re.search(r"^    - name: (.+)$", step, re.MULTILINE)
+            else None
+            for step in steps
+        ]
+        download = names.index("Download private base image")
+        create = names.index("Create and verify patch artifact")
+        cleanup = names.index("Cleanup and verify private base")
+        self.assertEqual(create, download + 1)
+        self.assertEqual(cleanup, create + 1)
+        self.assertEqual(len(steps) - 1, cleanup + 1)
+        create_step = steps[create]
+        for forbidden in (
+            "./",
+            "make ",
+            "scripts/modernize/patch_release.py",
+            "python3 -m scripts",
+            "sudo ",
+        ):
+            self.assertNotIn(forbidden, create_step)
+        self.assertIn("/usr/bin/env -i", create_step)
+        self.assertIn("/usr/bin/python3 -I -S -c", create_step)
+        self.assertIn('cd "$PATCH_RUNTIME_ROOT"', create_step)
+        self.assertIn("cleanup_private_base", create_step)
+        self.assertIn('/bin/rm -f -- "$BASE_IMAGE"', create_step)
+        self.assertIn(
+            "BASE_IMAGE: ${{ steps.private-base.outputs.base_path }}",
+            create_step,
+        )
+        self.assertNotIn("BASEROM_URL", create_step)
+        self.assertIn('test ! -e "$BASE_IMAGE"', steps[cleanup])
+        self.assertIn("      if: always()", steps[cleanup])
+        self.assertNotIn("BASE_IMAGE", steps[-1])
+
+    def test_private_base_boundary_mutations_fail(self):
+        steps = patch_release_step_blocks(self.text)
+        download = next(step for step in steps if "Download private base image" in step)
+        create = next(step for step in steps if "Create and verify patch artifact" in step)
+        cleanup = next(step for step in steps if "Cleanup and verify private base" in step)
+        candidate = next(step for step in steps if "sudo apt-get update" in step)
+        moved_early = self.text.replace(download, "", 1).replace(
+            candidate,
+            download + candidate,
+            1,
+        )
+        inserted_candidate = self.text.replace(
+            create,
+            "    - run: ./build_tools.sh\n\n" + create,
+            1,
+        )
+        predictable_path = self.text.replace(
+            '/usr/bin/mktemp -d "$RUNNER_TEMP/patch-private.XXXXXXXXXX"',
+            'printf "$RUNNER_TEMP/base-image"',
+            1,
+        )
+        leaked_secret = self.text.replace(
+            "      env:\n"
+            "        BASE_IMAGE: ${{ steps.private-base.outputs.base_path }}",
+            "      env:\n"
+            "        BASEROM_URL: ${{ secrets.BASEROM_URL }}\n"
+            "        BASE_IMAGE: ${{ steps.private-base.outputs.base_path }}",
+            1,
+        )
+        removed_cleanup = self.text.replace(
+            '/bin/rm -f -- "$BASE_IMAGE" || cleanup_failed=1',
+            "true",
+            1,
+        )
+        disabled_cleanup_step = cleanup.replace(
+            "      if: always()",
+            "      if: false",
+            1,
+        )
+        disabled_cleanup = self.text.replace(cleanup, disabled_cleanup_step, 1)
+        for name, changed in (
+            ("download-before-candidate", moved_early),
+            ("candidate-between-download-and-patch", inserted_candidate),
+            ("predictable-private-path", predictable_path),
+            ("secret-leak", leaked_secret),
+            ("missing-cleanup", removed_cleanup),
+            ("disabled-cleanup-step", disabled_cleanup),
+        ):
+            with self.subTest(name=name):
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(publisher_boundary_errors(changed))
+
+    def test_audited_patch_tool_hashes_and_imports_are_closed(self):
+        allowed_import_roots = {
+            "__future__",
+            "argparse",
+            "dataclasses",
+            "hashlib",
+            "json",
+            "pathlib",
+            "scripts",
+            "struct",
+            "sys",
+            "typing",
+            "zlib",
+        }
+        for relative, expected_hash in AUDITED_PATCH_TOOL_HASHES.items():
+            with self.subTest(relative=relative):
+                data = (ROOT / relative).read_bytes()
+                self.assertEqual(hashlib.sha256(data).hexdigest(), expected_hash)
+                self.assertIn(expected_hash, self.patch_job)
+                tree = ast.parse(data, filename=relative)
+                imports = {
+                    alias.name.split(".", 1)[0]
+                    for node in ast.walk(tree)
+                    if isinstance(node, ast.Import)
+                    for alias in node.names
+                }
+                imports.update(
+                    node.module.split(".", 1)[0]
+                    for node in ast.walk(tree)
+                    if isinstance(node, ast.ImportFrom) and node.module
+                )
+                self.assertLessEqual(imports, allowed_import_roots)
+
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="audited-patch-tool-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            tool_root = sandbox / "tool"
+            runtime_root = sandbox / "runtime"
+            (tool_root / "scripts" / "modernize").mkdir(parents=True)
+            runtime_root.mkdir()
+            for relative in AUDITED_PATCH_TOOL_HASHES:
+                target = tool_root / relative
+                target.write_bytes((ROOT / relative).read_bytes())
+            base = sandbox / "base.gba"
+            target = sandbox / "target.gba"
+            metadata = sandbox / "metadata.json"
+            base.write_bytes(b"invalid")
+            target.write_bytes(b"invalid")
+            metadata.write_text("{}\n", encoding="ascii")
+            completed = subprocess.run(
+                [
+                    "/usr/bin/python3",
+                    "-I",
+                    "-S",
+                    "-c",
+                    "import sys; sys.path.insert(0, sys.argv.pop(1)); "
+                    "from scripts.modernize.patch_release import main; "
+                    "raise SystemExit(main(sys.argv[1:]))",
+                    str(tool_root),
+                    "create",
+                    "--base",
+                    str(base),
+                    "--target",
+                    str(target),
+                    "--metadata",
+                    str(metadata),
+                    "--output-dir",
+                    str(sandbox / "artifact"),
+                    "--commit",
+                    "1" * 40,
+                ],
+                cwd=runtime_root,
+                env={
+                    "HOME": str(runtime_root),
+                    "LC_ALL": "C",
+                    "PATH": "/usr/bin:/bin",
+                },
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 1)
+            self.assertIn("base validation failed: size mismatch", completed.stderr)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)
@@ -281,8 +589,13 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         expected_check = (
             "LC_ALL=C\n"
             "        export LC_ALL\n"
-            "        find \"$PATCH_ARTIFACT_DIR\" -maxdepth 1 -type f -printf '%f\\n' | sort | diff -u "
-            "<(printf '%s\\n' README.txt fireemblem8-expansion-all-locales-all-features-aapcs.bps manifest.json | sort) -"
+            "        /usr/bin/find \"$PATCH_ARTIFACT_DIR\" -maxdepth 1 -type f "
+            "-printf '%f\\n' \\\n"
+            "          | /usr/bin/sort \\\n"
+            "          | /usr/bin/diff -u \\\n"
+            "            <(printf '%s\\n' README.txt \\\n"
+            "              fireemblem8-expansion-all-locales-all-features-aapcs.bps \\\n"
+            "              manifest.json | /usr/bin/sort) -"
         )
         self.assertIn(expected_check, self.patch_job)
 
@@ -312,11 +625,12 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
 
     def test_profile_and_local_verifier_are_required_before_upload(self):
         self.assertIn("make expansion-modern-all-locales-all-features-check -j1", self.patch_job)
-        self.assertIn("scripts.modernize.patch_release create", self.patch_job)
-        self.assertIn("scripts.modernize.patch_release verify", self.patch_job)
+        self.assertEqual(self.patch_job.count("from scripts.modernize.patch_release import main"), 2)
+        self.assertIn('"$PATCH_TOOL_ROOT" create', self.patch_job)
+        self.assertIn('"$PATCH_TOOL_ROOT" verify', self.patch_job)
         self.assertIn("--commit \"$PATCH_COMMIT\"", self.patch_job)
 
-    def test_publisher_uses_one_python_interpreter_for_install_and_execution(self):
+    def test_publisher_uses_absolute_isolated_python_after_install(self):
         install_interpreters = set()
         publisher_interpreters = set()
         for step in parse_patch_release_run_commands(self.text):
@@ -324,12 +638,17 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 for index in range(len(command) - 3):
                     if command[index + 1:index + 4] == ["-m", "pip", "install"]:
                         install_interpreters.add(command[index])
-                if command[1:3] == ["-m", "scripts.modernize.patch_release"]:
-                    publisher_interpreters.add(command[0])
+                for index in range(len(command) - 2):
+                    if command[index:index + 4] == [
+                        "/usr/bin/python3",
+                        "-I",
+                        "-S",
+                        "-c",
+                    ]:
+                        publisher_interpreters.add(command[index])
 
         self.assertEqual(install_interpreters, {"python3"})
-        self.assertEqual(publisher_interpreters, {"python3"})
-        self.assertEqual(install_interpreters, publisher_interpreters)
+        self.assertEqual(publisher_interpreters, {"/usr/bin/python3"})
 
 
 if __name__ == "__main__":

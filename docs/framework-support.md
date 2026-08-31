@@ -62,8 +62,15 @@ rejects missing, failed, skipped, renamed, duplicate, or unknown setup
 contexts. Workers consume only that validated SHA. The publisher uses the same
 validated push SHA,
 verifies `/usr/bin/git rev-parse HEAD` immediately after checkout, and exposes
-`BASEROM_URL` only to the later minimal curl step; candidate code runs without
-the secret. The minimal secret step runs before any candidate code.
+`BASEROM_URL` only after every repository/candidate-controlled setup and build
+command has finished. It stages a hash-pinned patch tool and public inputs,
+downloads to an unpredictable mode-restricted path, invokes only absolute
+isolated Python from an empty runtime CWD/environment while the base exists,
+deletes the base on success/failure, verifies cleanup, and only then uploads
+the patch artifact.
+All repository/candidate-controlled commands finish before private download.
+No candidate command runs while the base exists. Cleanup is verified before
+upload.
 The same Build jobs rerun on `master`; only the
 technically used patch publisher is master-only. Arch and macOS support is
 exercised by the same script logic but is not re-run in CI; treat regressions

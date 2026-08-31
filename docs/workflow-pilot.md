@@ -233,9 +233,18 @@ no worker and cannot produce a successful summary. Classifier-failure workers
 also consume only that validated output. Workers consume only that validated
 SHA. The
 publisher consumes the same validated push SHA, verifies
-`/usr/bin/git rev-parse HEAD` immediately after checkout, and only then exposes
-`BASEROM_URL` to a minimal curl-only step; candidate code runs later without
-the secret. The minimal secret step runs before any candidate code.
+`/usr/bin/git rev-parse HEAD` immediately after checkout, then completes every
+repository/candidate-controlled setup and build command before private-base
+download. A hash-pinned three-file patch tool and already-built public inputs
+are staged first. The minimal `BASEROM_URL` step creates an unpredictable,
+mode-restricted private path and exposes only that path through trusted output.
+The immediately following step runs the staged tool with absolute isolated
+Python, an empty runtime CWD/environment, and no repository import path. No
+candidate command runs while the base exists. Traps delete the base on success
+or failure, cleanup is verified before upload, and later steps see only the
+patch artifact.
+All repository/candidate-controlled commands finish before private download.
+Cleanup is verified before upload.
 The current Build workflow has no explicit final-dispatch trigger; if that
 supported surface is introduced later, `workflow_dispatch` classifies as full
 and the trigger/topology contracts must be updated together.

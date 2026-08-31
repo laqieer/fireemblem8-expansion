@@ -134,6 +134,10 @@ corrupted-BPS, noncanonical-manifest, extra-file, directory, and symlink
 inputs fail closed. A wrong source never writes the requested BPS output, the
 workflow is trusted `push` to `master` only, pull requests receive no base
 secret or artifact upload, and diagnostics expose no protected base content.
+The publisher finishes every repository-controlled command before download,
+uses an unpredictable mode-restricted base path, invokes only the hash-pinned
+staged tool through absolute isolated Python while the base exists, removes it
+on success/failure, verifies cleanup, and uploads only the patch artifact.
 
 ### Negative control
 
@@ -158,8 +162,9 @@ archival-lane behavior changes.
   controls.
 - `python3 -m unittest tests.workflows.test_patch_release_workflow -v` —
   `tests/workflows/test_patch_release_workflow.py` maps the trusted event,
-  secret scope, no-PR publication, artifact allowlist, and profile/verifier
-  requirements.
+  secret scope, no-PR publication, candidate-before-download ordering,
+  hash-pinned isolated tool, unpredictable private path, cleanup-before-upload,
+  mutation controls, artifact allowlist, and profile/verifier requirements.
 
 ### Cleanup and limitations
 

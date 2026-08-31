@@ -805,17 +805,6 @@ jobs:
         printf 'patch.checkout.sha=%s\n' "$ACTUAL_SHA"
         test "$ACTUAL_SHA" = "$PATCH_COMMIT"
 
-    - name: Download private base image
-      env:
-        BASH_ENV: ''
-        BASEROM_URL: ${{ secrets.BASEROM_URL }}
-        ENV: ''
-        PATH: /usr/bin:/bin
-      run: |
-        set -euo pipefail
-        test -n "$BASEROM_URL"
-        /usr/bin/curl --fail --silent --location --proto '=https' --proto-redir '=https' --tlsv1.2 --output "$RUNNER_TEMP/base-image" "$BASEROM_URL"
-
     - run: |
         sudo apt-get update
         sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev pkg-config gcc-arm-none-eabi libnewlib-arm-none-eabi libmgba-dev
@@ -825,20 +814,191 @@ jobs:
 
     - run: make expansion-modern-all-locales-all-features-check -j1
 
-    - name: Create and verify patch artifact
+    - name: Stage audited patch tool and public inputs
       env:
+        PATCH_INPUT_ROOT: ${{ runner.temp }}/patch-input
+        PATCH_RUNTIME_ROOT: ${{ runner.temp }}/patch-runtime
+        PATCH_TOOL_ROOT: ${{ runner.temp }}/patch-tool
         PATCH_ARTIFACT_DIR: ${{ runner.temp }}/patch-artifact
       run: |
         set -euo pipefail
-        base_image="$RUNNER_TEMP/base-image"
-        target_image="$RUNNER_TEMP/target-image"
-        cp build/expansion-modern-all-locales-all-features/release/aapcs/fireemblem8.gba "$target_image"
-        trap 'rm -f "$base_image" "$target_image"' EXIT
-        python3 -m scripts.modernize.patch_release create --base "$base_image" --target "$target_image" --metadata build/expansion-modern-all-locales-all-features/release/aapcs/generated/expansion_build_metadata.json --output-dir "$PATCH_ARTIFACT_DIR" --commit "$PATCH_COMMIT"
-        python3 -m scripts.modernize.patch_release verify --base "$base_image" --artifact-dir "$PATCH_ARTIFACT_DIR"
+        /bin/rm -rf -- "$PATCH_INPUT_ROOT" "$PATCH_RUNTIME_ROOT" \
+          "$PATCH_TOOL_ROOT" "$PATCH_ARTIFACT_DIR"
+        /usr/bin/install -d -m 0700 "$PATCH_INPUT_ROOT" "$PATCH_RUNTIME_ROOT"
+        /usr/bin/install -d -m 0700 "$PATCH_TOOL_ROOT" \
+          "$PATCH_TOOL_ROOT/scripts" "$PATCH_TOOL_ROOT/scripts/modernize"
+        for source in scripts/modernize/patch_release.py \
+          scripts/modernize/bps_patch.py \
+          scripts/modernize/verify_rom_header.py
+        do
+          test -f "$source"
+          test ! -L "$source"
+          /usr/bin/install -m 0444 "$source" \
+            "$PATCH_TOOL_ROOT/$source"
+        done
+        (
+          cd "$PATCH_TOOL_ROOT"
+          printf '%s  %s\n' \
+            b78a076dfe393980af3695bc19a189fb1e850bb252618a8320f0527a708c5072 \
+              scripts/modernize/patch_release.py \
+            da2c9bd2248c340ecb84830bad7993a276b8daf5e8e5ebdadb0e4d268c0cd29c \
+              scripts/modernize/bps_patch.py \
+            9c13ae7713cc3eb87006b04b8aaebe7c4f829aeccd7d9fa1b199c22ac58d9bf7 \
+              scripts/modernize/verify_rom_header.py \
+            | /usr/bin/sha256sum -c -
+        )
+        /bin/chmod 0555 "$PATCH_TOOL_ROOT" "$PATCH_TOOL_ROOT/scripts" \
+          "$PATCH_TOOL_ROOT/scripts/modernize"
+        target_source=build/expansion-modern-all-locales-all-features/release/aapcs/fireemblem8.gba
+        metadata_source=build/expansion-modern-all-locales-all-features/release/aapcs/generated/expansion_build_metadata.json
+        test -f "$target_source"
+        test ! -L "$target_source"
+        test -f "$metadata_source"
+        test ! -L "$metadata_source"
+        /usr/bin/install -m 0400 "$target_source" "$PATCH_INPUT_ROOT/target.gba"
+        /usr/bin/install -m 0400 "$metadata_source" "$PATCH_INPUT_ROOT/metadata.json"
+        printf '%s\n' "$PATCH_COMMIT" > "$PATCH_INPUT_ROOT/commit"
+        /bin/chmod 0400 "$PATCH_INPUT_ROOT/commit"
+        test "$(/usr/bin/stat -c %s "$PATCH_INPUT_ROOT/target.gba")" = 33554432
+        metadata_size="$(/usr/bin/stat -c %s "$PATCH_INPUT_ROOT/metadata.json")"
+        test "$metadata_size" -gt 0
+        test "$metadata_size" -le 1048576
+
+    - name: Download private base image
+      id: private-base
+      shell: /bin/bash --noprofile --norc -euo pipefail {0}
+      env:
+        BASEROM_URL: ${{ secrets.BASEROM_URL }}
+      run: |
+        private_dir=""
+        base_image=""
+        cleanup_download() {
+          status="$?"
+          trap - EXIT INT TERM
+          set +e
+          if [ "$status" -ne 0 ] && [ -n "$private_dir" ]; then
+            /bin/chmod -R u+w -- "$private_dir" 2>/dev/null || true
+            if [ -n "$base_image" ]; then
+              /bin/rm -f -- "$base_image"
+            fi
+            /usr/bin/rmdir -- "$private_dir" 2>/dev/null || true
+          fi
+          exit "$status"
+        }
+        trap cleanup_download EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+        test -n "$BASEROM_URL"
+        umask 077
+        private_dir="$(/usr/bin/mktemp -d "$RUNNER_TEMP/patch-private.XXXXXXXXXX")"
+        /bin/chmod 0700 "$private_dir"
+        base_image="$private_dir/base.gba"
+        /usr/bin/curl --fail --silent --location --proto '=https' --proto-redir '=https' --tlsv1.2 --output "$base_image" "$BASEROM_URL"
+        /bin/chmod 0400 "$base_image"
+        test -f "$base_image"
+        test ! -L "$base_image"
+        test "$(/usr/bin/stat -c %a "$private_dir")" = 700
+        test "$(/usr/bin/stat -c %a "$base_image")" = 400
+        test "$(/usr/bin/stat -c %s "$base_image")" = 16777216
+        printf 'base_path=%s\n' "$base_image" >> "$GITHUB_OUTPUT"
+        trap - EXIT INT TERM
+
+    - name: Create and verify patch artifact
+      shell: /bin/bash --noprofile --norc -euo pipefail {0}
+      env:
+        BASE_IMAGE: ${{ steps.private-base.outputs.base_path }}
+        PATCH_INPUT_ROOT: ${{ runner.temp }}/patch-input
+        PATCH_RUNTIME_ROOT: ${{ runner.temp }}/patch-runtime
+        PATCH_TOOL_ROOT: ${{ runner.temp }}/patch-tool
+        PATCH_ARTIFACT_DIR: ${{ runner.temp }}/patch-artifact
+      run: |
+        cleanup_private_base() {
+          status="$?"
+          cleanup_failed=0
+          trap - EXIT INT TERM
+          set +e
+          case "$BASE_IMAGE" in
+            "$RUNNER_TEMP"/patch-private.??????????/base.gba)
+              private_dir="${BASE_IMAGE%/base.gba}"
+              /bin/chmod u+w -- "$BASE_IMAGE" 2>/dev/null || cleanup_failed=1
+              /bin/rm -f -- "$BASE_IMAGE" || cleanup_failed=1
+              /usr/bin/rmdir -- "$private_dir" || cleanup_failed=1
+              ;;
+            *)
+              echo "refusing cleanup outside the trusted private path" >&2
+              cleanup_failed=1
+              ;;
+          esac
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          exit "$cleanup_failed"
+        }
+        trap cleanup_private_base EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+        case "$BASE_IMAGE" in
+          "$RUNNER_TEMP"/patch-private.??????????/base.gba) ;;
+          *) echo "private base path is outside the trusted boundary" >&2; exit 1 ;;
+        esac
+        test -f "$BASE_IMAGE"
+        test ! -L "$BASE_IMAGE"
+        test "$(/usr/bin/stat -c %a "$BASE_IMAGE")" = 400
+        test "$(/usr/bin/stat -c %s "$BASE_IMAGE")" = 16777216
+        test -f "$PATCH_INPUT_ROOT/target.gba"
+        test ! -L "$PATCH_INPUT_ROOT/target.gba"
+        test -f "$PATCH_INPUT_ROOT/metadata.json"
+        test ! -L "$PATCH_INPUT_ROOT/metadata.json"
+        test "$(/bin/cat "$PATCH_INPUT_ROOT/commit")" = "$PATCH_COMMIT"
+        cd "$PATCH_RUNTIME_ROOT"
+        /usr/bin/env -i HOME="$PATCH_RUNTIME_ROOT" PATH=/usr/bin:/bin LC_ALL=C \
+          /usr/bin/python3 -I -S -c \
+          'import sys; sys.path.insert(0, sys.argv.pop(1)); from scripts.modernize.patch_release import main; raise SystemExit(main(sys.argv[1:]))' \
+          "$PATCH_TOOL_ROOT" create \
+          --base "$BASE_IMAGE" \
+          --target "$PATCH_INPUT_ROOT/target.gba" \
+          --metadata "$PATCH_INPUT_ROOT/metadata.json" \
+          --output-dir "$PATCH_ARTIFACT_DIR" \
+          --commit "$PATCH_COMMIT"
+        /usr/bin/env -i HOME="$PATCH_RUNTIME_ROOT" PATH=/usr/bin:/bin LC_ALL=C \
+          /usr/bin/python3 -I -S -c \
+          'import sys; sys.path.insert(0, sys.argv.pop(1)); from scripts.modernize.patch_release import main; raise SystemExit(main(sys.argv[1:]))' \
+          "$PATCH_TOOL_ROOT" verify \
+          --base "$BASE_IMAGE" \
+          --artifact-dir "$PATCH_ARTIFACT_DIR"
         LC_ALL=C
         export LC_ALL
-        find "$PATCH_ARTIFACT_DIR" -maxdepth 1 -type f -printf '%f\n' | sort | diff -u <(printf '%s\n' README.txt fireemblem8-expansion-all-locales-all-features-aapcs.bps manifest.json | sort) -
+        /usr/bin/find "$PATCH_ARTIFACT_DIR" -maxdepth 1 -type f -printf '%f\n' \
+          | /usr/bin/sort \
+          | /usr/bin/diff -u \
+            <(printf '%s\n' README.txt \
+              fireemblem8-expansion-all-locales-all-features-aapcs.bps \
+              manifest.json | /usr/bin/sort) -
+
+    - name: Cleanup and verify private base
+      if: always()
+      shell: /bin/bash --noprofile --norc -euo pipefail {0}
+      env:
+        BASE_IMAGE: ${{ steps.private-base.outputs.base_path }}
+      run: |
+        if [ -z "$BASE_IMAGE" ]; then
+          exit 0
+        fi
+        case "$BASE_IMAGE" in
+          "$RUNNER_TEMP"/patch-private.??????????/base.gba) ;;
+          *) echo "private cleanup path is outside the trusted boundary" >&2; exit 1 ;;
+        esac
+        private_dir="${BASE_IMAGE%/base.gba}"
+        if [ -e "$BASE_IMAGE" ]; then
+          /bin/chmod u+w -- "$BASE_IMAGE"
+          /bin/rm -f -- "$BASE_IMAGE"
+        fi
+        if [ -d "$private_dir" ]; then
+          /usr/bin/rmdir -- "$private_dir"
+        fi
+        test ! -e "$BASE_IMAGE"
+        test ! -e "$private_dir"
+
     - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
       with:
         name: modern-release-all-locales-all-features-aapcs-bps-${{ needs.event-identity.outputs.fallback_sha }}

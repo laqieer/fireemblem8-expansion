@@ -820,11 +820,13 @@ _EXPECTED_STEP_ROLES = {
     "patch-release": (
         ("publisher", None),
         ("publisher", "Verify patch candidate revision"),
+        ("publisher", None),
+        ("publisher", None),
+        ("publisher", None),
+        ("publisher", "Stage audited patch tool and public inputs"),
         ("publisher", "Download private base image"),
-        ("publisher", None),
-        ("publisher", None),
-        ("publisher", None),
         ("publisher", "Create and verify patch artifact"),
+        ("publisher", "Cleanup and verify private base"),
         ("publisher", None),
     ),
     "summary": (("summary", "Render fail-closed combined Build summary"),),
@@ -1370,7 +1372,8 @@ def _parse_step(block, job_name, index):
     if len(direct_names) != len(set(direct_names)):
         raise ValueError(f"{step_label} contains duplicate direct fields")
     unknown = sorted(
-        set(direct_names) - {"id", "name", "uses", "run", "env", "with"}
+        set(direct_names)
+        - {"id", "if", "name", "uses", "run", "shell", "env", "with"}
     )
     if unknown:
         raise ValueError(
@@ -1479,15 +1482,23 @@ def _parse_step(block, job_name, index):
     elif job_name == "patch-release":
         expected_fields = (
             {"uses", "with"}
-            if index in {0, 7}
+            if index in {0, 9}
+            else {"id", "name", "shell", "env", "run"}
+            if index == 6
+            else {"name", "shell", "env", "run"}
+            if index == 7
+            else {"if", "name", "shell", "env", "run"}
+            if index == 8
             else {"name", "env", "run"}
-            if index in {1, 2, 6}
+            if index in {1, 5}
             else {"run"}
         )
         expected_name = {
             1: "Verify patch candidate revision",
-            2: "Download private base image",
-            6: "Create and verify patch artifact",
+            5: "Stage audited patch tool and public inputs",
+            6: "Download private base image",
+            7: "Create and verify patch artifact",
+            8: "Cleanup and verify private base",
         }.get(index)
         if name != expected_name or set(values) != expected_fields:
             raise ValueError(f"{step_label} publisher mapping differs")
@@ -1517,46 +1528,71 @@ def _parse_step(block, job_name, index):
             )
         ):
             raise ValueError(f"{step_label} exact revision verification differs")
-        if index == 2 and (
-            values["env"]
-            != (
-                ("BASEROM_URL", "${{ secrets.BASEROM_URL }}"),
-                ("BASH_ENV", "''"),
-                ("ENV", "''"),
-                ("PATH", "/usr/bin:/bin"),
-            )
-            or values["run"]
-            != (
-                ("set", "-euo", "pipefail"),
-                ("test", "-n", "$BASEROM_URL"),
-                (
-                    "/usr/bin/curl",
-                    "--fail",
-                    "--silent",
-                    "--location",
-                    "--proto",
-                    "=https",
-                    "--proto-redir",
-                    "=https",
-                    "--tlsv1.2",
-                    "--output",
-                    "$RUNNER_TEMP/base-image",
-                    "$BASEROM_URL",
-                ),
-            )
+        if index == 5 and values["env"] != (
+            ("PATCH_ARTIFACT_DIR", "${{ runner.temp }}/patch-artifact"),
+            ("PATCH_INPUT_ROOT", "${{ runner.temp }}/patch-input"),
+            ("PATCH_RUNTIME_ROOT", "${{ runner.temp }}/patch-runtime"),
+            ("PATCH_TOOL_ROOT", "${{ runner.temp }}/patch-tool"),
+        ):
+            raise ValueError(f"{step_label} staged patch environment differs")
+        if index == 6 and (
+            values["id"] != "private-base"
+            or values["shell"]
+            != "/bin/bash --noprofile --norc -euo pipefail {0}"
+            or values["env"]
+            != (("BASEROM_URL", "${{ secrets.BASEROM_URL }}"),)
+            or "/usr/bin/curl"
+            not in {token for command in values["run"] for token in command}
+            or "/usr/bin/mktemp"
+            not in " ".join(token for command in values["run"] for token in command)
+            or "scripts."
+            in " ".join(token for command in values["run"] for token in command)
         ):
             raise ValueError(f"{step_label} secret download boundary differs")
-        if index == 6 and values["env"] != (
-            ("PATCH_ARTIFACT_DIR", "${{ runner.temp }}/patch-artifact"),
-        ):
-            raise ValueError(f"{step_label} patch environment differs")
         if index == 7 and (
+            values["shell"]
+            != "/bin/bash --noprofile --norc -euo pipefail {0}"
+            or values["env"]
+            != (
+                ("BASE_IMAGE", "${{ steps.private-base.outputs.base_path }}"),
+                ("PATCH_ARTIFACT_DIR", "${{ runner.temp }}/patch-artifact"),
+                ("PATCH_INPUT_ROOT", "${{ runner.temp }}/patch-input"),
+                ("PATCH_RUNTIME_ROOT", "${{ runner.temp }}/patch-runtime"),
+                ("PATCH_TOOL_ROOT", "${{ runner.temp }}/patch-tool"),
+            )
+            or "/usr/bin/python3"
+            not in {token for command in values["run"] for token in command}
+            or "-S" not in {token for command in values["run"] for token in command}
+            or "/usr/bin/env"
+            not in {token for command in values["run"] for token in command}
+            or "cleanup_private_base()"
+            not in {token for command in values["run"] for token in command}
+        ):
+            raise ValueError(f"{step_label} audited patch boundary differs")
+        if index == 8 and (
+            values["if"] != "always()"
+            or
+            values["shell"]
+            != "/bin/bash --noprofile --norc -euo pipefail {0}"
+            or values["env"]
+            != (("BASE_IMAGE", "${{ steps.private-base.outputs.base_path }}"),)
+            or "/bin/rm"
+            not in {token for command in values["run"] for token in command}
+            or ("test", "!", "-e", "$BASE_IMAGE") not in values["run"]
+            or ("test", "!", "-e", "$private_dir") not in values["run"]
+        ):
+            raise ValueError(f"{step_label} private cleanup verification differs")
+        if index == 9 and (
             values["uses"] != _UPLOAD_USES
             or values["with"] != _UPLOAD_WITH
         ):
             raise ValueError(f"{step_label} upload action differs")
-        if index == 2 and "scripts." in " ".join(
+        if index == 6 and (
+            values["env"]
+            != (("BASEROM_URL", "${{ secrets.BASEROM_URL }}"),)
+            or "scripts." in " ".join(
             token for command in values["run"] for token in command
+            )
         ):
             raise ValueError(f"{step_label} secret step executes candidate code")
         role = "publisher"
