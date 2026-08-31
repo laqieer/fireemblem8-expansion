@@ -1024,8 +1024,8 @@ class TesterCaseRegistryTests(unittest.TestCase):
                     "TC-WORKFLOW-GATE-OWNERSHIP-001": {
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
-                            "python3 -m unittest discover -s "
-                            "scripts/validation_ownership/tests -p 'test_*.py' -v",
+                            "/usr/bin/python3 -I "
+                            "scripts/validation_ownership/isolated_launcher.py tests",
                             "make validation-ownership-check",
                         },
                     },
@@ -1864,15 +1864,15 @@ class StructuralObjectCountClaimTests(unittest.TestCase):
 #      ac0ee5d7f17eb8e70175576cb46d9f320d8013cd merged into master.
 #   2. docs/framework-support.md said the item-ID-expansion checks were
 #      "gates 11-12" of the upstream verify gate set; the real, current
-#      scripts/upstream_port/verify.py gates() puts them at gates 20-21
-#      of exactly 28.
+#      scripts/upstream_port/verify.py gates() puts them at gates 22-23
+#      of exactly 30.
 #
 # These tests prove: (a) every old phrase is flagged stale if it reappears,
 # (b) the current live doc/report text is stale-clean, (c) the historical,
 # batch-scoped technical boundary wording (which looks similar but is not a
 # live current-status claim) is NOT flagged, (d) the current docs/report
 # state #5 CLOSED with the real completion commit as merged evidence, and
-# (e) the "gates 20-21" claim is source-backed against the real
+# (e) the "gates 22-23" claim is source-backed against the real
 # scripts/upstream_port/verify.py gates() ordering -- never a hardcoded
 # fake substitute.
 # ---------------------------------------------------------------------------
@@ -1952,7 +1952,7 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         framework_support_text = check_docs.read_text(
             os.path.join(REAL_REPO_ROOT, "docs", "framework-support.md")
         )
-        self.assertIn("gates 20-21 of", framework_support_text)
+        self.assertIn("gates 22-23 of", framework_support_text)
         self.assertNotIn("gates 18-19 of", framework_support_text)
         self.assertNotIn("gates 17-18 of", framework_support_text)
         self.assertNotIn("gates 12-13 of", framework_support_text)
@@ -1961,7 +1961,7 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
 
     def test_verify_gates_item_expansion_entries_precede_patch_profile(self):
         # Safe, standalone, no-network import of the live verify module
-        # straight off disk -- proves gates 20-21 against the real,
+        # straight off disk -- proves gates 22-23 against the real,
         # current scripts/upstream_port/verify.py gates() ordering rather
         # than a hardcoded fake substitute.
         verify_path = os.path.join(
@@ -1978,14 +1978,14 @@ class StaleIssue5StatusAndGateNumberRegressionTests(unittest.TestCase):
         finally:
             sys.modules.pop(spec.name, None)
 
-        self.assertEqual(len(all_gates), 28)
-        self.assertIn("itemexpansion", all_gates[19].name)
-        self.assertIn("itemexpansion", all_gates[20].name)
+        self.assertEqual(len(all_gates), 30)
+        self.assertIn("itemexpansion", all_gates[21].name)
+        self.assertIn("itemexpansion", all_gates[22].name)
         for index, gate in enumerate(all_gates):
-            if index not in (19, 20):
+            if index not in (21, 22):
                 self.assertNotIn("itemexpansion", gate.name)
         self.assertEqual(
-            all_gates[21].name,
+            all_gates[23].name,
             "modern-all-locales-all-features-profile",
         )
 

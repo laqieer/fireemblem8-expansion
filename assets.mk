@@ -40,7 +40,7 @@ ASSET_PORTRAIT_INCBIN_CONSUMERS ?=
 ASSET_TMX_INCBIN_CONSUMERS ?=
 ASSET_BANIM_INCBIN_CONSUMERS ?=
 ASSET_CUSTOM_SPELL_INCBIN_CONSUMERS ?=
-ifeq (,$(filter validation-ownership-check,$(MAKECMDGOALS)))
+ifneq ($(MAKECMDGOALS),validation-ownership-check)
 -include $(ASSET_DISCOVERY_MK)
 endif
 

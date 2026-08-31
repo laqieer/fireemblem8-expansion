@@ -112,7 +112,7 @@ precedence/migration, runtime/shifted/budget matrices, and legal non-goals:
   see its README's "Deterministic runtime scenario coverage (issue #13)"
   table), a host-only vs. normal (live-ROM) run mode
   (`GBA_PLAYTEST_HOST_ONLY=1`, also gate 1 of the current-master
-  28-gate `scripts/upstream_port/verify.py`) that keeps scenario/schema/generator/
+  30-gate `scripts/upstream_port/verify.py`) that keeps scenario/schema/generator/
   config/timeout/retry-policy tests toolchain-free while skipping only the
   live-integration tests, an explicit human-run-only baseline-refresh
   policy (no `verify --write-baseline`-style flag exists anywhere in the

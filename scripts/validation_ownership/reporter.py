@@ -4,36 +4,50 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import copy
 import hashlib
+import importlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
 from scripts import check_docs
-from scripts.generated_data import registry as generated_data_registry
 from scripts.upstream_port import verify as workflow_verify
 from scripts.workflow_pilot import reporter as pilot_reporter
 
 
 GRAPH_PATH = Path(".github/validation-ownership-graph.json")
 SCHEMA_PATH = Path("scripts/validation_ownership/graph.schema.json")
+PROBE_ORACLE_PATH = Path("scripts/validation_ownership/probe-oracle.json")
 TEST_CASE_REGISTRY_PATH = Path("docs/test-cases/registry.json")
 BUILD_WORKFLOW_PATH = Path(".github/workflows/build.yml")
 EXPECTED_SCHEMA_VERSION = 1
 EDGE_SEAL_DOMAIN = b"validation-ownership-resolved-edges-v1\0"
 GRAPH_SEAL_DOMAIN = b"validation-ownership-graph-v1\0"
 SCHEMA_SEAL_DOMAIN = b"validation-ownership-schema-v1\0"
+PROBE_SEAL_DOMAIN = b"validation-ownership-probe-oracle-v1\0"
 REQUIRED_PROOF_KINDS = {
     "artifact_checkpoint",
     "dependency_changed",
     "pre_graduation",
 }
+LIFECYCLE_FAILURE_REASON = (
+    "removal loses the issue #180 validation ownership invariant"
+)
+LIFECYCLE_CHECKS = {
+    "validation-ownership-check",
+    "TC-WORKFLOW-GATE-OWNERSHIP-001",
+}
+LIFECYCLE_TIMEOUT_SECONDS = 30
 REQUIREMENT_EDGES = {
     "positive": {"owns-test"},
     "adversarial": {"adversarial-control"},
@@ -58,6 +72,18 @@ EDGE_TARGET_TYPES = {
     "negative-control": {"host", "compile", "link", "runtime"},
     "manual-handoff": {"manual"},
 }
+EDGE_TYPES = set(EDGE_TARGET_TYPES) | {"depends-on"}
+REGULAR_BLOB_MODE_RE = re.compile(r"^100[0-7]{3}$")
+SYMLINK_MODE = "120000"
+GITLINK_MODE = "160000"
+
+
+@dataclass(frozen=True)
+class GitTreeEntry:
+    path: str
+    mode: str
+    object_type: str
+    object_id: str
 
 
 class OwnershipError(Exception):
@@ -232,22 +258,6 @@ def _sha256(domain: bytes, value: Any) -> str:
     return hashlib.sha256(domain + normalized_json(value)).hexdigest()
 
 
-def _read_regular_file(root: Path, relative: Path) -> bytes:
-    path = root / relative
-    try:
-        resolved = path.resolve(strict=True)
-    except OSError as error:
-        raise OwnershipError(f"required authority {relative} is unavailable: {error}") from error
-    if path.is_symlink() or not resolved.is_file():
-        raise OwnershipError(f"required authority {relative} must be a regular file")
-    if root not in resolved.parents:
-        raise OwnershipError(f"required authority {relative} escapes repository root")
-    try:
-        return resolved.read_bytes()
-    except OSError as error:
-        raise OwnershipError(f"cannot read authority {relative}: {error}") from error
-
-
 def _git(
     root: Path,
     *arguments: str,
@@ -278,18 +288,102 @@ def validate_repository_root(root: Path) -> Path:
         raise OwnershipError(str(error)) from error
 
 
-def tracked_paths(root: Path) -> tuple[str, ...]:
-    output = _git(root, "ls-files", "-z").stdout
+def _validate_relative_path(relative: str | Path, label: str) -> str:
+    value = Path(relative).as_posix()
+    if (
+        not value
+        or value.startswith("/")
+        or value == "."
+        or ".." in Path(value).parts
+        or "\0" in value
+    ):
+        raise OwnershipError(f"{label} must be a confined repository-relative path")
+    return value
+
+
+def git_tree_entries(root: Path, revision: str = "HEAD") -> dict[str, GitTreeEntry]:
+    output = _git(root, "ls-tree", "-rz", "--full-tree", revision).stdout
     try:
-        paths = output.decode("utf-8").split("\0")
+        records = output.decode("utf-8").split("\0")
     except UnicodeDecodeError as error:
-        raise OwnershipError("Git tracked paths are not valid UTF-8") from error
-    result = tuple(sorted(path for path in paths if path))
+        raise OwnershipError("Git tree paths are not valid UTF-8") from error
+    result = {}
+    for record in records:
+        if not record:
+            continue
+        try:
+            header, path = record.split("\t", 1)
+            mode, object_type, object_id = header.split(" ")
+        except ValueError as error:
+            raise OwnershipError("Git returned a malformed tree entry") from error
+        _validate_relative_path(path, "Git tree path")
+        if path in result:
+            raise OwnershipError(f"Git tree repeats path {path!r}")
+        result[path] = GitTreeEntry(path, mode, object_type, object_id)
     if not result:
-        raise OwnershipError("Git returned no tracked repository paths")
-    if len(result) != len(set(result)):
-        raise OwnershipError("Git returned duplicate tracked repository paths")
+        raise OwnershipError(f"Git tree {revision!r} contains no entries")
     return result
+
+
+def tracked_paths(root: Path) -> tuple[str, ...]:
+    return tuple(sorted(git_tree_entries(root)))
+
+
+class AuthorityLoader:
+    """Load authority only from one validated Git tree and confined root."""
+
+    def __init__(
+        self,
+        root: Path,
+        entries: dict[str, GitTreeEntry],
+        revision: str | None = None,
+    ):
+        self.root = root
+        self.entries = entries
+        self.revision = revision
+
+    def entry(self, relative: str | Path, label: str) -> GitTreeEntry:
+        path = _validate_relative_path(relative, label)
+        entry = self.entries.get(path)
+        if entry is None:
+            raise OwnershipError(f"{label} {path!r} is not tracked by the selected Git tree")
+        if not REGULAR_BLOB_MODE_RE.fullmatch(entry.mode) or entry.object_type != "blob":
+            raise OwnershipError(
+                f"{label} {path!r} must be a tracked regular blob, got "
+                f"mode {entry.mode} type {entry.object_type}"
+            )
+        return entry
+
+    def read_blob(self, relative: str | Path, label: str) -> bytes:
+        entry = self.entry(relative, label)
+        if self.revision is not None:
+            completed = _git(
+                self.root,
+                "cat-file",
+                "blob",
+                entry.object_id,
+            )
+            return completed.stdout
+        path = self.root / entry.path
+        try:
+            resolved = path.resolve(strict=True)
+        except OSError as error:
+            raise OwnershipError(f"{label} {entry.path!r} is unavailable: {error}") from error
+        if path.is_symlink() or not resolved.is_file():
+            raise OwnershipError(f"{label} {entry.path!r} must be a regular file")
+        if self.root not in resolved.parents:
+            raise OwnershipError(f"{label} {entry.path!r} escapes repository root")
+        try:
+            return resolved.read_bytes()
+        except OSError as error:
+            raise OwnershipError(f"cannot read {label} {entry.path!r}: {error}") from error
+
+    def read_json(self, relative: str | Path, label: str) -> Any:
+        try:
+            text = self.read_blob(relative, label).decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise OwnershipError(f"{label} is not valid UTF-8") from error
+        return parse_json(text, label)
 
 
 def repository_status(root: Path) -> bytes:
@@ -302,7 +396,22 @@ def repository_status(root: Path) -> bytes:
     ).stdout
 
 
-def _generated_registry_records(root: Path) -> tuple[list[dict[str, Any]], set[str]]:
+def _generated_registry_records(
+    loader: AuthorityLoader,
+) -> tuple[list[dict[str, Any]], set[str]]:
+    generated_modules = [
+        path
+        for path in loader.entries
+        if path.startswith("scripts/generated_data/") and path.endswith(".py")
+    ]
+    if not generated_modules:
+        raise OwnershipError("generated-data registry has no tracked Python authority")
+    for path in generated_modules:
+        loader.read_blob(path, "generated-data authority")
+    generated_data_registry = importlib.import_module(
+        "scripts.generated_data.registry"
+    )
+
     records = []
     paths: set[str] = set()
     registry = generated_data_registry.REGISTRY
@@ -331,15 +440,34 @@ def _generated_registry_records(root: Path) -> tuple[list[dict[str, Any]], set[s
                 raise OwnershipError(
                     f"generated-data schema {name!r} has malformed {field}"
                 )
-            path = root / candidate
-            if path.is_file():
+            if candidate in loader.entries:
+                loader.entry(candidate, f"generated-data schema {name!r} {field}")
                 paths.add(candidate)
-            elif not path.is_dir():
+            elif not any(
+                path.startswith(candidate.rstrip("/") + "/")
+                for path in loader.entries
+            ):
                 raise OwnershipError(
                     f"generated-data schema {name!r} references stale {field} "
                     f"{candidate!r}"
                 )
     return records, paths
+
+
+def _generated_registry_semantics(loader: AuthorityLoader) -> list[dict[str, str]]:
+    records = []
+    for path in sorted(loader.entries):
+        if not path.startswith("scripts/generated_data/") or not path.endswith(".py"):
+            continue
+        try:
+            text = loader.read_blob(path, "generated-data authority").decode("utf-8")
+            syntax = ast.dump(ast.parse(text, filename=path), include_attributes=False)
+        except (UnicodeDecodeError, SyntaxError) as error:
+            raise OwnershipError(
+                f"generated-data authority {path!r} is not valid Python: {error}"
+            ) from error
+        records.append({"path": path, "syntax": syntax})
+    return records
 
 
 def _selector_identity(selector: dict[str, Any]) -> tuple[str, str]:
@@ -375,8 +503,13 @@ def _path_rule_matches(
     )
 
 
-def _load_test_case_registry(root: Path) -> dict[str, dict[str, Any]]:
-    registry = load_json(root / TEST_CASE_REGISTRY_PATH)
+def _load_test_case_registry(
+    loader: AuthorityLoader,
+) -> dict[str, dict[str, Any]]:
+    registry = loader.read_json(
+        TEST_CASE_REGISTRY_PATH,
+        "tester-case registry",
+    )
     if not isinstance(registry, dict) or not isinstance(registry.get("cases"), list):
         raise OwnershipError("tester-case registry lacks a cases array")
     result = {}
@@ -390,29 +523,91 @@ def _load_test_case_registry(root: Path) -> dict[str, dict[str, Any]]:
     return result
 
 
-def _workflow_authorities(
-    root: Path,
+def _canonical_workflow_lines(text: str) -> tuple[str, ...]:
+    return tuple(
+        line.rstrip()
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    )
+
+
+def _generic_workflow_authorities(
+    text: str,
 ) -> tuple[dict[str, Any], dict[tuple[str, str], Any]]:
-    text = _read_regular_file(root, BUILD_WORKFLOW_PATH).decode("utf-8")
     try:
-        _, _, jobs = workflow_verify._parse_workflow_structure_text(text)
-    except (UnicodeError, ValueError) as error:
+        jobs = workflow_verify._workflow_job_entries(text)
+    except ValueError as error:
         raise OwnershipError(f"Build workflow authority is invalid: {error}") from error
     job_records = {}
     step_records = {}
-    for job_name, context, steps in jobs:
-        job_records[job_name] = {"context": context, "steps": steps}
-        for role, step_name, fields in steps:
-            if step_name is not None:
-                step_records[(job_name, step_name)] = {
-                    "role": role,
-                    "fields": fields,
-                }
+    for job_name, body in jobs:
+        lines = body.splitlines(keepends=True)
+        starts = [
+            index
+            for index, line in enumerate(lines)
+            if re.match(r"^    -(?:[ \t]|\r?\n?\Z)", line)
+        ]
+        steps = []
+        names = set()
+        for position, start in enumerate(starts):
+            block = "".join(
+                lines[
+                    start :
+                    starts[position + 1]
+                    if position + 1 < len(starts)
+                    else len(lines)
+                ]
+            )
+            match = re.search(r"^    - name:[ \t]*(.+?)\s*$", block, re.MULTILINE)
+            if match is None:
+                continue
+            name = match.group(1).strip().strip("\"'")
+            if not name or name in names:
+                raise OwnershipError(
+                    f"Build workflow job {job_name!r} has missing or duplicate step name"
+                )
+            names.add(name)
+            record = _canonical_workflow_lines(block)
+            step_records[(job_name, name)] = record
+            steps.append((name, record))
+        before_steps = body.split("\n    steps:", 1)[0]
+        job_records[job_name] = {
+            "context": tuple(sorted(_canonical_workflow_lines(before_steps))),
+            "steps": tuple(steps),
+        }
     return job_records, step_records
 
 
-def _manual_handoff_record(root: Path, relative: str) -> dict[str, Any]:
-    record = load_json(root / relative)
+def _workflow_authorities(
+    loader: AuthorityLoader,
+    *,
+    strict: bool,
+) -> tuple[dict[str, Any], dict[tuple[str, str], Any]]:
+    try:
+        text = loader.read_blob(
+            BUILD_WORKFLOW_PATH,
+            "Build workflow authority",
+        ).decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise OwnershipError("Build workflow authority is not valid UTF-8") from error
+    if strict:
+        try:
+            workflow_verify._parse_workflow_structure_text(text)
+        except ValueError as error:
+            raise OwnershipError(f"Build workflow authority is invalid: {error}") from error
+    return _generic_workflow_authorities(text)
+
+
+def _manual_handoff_record(
+    loader: AuthorityLoader,
+    relative: str,
+) -> dict[str, Any]:
+    if relative != ".github/manual-testing-handoff.json":
+        raise OwnershipError(
+            "manual handoff authority must be exactly "
+            ".github/manual-testing-handoff.json"
+        )
+    record = loader.read_json(relative, "manual handoff contract")
     try:
         schema = record["schema"]
         eligibility = record["eligibility"]
@@ -430,23 +625,150 @@ def _manual_handoff_record(root: Path, relative: str) -> dict[str, Any]:
     return record
 
 
-def _make_authority_digest(root: Path) -> str:
-    paths = []
-    for path in tracked_paths(root):
-        name = Path(path).name
-        if path == "Makefile" or name.endswith(".mk"):
-            paths.append(path)
-    return digest_paths(root, paths, b"validation-ownership-make-authority-v1\0")
+def _strip_make_comment(line: str) -> str:
+    escaped = False
+    for index, character in enumerate(line):
+        if character == "#" and not escaped:
+            return line[:index]
+        escaped = character == "\\" and not escaped
+        if character != "\\":
+            escaped = False
+    return line
 
 
-def digest_paths(root: Path, paths: Iterable[str], domain: bytes) -> str:
-    digest = hashlib.sha256(domain)
-    for relative in sorted(paths):
-        digest.update(relative.encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(_read_regular_file(root, Path(relative)))
-        digest.update(b"\0")
-    return digest.hexdigest()
+def _make_logical_lines(text: str) -> list[tuple[bool, str]]:
+    result = []
+    pending = ""
+    for physical in text.splitlines():
+        if physical.startswith("\t"):
+            if pending:
+                result.append((False, pending))
+                pending = ""
+            result.append((True, physical[1:]))
+            continue
+        stripped = physical.rstrip()
+        continuation = stripped.endswith("\\")
+        piece = stripped[:-1] if continuation else stripped
+        pending = (pending + " " + piece.strip()).strip() if pending else piece
+        if not continuation:
+            result.append((False, pending))
+            pending = ""
+    if pending:
+        result.append((False, pending))
+    return result
+
+
+def _make_variable_refs(values: Iterable[str]) -> set[str]:
+    return {
+        match.group(1)
+        for value in values
+        for match in re.finditer(r"\$\(([A-Za-z_][A-Za-z0-9_]*)\)", value)
+    }
+
+
+def _parse_make_authorities(loader: AuthorityLoader) -> dict[str, dict[str, Any]]:
+    targets: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {"declarations": [], "recipes": [], "phony": False}
+    )
+    variables: dict[str, set[str]] = defaultdict(set)
+    seen = set()
+
+    def parse_file(relative: str) -> None:
+        relative = _validate_relative_path(relative, "Make include")
+        if relative in seen:
+            return
+        seen.add(relative)
+        try:
+            text = loader.read_blob(relative, "Make authority").decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise OwnershipError(f"Make authority {relative!r} is not UTF-8") from error
+        current_targets: list[str] = []
+        for recipe, raw_line in _make_logical_lines(text):
+            if recipe:
+                command = raw_line.strip()
+                if command and not command.startswith("#"):
+                    for target in current_targets:
+                        targets[target]["recipes"].append(command)
+                continue
+            current_targets = []
+            line = _strip_make_comment(raw_line).strip()
+            if not line:
+                continue
+            include = check_docs.MAKE_INCLUDE_RE.match(line)
+            if include:
+                for candidate in include.group(2).split():
+                    if "$" in candidate or "*" in candidate:
+                        continue
+                    path = Path(relative).parent / candidate
+                    parse_file(path.as_posix())
+                continue
+            assignment = re.match(
+                r"^([A-Za-z_][A-Za-z0-9_]*)\s*([:+?]?=)\s*(.*)$",
+                line,
+            )
+            if assignment:
+                variables[assignment.group(1)].add(
+                    f"{assignment.group(2)} {' '.join(assignment.group(3).split())}"
+                )
+                continue
+            if ":" not in line or ":=" in line.split(":", 1)[0]:
+                continue
+            lhs, rhs = line.split(":", 1)
+            target_names = check_docs._split_make_line_tokens(lhs)
+            if lhs.strip() == ".PHONY":
+                for target in rhs.split():
+                    if "$" not in target:
+                        targets[target]["phony"] = True
+                continue
+            if not target_names:
+                continue
+            declaration, separator, inline_recipe = rhs.partition(";")
+            normal, marker, order_only = declaration.partition("|")
+            record = {
+                "prerequisites": tuple(sorted(normal.split())),
+                "order_only": tuple(sorted(order_only.split())) if marker else (),
+            }
+            for target in target_names:
+                targets[target]["declarations"].append(record)
+                if separator and inline_recipe.strip():
+                    targets[target]["recipes"].append(inline_recipe.strip())
+            current_targets = target_names
+
+    parse_file("Makefile")
+    result = {}
+    for target, record in targets.items():
+        values = [
+            *(
+                " ".join(declaration["prerequisites"])
+                + " | "
+                + " ".join(declaration["order_only"])
+                for declaration in record["declarations"]
+            ),
+            *record["recipes"],
+        ]
+        referenced = set()
+        pending = list(_make_variable_refs(values))
+        while pending:
+            name = pending.pop()
+            if name in referenced:
+                continue
+            referenced.add(name)
+            pending.extend(
+                _make_variable_refs(variables.get(name, ())) - referenced
+            )
+        result[target] = {
+            "declarations": sorted(
+                record["declarations"],
+                key=lambda item: (item["prerequisites"], item["order_only"]),
+            ),
+            "recipes": tuple(record["recipes"]),
+            "phony": record["phony"],
+            "variables": {
+                name: sorted(variables.get(name, ()))
+                for name in sorted(referenced)
+            },
+        }
+    return result
 
 
 def _authority_identity(authority: dict[str, Any]) -> tuple[str, ...]:
@@ -467,14 +789,18 @@ def _authority_identity(authority: dict[str, Any]) -> tuple[str, ...]:
 
 
 def _validate_authorities(
-    root: Path,
+    loader: AuthorityLoader,
     evidence_nodes: dict[str, dict[str, Any]],
     generated_records: list[dict[str, Any]],
+    *,
+    strict_workflow: bool,
 ) -> dict[str, dict[str, str]]:
-    literal_targets, pattern_targets = check_docs.parse_make_targets(str(root))
-    workflow_jobs, workflow_steps = _workflow_authorities(root)
-    tester_cases = _load_test_case_registry(root)
-    make_digest = _make_authority_digest(root)
+    make_targets = _parse_make_authorities(loader)
+    workflow_jobs, workflow_steps = _workflow_authorities(
+        loader,
+        strict=strict_workflow,
+    )
+    tester_cases = _load_test_case_registry(loader)
     identities = set()
     result = {}
     for node_id, node in evidence_nodes.items():
@@ -488,16 +814,14 @@ def _validate_authorities(
         kind = authority["kind"]
         if kind == "make-target":
             target = authority["target"]
-            if not check_docs.make_target_exists(
-                target, literal_targets, pattern_targets
-            ):
+            if target not in make_targets:
                 raise OwnershipError(
                     f"evidence node {node_id!r} references stale Make target "
                     f"{target!r}"
                 )
             fingerprint = _sha256(
                 b"validation-ownership-make-target-v1\0",
-                {"target": target, "make_authority": make_digest},
+                {"target": target, "record": make_targets[target]},
             )
             display = f"make {target}"
         elif kind == "workflow-job":
@@ -536,7 +860,7 @@ def _validate_authorities(
             )
             display = f"{TEST_CASE_REGISTRY_PATH}:{case_id}"
         elif kind == "manual-handoff":
-            record = _manual_handoff_record(root, authority["path"])
+            record = _manual_handoff_record(loader, authority["path"])
             fingerprint = _sha256(
                 b"validation-ownership-manual-handoff-v1\0", record
             )
@@ -544,7 +868,10 @@ def _validate_authorities(
         elif kind == "generated-data-registry":
             fingerprint = _sha256(
                 b"validation-ownership-generated-registry-v1\0",
-                generated_records,
+                {
+                    "records": generated_records,
+                    "source_semantics": _generated_registry_semantics(loader),
+                },
             )
             display = "scripts.generated_data.registry:REGISTRY"
         else:
@@ -558,7 +885,9 @@ def _validate_authorities(
 
 def _validate_lifecycle(
     artifact: dict[str, Any],
+    events: list[dict[str, Any]],
     evidence_nodes: dict[str, dict[str, Any]],
+    edge_ids: set[str],
 ) -> None:
     if (
         artifact["estimated_maintenance_minutes"]
@@ -592,24 +921,75 @@ def _validate_lifecycle(
         if previous is not None and expiry <= previous and current != "Delete":
             raise OwnershipError("expired artifact is not deleted")
 
-    proofs = artifact["lifecycle_proofs"]
-    kinds = {proof["kind"] for proof in proofs}
-    if kinds != REQUIRED_PROOF_KINDS or len(proofs) != len(REQUIRED_PROOF_KINDS):
+    by_id = {}
+    for event in events:
+        if event["id"] in by_id:
+            raise OwnershipError(f"duplicate lifecycle event {event['id']!r}")
+        by_id[event["id"]] = event
+        if event["artifact_id"] != artifact["artifact_id"]:
+            raise OwnershipError(
+                f"lifecycle event {event['id']!r} references another artifact"
+            )
+    triggers = [
+        event
+        for event in events
+        if event["type"] in pilot_reporter.DELETION_TRIGGER_TYPES
+    ]
+    proofs = [event for event in events if event["type"] == "deletion_proof"]
+    kinds = {trigger["type"] for trigger in triggers}
+    if kinds != REQUIRED_PROOF_KINDS or len(triggers) != len(REQUIRED_PROOF_KINDS):
         raise OwnershipError(
             "artifact lifecycle requires exactly one checkpoint, dependency "
-            "change, and pre-graduation proof"
+            "change, and pre-graduation trigger"
         )
+    expected_authorities = {
+        "artifact_checkpoint": f"artifact:{artifact['artifact_id']}",
+        "dependency_changed": "edge:generated-schema.depends",
+        "pre_graduation": f"decision:{artifact['unique_decision']}",
+    }
+    if "generated-schema.depends" not in edge_ids:
+        raise OwnershipError("lifecycle dependency authority edge is missing")
+    for trigger in triggers:
+        if trigger["authority"] != expected_authorities[trigger["type"]]:
+            raise OwnershipError(
+                f"lifecycle trigger {trigger['id']!r} has fabricated authority"
+            )
+    proofs_by_trigger: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for proof in proofs:
+        trigger = by_id.get(proof["trigger_event_id"])
+        if trigger is None or trigger["type"] not in REQUIRED_PROOF_KINDS:
+            raise OwnershipError(
+                f"lifecycle proof {proof['id']!r} has no authoritative trigger"
+            )
+        proofs_by_trigger[trigger["id"]].append(proof)
+    for trigger in triggers:
+        if len(proofs_by_trigger[trigger["id"]]) != 1:
+            raise OwnershipError(
+                f"lifecycle trigger {trigger['id']!r} requires exactly one proof"
+            )
+    if len(proofs) != len(triggers):
+        raise OwnershipError("artifact lifecycle has an orphan proof")
     reasons = {proof["reason"] for proof in proofs}
-    if len(reasons) != 1:
-        raise OwnershipError("artifact lifecycle proofs have mixed reasons")
+    if reasons != {LIFECYCLE_FAILURE_REASON}:
+        raise OwnershipError(
+            "artifact lifecycle proofs must use the executable failure reason"
+        )
     required_semantic = "pass" if current == "Delete" else "fail"
     for proof in proofs:
         try:
             occurred = pilot_reporter.parse_time(
                 proof["occurred_at"], f"artifact proof {proof['id']}.occurred_at"
             )
+            trigger_at = pilot_reporter.parse_time(
+                by_id[proof["trigger_event_id"]]["occurred_at"],
+                f"artifact trigger {proof['trigger_event_id']}.occurred_at",
+            )
         except pilot_reporter.PilotDataError as error:
             raise OwnershipError(str(error)) from error
+        if occurred <= trigger_at:
+            raise OwnershipError(
+                f"artifact proof {proof['id']!r} must strictly follow its trigger"
+            )
         if previous is not None and occurred >= previous:
             raise OwnershipError(
                 "artifact disposition must strictly follow every lifecycle proof"
@@ -684,8 +1064,8 @@ def _required_edge_types(surface: dict[str, Any]) -> set[str]:
 
 def _validate_semantics(
     graph: dict[str, Any],
-    root: Path,
-    paths: tuple[str, ...],
+    loader: AuthorityLoader,
+    entries: dict[str, GitTreeEntry],
 ) -> dict[str, Any]:
     if graph["schema_version"] != EXPECTED_SCHEMA_VERSION:
         raise OwnershipError(
@@ -812,9 +1192,19 @@ def _validate_semantics(
                     f"evidence; missing {missing_deterministic}"
                 )
 
-    generated_records, generated_paths = _generated_registry_records(root)
-    authorities = _validate_authorities(root, evidence_nodes, generated_records)
-    _validate_lifecycle(graph["artifact"], evidence_nodes)
+    generated_records, generated_paths = _generated_registry_records(loader)
+    authorities = _validate_authorities(
+        loader,
+        evidence_nodes,
+        generated_records,
+        strict_workflow=True,
+    )
+    _validate_lifecycle(
+        graph["artifact"],
+        graph["lifecycle_events"],
+        evidence_nodes,
+        edge_ids,
+    )
 
     rule_ids = set()
     for rule in graph["path_rules"]:
@@ -839,7 +1229,7 @@ def _validate_semantics(
         exclusion_ids.add(exclusion["id"])
 
     coverage = {}
-    for path in paths:
+    for path, entry in sorted(entries.items()):
         matches = [
             rule
             for rule in graph["path_rules"]
@@ -853,27 +1243,48 @@ def _validate_semantics(
                 for selector in exclusion["include"]
             )
         ]
-        if len(matches) + len(excluded) == 0:
-            raise OwnershipError(f"tracked path {path!r} has no ownership contract")
-        if len(matches) + len(excluded) > 1:
-            identities = [rule["id"] for rule in matches] + [
-                exclusion["id"] for exclusion in excluded
-            ]
+        if entry.mode == SYMLINK_MODE:
             raise OwnershipError(
-                f"tracked path {path!r} has ambiguous ownership {identities}"
+                f"tracked path {path!r} is a symlink; mode 120000 is not admitted"
             )
-        if matches:
-            coverage[path] = {
-                "kind": "owned",
-                "rule": matches[0]["id"],
-                "surface": matches[0]["surface"],
-            }
-        else:
+        if entry.mode == GITLINK_MODE:
+            if entry.object_type != "commit":
+                raise OwnershipError(
+                    f"gitlink {path!r} must identify a commit object"
+                )
+            if matches or len(excluded) != 1:
+                raise OwnershipError(
+                    f"gitlink {path!r} requires one explicit fail-closed exclusion"
+                )
             coverage[path] = {
                 "kind": "excluded",
+                "mode": entry.mode,
                 "exclusion": excluded[0]["id"],
                 "reason": excluded[0]["reason"],
             }
+            continue
+        if not REGULAR_BLOB_MODE_RE.fullmatch(entry.mode) or entry.object_type != "blob":
+            raise OwnershipError(
+                f"tracked path {path!r} has unsupported mode {entry.mode} "
+                f"type {entry.object_type}"
+            )
+        if excluded:
+            raise OwnershipError(
+                f"regular blob {path!r} cannot use a gitlink exclusion"
+            )
+        if len(matches) == 0:
+            raise OwnershipError(f"tracked path {path!r} has no ownership contract")
+        if len(matches) > 1:
+            identities = [rule["id"] for rule in matches]
+            raise OwnershipError(
+                f"tracked path {path!r} has ambiguous ownership {identities}"
+            )
+        coverage[path] = {
+            "kind": "owned",
+            "mode": entry.mode,
+            "rule": matches[0]["id"],
+            "surface": matches[0]["surface"],
+        }
 
     return {
         "nodes": nodes,
@@ -881,23 +1292,25 @@ def _validate_semantics(
         "evidence": evidence_nodes,
         "outgoing": outgoing,
         "authorities": authorities,
+        "generated_records": generated_records,
         "generated_paths": generated_paths,
         "coverage": coverage,
+        "entries": entries,
     }
 
 
 def validate_graph(
     graph: dict[str, Any],
     schema: dict[str, Any],
-    root: Path,
-    paths: tuple[str, ...],
+    loader: AuthorityLoader,
+    entries: dict[str, GitTreeEntry],
 ) -> dict[str, Any]:
     if not isinstance(schema, dict):
         raise OwnershipError("graph schema must be an object")
     if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
         raise OwnershipError("graph schema must use JSON Schema draft 2020-12")
     validate_json_schema(graph, schema, schema)
-    return _validate_semantics(graph, root, paths)
+    return _validate_semantics(graph, loader, entries)
 
 
 def _resolved_edges(
@@ -1011,78 +1424,108 @@ def compare_graph_edges(
 
 
 def _authority_changed_edges(
-    root: Path,
-    revision: str,
     graph: dict[str, Any],
+    prior_graph: dict[str, Any],
+    model: dict[str, Any],
+    current_loader: AuthorityLoader,
+    base_loader: AuthorityLoader,
 ) -> set[str]:
-    output = _git(root, "diff", "--name-only", "-z", revision, "--").stdout
-    try:
-        changed_paths = {
-            path
-            for path in output.decode("utf-8").split("\0")
-            if path
-        }
-    except UnicodeDecodeError as error:
-        raise OwnershipError("Git changed paths are not valid UTF-8") from error
-    if SCHEMA_PATH.as_posix() in changed_paths:
+    if (
+        SCHEMA_PATH.as_posix() not in base_loader.entries
+        or PROBE_ORACLE_PATH.as_posix() not in base_loader.entries
+    ):
         return {edge["id"] for edge in graph["edges"]}
-
-    changed_authority_kinds = set()
-    if any(path == "Makefile" or path.endswith(".mk") for path in changed_paths):
-        changed_authority_kinds.add("make-target")
-    if BUILD_WORKFLOW_PATH.as_posix() in changed_paths:
-        changed_authority_kinds.update({"workflow-job", "workflow-step"})
-    if TEST_CASE_REGISTRY_PATH.as_posix() in changed_paths:
-        changed_authority_kinds.add("tester-case")
-    if any(path.startswith("scripts/generated_data/") for path in changed_paths):
-        changed_authority_kinds.add("generated-data-registry")
-
-    nodes = {
+    current_schema = current_loader.read_json(
+        SCHEMA_PATH,
+        "ownership graph schema",
+    )
+    base_schema = base_loader.read_json(
+        SCHEMA_PATH,
+        "base ownership graph schema",
+    )
+    current_oracle = current_loader.read_json(
+        PROBE_ORACLE_PATH,
+        "ownership probe oracle",
+    )
+    base_oracle = base_loader.read_json(
+        PROBE_ORACLE_PATH,
+        "base ownership probe oracle",
+    )
+    if current_schema != base_schema or current_oracle != base_oracle:
+        return {edge["id"] for edge in graph["edges"]}
+    current_nodes = {
         node["id"]: node
         for node in graph["nodes"]
         if node["kind"] == "evidence"
     }
-    changed_nodes = set()
-    for node_id, node in nodes.items():
-        authority = node["authority"]
-        if authority["kind"] in changed_authority_kinds:
-            changed_nodes.add(node_id)
-        if (
-            authority["kind"] == "manual-handoff"
-            and authority["path"] in changed_paths
-        ):
-            changed_nodes.add(node_id)
+    prior_nodes = {
+        node["id"]: node
+        for node in prior_graph["nodes"]
+        if node["kind"] == "evidence"
+    }
+    prior_authorities = _validate_authorities(
+        base_loader,
+        prior_nodes,
+        model["generated_records"],
+        strict_workflow=False,
+    )
+    changed_nodes = {
+        node_id
+        for node_id in set(current_nodes) & set(prior_nodes)
+        if _authority_identity(current_nodes[node_id]["authority"])
+        == _authority_identity(prior_nodes[node_id]["authority"])
+        and model["authorities"][node_id]["fingerprint"]
+        != prior_authorities[node_id]["fingerprint"]
+    }
     return {
         edge["id"]
-        for edge in graph["edges"]
+        for candidate in (graph, prior_graph)
+        for edge in candidate["edges"]
         if edge["target"] in changed_nodes
     }
 
 
-def _prior_graph(root: Path, revision: str | None) -> dict[str, Any] | None:
-    if revision is None:
+def _prior_graph(loader: AuthorityLoader | None) -> dict[str, Any] | None:
+    if loader is None or GRAPH_PATH.as_posix() not in loader.entries:
         return None
-    completed = _git(
-        root,
-        "show",
-        f"{revision}:{GRAPH_PATH.as_posix()}",
-        check=False,
+    return loader.read_json(
+        GRAPH_PATH,
+        "prior ownership graph",
     )
-    if completed.returncode != 0:
-        return None
-    try:
-        return parse_json(completed.stdout.decode("utf-8"), f"{revision}:{GRAPH_PATH}")
-    except UnicodeDecodeError as error:
-        raise OwnershipError("prior ownership graph is not valid UTF-8") from error
 
 
 def _resolve_path(
     path: str,
     graph: dict[str, Any],
     model: dict[str, Any],
+    base_entries: dict[str, GitTreeEntry] | None = None,
 ) -> dict[str, Any]:
-    if not path or path.startswith("/") or ".." in Path(path).parts:
-        raise OwnershipError(f"changed path {path!r} must be repository-relative")
+    path = _validate_relative_path(path, "changed path")
+    current_entry = model["entries"].get(path)
+    base_entry = None if base_entries is None else base_entries.get(path)
+    if current_entry is None and base_entry is None:
+        raise OwnershipError(
+            f"changed path {path!r} is absent from the current and selected base trees"
+        )
+    if (
+        current_entry is not None
+        and base_entry is not None
+        and (
+            current_entry.mode != base_entry.mode
+            or current_entry.object_type != base_entry.object_type
+        )
+    ):
+        raise OwnershipError(
+            f"changed path {path!r} changes Git mode/type "
+            f"{base_entry.mode}/{base_entry.object_type} -> "
+            f"{current_entry.mode}/{current_entry.object_type}"
+        )
+    entry = current_entry or base_entry
+    assert entry is not None
+    if entry.mode == SYMLINK_MODE:
+        raise OwnershipError(
+            f"changed path {path!r} is a rejected 120000 symlink"
+        )
     generated_paths = model["generated_paths"]
     matches = [
         rule
@@ -1097,16 +1540,29 @@ def _resolve_path(
             for selector in exclusion["include"]
         )
     ]
-    if not matches and not exclusions:
-        raise OwnershipError(f"changed path {path!r} has no ownership contract")
-    if len(matches) + len(exclusions) > 1:
-        raise OwnershipError(f"changed path {path!r} has ambiguous ownership")
-    if exclusions:
+    if entry.mode == GITLINK_MODE:
+        if matches or len(exclusions) != 1:
+            raise OwnershipError(
+                f"changed gitlink {path!r} lacks one explicit fail-closed exclusion"
+            )
         exclusion = exclusions[0]
         raise OwnershipError(
-            f"changed path {path!r} is fail-closed exclusion "
+            f"changed path {path!r} is fail-closed gitlink exclusion "
             f"{exclusion['id']!r}: {exclusion['reason']}"
         )
+    if not REGULAR_BLOB_MODE_RE.fullmatch(entry.mode) or entry.object_type != "blob":
+        raise OwnershipError(
+            f"changed path {path!r} has unsupported mode {entry.mode} "
+            f"type {entry.object_type}"
+        )
+    if exclusions:
+        raise OwnershipError(
+            f"changed regular blob {path!r} cannot use a gitlink exclusion"
+        )
+    if not matches:
+        raise OwnershipError(f"changed path {path!r} has no ownership contract")
+    if len(matches) > 1:
+        raise OwnershipError(f"changed path {path!r} has ambiguous ownership")
     rule = matches[0]
     surface = model["surfaces"][rule["surface"]]
     owners = []
@@ -1132,18 +1588,93 @@ def _resolve_path(
         "rule": rule["id"],
         "surface": surface["id"],
         "surface_type": surface["surface_type"],
+        "git_mode": entry.mode,
         "owners": owners,
     }
 
 
+def validate_probe_oracle(
+    oracle: Any,
+    graph: dict[str, Any],
+    entries: dict[str, GitTreeEntry],
+) -> dict[str, Any]:
+    if not isinstance(oracle, dict):
+        raise OwnershipError("probe oracle must be an object")
+    expected_keys = {"schema_version", "source_case", "probes", "seal"}
+    if set(oracle) != expected_keys:
+        raise OwnershipError(
+            f"probe oracle keys must be exactly {sorted(expected_keys)}"
+        )
+    if oracle["schema_version"] != 1:
+        raise OwnershipError("probe oracle schema_version must be 1")
+    if oracle["source_case"] != "TC-WORKFLOW-GATE-OWNERSHIP-001":
+        raise OwnershipError("probe oracle has unknown source case")
+    if not isinstance(oracle["probes"], list) or not oracle["probes"]:
+        raise OwnershipError("probe oracle must contain probes")
+    surfaces = {
+        node["id"]
+        for node in graph["nodes"]
+        if node["kind"] == "surface"
+    }
+    paths = set()
+    for index, probe in enumerate(oracle["probes"]):
+        label = f"probe oracle entry {index}"
+        if not isinstance(probe, dict) or set(probe) != {
+            "path",
+            "expected_surface",
+            "expected_edge_types",
+        }:
+            raise OwnershipError(f"{label} has unknown or missing fields")
+        path = _validate_relative_path(probe["path"], f"{label}.path")
+        if path in paths:
+            raise OwnershipError(f"probe oracle duplicates path {path!r}")
+        paths.add(path)
+        entry = entries.get(path)
+        if (
+            entry is None
+            or not REGULAR_BLOB_MODE_RE.fullmatch(entry.mode)
+            or entry.object_type != "blob"
+        ):
+            raise OwnershipError(
+                f"probe oracle path {path!r} is not a current regular blob"
+            )
+        if probe["expected_surface"] not in surfaces:
+            raise OwnershipError(
+                f"{label} references unknown surface {probe['expected_surface']!r}"
+            )
+        edge_types = probe["expected_edge_types"]
+        if (
+            not isinstance(edge_types, list)
+            or not edge_types
+            or len(edge_types) != len(set(edge_types))
+        ):
+            raise OwnershipError(f"{label} edge types must be a unique nonempty list")
+        unknown = sorted(set(edge_types) - EDGE_TYPES)
+        if unknown:
+            raise OwnershipError(f"{label} has unknown edge families {unknown}")
+    seal = oracle["seal"]
+    if not isinstance(seal, str) or not re.fullmatch(r"[0-9a-f]{64}", seal):
+        raise OwnershipError("probe oracle seal must be a lowercase SHA-256")
+    payload = {
+        "schema_version": oracle["schema_version"],
+        "source_case": oracle["source_case"],
+        "probes": oracle["probes"],
+    }
+    expected = _sha256(PROBE_SEAL_DOMAIN, payload)
+    if seal != expected:
+        raise OwnershipError("probe oracle seal does not match its admitted cases")
+    return oracle
+
+
 def _measure(
+    oracle: dict[str, Any],
     graph: dict[str, Any],
     model: dict[str, Any],
 ) -> dict[str, Any]:
     false_positive = 0
     false_negative = 0
     probes = []
-    for probe in graph["measurement"]["probes"]:
+    for probe in oracle["probes"]:
         resolution = _resolve_path(probe["path"], graph, model)
         actual = {owner["edge_type"] for owner in resolution["owners"]}
         expected = set(probe["expected_edge_types"])
@@ -1159,9 +1690,15 @@ def _measure(
                 "edge_types": sorted(actual),
             }
         )
+    if false_positive or false_negative:
+        raise OwnershipError(
+            "probe oracle selection mismatch "
+            f"(false_positive={false_positive}, false_negative={false_negative})"
+        )
     artifact = graph["artifact"]
     return {
-        "source_case": graph["measurement"]["source_case"],
+        "source_case": oracle["source_case"],
+        "oracle_seal": oracle["seal"],
         "probe_count": len(probes),
         "false_positive_selections": false_positive,
         "false_negative_selections": false_negative,
@@ -1176,16 +1713,19 @@ def _measure(
 def build_report(
     graph: dict[str, Any],
     schema: dict[str, Any],
-    root: Path,
-    paths: tuple[str, ...],
+    oracle: dict[str, Any],
+    loader: AuthorityLoader,
+    entries: dict[str, GitTreeEntry],
     changed_paths: Iterable[str] = (),
     prior_graph: dict[str, Any] | None = None,
     review_comparison_requested: bool = False,
     authority_changed_edge_ids: Iterable[str] = (),
+    base_entries: dict[str, GitTreeEntry] | None = None,
 ) -> dict[str, Any]:
-    model = validate_graph(graph, schema, root, paths)
+    model = validate_graph(graph, schema, loader, entries)
+    oracle = validate_probe_oracle(oracle, graph, entries)
     resolutions = [
-        _resolve_path(path, graph, model)
+        _resolve_path(path, graph, model, base_entries)
         for path in sorted(set(changed_paths))
     ]
     selected = {}
@@ -1215,7 +1755,7 @@ def build_report(
         "schema_version": EXPECTED_SCHEMA_VERSION,
         "policy": graph["policy"],
         "coverage": {
-            "tracked_paths": len(paths),
+            "tracked_paths": len(entries),
             "owned_paths": sum(
                 item["kind"] == "owned" for item in model["coverage"].values()
             ),
@@ -1233,7 +1773,7 @@ def build_report(
             "executable_consumer": graph["artifact"]["executable_consumer"],
             "consistency_check": graph["artifact"]["consistency_check"],
         },
-        "measurement": _measure(graph, model),
+        "measurement": _measure(oracle, graph, model),
         "resolutions": resolutions,
         "selected_gates": [
             selected[key] for key in sorted(selected)
@@ -1253,6 +1793,177 @@ def build_report(
             "resolved_edges": _sha256(EDGE_SEAL_DOMAIN, resolved_edges),
         },
     }
+
+
+def run_lifecycle_check(
+    artifact_root: Path,
+    authority_root: Path,
+    check_id: str,
+) -> int:
+    if check_id not in LIFECYCLE_CHECKS:
+        raise OwnershipError(f"lifecycle check {check_id!r} is not allowlisted")
+    authority_root = validate_repository_root(authority_root)
+    artifact_root = artifact_root.resolve(strict=True)
+    sandbox_parent = (authority_root / "build" / "test-artifacts").resolve()
+    if sandbox_parent not in artifact_root.parents:
+        raise OwnershipError("lifecycle artifact root must be in the bounded sandbox")
+    graph_path = artifact_root / GRAPH_PATH
+    if not graph_path.is_file() or graph_path.is_symlink():
+        raise OwnershipError(
+            "validation ownership graph artifact is missing: "
+            + LIFECYCLE_FAILURE_REASON
+        )
+    graph = load_json(graph_path)
+    entries = git_tree_entries(authority_root)
+    loader = AuthorityLoader(authority_root, entries)
+    schema = loader.read_json(SCHEMA_PATH, "ownership graph schema")
+    oracle = loader.read_json(PROBE_ORACLE_PATH, "ownership probe oracle")
+    report = build_report(
+        graph,
+        schema,
+        oracle,
+        loader,
+        entries,
+    )
+    if check_id == "TC-WORKFLOW-GATE-OWNERSHIP-001":
+        measurement = report["measurement"]
+        if (
+            measurement["false_positive_selections"] != 0
+            or measurement["false_negative_selections"] != 0
+        ):
+            raise OwnershipError("ownership consistency check has selection loss")
+    return 0
+
+
+def _run_lifecycle_subprocess(
+    authority_root: Path,
+    artifact_root: Path,
+    check_id: str,
+) -> subprocess.CompletedProcess[bytes]:
+    command = (
+        "/usr/bin/python3",
+        "-I",
+        str(authority_root / "scripts/validation_ownership/isolated_launcher.py"),
+        "lifecycle-check",
+        "--artifact-root",
+        str(artifact_root),
+        "--authority-root",
+        str(authority_root),
+        "--check",
+        check_id,
+    )
+    try:
+        return subprocess.run(
+            command,
+            cwd=authority_root,
+            env={"LC_ALL": "C", "PATH": "/usr/bin:/bin", "PYTHONHASHSEED": "0"},
+            check=False,
+            capture_output=True,
+            timeout=LIFECYCLE_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise OwnershipError(f"cannot execute lifecycle proof: {error}") from error
+
+
+def validate_executable_lifecycle(
+    root: Path,
+    graph: dict[str, Any],
+) -> list[dict[str, str]]:
+    events = graph["lifecycle_events"]
+    triggers = {
+        event["id"]: event
+        for event in events
+        if event["type"] in REQUIRED_PROOF_KINDS
+    }
+    proofs = sorted(
+        (
+            event
+            for event in events
+            if event["type"] == "deletion_proof"
+        ),
+        key=lambda item: item["occurred_at"],
+    )
+    build_root = root / "build"
+    sandbox_parent = build_root / "test-artifacts"
+    build_existed = build_root.exists()
+    sandbox_parent_existed = sandbox_parent.exists()
+    sandbox_parent.mkdir(parents=True, exist_ok=True)
+    source_bytes = (root / GRAPH_PATH).read_bytes()
+    results = []
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix=f".{root.name}-validation-ownership-proof-",
+            dir=sandbox_parent,
+        ) as temporary:
+            sandbox = Path(temporary)
+            artifact = sandbox / GRAPH_PATH
+            artifact.parent.mkdir(parents=True)
+            shutil.copy2(root / GRAPH_PATH, artifact)
+            for check_id in sorted(LIFECYCLE_CHECKS):
+                initial = _run_lifecycle_subprocess(root, sandbox, check_id)
+                if initial.returncode != 0:
+                    detail = initial.stderr.decode("utf-8", errors="replace").strip()
+                    raise OwnershipError(
+                        "stale executable lifecycle baseline does not pass"
+                        + (f": {detail}" if detail else "")
+                    )
+            backup = sandbox / "validation-ownership-graph.backup"
+            for proof in proofs:
+                trigger = triggers[proof["trigger_event_id"]]
+                artifact.replace(backup)
+                removed = [
+                    _run_lifecycle_subprocess(root, sandbox, check_id)
+                    for check_id in sorted(LIFECYCLE_CHECKS)
+                ]
+                backup.replace(artifact)
+                if any(item.returncode == 0 for item in removed):
+                    raise OwnershipError(
+                        f"lifecycle proof {proof['id']!r} removal did not fail"
+                    )
+                removal_details = [
+                    item.stderr.decode("utf-8", errors="replace")
+                    for item in removed
+                ]
+                if any(
+                    LIFECYCLE_FAILURE_REASON not in detail
+                    for detail in removal_details
+                ):
+                    raise OwnershipError(
+                        f"lifecycle proof {proof['id']!r} lacks the named failure"
+                    )
+                restored = [
+                    _run_lifecycle_subprocess(root, sandbox, check_id)
+                    for check_id in sorted(LIFECYCLE_CHECKS)
+                ]
+                if any(item.returncode != 0 for item in restored):
+                    raise OwnershipError(
+                        f"lifecycle proof {proof['id']!r} restoration did not pass"
+                    )
+                results.append(
+                    {
+                        "trigger_event_id": trigger["id"],
+                        "trigger_type": trigger["type"],
+                        "proof_id": proof["id"],
+                        "removal": "fail",
+                        "reason": LIFECYCLE_FAILURE_REASON,
+                        "restoration": "pass",
+                    }
+                )
+    except OSError as error:
+        raise OwnershipError(f"cannot prepare lifecycle sandbox: {error}") from error
+    finally:
+        for path, existed in (
+            (sandbox_parent, sandbox_parent_existed),
+            (build_root, build_existed),
+        ):
+            if not existed:
+                try:
+                    path.rmdir()
+                except OSError:
+                    pass
+    if (root / GRAPH_PATH).read_bytes() != source_bytes:
+        raise OwnershipError("lifecycle proof changed the source graph")
+    return results
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -1282,25 +1993,50 @@ def main(argv: list[str] | None = None) -> int:
     try:
         root = validate_repository_root(Path(arguments.repository_root))
         before = repository_status(root)
-        graph = load_json(root / GRAPH_PATH)
-        schema = load_json(root / SCHEMA_PATH)
-        prior = _prior_graph(root, arguments.base_revision)
+        entries = git_tree_entries(root)
+        loader = AuthorityLoader(root, entries)
+        graph = loader.read_json(GRAPH_PATH, "validation ownership graph")
+        schema = loader.read_json(SCHEMA_PATH, "ownership graph schema")
+        oracle = loader.read_json(PROBE_ORACLE_PATH, "ownership probe oracle")
+        base_entries = (
+            git_tree_entries(root, arguments.base_revision)
+            if arguments.base_revision is not None
+            else None
+        )
+        base_loader = (
+            AuthorityLoader(root, base_entries, arguments.base_revision)
+            if base_entries is not None
+            else None
+        )
+        prior = _prior_graph(base_loader)
         if prior is not None:
             validate_json_schema(prior, schema, schema, "prior graph")
+        model = validate_graph(graph, schema, loader, entries)
         authority_changed = (
-            _authority_changed_edges(root, arguments.base_revision, graph)
-            if arguments.base_revision is not None and prior is not None
+            _authority_changed_edges(
+                graph,
+                prior,
+                model,
+                loader,
+                base_loader,
+            )
+            if base_loader is not None and prior is not None
             else set()
         )
         report = build_report(
             graph,
             schema,
-            root,
-            tracked_paths(root),
+            oracle,
+            loader,
+            entries,
             arguments.changed,
             prior,
             arguments.base_revision is not None,
             authority_changed,
+            base_entries,
+        )
+        report["artifact"]["executable_lifecycle"] = (
+            validate_executable_lifecycle(root, graph)
         )
         after = repository_status(root)
         if after != before:

@@ -13,6 +13,7 @@ from scripts.validation_ownership import reporter
 ROOT = Path(__file__).resolve().parents[3]
 GRAPH_PATH = ROOT / reporter.GRAPH_PATH
 SCHEMA_PATH = ROOT / reporter.SCHEMA_PATH
+ORACLE_PATH = ROOT / reporter.PROBE_ORACLE_PATH
 SCRATCH_ROOT = ROOT / "build" / "test-artifacts" / "validation-ownership"
 
 
@@ -21,23 +22,29 @@ class OwnershipGraphTests(unittest.TestCase):
     def setUpClass(cls):
         cls.graph = reporter.load_json(GRAPH_PATH)
         cls.schema = reporter.load_json(SCHEMA_PATH)
-        cls.tracked = reporter.tracked_paths(ROOT)
-        cls.fixture_paths = tuple(
-            probe["path"] for probe in cls.graph["measurement"]["probes"]
-        ) + ("mgfembp",)
+        cls.oracle = reporter.load_json(ORACLE_PATH)
+        cls.entries = reporter.git_tree_entries(ROOT)
+        cls.loader = reporter.AuthorityLoader(ROOT, cls.entries)
+        cls.fixture_entries = {
+            path: cls.entries[path]
+            for path in {
+                *(probe["path"] for probe in cls.oracle["probes"]),
+                "mgfembp",
+            }
+        }
         SCRATCH_ROOT.mkdir(parents=True, exist_ok=True)
 
-    def validate(self, graph=None, paths=None):
+    def validate(self, graph=None, entries=None):
         return reporter.validate_graph(
             self.graph if graph is None else graph,
             self.schema,
-            ROOT,
-            self.fixture_paths if paths is None else paths,
+            self.loader,
+            self.fixture_entries if entries is None else entries,
         )
 
     def test_whole_repository_has_exact_coverage(self):
-        model = self.validate(paths=self.tracked)
-        self.assertEqual(len(model["coverage"]), len(self.tracked))
+        model = self.validate(entries=self.entries)
+        self.assertEqual(len(model["coverage"]), len(self.entries))
         self.assertEqual(
             [path for path, record in model["coverage"].items() if record["kind"] == "excluded"],
             ["mgfembp"],
@@ -47,9 +54,10 @@ class OwnershipGraphTests(unittest.TestCase):
         report = reporter.build_report(
             self.graph,
             self.schema,
-            ROOT,
-            self.tracked,
-            (probe["path"] for probe in self.graph["measurement"]["probes"]),
+            self.oracle,
+            self.loader,
+            self.entries,
+            (probe["path"] for probe in self.oracle["probes"]),
         )
         self.assertEqual(report["measurement"]["false_positive_selections"], 0)
         self.assertEqual(report["measurement"]["false_negative_selections"], 0)
@@ -58,7 +66,7 @@ class OwnershipGraphTests(unittest.TestCase):
         }
         expected = {
             probe["path"]: probe["expected_surface"]
-            for probe in self.graph["measurement"]["probes"]
+            for probe in self.oracle["probes"]
         }
         self.assertEqual(actual, expected)
         for resolution in report["resolutions"]:
@@ -68,25 +76,117 @@ class OwnershipGraphTests(unittest.TestCase):
             )
 
     def test_generated_paths_come_from_typed_registry(self):
-        model = self.validate(paths=self.tracked)
+        model = self.validate(entries=self.entries)
         generated = {
             path
             for path, record in model["coverage"].items()
             if record.get("surface") == "surface.generated"
         }
-        _, registry_paths = reporter._generated_registry_records(ROOT)
+        _, registry_paths = reporter._generated_registry_records(self.loader)
         self.assertTrue(registry_paths)
         self.assertLessEqual(registry_paths, generated)
         self.assertIn("src/data/items.json", generated)
 
     def test_unknown_path_and_fail_closed_exclusion_reject(self):
         model = self.validate()
-        with self.assertRaisesRegex(reporter.OwnershipError, "no ownership contract"):
+        with self.assertRaisesRegex(reporter.OwnershipError, "absent from"):
             reporter._resolve_path("unowned/new.c", self.graph, model)
-        with self.assertRaisesRegex(reporter.OwnershipError, "fail-closed exclusion"):
+        with self.assertRaisesRegex(reporter.OwnershipError, "fail-closed.*exclusion"):
             reporter._resolve_path("mgfembp", self.graph, model)
         with self.assertRaisesRegex(reporter.OwnershipError, "no ownership contract"):
-            self.validate(paths=self.fixture_paths + ("unowned/new.c",))
+            entries = dict(self.fixture_entries)
+            entries["unowned/new.c"] = reporter.GitTreeEntry(
+                "unowned/new.c",
+                "100644",
+                "blob",
+                "0" * 40,
+            )
+            self.validate(entries=entries)
+
+    def test_git_modes_and_changed_path_provenance_fail_closed(self):
+        entries = dict(self.fixture_entries)
+        entries["include/global.h"] = reporter.GitTreeEntry(
+            "include/global.h",
+            reporter.SYMLINK_MODE,
+            "blob",
+            "0" * 40,
+        )
+        with self.assertRaisesRegex(reporter.OwnershipError, "120000"):
+            self.validate(entries=entries)
+
+        entries = dict(self.fixture_entries)
+        entries["scripts/check_docs.py"] = reporter.GitTreeEntry(
+            "scripts/check_docs.py",
+            reporter.GITLINK_MODE,
+            "commit",
+            "0" * 40,
+        )
+        with self.assertRaisesRegex(reporter.OwnershipError, "gitlink.*exclusion"):
+            self.validate(entries=entries)
+
+        model = self.validate()
+        with self.assertRaisesRegex(reporter.OwnershipError, "absent from"):
+            reporter._resolve_path("src/new.c", self.graph, model)
+        with self.assertRaisesRegex(reporter.OwnershipError, "absent from"):
+            reporter._resolve_path("build/ignored.c", self.graph, model)
+
+        base_entries = {
+            "src/removed.c": reporter.GitTreeEntry(
+                "src/removed.c",
+                "100644",
+                "blob",
+                "1" * 40,
+            ),
+        }
+        resolution = reporter._resolve_path(
+            "src/removed.c",
+            self.graph,
+            model,
+            base_entries,
+        )
+        self.assertEqual(resolution["surface"], "surface.runtime")
+
+        base_entries["include/global.h"] = reporter.GitTreeEntry(
+            "include/global.h",
+            "100755",
+            "blob",
+            "2" * 40,
+        )
+        with self.assertRaisesRegex(reporter.OwnershipError, "changes Git mode"):
+            reporter._resolve_path(
+                "include/global.h",
+                self.graph,
+                model,
+                base_entries,
+            )
+
+    def test_authority_loader_rejects_symlink_escape_and_nonblob_mode(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            scratch = Path(directory)
+            outside = SCRATCH_ROOT / "outside-authority.json"
+            outside.write_text("{}\n", encoding="ascii")
+            link = scratch / "authority.json"
+            link.symlink_to(outside)
+            entries = {
+                "authority.json": reporter.GitTreeEntry(
+                    "authority.json",
+                    "100644",
+                    "blob",
+                    "0" * 40,
+                )
+            }
+            loader = reporter.AuthorityLoader(scratch, entries)
+            with self.assertRaisesRegex(reporter.OwnershipError, "regular file"):
+                loader.read_blob("authority.json", "fixture authority")
+            entries["authority.json"] = reporter.GitTreeEntry(
+                "authority.json",
+                reporter.SYMLINK_MODE,
+                "blob",
+                "0" * 40,
+            )
+            with self.assertRaisesRegex(reporter.OwnershipError, "regular blob"):
+                loader.read_blob("authority.json", "fixture authority")
+            outside.unlink()
 
     def test_overlap_and_duplicate_rule_reject(self):
         graph = copy.deepcopy(self.graph)
@@ -220,10 +320,20 @@ class OwnershipGraphTests(unittest.TestCase):
         with self.assertRaisesRegex(reporter.OwnershipError, "missing owner edges"):
             self.validate(graph)
         handoff = reporter._manual_handoff_record(
-            ROOT, ".github/manual-testing-handoff.json"
+            self.loader, ".github/manual-testing-handoff.json"
         )
         self.assertFalse(handoff["eligibility"]["deterministic_criteria"])
         self.assertTrue(handoff["pre_handoff"]["semantic_assertions_primary"])
+
+        graph = copy.deepcopy(self.graph)
+        manual = next(
+            node
+            for node in graph["nodes"]
+            if node["id"] == "owner.manual-handoff"
+        )
+        manual["authority"]["path"] = ".github/CODEOWNERS"
+        with self.assertRaisesRegex(reporter.OwnershipError, "must be exactly"):
+            self.validate(graph)
 
     def test_stale_make_workflow_case_and_generated_targets_reject(self):
         mutations = (
@@ -243,44 +353,97 @@ class OwnershipGraphTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
             scratch = Path(directory)
             make_path = scratch / "Makefile"
-            workflow_path = scratch / "build.yml"
-            make_path.write_bytes((ROOT / "Makefile").read_bytes())
-            workflow_path.write_bytes((ROOT / reporter.BUILD_WORKFLOW_PATH).read_bytes())
-            before_make = reporter.digest_paths(
-                scratch,
-                ("Makefile",),
-                b"make-fixture\0",
+            include_path = scratch / "rules.mk"
+            make_path.write_text(
+                "include rules.mk\n"
+                "alpha: first\n"
+                "alpha: second\n"
+                "\t@echo $(ALPHA)\n"
+                "beta:\n"
+                "\t@echo beta\n",
+                encoding="ascii",
             )
-            before_workflow = reporter.digest_paths(
-                scratch,
-                ("build.yml",),
-                b"workflow-fixture\0",
+            include_path.write_text("ALPHA := value\n", encoding="ascii")
+            entries = {
+                path: reporter.GitTreeEntry(path, "100644", "blob", "0" * 40)
+                for path in ("Makefile", "rules.mk")
+            }
+            loader = reporter.AuthorityLoader(scratch, entries)
+            before_make = reporter._parse_make_authorities(loader)
+
+            make_path.write_text(
+                "# comment-only change\n"
+                "include rules.mk\n"
+                "alpha: second\n"
+                "alpha: first\n"
+                "\t@echo $(ALPHA)\n"
+                "beta:\n"
+                "\t@echo beta\n",
+                encoding="ascii",
             )
-            make_path.write_bytes(make_path.read_bytes() + b"\n# target drift\n")
-            workflow_path.write_bytes(
-                workflow_path.read_bytes() + b"\n# workflow target drift\n"
+            reordered_make = reporter._parse_make_authorities(loader)
+            self.assertEqual(before_make, reordered_make)
+
+            make_path.write_text(
+                make_path.read_text(encoding="ascii").replace(
+                    "@echo beta",
+                    "@echo changed-beta",
+                ),
+                encoding="ascii",
             )
-            after_make = reporter.digest_paths(
-                scratch,
-                ("Makefile",),
-                b"make-fixture\0",
-            )
-            after_workflow = reporter.digest_paths(
-                scratch,
-                ("build.yml",),
-                b"workflow-fixture\0",
-            )
-        self.assertNotEqual(before_make, after_make)
-        self.assertNotEqual(before_workflow, after_workflow)
-        first = reporter._sha256(
-            reporter.EDGE_SEAL_DOMAIN,
-            {"authority": before_make},
+            changed_make = reporter._parse_make_authorities(loader)
+            self.assertEqual(before_make["alpha"], changed_make["alpha"])
+            self.assertNotEqual(before_make["beta"], changed_make["beta"])
+
+        workflow = (
+            "name: Fixture\non: push\npermissions: read-all\njobs:\n"
+            "  host-tests:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    steps:\n"
+            "    - name: Alpha\n"
+            "      run: echo alpha\n"
+            "    - name: Beta\n"
+            "      run: echo beta\n"
         )
-        second = reporter._sha256(
-            reporter.EDGE_SEAL_DOMAIN,
-            {"authority": after_make},
+        before_jobs, before_steps = reporter._generic_workflow_authorities(workflow)
+        commented_jobs, commented_steps = reporter._generic_workflow_authorities(
+            workflow.replace("jobs:\n", "jobs:\n  # comment-only change\n")
         )
-        self.assertNotEqual(first, second)
+        self.assertEqual(before_jobs, commented_jobs)
+        self.assertEqual(before_steps, commented_steps)
+        changed_jobs, changed_steps = reporter._generic_workflow_authorities(
+            workflow.replace("echo beta", "echo changed-beta")
+        )
+        self.assertEqual(
+            before_steps[("host-tests", "Alpha")],
+            changed_steps[("host-tests", "Alpha")],
+        )
+        self.assertNotEqual(
+            before_steps[("host-tests", "Beta")],
+            changed_steps[("host-tests", "Beta")],
+        )
+        self.assertNotEqual(
+            before_jobs["host-tests"],
+            changed_jobs["host-tests"],
+        )
+
+    def test_recursive_make_authority_rejects_untracked_include(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            scratch = Path(directory)
+            (scratch / "Makefile").write_text(
+                "include untracked.mk\nowned:\n\t@true\n",
+                encoding="ascii",
+            )
+            loader = reporter.AuthorityLoader(
+                scratch,
+                {
+                    "Makefile": reporter.GitTreeEntry(
+                        "Makefile", "100644", "blob", "0" * 40
+                    )
+                },
+            )
+            with self.assertRaisesRegex(reporter.OwnershipError, "not tracked"):
+                reporter._parse_make_authorities(loader)
 
     def test_review_invalidation_is_derived_from_edge_authority(self):
         unchanged = reporter.compare_graph_edges(self.graph, copy.deepcopy(self.graph))
@@ -369,29 +532,83 @@ class OwnershipGraphTests(unittest.TestCase):
         for kind in sorted(reporter.REQUIRED_PROOF_KINDS):
             with self.subTest(kind=kind):
                 graph = copy.deepcopy(self.graph)
-                graph["artifact"]["lifecycle_proofs"] = [
-                    proof
-                    for proof in graph["artifact"]["lifecycle_proofs"]
-                    if proof["kind"] != kind
+                trigger_id = next(
+                    event["id"]
+                    for event in graph["lifecycle_events"]
+                    if event["type"] == kind
+                )
+                graph["lifecycle_events"] = [
+                    event
+                    for event in graph["lifecycle_events"]
+                    if event["id"] != trigger_id
                 ]
-                with self.assertRaisesRegex(reporter.OwnershipError, "lifecycle"):
+                with self.assertRaisesRegex(
+                    reporter.OwnershipError,
+                    "authoritative trigger|lifecycle",
+                ):
                     self.validate(graph)
 
         graph = copy.deepcopy(self.graph)
-        graph["artifact"]["lifecycle_proofs"][0]["restored_result"] = "fail"
+        proof = next(
+            event
+            for event in graph["lifecycle_events"]
+            if event["type"] == "deletion_proof"
+        )
+        proof["restored_result"] = "fail"
         with self.assertRaisesRegex(reporter.OwnershipError, "did not restore"):
             self.validate(graph)
 
-        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
-            copy_path = Path(directory) / GRAPH_PATH.name
-            original = GRAPH_PATH.read_bytes()
-            copy_path.write_bytes(original)
-            copy_path.unlink()
-            with self.assertRaisesRegex(reporter.OwnershipError, "cannot read"):
-                reporter.load_json(copy_path)
-            copy_path.write_bytes(original)
-            self.assertEqual(reporter.load_json(copy_path), self.graph)
-        self.assertEqual(GRAPH_PATH.read_bytes(), original)
+        graph = copy.deepcopy(self.graph)
+        proof = next(
+            event
+            for event in graph["lifecycle_events"]
+            if event["type"] == "deletion_proof"
+        )
+        proof["reason"] = "self-declared consistent string"
+        with self.assertRaisesRegex(reporter.OwnershipError, "executable failure reason"):
+            self.validate(graph)
+
+        graph = copy.deepcopy(self.graph)
+        proof = next(
+            event
+            for event in graph["lifecycle_events"]
+            if event["type"] == "deletion_proof"
+        )
+        trigger = next(
+            event
+            for event in graph["lifecycle_events"]
+            if event["id"] == proof["trigger_event_id"]
+        )
+        proof["occurred_at"] = trigger["occurred_at"]
+        with self.assertRaisesRegex(reporter.OwnershipError, "strictly follow"):
+            self.validate(graph)
+
+        graph = copy.deepcopy(self.graph)
+        trigger = next(
+            event
+            for event in graph["lifecycle_events"]
+            if event["type"] == "dependency_changed"
+        )
+        trigger["authority"] = "edge:fabricated"
+        with self.assertRaisesRegex(reporter.OwnershipError, "fabricated authority"):
+            self.validate(graph)
+
+        before = GRAPH_PATH.read_bytes()
+        results = reporter.validate_executable_lifecycle(ROOT, self.graph)
+        self.assertEqual(len(results), len(reporter.REQUIRED_PROOF_KINDS))
+        self.assertEqual(
+            {result["trigger_type"] for result in results},
+            reporter.REQUIRED_PROOF_KINDS,
+        )
+        self.assertTrue(
+            all(
+                result["removal"] == "fail"
+                and result["restoration"] == "pass"
+                and result["reason"] == reporter.LIFECYCLE_FAILURE_REASON
+                for result in results
+            )
+        )
+        self.assertEqual(GRAPH_PATH.read_bytes(), before)
 
     def test_strict_schema_rejects_unknown_keys_and_boolean_integers(self):
         graph = copy.deepcopy(self.graph)
@@ -403,6 +620,91 @@ class OwnershipGraphTests(unittest.TestCase):
         graph["artifact"]["estimated_maintenance_minutes"] = False
         with self.assertRaisesRegex(reporter.OwnershipError, "must have type integer"):
             self.validate(graph)
+
+    def test_independent_probe_oracle_is_sealed_and_mismatch_fails(self):
+        def reseal(oracle):
+            payload = {
+                key: oracle[key]
+                for key in ("schema_version", "source_case", "probes")
+            }
+            oracle["seal"] = reporter._sha256(
+                reporter.PROBE_SEAL_DOMAIN,
+                payload,
+            )
+
+        reporter.validate_probe_oracle(
+            self.oracle,
+            self.graph,
+            self.entries,
+        )
+
+        oracle = copy.deepcopy(self.oracle)
+        oracle["seal"] = "0" * 64
+        with self.assertRaisesRegex(reporter.OwnershipError, "seal does not match"):
+            reporter.validate_probe_oracle(oracle, self.graph, self.entries)
+
+        oracle = copy.deepcopy(self.oracle)
+        oracle["probes"][0]["expected_edge_types"].append("guessed-family")
+        reseal(oracle)
+        with self.assertRaisesRegex(reporter.OwnershipError, "unknown edge families"):
+            reporter.validate_probe_oracle(oracle, self.graph, self.entries)
+
+        oracle = copy.deepcopy(self.oracle)
+        oracle["probes"][0]["expected_surface"] = "surface.missing"
+        reseal(oracle)
+        with self.assertRaisesRegex(reporter.OwnershipError, "unknown surface"):
+            reporter.validate_probe_oracle(oracle, self.graph, self.entries)
+
+        oracle = copy.deepcopy(self.oracle)
+        oracle["probes"][0]["expected_edge_types"].pop()
+        reseal(oracle)
+        with self.assertRaisesRegex(reporter.OwnershipError, "selection mismatch"):
+            reporter.build_report(
+                self.graph,
+                self.schema,
+                oracle,
+                self.loader,
+                self.entries,
+            )
+
+    def test_public_make_gate_surfaces_probe_mismatch(self):
+        original = ORACLE_PATH.read_bytes()
+        oracle = copy.deepcopy(self.oracle)
+        oracle["probes"][0]["expected_edge_types"].pop()
+        payload = {
+            key: oracle[key]
+            for key in ("schema_version", "source_case", "probes")
+        }
+        oracle["seal"] = reporter._sha256(reporter.PROBE_SEAL_DOMAIN, payload)
+        try:
+            ORACLE_PATH.write_bytes(reporter.normalized_json(oracle))
+            completed = subprocess.run(
+                ["make", "validation-ownership-check"],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        finally:
+            ORACLE_PATH.write_bytes(original)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("probe oracle selection mismatch", completed.stderr)
+
+    def test_mixed_make_goal_is_rejected_before_dependency_suppression(self):
+        before = reporter.repository_status(ROOT)
+        completed = subprocess.run(
+            ["make", "-n", "validation-ownership-check", "compare"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn(
+            "validation-ownership-check must be invoked as the sole Make goal",
+            completed.stderr,
+        )
+        self.assertEqual(reporter.repository_status(ROOT), before)
 
     def test_report_is_canonical_report_only_and_preserves_git_state(self):
         before = reporter.repository_status(ROOT)

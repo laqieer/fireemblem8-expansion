@@ -105,6 +105,12 @@ _WORKFLOW_PILOT_TEST_STEP_NAME = (
 _WORKFLOW_PILOT_BASELINE_STEP_NAME = (
     "Validate workflow-pilot baseline against checked-out Git history"
 )
+_VALIDATION_OWNERSHIP_TEST_STEP_NAME = (
+    "Run validation ownership regression suite (issue #180)"
+)
+_VALIDATION_OWNERSHIP_CHECK_STEP_NAME = (
+    "Validate validation ownership graph (issue #180)"
+)
 _SCRUBBED_PILOT_ENV = (
     "BASH_ENV: ''",
     "ENV: ''",
@@ -141,6 +147,8 @@ _EXPECTED_STEP_ROLES = {
         ("gate", "Run workflow contract test suite"),
         ("gate", _WORKFLOW_PILOT_TEST_STEP_NAME),
         ("gate", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
+        ("gate", _VALIDATION_OWNERSHIP_TEST_STEP_NAME),
+        ("gate", _VALIDATION_OWNERSHIP_CHECK_STEP_NAME),
         ("gate", "Run localization host test suite (issue #18)"),
         ("gate", "Run full-game localization width contract (issue #18)"),
     ),
@@ -755,6 +763,8 @@ def _parse_step(block, job_name, index):
             in {
                 _WORKFLOW_PILOT_TEST_STEP_NAME,
                 _WORKFLOW_PILOT_BASELINE_STEP_NAME,
+                _VALIDATION_OWNERSHIP_TEST_STEP_NAME,
+                _VALIDATION_OWNERSHIP_CHECK_STEP_NAME,
                 "Hydrate workflow-pilot Git authority",
             }
             else {"name", "run"}
@@ -1055,6 +1065,28 @@ def gates(jobs: int = 2) -> List[Gate]:
             applicable_note=(
                 "issue #176 host lane: validates the frozen workflow-pilot "
                 "baseline against checked-out Git history"
+            ),
+        ),
+        Gate(
+            name="validation-ownership-tests",
+            command=[
+                "/usr/bin/python3",
+                "-I",
+                "scripts/validation_ownership/isolated_launcher.py",
+                "tests",
+            ],
+            applicable_note=(
+                "issue #180 host lane: isolated fail-closed ownership graph "
+                "schema, path-mode, authority, mutation, and lifecycle tests"
+            ),
+        ),
+        Gate(
+            name="validation-ownership-check",
+            command=["make", "validation-ownership-check"],
+            applicable_note=(
+                "issue #180 host lane: validates exact Git-tree coverage, "
+                "independent probes, and executable lifecycle without "
+                "narrowing or executing graph-selected gates"
             ),
         ),
         Gate(

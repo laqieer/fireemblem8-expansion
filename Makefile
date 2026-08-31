@@ -101,6 +101,16 @@ ASFLAGS  := -mcpu=arm7tdmi -mthumb-interwork -I include
 # what any included makefile defines first.
 .DEFAULT_GOAL := all
 
+# This source-only target suppresses generated includes and dependency
+# discovery only as a sole goal. Mixed invocations fail before any included
+# fragment can narrow the other goal's dependency graph.
+ifneq (,$(filter validation-ownership-check,$(MAKECMDGOALS)))
+ifneq ($(strip $(MAKECMDGOALS)),validation-ownership-check)
+$(error validation-ownership-check must be invoked as the sole Make goal)
+endif
+  NODEP := 1
+endif
+
 include generated_data.mk
 
 # Issue #18 sprint 1: fast, Python-only localization catalog targets
@@ -111,12 +121,6 @@ include localization.mk
 # The fragment does not add prerequisites to `all`; bare/default builds stay
 # English-only and never generate or link CJK game-message payloads.
 include game_localization.mk
-
-# Keep the source-only ownership reporter free of dependency discovery and
-# generated build-side effects while GNU Make reads this file.
-ifneq (,$(filter validation-ownership-check,$(MAKECMDGOALS)))
-  NODEP := 1
-endif
 
 #### Files ####
 

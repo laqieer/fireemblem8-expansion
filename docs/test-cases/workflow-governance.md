@@ -296,7 +296,7 @@ availability or grant credentials.
    recover it with lazy fetching disabled. The strict exact-commit seam
    restores it without changing `HEAD`, refs, or `FETCH_HEAD`. Separately,
    confirm production extraction returns exactly the unique commit identities
-   in the committed full baseline and that setup remains absent from the 28
+   in the committed full baseline and that setup remains absent from the 30
    local gates.
 9. Mutate every combined worker with container/services/strategy/permissions/
    defaults/needs/if/advisory/environment/concurrency/uses/secrets/shell
@@ -481,33 +481,43 @@ game behavior needs a compensating change.
 ### Actions
 
 1. Run
-   `python3 -m unittest discover -s scripts/validation_ownership/tests -p 'test_*.py' -v`.
+   `/usr/bin/python3 -I scripts/validation_ownership/isolated_launcher.py tests`.
 2. Run `make validation-ownership-check`.
 3. Use the isolated reporter's `resolve` mode with `--changed` for
    `src/bm.c`, `include/global.h`, `scripts/check_docs.py`,
-   `src/data/items.json`, `texts/expansion/catalog.en.json`, `config.mk`, and
-   `graphics/titlescreen/title_main_background_1.png`.
+   `src/data/items.json`, `texts/expansion/catalog.en.json`, `config.mk`,
+   `graphics/titlescreen/title_main_background_1.png`,
+   `.github/workflows/build.yml`, `.github/validation-ownership-graph.json`,
+   `.github/CODEOWNERS`, and `.github/ISSUE_TEMPLATE/bug_report.yml`.
 4. Confirm each result identifies one surface, every applicable typed edge,
    its existing authority, and a plain-language reason. Confirm the graph
    remains `report-only` with `narrowing_authorized` false.
 5. Inspect the suite's non-destructive fixtures. They remove and redirect
    every edge family, delete and restore the graph copy, mutate Make/workflow
    authority, add unknown and overlapping paths, create cycles, duplicate
-   owners, remove dependents, and replace targets with stale identities.
+   owners, remove dependents, replace targets with stale identities, introduce
+   symlink/gitlink modes, and disconnect each lifecycle trigger.
+6. Run `make -n validation-ownership-check compare` and require the explicit
+   sole-goal diagnostic before any dependency suppression.
 
 ### Expected result
 
 Every Git-tracked path resolves to exactly one complete owner set. The sole
 gitlink is a named fail-closed exclusion whose selection cannot silently
 succeed. Representative runtime/ABI, host-only, generated, localization,
-configuration, and manual A/V paths resolve with no missing or unexpected
-edge families. Generated paths derive from the typed generated-data registry;
-gate commands derive from existing Make targets, workflow jobs/steps, and
-tester cases rather than a duplicate command list.
+configuration, manual A/V, workflow, governance, repository configuration, and
+template paths resolve with no missing or unexpected edge families.
+`.github/CODEOWNERS` selects host evidence only. Generated paths derive from
+the typed generated-data registry; gate commands derive from existing Make
+targets, workflow jobs/steps, and tester cases rather than a duplicate command
+list. Both ownership commands are required, scrubbed `host-tests` gates and
+members of the complete 30-gate upstream mirror.
 
 The canonical JSON report explains each selected gate, reports zero false
-positive and false negative edge-family selections for the frozen probes, and
-records bounded maintenance cost through the issue #176 artifact shape.
+positive and false negative edge-family selections against the independently
+sealed probe oracle, and records bounded maintenance cost through the issue
+#176 artifact shape. A mismatch is a failed public check, not a successful
+report.
 Domain-separated graph, schema, and resolved-edge seals change when semantic
 authority changes. Comparing a prior Git revision invalidates review from
 authoritative edge or target-authority changes, not filenames or commit prose.
@@ -518,7 +528,16 @@ Unknown paths or edge types, uncovered or overlapping path patterns, cycles,
 duplicate or ambiguous owners, stale Make/workflow/tester/generated/manual
 targets, missing profiles or negative controls, and every removed or
 redirected edge family fail with the missing contract named. Make and workflow
-authority content changes alter the resolved-edge seal automatically.
+authority uses target/job-specific normalized semantics: comments,
+declaration order, and unrelated `.mk` changes stay green, while affected
+recipes, steps, endpoints, edge types, owners, and authority targets invalidate
+only their edge IDs.
+
+Exact current/base Git mode and provenance is mandatory. Symlinks, synthetic
+gitlinks under owned prefixes, untracked/ignored/nonexistent changed paths,
+mode changes, escaping authorities, untracked recursive Make includes, and
+nonblob authority entries reject. Only the actual `mgfembp` gitlink reaches
+the named exclusion.
 
 A manual visual/audio/UX edge must point to
 `.github/manual-testing-handoff.json` and remains supplementary. Removing any
@@ -529,7 +548,9 @@ surface fails; manual handoff cannot replace deterministic evidence.
 
 This capability depends on issue #176's artifact admission/deletion lifecycle,
 strict source boundaries, isolated startup, clean-Git checks, seals, and
-maintenance reporting. It reuses existing Make targets, Build workflow
+maintenance reporting. Each checkpoint, dependency-change, and pre-graduation
+event executes the declared consumer and consistency check against a bounded
+remove/restore sandbox with one fixed failure reason. It reuses existing Make targets, Build workflow
 structure, the generated-data registry, tester-case registry, and manual
 handoff contract. Issue #181 is parallel and not a dependency. There is no
 feature flag and no gameplay, runtime, save, localization payload, generated
@@ -543,9 +564,11 @@ before any delivery behavior can consume these explanations.
 
 The focused unittest suite owns parsed schema and graph invariants,
 whole-repository coverage, target existence and drift, every edge-family
-mutation, lifecycle deletion/restoration, review invalidation, canonical
-reporting, and unchanged Git state. `make validation-ownership-check` runs the
-same reporter through `/usr/bin/python3 -I`.
+mutation, exact Git modes, confined authorities, independent oracle mutation,
+executable lifecycle deletion/restoration, review invalidation, canonical
+reporting, mixed-goal rejection, and unchanged Git state.
+`make validation-ownership-check` runs the same reporter through
+`/usr/bin/python3 -I`.
 
 ### Cleanup and limitations
 

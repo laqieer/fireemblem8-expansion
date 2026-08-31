@@ -6,25 +6,29 @@ from admitted repository paths to existing validation evidence. It records
 semantic ownership that Git history cannot derive reliably.
 
 The graph is observational. It reports additive owners and review invalidation;
-it does not execute a gate, skip a gate, narrow local checks, or change Build
-CI. Any use for narrower validation requires a later independently accepted
-issue with non-inferiority evidence. Issue #181 is parallel and does not
-consume or authorize this graph.
+it does not execute a selected gate, skip a gate, or narrow local checks.
+Build CI requires the ownership suite and whole-tree check in `host-tests`,
+but those checks only validate this contract. Any use for narrower validation
+requires a later independently accepted issue with non-inferiority evidence.
+Issue #181 is parallel and does not consume or authorize this graph.
 
 ## Authoritative files and public commands
 
 - [`.github/validation-ownership-graph.json`](../.github/validation-ownership-graph.json)
   contains typed surfaces, evidence authorities, edges, path rules, named
-  exclusions, lifecycle records, and representative measurement probes.
+  exclusions, and authoritative lifecycle events.
 - [`scripts/validation_ownership/graph.schema.json`](../scripts/validation_ownership/graph.schema.json)
   is the closed JSON Schema. The stdlib reporter also applies semantic
   invariants that a schema alone cannot express.
+- [`scripts/validation_ownership/probe-oracle.json`](../scripts/validation_ownership/probe-oracle.json)
+  is the independent sealed probe oracle. Expected surfaces and edge families
+  never come from the graph being measured.
 - [`scripts/validation_ownership/reporter.py`](../scripts/validation_ownership/reporter.py)
   enumerates tracked paths through trusted Git, resolves live authorities,
   emits canonical JSON, and verifies that execution did not change Git state.
 - [`scripts/validation_ownership/isolated_launcher.py`](../scripts/validation_ownership/isolated_launcher.py)
-  admits only `check` and `resolve` after isolated Python startup and removes
-  ambient `GIT_*` controls.
+  admits only `check`, `resolve`, `tests`, and the closed lifecycle-check mode
+  after isolated Python startup and removes ambient `GIT_*` controls.
 
 Validate whole-repository coverage without selecting or running any owner:
 
@@ -45,6 +49,10 @@ Add `--base-revision <revision>` to derive whether authoritative graph-edge
 changes invalidate review evidence. Output is recursively sorted canonical
 ASCII JSON with one trailing newline.
 
+`validation-ownership-check` must be the sole Make goal. A mixed invocation
+such as `make validation-ownership-check compare` fails before NODEP or
+generated-include suppression can affect `compare`.
+
 ## Typed contract
 
 Surface nodes use the closed types `source`, `schema`, `configuration`,
@@ -57,12 +65,21 @@ Surface nodes use the closed types `source`, `schema`, `configuration`,
 - the typed `scripts.generated_data.registry:REGISTRY`; or
 - `.github/manual-testing-handoff.json`.
 
-The graph stores identities, not copied commands. Make targets come from the
-same static parser used by documentation governance. Workflow jobs and steps
-come from the existing strict Build workflow parser. Generated source paths
-and owners come from registered table schemas. Target removal, registry drift,
-or workflow structural drift therefore fails without a second command or
-filename-derived ownership registry.
+The graph stores identities, not copied commands. A single root-confined loader
+requires every graph, schema, probe, tester-case, manual, generated-data, Make,
+and workflow authority to be a Git-tracked regular blob. Recursive literal
+Make includes pass through that loader. Workflow jobs and steps remain bound
+to the existing strict Build workflow parser. Generated paths and owners come
+from registered table schemas. Symlinks, escapes, untracked includes,
+non-blob modes, target removal, registry drift, and workflow structural drift
+therefore fail without a second command or filename-derived owner registry.
+
+Make authority fingerprints contain normalized target declarations, recipes,
+and transitively referenced variable definitions. Comments, declaration
+order, and unrelated `.mk` targets do not invalidate another target. Workflow
+fingerprints are job/step-specific normalized structures. Review invalidation
+reports only edge IDs whose endpoint, type, owner, target authority, path
+mapping, or referenced target/job semantics changed.
 
 The closed edge families are:
 
@@ -88,17 +105,28 @@ targets fail closed.
 
 ## Maintainable path coverage
 
-Coverage uses Git's tracked path enumeration. Typed exact and prefix selectors
+Coverage uses exact `HEAD` and optional base tree entries, including Git mode,
+object type, and identity. `100xxx` regular blobs enter typed exact and prefix selectors
 cover stable repository namespaces; the generated-data selector expands from
 the real schema registry. Includes and explicit excludes form a partition:
 zero matches are unknown, while multiple rule/exclusion matches are ambiguous.
 Either condition is an error.
 
 This avoids a hand-maintained list of more than ten thousand files while
-keeping overlap and unknown namespaces deterministic. The `mgfembp` gitlink is
+keeping overlap and unknown namespaces deterministic. Mode `120000` symlinks
+always reject. The `mgfembp` mode `160000` gitlink is
 a named fail-closed exclusion because nested ownership and provenance cannot
 be inferred from the parent path. Resolving it as a change is an error, not an
-empty success.
+empty success; any synthetic gitlink under an owned prefix also rejects.
+Changed paths must exist in `HEAD` or the selected base, and a path whose mode
+changes between them rejects. Untracked, ignored, and nonexistent paths never
+inherit ownership from a matching prefix.
+
+GitHub metadata is partitioned semantically: workflows, governance/schema,
+repository host configuration, templates, and manual handoff are distinct
+surfaces. In particular, `.github/workflows/build.yml` resolves to the workflow
+contract step, while `.github/CODEOWNERS` resolves only to host evidence and
+never to target compile, link, or emulator owners.
 
 ## Manual evidence boundary
 
@@ -114,22 +142,29 @@ those owners, and this implementation has no manual-only acceptance criterion.
 The graph uses issue #176's admission fields: one owner, executable consumer,
 unique decision, consistency check, bounded maintenance estimate, deletion
 criterion, expiry, and disposition history. Checkpoint, dependency-change, and
-pre-graduation deletion proofs must agree with the current disposition, share
-one semantic reason, precede the disposition, fail while this graduated
-artifact is absent, and pass after restoration.
+pre-graduation triggers each have one later proof bound to the artifact,
+dependency edge or decision authority. The public check uses the #176-style
+bounded sandbox and isolated launcher: for each trigger it removes the graph,
+runs both the declared consumer and consistency identity, requires the fixed
+named semantic failure, restores the graph, and reruns both successfully.
+Self-declared replacement reasons, fabricated authorities, stale timestamps,
+or non-restoring proofs reject.
 
-Representative runtime, host-only, generated, localization, configuration,
-ABI, and manual A/V probes measure missing and unexpected edge-family
-selections. The report exposes those false-negative/false-positive counts plus
-the bounded maintenance estimate without modifying issue #176's immutable
-baseline fixture or expected report.
+The independently sealed oracle covers runtime, host-only, generated,
+localization, configuration, ABI, manual A/V, workflow, governance, templates,
+and host-only CODEOWNERS surfaces. Unknown families, stale paths/surfaces, or
+seal drift reject. Any missing or unexpected edge family makes the public
+check fail rather than emitting a successful report. The report exposes zero
+false-negative/false-positive counts plus the bounded maintenance estimate
+without modifying issue #176's immutable baseline fixture or expected report.
 
-Domain-separated seals cover the strict schema, complete graph, and resolved
+Domain-separated seals cover the strict schema, probe oracle, complete graph, and resolved
 edges plus live evidence-authority fingerprints. Make authority derives from
-the actual tracked Makefiles; workflow authority derives from parsed jobs and
-steps; tester/manual/generated authority derives from their real registries.
-Graph-edge comparison is the review-invalidation source. Filenames, commit
-messages, comments, and ordering are not evidence.
+normalized target semantics; workflow authority derives from normalized parsed
+jobs and steps; tester/manual/generated authority derives from real typed
+registries. Graph-edge comparison is the review-invalidation source. Filenames,
+commit messages, comments, and non-semantic declaration ordering are not
+evidence.
 
 ## Tester case and compatibility
 

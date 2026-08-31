@@ -472,7 +472,7 @@ $(GENERATED_DATA_CHAPTEROBJECTIVES_DEPFILE): FORCE_CHAPTEROBJECTIVES_DEPFILE \
 		--make-target "$(GENERATED_DATA_CHAPTEROBJECTIVES_C)" \
 		--depfile "$@"
 
-ifeq (,$(filter validation-ownership-check,$(MAKECMDGOALS)))
+ifneq ($(MAKECMDGOALS),validation-ownership-check)
 -include $(GENERATED_DATA_CHAPTEROBJECTIVES_DEPFILE)
 endif
 
@@ -548,7 +548,7 @@ $(GENERATED_DATA_AUTOPLAYSTRATEGIES_DEPFILE): FORCE_AUTOPLAYSTRATEGIES_DEPFILE \
 		--make-target "$(GENERATED_DATA_AUTOPLAYSTRATEGIES_C)" \
 		--depfile "$@"
 
-ifeq (,$(filter validation-ownership-check,$(MAKECMDGOALS)))
+ifneq ($(MAKECMDGOALS),validation-ownership-check)
 -include $(GENERATED_DATA_AUTOPLAYSTRATEGIES_DEPFILE)
 endif
 
@@ -1865,7 +1865,7 @@ $(GENERATED_DATA_CH2_EVENTLISTS_DEPFILE): FORCE_CH2_EVENTLISTS_DEPFILE \
 		--make-target "$(GENERATED_DATA_CH2_EVENTLISTS_VALIDATED_STAMP)" \
 		--depfile "$@"
 
-ifeq (,$(filter validation-ownership-check,$(MAKECMDGOALS)))
+ifneq ($(MAKECMDGOALS),validation-ownership-check)
 -include $(GENERATED_DATA_CH2_EVENTLISTS_DEPFILE)
 endif
 

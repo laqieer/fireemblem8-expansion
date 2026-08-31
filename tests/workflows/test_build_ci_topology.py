@@ -75,6 +75,10 @@ WORKFLOW_PILOT_BASELINE_GATE = (
     "--expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json "
     "> /dev/null"
 )
+VALIDATION_OWNERSHIP_TEST_GATE = (
+    "/usr/bin/python3 -I scripts/validation_ownership/isolated_launcher.py tests"
+)
+VALIDATION_OWNERSHIP_CHECK_GATE = "make validation-ownership-check"
 EXPECTED_BUILD_SHA_EXPRESSION = (
     "${{ github.event_name == 'pull_request' && "
     "github.event.pull_request.head.sha || github.sha }}"
@@ -784,6 +788,26 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             errors.append(
                 f"candidate host lost exact fail-closed Build evidence: {command}"
             )
+    for command in (
+        VALIDATION_OWNERSHIP_TEST_GATE,
+        VALIDATION_OWNERSHIP_CHECK_GATE,
+    ):
+        if not _contains_exact_command(jobs["host-tests"], command):
+            errors.append(
+                f"candidate host lost exact validation ownership evidence: {command}"
+            )
+    host_steps = _step_blocks(jobs["host-tests"])
+    for name in (
+        "Run validation ownership regression suite (issue #180)",
+        "Validate validation ownership graph (issue #180)",
+    ):
+        matching = [
+            step for step in host_steps if f"    - name: {name}\n" in step
+        ]
+        if len(matching) != 1 or not _step_has_scrubbed_environment(matching[0]):
+            errors.append(
+                f"validation ownership step {name!r} changes its scrubbed environment"
+            )
     if not _contains_exact_command(
         jobs["host-tests"],
         WORKFLOW_PILOT_AUTHORITY_HYDRATION,
@@ -1049,6 +1073,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "Hydrate workflow-pilot Git authority",
             "Run workflow-pilot reporter regression suite (issue #176)",
             "Validate workflow-pilot baseline against checked-out Git history",
+            "Run validation ownership regression suite (issue #180)",
+            "Validate validation ownership graph (issue #180)",
         )
         env_block = "      env:\n" + "\n".join(SCRUBBED_STEP_ENV) + "\n"
         variants = (
@@ -1079,6 +1105,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         any(
                             "protected pre-pilot step sequence differs" in error
                             or "lost exact workflow-pilot" in error
+                            or "lost exact validation ownership" in error
+                            or "changes its scrubbed environment" in error
                             for error in _errors(changed, False)
                         )
                     )
@@ -2364,6 +2392,23 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 for error in _errors(changed, False)
             )
         )
+
+    def test_validation_ownership_gates_are_required_host_steps(self):
+        host_tests = _job_blocks(self.text)["host-tests"]
+        for command in (
+            VALIDATION_OWNERSHIP_TEST_GATE,
+            VALIDATION_OWNERSHIP_CHECK_GATE,
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(_contains_exact_command(host_tests, command))
+                changed = self.text.replace(f"      run: {command}\n", "      run: true\n", 1)
+                self.assertTrue(
+                    any(
+                        "candidate host lost exact validation ownership evidence"
+                        in error
+                        for error in _errors(changed, False)
+                    )
+                )
 
     def test_workflow_pilot_steps_reject_spaced_protected_keys(self):
         changed = self.text

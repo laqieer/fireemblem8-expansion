@@ -150,7 +150,7 @@ exact `.github/workflow-pilot-decisions.json` blob IDs from hydrated trees,
 and fetches those blobs explicitly without hydrating unrelated blobs. Both
 bounded phases recheck that `HEAD`, refs, and FETCH_HEAD are unchanged and
 that `HEAD` still equals `EXPECTED_BUILD_SHA`. This hydration is environment
-setup, not a 29th local semantic gate; local
+setup, not a 31st local semantic gate; local
 `scripts.upstream_port verify` remains network-independent.
 The deterministic read-only owner handoff is:
 

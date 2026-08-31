@@ -22,34 +22,61 @@
         "disposition": "Graduate",
         "reason": "Dependent validation design requires one stable fail-closed ownership seam."
       }
-    ],
-    "lifecycle_proofs": [
-      {
-        "id": "proof.artifact-checkpoint",
-        "kind": "artifact_checkpoint",
-        "occurred_at": "2026-08-31T02:45:00Z",
-        "reason": "Removing the graph loses complete validation ownership coverage.",
-        "semantic_result": "fail",
-        "restored_result": "pass"
-      },
-      {
-        "id": "proof.dependency-change",
-        "kind": "dependency_changed",
-        "occurred_at": "2026-08-31T02:46:00Z",
-        "reason": "Removing the graph loses complete validation ownership coverage.",
-        "semantic_result": "fail",
-        "restored_result": "pass"
-      },
-      {
-        "id": "proof.pre-graduation",
-        "kind": "pre_graduation",
-        "occurred_at": "2026-08-31T02:47:00Z",
-        "reason": "Removing the graph loses complete validation ownership coverage.",
-        "semantic_result": "fail",
-        "restored_result": "pass"
-      }
     ]
   },
+  "lifecycle_events": [
+    {
+      "id": "event.artifact-checkpoint",
+      "type": "artifact_checkpoint",
+      "occurred_at": "2026-08-31T02:43:00Z",
+      "artifact_id": "validation-ownership-graph",
+      "authority": "artifact:validation-ownership-graph"
+    },
+    {
+      "id": "proof.artifact-checkpoint",
+      "type": "deletion_proof",
+      "occurred_at": "2026-08-31T02:43:30Z",
+      "artifact_id": "validation-ownership-graph",
+      "trigger_event_id": "event.artifact-checkpoint",
+      "reason": "removal loses the issue #180 validation ownership invariant",
+      "semantic_result": "fail",
+      "restored_result": "pass"
+    },
+    {
+      "id": "event.dependency-change",
+      "type": "dependency_changed",
+      "occurred_at": "2026-08-31T02:44:00Z",
+      "artifact_id": "validation-ownership-graph",
+      "authority": "edge:generated-schema.depends"
+    },
+    {
+      "id": "proof.dependency-change",
+      "type": "deletion_proof",
+      "occurred_at": "2026-08-31T02:44:30Z",
+      "artifact_id": "validation-ownership-graph",
+      "trigger_event_id": "event.dependency-change",
+      "reason": "removal loses the issue #180 validation ownership invariant",
+      "semantic_result": "fail",
+      "restored_result": "pass"
+    },
+    {
+      "id": "event.pre-graduation",
+      "type": "pre_graduation",
+      "occurred_at": "2026-08-31T02:45:00Z",
+      "artifact_id": "validation-ownership-graph",
+      "authority": "decision:single-fail-closed-validation-ownership-graph"
+    },
+    {
+      "id": "proof.pre-graduation",
+      "type": "deletion_proof",
+      "occurred_at": "2026-08-31T02:45:30Z",
+      "artifact_id": "validation-ownership-graph",
+      "trigger_event_id": "event.pre-graduation",
+      "reason": "removal loses the issue #180 validation ownership invariant",
+      "semantic_result": "fail",
+      "restored_result": "pass"
+    }
+  ],
   "nodes": [
     {
       "id": "surface.runtime",
@@ -131,6 +158,50 @@
       "dependencies": []
     },
     {
+      "id": "surface.workflow",
+      "kind": "surface",
+      "label": "GitHub Actions workflow",
+      "surface_type": "configuration",
+      "requirements": [
+        "positive",
+        "adversarial"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.governance",
+      "kind": "surface",
+      "label": "Repository governance and validation schema",
+      "surface_type": "schema",
+      "requirements": [
+        "positive",
+        "adversarial"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.repo-config",
+      "kind": "surface",
+      "label": "Repository host configuration",
+      "surface_type": "configuration",
+      "requirements": [
+        "positive",
+        "adversarial"
+      ],
+      "dependencies": []
+    },
+    {
+      "id": "surface.templates",
+      "kind": "surface",
+      "label": "GitHub issue and pull-request templates",
+      "surface_type": "schema",
+      "requirements": [
+        "positive",
+        "adversarial"
+      ],
+      "dependencies": []
+    },
+    {
       "id": "surface.host",
       "kind": "surface",
       "label": "Host tooling and tests",
@@ -208,6 +279,28 @@
         "kind": "workflow-step",
         "job": "host-tests",
         "step": "Run workflow contract test suite"
+      }
+    },
+    {
+      "id": "owner.validation-suite",
+      "kind": "evidence",
+      "label": "Validation ownership regression suite",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "workflow-step",
+        "job": "host-tests",
+        "step": "Run validation ownership regression suite (issue #180)"
+      }
+    },
+    {
+      "id": "owner.validation-check",
+      "kind": "evidence",
+      "label": "Validation ownership whole-tree gate",
+      "evidence_type": "host",
+      "authority": {
+        "kind": "workflow-step",
+        "job": "host-tests",
+        "step": "Validate validation ownership graph (issue #180)"
       }
     },
     {
@@ -688,6 +781,62 @@
       "reason": "The default build lane remains the shared-contract negative control."
     },
     {
+      "id": "workflow.owns-test",
+      "type": "owns-test",
+      "source": "surface.workflow",
+      "target": "owner.host-workflow",
+      "reason": "Build workflows are owned by the exact workflow topology test step."
+    },
+    {
+      "id": "workflow.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.workflow",
+      "target": "owner.validation-check",
+      "reason": "The ownership check rejects stale or redirected workflow authority."
+    },
+    {
+      "id": "governance.owns-test",
+      "type": "owns-test",
+      "source": "surface.governance",
+      "target": "owner.validation-suite",
+      "reason": "Governance and validation schemas are owned by the required ownership suite."
+    },
+    {
+      "id": "governance.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.governance",
+      "target": "owner.validation-check",
+      "reason": "The required whole-tree check owns governance drift controls."
+    },
+    {
+      "id": "repo-config.owns-test",
+      "type": "owns-test",
+      "source": "surface.repo-config",
+      "target": "owner.host-build",
+      "reason": "Repository host configuration remains in the host-only combined job."
+    },
+    {
+      "id": "repo-config.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.repo-config",
+      "target": "owner.validation-check",
+      "reason": "Repository configuration ownership is checked without target compilation."
+    },
+    {
+      "id": "templates.owns-test",
+      "type": "owns-test",
+      "source": "surface.templates",
+      "target": "owner.host-workflow",
+      "reason": "Issue and pull-request templates use the existing workflow contract tests."
+    },
+    {
+      "id": "templates.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.templates",
+      "target": "owner.validation-check",
+      "reason": "Template ownership drift is checked by the required graph gate."
+    },
+    {
       "id": "host.owns-test",
       "type": "owns-test",
       "source": "surface.host",
@@ -851,13 +1000,77 @@
       "exclude": []
     },
     {
-      "id": "paths.configuration",
-      "surface": "surface.configuration",
+      "id": "paths.workflow",
+      "surface": "surface.workflow",
       "include": [
         {
           "kind": "prefix",
-          "path": ".github/"
+          "path": ".github/workflows/"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.governance",
+      "surface": "surface.governance",
+      "include": [
+        {
+          "kind": "prefix",
+          "path": ".github/skills/"
         },
+        {
+          "kind": "exact",
+          "path": ".github/copilot-instructions.md"
+        },
+        {
+          "kind": "exact",
+          "path": ".github/validation-ownership-graph.json"
+        },
+        {
+          "kind": "exact",
+          "path": ".github/workflow-pilot-decisions.json"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.repo-config",
+      "surface": "surface.repo-config",
+      "include": [
+        {
+          "kind": "prefix",
+          "path": ".github/requirements/"
+        },
+        {
+          "kind": "prefix",
+          "path": ".github/copilot/"
+        },
+        {
+          "kind": "exact",
+          "path": ".github/CODEOWNERS"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.templates",
+      "surface": "surface.templates",
+      "include": [
+        {
+          "kind": "prefix",
+          "path": ".github/ISSUE_TEMPLATE/"
+        },
+        {
+          "kind": "exact",
+          "path": ".github/PULL_REQUEST_TEMPLATE.md"
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.configuration",
+      "surface": "surface.configuration",
+      "include": [
         {
           "kind": "prefix",
           "path": "config/"
@@ -971,12 +1184,7 @@
           "path": "sym_iwram.txt"
         }
       ],
-      "exclude": [
-        {
-          "kind": "exact",
-          "path": ".github/manual-testing-handoff.json"
-        }
-      ]
+      "exclude": []
     },
     {
       "id": "paths.host",
@@ -1089,95 +1297,5 @@
       "reason": "A gitlink change requires explicit submodule provenance and the broader combined Build; this graph cannot infer nested ownership.",
       "fail_closed": true
     }
-  ],
-  "measurement": {
-    "source_case": "TC-WORKFLOW-GATE-OWNERSHIP-001",
-    "probes": [
-      {
-        "path": "src/bm.c",
-        "expected_surface": "surface.runtime",
-        "expected_edge_types": [
-          "owns-test",
-          "adversarial-control",
-          "compile-owner",
-          "link-owner",
-          "target-scenario"
-        ]
-      },
-      {
-        "path": "scripts/check_docs.py",
-        "expected_surface": "surface.host",
-        "expected_edge_types": [
-          "owns-test",
-          "adversarial-control"
-        ]
-      },
-      {
-        "path": "src/data/items.json",
-        "expected_surface": "surface.generated",
-        "expected_edge_types": [
-          "owns-test",
-          "adversarial-control",
-          "compile-owner",
-          "link-owner",
-          "target-scenario",
-          "generated-by",
-          "drift-check",
-          "generated-consumer"
-        ]
-      },
-      {
-        "path": "texts/expansion/catalog.en.json",
-        "expected_surface": "surface.localization",
-        "expected_edge_types": [
-          "owns-test",
-          "adversarial-control",
-          "compile-owner",
-          "link-owner",
-          "target-scenario",
-          "generated-by",
-          "drift-check",
-          "generated-consumer",
-          "dependent-profile",
-          "negative-control"
-        ]
-      },
-      {
-        "path": "config.mk",
-        "expected_surface": "surface.configuration",
-        "expected_edge_types": [
-          "owns-test",
-          "adversarial-control",
-          "compile-owner",
-          "link-owner",
-          "target-scenario",
-          "dependent-profile",
-          "negative-control"
-        ]
-      },
-      {
-        "path": "include/global.h",
-        "expected_surface": "surface.runtime",
-        "expected_edge_types": [
-          "owns-test",
-          "adversarial-control",
-          "compile-owner",
-          "link-owner",
-          "target-scenario"
-        ]
-      },
-      {
-        "path": "graphics/titlescreen/title_main_background_1.png",
-        "expected_surface": "surface.manual-av",
-        "expected_edge_types": [
-          "owns-test",
-          "adversarial-control",
-          "compile-owner",
-          "link-owner",
-          "target-scenario",
-          "manual-handoff"
-        ]
-      }
-    ]
-  }
+  ]
 }
