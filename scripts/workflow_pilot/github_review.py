@@ -3,11 +3,16 @@
 
 from __future__ import annotations
 
+import argparse
+import base64
 import hashlib
 import hmac
 import json
 import os
+import re
+import shutil
 import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -17,25 +22,18 @@ from scripts.workflow_pilot import reporter
 
 GH = "/usr/bin/gh"
 CHECK_RECEIPT_DOMAIN = b"workflow-review-check-receipt-v1\0"
-EVIDENCE_RECEIPT_DOMAIN = b"workflow-review-authenticated-evidence-v1\0"
-REGISTERED_CHECK_COMMANDS = {
-    "review-family-suite": (
-        "/usr/bin/python3",
-        "-S",
-        "-m",
-        "unittest",
-        "scripts.workflow_pilot.tests.test_review_family",
-        "-q",
-    ),
-    "review-family-negative-control": ("/usr/bin/false",),
-}
-RESULT_CHECK_IDS = {"review-family-suite"}
-LIVE_REVIEWED_FILES = (
-    "docs/workflow-pilot.md",
-    "scripts/workflow_pilot/review_family.py",
-    "scripts/workflow_pilot/tests/test_review_family.py",
+RECEIPT_DOMAIN = b"workflow-review-authenticated-envelope-v2\0"
+RECEIPT_PURPOSE = "independent-review-report"
+RECEIPT_MAX_LIFETIME_SECONDS = 600
+NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
+BASE_CHECKER_PATH = "scripts/workflow_pilot/review_base_checker.py"
+BASE_CHECKER_ARGV = (
+    "/usr/bin/python3",
+    "-I",
+    "review_base_checker.py",
+    "--input",
+    "checker-input.json",
 )
-_TRUST_TOKEN = object()
 
 
 GRAPHQL_QUERY = r"""
@@ -43,6 +41,7 @@ query ReviewFamilyEvidence($owner: String!, $name: String!, $number: Int!) {
   viewer { id login }
   repository(owner: $owner, name: $name) {
     viewerPermission
+    owner { id login }
     pullRequest(number: $number) {
       id
       number
@@ -70,6 +69,7 @@ query ReviewFamilyEvidence($owner: String!, $name: String!, $number: Int!) {
           databaseId
           state
           submittedAt
+          body
           commit { oid }
           author { id login }
           comments(first: 100) {
@@ -99,125 +99,6 @@ query ReviewFamilyEvidence($owner: String!, $name: String!, $number: Int!) {
 """
 
 
-class TrustedCheckReceipt:
-    __slots__ = ("raw", "_token")
-
-    def __init__(self, raw: dict[str, Any], token: object):
-        if token is not _TRUST_TOKEN:
-            raise TypeError("trusted check receipts are factory-only")
-        self.raw = raw
-        self._token = token
-
-
-class TrustedEvidence:
-    __slots__ = ("raw", "trusted_receipt_seals", "_token")
-
-    def __init__(
-        self,
-        raw: dict[str, Any],
-        receipt_seals: set[str],
-        token: object,
-    ):
-        if token is not _TRUST_TOKEN:
-            raise TypeError("trusted evidence is collector-only")
-        self.raw = raw
-        self.trusted_receipt_seals = frozenset(receipt_seals)
-        self._token = token
-
-
-def unwrap_evidence(value: Any) -> tuple[Any, bool, frozenset[str]]:
-    if isinstance(value, TrustedEvidence) and value._token is _TRUST_TOKEN:
-        return value.raw, True, value.trusted_receipt_seals
-    return value, False, frozenset()
-
-
-def make_authenticated_evidence_receipt(
-    evidence: dict[str, Any],
-    key_id: str,
-    key: bytes,
-) -> dict[str, Any]:
-    reporter.expect_string(key_id, "evidence receipt key ID")
-    if not isinstance(key, bytes) or len(key) < 32:
-        raise reporter.PilotDataError(
-            "evidence receipt trust key must contain at least 32 bytes"
-        )
-    payload = {
-        "schema_version": 1,
-        "key_id": key_id,
-        "evidence": evidence,
-    }
-    payload["hmac_sha256"] = hmac.new(
-        key,
-        EVIDENCE_RECEIPT_DOMAIN + reporter.normalized_json(payload),
-        hashlib.sha256,
-    ).hexdigest()
-    return payload
-
-
-def authenticate_evidence_receipt(
-    raw_receipt: Any,
-    trusted_key_id: str,
-    trusted_key: bytes,
-) -> TrustedEvidence:
-    receipt = reporter.expect_object(raw_receipt, "authenticated evidence receipt")
-    reporter.expect_keys(
-        receipt,
-        "authenticated evidence receipt",
-        ("schema_version", "key_id", "evidence", "hmac_sha256"),
-    )
-    version = reporter.expect_int(
-        receipt["schema_version"],
-        "authenticated evidence receipt.schema_version",
-        1,
-    )
-    if version != 1:
-        raise reporter.PilotDataError(
-            "authenticated evidence receipt.schema_version must be 1"
-        )
-    if receipt["key_id"] != trusted_key_id:
-        raise reporter.PilotDataError(
-            "authenticated evidence receipt key ID is not trusted"
-        )
-    if not isinstance(trusted_key, bytes) or len(trusted_key) < 32:
-        raise reporter.PilotDataError(
-            "evidence receipt trust key must contain at least 32 bytes"
-        )
-    supplied = reporter.expect_string(
-        receipt["hmac_sha256"],
-        "authenticated evidence receipt.hmac_sha256",
-    )
-    payload = {
-        "schema_version": version,
-        "key_id": receipt["key_id"],
-        "evidence": receipt["evidence"],
-    }
-    expected = hmac.new(
-        trusted_key,
-        EVIDENCE_RECEIPT_DOMAIN + reporter.normalized_json(payload),
-        hashlib.sha256,
-    ).hexdigest()
-    if not hmac.compare_digest(supplied, expected):
-        raise reporter.PilotDataError(
-            "authenticated evidence receipt signature is invalid"
-        )
-    evidence = reporter.expect_object(
-        receipt["evidence"], "authenticated evidence receipt.evidence"
-    )
-    execution_receipts = reporter.expect_list(
-        evidence.get("execution_receipts"),
-        "authenticated evidence receipt.evidence.execution_receipts",
-    )
-    seals = {
-        reporter.expect_string(
-            item.get("seal"),
-            "authenticated execution receipt seal",
-        )
-        for item in execution_receipts
-        if isinstance(item, dict)
-    }
-    return TrustedEvidence(evidence, seals, _TRUST_TOKEN)
-
-
 def receipt_payload(raw: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in raw.items() if key != "seal"}
 
@@ -236,63 +117,402 @@ def _format_time(value: datetime) -> str:
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def run_registered_check(
-    repository_root: Path,
-    expected_candidate: str,
-    check_id: str,
+def make_signed_receipt_bytes(
+    payload_bytes: bytes,
     *,
-    clock: Callable[[], datetime] = _utc_now,
-) -> TrustedCheckReceipt:
-    root = reporter.validate_repository_root(repository_root)
-    expected_candidate = reporter.expect_sha(
-        expected_candidate, "registered check candidate"
-    )
-    if check_id not in REGISTERED_CHECK_COMMANDS:
+    repository: str,
+    pull_request: int,
+    candidate_sha: str,
+    issued_at: str,
+    expires_at: str,
+    nonce: str,
+    key_id: str,
+    key_epoch: int,
+    key: bytes,
+) -> bytes:
+    if not isinstance(payload_bytes, bytes):
+        raise reporter.PilotDataError("receipt payload must be immutable bytes")
+    if not isinstance(key, bytes) or len(key) < 32:
         raise reporter.PilotDataError(
-            f"registered check {check_id!r} is not allowlisted"
+            "receipt trust key must contain at least 32 bytes"
         )
-    head = (
-        reporter.run_git(root, "rev-parse", "--verify", "HEAD^{commit}")
-        .decode("ascii")
-        .strip()
-    )
-    if head != expected_candidate:
-        raise reporter.PilotDataError(
-            "registered check worktree HEAD does not match candidate"
-        )
-    if reporter.run_git(root, "status", "--porcelain").strip():
-        raise reporter.PilotDataError(
-            "registered check requires a clean exact-candidate worktree"
-        )
+    envelope = {
+        "schema_version": 2,
+        "repository": repository,
+        "pull_request": pull_request,
+        "candidate_sha": candidate_sha,
+        "issued_at": issued_at,
+        "expires_at": expires_at,
+        "nonce": nonce,
+        "key_id": key_id,
+        "key_epoch": key_epoch,
+        "purpose": RECEIPT_PURPOSE,
+        "payload_b64": base64.b64encode(payload_bytes).decode("ascii"),
+    }
+    envelope["hmac_sha256"] = hmac.new(
+        key,
+        RECEIPT_DOMAIN + reporter.normalized_json(envelope),
+        hashlib.sha256,
+    ).hexdigest()
+    return reporter.normalized_json(envelope)
 
-    command = REGISTERED_CHECK_COMMANDS[check_id]
+
+def verify_signed_receipt_bytes(
+    receipt_bytes: bytes,
+    *,
+    repository: str,
+    pull_request: int,
+    candidate_sha: str,
+    trusted_key_id: str,
+    trusted_key_epoch: int,
+    trusted_key: bytes,
+    current_time: datetime,
+    replay_store: Path | None,
+    consume_nonce: bool,
+) -> bytes:
+    if not isinstance(receipt_bytes, bytes):
+        raise reporter.PilotDataError("receipt must be immutable bytes")
+    try:
+        text = receipt_bytes.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise reporter.PilotDataError("receipt is not UTF-8") from error
+    envelope = reporter.expect_object(
+        reporter.parse_json(text, "authenticated review receipt"),
+        "authenticated review receipt",
+    )
+    if reporter.normalized_json(envelope) != receipt_bytes:
+        raise reporter.PilotDataError(
+            "authenticated review receipt is not canonical immutable bytes"
+        )
+    reporter.expect_keys(
+        envelope,
+        "authenticated review receipt",
+        (
+            "schema_version",
+            "repository",
+            "pull_request",
+            "candidate_sha",
+            "issued_at",
+            "expires_at",
+            "nonce",
+            "key_id",
+            "key_epoch",
+            "purpose",
+            "payload_b64",
+            "hmac_sha256",
+        ),
+    )
+    if envelope["schema_version"] != 2:
+        raise reporter.PilotDataError(
+            "authenticated review receipt.schema_version must be 2"
+        )
+    reporter.expect_string(
+        envelope["repository"], "authenticated review receipt.repository"
+    )
+    reporter.expect_int(
+        envelope["pull_request"],
+        "authenticated review receipt.pull_request",
+        1,
+    )
+    reporter.expect_sha(
+        envelope["candidate_sha"],
+        "authenticated review receipt.candidate_sha",
+    )
+    reporter.expect_string(
+        envelope["key_id"], "authenticated review receipt.key_id"
+    )
+    reporter.expect_int(
+        envelope["key_epoch"],
+        "authenticated review receipt.key_epoch",
+        1,
+    )
+    reporter.expect_string(
+        envelope["purpose"], "authenticated review receipt.purpose"
+    )
+    reporter.expect_string(
+        envelope["payload_b64"],
+        "authenticated review receipt.payload_b64",
+        allow_empty=True,
+    )
+    supplied_hmac = reporter.expect_string(
+        envelope["hmac_sha256"],
+        "authenticated review receipt.hmac_sha256",
+    )
+    if reporter.SHA256_RE.fullmatch(supplied_hmac) is None:
+        raise reporter.PilotDataError(
+            "authenticated review receipt HMAC must be lowercase SHA-256"
+        )
+    scope = {
+        "repository": repository,
+        "pull_request": pull_request,
+        "candidate_sha": candidate_sha,
+        "key_id": trusted_key_id,
+        "key_epoch": trusted_key_epoch,
+        "purpose": RECEIPT_PURPOSE,
+    }
+    for field, expected in scope.items():
+        if envelope[field] != expected:
+            raise reporter.PilotDataError(
+                f"authenticated review receipt {field} is outside trusted scope"
+            )
+    nonce = reporter.expect_string(
+        envelope["nonce"], "authenticated review receipt.nonce"
+    )
+    if NONCE_RE.fullmatch(nonce) is None:
+        raise reporter.PilotDataError(
+            "authenticated review receipt nonce is malformed"
+        )
+    issued = reporter.parse_time(
+        envelope["issued_at"], "authenticated review receipt.issued_at"
+    )
+    expires = reporter.parse_time(
+        envelope["expires_at"], "authenticated review receipt.expires_at"
+    )
+    assert issued is not None and expires is not None
+    if current_time.tzinfo is None:
+        raise reporter.PilotDataError(
+            "trusted current time must be timezone-aware"
+        )
+    current_time = current_time.astimezone(timezone.utc)
+    if expires <= issued:
+        raise reporter.PilotDataError(
+            "authenticated review receipt has an invalid lifetime"
+        )
+    if (expires - issued).total_seconds() > RECEIPT_MAX_LIFETIME_SECONDS:
+        raise reporter.PilotDataError(
+            "authenticated review receipt lifetime exceeds maximum"
+        )
+    if current_time < issued or current_time >= expires:
+        raise reporter.PilotDataError(
+            "authenticated review receipt is stale or not yet valid"
+        )
+    if not isinstance(trusted_key, bytes) or len(trusted_key) < 32:
+        raise reporter.PilotDataError(
+            "receipt trust key must contain at least 32 bytes"
+        )
+    signed = {
+        key: value
+        for key, value in envelope.items()
+        if key != "hmac_sha256"
+    }
+    expected_hmac = hmac.new(
+        trusted_key,
+        RECEIPT_DOMAIN + reporter.normalized_json(signed),
+        hashlib.sha256,
+    ).hexdigest()
+    if not hmac.compare_digest(supplied_hmac, expected_hmac):
+        raise reporter.PilotDataError(
+            "authenticated review receipt signature is invalid"
+        )
+    try:
+        payload = base64.b64decode(
+            envelope["payload_b64"], validate=True
+        )
+    except (ValueError, TypeError) as error:
+        raise reporter.PilotDataError(
+            "authenticated review receipt payload is not canonical base64"
+        ) from error
+    if base64.b64encode(payload).decode("ascii") != envelope["payload_b64"]:
+        raise reporter.PilotDataError(
+            "authenticated review receipt payload is not canonical base64"
+        )
+    if consume_nonce:
+        if replay_store is None:
+            raise reporter.PilotDataError(
+                "authenticated review receipt requires replay authority"
+            )
+        if replay_store.is_symlink():
+            raise reporter.PilotDataError(
+                "authenticated review receipt replay store is unavailable"
+            )
+        replay_store = replay_store.resolve()
+        if not replay_store.is_dir():
+            raise reporter.PilotDataError(
+                "authenticated review receipt replay store is unavailable"
+            )
+        replay_id = hashlib.sha256(
+            reporter.normalized_json({**scope, "nonce": nonce})
+        ).hexdigest()
+        replay_path = replay_store / replay_id
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        try:
+            descriptor = os.open(replay_path, flags, 0o600)
+        except FileExistsError as error:
+            raise reporter.PilotDataError(
+                "authenticated review receipt nonce was already consumed"
+            ) from error
+        try:
+            os.write(descriptor, hashlib.sha256(receipt_bytes).hexdigest().encode())
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    return payload
+
+
+def _git_text(repository_root: Path, *arguments: str) -> str:
+    return reporter.run_git(repository_root, *arguments).decode("utf-8").strip()
+
+
+def run_base_pinned_checker(
+    repository_root: Path,
+    *,
+    repository: str,
+    pull_request: int,
+    base_sha: str,
+    candidate_sha: str,
+    github_finding_ids: list[str],
+    review_report_bytes: bytes,
+    clock: Callable[[], datetime] = _utc_now,
+) -> dict[str, Any]:
+    root = reporter.validate_repository_root(repository_root)
+    base_sha = reporter.expect_sha(base_sha, "base checker base SHA")
+    candidate_sha = reporter.expect_sha(
+        candidate_sha, "base checker candidate SHA"
+    )
+    head = _git_text(root, "rev-parse", "--verify", "HEAD^{commit}")
+    if head != candidate_sha:
+        raise reporter.PilotDataError(
+            "base checker candidate does not match actual Git HEAD"
+        )
+    pre_status = reporter.run_git(root, "status", "--porcelain")
+    if pre_status:
+        raise reporter.PilotDataError(
+            "base checker requires a clean candidate worktree"
+        )
+    try:
+        reporter.run_git(
+            root, "merge-base", "--is-ancestor", base_sha, candidate_sha
+        )
+    except reporter.PilotDataError as error:
+        raise reporter.PilotDataError(
+            "base checker base is not an ancestor of candidate"
+        ) from error
+    base_tree = _git_text(root, "rev-parse", f"{base_sha}^{{tree}}")
+    candidate_tree = _git_text(
+        root, "rev-parse", f"{candidate_sha}^{{tree}}"
+    )
+    checker_blob = _git_text(
+        root, "rev-parse", f"{base_sha}:{BASE_CHECKER_PATH}"
+    )
+    checker_source = reporter.run_git(
+        root, "show", f"{base_sha}:{BASE_CHECKER_PATH}"
+    )
+    changed_raw = reporter.run_git(
+        root, "diff", "--name-only", "-z", f"{base_sha}...{candidate_sha}"
+    )
+    changed_files = sorted(
+        path.decode("utf-8")
+        for path in changed_raw.split(b"\0")
+        if path
+    )
+    if not changed_files:
+        raise reporter.PilotDataError(
+            "base checker candidate has no changed files"
+        )
+    try:
+        review_report = reporter.expect_object(
+            reporter.parse_json(
+                review_report_bytes.decode("utf-8"),
+                "independent review report",
+            ),
+            "independent review report",
+        )
+    except UnicodeDecodeError as error:
+        raise reporter.PilotDataError(
+            "independent review report is not UTF-8"
+        ) from error
+    checker_input = {
+        "schema_version": 1,
+        "repository": repository,
+        "pull_request": pull_request,
+        "base_sha": base_sha,
+        "base_tree": base_tree,
+        "candidate_sha": candidate_sha,
+        "candidate_tree": candidate_tree,
+        "changed_files": changed_files,
+        "github_finding_ids": sorted(github_finding_ids),
+        "review_report": review_report,
+    }
+    artifact_root = root / "build" / "test-artifacts"
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    resolved_artifact_root = artifact_root.resolve()
+    if (
+        os.path.commonpath((str(root), str(resolved_artifact_root)))
+        != str(root)
+        or artifact_root.is_symlink()
+    ):
+        raise reporter.PilotDataError(
+            "base checker artifact root escapes repository"
+        )
+    sandbox = resolved_artifact_root / (
+        f"review-base-check-{os.getpid()}-{candidate_sha[:12]}"
+    )
+    if sandbox.exists():
+        raise reporter.PilotDataError(
+            "base checker sandbox already exists"
+        )
+    sandbox.mkdir(parents=True, mode=0o700)
+    checker_path = sandbox / "review_base_checker.py"
+    input_path = sandbox / "checker-input.json"
+    checker_path.write_bytes(checker_source)
+    input_path.write_bytes(reporter.normalized_json(checker_input))
+    checker_path.chmod(0o444)
+    input_path.chmod(0o444)
+    sandbox.chmod(0o555)
+    command = (
+        "/usr/bin/python3",
+        "-I",
+        str(checker_path),
+        "--input",
+        str(input_path),
+    )
     environment = {
-        "HOME": str(root),
+        "HOME": str(sandbox),
         "LC_ALL": "C",
         "PATH": "/usr/bin:/bin",
         "PYTHONHASHSEED": "0",
-        "PYTHONPATH": str(root),
     }
     started = clock()
     try:
         completed = subprocess.run(
             command,
-            cwd=root,
+            cwd=sandbox,
             env=environment,
             check=False,
             capture_output=True,
-            timeout=120,
+            timeout=60,
         )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        raise reporter.PilotDataError(
-            f"registered check {check_id!r} could not execute: {error}"
-        ) from error
-    finished = clock()
+        finished = clock()
+        post_status = reporter.run_git(root, "status", "--porcelain")
+        sandbox_read_only = (
+            checker_path.stat().st_mode & 0o222 == 0
+            and input_path.stat().st_mode & 0o222 == 0
+            and sandbox.stat().st_mode & 0o222 == 0
+        )
+    finally:
+        sandbox.chmod(0o700)
+        shutil.rmtree(sandbox)
     output = completed.stdout + b"\0stderr\0" + completed.stderr
     raw = {
-        "id": f"CHECK:{check_id}:{expected_candidate}",
-        "check_id": check_id,
-        "candidate_sha": expected_candidate,
+        "id": f"BASE-CHECK:{base_sha}:{candidate_sha}",
+        "check_id": "base-pinned-independent-review",
+        "base_sha": base_sha,
+        "base_tree": base_tree,
+        "candidate_sha": candidate_sha,
+        "candidate_tree": candidate_tree,
+        "checker_path": BASE_CHECKER_PATH,
+        "checker_blob_oid": checker_blob,
+        "argv": list(BASE_CHECKER_ARGV),
+        "changed_files": changed_files,
+        "github_finding_ids": sorted(github_finding_ids),
+        "review_report_sha256": hashlib.sha256(
+            review_report_bytes
+        ).hexdigest(),
+        "read_only": sandbox_read_only,
+        "pre_clean": pre_status == b"",
+        "post_clean": post_status == b"",
         "started_at": _format_time(started),
         "completed_at": _format_time(finished),
         "exit_code": completed.returncode,
@@ -300,7 +520,7 @@ def run_registered_check(
         "output_sha256": hashlib.sha256(output).hexdigest(),
     }
     raw["seal"] = receipt_seal(raw)
-    return TrustedCheckReceipt(raw, _TRUST_TOKEN)
+    return raw
 
 
 class GhApiAdapter:
@@ -488,14 +708,15 @@ def _build_result_manifest(
     return [result[result_id] for result_id in sorted(result)]
 
 
-def collect_live_evidence(
+def collect_live_evidence_bytes(
     raw_contract: Any,
     repository_root: Path,
     expected_candidate: str,
-    check_receipts: list[TrustedCheckReceipt],
+    review_report: dict[str, Any],
+    execution_receipt: dict[str, Any] | None,
     *,
     clock: Callable[[], datetime] = _utc_now,
-) -> TrustedEvidence:
+) -> bytes:
     from scripts.workflow_pilot import review_family
 
     contract = review_family.validate_contract(raw_contract)
@@ -516,7 +737,9 @@ def collect_live_evidence(
         data["repository"], "GitHub repository"
     )
     reporter.expect_keys(
-        repository, "GitHub repository", ("viewerPermission", "pullRequest")
+        repository,
+        "GitHub repository",
+        ("viewerPermission", "owner", "pullRequest"),
     )
     if repository["viewerPermission"] != "READ":
         raise reporter.PilotDataError(
@@ -551,7 +774,8 @@ def collect_live_evidence(
             "live GitHub pull-request head does not match expected candidate"
         )
     author = _actor(pr["author"], "user", "GitHub pull-request author")
-    actor_records = [viewer, author]
+    owner = _actor(repository["owner"], "user", "GitHub repository owner")
+    actor_records = [viewer, author, owner]
 
     commit_nodes = _expect_page_complete(
         pr["commits"], "GitHub pull-request commits"
@@ -639,6 +863,7 @@ def collect_live_evidence(
                 "databaseId",
                 "state",
                 "submittedAt",
+                "body",
                 "commit",
                 "author",
                 "comments",
@@ -665,6 +890,10 @@ def collect_live_evidence(
             {"APPROVED", "CHANGES_REQUESTED", "COMMENTED"},
             f"{label}.state",
         )
+        body = reporter.expect_string(
+            review["body"], f"{label}.body", allow_empty=True
+        )
+        body_has_findings = body.strip() not in {"", "No issues found."}
         review_commit = reporter.expect_object(
             review["commit"], f"{label}.commit"
         )
@@ -704,8 +933,15 @@ def collect_live_evidence(
                 "reviewer_actor_id": review_actor["id"],
                 "candidate_sha": review_candidate,
                 "submitted_at": review["submittedAt"],
+                "state": state,
+                "body": body,
+                "body_has_findings": body_has_findings,
                 "outcome": (
-                    "changes-requested" if finding_ids else "clean"
+                    "changes-requested"
+                    if state == "CHANGES_REQUESTED"
+                    or finding_ids
+                    or body_has_findings
+                    else "clean"
                 ),
                 "finding_ids": finding_ids,
             }
@@ -798,49 +1034,39 @@ def collect_live_evidence(
                 "live adversarial reviewer performed a GitHub comment action"
             )
     dispositions = _parse_disposition_comments(comment_nodes, actor_records)
+    actor_records.append(
+        {
+            "id": review_report["reviewer_actor_id"],
+            "login": review_report["reviewer_login"],
+            "kind": "user",
+        }
+    )
     actors = _collect_actors(actor_records)
 
-    if not check_receipts:
-        raise reporter.PilotDataError(
-            "live collection requires executable check receipts"
-        )
-    raw_receipts = []
-    trusted_seals = set()
-    for receipt in check_receipts:
-        if (
-            not isinstance(receipt, TrustedCheckReceipt)
-            or receipt._token is not _TRUST_TOKEN
-        ):
-            raise reporter.PilotDataError(
-                "live collection received an untrusted check receipt"
-            )
-        raw_receipts.append(receipt.raw)
-        trusted_seals.add(receipt.raw["seal"])
-    primary = raw_receipts[0]
     pre_reviews = []
     if contract["pre_review_required"]:
         pre_reviews.append(
             {
-                "id": f"PRE:{primary['seal'][:24]}",
-                "owner_actor_id": viewer["id"],
+                "id": review_report["report_id"],
+                "owner_actor_id": review_report["reviewer_actor_id"],
                 "candidate_sha": head,
-                "started_at": primary["started_at"],
-                "completed_at": primary["completed_at"],
-                "permissions": ["contents:read"],
+                "started_at": review_report["started_at"],
+                "completed_at": review_report["completed_at"],
+                "permissions": review_report["permissions"],
                 "actions": [
                     {
-                        "id": f"ACTION:READ:{primary['seal'][:16]}",
-                        "kind": "read-candidate",
-                        "occurred_at": primary["started_at"],
+                        "id": f"{review_report['report_id']}:READ",
+                        "kind": review_report["actions"][0],
+                        "occurred_at": review_report["started_at"],
                     },
                     {
-                        "id": f"ACTION:REPORT:{primary['seal'][:16]}",
-                        "kind": "emit-local-report",
-                        "occurred_at": primary["completed_at"],
+                        "id": f"{review_report['report_id']}:REPORT",
+                        "kind": review_report["actions"][1],
+                        "occurred_at": review_report["completed_at"],
                     },
                 ],
                 "finding_ids": [],
-                "reviewed_files": list(LIVE_REVIEWED_FILES),
+                "reviewed_files": review_report["reviewed_files"],
             }
         )
     captured_at = _format_time(clock())
@@ -854,18 +1080,277 @@ def collect_live_evidence(
             "number": pr["number"],
             "node_id": pr["id"],
             "created_at": pr["createdAt"],
+            "author_actor_id": author["id"],
         },
         "result_source_path": review_family.RESULT_SOURCE_PATH,
         "actors": actors,
+        "trusted_disposition_actor_ids": [owner["id"]],
         "pre_reviews": pre_reviews,
         "remote_reviews": remote_reviews,
         "findings": finding_records,
         "threads": threads,
         "candidate_advances": advances,
         "architecture_dispositions": dispositions,
-        "execution_receipts": raw_receipts,
+        "execution_receipts": (
+            [execution_receipt] if execution_receipt is not None else []
+        ),
         "result_manifest": _build_result_manifest(
             contract, finding_families, head
         ),
     }
-    return TrustedEvidence(raw_evidence, trusted_seals, _TRUST_TOKEN)
+    return reporter.normalized_json(raw_evidence)
+
+
+def _live_state_digest(evidence_bytes: bytes) -> str:
+    evidence = reporter.expect_object(
+        reporter.parse_json(
+            evidence_bytes.decode("utf-8"), "live state revalidation"
+        ),
+        "live state revalidation",
+    )
+    payload = {
+        "repository": evidence["repository"],
+        "candidate": evidence["candidate"],
+        "pull_request": evidence["pull_request"],
+        "actors": evidence["actors"],
+        "trusted_disposition_actor_ids": evidence[
+            "trusted_disposition_actor_ids"
+        ],
+        "remote_reviews": evidence["remote_reviews"],
+        "findings": evidence["findings"],
+        "threads": evidence["threads"],
+        "candidate_advances": evidence["candidate_advances"],
+        "architecture_dispositions": evidence[
+            "architecture_dispositions"
+        ],
+    }
+    return hashlib.sha256(reporter.normalized_json(payload)).hexdigest()
+
+
+def _github_finding_ids(evidence_bytes: bytes) -> list[str]:
+    evidence = reporter.expect_object(
+        reporter.parse_json(
+            evidence_bytes.decode("utf-8"), "live finding identities"
+        ),
+        "live finding identities",
+    )
+    finding_ids = [finding["node_id"] for finding in evidence["findings"]]
+    finding_ids.extend(
+        review["node_id"]
+        for review in evidence["remote_reviews"]
+        if review["body_has_findings"]
+    )
+    return sorted(finding_ids)
+
+
+def _run_isolated_live_gate(
+    *,
+    raw_contract: Any,
+    repository_root: Path,
+    expected_candidate: str,
+    base_sha: str,
+    review_receipt_bytes: bytes,
+    replay_store: Path,
+    trusted_key_id: str,
+    trusted_key_epoch: int,
+    trusted_key: bytes,
+    current_time: datetime,
+    clock: Callable[[], datetime] = _utc_now,
+) -> dict[str, Any]:
+    from scripts.workflow_pilot import review_family
+
+    contract = review_family.validate_contract(raw_contract)
+    report_bytes = verify_signed_receipt_bytes(
+        review_receipt_bytes,
+        repository=contract["repository"],
+        pull_request=contract["pull_request"],
+        candidate_sha=expected_candidate,
+        trusted_key_id=trusted_key_id,
+        trusted_key_epoch=trusted_key_epoch,
+        trusted_key=trusted_key,
+        current_time=current_time,
+        replay_store=replay_store,
+        consume_nonce=True,
+    )
+    report_bytes_reverified = verify_signed_receipt_bytes(
+        review_receipt_bytes,
+        repository=contract["repository"],
+        pull_request=contract["pull_request"],
+        candidate_sha=expected_candidate,
+        trusted_key_id=trusted_key_id,
+        trusted_key_epoch=trusted_key_epoch,
+        trusted_key=trusted_key,
+        current_time=current_time,
+        replay_store=None,
+        consume_nonce=False,
+    )
+    if report_bytes_reverified != report_bytes:
+        raise reporter.PilotDataError(
+            "authenticated review report bytes changed after verification"
+        )
+    review_report = reporter.expect_object(
+        reporter.parse_json(
+            report_bytes.decode("utf-8"), "authenticated independent review"
+        ),
+        "authenticated independent review",
+    )
+    first_evidence = collect_live_evidence_bytes(
+        raw_contract,
+        repository_root,
+        expected_candidate,
+        review_report,
+        None,
+        clock=clock,
+    )
+    finding_ids = _github_finding_ids(first_evidence)
+    checker_report_bytes = verify_signed_receipt_bytes(
+        review_receipt_bytes,
+        repository=contract["repository"],
+        pull_request=contract["pull_request"],
+        candidate_sha=expected_candidate,
+        trusted_key_id=trusted_key_id,
+        trusted_key_epoch=trusted_key_epoch,
+        trusted_key=trusted_key,
+        current_time=current_time,
+        replay_store=None,
+        consume_nonce=False,
+    )
+    execution_receipt = run_base_pinned_checker(
+        repository_root,
+        repository=contract["repository"],
+        pull_request=contract["pull_request"],
+        base_sha=base_sha,
+        candidate_sha=expected_candidate,
+        github_finding_ids=finding_ids,
+        review_report_bytes=checker_report_bytes,
+        clock=clock,
+    )
+    second_report_bytes = verify_signed_receipt_bytes(
+        review_receipt_bytes,
+        repository=contract["repository"],
+        pull_request=contract["pull_request"],
+        candidate_sha=expected_candidate,
+        trusted_key_id=trusted_key_id,
+        trusted_key_epoch=trusted_key_epoch,
+        trusted_key=trusted_key,
+        current_time=current_time,
+        replay_store=None,
+        consume_nonce=False,
+    )
+    second_review_report = reporter.expect_object(
+        reporter.parse_json(
+            second_report_bytes.decode("utf-8"),
+            "reverified independent review",
+        ),
+        "reverified independent review",
+    )
+    second_evidence = collect_live_evidence_bytes(
+        raw_contract,
+        repository_root,
+        expected_candidate,
+        second_review_report,
+        execution_receipt,
+        clock=clock,
+    )
+    if _live_state_digest(first_evidence) != _live_state_digest(second_evidence):
+        raise reporter.PilotDataError(
+            "GitHub head/review/thread state changed during gate evaluation"
+        )
+    final_report_bytes = verify_signed_receipt_bytes(
+        review_receipt_bytes,
+        repository=contract["repository"],
+        pull_request=contract["pull_request"],
+        candidate_sha=expected_candidate,
+        trusted_key_id=trusted_key_id,
+        trusted_key_epoch=trusted_key_epoch,
+        trusted_key=trusted_key,
+        current_time=current_time,
+        replay_store=None,
+        consume_nonce=False,
+    )
+    if final_report_bytes != report_bytes:
+        raise reporter.PilotDataError(
+            "authenticated review report bytes changed before consumption"
+        )
+    result = review_family.build_report(
+        raw_contract,
+        second_evidence,
+        repository_root,
+        expected_candidate,
+    )
+    result["provenance"]["isolated_gate_evidence_complete"] = True
+    result["provenance"]["base_pinned_checker"] = True
+    return result
+
+
+def parse_args(argv: list[str] | None = None) -> Any:
+    parser = argparse.ArgumentParser(
+        description="Run isolated read-only live sibling-review gate."
+    )
+    parser.add_argument("--repository-root", type=Path, required=True)
+    parser.add_argument("--expected-candidate", required=True)
+    parser.add_argument("--base-sha", required=True)
+    parser.add_argument("--contract", type=Path, required=True)
+    parser.add_argument("--review-receipt", type=Path, required=True)
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    try:
+        if not sys.flags.isolated:
+            raise reporter.PilotDataError(
+                "live gate authority requires isolated Python startup"
+            )
+        key_id = os.environ.get("WORKFLOW_REVIEW_RECEIPT_KEY_ID")
+        key_epoch_text = os.environ.get("WORKFLOW_REVIEW_RECEIPT_KEY_EPOCH")
+        key = os.environ.get("WORKFLOW_REVIEW_RECEIPT_HMAC_KEY")
+        replay_store = os.environ.get("WORKFLOW_REVIEW_REPLAY_STORE")
+        if not key_id or not key_epoch_text or not key or not replay_store:
+            raise reporter.PilotDataError(
+                "isolated live gate requires external receipt key ID, epoch, "
+                "HMAC key, and replay store"
+            )
+        try:
+            key_epoch = int(key_epoch_text)
+        except ValueError as error:
+            raise reporter.PilotDataError(
+                "receipt key epoch must be an integer"
+            ) from error
+        result = _run_isolated_live_gate(
+            raw_contract=reporter.load_json(args.contract),
+            repository_root=args.repository_root,
+            expected_candidate=args.expected_candidate,
+            base_sha=args.base_sha,
+            review_receipt_bytes=args.review_receipt.read_bytes(),
+            replay_store=Path(replay_store),
+            trusted_key_id=key_id,
+            trusted_key_epoch=key_epoch,
+            trusted_key=key.encode("utf-8"),
+            current_time=_utc_now(),
+        )
+        result["provenance"] = {
+            "source": "isolated-live-gate",
+            "authoritative": True,
+            "live_authoritative": True,
+            "authenticated_receipt": True,
+            "base_pinned_checker": True,
+            "execution_receipt_seals": result["provenance"][
+                "execution_receipt_seals"
+            ],
+        }
+        result["gates"] = {
+            **result["gates"],
+            "push_allowed": result["structural_eligibility"]["push"],
+            "trusted_push_allowed": result["structural_eligibility"]["push"],
+            "merge_allowed": result["structural_eligibility"]["merge"],
+        }
+    except (OSError, reporter.PilotDataError) as error:
+        print(f"isolated review gate error: {error}", file=sys.stderr)
+        return 2
+    sys.stdout.buffer.write(reporter.normalized_json(result))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

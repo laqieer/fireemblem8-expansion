@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import sys
 from collections import defaultdict
@@ -15,7 +14,7 @@ from typing import Any, Iterable
 from scripts.workflow_pilot import reporter
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 FAMILY_MEMBERS = {
     "action": ("actions", "items", "targets"),
     "generated": ("owners", "outputs", "consumers", "drift-checks"),
@@ -126,7 +125,7 @@ BEHAVIOR_ROW_SPECS = {
 }
 REQUIRED_BEHAVIOR_ROWS = tuple(sorted(BEHAVIOR_ROW_SPECS))
 RESULT_SOURCE_PATH = "scripts/workflow_pilot/tests/test_review_family.py"
-REGISTERED_RESULT_CHECK_IDS = {"review-family-suite"}
+REGISTERED_RESULT_CHECK_IDS = {"base-pinned-independent-review"}
 COPILOT_ACTOR = "copilot-pull-request-reviewer"
 ACTOR_LOGIN_RE = re.compile(
     r"^@?[A-Za-z0-9](?:[A-Za-z0-9_-]{0,98}[A-Za-z0-9])?(?:\[bot\])?$"
@@ -539,6 +538,9 @@ def _validate_remote_review_records(value: Any) -> list[dict[str, Any]]:
                 "reviewer_actor_id",
                 "candidate_sha",
                 "submitted_at",
+                "state",
+                "body",
+                "body_has_findings",
                 "outcome",
                 "finding_ids",
             ),
@@ -562,6 +564,24 @@ def _validate_remote_review_records(value: Any) -> list[dict[str, Any]]:
                 "remote review timestamps must be strictly chronological"
             )
         previous_time = submitted
+        state = reporter.expect_enum(
+            review["state"],
+            {"APPROVED", "CHANGES_REQUESTED", "COMMENTED"},
+            f"{label}.state",
+        )
+        body = reporter.expect_string(
+            review["body"], f"{label}.body", allow_empty=True
+        )
+        body_has_findings = reporter.expect_bool(
+            review["body_has_findings"], f"{label}.body_has_findings"
+        )
+        if body_has_findings != (body.strip() not in {"", "No issues found."}):
+            raise reporter.PilotDataError(
+                f"{label}.body_has_findings contradicts review body"
+            )
+        outcome = reporter.expect_enum(
+            review["outcome"], REMOTE_OUTCOMES, f"{label}.outcome"
+        )
         result.append(
             {
                 "id": review_id,
@@ -575,11 +595,10 @@ def _validate_remote_review_records(value: Any) -> list[dict[str, Any]]:
                     review["candidate_sha"], f"{label}.candidate_sha"
                 ),
                 "submitted_at": submitted_at,
-                "outcome": reporter.expect_enum(
-                    review["outcome"],
-                    REMOTE_OUTCOMES,
-                    f"{label}.outcome",
-                ),
+                "state": state,
+                "body": body,
+                "body_has_findings": body_has_findings,
+                "outcome": outcome,
                 "finding_ids": _expect_string_list(
                     review["finding_ids"],
                     f"{label}.finding_ids",
@@ -731,7 +750,19 @@ def _validate_execution_receipts(value: Any) -> list[dict[str, Any]]:
             (
                 "id",
                 "check_id",
+                "base_sha",
+                "base_tree",
                 "candidate_sha",
+                "candidate_tree",
+                "checker_path",
+                "checker_blob_oid",
+                "argv",
+                "changed_files",
+                "github_finding_ids",
+                "review_report_sha256",
+                "read_only",
+                "pre_clean",
+                "post_clean",
                 "started_at",
                 "completed_at",
                 "exit_code",
@@ -743,7 +774,7 @@ def _validate_execution_receipts(value: Any) -> list[dict[str, Any]]:
         receipt_id = reporter.expect_string(receipt["id"], f"{label}.id")
         check_id = reporter.expect_enum(
             receipt["check_id"],
-            set(github_review.REGISTERED_CHECK_COMMANDS),
+            REGISTERED_RESULT_CHECK_IDS,
             f"{label}.check_id",
         )
         started_at, started = _expect_time(
@@ -782,14 +813,59 @@ def _validate_execution_receipts(value: Any) -> list[dict[str, Any]]:
             raise reporter.PilotDataError(
                 f"{label} does not match its execution seal"
             )
+        review_report_sha256 = reporter.expect_string(
+            receipt["review_report_sha256"],
+            f"{label}.review_report_sha256",
+        )
+        if reporter.SHA256_RE.fullmatch(review_report_sha256) is None:
+            raise reporter.PilotDataError(
+                f"{label}.review_report_sha256 must be a lowercase SHA-256"
+            )
         receipt_ids.append(receipt_id)
         seals.append(seal)
         result.append(
             {
                 "id": receipt_id,
                 "check_id": check_id,
+                "base_sha": reporter.expect_sha(
+                    receipt["base_sha"], f"{label}.base_sha"
+                ),
+                "base_tree": reporter.expect_sha(
+                    receipt["base_tree"], f"{label}.base_tree"
+                ),
                 "candidate_sha": reporter.expect_sha(
                     receipt["candidate_sha"], f"{label}.candidate_sha"
+                ),
+                "candidate_tree": reporter.expect_sha(
+                    receipt["candidate_tree"], f"{label}.candidate_tree"
+                ),
+                "checker_path": _validate_path(
+                    receipt["checker_path"], f"{label}.checker_path"
+                ),
+                "checker_blob_oid": reporter.expect_sha(
+                    receipt["checker_blob_oid"],
+                    f"{label}.checker_blob_oid",
+                ),
+                "argv": _expect_string_list(
+                    receipt["argv"], f"{label}.argv"
+                ),
+                "changed_files": _expect_string_list(
+                    receipt["changed_files"], f"{label}.changed_files"
+                ),
+                "github_finding_ids": _expect_string_list(
+                    receipt["github_finding_ids"],
+                    f"{label}.github_finding_ids",
+                    nonempty=False,
+                ),
+                "review_report_sha256": review_report_sha256,
+                "read_only": reporter.expect_bool(
+                    receipt["read_only"], f"{label}.read_only"
+                ),
+                "pre_clean": reporter.expect_bool(
+                    receipt["pre_clean"], f"{label}.pre_clean"
+                ),
+                "post_clean": reporter.expect_bool(
+                    receipt["post_clean"], f"{label}.post_clean"
                 ),
                 "started_at": started_at,
                 "completed_at": completed_at,
@@ -942,6 +1018,7 @@ def validate_evidence(raw_evidence: Any) -> dict[str, Any]:
             "pull_request",
             "result_source_path",
             "actors",
+            "trusted_disposition_actor_ids",
             "pre_reviews",
             "remote_reviews",
             "findings",
@@ -988,7 +1065,7 @@ def validate_evidence(raw_evidence: Any) -> dict[str, Any]:
     reporter.expect_keys(
         pull_request,
         "evidence.pull_request",
-        ("number", "node_id", "created_at"),
+        ("number", "node_id", "created_at", "author_actor_id"),
     )
     created_at, _ = _expect_time(
         pull_request["created_at"], "evidence.pull_request.created_at"
@@ -1022,8 +1099,16 @@ def validate_evidence(raw_evidence: Any) -> dict[str, Any]:
                 pull_request["node_id"], "evidence.pull_request.node_id"
             ),
             "created_at": created_at,
+            "author_actor_id": reporter.expect_string(
+                pull_request["author_actor_id"],
+                "evidence.pull_request.author_actor_id",
+            ),
         },
         "actors": _validate_actor_records(evidence["actors"]),
+        "trusted_disposition_actor_ids": _expect_string_list(
+            evidence["trusted_disposition_actor_ids"],
+            "evidence.trusted_disposition_actor_ids",
+        ),
         "pre_reviews": _validate_pre_review_records(evidence["pre_reviews"]),
         "remote_reviews": _validate_remote_review_records(
             evidence["remote_reviews"]
@@ -1238,6 +1323,10 @@ def validate_repository_authority(
             for receipt in evidence["execution_receipts"]
         ),
         *(
+            receipt["base_sha"]
+            for receipt in evidence["execution_receipts"]
+        ),
+        *(
             result["candidate_sha"]
             for result in evidence["result_manifest"].values()
         ),
@@ -1311,6 +1400,14 @@ def _validate_review_causality(
     implementer = _require_actor(
         contract["implementer_actor_id"], actors, "contract implementer"
     )
+    if contract["implementer_actor_id"] != evidence["pull_request"][
+        "author_actor_id"
+    ]:
+        raise reporter.PilotDataError(
+            "contract implementer is not the authoritative pull-request author"
+        )
+    for actor_id in evidence["trusted_disposition_actor_ids"]:
+        _require_actor(actor_id, actors, "trusted disposition owner")
     pre_reviews = evidence["pre_reviews"]
     expected_pre_reviews = 1 if contract["pre_review_required"] else 0
     if len(pre_reviews) != expected_pre_reviews:
@@ -1495,13 +1592,19 @@ def _validate_findings_and_sweeps(
             )
 
     for review in evidence["remote_reviews"]:
-        if review["outcome"] == "clean" and review["finding_ids"]:
+        requests_changes = (
+            review["state"] == "CHANGES_REQUESTED"
+            or review["body_has_findings"]
+            or bool(review["finding_ids"])
+        )
+        if review["outcome"] == "clean" and requests_changes:
             raise reporter.PilotDataError(
-                f"remote review round {review['round']} is clean but has findings"
+                f"remote review round {review['round']} is not semantically clean"
             )
-        if review["outcome"] == "changes-requested" and not review["finding_ids"]:
+        if review["outcome"] == "changes-requested" and not requests_changes:
             raise reporter.PilotDataError(
-                f"remote review round {review['round']} requests changes without findings"
+                f"remote review round {review['round']} requests changes "
+                "without state/body/inline evidence"
             )
 
     sweeps = {}
@@ -1566,7 +1669,7 @@ def _validate_findings_and_sweeps(
             normalized_siblings.append(
                 {
                     **sibling,
-                    "registered_check_id": "review-family-suite",
+                    "registered_check_id": "base-pinned-independent-review",
                 }
             )
         sweeps[finding_id] = {
@@ -1634,7 +1737,7 @@ def _validate_behavior_evidence(
             {
                 "id": row_id,
                 **BEHAVIOR_ROW_SPECS[row_id],
-                "registered_check_id": "review-family-suite",
+                "registered_check_id": "base-pinned-independent-review",
                 "evidence_result_ids": row["evidence_result_ids"],
             }
         )
@@ -1649,12 +1752,15 @@ def _validate_behavior_evidence(
 def _validate_executable_results(
     contract: dict[str, Any],
     evidence: dict[str, Any],
-    trusted_receipt_seals: frozenset[str],
     authority: dict[str, Any],
-) -> tuple[bool, list[str]]:
+) -> list[str]:
+    from scripts.workflow_pilot import github_review
+
     receipts_by_check: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for receipt in evidence["execution_receipts"]:
         receipts_by_check[receipt["check_id"]].append(receipt)
+    if not receipts_by_check:
+        return []
     required_checks = set(REGISTERED_RESULT_CHECK_IDS)
     accepted_receipts = []
     for check_id in sorted(required_checks):
@@ -1668,6 +1774,9 @@ def _validate_executable_results(
             receipt["candidate_sha"] != contract["candidate_sha"]
             or receipt["result"] != "pass"
             or receipt["exit_code"] != 0
+            or not receipt["read_only"]
+            or not receipt["pre_clean"]
+            or not receipt["post_clean"]
         ):
             raise reporter.PilotDataError(
                 f"result check {check_id!r} lacks a passing current-candidate receipt"
@@ -1694,15 +1803,71 @@ def _validate_executable_results(
                 f"execution receipt {receipt['id']} follows evidence capture"
             )
         accepted_receipts.append(receipt["seal"])
+        root = authority["repository_root"]
+        actual_base_tree = (
+            reporter.run_git(
+                root, "rev-parse", f"{receipt['base_sha']}^{{tree}}"
+            )
+            .decode("ascii")
+            .strip()
+        )
+        actual_candidate_tree = (
+            reporter.run_git(
+                root, "rev-parse", f"{receipt['candidate_sha']}^{{tree}}"
+            )
+            .decode("ascii")
+            .strip()
+        )
+        actual_checker_blob = (
+            reporter.run_git(
+                root,
+                "rev-parse",
+                f"{receipt['base_sha']}:{github_review.BASE_CHECKER_PATH}",
+            )
+            .decode("ascii")
+            .strip()
+        )
+        changed_files = sorted(
+            path.decode("utf-8")
+            for path in reporter.run_git(
+                root,
+                "diff",
+                "--name-only",
+                "-z",
+                f"{receipt['base_sha']}...{receipt['candidate_sha']}",
+            ).split(b"\0")
+            if path
+        )
+        expected_finding_ids = sorted(
+            [
+                *evidence["findings"],
+                *(
+                    review["node_id"]
+                    for review in evidence["remote_reviews"]
+                    if review["body_has_findings"]
+                ),
+            ]
+        )
+        if (
+            receipt["base_tree"] != actual_base_tree
+            or receipt["candidate_tree"] != actual_candidate_tree
+            or receipt["checker_path"] != github_review.BASE_CHECKER_PATH
+            or receipt["checker_blob_oid"] != actual_checker_blob
+            or receipt["argv"] != list(github_review.BASE_CHECKER_ARGV)
+            or receipt["changed_files"] != changed_files
+            or receipt["github_finding_ids"]
+            != expected_finding_ids
+        ):
+            raise reporter.PilotDataError(
+                f"result check {check_id!r} receipt does not match "
+                "base/candidate/checker/diff/finding authority"
+            )
     extra_checks = set(receipts_by_check) - required_checks
     if extra_checks:
         raise reporter.PilotDataError(
             f"execution receipts contain unrelated checks {sorted(extra_checks)}"
         )
-    trusted = bool(accepted_receipts) and all(
-        seal in trusted_receipt_seals for seal in accepted_receipts
-    )
-    return trusted, accepted_receipts
+    return accepted_receipts
 
 
 def _consume_disposition(
@@ -1722,6 +1887,11 @@ def _consume_disposition(
         )
     event_id = event["node_id"]
     _require_actor(event["actor_id"], actors, f"disposition {event_id}")
+    if event["actor_id"] not in evidence["trusted_disposition_actor_ids"]:
+        raise reporter.PilotDataError(
+            "architecture disposition actor is not repository owner/trusted "
+            "coordinator"
+        )
     if event["actor_id"] == pre_owner_id:
         raise reporter.PilotDataError(
             "read-only pre-review owner cannot dispose architecture holds"
@@ -1935,30 +2105,21 @@ def build_report(
     repository_root: Path,
     expected_candidate: str,
 ) -> dict[str, Any]:
-    """Validate live-capability or offline transform evidence against Git."""
-    from scripts.workflow_pilot import github_review
-
-    raw_evidence, live_trusted, trusted_receipt_seals = (
-        github_review.unwrap_evidence(evidence_input)
-    )
+    """Validate immutable evidence structurally without granting authority."""
+    if isinstance(evidence_input, bytes):
+        try:
+            evidence_text = evidence_input.decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise reporter.PilotDataError(
+                "immutable evidence bytes are not UTF-8"
+            ) from error
+        raw_evidence = reporter.parse_json(
+            evidence_text, "immutable evidence bytes"
+        )
+    else:
+        raw_evidence = evidence_input
     contract = validate_contract(raw_contract)
     evidence = validate_evidence(raw_evidence)
-    if (
-        evidence["source"]["kind"]
-        in {"authenticated-receipt", "live-gh-api"}
-        and not live_trusted
-    ):
-        raise reporter.PilotDataError(
-            "authoritative evidence lacks collector/receipt trust capability"
-        )
-    if (
-        live_trusted
-        and evidence["source"]["kind"]
-        not in {"authenticated-receipt", "live-gh-api"}
-    ):
-        raise reporter.PilotDataError(
-            "collector trust capability cannot authenticate offline evidence"
-        )
     authority = validate_repository_authority(
         repository_root,
         expected_candidate,
@@ -1976,10 +2137,8 @@ def build_report(
     behavior_rows = _validate_behavior_evidence(
         contract, evidence, referenced_results
     )
-    executable_trusted, execution_receipt_seals = (
-        _validate_executable_results(
-            contract, evidence, trusted_receipt_seals, authority
-        )
+    execution_receipt_seals = _validate_executable_results(
+        contract, evidence, authority
     )
     handoffs, architecture_hold, consumed_dispositions = _progress_rounds(
         contract, evidence, sweeps
@@ -2000,7 +2159,6 @@ def build_report(
     unresolved_findings = sum(
         not thread["is_resolved"] for thread in threads.values()
     )
-    delivery_trusted = live_trusted and executable_trusted
     return {
         "schema_version": SCHEMA_VERSION,
         "identity": {
@@ -2012,15 +2170,10 @@ def build_report(
         },
         "provenance": {
             "source": evidence["source"]["kind"],
-            "authoritative": live_trusted,
-            "live_authoritative": bool(
-                live_trusted and evidence["source"]["kind"] == "live-gh-api"
-            ),
-            "authenticated_receipt": bool(
-                live_trusted
-                and evidence["source"]["kind"] == "authenticated-receipt"
-            ),
-            "executable_evidence_trusted": executable_trusted,
+            "authoritative": False,
+            "live_authoritative": False,
+            "authenticated_receipt": False,
+            "executable_evidence_trusted": False,
             "execution_receipt_seals": execution_receipt_seals,
         },
         "trigger": {
@@ -2063,18 +2216,17 @@ def build_report(
             "consumed_disposition_ids": consumed_dispositions,
         },
         "gates": {
-            "push_allowed": bool(
-                delivery_trusted and architecture_hold is None
-            ),
-            "trusted_push_allowed": bool(
-                delivery_trusted and architecture_hold is None
-            ),
+            "push_allowed": False,
+            "trusted_push_allowed": False,
             "remote_copilot_review_required": True,
             "current_candidate_reviewed": current_candidate_reviewed,
             "current_candidate_clean": current_candidate_clean,
-            "merge_allowed": bool(
-                delivery_trusted
-                and current_candidate_clean
+            "merge_allowed": False,
+        },
+        "structural_eligibility": {
+            "push": architecture_hold is None,
+            "merge": bool(
+                current_candidate_clean
                 and unresolved_findings == 0
                 and architecture_hold is None
             ),
@@ -2096,47 +2248,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--repository-root", type=Path, required=True)
     parser.add_argument("--expected-candidate", required=True)
     parser.add_argument("--contract", type=Path, required=True)
-    source = parser.add_mutually_exclusive_group(required=True)
-    source.add_argument("--live", action="store_true")
-    source.add_argument("--evidence", type=Path)
-    source.add_argument("--receipt", type=Path)
+    parser.add_argument("--evidence", type=Path, required=True)
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
-        from scripts.workflow_pilot import github_review
-
         contract = reporter.load_json(args.contract)
-        if args.live:
-            receipt = github_review.run_registered_check(
-                args.repository_root,
-                args.expected_candidate,
-                "review-family-suite",
-            )
-            evidence = github_review.collect_live_evidence(
-                contract,
-                args.repository_root,
-                args.expected_candidate,
-                [receipt],
-            )
-        elif args.receipt is not None:
-            key_id = os.environ.get("WORKFLOW_REVIEW_RECEIPT_KEY_ID")
-            key = os.environ.get("WORKFLOW_REVIEW_RECEIPT_HMAC_KEY")
-            if not key_id or not key:
-                raise reporter.PilotDataError(
-                    "authenticated receipt requires external "
-                    "WORKFLOW_REVIEW_RECEIPT_KEY_ID and "
-                    "WORKFLOW_REVIEW_RECEIPT_HMAC_KEY"
-                )
-            evidence = github_review.authenticate_evidence_receipt(
-                reporter.load_json(args.receipt),
-                key_id,
-                key.encode("utf-8"),
-            )
-        else:
-            evidence = reporter.load_json(args.evidence)
+        evidence = args.evidence.read_bytes()
         report = build_report(
             contract,
             evidence,

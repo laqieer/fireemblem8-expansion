@@ -476,6 +476,8 @@ game behavior needs a compensating change.
   PR, workflow, ROM, or emulator is required.
 - **Prerequisites and clean starting state:** start at the repository root
   with `scripts/workflow_pilot/review_family.py`,
+  `scripts/workflow_pilot/review_base_checker.py`,
+  `scripts/workflow_pilot/isolated_review_gate.py`,
   `review_family_complete.json`, `review_family_complete_evidence.json`,
   their default counterparts, and `review_family_github_adapter.json`
   unchanged. The fixture candidate
@@ -491,59 +493,73 @@ game behavior needs a compensating change.
    Compare its canonical JSON bytes and confirm it cannot authorize push or
    merge.
 3. Mock the production `gh api graphql` adapter with the committed bounded
-   response, execute the real allowlisted positive check, and confirm the
-   private live collector capability authorizes the current clean candidate.
-   Execute the real negative-control command and confirm its receipt fails.
-   Authenticate a receipt with an external test HMAC trust root, then tamper it
-   and require signature failure.
-4. Inspect the complete evidence snapshot's immutable PR, actor, review,
+   response inside the isolated gate. Confirm the report core itself can never
+   authorize delivery and exports no trust-capability class/token.
+4. Create a two-commit disposable repository under `build/test-artifacts/`.
+   Extract the checker from its immutable base tree, run it with
+   `/usr/bin/python3 -I` in the read-only sandbox, and inspect the receipt's
+   checker blob/argv, base/candidate trees, full diff, actual finding IDs,
+   report digest, pre/post cleanliness, and pass result. Remove one changed
+   file or finding from the independent report and require failure.
+5. Sign canonical independent-report bytes with the test-only external key.
+   Verify fresh scope, key epoch/purpose, expiry, nonce, and atomic replay
+   consumption. Reject stale/2020/future/overlong, wrong-scope/key, mutated,
+   noncanonical, unavailable-replay, and reused receipts. Confirm production
+   stores no key.
+6. Inspect the complete evidence snapshot's immutable PR, actor, review,
    finding, action, full-SHA, tree/blob, and timestamp identities. Confirm the
    complete contract's one accepted synthetic finding in each
    action, lifecycle, wire, generated, and resource family. Confirm all exact
    siblings and manifest-backed result IDs appear in the global and
    first-round handoffs.
-5. Mutate actual/live head, origin-bound candidate/tree/source, collector
+7. Mutate actual/live head, origin-bound candidate/tree/source, collector
    completeness/pagination, review/finding/action timestamps, actor case/bot
    aliases, ownership, permission/action order, frozen behavior rows, result
    and execution-receipt association, family/member/result/outcome, and every
    numeric limit. Reuse one review node as a finding node and require global
    collision failure. Prove an old `a876...` result cannot support the later
    `1a6...` candidate.
-6. Supply 55 finding IDs against `max_findings_per_review: 10`; exceed the
+8. Supply 55 finding IDs against `max_findings_per_review: 10`; exceed the
    reviewed-file, duration, sibling-per-finding, and sibling-per-handoff
    maxima; and use boolean, negative, zero, or above-cap limits. Require
    failure.
-7. Add six consecutive change-request rounds with dispositions for rounds 3
+9. Add six consecutive change-request rounds with dispositions for rounds 3
    and 6. Confirm both holds lift independently, then remove, reuse, reorder,
    future-date, or change the SHA of each event and require failure. Confirm a
    current third round without disposition remains a push-blocking hold.
    Insert a candidate advance between a held review and its disposition and
-   require failure.
-8. Inspect the default fixture's current zero-finding remote Copilot review.
+   require failure. Change the disposition actor to an outsider or pre-review
+   owner and require failure.
+10. Set a remote review to `CHANGES_REQUESTED` with zero inline comments, then
+   add a body finding under `COMMENTED`; neither may classify clean. Change
+   head/review/thread state between the gate's first and second live collection
+   and require failure.
+11. Inspect the default fixture's current zero-finding remote Copilot review.
    Remove it and then make it stale; confirm merge remains blocked while the
    remote-review-required gate remains true.
 
 ### Expected result
 
 The complete offline fixture validates transformation semantics against a real
-Git head/tree/object database but cannot authorize delivery. The mocked
-read-only live collector or externally authenticated receipt supplies the
-non-authorable trust capability; a real current-candidate execution receipt
-supplies behavior authority. The exact five-row behavior inventory maps
-production, execution, representation, stale-state, host, and
-positive/adversarial/default/runtime result identities to the closed check.
+Git head/tree/object database but cannot authorize delivery. No in-process
+object can set trust. Only the `/usr/bin/python3 -I` live gate with fresh
+single-use externally authenticated report bytes, two matching live snapshots,
+and a passing immutable-base checker promotes structural eligibility. The
+exact five-row inventory maps all result identities to that base-pinned check.
 
 ### Negative control
 
-The suite rejects an offline fixture claiming authority; stale live head,
+The suite rejects an in-process/offline trust claim; stale live head,
 repository, source, reviewer, outcome, action, order, unresolved state, or
-timestamp; incomplete API pages; invalid receipt HMAC/result/seal/check/SHA;
+timestamp; incomplete API pages; invalid/noncanonical/stale/reused/wrong-scope
+receipt HMAC, key epoch/purpose, nonce, replay authority, result/check/SHA;
 nonexistent or unrelated evidence; one omitted family sibling; unknown
 family/member/result/action/state; cross-domain node collisions; actor case or
 bot-suffix aliases; duplicate/overlapping ownership; duplicate/reversed/
 interleaved actions; exceeded limits; semantic result reassociation; an old
-candidate result; absent/stale remote review; premature push; and invalid
-architecture disposition.
+candidate result; missing changed-file/finding review coverage; writable/dirty
+checker execution; `CHANGES_REQUESTED` or body findings classified clean;
+changed second live state; premature push; and outsider/self disposition.
 
 ### Interactions and save compatibility
 
@@ -559,11 +575,13 @@ debug/release, or archival impact.
 
 ### Automation
 
-`python3 -m unittest scripts.workflow_pilot.tests.test_review_family -v`
-executes the production evaluator with positive, adversarial, default, stale,
-live-collector/adapter, HMAC receipt, real executable pass/fail,
-semantic-association, global node, bound, no-push, multi-hold progression,
-action-order, normalized ownership, and metric-binding reproducers.
+`python3 -m unittest scripts.workflow_pilot.tests.test_review_base_checker
+scripts.workflow_pilot.tests.test_review_family
+scripts.workflow_pilot.tests.test_github_review -v` executes the independent
+base checker, structural evaluator, isolated live collector, immutable receipt,
+replay, full-diff/finding coverage, state revalidation, semantic association,
+global-node, bound, no-push, multi-hold, action-order, owner, and metric
+reproducers.
 
 `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
 checks that the production review/merge policy retains the bounded read-only
@@ -575,10 +593,11 @@ ownership and automation paths.
 
 ### Cleanup and limitations
 
-The focused suite automatically removes its ignored detached authority
-worktree. The collector uses only read-only `gh api graphql`; checks and
-receipts remain local and no mode changes remote state. Offline fixtures never
-grant delivery authority. No manual-only criterion applies.
+The focused suites automatically remove ignored detached/synthetic authority
+worktrees, checker sandboxes, and replay files. The collector uses only
+read-only `gh api graphql`; no mode changes remote state. Offline fixtures and
+HMAC bytes without current-time/key/replay plus fresh live authority never grant
+delivery. No manual-only criterion applies.
 
 Rollback is a normal revert of issue #179. The issue #176 baseline values and
 existing Build, Copilot review, merge, and post-merge gates remain unchanged.

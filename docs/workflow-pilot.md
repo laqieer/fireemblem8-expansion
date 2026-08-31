@@ -247,16 +247,15 @@ booleans are accepted only by declared boolean fields.
 Issue [#179](https://github.com/laqieer/fireemblem8-expansion/issues/179)
 extends the issue #176 seam with an accepted **framework capability:
 review-convergence contract**. It does not change the frozen baseline fixture,
-expected values, decision seal, or reporter formulas. It adds an offline
-stdlib module that consumes one immutable candidate contract and emits
-canonical JSON:
+expected values, decision seal, or reporter formulas. It adds a structural stdlib module plus one isolated live gate:
 
 ```bash
-python3 -m scripts.workflow_pilot.review_family \
+/usr/bin/python3 -I scripts/workflow_pilot/isolated_review_gate.py \
   --repository-root <exact-candidate-checkout> \
   --expected-candidate <full-head-sha> \
+  --base-sha <immutable-parent-or-base-sha> \
   --contract <candidate-contract.json> \
-  --live
+  --review-receipt <authenticated-independent-review.json>
 ```
 
 The module reuses `PilotDataError`, strict JSON loading, full-SHA validation,
@@ -269,19 +268,33 @@ tree ID, reviewed paths, evidence paths, and blob IDs are re-derived from Git.
 A contract or snapshot claiming an invented or stale candidate cannot make
 itself authoritative.
 
-Production `--live` uses a closed read-only `/usr/bin/gh api graphql` adapter
+The report core never carries a trust token or caller-constructible trusted
+object. `python3 -m scripts.workflow_pilot.review_family --evidence ...` only
+computes structural eligibility and always emits false push/merge gates,
+including when input claims to be live. Only the `/usr/bin/python3 -I`
+launcher can evaluate delivery gates.
+
+The isolated process uses a closed read-only `/usr/bin/gh api graphql` adapter
 at validation time. It obtains the PR node/current head/author, bounded complete
 commit and force-push history, Copilot review and finding nodes, review threads
 and unresolved state, actor IDs/logins, outcomes, timestamps, repository
 permission, and typed disposition comments. Any paginated remainder fails
-instead of silently truncating authority. The collector returns a private
-in-process trust capability that contract JSON cannot construct. An alternative
-immutable receipt is accepted only after HMAC-SHA-256 authentication with the
-external `WORKFLOW_REVIEW_RECEIPT_KEY_ID` and
-`WORKFLOW_REVIEW_RECEIPT_HMAC_KEY` trust root; the key and trusted ID never
-come from the contract or receipt.
+instead of silently truncating authority. It collects twice and compares the
+head/review/finding/thread/push/disposition state immediately before promoting
+structural merge eligibility.
 
-`--evidence <fixture.json>` is explicitly an offline transformation mode. Even
+The independent report receipt retains canonical signed payload bytes. Its
+HMAC envelope binds repository, PR, candidate, issue/expiry times, nonce, key
+ID, key epoch, and purpose. The isolated consumer obtains
+`WORKFLOW_REVIEW_RECEIPT_KEY_ID`, `WORKFLOW_REVIEW_RECEIPT_KEY_EPOCH`,
+`WORKFLOW_REVIEW_RECEIPT_HMAC_KEY`, and `WORKFLOW_REVIEW_REPLAY_STORE` only
+from its external environment. It rejects not-yet-valid, expired, 2020-era,
+overlong, wrong-scope/epoch/purpose, malformed-nonce, noncanonical, modified,
+or already-consumed receipts. The nonce is consumed atomically in the external
+replay store. Signed bytes are retained and HMAC/freshness is reverified before
+each parse/consumer. No secret or replay ledger is committed.
+
+`--evidence <fixture.json>` on the core is explicitly an offline transformation mode. Even
 a fully coherent fixture with a clean remote review always reports
 `authoritative: false`, `trusted_push_allowed: false`, and
 `merge_allowed: false`. Recomputable expected JSON files are not provenance and
@@ -290,6 +303,26 @@ complete/default adapter and transform fixtures are pinned to historical candida
 `a8768e4f467c36f8bec60ee823d7d1735d3fcd45`; tests create a bounded detached
 local authority worktree at that commit. These are deterministic inputs, not a
 mutable delivery ledger or self-reported current GitHub state.
+
+### Base-pinned executable review evidence
+
+Candidate tests may contribute ordinary evidence but are never a trust root.
+The isolated gate derives every changed file from `git diff
+<base>...<candidate>` and requires the authenticated independent report to
+cover that exact set plus every live inline/body finding identity. It loads
+`scripts/workflow_pilot/review_base_checker.py` from the immutable base tree,
+not the candidate worktree, records the base checker blob and fixed argv, and
+executes the extracted source with `/usr/bin/python3 -I` in a bounded sandbox
+under ignored `build/test-artifacts/`.
+
+Checker source/input and sandbox are read-only during execution. The candidate
+worktree must be clean before and after. The execution receipt binds base and
+candidate commits/trees, checker path/blob/argv, changed files, live finding
+IDs, independent-report digest, read-only and pre/post-clean status,
+timestamps, exit/result, output digest, and receipt seal. Missing, stale,
+wrong-check/SHA/result/blob/argv/diff/finding, writable, or dirty receipts fail.
+The checker and independent report replace the former hard-coded three-file
+candidate-suite claim.
 
 ### Behavior-row contract
 
@@ -306,16 +339,15 @@ owned by the module:
 | `remote-review-metrics` | Current clean Copilot review and #176 metric bindings |
 
 Missing, duplicate, or invented rows fail. Each positive, adversarial, default,
-and runtime result ID resolves to the closed `review-family-suite` check,
+and runtime result ID resolves to the closed
+`base-pinned-independent-review` check,
 candidate SHA, same row, evidence class, family/member (when applicable), and
 closed assertion ID. The allowlisted runner requires a clean exact-head
 worktree and executes fixed argv with isolated environment; it records check
 ID, candidate, start/end, exit/result, output digest, and a domain-separated
-receipt seal. Only live-collector receipts or an externally authenticated
-receipt can authorize delivery. Missing, failed, wrong-check, stale-SHA, or
-wrong-result receipts fail. Unused/reused results and swapped IDs with unchanged
-wording fail semantically. The old `a876...` result cannot prove a later
-`1a6...` authority-causality row.
+receipt seal. Missing, failed, wrong-check, stale-SHA, or wrong-result receipts
+fail. Unused/reused results and swapped IDs with unchanged wording fail
+semantically.
 
 | Required mapping | Producer / consumer contract |
 | --- | --- |
@@ -376,10 +408,12 @@ emits no narrow handoff: it derives an architecture/decomposition hold and
 sets `push_allowed` false.
 
 Architecture dispositions are an ordered list of unique immutable events.
-Each has an ID, held round, exact candidate SHA, non-reviewer actor, closed
-action, and timestamp strictly after the held review and before any next
-review. Each event is consumed exactly once. A missing disposition blocks a
-later round; duplicate/reused, out-of-order, mismatched, or future events fail.
+Each has an ID, held round, exact candidate SHA, closed action, and timestamp
+strictly after the held review and before any next review. Its actor must be
+the immutable repository-owner ID collected live (or a separately
+authenticated trusted coordinator); outsiders and the pre-review owner fail.
+Each event is consumed exactly once. A missing disposition blocks a later
+round; duplicate/reused, out-of-order, mismatched, or future events fail.
 After a valid disposition the consecutive counter restarts, so rounds 3 and 6
 can independently hold and lift in one evidence history.
 
@@ -390,6 +424,11 @@ its required disposition is a hard failure, even if a later disposition or
 review exists. PR, actor, review, finding, thread, push, local review/action,
 and disposition node IDs share one case-normalized global uniqueness domain;
 a review and finding cannot reuse the same node ID.
+
+`CHANGES_REQUESTED` always requests changes even with zero inline comments.
+The collector also retains the review body; nonempty body findings request
+changes. Clean requires an acceptable `COMMENTED`/`APPROVED` state, no body or
+inline findings, and zero unresolved threads.
 
 `remote_copilot_review_required` is always true. A zero-finding local
 pre-review, no accepted finding, or an architecture disposition cannot satisfy

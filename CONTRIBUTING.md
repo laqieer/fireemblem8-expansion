@@ -87,18 +87,18 @@ High-risk or large candidates also run one bounded fresh read-only adversarial
 pre-review before their first remote review. The reviewer is separate from the
 implementer and cannot mutate repository or GitHub state. Evaluate its exact
 candidate report with `python3 -m scripts.workflow_pilot.review_family` using
-an explicit real repository root/expected head and read-only live GitHub
-collection (or an immutable receipt authenticated by an external trust root).
-Offline fixtures never authorize delivery. Every valid finding must cover its complete
-action, lifecycle, wire, generated, or enabled/disabled resource sibling family
-with result IDs backed by a passing exact-candidate closed check before another
-push. Declared maxima are enforced against observed files, findings, duration,
-and siblings. Actions are exactly read then report; GitHub node IDs are
-globally unique; complete push history must show no advance before a required
-disposition. The first two consecutive change-request rounds produce bounded
-handoffs; every third creates an independently timestamped
-architecture/decomposition hold until its exact round/SHA disposition. This
-local contract does not replace the mandatory exact-candidate Copilot review.
+the offline report core only for structural diagnostics; it can never authorize
+delivery. Production uses `/usr/bin/python3 -I
+scripts/workflow_pilot/isolated_review_gate.py`, fresh single-use signed
+independent-review bytes with external time/key/replay authority, two matching
+read-only GitHub collections, and a checker extracted from the immutable base
+tree. The checker receipt covers every changed file and actual finding ID,
+fixed argv/blob/tree identities, read-only execution, and pre/post cleanliness.
+Actions are exactly read then report; GitHub node IDs are globally unique;
+`CHANGES_REQUESTED`, body/inline findings, or unresolved threads are not clean;
+complete push history permits no advance before an owner/coordinator
+disposition. Offline fixtures never authorize delivery. This contract does not
+replace mandatory exact-candidate Copilot review.
 
 Both PR and master Build runs execute `host-tests`, `build`,
 `extended-host-tests`, `legacy`, and the seconds-only fail-closed `summary` in

@@ -1983,7 +1983,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     self.assertIn(requirement.casefold(), normalized)
 
         for requirement in (
-            "python3 -m scripts.workflow_pilot.review_family",
+            "/usr/bin/python3 -I "
+            "scripts/workflow_pilot/isolated_review_gate.py",
             "actions, items, and targets",
             "lifecycle entries, preservation, resets, and terminals",
             "wire producers, consumers, validators, replay, and stale bindings",
@@ -1997,12 +1998,16 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "explicit repository root, expected candidate",
             "actual Git `HEAD`",
             "closed read-only `gh api graphql` collector",
-            "external HMAC trust root",
-            "offline fixtures and recomputable expected files cannot authorize",
-            "passing exact-candidate execution receipt",
+            "external current-time/key/replay authorities",
+            "caller-importable objects cannot authorize push or merge",
+            "checker source extracted from the immutable base tree",
+            "full Git-derived changed-file set",
             "exactly ordered `read-candidate` then later `emit-local-report`",
             "globally unique normalized node IDs",
             "no candidate push",
+            "`CHANGES_REQUESTED`, body findings",
+            "live repository-owner/trusted coordinator ID",
+            "recollects head/review/thread state",
             "later sixth",
             "declared maxima",
             "Normalize actor case and bot suffix aliases",

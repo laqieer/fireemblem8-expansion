@@ -1025,8 +1025,9 @@ class TesterCaseRegistryTests(unittest.TestCase):
                         "document": "docs/test-cases/workflow-governance.md",
                         "commands": {
                             "python3 -m unittest "
-                            "scripts.workflow_pilot.tests."
-                            "test_review_family -v",
+                            "scripts.workflow_pilot.tests.test_review_base_checker "
+                            "scripts.workflow_pilot.tests.test_review_family "
+                            "scripts.workflow_pilot.tests.test_github_review -v",
                             "python3 -m unittest "
                             "scripts.docs_check_tests."
                             "test_development_workflow_skill -v",

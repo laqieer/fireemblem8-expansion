@@ -6,6 +6,10 @@
     },
     "repository": {
       "viewerPermission": "READ",
+      "owner": {
+        "id": "ACTOR_OWNER_001",
+        "login": "repository-owner"
+      },
       "pullRequest": {
         "id": "PR_LIVE_179",
         "number": 179,
@@ -46,6 +50,7 @@
               "databaseId": 3001,
               "state": "COMMENTED",
               "submittedAt": "2026-08-31T03:37:00Z",
+              "body": "",
               "commit": {
                 "oid": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45"
               },

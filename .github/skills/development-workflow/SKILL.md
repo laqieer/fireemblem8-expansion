@@ -569,22 +569,32 @@ before the first remote review. Its owner must be separate from the
 implementer and have no overlapping review owner. The fresh reviewer is
 read-only: it cannot edit, push, comment, request review, dispatch CI, or
 merge. It may only read the exact candidate and emit the local report consumed
-by `python3 -m scripts.workflow_pilot.review_family`. Invoke production
-validation with explicit repository root, expected candidate, candidate
-contract, and `--live`. Its closed read-only `gh api graphql` collector must
+by the review-family contract. The importable report core never grants trust or
+delivery gates. Invoke production validation only through
+`/usr/bin/python3 -I scripts/workflow_pilot/isolated_review_gate.py` with
+explicit repository root, expected candidate, immutable base, candidate
+contract, and authenticated independent-review receipt. Its closed read-only
+`gh api graphql` collector must
 verify actual Git `HEAD`, origin, commit ancestry/time, tree/source membership,
 complete push/force-push history, PR/review/finding/thread nodes, unresolved
-state, actors, outcomes, permissions, actions, and dispositions. An immutable
-receipt is authoritative only with an external HMAC trust root; offline
-fixtures and recomputable expected files cannot authorize push or merge.
+state, actors, outcomes, permissions, actions, and dispositions. The canonical
+signed bytes bind scope, issue/expiry times, nonce, key epoch, and purpose; the
+process requires external current-time/key/replay authorities, atomically
+consumes the nonce, and reverifies before every consumption. Offline fixtures,
+HMAC bytes without those authorities, and caller-importable objects cannot
+authorize push or merge.
 
 The executable review-family contract has one exact frozen behavior-row
 inventory. It maps each row to its production predicate and producer, executor
 and consumer, representation, stale-state revalidation, host validation, and
-positive, adversarial, default, and runtime result IDs. Every result must bind the same
-row/family/assertion/check to a passing exact-candidate execution receipt from
-the closed allowlisted runner. A valid finding must expand to every member of
-exactly one closed sibling family before another push:
+positive, adversarial, default, and runtime result IDs. Candidate tests are supplemental only. Every result
+must bind the same row/family/assertion/check to a passing receipt from the
+checker source extracted from the immutable base tree and executed with fixed
+argv in an isolated read-only sandbox. The receipt covers the full Git-derived
+changed-file set, actual GitHub finding IDs, checker blob, base/candidate trees,
+signed independent report, and pre/post cleanliness. A valid finding must
+expand to every member of exactly one closed sibling family before another
+push:
 
 - actions, items, and targets;
 - lifecycle entries, preservation, resets, and terminals;
@@ -603,12 +613,15 @@ per handoff. Normalize actor case and bot suffix aliases before rejecting
 duplicate/overlapping ownership. Require exactly ordered `read-candidate` then
 later `emit-local-report` actions, globally unique normalized node IDs across
 all actor/PR/review/finding/thread/push/disposition domains, and no candidate
-push between a held review and its disposition. Unknown families, members,
+push between a held review and its disposition. `CHANGES_REQUESTED`, body
+findings, inline findings, or unresolved threads can never classify clean.
+Disposition actors are limited to the live repository-owner/trusted
+coordinator ID and never the pre-review owner. Unknown families, members,
 actions, outcomes, incomplete/unrelated evidence, stale SHA/check receipts,
 malformed/exceeded bounds, noncausal dispositions, duplicate owners, and
 overlapping finding ownership fail closed. A later zero-finding round does not
-waive remote Copilot review: the current actual Git head still needs that clean
-review before merge.
+waive remote Copilot review: immediately before merge the isolated process
+recollects head/review/thread state and requires it to match.
 
 No human code review or approval is required. A CODEOWNERS request is advisory
 unless an external GitHub ruleset enforces it; this workflow does not add such

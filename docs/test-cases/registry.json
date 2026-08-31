@@ -2270,18 +2270,18 @@
       "profiles": [
         "Clean source checkout with Python 3, Git, candidate-pinned offline fixtures, mocked live GraphQL adapter, and no live GitHub workflow"
       ],
-      "purpose": "Prove read-only live GitHub or externally authenticated receipt authority, exact-head executable check receipts, normalized actors, global node uniqueness, semantic action order, enforced maxima, complete sibling expansion, no-push holds, and mandatory current-candidate Copilot review.",
+      "purpose": "Prove only the isolated live gate can authorize delivery using fresh single-use signed report bytes, two matching GitHub collections, immutable-base checker receipts, normalized actors, global nodes, complete sibling expansion, no-push holds, and clean Copilot review.",
       "prerequisites": "Start at the repository root with candidate a8768e4f467c36f8bec60ee823d7d1735d3fcd45 available and the issue #176 reporter plus complete/default transform fixtures and mocked GraphQL adapter unchanged; no credentials, ROM, emulator, or active PR are required.",
-      "actions": "Run the focused suite and offline CLI twice; exercise mocked live collection, HMAC receipt authentication, and real allowlisted pass/fail commands; mutate authority/actions/nodes/receipts/results/bounds/families, reject old-candidate evidence, exercise 55 findings, omit each sibling, and progress six rounds with two no-push dispositions.",
-      "expected_result": "Offline fixtures cannot authorize delivery; only a live collector capability or externally authenticated receipt plus passing exact-candidate registered check permits push/merge; all rows/siblings consume check-bound results and rounds 3 and 6 hold/lift independently.",
-      "negative_control": "Self-asserted offline authority, stale live facts, incomplete API pages, receipt HMAC/check/result/SHA drift, old or unrelated results, cross-domain node collision, actor overlap, duplicate/reversed/interleaved actions, exceeded bounds, missing siblings/rows, premature push, invalid dispositions, or absent/stale remote review fails closed.",
-      "interactions": "Depends on issue #176 hardened Git authority, risk/threshold decisions, lifecycle discipline, and metric namespace plus read-only gh API access or an external receipt trust root; issue #181 depends on it; conflicts with self-asserted evidence, overlapping reviewers, incomplete results, exceeded bounds, premature pushes, and bypassed holds.",
+      "actions": "Run base-checker, structural, and isolated-gate suites; exercise canonical HMAC scope/freshness/expiry/nonce/replay, immutable base checker source/argv/read-only sandbox/full changed-file and finding coverage, double live revalidation, CHANGES_REQUESTED/body findings, global nodes, bounds, families, and repeated holds.",
+      "expected_result": "Core/offline inputs always deny delivery; only the /usr/bin/python3 -I gate with fresh single-use externally authenticated report bytes, matching before/after live state, and passing immutable-base checker receipt promotes push/merge eligibility.",
+      "negative_control": "Any in-process trust marker, stale/future/reused/wrong-scope receipt, unavailable replay authority, mutable signed bytes, candidate-suite trust, missing changed file/finding, wrong checker/blob/argv/SHA/result, dirty/writable sandbox, state/body false clean, cross-domain node collision, actor overlap, premature push, or outsider/self disposition fails.",
+      "interactions": "Depends on issue #176 hardened Git authority, risk/threshold decisions, lifecycle discipline, and metrics plus read-only gh API, external HMAC key epoch, authoritative replay store, and immutable parent checker; issue #181 depends on it; conflicts with in-process/self-asserted authority and bypassed holds.",
       "save_compatibility": "Source-only workflow governance; no game/runtime, save, generated game-data, localization, ROM/RAM, modern debug/release, or archival impact.",
-      "cleanup": "The suite automatically removes its ignored detached candidate-authority worktree; the collector uses only read-only gh api graphql, output goes to stdout, and no GitHub or workflow state changes.",
-      "limitations": "Mocked adapters prove transformation without network access; production delivery authority requires live collection or an externally authenticated immutable receipt and does not replace candidate Build or post-merge Build.",
+      "cleanup": "The suites remove ignored detached/synthetic worktrees, read-only checker sandboxes, and replay files; the collector uses only read-only gh api graphql and performs no remote mutation.",
+      "limitations": "Mocked adapters prove deterministic transforms; production authority requires the isolated live process, external current-time/key/replay authorities, independent signed review report, and live GitHub revalidation and does not replace Build gates.",
       "automation": [
         {
-          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_review_family -v",
+          "command": "python3 -m unittest scripts.workflow_pilot.tests.test_review_base_checker scripts.workflow_pilot.tests.test_review_family scripts.workflow_pilot.tests.test_github_review -v",
           "evidence": "scripts/workflow_pilot/tests/test_review_family.py"
         },
         {

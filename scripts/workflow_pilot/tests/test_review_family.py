@@ -4,23 +4,19 @@ import os
 import subprocess
 import sys
 import unittest
-from datetime import datetime, timezone
 from pathlib import Path
-from unittest import mock
 
-from scripts.workflow_pilot import github_review, reporter, review_family
+from scripts.workflow_pilot import reporter, review_family
 
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 CANDIDATE = "a8768e4f467c36f8bec60ee823d7d1735d3fcd45"
-CURRENT_AUTHORITY = "1a6dfd06be0c6ccfddb45cfc9201b55a9ad463ef"
 COMPLETE = FIXTURES / "review_family_complete.json"
 COMPLETE_EVIDENCE = FIXTURES / "review_family_complete_evidence.json"
 DEFAULT = FIXTURES / "review_family_default.json"
 DEFAULT_EVIDENCE = FIXTURES / "review_family_default_evidence.json"
 BASELINE_EXPECTED = FIXTURES / "baseline_expected.json"
-GITHUB_ADAPTER = FIXTURES / "review_family_github_adapter.json"
 
 
 def load(path):
@@ -50,6 +46,9 @@ def add_change_round(contract, evidence, round_number, minute):
             "reviewer_actor_id": "ACTOR_COPILOT_001",
             "candidate_sha": CANDIDATE,
             "submitted_at": timestamp(minute),
+            "state": "COMMENTED",
+            "body": "",
+            "body_has_findings": False,
             "outcome": "changes-requested",
             "finding_ids": [finding_id],
         }
@@ -101,10 +100,6 @@ def add_disposition(evidence, held_round, minute):
     )
 
 
-def reseal_execution_receipt(receipt):
-    receipt["seal"] = github_review.receipt_seal(receipt)
-
-
 class ReviewFamilyContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -126,38 +121,9 @@ class ReviewFamilyContractTests(unittest.TestCase):
             check=True,
             capture_output=True,
         )
-        cls.current_authority = (
-            artifact_root / f"review-family-current-authority-{os.getpid()}"
-        )
-        subprocess.run(
-            reporter.git_command(
-                ROOT,
-                "worktree",
-                "add",
-                "--detach",
-                "--no-checkout",
-                str(cls.current_authority),
-                CURRENT_AUTHORITY,
-            ),
-            env=reporter.git_environment(offline=True),
-            check=True,
-            capture_output=True,
-        )
 
     @classmethod
     def tearDownClass(cls):
-        subprocess.run(
-            reporter.git_command(
-                ROOT,
-                "worktree",
-                "remove",
-                "--force",
-                str(cls.current_authority),
-            ),
-            env=reporter.git_environment(offline=True),
-            check=True,
-            capture_output=True,
-        )
         subprocess.run(
             reporter.git_command(
                 ROOT,
@@ -249,7 +215,9 @@ class ReviewFamilyContractTests(unittest.TestCase):
         self.assertFalse(report["gates"]["merge_allowed"])
 
         evidence["source"]["kind"] = "live-gh-api"
-        self.assert_rejected(contract, evidence, "lacks collector/receipt")
+        report = self.report(contract, evidence)
+        self.assertFalse(report["provenance"]["authoritative"])
+        self.assertFalse(report["gates"]["merge_allowed"])
 
     def test_canonical_evidence_source_must_be_complete(self):
         contract, evidence, _ = fixture()
@@ -312,6 +280,27 @@ class ReviewFamilyContractTests(unittest.TestCase):
             contract, evidence, "strictly chronological"
         )
 
+    def test_review_state_and_body_findings_are_semantic(self):
+        contract, evidence, _ = fixture("default")
+        review = evidence["remote_reviews"][0]
+        review["state"] = "CHANGES_REQUESTED"
+        review["outcome"] = "changes-requested"
+        report = self.report(contract, evidence)
+        self.assertFalse(report["gates"]["current_candidate_clean"])
+
+        contract, evidence, _ = fixture("default")
+        review = evidence["remote_reviews"][0]
+        review["body"] = "Please correct the stale boundary."
+        review["body_has_findings"] = True
+        review["outcome"] = "changes-requested"
+        report = self.report(contract, evidence)
+        self.assertFalse(report["gates"]["current_candidate_clean"])
+
+        contract, evidence, _ = fixture("default")
+        review = evidence["remote_reviews"][0]
+        review["state"] = "CHANGES_REQUESTED"
+        self.assert_rejected(contract, evidence, "not semantically clean")
+
     def test_actor_aliases_case_and_bot_suffixes_cannot_overlap(self):
         aliases = (
             "Implementation-Agent",
@@ -346,7 +335,7 @@ class ReviewFamilyContractTests(unittest.TestCase):
 
         contract, evidence, _ = fixture()
         contract["implementer_actor_id"] = "ACTOR_COPILOT_001"
-        self.assert_rejected(contract, evidence, "ownership overlap")
+        self.assert_rejected(contract, evidence, "authoritative pull-request author")
 
     def test_read_only_permissions_and_actions_are_authoritative(self):
         for action in (
@@ -565,6 +554,33 @@ class ReviewFamilyContractTests(unittest.TestCase):
         evidence["architecture_dispositions"][0]["candidate_sha"] = "e" * 40
         self.assert_rejected(contract, evidence, "does not exist")
 
+    def test_disposition_requires_repository_owner_and_not_pre_reviewer(self):
+        contract, evidence = self.six_round_fixture()
+        evidence["actors"].append(
+            {
+                "id": "ACTOR_OUTSIDER_001",
+                "login": "outsider",
+                "kind": "user",
+            }
+        )
+        evidence["architecture_dispositions"][0]["actor_id"] = (
+            "ACTOR_OUTSIDER_001"
+        )
+        self.assert_rejected(
+            contract, evidence, "not repository owner/trusted coordinator"
+        )
+
+        contract, evidence = self.six_round_fixture()
+        evidence["trusted_disposition_actor_ids"].append(
+            "ACTOR_PRE_REVIEWER_001"
+        )
+        evidence["architecture_dispositions"][0]["actor_id"] = (
+            "ACTOR_PRE_REVIEWER_001"
+        )
+        self.assert_rejected(
+            contract, evidence, "pre-review owner cannot dispose"
+        )
+
     def test_candidate_advance_before_disposition_is_rejected(self):
         contract, evidence = self.six_round_fixture()
         evidence["candidate_advances"].append(
@@ -612,121 +628,12 @@ class ReviewFamilyContractTests(unittest.TestCase):
         self.assertEqual(paths["efficiency.pilot_coordination_minutes"], 0)
         self.assertEqual(paths["efficiency.metadata_maintenance_minutes"], 0)
 
-    def test_execution_receipt_seal_is_deterministic(self):
-        _, evidence, _ = fixture()
-        receipt = evidence["execution_receipts"][0]
-        self.assertEqual(
-            github_review.receipt_seal(receipt),
-            receipt["seal"],
-        )
-        self.assertEqual(
-            github_review.receipt_seal(receipt),
-            github_review.receipt_seal(copy.deepcopy(receipt)),
-        )
-
-    def test_execution_receipts_reject_missing_stale_wrong_and_failed_checks(self):
-        contract, evidence, _ = fixture()
-        evidence["execution_receipts"] = []
-        self.assert_rejected(contract, evidence, "exactly one execution receipt")
-
-        contract, evidence, _ = fixture()
-        receipt = evidence["execution_receipts"][0]
-        receipt["seal"] = "f" * 64
-        self.assert_rejected(contract, evidence, "execution seal")
-
-        contract, evidence, _ = fixture()
-        receipt = evidence["execution_receipts"][0]
-        receipt["check_id"] = "review-family-negative-control"
-        reseal_execution_receipt(receipt)
-        self.assert_rejected(contract, evidence, "exactly one execution receipt")
-
-        contract, evidence, _ = fixture()
-        receipt = evidence["execution_receipts"][0]
-        receipt["exit_code"] = 1
-        receipt["result"] = "fail"
-        reseal_execution_receipt(receipt)
-        self.assert_rejected(contract, evidence, "lacks a passing")
-
-        contract, evidence, _ = fixture()
-        receipt = evidence["execution_receipts"][0]
-        receipt["candidate_sha"] = "e" * 40
-        receipt["id"] = "CHECK:review-family-suite:stale"
-        reseal_execution_receipt(receipt)
-        self.assert_rejected(contract, evidence, "does not exist")
-
-    def test_old_result_candidate_cannot_prove_current_authority(self):
-        contract, evidence, _ = fixture()
-
-        def retarget(value):
-            if isinstance(value, dict):
-                return {key: retarget(item) for key, item in value.items()}
-            if isinstance(value, list):
-                return [retarget(item) for item in value]
-            return CURRENT_AUTHORITY if value == CANDIDATE else value
-
-        contract = retarget(contract)
-        evidence = retarget(evidence)
-        evidence["captured_at"] = timestamp(39)
-        evidence["pull_request"]["created_at"] = timestamp(34, 30)
-        evidence["candidate_advances"][0]["pushed_at"] = timestamp(34, 25)
-        pre_review = evidence["pre_reviews"][0]
-        pre_review["started_at"] = timestamp(35)
-        pre_review["completed_at"] = timestamp(35, 30)
-        pre_review["actions"][0]["occurred_at"] = timestamp(35, 5)
-        pre_review["actions"][1]["occurred_at"] = timestamp(35, 25)
-        evidence["remote_reviews"][0]["submitted_at"] = timestamp(38)
-        for index, finding in enumerate(evidence["findings"], start=1):
-            finding["created_at"] = timestamp(37, index)
-        receipt = evidence["execution_receipts"][0]
-        receipt["started_at"] = timestamp(35, 40)
-        receipt["completed_at"] = timestamp(36)
-        receipt["id"] = (
-            "CHECK:review-family-suite:" + CURRENT_AUTHORITY
-        )
-        reseal_execution_receipt(receipt)
-        evidence["result_manifest"][0]["candidate_sha"] = CANDIDATE
-        with self.assertRaisesRegex(
-            reporter.PilotDataError, "unrelated to behavior"
-        ):
-            review_family.build_report(
-                contract,
-                evidence,
-                self.current_authority,
-                CURRENT_AUTHORITY,
-            )
-
     def test_global_node_ids_cannot_collide_across_review_and_finding(self):
         contract, evidence, _ = fixture()
         evidence["findings"][0]["node_id"] = "REMOTE_REVIEW_001"
         self.assert_rejected(
             contract, evidence, "global GitHub node identity collision"
         )
-
-    def test_authenticated_receipt_uses_external_trust_root(self):
-        contract, evidence, _ = fixture("default")
-        evidence["source"]["kind"] = "authenticated-receipt"
-        key = b"external-test-trust-root-key-32-bytes-minimum"
-        receipt = github_review.make_authenticated_evidence_receipt(
-            evidence, "test-root", key
-        )
-        trusted = github_review.authenticate_evidence_receipt(
-            receipt, "test-root", key
-        )
-        report = review_family.build_report(
-            contract, trusted, self.authority, CANDIDATE
-        )
-        self.assertTrue(report["provenance"]["authenticated_receipt"])
-        self.assertTrue(report["gates"]["merge_allowed"])
-
-        receipt["evidence"]["remote_reviews"][0]["outcome"] = (
-            "changes-requested"
-        )
-        with self.assertRaisesRegex(
-            reporter.PilotDataError, "signature is invalid"
-        ):
-            github_review.authenticate_evidence_receipt(
-                receipt, "test-root", key
-            )
 
     def test_unresolved_threads_block_later_clean_review(self):
         contract, evidence, _ = fixture()
@@ -738,143 +645,19 @@ class ReviewFamilyContractTests(unittest.TestCase):
                 "reviewer_actor_id": "ACTOR_COPILOT_001",
                 "candidate_sha": CANDIDATE,
                 "submitted_at": timestamp(12, 30),
+                "state": "COMMENTED",
+                "body": "",
+                "body_has_findings": False,
                 "outcome": "clean",
                 "finding_ids": [],
             }
         )
-        evidence["source"]["kind"] = "authenticated-receipt"
-        key = b"external-test-trust-root-key-32-bytes-minimum"
-        authenticated = github_review.authenticate_evidence_receipt(
-            github_review.make_authenticated_evidence_receipt(
-                evidence, "test-root", key
-            ),
-            "test-root",
-            key,
-        )
         report = review_family.build_report(
-            contract, authenticated, self.authority, CANDIDATE
+            contract, evidence, self.authority, CANDIDATE
         )
         self.assertTrue(report["gates"]["current_candidate_clean"])
         self.assertEqual(report["findings"]["current_unresolved"], 5)
         self.assertFalse(report["gates"]["merge_allowed"])
-
-    def test_registered_runner_executes_real_pass_and_fail_commands(self):
-        times = iter(
-            (
-                datetime(2026, 8, 31, 3, 35, tzinfo=timezone.utc),
-                datetime(2026, 8, 31, 3, 36, tzinfo=timezone.utc),
-            )
-        )
-        passed = github_review.run_registered_check(
-            self.authority,
-            CANDIDATE,
-            "review-family-suite",
-            clock=lambda: next(times),
-        )
-        self.assertEqual(passed.raw["result"], "pass")
-        self.assertEqual(passed.raw["exit_code"], 0)
-
-        fail_times = iter(
-            (
-                datetime(2026, 8, 31, 3, 35, tzinfo=timezone.utc),
-                datetime(2026, 8, 31, 3, 36, tzinfo=timezone.utc),
-            )
-        )
-        failed = github_review.run_registered_check(
-            self.authority,
-            CANDIDATE,
-            "review-family-negative-control",
-            clock=lambda: next(fail_times),
-        )
-        self.assertEqual(failed.raw["result"], "fail")
-        self.assertNotEqual(failed.raw["exit_code"], 0)
-
-    def test_live_collector_adapter_is_authoritative_and_read_only(self):
-        times = iter(
-            (
-                datetime(2026, 8, 31, 3, 35, 20, tzinfo=timezone.utc),
-                datetime(2026, 8, 31, 3, 35, 40, tzinfo=timezone.utc),
-            )
-        )
-        check_receipt = github_review.run_registered_check(
-            self.authority,
-            CANDIDATE,
-            "review-family-suite",
-            clock=lambda: next(times),
-        )
-        contract, _, _ = fixture("default")
-        with mock.patch.object(
-            github_review.GhApiAdapter,
-            "fetch",
-            return_value=load(GITHUB_ADAPTER),
-        ) as fetch:
-            trusted = github_review.collect_live_evidence(
-                contract,
-                self.authority,
-                CANDIDATE,
-                [check_receipt],
-                clock=lambda: datetime(
-                    2026, 8, 31, 3, 40, tzinfo=timezone.utc
-                ),
-            )
-        fetch.assert_called_once_with(
-            "laqieer/fireemblem8-expansion", 179
-        )
-        report = review_family.build_report(
-            contract, trusted, self.authority, CANDIDATE
-        )
-        self.assertTrue(report["provenance"]["live_authoritative"])
-        self.assertTrue(report["provenance"]["executable_evidence_trusted"])
-        self.assertTrue(report["gates"]["trusted_push_allowed"])
-        self.assertTrue(report["gates"]["merge_allowed"])
-
-    def test_live_collector_rejects_incomplete_adapter_pages(self):
-        payload = load(GITHUB_ADAPTER)
-        payload["data"]["repository"]["pullRequest"]["commits"][
-            "pageInfo"
-        ]["hasNextPage"] = True
-        contract, _, _ = fixture("default")
-        with mock.patch.object(
-            github_review.GhApiAdapter, "fetch", return_value=payload
-        ):
-            with self.assertRaisesRegex(
-                reporter.PilotDataError, "exceeds the bounded complete"
-            ):
-                github_review.collect_live_evidence(
-                    contract,
-                    self.authority,
-                    CANDIDATE,
-                    [],
-                )
-
-    def test_live_collector_rejects_reviewer_github_mutation(self):
-        payload = load(GITHUB_ADAPTER)
-        payload["data"]["repository"]["pullRequest"]["comments"][
-            "nodes"
-        ].append(
-            {
-                "id": "COMMENT_MUTATION_001",
-                "createdAt": "2026-08-31T03:38:00Z",
-                "body": "mutation",
-                "author": {
-                    "id": "ACTOR_COLLECTOR_001",
-                    "login": "fresh-collector",
-                },
-            }
-        )
-        contract, _, _ = fixture("default")
-        with mock.patch.object(
-            github_review.GhApiAdapter, "fetch", return_value=payload
-        ):
-            with self.assertRaisesRegex(
-                reporter.PilotDataError, "performed a GitHub comment action"
-            ):
-                github_review.collect_live_evidence(
-                    contract,
-                    self.authority,
-                    CANDIDATE,
-                    [],
-                )
 
     def test_cli_offline_transform_is_deterministic_and_cannot_merge(self):
         command = (
