@@ -186,7 +186,7 @@ The synthetic non-master-base pull request selects the mandatory
 
 - **Parsed full-PR job set:** {`event-identity`, `event-router`,
   `event-classifier`, `host-tests`, `build`, `extended-host-tests`, `legacy`,
-  `patch-release`, `summary`}.
+  `summary`}.
 
 Every candidate worker still checks out and verifies
 `pull_request.head.sha`. The publisher is absent from pull-request execution,

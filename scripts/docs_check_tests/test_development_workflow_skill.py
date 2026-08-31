@@ -620,8 +620,9 @@ def workflow_tester_topology_violations(text):
         read_markdown_section(text, BODY_EDIT_CASE_HEADING)
     )
     current_jobs = workflow_job_ids(BUILD_WORKFLOW_PATH)
+    selected_full_pr_jobs = current_jobs - {"patch-release"}
     expected = {
-        "stacked-full-pr": current_jobs,
+        "stacked-full-pr": selected_full_pr_jobs,
         "current-metadata": frozenset(
             {
                 "event-identity",
