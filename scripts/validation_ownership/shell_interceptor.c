@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
@@ -7,6 +9,9 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#define EVENT_FD 3
+#define MAPPING_FD 4
 
 static int write_all(int fd, const void *buffer, size_t size)
 {
@@ -40,14 +45,14 @@ static int write_u32(int fd, uint32_t value)
     return write_all(fd, bytes, sizeof(bytes));
 }
 
-static unsigned char *read_file(const char *path, size_t *size)
+static unsigned char *read_file_at(int directory, const char *path, size_t *size)
 {
     struct stat status;
     unsigned char *data;
     size_t offset = 0;
     int fd;
 
-    fd = open(path, O_RDONLY);
+    fd = openat(directory, path, O_RDONLY | O_NOFOLLOW);
     if (fd < 0 || fstat(fd, &status) != 0 || status.st_size < 0)
     {
         if (fd >= 0)
@@ -90,22 +95,14 @@ static int log_event(
     uint64_t command_hash
 )
 {
-    const char *path = getenv("VO_EVENT_PATH");
-    int fd;
     int index;
 
-    if (path == NULL)
-        return -1;
-    fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0600);
-    if (fd < 0)
-        return -1;
-    if (write_u32(fd, (uint32_t) match) != 0
-        || write_u32(fd, mapping_count) != 0
-        || write_u32(fd, (uint32_t) command_hash) != 0
-        || write_u32(fd, (uint32_t) (command_hash >> 32)) != 0
-        || write_u32(fd, (uint32_t) argc) != 0)
+    if (write_u32(EVENT_FD, (uint32_t) match) != 0
+        || write_u32(EVENT_FD, mapping_count) != 0
+        || write_u32(EVENT_FD, (uint32_t) command_hash) != 0
+        || write_u32(EVENT_FD, (uint32_t) (command_hash >> 32)) != 0
+        || write_u32(EVENT_FD, (uint32_t) argc) != 0)
     {
-        close(fd);
         return -1;
     }
     for (index = 0; index < argc; ++index)
@@ -113,14 +110,13 @@ static int log_event(
         size_t length = strlen(argv[index]);
 
         if (length > UINT32_MAX
-            || write_u32(fd, (uint32_t) length) != 0
-            || write_all(fd, argv[index], length) != 0)
+            || write_u32(EVENT_FD, (uint32_t) length) != 0
+            || write_all(EVENT_FD, argv[index], length) != 0)
         {
-            close(fd);
             return -1;
         }
     }
-    return close(fd);
+    return 0;
 }
 
 static const char *canonical_program(const char *program)
@@ -164,7 +160,6 @@ static char *direct_command(int argc, char **argv)
 int main(int argc, char **argv)
 {
     const char *count_text = getenv("VO_COMMAND_COUNT");
-    const char *map_dir = getenv("VO_MAP_DIR");
     const char *command = NULL;
     char *owned_command = NULL;
     unsigned long count = 0;
@@ -180,7 +175,7 @@ int main(int argc, char **argv)
     }
     if (count_text != NULL)
         count = strtoul(count_text, NULL, 10);
-    if (command != NULL && map_dir != NULL)
+    if (command != NULL)
     {
         const unsigned char *cursor = (const unsigned char *) command;
         uint64_t hash = UINT64_C(14695981039346656037);
@@ -194,10 +189,10 @@ int main(int argc, char **argv)
             hash *= UINT64_C(1099511628211);
         }
         command_hash = hash;
-        if (snprintf(path, sizeof(path), "%s/%016llx.cmd", map_dir,
+        if (snprintf(path, sizeof(path), "%016llx.cmd",
             (unsigned long long) hash) >= (int) sizeof(path))
             return 125;
-        candidate = read_file(path, &size);
+        candidate = read_file_at(MAPPING_FD, path, &size);
         if (candidate != NULL)
         {
             if (size == strlen(command)
@@ -222,11 +217,11 @@ int main(int argc, char **argv)
             hash ^= *cursor++;
             hash *= UINT64_C(1099511628211);
         }
-        if (snprintf(path, sizeof(path), "%s/%016llx.out", map_dir,
+        if (snprintf(path, sizeof(path), "%016llx.out",
             (unsigned long long) hash)
             >= (int) sizeof(path))
             return 125;
-        output = read_file(path, &size);
+        output = read_file_at(MAPPING_FD, path, &size);
         if (output == NULL)
             return 125;
         if (write_all(STDOUT_FILENO, output, size) != 0)

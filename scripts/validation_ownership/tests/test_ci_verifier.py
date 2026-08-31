@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts.validation_ownership import ci_verifier, reporter
 
@@ -13,6 +15,66 @@ SCRATCH_ROOT = ROOT / "build" / "test-artifacts" / "validation-ownership"
 
 
 class BasePinnedVerifierTests(unittest.TestCase):
+    def test_candidate_owner_redirect_rejects_exact_base_oracle(self):
+        oracle = {
+            "probes": [
+                {
+                    "path": "scripts/validation_ownership/reporter.py",
+                    "expected_surface": "surface.validation",
+                    "expected_owners": [
+                        {
+                            "edge_type": "owns-test",
+                            "evidence_id": "owner.validation-check",
+                        }
+                    ],
+                }
+            ]
+        }
+        matching = {
+            "probes": [
+                {
+                    "path": "scripts/validation_ownership/reporter.py",
+                    "surface": "surface.validation",
+                    "owners": [
+                        {
+                            "edge_type": "owns-test",
+                            "evidence_id": "owner.validation-check",
+                        }
+                    ],
+                }
+            ]
+        }
+        with mock.patch.object(
+            reporter,
+            "_measure",
+            return_value=matching,
+        ):
+            ci_verifier._verify_oracle_pairs(oracle, {}, {})
+
+        redirected = {
+            "probes": [
+                {
+                    "path": "scripts/validation_ownership/reporter.py",
+                    "surface": "surface.validation",
+                    "owners": [
+                        {
+                            "edge_type": "owns-test",
+                            "evidence_id": "owner.validation-suite",
+                        }
+                    ],
+                }
+            ]
+        }
+        with mock.patch.object(
+            reporter,
+            "_measure",
+            return_value=redirected,
+        ), self.assertRaisesRegex(
+            reporter.OwnershipError,
+            "differ byte-for-byte",
+        ):
+            ci_verifier._verify_oracle_pairs(oracle, {}, {})
+
     def test_base_verifier_step_is_a_pinned_security_boundary(self):
         step = (
             "    - name: Validate ownership with exact PR-base verifier\n"
@@ -45,8 +107,12 @@ class BasePinnedVerifierTests(unittest.TestCase):
                 "PATH": "/usr/bin:/bin",
             }
             trusted = {
-                "scripts/validation_ownership/reporter.py": "BASE_REPORTER\n",
-                "scripts/validation_ownership/shell_interceptor.c": "BASE_INTERCEPTOR\n",
+                "scripts/validation_ownership/reporter.py": (
+                    "def public_report_fixture():\n    return 'base'\n"
+                ),
+                "scripts/validation_ownership/shell_interceptor.c": (
+                    "/* Public base fixture. */\n"
+                ),
             }
             for path, content in trusted.items():
                 target = root / path
@@ -70,7 +136,7 @@ class BasePinnedVerifierTests(unittest.TestCase):
 
             for path in trusted:
                 (root / path).write_text(
-                    "CANDIDATE_COMPROMISE\n",
+                    "/* Public candidate mutation fixture. */\n",
                     encoding="ascii",
                 )
             (root / "candidate.txt").write_text("candidate\n", encoding="ascii")
@@ -115,13 +181,17 @@ class BasePinnedVerifierTests(unittest.TestCase):
 
     def test_base_gate_rejects_candidate_make_controls(self):
         gate = ROOT / "scripts/validation_ownership/ci_gate.mk"
+        public_fixture_revision = hashlib.sha1(
+            b"public validation ownership fixture",
+            usedforsecurity=False,
+        ).hexdigest()
         environment = {
             "HOME": "/nonexistent",
             "LANG": "C",
             "LC_ALL": "C",
             "PATH": "/usr/bin:/bin",
-            "VO_BASE_SHA": "1" * 40,
-            "VO_CANDIDATE_SHA": "2" * 40,
+            "VO_BASE_SHA": public_fixture_revision,
+            "VO_CANDIDATE_SHA": public_fixture_revision,
             "VO_REPOSITORY_ROOT": str(ROOT),
             "VO_TRUSTED_ROOT": str(ROOT),
         }

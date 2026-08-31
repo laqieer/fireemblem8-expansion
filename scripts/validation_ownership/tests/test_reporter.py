@@ -31,6 +31,7 @@ class OwnershipGraphTests(unittest.TestCase):
         for path in (
             "scripts/validation_ownership/ci_gate.mk",
             "scripts/validation_ownership/ci_verifier.py",
+            "scripts/validation_ownership/generated_registry_probe.py",
             "scripts/validation_ownership/make_probe.py",
             "scripts/validation_ownership/sandbox_exec.py",
             "scripts/validation_ownership/shell_interceptor.c",
@@ -585,6 +586,88 @@ class OwnershipGraphTests(unittest.TestCase):
         manual["authority"]["path"] = ".github/CODEOWNERS"
         with self.assertRaisesRegex(reporter.OwnershipError, "must be exactly"):
             self.validate(graph)
+
+    def test_lifecycle_consumer_runs_complete_nonrecursive_validation(self):
+        with tempfile.TemporaryDirectory(
+            dir=self.scratch.path,
+        ) as directory:
+            artifact_root = Path(directory)
+            graph_path = artifact_root / reporter.GRAPH_PATH
+            graph_path.parent.mkdir(parents=True)
+
+            redirected = copy.deepcopy(self.graph)
+            edge = next(
+                item
+                for item in redirected["edges"]
+                if item["id"] == "workflow.owns-test"
+            )
+            edge["target"] = "owner.host-build"
+            graph_path.write_bytes(reporter.normalized_json(redirected))
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "selection mismatch",
+            ):
+                reporter.run_lifecycle_check(
+                    artifact_root,
+                    ROOT,
+                    "validation-ownership-check",
+                )
+
+            stale = copy.deepcopy(self.graph)
+            stale["edges"][0]["target"] = "owner.missing"
+            graph_path.write_bytes(reporter.normalized_json(stale))
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "unknown node",
+            ):
+                reporter.run_lifecycle_check(
+                    artifact_root,
+                    ROOT,
+                    "validation-ownership-check",
+                )
+
+            graph_path.write_bytes(reporter.normalized_json(self.graph))
+            workflow_path = ROOT / reporter.BUILD_WORKFLOW_PATH
+            workflow = workflow_path.read_bytes()
+            try:
+                workflow_path.write_bytes(
+                    workflow.replace(
+                        b"Validate ownership with exact PR-base verifier",
+                        b"Duplicated verifier step",
+                        1,
+                    )
+                )
+                with self.assertRaisesRegex(
+                    reporter.OwnershipError,
+                    "workflow authority is invalid|stale workflow",
+                ):
+                    reporter.run_lifecycle_check(
+                        artifact_root,
+                        ROOT,
+                        "validation-ownership-check",
+                    )
+            finally:
+                workflow_path.write_bytes(workflow)
+
+            registry_path = ROOT / reporter.MAKE_DYNAMIC_PATH
+            registry_bytes = registry_path.read_bytes()
+            try:
+                registry = json.loads(registry_bytes)
+                registry["seal"] = "0" * 64
+                registry_path.write_bytes(
+                    reporter.normalized_json(registry)
+                )
+                with self.assertRaisesRegex(
+                    reporter.OwnershipError,
+                    "seal does not match",
+                ):
+                    reporter.run_lifecycle_check(
+                        artifact_root,
+                        ROOT,
+                        "validation-ownership-check",
+                    )
+            finally:
+                registry_path.write_bytes(registry_bytes)
 
     def test_stale_make_workflow_case_and_generated_targets_reject(self):
         mutations = (

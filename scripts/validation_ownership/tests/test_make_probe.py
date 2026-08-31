@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import struct
 import subprocess
 import tempfile
 import unittest
@@ -14,12 +15,60 @@ from scripts.validation_ownership import make_probe, reporter, sandbox_exec
 ROOT = Path(__file__).resolve().parents[3]
 SCRATCH_ROOT = ROOT / "build" / "test-artifacts" / "validation-ownership"
 PROBE_INPUTS = (
+    "scripts/validation_ownership/generated_registry_probe.py",
     "scripts/validation_ownership/sandbox_exec.py",
     "scripts/validation_ownership/shell_interceptor.c",
 )
 
 
 class AuthoritativeMakeProbeTests(unittest.TestCase):
+    def test_candidate_generated_registry_is_confined_typed_authority(self):
+        registry = (
+            "import os\n"
+            "from pathlib import Path\n"
+            "assert 'GITHUB_TOKEN' not in os.environ\n"
+            "try:\n"
+            "    Path('/repo/forged').write_text('forged')\n"
+            "except OSError:\n"
+            "    pass\n"
+            "else:\n"
+            "    raise RuntimeError('candidate tree was writable')\n"
+            "class Schema:\n"
+            "    version = 1\n"
+            "    default_source = 'src/data/new_table.json'\n"
+            "    default_hand_source = None\n"
+            "    default_output_name = 'data_new_table.c'\n"
+            "    default_inventory_path = None\n"
+            "    def dependencies(self): return ()\n"
+            "    def dependency_tables(self): return ()\n"
+            "class Registry:\n"
+            "    def all_names(self): return ('new-table',)\n"
+            "    def resolve(self, name):\n"
+            "        assert name == 'new-table'\n"
+            "        return Schema()\n"
+            "REGISTRY = Registry()\n"
+        )
+        directory, root, entries = self.fixture(
+            "all:\n\t@true\n",
+            {
+                "scripts/__init__.py": "",
+                "scripts/generated_data/__init__.py": "",
+                "scripts/generated_data/registry.py": registry,
+                "src/data/new_table.json": "{}\n",
+            },
+        )
+        with directory:
+            records, paths = reporter._generated_registry_records(
+                reporter.AuthorityLoader(root, entries)
+            )
+            self.assertEqual(records[0]["name"], "new-table")
+            self.assertEqual(
+                records[0]["default_source"],
+                "src/data/new_table.json",
+            )
+            self.assertEqual(paths, {"src/data/new_table.json"})
+            self.assertFalse((root / "forged").exists())
+
     def fixture(self, makefile: str, files: dict[str, str] | None = None):
         directory = tempfile.TemporaryDirectory(dir=SCRATCH_ROOT)
         root = Path(directory.name)
@@ -345,6 +394,89 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 authority["record"]["dynamic_commands"],
                 [],
             )
+            environment = authority["record"]["sanitized_environment"]
+            self.assertNotIn("VO_EVENT_PATH", environment)
+            self.assertNotIn("VO_MAP_DIR", environment)
+
+    def test_candidate_make_cannot_forge_supervisor_control_files(self):
+        directory, root, entries = self.fixture(
+            "$(file >/work/events.bin,candidate-forgery)\n"
+            "$(file >/work/map,candidate-forgery)\n"
+            "CANDIDATE_READ := $(file </work/events.bin)\n"
+            "all:\n\t@true\n"
+        )
+        with directory:
+            authority = self.probe(root, entries)
+            self.assertEqual(
+                authority["record"]["dynamic_commands"],
+                [],
+            )
+
+    def test_registered_command_has_no_supervisor_control_descriptors(self):
+        script = (
+            "import os\n"
+            "from pathlib import Path\n"
+            "Path('/work/events.bin').write_text('candidate', encoding='ascii')\n"
+            "Path('/work/map').write_text('candidate', encoding='ascii')\n"
+            "for descriptor in (3, 4):\n"
+            "    try:\n"
+            "        os.write(descriptor, b'candidate')\n"
+            "    except OSError:\n"
+            "        continue\n"
+            "    raise RuntimeError('supervisor descriptor leaked')\n"
+            "print('sealed')\n"
+        )
+        directory, root, entries = self.fixture(
+            "VALUE != python3 forge.py\nall:\n\t@true\n",
+            {"forge.py": script},
+        )
+        contract = {
+            "id": "fixture-control-forgery",
+            "command_regex": "^python3 forge\\.py$",
+            "resolved_value": None,
+        }
+        with directory:
+            authority = self.probe(
+                root,
+                entries,
+                dynamic={"$(shell fixture-forgery)": contract},
+            )
+            commands = authority["record"]["dynamic_commands"]
+            self.assertEqual(
+                [item["authority_id"] for item in commands],
+                ["fixture-control-forgery"],
+            )
+
+    def test_interceptor_event_count_and_format_are_supervisor_bound(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            path = Path(directory) / "events.bin"
+            path.write_bytes(
+                struct.pack(
+                    "<IIIII",
+                    0xFFFFFFFF,
+                    9,
+                    0,
+                    0,
+                    0,
+                )
+            )
+            with self.assertRaisesRegex(
+                make_probe.MakeProbeError,
+                "mapping count differs",
+            ):
+                make_probe._read_events(
+                    path,
+                    expected_mapping_count=0,
+                )
+            path.write_bytes(b"\0")
+            with self.assertRaisesRegex(
+                make_probe.MakeProbeError,
+                "truncated event",
+            ):
+                make_probe._read_events(
+                    path,
+                    expected_mapping_count=0,
+                )
 
     def test_absolute_and_untracked_includes_reject(self):
         for include in ("/dev/stdin", "missing-untracked.mk"):

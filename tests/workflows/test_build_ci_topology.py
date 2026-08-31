@@ -150,12 +150,15 @@ VALIDATION_OWNERSHIP_BASE_STEP = (
     "Validate ownership with exact PR-base verifier"
 )
 VALIDATION_OWNERSHIP_BASE_SHA_ENV = (
-    "        EXPECTED_BASE_SHA: ${{ github.event_name == 'pull_request' && "
-    "github.event.pull_request.base.sha || '' }}"
+    "        EXPECTED_BASE_SHA: ${{ (needs.event-classifier.result == "
+    "'success' && needs.event-classifier.outputs.expected_base) || "
+    "(github.event_name == 'pull_request' && "
+    "github.event.pull_request.base.sha) || '' }}"
 )
 VALIDATION_OWNERSHIP_CANDIDATE_SHA_ENV = (
-    "        EXPECTED_CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && "
-    "github.event.pull_request.head.sha || github.sha }}"
+    "        EXPECTED_CANDIDATE_SHA: ${{ (needs.event-classifier.result == "
+    "'success' && needs.event-classifier.outputs.expected_head) || "
+    "needs.event-identity.outputs.fallback_sha || '' }}"
 )
 VALIDATION_OWNERSHIP_BASE_CONTRACT = (
     "        BUILD_EVENT_NAME: ${{ github.event_name }}",

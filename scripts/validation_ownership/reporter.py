@@ -7,7 +7,6 @@ import argparse
 import ast
 import copy
 import hashlib
-import importlib
 import json
 import os
 import re
@@ -509,26 +508,79 @@ def _generated_registry_records(
         raise OwnershipError("generated-data registry has no tracked Python authority")
     for path in generated_modules:
         loader.read_blob(path, "generated-data authority")
-    generated_data_registry = importlib.import_module(
-        "scripts.generated_data.registry"
-    )
+    try:
+        from scripts.validation_ownership import make_probe
 
-    records = []
+        output, probe_authority = make_probe.probe_generated_registry(
+            loader,
+            scratch_root=(
+                loader.root
+                / "build"
+                / "test-artifacts"
+                / "validation-ownership"
+            ),
+        )
+    except make_probe.MakeProbeError as error:
+        raise OwnershipError(str(error)) from error
+    try:
+        decoded = output.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise OwnershipError(
+            "candidate generated-data registry output is not UTF-8"
+        ) from error
+    records = parse_json(decoded, "candidate generated-data registry output")
+    if not isinstance(records, list) or not records:
+        raise OwnershipError(
+            "candidate generated-data registry output must be a nonempty list"
+        )
     paths: set[str] = set()
-    registry = generated_data_registry.REGISTRY
-    for name in registry.all_names():
-        schema = registry.resolve(name)
-        record = {
-            "name": name,
-            "version": schema.version,
-            "default_source": schema.default_source,
-            "default_hand_source": schema.default_hand_source,
-            "default_output_name": schema.default_output_name,
-            "default_inventory_path": schema.default_inventory_path,
-            "dependencies": sorted(schema.dependencies()),
-            "dependency_tables": list(schema.dependency_tables()),
-        }
-        records.append(record)
+    names = set()
+    ordered_names = []
+    fields = {
+        "name",
+        "version",
+        "default_source",
+        "default_hand_source",
+        "default_output_name",
+        "default_inventory_path",
+        "dependencies",
+        "dependency_tables",
+    }
+    for index, record in enumerate(records):
+        label = f"candidate generated-data registry record {index}"
+        if not isinstance(record, dict) or set(record) != fields:
+            raise OwnershipError(f"{label} has invalid fields")
+        name = record["name"]
+        if (
+            not isinstance(name, str)
+            or not name
+            or name in names
+            or not isinstance(record["version"], int)
+            or isinstance(record["version"], bool)
+            or record["version"] < 1
+            or (
+                record["default_output_name"] is not None
+                and (
+                    not isinstance(record["default_output_name"], str)
+                    or not record["default_output_name"]
+                )
+            )
+        ):
+            raise OwnershipError(f"{label} has invalid identity fields")
+        names.add(name)
+        ordered_names.append(name)
+        for list_field in ("dependencies", "dependency_tables"):
+            values = record[list_field]
+            if (
+                not isinstance(values, list)
+                or values != list(dict.fromkeys(values))
+                or not all(isinstance(value, str) and value for value in values)
+                or (
+                    list_field == "dependencies"
+                    and values != sorted(values)
+                )
+            ):
+                raise OwnershipError(f"{label}.{list_field} is invalid")
         for field in (
             "default_source",
             "default_hand_source",
@@ -552,6 +604,12 @@ def _generated_registry_records(
                     f"generated-data schema {name!r} references stale {field} "
                     f"{candidate!r}"
                 )
+    if ordered_names != sorted(ordered_names):
+        raise OwnershipError(
+            "candidate generated-data registry names are not sorted"
+        )
+    for record in records:
+        record["probe_authority"] = probe_authority
     return records, paths
 
 
@@ -1426,6 +1484,7 @@ def _parse_make_authorities(
     authority_paths.update(
         {
             MAKE_DYNAMIC_PATH.as_posix(),
+            "scripts/validation_ownership/generated_registry_probe.py",
             "scripts/validation_ownership/make_probe.py",
             "scripts/validation_ownership/sandbox_exec.py",
             "scripts/validation_ownership/shell_interceptor.c",
@@ -2362,6 +2421,7 @@ def _authority_changed_edges(
             if edge["target"] in make_nodes
         }
     probe_paths = {
+        "scripts/validation_ownership/generated_registry_probe.py",
         "scripts/validation_ownership/make_probe.py",
         "scripts/validation_ownership/sandbox_exec.py",
         "scripts/validation_ownership/shell_interceptor.c",
@@ -2880,12 +2940,6 @@ def run_lifecycle_check(
                 "validation ownership graph artifact is missing: "
                 + LIFECYCLE_FAILURE_REASON
             )
-        authority_bytes = (authority_root / GRAPH_PATH).read_bytes()
-        if graph_path.read_bytes() != authority_bytes:
-            raise OwnershipError(
-                "validation ownership graph artifact differs from exact "
-                "authority: " + LIFECYCLE_FAILURE_REASON
-            )
         graph = load_json(graph_path)
         entries = git_tree_entries(authority_root)
         loader = AuthorityLoader(authority_root, entries)
@@ -2898,12 +2952,21 @@ def run_lifecycle_check(
             "$",
         )
         validate_probe_oracle(oracle, graph, entries)
+        model = validate_graph(graph, schema, loader, entries)
+        measurement = _measure(oracle, graph, model)
         if check_id == "TC-WORKFLOW-GATE-OWNERSHIP-001":
             cases = _load_test_case_registry(loader)
             if check_id not in cases:
                 raise OwnershipError(
                     "ownership consistency tester case is stale"
                 )
+        if (
+            measurement["false_positive_selections"] != 0
+            or measurement["false_negative_selections"] != 0
+        ):
+            raise OwnershipError(
+                "ownership lifecycle consumer has exact owner-pair selection loss"
+            )
         return 0
     finally:
         cleanup_validation_scratch(scratch)
@@ -2939,6 +3002,29 @@ def _run_lifecycle_subprocess(
         raise OwnershipError(f"cannot execute lifecycle proof: {error}") from error
 
 
+def _run_lifecycle_direct(
+    authority_root: Path,
+    artifact_root: Path,
+    check_id: str,
+) -> subprocess.CompletedProcess[bytes]:
+    try:
+        returncode = run_lifecycle_check(
+            artifact_root,
+            authority_root,
+            check_id,
+        )
+        detail = b""
+    except OwnershipError as error:
+        returncode = 1
+        detail = str(error).encode("utf-8")
+    return subprocess.CompletedProcess(
+        args=(check_id,),
+        returncode=returncode,
+        stdout=b"",
+        stderr=detail,
+    )
+
+
 def validate_executable_lifecycle(
     root: Path,
     graph: dict[str, Any],
@@ -2971,7 +3057,7 @@ def validate_executable_lifecycle(
             artifact.parent.mkdir(parents=True)
             shutil.copy2(root / GRAPH_PATH, artifact)
             for check_id in sorted(LIFECYCLE_CHECKS):
-                initial = _run_lifecycle_subprocess(root, sandbox, check_id)
+                initial = _run_lifecycle_direct(root, sandbox, check_id)
                 if initial.returncode != 0:
                     detail = initial.stderr.decode("utf-8", errors="replace").strip()
                     raise OwnershipError(
@@ -2983,7 +3069,7 @@ def validate_executable_lifecycle(
                 trigger = triggers[proof["trigger_event_id"]]
                 artifact.replace(backup)
                 removed = [
-                    _run_lifecycle_subprocess(root, sandbox, check_id)
+                    _run_lifecycle_direct(root, sandbox, check_id)
                     for check_id in sorted(LIFECYCLE_CHECKS)
                 ]
                 backup.replace(artifact)
@@ -3003,7 +3089,7 @@ def validate_executable_lifecycle(
                         f"lifecycle proof {proof['id']!r} lacks the named failure"
                     )
                 restored = [
-                    _run_lifecycle_subprocess(root, sandbox, check_id)
+                    _run_lifecycle_direct(root, sandbox, check_id)
                     for check_id in sorted(LIFECYCLE_CHECKS)
                 ]
                 if any(item.returncode != 0 for item in restored):

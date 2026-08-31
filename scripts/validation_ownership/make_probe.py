@@ -26,6 +26,9 @@ SANDBOX_EXEC = Path("scripts/validation_ownership/sandbox_exec.py")
 INTERCEPTOR_SOURCE = Path(
     "scripts/validation_ownership/shell_interceptor.c"
 )
+GENERATED_REGISTRY_PROBE = Path(
+    "scripts/validation_ownership/generated_registry_probe.py"
+)
 MAX_SANDBOX_RUNS = 4096
 MAX_DYNAMIC_PASSES = 64
 TRACE_RE = re.compile(
@@ -209,7 +212,9 @@ def _sandbox_run(
     work: Path,
     *,
     argv: list[str],
+    event_path: Path | None = None,
     environment: dict[str, str],
+    mapping_path: Path | None = None,
     read_only: list[tuple[Path, str]],
     writable: list[tuple[Path, str]] | None = None,
     timeout: int = 120,
@@ -218,6 +223,16 @@ def _sandbox_run(
         "argv": argv,
         "cwd": "/repo",
         "environment": environment,
+        "event_path": (
+            None
+            if event_path is None
+            else str(event_path.resolve(strict=True))
+        ),
+        "mapping_path": (
+            None
+            if mapping_path is None
+            else str(mapping_path.resolve(strict=True))
+        ),
         "read_only": [
             [str(source.resolve(strict=True)), target]
             for source, target in read_only
@@ -401,7 +416,11 @@ def _copy_gitlink(
         target.chmod(0o755 if mode == "100755" else 0o644)
 
 
-def _read_events(path: Path) -> list[dict[str, Any]]:
+def _read_events(
+    path: Path,
+    *,
+    expected_mapping_count: int,
+) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     data = memoryview(path.read_bytes())
@@ -421,9 +440,17 @@ def _read_events(path: Path) -> list[dict[str, Any]]:
         mapping_count = take_u32()
         command_hash = take_u32() | (take_u32() << 32)
         argc = take_u32()
+        if argc > 4096:
+            raise MakeProbeError("shell interceptor emitted excessive arguments")
         arguments = []
+        argument_bytes = 0
         for _ in range(argc):
             size = take_u32()
+            argument_bytes += size
+            if argument_bytes > 1024 * 1024:
+                raise MakeProbeError(
+                    "shell interceptor event exceeds byte bound"
+                )
             if offset + size > len(data):
                 raise MakeProbeError(
                     "shell interceptor emitted a truncated argument"
@@ -438,6 +465,19 @@ def _read_events(path: Path) -> list[dict[str, Any]]:
                 "mapping_count": mapping_count,
             }
         )
+        if mapping_count != expected_mapping_count:
+            raise MakeProbeError(
+                "shell interceptor mapping count differs from supervisor state"
+            )
+        if match not in {0, 0xFFFFFFFF}:
+            raise MakeProbeError(
+                "shell interceptor emitted an invalid match identity"
+            )
+        command = _event_command(result[-1])
+        if command is None or result[-1]["command_hash"] != _command_hash(command):
+            raise MakeProbeError(
+                "shell interceptor event command identity is invalid"
+            )
     return result
 
 
@@ -484,29 +524,37 @@ def _event_direct_arguments(event: dict[str, Any]) -> list[str] | None:
     return arguments or None
 
 
-def _write_mapping(work: Path, mappings: list[dict[str, Any]]) -> None:
-    directory = work / "map"
+def _command_hash(command: str) -> str:
+    value = 0xCBF29CE484222325
+    for byte in command.encode("utf-8"):
+        value ^= byte
+        value = (value * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return f"{value:016x}"
+
+
+def _write_mapping(directory: Path, mappings: list[dict[str, Any]]) -> None:
     if directory.exists():
+        directory.chmod(0o700)
         shutil.rmtree(directory)
-    directory.mkdir()
+    directory.mkdir(mode=0o700)
     seen = set()
     for mapping in mappings:
-        value = 0xCBF29CE484222325
-        for byte in mapping["command"].encode("utf-8"):
-            value ^= byte
-            value = (value * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
-        name = f"{value:016x}"
+        name = _command_hash(mapping["command"])
         if name in seen:
             raise MakeProbeError("Make command mapping hash collision")
         seen.add(name)
-        (directory / f"{name}.cmd").write_bytes(
+        command_path = directory / f"{name}.cmd"
+        output_path = directory / f"{name}.out"
+        command_path.write_bytes(
             mapping["command"].encode("utf-8")
         )
-        (directory / f"{name}.out").write_bytes(mapping["output"])
+        output_path.write_bytes(mapping["output"])
+        command_path.chmod(0o400)
+        output_path.chmod(0o400)
+    directory.chmod(0o500)
 
 
 def _make_environment(
-    work: Path,
     mapping_count: int,
     extra: dict[str, str],
 ) -> dict[str, str]:
@@ -524,8 +572,6 @@ def _make_environment(
         "TMPDIR": "/work",
         "TZ": "UTC",
         "VO_COMMAND_COUNT": str(mapping_count),
-        "VO_EVENT_PATH": "/work/events.bin",
-        "VO_MAP_DIR": "/work/map",
         **extra,
     }
 
@@ -587,6 +633,67 @@ def _prepare_command_root(base: Path) -> Path:
     return root
 
 
+def probe_generated_registry(
+    loader: Any,
+    *,
+    scratch_root: Path,
+) -> tuple[bytes, dict[str, Any]]:
+    """Run candidate generated registry code in a credential-free sandbox."""
+    tools = _ensure_tools()
+    scratch_root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix="generated-registry-probe-",
+        dir=scratch_root,
+    ) as directory:
+        base = Path(directory)
+        tree = base / "tree"
+        work = base / "command"
+        tree.mkdir()
+        work.mkdir()
+        (work / "build").mkdir()
+        _copy_tree(loader, tree)
+        (tree / "build").mkdir()
+        root = _prepare_command_root(base)
+        completed = _sandbox_run(
+            root,
+            work,
+            argv=[
+                "/usr/bin/python3",
+                "-I",
+                "-B",
+                f"/repo/{GENERATED_REGISTRY_PROBE.as_posix()}",
+            ],
+            environment={
+                "HOME": "/nonexistent",
+                "LANG": "C",
+                "LC_ALL": "C",
+                "PATH": "/usr/bin:/bin",
+                "SOURCE_DATE_EPOCH": "0",
+                "TZ": "UTC",
+            },
+            read_only=[
+                (tree, "/repo"),
+                (Path("/usr"), "/usr"),
+            ],
+            writable=[(Path("/dev/null"), "/dev/null")],
+            timeout=60,
+        )
+        if completed.returncode != 0:
+            raise MakeProbeError(
+                "candidate generated-data registry probe failed: "
+                + _normalize(completed.stderr)
+            )
+        output = completed.stdout.encode("utf-8")
+        if len(output) > 1024 * 1024:
+            raise MakeProbeError(
+                "candidate generated-data registry output exceeds bound"
+            )
+        return output, {
+            "launcher": tools["namespace_launcher"],
+            "probe_path": GENERATED_REGISTRY_PROBE.as_posix(),
+            "python": str(PYTHON),
+            "python_version": _tool_version(PYTHON),
+        }
 def _compile_scaninc(tree: Path, work: Path) -> Path:
     output = work / "scaninc"
     if output.exists():
@@ -690,9 +797,10 @@ def _execute_registered_command(
     contract: dict[str, Any],
     *,
     base: Path,
+    build_output: Path,
+    command_work: Path,
     direct_arguments: list[str] | None,
     tree: Path,
-    work: Path,
     environment: dict[str, str],
 ) -> bytes:
     if contract["resolved_value"] is not None:
@@ -701,7 +809,7 @@ def _execute_registered_command(
         return (contract["resolved_value"] + "\n").encode("utf-8")
     executed = command
     if contract["id"] == "banim-scaninc-inputs":
-        _compile_scaninc(tree, work)
+        _compile_scaninc(tree, command_work)
         executed = re.sub(
             r"^tools/scaninc/scaninc\b",
             "/work/scaninc",
@@ -738,7 +846,7 @@ def _execute_registered_command(
         ]
     completed = _sandbox_run(
         root,
-        work,
+        command_work,
         argv=argv,
         environment={
             "HOME": "/nonexistent",
@@ -756,7 +864,7 @@ def _execute_registered_command(
             (Path("/usr"), "/usr"),
         ],
         writable=[
-            (work / "build", "/repo/build"),
+            (build_output, "/repo/build"),
             (Path("/dev/null"), "/dev/null"),
         ],
     )
@@ -984,10 +1092,19 @@ def run_probe(
     ) as directory:
         base = Path(directory)
         tree = base / "tree"
-        work = base / "work"
+        make_work = base / "make-work"
+        command_work = base / "command-work"
+        build_output = base / "build-output"
+        control = base / "supervisor-control"
+        mapping_path = control / "mapping"
+        event_path = control / "events.bin"
         tree.mkdir()
-        work.mkdir()
-        (work / "build").mkdir()
+        make_work.mkdir()
+        command_work.mkdir()
+        build_output.mkdir()
+        control.mkdir(mode=0o700)
+        event_path.write_bytes(b"")
+        event_path.chmod(0o600)
         _copy_tree(loader, tree)
         (tree / "build").mkdir()
         interceptor = base / "shell-interceptor"
@@ -1014,7 +1131,7 @@ def run_probe(
             gbagfx_target.touch()
             gbagfx_target.chmod(0o755)
             read_only.append((gbagfx, "/repo/tools/gbagfx/gbagfx"))
-        probe_file = work / "probe.mk"
+        probe_file = make_work / "probe.mk"
         tracked_inputs = [
             path
             for path, entry in sorted(loader.entries.items())
@@ -1053,8 +1170,7 @@ def run_probe(
             encoding="ascii",
         )
         mappings: list[dict[str, Any]] = []
-        _write_mapping(work, mappings)
-        event_path = work / "events.bin"
+        _write_mapping(mapping_path, mappings)
         normal_targets = sorted(
             target for target in targets if target != "validation-ownership-check"
         )
@@ -1115,21 +1231,38 @@ def run_probe(
                     else selected_targets
                 )
             for _ in range(MAX_DYNAMIC_PASSES):
-                _write_mapping(work, mappings)
-                event_path.unlink(missing_ok=True)
+                _write_mapping(mapping_path, mappings)
+                event_path.write_bytes(b"")
+                event_path.chmod(0o600)
                 completed = _sandbox_run(
                     root,
-                    work,
+                    make_work,
                     argv=argv,
+                    event_path=event_path,
                     environment=_make_environment(
-                        work,
                         len(mappings),
                         extra_environment,
                     ),
+                    mapping_path=mapping_path,
                     read_only=read_only,
-                    writable=[(work / "build", "/repo/build")],
+                    writable=[(build_output, "/repo/build")],
                 )
-                events = _read_events(event_path)
+                events = _read_events(
+                    event_path,
+                    expected_mapping_count=len(mappings),
+                )
+                mapped_commands = {
+                    mapping["command"]
+                    for mapping in mappings
+                }
+                if any(
+                    event["match"] >= 0
+                    and _event_command(event) not in mapped_commands
+                    for event in events
+                ):
+                    raise MakeProbeError(
+                        "shell interceptor matched an unknown supervisor mapping"
+                    )
                 unknown = [
                     event
                     for event in events
@@ -1187,9 +1320,10 @@ def run_probe(
                         command,
                         contract,
                         base=base,
+                        build_output=build_output,
+                        command_work=command_work,
                         direct_arguments=_event_direct_arguments(event),
                         tree=tree,
-                        work=work,
                         environment=extra_environment,
                     )
                     mappings.append(
@@ -1278,7 +1412,7 @@ def run_probe(
             )
         fallback_values = (
             {
-                name: (work / f"domain-{index}")
+                name: (make_work / f"domain-{index}")
                 .read_text(encoding="utf-8")
                 .removesuffix("\n")
                 for index, name in enumerate(sorted(prerequisite_domains))
@@ -1412,7 +1546,6 @@ def run_probe(
                     "make_inputs": make_inputs,
                     "probe_tools": tools,
                     "sanitized_environment": _make_environment(
-                        work,
                         len(mappings),
                         {},
                     ),

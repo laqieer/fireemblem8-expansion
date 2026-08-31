@@ -160,6 +160,12 @@ runs both the declared consumer and consistency identity, requires the fixed
 named semantic failure, restores the graph, and reruns both successfully.
 Self-declared replacement reasons, fabricated authorities, stale timestamps,
 or non-restoring proofs reject.
+The lifecycle consumer now calls the same nonrecursive complete
+`validate_graph` path as the public checker, then performs the independent
+oracle measurement. Make/workflow authorities and exact resolved owner pairs
+are therefore checked on every restored proof without invoking the lifecycle
+driver again. Broken/stale edges, owners, Make contracts, workflows, or oracle
+pairs fail the proof rather than passing an artifact-byte-only shortcut.
 
 The independently sealed oracle pins exact `(edge_type, evidence_id)` owner
 pairs for runtime, host-only, generated,
@@ -177,8 +183,10 @@ Make authority comes from `/usr/bin/make`, not a repository implementation of
 Make syntax. The reporter creates a new scratch root from the selected exact
 Git tree, materializes the exact `mgfembp` gitlink commit from the shared object
 database, and starts GNU Make through user, mount, PID, and network namespaces.
-The superproject and gitlink trees are read-only mounts. Only the ignored
-scratch `build` overlay and command-control directory are writable. Missing
+The superproject and gitlink trees are read-only mounts. Only separate ignored
+Make scratch, registered-command scratch, and generated `build` output mounts
+are writable. Supervisor control is outside all candidate-visible mounts.
+Missing
 namespace support, the fixed absolute tools, the exact gitlink object, or the
 statically built command interceptor fails before Make starts.
 The launcher first probes unprivileged user namespaces. On runners that block
@@ -236,6 +244,27 @@ sealed contract; the same text appearing in trace output, a recipe, or
 normalized multiline output grants no authority. Unknown direct recipe
 expansion, unregistered shell/eager assignment,
 ambiguous command registration, nonconvergence, or sandbox failure rejects.
+The interceptor receives a fixed append-only event descriptor and read-only
+mapping-directory descriptor opened by the trusted launcher before chroot.
+Neither descriptor has a pathname through `/proc` or `/dev/fd`, and no event
+or mapping path appears in candidate environment or scratch. Event state is
+truncated by the supervisor for each pass, and every record's format, argument
+bound, mapping count, command hash, and match identity is revalidated.
+Registered commands run in a different scratch namespace with both control
+descriptors closed. Candidate `$(file ...)` writes and registered scripts can
+only create decoys in their own scratch; they cannot read, overwrite, or forge
+supervisor events or mappings.
+
+Generated-data path classification likewise does not import the base
+`scripts.generated_data.registry` into the trusted reporter. A small trusted
+probe executes the exact candidate registry in a separate credential-free,
+networkless, read-only-tree process with only isolated command scratch. The
+reporter accepts only bounded UTF-8 JSON with the closed typed record schema,
+sorted unique names/dependencies, valid versions, and confined tracked paths.
+It binds the candidate registry AST/blob set, exact typed output, launcher, and
+Python identity. Newly declared candidate generated paths therefore classify
+from candidate authority, while candidate code cannot mutate or enter the
+trusted gate process.
 
 Every Make include observed by GNU Make must be the primary `Makefile`, a
 tracked regular `.mk`, an exact gitlink-contained file, the trusted probe
@@ -264,7 +293,12 @@ objects, excludes the candidate checkout from `sys.path`, and overlays the
 base validation package/schema/oracle while reading all other graph and Make
 authority from the exact candidate commit. Candidate modifications to
 `reporter.py`, `make_probe.py`, the interceptor, or their tests therefore
-cannot authorize themselves. This introducing PR's base lacks that package,
+cannot authorize themselves. After trusted `validate_graph`, the base verifier
+resolves every independent-oracle probe through the candidate model, sorts its
+exact `(edge_type, evidence_id)` pairs, and requires byte-for-byte equality
+with the base oracle representation. A candidate self-checker redirect or
+owner update therefore rejects even when graph shape remains valid.
+This introducing PR's base lacks that package,
 so CI emits `bootstrap-not-authoritative`; candidate tests and the public gate
 still run, but direct adversarial review is the introduction evidence. After
 merge, every ordinary PR enters `exact-base-pinned` mode. Git remains the

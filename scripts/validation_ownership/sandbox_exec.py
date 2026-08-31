@@ -7,6 +7,7 @@ import ctypes
 import errno
 import json
 import os
+import stat
 import sys
 from pathlib import Path
 
@@ -22,6 +23,8 @@ PR_SET_NO_NEW_PRIVS = 38
 PR_SET_KEEPCAPS = 8
 PR_CAPBSET_DROP = 24
 LINUX_CAPABILITY_VERSION_3 = 0x20080522
+EVENT_FD = 3
+MAPPING_FD = 4
 
 
 class _CapabilityHeader(ctypes.Structure):
@@ -96,6 +99,43 @@ def _drop_sudo_privileges(uid: int, gid: int) -> None:
         raise RuntimeError("sudo sandbox did not drop the runner identity")
 
 
+def _open_control_descriptors(
+    event_path: str | None,
+    mapping_path: str | None,
+) -> None:
+    if (event_path is None) != (mapping_path is None):
+        raise RuntimeError("sandbox control descriptors must be paired")
+    if event_path is None:
+        for descriptor in (EVENT_FD, MAPPING_FD):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        return
+    event = Path(event_path).resolve(strict=True)
+    mapping = Path(mapping_path).resolve(strict=True)
+    event_fd = os.open(
+        event,
+        os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW,
+    )
+    mapping_fd = os.open(
+        mapping,
+        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+    )
+    if not stat.S_ISREG(os.fstat(event_fd).st_mode):
+        raise RuntimeError("sandbox event control is not a regular file")
+    if not stat.S_ISDIR(os.fstat(mapping_fd).st_mode):
+        raise RuntimeError("sandbox mapping control is not a directory")
+    os.dup2(event_fd, EVENT_FD, inheritable=True)
+    os.dup2(mapping_fd, MAPPING_FD, inheritable=True)
+    os.set_inheritable(EVENT_FD, True)
+    os.set_inheritable(MAPPING_FD, True)
+    if event_fd not in {EVENT_FD, MAPPING_FD}:
+        os.close(event_fd)
+    if mapping_fd not in {EVENT_FD, MAPPING_FD}:
+        os.close(mapping_fd)
+
+
 def main() -> int:
     if not sys.flags.isolated or len(sys.argv) != 2:
         raise SystemExit("sandbox_exec requires isolated Python and one config")
@@ -105,6 +145,8 @@ def main() -> int:
         "argv",
         "cwd",
         "environment",
+        "event_path",
+        "mapping_path",
         "read_only",
         "root",
         "runner_gid",
@@ -115,6 +157,10 @@ def main() -> int:
         raise SystemExit("sandbox_exec config has unexpected fields")
 
     root = Path(config["root"]).resolve(strict=True)
+    _open_control_descriptors(
+        config["event_path"],
+        config["mapping_path"],
+    )
     _mount(str(root), str(root), MS_BIND | MS_REC)
     for source_text, target_text in config["read_only"]:
         source = Path(source_text).resolve(strict=True)

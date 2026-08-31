@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -100,6 +101,7 @@ def _trusted_paths(
     required = {
         f"{TRUSTED_PREFIX}ci_gate.mk",
         f"{TRUSTED_PREFIX}ci_verifier.py",
+        f"{TRUSTED_PREFIX}generated_registry_probe.py",
         f"{TRUSTED_PREFIX}isolated_launcher.py",
         f"{TRUSTED_PREFIX}make_probe.py",
         f"{TRUSTED_PREFIX}reporter.py",
@@ -234,6 +236,45 @@ def _verify_base_step(
         )
 
 
+def _verify_oracle_pairs(
+    oracle: dict[str, Any],
+    graph: dict[str, Any],
+    model: dict[str, Any],
+) -> str:
+    measurement = reporter._measure(oracle, graph, model)
+    expected = []
+    for probe in oracle["probes"]:
+        if "expected_exclusion" in probe:
+            expected.append(
+                {
+                    "path": probe["path"],
+                    "exclusion": probe["expected_exclusion"],
+                }
+            )
+            continue
+        expected.append(
+            {
+                "path": probe["path"],
+                "surface": probe["expected_surface"],
+                "owners": sorted(
+                    probe["expected_owners"],
+                    key=lambda item: (
+                        item["edge_type"],
+                        item["evidence_id"],
+                    ),
+                ),
+            }
+        )
+    expected_bytes = reporter.normalized_json(expected)
+    actual_bytes = reporter.normalized_json(measurement["probes"])
+    if actual_bytes != expected_bytes:
+        raise reporter.OwnershipError(
+            "candidate resolved owner pairs differ byte-for-byte from "
+            "the independent base oracle"
+        )
+    return hashlib.sha256(actual_bytes).hexdigest()
+
+
 def verify(
     trusted_root: Path,
     repository_root: Path,
@@ -293,6 +334,7 @@ def verify(
     )
     reporter.validate_probe_oracle(oracle, graph, entries)
     model = reporter.validate_graph(graph, schema, loader, entries)
+    oracle_pairs_sha256 = _verify_oracle_pairs(oracle, graph, model)
     loaded_after = _verify_loaded_modules(trusted_root, base_loader)
     return {
         "base_sha": base_sha,
@@ -301,6 +343,7 @@ def verify(
         "coverage_paths": len(model["coverage"]),
         "evidence_authorities": len(model["authorities"]),
         "mode": "exact-base-pinned",
+        "oracle_pairs_sha256": oracle_pairs_sha256,
         "trusted_modules": sorted(set(loaded_before) | set(loaded_after)),
         "trusted_package_files": len(trusted_paths),
     }

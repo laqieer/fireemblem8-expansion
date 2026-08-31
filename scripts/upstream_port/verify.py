@@ -798,20 +798,26 @@ _SCRUBBED_PILOT_ENV = (
     "GIT_OBJECT_DIRECTORY: ''",
     "GIT_REPLACE_REF_BASE: ''",
     "GIT_WORK_TREE: ''",
+    "PATH: /usr/bin:/bin",
+    "PYTHONPATH: ''",
+)
+_VALIDATION_OWNERSHIP_ENV = (
+    *_SCRUBBED_PILOT_ENV,
     "GNUMAKEFLAGS: ''",
     "MAKEFLAGS: ''",
     "MAKEOVERRIDES: ''",
     "MFLAGS: ''",
-    "PATH: /usr/bin:/bin",
-    "PYTHONPATH: ''",
 )
 _BASE_VERIFIER_ENV = (
-    *_SCRUBBED_PILOT_ENV,
+    *_VALIDATION_OWNERSHIP_ENV,
     "BUILD_EVENT_NAME: ${{ github.event_name }}",
-    "EXPECTED_BASE_SHA: ${{ github.event_name == 'pull_request' && "
-    "github.event.pull_request.base.sha || '' }}",
-    "EXPECTED_CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && "
-    "github.event.pull_request.head.sha || github.sha }}",
+    "EXPECTED_BASE_SHA: ${{ (needs.event-classifier.result == 'success' && "
+    "needs.event-classifier.outputs.expected_base) || "
+    "(github.event_name == 'pull_request' && github.event.pull_request.base.sha) "
+    "|| '' }}",
+    "EXPECTED_CANDIDATE_SHA: ${{ (needs.event-classifier.result == 'success' && "
+    "needs.event-classifier.outputs.expected_head) || "
+    "needs.event-identity.outputs.fallback_sha || '' }}",
 )
 _PRIVATE_STEP_ENV = (
     ("BASH_ENV", "''"),
@@ -1927,6 +1933,12 @@ def _parse_step(block, job_name, index):
         expected_environment = (
             _BASE_VERIFIER_ENV
             if name == _VALIDATION_OWNERSHIP_BASE_STEP_NAME
+            else _VALIDATION_OWNERSHIP_ENV
+            if name
+            in {
+                _VALIDATION_OWNERSHIP_TEST_STEP_NAME,
+                _VALIDATION_OWNERSHIP_CHECK_STEP_NAME,
+            }
             else _SCRUBBED_PILOT_ENV
         )
         if "env" in values and values["env"] != tuple(

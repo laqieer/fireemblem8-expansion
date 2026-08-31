@@ -1479,6 +1479,20 @@ must match one sealed contract and are intercepted rather than executed by
 Make.
 Absolute `/dev/stdin`, dynamic, escaping, symlink, and untracked includes
 reject; confined generated `build/` includes are rebuilt from an empty overlay.
+Supervisor mappings and events are absent from candidate-visible paths. The
+trusted launcher opens a read-only mapping-directory descriptor and an
+append-only event descriptor before chroot; no `/proc` or `/dev/fd` alias is
+mounted. Make scratch, registered-command scratch, and build output are
+separate. Candidate `$(file ...)` attempts and a registered Python forgery
+script can create only private decoys, while truncated, wrong-count,
+wrong-hash, malformed, or unknown-match event records reject.
+
+Generated-data ownership comes from a trusted typed probe of the exact
+candidate registry in a credential-free, networkless, read-only-tree process,
+not an import of the base registry into the trusted reporter. Its bounded JSON
+must have sorted unique schema names/dependencies, valid versions, and confined
+tracked source/inventory paths. A synthetic candidate adds a new typed table
+and path successfully; write/control forgery and malformed output reject.
 
 The namespace launcher uses unprivileged user/mount/network/PID namespaces
 when available. A mocked Ubuntu-24.04 control blocks that probe and admits only
@@ -1493,7 +1507,10 @@ archives the clean base and invokes its `ci_gate.mk`/`ci_verifier.py` against
 the exact candidate Git tree. Every trusted package and loaded module identity
 comes from base Git objects, and candidate paths never enter verifier
 `sys.path`; compromised candidate reporter/interceptor fixtures remain data,
-not authority. This introducing PR emits the explicit
+not authority. After full trusted graph validation, resolved candidate
+`(edge_type, evidence_id)` pairs must also equal the independent base oracle
+byte-for-byte; a shape-valid self-checker/owner redirect rejects.
+This introducing PR emits the explicit
 `bootstrap-not-authoritative` state because its base lacks the package, while
 candidate tests/public checks continue and direct adversarial review supplies
 introduction evidence. Missing/changed base staging, candidate gate paths,
@@ -1506,6 +1523,12 @@ mixed goals, and `AUTOTOOLS_CONFIG_MK=/dev/stdin SHELL=...` therefore fail
 during trusted bootstrap. The exact sole goal skips every normal config,
 generated, asset, and dependency include; plain and allowed parallel public
 invocations execute the checker rather than printing success.
+
+The lifecycle `validation-ownership-check` consumer calls complete
+nonrecursive graph validation, Make/workflow authority validation, and exact
+oracle measurement on the artifact copy. Redirected/stale edges or owners and
+broken Make registry/workflow mutations therefore fail removal/restoration
+proofs; the consumer never invokes the lifecycle driver recursively.
 
 Exact current/base Git mode and provenance is mandatory. Symlinks, synthetic
 gitlinks under owned prefixes, untracked/ignored/nonexistent changed paths,
