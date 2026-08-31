@@ -186,8 +186,9 @@ mirrored verifier gates in fail-fast order. `.github/workflows/build.yml`
 carries the same 28 commands with argv/order preserved across its combined
 host, modern, extended-host, and archival jobs, plus the deliberately
 standalone issues #7/#17 documentation-governance workflow gate described
-below. A small event classifier precedes the four combined workers in CI; the
-four combined workers run in parallel after that decision, and `summary` is their
+below. An event router plus mode-specific classifier check precedes the four
+combined workers in CI; the four combined workers run in parallel after that
+decision, and `summary` is their
 fail-closed join. Metadata-only PR edits do not invoke local `verify` or those
 workers. Local `verify` runs the same 28 gates in its
 documented order and therefore does not reproduce CI wall-clock parallelism.
@@ -203,12 +204,11 @@ selected root is both the subprocess working directory and the pilot
 baseline's `--repository-root`; there is no per-step working-directory
 override. Before either a dry run or execution, the source tool parses the
 target checkout's Build workflow as bounded UTF-8 data without importing or
-executing target Python. The event classifier and four reviewed worker jobs must have
+executing target Python. The event router, mode-specific classifier, and four reviewed worker jobs must have
 the exact same complete ordered step sequences as the source: step count,
 unique required names, setup-versus-gate role, action and immutable SHA, run
 argv, `env`/`with` mappings, direct fields, and no working-directory override.
-The complete job-name order must also match, so extra jobs fail. The classifier
-is parsed setup and never becomes a 29th local gate. The 28 gate
+The complete job-name order must also match, so extra jobs fail. Both setup jobs are parsed and never become a 29th local gate. The 28 gate
 commands are then checked against source `gates()`. An unnamed non-checkout
 step, duplicate setup/name, complex key form, or older, newer, missing, added,
 removed, reordered, or changed target step fails closed instead of running
@@ -216,8 +216,9 @@ source-defined evidence against a different checkout contract.
 The same structure closes execution context before step comparison:
 workflow-level keys are exactly reviewed `name`, triggers, read-only
 permissions, and jobs, with workflow `env`, `defaults`, and `concurrency`
-absent. The classifier contains only its reviewed runner, timeout, outputs,
-environment, and steps. Each combined job contains only its exact classifier
+absent. The router and mode-classifier contain only their reviewed names,
+runner, timeout, outputs, environment, dependencies/conditions, and steps.
+Each combined job contains only its exact dynamic mode name, classifier
 dependency and fail-closed condition, `runs-on: ubuntu-latest`,
 `timeout-minutes: 60`, its exact allowlisted environment, and `steps`.
 Classifier authority uses direct PR-base or push identities, with a
@@ -235,15 +236,15 @@ Containers, services, strategies/matrices, permissions, defaults, dependency
 or condition substitutions, deployment environment, concurrency, reusable-job
 `uses`/secrets, custom shell context, unknown fields, and complex, duplicate,
 or reordered keys fail before dry-run.
-The complete seven-job structure preserves the six closed issue #176 jobs and
-adds only the closed, non-mirrored classifier root.
+The complete eight-job structure preserves the six closed issue #176 jobs and
+adds only the closed, non-mirrored router and mode-classifier setup jobs.
 `patch-release` must retain its master-push-only condition, Ubuntu/60-minute
 context, exact commit env, six ordered publisher steps, pinned checkout/upload
 actions, scoped base-image secret, and upload mapping. `summary` must retain
-`always()`, the classifier plus exact four ordered worker needs,
-Ubuntu/five-minute context, exact classifier/result env, metadata-skip and
-full-run validation, and missing/stale identity failure, plus its single
-fail-closed command. Runner, condition, needs,
+`always()`, its dynamic mode name, the classifier plus exact ordered
+worker/publisher needs, Ubuntu/five-minute context, exact classifier/result
+env, metadata-skip and full-run validation, and missing/stale identity
+failure, plus its single fail-closed command. Runner, condition, needs,
 permission, env, step, command, action, container/default, or unknown-field
 drift in either job fails before local dry-run even though neither job becomes
 one of the 28 locally executed gates.

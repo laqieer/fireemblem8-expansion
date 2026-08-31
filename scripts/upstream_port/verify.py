@@ -36,8 +36,9 @@ _SOURCE_ROOT = os.path.realpath(
 )
 _BUILD_WORKFLOW_RELATIVE = os.path.join(".github", "workflows", "build.yml")
 _COMBINED_JOBS = ("host-tests", "build", "extended-host-tests", "legacy")
+_EVENT_ROUTER_JOB = "event-router"
 _EVENT_CLASSIFIER_JOB = "event-classifier"
-_EXPECTED_JOBS = (_EVENT_CLASSIFIER_JOB,) + _COMBINED_JOBS + (
+_EXPECTED_JOBS = (_EVENT_ROUTER_JOB, _EVENT_CLASSIFIER_JOB) + _COMBINED_JOBS + (
     "patch-release",
     "summary",
 )
@@ -54,6 +55,7 @@ _CHECKOUT_WITH = (
         "github.event.pull_request.head.sha) || "
         "(needs.event-classifier.result == 'failure' && "
         "github.event_name == 'push' && github.ref == 'refs/heads/master' && "
+        "github.event.after != '' && github.sha == github.event.after && "
         "github.sha) || '' }}",
     ),
     ("submodules", "recursive"),
@@ -91,6 +93,7 @@ _EXPECTED_BUILD_SHA_EXPRESSION = (
     "github.event.pull_request.head.sha) || "
     "(needs.event-classifier.result == 'failure' && "
     "github.event_name == 'push' && github.ref == 'refs/heads/master' && "
+    "github.event.after != '' && github.sha == github.event.after && "
     "github.sha) || '' }}"
 )
 _CLASSIFIER_REF_EXPRESSION = (
@@ -106,16 +109,22 @@ _CLASSIFIER_EXPECTED_SHA_EXPRESSION = (
 )
 _WORKER_CONDITION = (
     "${{ always() && ((needs.event-classifier.result == 'success' && "
-    "needs.event-classifier.outputs.identity_valid == 'true' && "
+    "needs.event-classifier.outputs.classification == 'full' && "
+    "needs.event-classifier.outputs.head_valid == 'true' && "
     "needs.event-classifier.outputs.run_expensive == 'true' && "
     "((github.event_name == 'pull_request' && "
     "needs.event-classifier.outputs.expected_head == "
     "github.event.pull_request.head.sha && "
+    "github.event.pull_request.head.sha != '' && "
+    "((needs.event-classifier.outputs.identity_valid == 'true' && "
     "needs.event-classifier.outputs.expected_base == "
     "github.event.pull_request.base.sha && "
-    "github.event.pull_request.head.sha != '' && "
     "github.event.pull_request.base.sha != '') || "
+    "(needs.event-classifier.outputs.identity_valid == 'false' && "
+    "needs.event-classifier.outputs.expected_base == '' && "
+    "github.event.pull_request.base.sha == ''))) || "
     "(github.event_name == 'push' && "
+    "needs.event-classifier.outputs.identity_valid == 'true' && "
     "needs.event-classifier.outputs.expected_head == github.event.after && "
     "needs.event-classifier.outputs.expected_base == '' && "
     "github.event.after != ''))) || "
@@ -123,8 +132,40 @@ _WORKER_CONDITION = (
     "((github.event_name == 'pull_request' && "
     "github.event.pull_request.head.sha != '') || "
     "(github.event_name == 'push' && github.ref == 'refs/heads/master' && "
-    "github.sha != '')))) }}"
+    "github.event.after != '' && github.sha == github.event.after))))) }}"
 )
+_DYNAMIC_JOB_NAMES = {
+    "event-classifier": (
+        "${{ needs.event-router.result == 'success' && "
+        "needs.event-router.outputs.classification == 'metadata-only' && "
+        "'metadata-classifier' || 'event-classifier' }}"
+    ),
+    "host-tests": (
+        "${{ needs.event-classifier.result == 'success' && "
+        "needs.event-classifier.outputs.classification == 'metadata-only' "
+        "&& 'metadata-host-tests-skipped' || 'host-tests' }}"
+    ),
+    "build": (
+        "${{ needs.event-classifier.result == 'success' && "
+        "needs.event-classifier.outputs.classification == 'metadata-only' "
+        "&& 'metadata-build-skipped' || 'build' }}"
+    ),
+    "extended-host-tests": (
+        "${{ needs.event-classifier.result == 'success' && "
+        "needs.event-classifier.outputs.classification == 'metadata-only' "
+        "&& 'metadata-extended-host-tests-skipped' || 'extended-host-tests' }}"
+    ),
+    "legacy": (
+        "${{ needs.event-classifier.result == 'success' && "
+        "needs.event-classifier.outputs.classification == 'metadata-only' "
+        "&& 'metadata-legacy-skipped' || 'legacy' }}"
+    ),
+    "summary": (
+        "${{ needs.event-classifier.result == 'success' && "
+        "needs.event-classifier.outputs.classification == 'metadata-only' "
+        "&& 'metadata-summary' || 'summary' }}"
+    ),
+}
 _CLASSIFIER_VERIFY_COMMANDS = (
     ("ACTUAL_SHA=$(git rev-parse HEAD)",),
     ("printf", "classifier.sha=%s\\n", "$ACTUAL_SHA"),
@@ -163,6 +204,7 @@ _CLASSIFIER_COMMANDS = (
     ("else",),
     ("expected_base=",),
     ("expected_head=",),
+    ("head_valid=false",),
     ("identity_valid=false",),
     ("if", "[[", "$GITHUB_EVENT_NAME", "=", "pull_request", "]];", "then"),
     (
@@ -186,6 +228,7 @@ _CLASSIFIER_COMMANDS = (
         "then",
     ),
     ("expected_head=$PR_HEAD_SHA",),
+    ("head_valid=true",),
     ("fi",),
     (
         "if",
@@ -207,13 +250,22 @@ _CLASSIFIER_COMMANDS = (
         "=",
         "push",
         "&&",
+        "$GITHUB_REF",
+        "=",
+        "refs/heads/master",
+        "&&",
         "$PUSH_SHA",
         "=~",
         "^[0-9a-f]{40}$",
+        "&&",
+        "$RAW_PUSH_SHA",
+        "=",
+        "$PUSH_SHA",
         "]];",
         "then",
     ),
     ("expected_head=$PUSH_SHA",),
+    ("head_valid=true",),
     ("identity_valid=true",),
     ("fi",),
     ("{",),
@@ -221,29 +273,123 @@ _CLASSIFIER_COMMANDS = (
     ("echo", "reason=classifier-bootstrap"),
     ("echo", "expected_base=$expected_base"),
     ("echo", "expected_head=$expected_head"),
+    ("echo", "head_valid=$head_valid"),
     ("echo", "identity_valid=$identity_valid"),
     ("echo", "run_expensive=true"),
     ("}", ">>", "$GITHUB_OUTPUT"),
     ("fi",),
 )
+_MODE_COMMANDS = (
+    ("if", "[", "$ROUTER_RESULT", "!=", "success", "];", "then"),
+    ("echo", "Build event router did not succeed: $ROUTER_RESULT", ">&2"),
+    ("exit", "1"),
+    ("fi",),
+    ("case", "$HEAD_VALID", "in"),
+    ("true|false)", ";;"),
+    (
+        "*)",
+        "echo",
+        "Build event router returned invalid head validity",
+        ">&2;",
+        "exit",
+        "1",
+        ";;",
+    ),
+    ("esac",),
+    ("case", "$IDENTITY_VALID", "in"),
+    ("true|false)", ";;"),
+    (
+        "*)",
+        "echo",
+        "Build event router returned invalid identity validity",
+        ">&2;",
+        "exit",
+        "1",
+        ";;",
+    ),
+    ("esac",),
+    ("if", "[", "$CLASSIFICATION", "=", "metadata-only", "];", "then"),
+    (
+        "if",
+        "[",
+        "$HEAD_VALID",
+        "!=",
+        "true",
+        "]",
+        "||",
+        "[",
+        "$IDENTITY_VALID",
+        "!=",
+        "true",
+        "]",
+        "||",
+        "[",
+        "$RUN_EXPENSIVE",
+        "!=",
+        "false",
+        "];",
+        "then",
+    ),
+    ("echo", "metadata event mode is not authoritative", ">&2"),
+    ("exit", "1"),
+    ("fi",),
+    ("exit", "0"),
+    ("fi",),
+    (
+        "if",
+        "[",
+        "$CLASSIFICATION",
+        "!=",
+        "full",
+        "]",
+        "||",
+        "[",
+        "$RUN_EXPENSIVE",
+        "!=",
+        "true",
+        "];",
+        "then",
+    ),
+    ("echo", "full Build event mode is not authoritative", ">&2"),
+    ("exit", "1"),
+    ("fi",),
+)
 _EXPECTED_JOB_OUTPUTS = {
-    "event-classifier": (
+    "event-router": (
         ("classification", "${{ steps.classify.outputs.classification }}"),
         ("expected_base", "${{ steps.classify.outputs.expected_base }}"),
         ("expected_head", "${{ steps.classify.outputs.expected_head }}"),
+        ("head_valid", "${{ steps.classify.outputs.head_valid }}"),
         ("identity_valid", "${{ steps.classify.outputs.identity_valid }}"),
         ("reason", "${{ steps.classify.outputs.reason }}"),
         ("run_expensive", "${{ steps.classify.outputs.run_expensive }}"),
     ),
+    "event-classifier": (
+        ("classification", "${{ needs.event-router.outputs.classification }}"),
+        ("expected_base", "${{ needs.event-router.outputs.expected_base }}"),
+        ("expected_head", "${{ needs.event-router.outputs.expected_head }}"),
+        ("head_valid", "${{ needs.event-router.outputs.head_valid }}"),
+        ("identity_valid", "${{ needs.event-router.outputs.identity_valid }}"),
+        ("reason", "${{ needs.event-router.outputs.reason }}"),
+        ("run_expensive", "${{ needs.event-router.outputs.run_expensive }}"),
+    ),
 }
 _EXPECTED_JOB_ENV = {
-    "event-classifier": (
+    "event-router": (
         ("CLASSIFIER_EXPECTED_SHA", _CLASSIFIER_EXPECTED_SHA_EXPRESSION),
         ("CLASSIFIER_REF", _CLASSIFIER_REF_EXPRESSION),
         ("DEFAULT_BRANCH", "${{ github.event.repository.default_branch }}"),
         ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
         ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
         ("PUSH_SHA", "${{ github.event.after }}"),
+        ("RAW_PUSH_SHA", "${{ github.sha }}"),
+    ),
+    "event-classifier": (
+        ("CLASSIFICATION", "${{ needs.event-router.outputs.classification }}"),
+        ("HEAD_VALID", "${{ needs.event-router.outputs.head_valid }}"),
+        ("IDENTITY_VALID", "${{ needs.event-router.outputs.identity_valid }}"),
+        ("ROUTER_RESULT", "${{ needs.event-router.result }}"),
+        ("RUN_EXPENSIVE", "${{ needs.event-router.outputs.run_expensive }}"),
     ),
     "host-tests": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
     "build": (("EXPECTED_BUILD_SHA", _EXPECTED_BUILD_SHA_EXPRESSION),),
@@ -272,6 +418,7 @@ _EXPECTED_JOB_ENV = {
         ),
         ("CLASSIFIER_RESULT", "${{ needs.event-classifier.result }}"),
         ("EXTENDED_HOST_TESTS_RESULT", "${{ needs.extended-host-tests.result }}"),
+        ("HEAD_VALID", "${{ needs.event-classifier.outputs.head_valid }}"),
         ("HOST_TESTS_RESULT", "${{ needs.host-tests.result }}"),
         ("IDENTITY_VALID", "${{ needs.event-classifier.outputs.identity_valid }}"),
         ("LEGACY_RESULT", "${{ needs.legacy.result }}"),
@@ -327,10 +474,13 @@ _SCRUBBED_PILOT_ENV = (
     "PYTHONPATH: ''",
 )
 _EXPECTED_STEP_ROLES = {
-    "event-classifier": (
+    "event-router": (
         ("setup", None),
         ("setup", "Verify classifier authority revision"),
         ("setup", "Classify Build event"),
+    ),
+    "event-classifier": (
+        ("setup", "Verify authoritative Build event mode"),
     ),
     "host-tests": (
         ("setup", None),
@@ -666,7 +816,18 @@ def _parse_job_context(job_name, body):
     if len(names) != len(set(names)):
         raise ValueError(f"job {job_name!r} contains duplicate direct keys")
     expected_names = {
+        "event-router": [
+            "name",
+            "runs-on",
+            "timeout-minutes",
+            "outputs",
+            "env",
+            "steps",
+        ],
         "event-classifier": [
+            "name",
+            "if",
+            "needs",
             "runs-on",
             "timeout-minutes",
             "outputs",
@@ -675,6 +836,7 @@ def _parse_job_context(job_name, body):
         ],
         **{
             name: [
+                "name",
                 "needs",
                 "if",
                 "runs-on",
@@ -686,6 +848,7 @@ def _parse_job_context(job_name, body):
         },
         "patch-release": ["if", "runs-on", "timeout-minutes", "env", "steps"],
         "summary": [
+            "name",
             "if",
             "needs",
             "runs-on",
@@ -712,14 +875,26 @@ def _parse_job_context(job_name, body):
             for line in lines[line_index + 1 : end]
             if line.strip() and not line.lstrip().startswith("#")
         ]
-        if name == "if":
+        if name == "name":
+            expected = (
+                "event-router"
+                if job_name == "event-router"
+                else _DYNAMIC_JOB_NAMES[job_name]
+            )
+            if value != expected or nested:
+                raise ValueError(f"job {job_name!r} name differs")
+            values[name] = value
+        elif name == "if":
             expected = (
                 _WORKER_CONDITION
                 if job_name in _COMBINED_JOBS
                 else {
+                    "event-classifier": "always()",
                     "patch-release": (
                         "${{ github.event_name == 'push' && "
-                        "github.ref == 'refs/heads/master' && github.sha != '' }}"
+                        "github.ref == 'refs/heads/master' && "
+                        "github.event.after != '' && "
+                        "github.sha == github.event.after }}"
                     ),
                     "summary": "always()",
                 }[job_name]
@@ -729,6 +904,9 @@ def _parse_job_context(job_name, body):
             values[name] = value
         elif name == "needs":
             expected = (
+                "[event-router]"
+                if job_name == "event-classifier"
+                else
                 "[event-classifier]"
                 if job_name in _COMBINED_JOBS
                 else "[event-classifier, host-tests, build, "
@@ -746,7 +924,7 @@ def _parse_job_context(job_name, body):
         elif name == "timeout-minutes":
             expected = (
                 "5"
-                if job_name in {"event-classifier", "summary"}
+                if job_name in {"event-router", "event-classifier", "summary"}
                 else "60"
             )
             if value != expected or nested:
@@ -935,7 +1113,7 @@ def _parse_step(block, job_name, index):
             values[name] = scalar
 
     name = values.get("name")
-    if job_name == "event-classifier":
+    if job_name == "event-router":
         if index == 0:
             if (
                 name is not None
@@ -970,6 +1148,15 @@ def _parse_step(block, job_name, index):
                 )
             ):
                 raise ValueError(f"{step_label} classifier mapping differs")
+        role = "setup"
+    elif job_name == "event-classifier":
+        if (
+            index != 0
+            or name != "Verify authoritative Build event mode"
+            or set(values) != {"name", "run"}
+            or values["run"] != _MODE_COMMANDS
+        ):
+            raise ValueError(f"{step_label} mode verification differs")
         role = "setup"
     elif job_name == "patch-release":
         expected_fields = (
@@ -1100,7 +1287,7 @@ def _parse_job_steps(job_name, body):
         6
         if job_name == "patch-release"
         else 0
-        if job_name == "summary"
+        if job_name in {"event-classifier", "summary"}
         else 1
     )
     if sum(step[1] is None for step in steps) != expected_unnamed:

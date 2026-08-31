@@ -41,6 +41,7 @@ def _expected_decision(case: dict) -> dict:
     expected = dict(case["expected"])
     expected.pop("jobs")
     expected.pop("summary_success")
+    expected["head_valid"] = bool(expected["expected_head"])
     return expected
 
 
@@ -112,15 +113,21 @@ class EventClassifierFixtureTests(unittest.TestCase):
                 case = cases[case_id]
                 decision = _decision(case)
                 self.assertFalse(decision.identity_valid)
+                self.assertEqual(
+                    decision.head_valid,
+                    bool(decision.expected_head),
+                )
                 self.assertTrue(decision.run_expensive)
                 self.assertNotEqual(
                     decision.expected_head,
                     case["runner"]["github_sha"],
                 )
-                self.assertEqual(
-                    set(case["expected"]["jobs"]),
-                    {"event-classifier", "summary"},
-                )
+                expected_jobs = {"event-classifier", "summary"}
+                if case_id == "missing-base":
+                    expected_jobs.update(
+                        {"host-tests", "build", "extended-host-tests", "legacy"}
+                    )
+                self.assertEqual(set(case["expected"]["jobs"]), expected_jobs)
                 self.assertFalse(case["expected"]["summary_success"])
 
         body_only = cases["body-only-merge-sha-ignored"]
@@ -176,6 +183,8 @@ class EventClassifierFixtureTests(unittest.TestCase):
                             f"classification={expected['classification']}",
                             f"expected_base={expected['expected_base']}",
                             f"expected_head={expected['expected_head']}",
+                            "head_valid="
+                            + ("true" if expected["head_valid"] else "false"),
                             "identity_valid="
                             + ("true" if expected["identity_valid"] else "false"),
                             f"reason={expected['reason']}",

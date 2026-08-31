@@ -454,7 +454,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
 
         for clause in (
             "four combined workers run in parallel",
-            "event classifier precedes the four combined workers",
+            "event router plus mode-specific classifier check precedes the four",
             "`summary` is their fail-closed join",
             "install both the supported modern toolchain",
             "explicit archival `make legacy` prerequisites",
@@ -1044,13 +1044,14 @@ class VerifyCliCwdTests(unittest.TestCase):
             ):
                 verify_mod.run_gates(target_root, dry_run=True)
 
-    def test_event_classifier_is_closed_but_not_a_29th_local_gate(self):
+    def test_event_router_and_mode_are_closed_but_not_local_gates(self):
         with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
             original = handle.read()
         structure = verify_mod._parse_workflow_structure_text(original)
         self.assertEqual(
             structure[1],
             (
+                "event-router",
                 "event-classifier",
                 "host-tests",
                 "build",
@@ -1061,14 +1062,14 @@ class VerifyCliCwdTests(unittest.TestCase):
             ),
         )
         self.assertEqual(len(verify_mod.gates()), 28)
-        self.assertNotIn(
-            "event-classifier",
-            {
-                job_name
-                for job_name, _, _ in verify_mod._workflow_gate_contract(
-                    structure
-                )
-            },
+        gate_jobs = {
+            job_name
+            for job_name, _, _ in verify_mod._workflow_gate_contract(
+                structure
+            )
+        }
+        self.assertTrue(
+            {"event-router", "event-classifier"}.isdisjoint(gate_jobs)
         )
 
         mutations = (
@@ -1383,7 +1384,9 @@ class VerifyCliCwdTests(unittest.TestCase):
                         "patch-release",
                         "if",
                         "    if: ${{ github.event_name == 'push' && "
-                        "github.ref == 'refs/heads/master' && github.sha != '' }}",
+                        "github.ref == 'refs/heads/master' && "
+                        "github.event.after != '' && "
+                        "github.sha == github.event.after }}",
                         "    if: always()",
                 ),
                 (

@@ -2921,10 +2921,18 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             f"{CANDIDATE_EVIDENCE_MARKER}\n"
             "Candidate evidence is maintained here.\n"
         )
+        architecture_comment = (
+            "Architecture hold: metadata-only contexts cannot replace "
+            "candidate evidence.\n"
+        )
         self.assertEqual(
-            candidate_evidence_violations(body, [canonical_comment]),
+            candidate_evidence_violations(
+                body,
+                [canonical_comment, architecture_comment],
+            ),
             [],
         )
+        self.assertNotIn(CANDIDATE_EVIDENCE_MARKER, architecture_comment)
 
         for field in EVOLVING_PR_BODY_FIELDS:
             with self.subTest(field=field):

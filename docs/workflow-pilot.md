@@ -103,8 +103,9 @@ but does not hash source files, blobs, objects, ROMs, or the repository tree.
 ## Build event classification and candidate evidence
 
 Issue [#177](https://github.com/laqieer/fireemblem8-expansion/issues/177)
-adds one parsed, fail-closed `event-classifier` job ahead of the four expensive
-workers. For pull requests with complete identity, that small job checks out
+adds a parsed, fail-closed `event-router` plus a mode-specific classifier check
+ahead of the four expensive workers. For pull requests with complete identity,
+the router checks out
 the exact current `pull_request.base.sha` with the pinned checkout action, no
 credentials, no submodules, and depth one. A missing PR base uses only the
 repository's trusted default-branch ref to execute the failure/bootstrap
@@ -116,6 +117,22 @@ base predates the classifier takes an explicit bootstrap full-build path, so
 introducing or reverting the seam cannot silently suppress evidence.
 The classifier bootstrap may use the trusted default branch when PR base
 identity is missing; worker checkouts never use a merge/default fallback.
+
+Check contexts are mode-separated. `event-router` is common setup only. Full
+candidate runs expose `event-classifier`, `host-tests`, `build`,
+`extended-host-tests`, `legacy`, and `summary`. Metadata-only runs expose
+`metadata-classifier`, `metadata-host-tests-skipped`,
+`metadata-build-skipped`, `metadata-extended-host-tests-skipped`,
+`metadata-legacy-skipped`, and `metadata-summary`. A later green metadata run
+therefore cannot replace any candidate-required full context on the same
+head/base.
+
+[`scripts/workflow_pilot/candidate_evidence.py`](../scripts/workflow_pilot/candidate_evidence.py)
+derives mode from those authoritative check names and evaluates the latest
+exact-head/exact-base full run as one unit. A metadata-only run is never
+candidate evidence. A failed full run followed by green metadata remains
+ineligible; a prior successful full run remains eligible because metadata
+contexts are distinct rather than replacements.
 
 The classifier reads the bounded `GITHUB_EVENT_PATH` JSON file with duplicate
 key and non-finite `NaN`/`Infinity` rejection. JSON floats are converted
@@ -164,11 +181,21 @@ identities. On a metadata-only edit, `summary` succeeds only
 when classification succeeded, the classified head still equals the event
 head, the classified base still equals the event base, suppression is exactly
 false, and all four worker conclusions are exactly `skipped`. On a full event,
-normal workers check out the classifier's exact nonempty head output; failure
+normal workers check out the classifier's exact nonempty head output. A
+missing base with a valid PR head sets `head_valid=true` and
+`identity_valid=false`; all four workers run at that exact head, then normal
+`summary` audits them and fails because full base identity is unavailable.
+Missing head runs no worker and fails. Failure
 fallback workers check out only the raw nonempty PR head or guarded master-push
 `github.sha`. Both paths retain revision verification, commands, and
 environments. Summary now joins the publisher as well: PR and metadata paths
 require it to be skipped, while master-push paths require success.
+
+Push bootstrap and fallback require all four facts together: event `push`,
+`refs/heads/master`, nonempty event `after`, and raw `github.sha == after`.
+Workers and publisher consume that same exact SHA. Missing, mismatched, or
+non-master push identities select neither workers nor publisher and cannot use
+the PR fallback.
 The current Build workflow has no explicit final-dispatch trigger; if that
 supported surface is introduced later, `workflow_dispatch` classifies as full
 and the trigger/topology contracts must be updated together.
@@ -275,15 +302,17 @@ safe values and pin `PATH=/usr/bin:/bin`; the isolated launcher removes every
 ambient `GIT_*` name before dispatch. Runner environment files,
 repository/user `sitecustomize.py`, shell startup hooks, and ambient Git
 controls therefore cannot replace either executable or authority root.
-At job scope, every combined worker has a closed direct mapping: the exact
-classifier dependency and fail-closed condition, `runs-on: ubuntu-latest`,
-`timeout-minutes: 60`, its reviewed environment, and `steps`. Host, modern,
-extended-host, and legacy therefore reject
+At job scope, router and mode-classifier have separate closed setup mappings.
+Every combined worker has a closed direct mapping: exact dynamic full/metadata
+name, classifier dependency and fail-closed condition,
+`runs-on: ubuntu-latest`, `timeout-minutes: 60`, its reviewed environment, and
+`steps`. Host, modern, extended-host, and legacy therefore reject
 containers, services, matrices/strategies, job permissions/defaults,
 other dependencies, conditions/advisory mode, deployment environments, concurrency,
 reusable-job `uses`/secrets, custom shell context, unknown fields, duplicate
 keys, reordered keys, and complex key aliases. Patch publication and summary
-retain their separate existing contracts.
+retain separate closed contracts, including coherent push identity,
+worker/publisher audit, and dynamic full/metadata summary name.
 
 Before the command succeeds, it creates a bounded mutable artifact sandbox
 under the checkout's ignored `build/test-artifacts/` directory and copies only

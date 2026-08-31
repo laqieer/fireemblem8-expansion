@@ -32,6 +32,7 @@ class EventDecision:
     reason: str
     run_expensive: bool
     expected_head: str
+    head_valid: bool
     identity_valid: bool
 
     def canonical_json(self) -> str:
@@ -52,6 +53,7 @@ def _full(
     expected_head: str,
     expected_base: str = "",
     *,
+    head_valid: bool | None = None,
     identity_valid: bool = True,
 ) -> EventDecision:
     return EventDecision(
@@ -60,6 +62,7 @@ def _full(
         reason=reason,
         run_expensive=True,
         expected_head=expected_head,
+        head_valid=bool(expected_head) if head_valid is None else head_valid,
         identity_valid=identity_valid,
     )
 
@@ -105,6 +108,7 @@ def _pull_request_identity(
     payload_head = head.get("sha") if isinstance(head, dict) else None
     payload_base = base.get("sha") if isinstance(base, dict) else None
     missing_head = not expected_head or not _is_sha(payload_head)
+    head_valid = bool(expected_head) and payload_head == expected_head
     missing_base = (
         not expected_base
         or not _is_sha(payload_base)
@@ -124,6 +128,7 @@ def _pull_request_identity(
             reason,
             expected_head,
             expected_base,
+            head_valid=head_valid,
             identity_valid=False,
         )
     if payload_head != expected_head or payload_base != expected_base:
@@ -131,6 +136,7 @@ def _pull_request_identity(
             "pull-request-identity-mismatch",
             expected_head,
             expected_base,
+            head_valid=head_valid,
             identity_valid=False,
         )
     return pull_request, None
@@ -214,6 +220,7 @@ def classify_event(
                     reason="body-title-only-edit",
                     run_expensive=False,
                     expected_head=pr_head_sha,
+                    head_valid=True,
                     identity_valid=True,
                 )
             return _full("incomplete-edit", pr_head_sha, pr_base_sha)
@@ -241,6 +248,7 @@ def classify_event(
         return _full(
             "incomplete-push",
             expected_head,
+            head_valid=bool(expected_head),
             identity_valid=False,
         )
 
@@ -249,6 +257,7 @@ def classify_event(
         return _full(
             "explicit-final-dispatch",
             expected_head,
+            head_valid=bool(expected_head),
             identity_valid=bool(expected_head),
         )
     return _full("unknown-event", "", identity_valid=False)
@@ -328,6 +337,7 @@ def write_github_output(path: Path, decision: EventDecision) -> None:
         "classification": decision.classification,
         "expected_base": decision.expected_base,
         "expected_head": decision.expected_head,
+        "head_valid": "true" if decision.head_valid else "false",
         "identity_valid": "true" if decision.identity_valid else "false",
         "reason": decision.reason,
         "run_expensive": "true" if decision.run_expensive else "false",

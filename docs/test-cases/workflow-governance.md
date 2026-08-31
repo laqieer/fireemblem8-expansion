@@ -179,7 +179,8 @@ issue rather than this repository.
 
 ### Expected result
 
-The synthetic non-master-base pull request selects `event-classifier`, the
+The synthetic non-master-base pull request selects `event-router`,
+`event-classifier`, the
 existing `host-tests`, `build`, `extended-host-tests`, `legacy`, and
 fail-closed `summary` jobs. Every candidate worker still checks out and
 verifies `pull_request.head.sha`. The publisher is absent from pull-request
@@ -296,7 +297,8 @@ availability or grant credentials.
 ### Expected result
 
 Body-only, title-only, and combined body/title edits select only
-`event-classifier` and `summary`; the four expensive workers do not start.
+`event-router`, `metadata-classifier`, and `metadata-summary`; the four
+expensive workers receive distinct metadata skipped contexts and do not start.
 The summary succeeds only when classifier status is `success`, the classified
 SHA equals the event's exact `pull_request.head.sha`, suppression is exactly
 false, and all four workers are exactly `skipped`.
@@ -360,14 +362,18 @@ parses every fixture, replays the real isolated event-file/output protocol, and
 exercises strict identity, semantic transition, non-finite JSON, malformed,
 and unknown fail-closed controls.
 
+`python3 -m unittest scripts.workflow_pilot.tests.test_candidate_evidence -v`
+derives full versus metadata mode from dynamic check contexts and proves a
+later green metadata run cannot replace a failed/missing candidate full run.
+
 `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v` parses the
 workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
 pin, and environment semantics, including the pre-fix negative selection.
 
 `python3 -m unittest tests.upstream_port.test_verify -v` preserves the 28 local
-gates while requiring complete seven-job source/target equivalence: the six
-issue #176 jobs remain closed and the classifier is a closed setup-only
-seventh job, never a 29th local gate.
+gates while requiring complete eight-job source/target equivalence: the six
+issue #176 jobs remain closed and the router/classifier are closed setup-only
+jobs, never 29th/30th local gates.
 
 `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
 parses the frozen PR template/body and comment collection, requiring exactly
@@ -381,6 +387,37 @@ changed. The local replay proves GitHub's documented event-file semantics and
 the exact workflow graph contract, not live service availability. No
 manual-only criterion applies. Rollback is a normal revert; the prior broad
 `edited` behavior then resumes.
+
+### Planned live title-only exercise after push
+
+The owner performs this disposable remote exercise only after the candidate is
+pushed; this local implementation does not perform it.
+
+1. Set `pr=<disposable-pr-number>` and record
+   `original_title=$(gh pr view "$pr" --json title --jq .title)`,
+   `head_sha=$(gh pr view "$pr" --json headRefOid --jq .headRefOid)`, and
+   `base_sha=$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)`.
+2. Require the latest source-triggered Build for that exact head/base to show
+   successful `event-router`, `event-classifier`, `host-tests`, `build`,
+   `extended-host-tests`, `legacy`, and `summary` contexts. Record its run ID.
+3. Run
+   `gh pr edit "$pr" --title "$original_title [title-only metadata probe]"`.
+4. Locate the newly created `pull_request` Build run at the unchanged
+   `head_sha`, then run
+   `gh run view <metadata-run-id> --json event,headSha,conclusion,jobs,url`.
+5. Require `metadata-classifier`, `metadata-host-tests-skipped`,
+   `metadata-build-skipped`, `metadata-extended-host-tests-skipped`,
+   `metadata-legacy-skipped`, and `metadata-summary`; require no normal
+   candidate context to be created/replaced and no expensive job to have a
+   start timestamp.
+6. Feed normalized full and metadata job contexts to
+   `scripts.workflow_pilot.candidate_evidence.evaluate_candidate_runs`.
+   Confirm a prior failed/missing full run remains ineligible and that the
+   metadata run itself is rejected as candidate evidence.
+7. Restore the title with `gh pr edit "$pr" --title "$original_title"` and
+   close/delete the disposable PR/branch through the normal owner workflow.
+   Architecture/review comments remain unmarked; only the canonical evolving
+   evidence comment carries the one marker.
 
 ## TC-WORKFLOW-PILOT-BASELINE-001: Freeze reproducible pilot baseline and decisions
 
@@ -572,7 +609,7 @@ authority and proves exact `HEAD` and refs are unchanged. The parsed workflow
 topology suite fails if classification, hydration, pre-pilot step
 order/content, scrubbed protected-step environments, ownership, or
 checked-out-root binding is removed or weakened. It also requires the
-classifier and each combined worker's exact direct job mapping and values; no
+router, mode-classifier, and each combined worker's exact direct job mapping and values; no
 container or alternate execution context can replace the reviewed Ubuntu
 host.
 The protected Python steps use the closed isolated launcher, so repository or
@@ -585,15 +622,17 @@ actions, run argv, `env`/`with` mappings, direct fields, and root execution
 before dry-run or execution. Unnamed non-checkout steps, duplicate setup names,
 complex keys, and extra jobs fail closed. Workflow execution context is
 exactly name/triggers/read-only permissions/jobs with no workflow env,
-defaults, or concurrency. The classifier is exactly Ubuntu, five minutes, its
-outputs/environment, and three setup steps. Every combined job is exactly its
+defaults, or concurrency. The router is exactly Ubuntu, five minutes, its
+outputs/environment, and three setup steps; the mode-classifier is a separate
+five-minute one-step check. Every combined job is exactly its
 classifier edge, Ubuntu, 60 minutes, its allowlisted env, and steps;
 self-hosted/container/service/strategy/default shell or any other execution
 field fails before dry-run.
 Patch publication and summary are also complete semantic structures:
 master-only publication condition, pinned actions, scoped secret/env and six
-publisher steps; then `always()`, classifier plus exact ordered worker
-needs/result env, five-minute context, and one fail-closed summary step.
+publisher steps; then `always()`, classifier plus exact ordered
+worker/publisher needs/result env, dynamic full/metadata name, five-minute
+context, and one fail-closed summary step.
 Neither is locally executed, but any
 runner/condition/needs/permission/env/step/command/action/alternate-context
 drift rejects before dry-run.

@@ -26,10 +26,13 @@ directly.
 
 **Automatic Build CI is the only host this repository re-verifies on every
 source-changing push/PR.** A PR candidate uses the complete combined Build
-gate and Copilot review concurrently. Parsed body/title-only edits retain only
-the classifier and successful summary; base, mixed, unknown/incomplete,
+gate and Copilot review concurrently. Parsed body/title-only edits retain the
+router plus distinct metadata-classifier/skipped-worker/metadata-summary
+contexts; base, mixed, unknown/incomplete,
 opened, synchronize, and reopened events with complete identity fail closed to
-the complete graph. A classifier failure with a nonempty PR event head runs
+the complete graph. Missing base with valid PR head also runs the four workers
+at that head and fails normal summary; missing head runs none. A classifier
+failure with a nonempty PR event head runs
 all four workers at that exact raw head and then fails summary. A master-push
 classifier failure does the same at nonempty raw `github.sha` and audits the
 master-only publisher before failing; without an event-specific fallback SHA,
@@ -126,10 +129,12 @@ no ROM build or network access is required for either.
 
 ### Consolidated Build CI
 
-Prefer focused local checks during iteration. A small base-authoritative
-`event-classifier` precedes candidate `host-tests`, `build`,
+Prefer focused local checks during iteration. A base-authoritative
+`event-router` and mode-specific classifier check precede candidate `host-tests`, `build`,
 `extended-host-tests`, `legacy`, and fail-closed `summary` jobs plus Copilot
-review. Only parsed body/title-only edits skip the four expensive workers. A
+review. Metadata uses distinct `metadata-*` check names, so its green summary
+cannot replace candidate-required full contexts. Only parsed body/title-only
+edits skip the four expensive workers. A
 merged `master` push reruns the complete combined gate and adds only
 `patch-release`. Unique CJK/font, codec,
 configuration/budget, and archival evidence stays parallel with Build-owned

@@ -184,6 +184,49 @@
         "pr_head_sha": "",
         "push_sha": ""
       }
+    },
+    {
+      "classifier_result": "failure",
+      "event_name": "push",
+      "expected_jobs": [
+        "event-classifier",
+        "summary"
+      ],
+      "expected_summary_success": false,
+      "expected_worker_head": "",
+      "id": "malformed-mismatched-push-sha",
+      "payload": {
+        "after": "4444444444444444444444444444444444444444",
+        "ref": "refs/heads/master"
+      },
+      "raw_kind": "malformed",
+      "runner": {
+        "github_ref": "refs/heads/master",
+        "github_sha": "5555555555555555555555555555555555555555",
+        "pr_base_sha": "",
+        "pr_head_sha": "",
+        "push_sha": "4444444444444444444444444444444444444444"
+      }
+    },
+    {
+      "classifier_result": "failure",
+      "event_name": "push",
+      "expected_jobs": [],
+      "expected_summary_success": false,
+      "expected_worker_head": "",
+      "id": "malformed-nonmaster-push",
+      "payload": {
+        "after": "4444444444444444444444444444444444444444",
+        "ref": "refs/heads/other"
+      },
+      "raw_kind": "malformed",
+      "runner": {
+        "github_ref": "refs/heads/other",
+        "github_sha": "4444444444444444444444444444444444444444",
+        "pr_base_sha": "",
+        "pr_head_sha": "",
+        "push_sha": "4444444444444444444444444444444444444444"
+      }
     }
   ],
   "cases": [
@@ -652,7 +695,11 @@
         "expected_head": "1111111111111111111111111111111111111111",
         "identity_valid": false,
         "jobs": [
+          "build",
           "event-classifier",
+          "extended-host-tests",
+          "host-tests",
+          "legacy",
           "summary"
         ],
         "reason": "missing-pull-request-base",
@@ -800,6 +847,9 @@
         "push_sha": "4444444444444444444444444444444444444444"
       }
     }
+  ],
+  "infrastructure_jobs": [
+    "event-router"
   ],
   "schema_version": 3,
   "strict_float_cases": [
