@@ -6,10 +6,13 @@ from __future__ import annotations
 import argparse
 import ast
 import copy
+import fnmatch
 import hashlib
 import importlib
+import itertools
 import json
 import os
+import posixpath
 import re
 import shutil
 import stat
@@ -761,16 +764,388 @@ MAKE_ASSIGNMENT_RE = re.compile(
     r"^([A-Za-z_][A-Za-z0-9_]*)\s*(::=|:=|\?=|\+=|!=|=)\s*(.*)$"
 )
 MAKE_CONDITIONAL_RE = re.compile(r"^(ifeq|ifneq|ifdef|ifndef)\b(.*)$")
+_MAKE_AUTHORITY_CACHE: dict[tuple[Any, ...], dict[str, dict[str, Any]]] = {}
+_MAKE_AUTHORITY_CACHE_LIMIT = 16
 
 
 def _normalize_make_expression(value: str) -> str:
     return " ".join(value.strip().split())
 
 
+def _split_make_words(value: str) -> tuple[str, ...]:
+    words = []
+    start = None
+    depth = 0
+    index = 0
+    while index < len(value):
+        if value.startswith("$(", index):
+            if start is None:
+                start = index
+            depth += 1
+            index += 2
+            continue
+        character = value[index]
+        if character == ")" and depth:
+            depth -= 1
+        if character.isspace() and depth == 0:
+            if start is not None:
+                words.append(value[start:index])
+                start = None
+        elif start is None:
+            start = index
+        index += 1
+    if depth:
+        raise OwnershipError("unterminated dynamic Make word")
+    if start is not None:
+        words.append(value[start:])
+    return tuple(words)
+
+
+class SafeMakeExpander:
+    """Bounded nonexecuting expansion for prerequisite graph expressions."""
+
+    FUNCTIONS = {
+        "addprefix",
+        "addsuffix",
+        "basename",
+        "dir",
+        "filter",
+        "filter-out",
+        "foreach",
+        "notdir",
+        "patsubst",
+        "sort",
+        "strip",
+        "subst",
+        "suffix",
+        "wildcard",
+    }
+    MAX_DEPTH = 64
+    MAX_VARIANTS = 4096
+    MAX_WORDS = 20000
+
+    def __init__(
+        self,
+        loader: AuthorityLoader,
+        assignments: dict[str, list[dict[str, Any]]],
+    ):
+        self.loader = loader
+        self.assignments = assignments
+        self.cache: dict[str, list[str]] = {}
+
+    @staticmethod
+    def _split_arguments(value: str) -> list[str]:
+        arguments = []
+        start = 0
+        depth = 0
+        index = 0
+        while index < len(value):
+            if value.startswith("$(", index):
+                depth += 1
+                index += 2
+                continue
+            if value[index] == ")" and depth:
+                depth -= 1
+            elif value[index] == "," and depth == 0:
+                arguments.append(value[start:index])
+                start = index + 1
+            index += 1
+        arguments.append(value[start:])
+        return arguments
+
+    @staticmethod
+    def _reference_end(value: str, start: int) -> int:
+        depth = 1
+        index = start
+        while index < len(value):
+            if value.startswith("$(", index):
+                depth += 1
+                index += 2
+                continue
+            if value[index] == ")":
+                depth -= 1
+                if depth == 0:
+                    return index
+            index += 1
+        raise OwnershipError("unterminated dynamic Make prerequisite")
+
+    @staticmethod
+    def _pattern_replace(word: str, pattern: str, replacement: str) -> str:
+        if "%" not in pattern:
+            return replacement if word == pattern else word
+        prefix, suffix = pattern.split("%", 1)
+        if not word.startswith(prefix) or not word.endswith(suffix):
+            return word
+        stem_end = len(word) - len(suffix) if suffix else len(word)
+        stem = word[len(prefix):stem_end]
+        return replacement.replace("%", stem)
+
+    @staticmethod
+    def _pattern_matches(word: str, pattern: str) -> bool:
+        if "%" not in pattern:
+            return word == pattern
+        prefix, suffix = pattern.split("%", 1)
+        return word.startswith(prefix) and word.endswith(suffix)
+
+    def _bounded(self, values: Iterable[str], label: str) -> list[str]:
+        result = list(dict.fromkeys(values))
+        if len(result) > self.MAX_VARIANTS:
+            raise OwnershipError(f"Make expansion exceeds variant bound for {label}")
+        if sum(len(item.split()) for item in result) > self.MAX_WORDS:
+            raise OwnershipError(f"Make expansion exceeds word bound for {label}")
+        return result
+
+    def variable(
+        self,
+        name: str,
+        local: dict[str, str],
+        stack: tuple[str, ...],
+    ) -> list[str]:
+        if name in stack:
+            if name == stack[-1] and name in local:
+                return [local[name]]
+            raise OwnershipError(
+                "cyclic dynamic Make prerequisite variables: "
+                + " -> ".join(stack + (name,))
+            )
+        if name in local:
+            return [local[name]]
+        if name in self.cache:
+            return self.cache[name]
+        records = self.assignments.get(name, ())
+        states = [""]
+        for record in records:
+            if record["operator"] == "!=":
+                raise OwnershipError(
+                    f"unsupported shell assignment in Make prerequisite variable {name!r}"
+                )
+            next_states = []
+            for state in states:
+                scoped = dict(local)
+                scoped[name] = state
+                expanded = self.expand(
+                    record["value"],
+                    scoped,
+                    stack + (name,),
+                )
+                if record["operator"] == "?=" and state:
+                    applied = [state]
+                elif record["operator"] == "+=":
+                    applied = [
+                        _normalize_make_expression(state + " " + value)
+                        for value in expanded
+                    ]
+                else:
+                    applied = expanded
+                next_states.extend(applied)
+            states = self._bounded(next_states, name)
+        self.cache[name] = states
+        return states
+
+    def _function(
+        self,
+        name: str,
+        raw_arguments: str,
+        local: dict[str, str],
+        stack: tuple[str, ...],
+    ) -> list[str]:
+        arguments = self._split_arguments(raw_arguments)
+        if name == "foreach":
+            if len(arguments) != 3:
+                raise OwnershipError("foreach Make prerequisite requires three arguments")
+            variable_name = arguments[0].strip()
+            if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", variable_name):
+                raise OwnershipError("foreach Make prerequisite has invalid variable")
+            result = []
+            for values in self.expand(arguments[1], local, stack):
+                pieces = []
+                for word in values.split():
+                    scoped = dict(local)
+                    scoped[variable_name] = word
+                    variants = self.expand(arguments[2], scoped, stack)
+                    if len(variants) != 1:
+                        raise OwnershipError(
+                            "foreach Make prerequisite body is ambiguously expanded"
+                        )
+                    pieces.append(variants[0])
+                result.append(" ".join(pieces))
+            return self._bounded(result, name)
+
+        expanded_arguments = [
+            self.expand(argument, local, stack)
+            for argument in arguments
+        ]
+        results = []
+        for values in itertools.product(*expanded_arguments):
+            if name in {"strip", "sort", "notdir", "dir", "basename", "suffix", "wildcard"}:
+                if len(values) != 1:
+                    raise OwnershipError(f"{name} Make prerequisite requires one argument")
+                words = values[0].split()
+                if name == "strip":
+                    result = " ".join(words)
+                elif name == "sort":
+                    result = " ".join(sorted(set(words)))
+                elif name == "notdir":
+                    result = " ".join(posixpath.basename(word) for word in words)
+                elif name == "dir":
+                    result = " ".join(
+                        (posixpath.dirname(word) + "/") if posixpath.dirname(word) else "./"
+                        for word in words
+                    )
+                elif name == "basename":
+                    result = " ".join(posixpath.splitext(word)[0] for word in words)
+                elif name == "suffix":
+                    result = " ".join(posixpath.splitext(word)[1] for word in words)
+                else:
+                    matched = []
+                    for pattern in words:
+                        matched.extend(
+                            path
+                            for path in self.loader.entries
+                            if fnmatch.fnmatchcase(path, pattern)
+                        )
+                    result = " ".join(sorted(set(matched)))
+            elif name in {"addprefix", "addsuffix", "filter", "filter-out"}:
+                if len(values) != 2:
+                    raise OwnershipError(f"{name} Make prerequisite requires two arguments")
+                first, words = values[0], values[1].split()
+                if name == "addprefix":
+                    result = " ".join(first + word for word in words)
+                elif name == "addsuffix":
+                    result = " ".join(word + first for word in words)
+                else:
+                    patterns = first.split()
+                    selected = [
+                        word
+                        for word in words
+                        if any(self._pattern_matches(word, pattern) for pattern in patterns)
+                    ]
+                    if name == "filter-out":
+                        selected = [word for word in words if word not in selected]
+                    result = " ".join(selected)
+            elif name in {"patsubst", "subst"}:
+                if len(values) != 3:
+                    raise OwnershipError(f"{name} Make prerequisite requires three arguments")
+                source, replacement, text = values
+                if name == "subst":
+                    result = text.replace(source, replacement)
+                else:
+                    result = " ".join(
+                        self._pattern_replace(word, source, replacement)
+                        for word in text.split()
+                    )
+            else:
+                raise OwnershipError(
+                    f"unsupported dynamic Make prerequisite function {name!r}"
+                )
+            results.append(result)
+        return self._bounded(results, name)
+
+    def _reference(
+        self,
+        content: str,
+        local: dict[str, str],
+        stack: tuple[str, ...],
+    ) -> list[str]:
+        function = re.match(r"^([A-Za-z][A-Za-z0-9-]*)\s+(.*)$", content, re.DOTALL)
+        if function:
+            name = function.group(1)
+            if name not in self.FUNCTIONS:
+                raise OwnershipError(
+                    f"unsupported dynamic Make prerequisite function {name!r}"
+                )
+            return self._function(function.group(1), function.group(2), local, stack)
+        substitution = re.fullmatch(
+            r"([A-Za-z_][A-Za-z0-9_]*):([^=]*)=(.*)",
+            content,
+            re.DOTALL,
+        )
+        if substitution:
+            return [
+                " ".join(
+                    self._pattern_replace(
+                        word,
+                        substitution.group(2),
+                        substitution.group(3),
+                    )
+                    for word in value.split()
+                )
+                for value in self.variable(substitution.group(1), local, stack)
+            ]
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", content):
+            raise OwnershipError(
+                f"unsupported dynamic Make prerequisite expression {content!r}"
+            )
+        return self.variable(content, local, stack)
+
+    def expand(
+        self,
+        value: str,
+        local: dict[str, str] | None = None,
+        stack: tuple[str, ...] = (),
+    ) -> list[str]:
+        if len(stack) > self.MAX_DEPTH:
+            raise OwnershipError("Make prerequisite expansion exceeds depth bound")
+        local = {} if local is None else local
+        start = value.find("$(")
+        if start < 0:
+            if "$" in value:
+                raise OwnershipError(
+                    f"unsupported dynamic Make prerequisite token {value!r}"
+                )
+            return [_normalize_make_expression(value)]
+        end = self._reference_end(value, start + 2)
+        prefix = value[:start]
+        suffix = value[end + 1:]
+        referenced = self._reference(value[start + 2:end], local, stack)
+        suffixes = self.expand(suffix, local, stack)
+        return self._bounded(
+            (
+                _normalize_make_expression(prefix + middle + tail)
+                for middle in referenced
+                for tail in suffixes
+            ),
+            value,
+        )
+
+
 def _parse_make_authorities(
     loader: AuthorityLoader,
     requested_targets: set[str] | None = None,
 ) -> dict[str, dict[str, Any]]:
+    make_paths = tuple(
+        sorted(
+            path
+            for path in loader.entries
+            if path == "Makefile" or path.endswith(".mk")
+        )
+    )
+    if loader.revision is not None:
+        state = tuple(
+            (path, loader.entries[path].object_id)
+            for path in make_paths
+        )
+    else:
+        try:
+            state = tuple(
+                (
+                    path,
+                    (loader.root / path).stat().st_mtime_ns,
+                    (loader.root / path).stat().st_size,
+                )
+                for path in make_paths
+            )
+        except OSError as error:
+            raise OwnershipError(f"cannot inspect Make authority state: {error}") from error
+    cache_key = (
+        str(loader.root),
+        loader.revision,
+        state,
+        None if requested_targets is None else tuple(sorted(requested_targets)),
+    )
+    cached = _MAKE_AUTHORITY_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     targets: dict[str, dict[str, Any]] = defaultdict(
         lambda: {"declarations": [], "recipes": [], "phony": False}
     )
@@ -853,15 +1228,21 @@ def _parse_make_authorities(
                     }
                 )
                 continue
+            if line.startswith("$(error "):
+                continue
             if ":" not in line or ":=" in line.split(":", 1)[0]:
                 continue
             lhs, rhs = line.split(":", 1)
-            target_names = check_docs._split_make_line_tokens(lhs)
             if lhs.strip() == ".PHONY":
                 for target in rhs.split():
                     if "$" not in target:
                         targets[target]["phony"] = True
                 continue
+            target_names = [
+                token
+                for token in _split_make_words(lhs)
+                if token != "&" and not token.startswith(".")
+            ]
             if not target_names:
                 continue
             declaration, separator, inline_recipe = rhs.partition(";")
@@ -881,8 +1262,8 @@ def _parse_make_authorities(
             normal, marker, order_only = declaration.partition("|")
             record = {
                 "kind": "rule",
-                "prerequisites": tuple(normal.split()),
-                "order_only": tuple(order_only.split()) if marker else (),
+                "prerequisites": _split_make_words(normal),
+                "order_only": _split_make_words(order_only) if marker else (),
                 "context": tuple(conditional_stack),
             }
             for target in target_names:
@@ -901,6 +1282,26 @@ def _parse_make_authorities(
             )
 
     parse_file("Makefile")
+    expander = SafeMakeExpander(loader, variables)
+    materialized: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {"declarations": [], "recipes": [], "phony": False}
+    )
+    unknown_dynamic_targets = []
+    for raw_target, record in targets.items():
+        try:
+            expanded_targets = expander.expand(raw_target)
+        except OwnershipError as error:
+            unknown_dynamic_targets.append(
+                {"target": raw_target, "reason": str(error)}
+            )
+            continue
+        for expanded in expanded_targets:
+            for target in expanded.split():
+                materialized[target]["declarations"].extend(record["declarations"])
+                materialized[target]["recipes"].extend(record["recipes"])
+                materialized[target]["phony"] |= record["phony"]
+    targets = materialized
+
     direct = {}
     for target, record in targets.items():
         values = [
@@ -944,34 +1345,81 @@ def _parse_make_authorities(
         }
 
     pattern_targets = [target for target in direct if "%" in target]
+    prerequisite_cache: dict[tuple[str, tuple[tuple[str, str], ...]], list[str]] = {}
 
-    def expand_prerequisite(token: str, record: dict[str, Any]) -> list[str]:
-        candidates = [token]
-        variable = re.fullmatch(r"\$\(([A-Za-z_][A-Za-z0-9_]*)\)", token)
-        if variable:
-            candidates = [
-                value
-                for assignment in record["variables"].get(variable.group(1), ())
-                for value in assignment["value"].split()
-            ]
+    def expand_prerequisite(token: str, local: dict[str, str]) -> list[str]:
+        cache_key = token, tuple(sorted(local.items()))
+        if cache_key in prerequisite_cache:
+            return prerequisite_cache[cache_key]
+        candidates = [
+            word
+            for expanded in expander.expand(token, local)
+            for word in expanded.split()
+        ]
         result = []
         for candidate in candidates:
             if candidate in direct:
                 result.append(candidate)
             if "$" in candidate:
-                continue
+                raise OwnershipError(
+                    f"unsupported dynamic Make prerequisite candidate {candidate!r}"
+                )
             for pattern in pattern_targets:
-                regex = "^" + "".join(
-                    ".+" if part == "%" else re.escape(part)
-                    for part in re.split(r"(%)", pattern)
-                ) + "$"
-                if re.fullmatch(regex, candidate):
+                if SafeMakeExpander._pattern_matches(candidate, pattern):
                     result.append(pattern)
-        return list(dict.fromkeys(result))
+        result = list(dict.fromkeys(result))
+        prerequisite_cache[cache_key] = result
+        return result
 
-    def child_targets(target: str) -> list[str]:
+    child_cache: dict[str, tuple[list[str], list[dict[str, str]]]] = {}
+    def child_targets(
+        target: str,
+        unknown_prerequisites: list[dict[str, str]],
+    ) -> list[str]:
+        if target in child_cache:
+            children, unknown = child_cache[target]
+            unknown_prerequisites.extend(unknown)
+            return children
         result = []
+        local_unknown = []
         record = direct[target]
+        target_local: dict[str, str] = {}
+        for declaration in record["declarations"]:
+            if declaration["kind"] != "target-assignment":
+                continue
+            if declaration["operator"] == "!=":
+                local_unknown.append(
+                    {
+                        "target": target,
+                        "prerequisite": declaration["value"],
+                        "reason": "unsupported target-specific shell assignment",
+                    }
+                )
+                continue
+            try:
+                values = expander.expand(declaration["value"], target_local)
+            except OwnershipError as error:
+                local_unknown.append(
+                    {
+                        "target": target,
+                        "prerequisite": declaration["value"],
+                        "reason": str(error),
+                    }
+                )
+                continue
+            if len(values) != 1:
+                raise OwnershipError(
+                    f"target-specific Make assignment for {target!r} is ambiguous"
+                )
+            name = declaration["name"]
+            if declaration["operator"] == "+=":
+                target_local[name] = _normalize_make_expression(
+                    target_local.get(name, "") + " " + values[0]
+                )
+            elif declaration["operator"] == "?=" and name in target_local:
+                continue
+            else:
+                target_local[name] = values[0]
         for declaration in record["declarations"]:
             if declaration["kind"] != "rule":
                 continue
@@ -979,16 +1427,29 @@ def _parse_make_authorities(
                 *declaration["prerequisites"],
                 *declaration["order_only"],
             ):
-                result.extend(expand_prerequisite(prerequisite, record))
-        return list(dict.fromkeys(result))
+                try:
+                    result.extend(expand_prerequisite(prerequisite, target_local))
+                except OwnershipError as error:
+                    local_unknown.append(
+                        {
+                            "target": target,
+                            "prerequisite": prerequisite,
+                            "reason": str(error),
+                        }
+                    )
+        result = list(dict.fromkeys(result))
+        child_cache[target] = (result, local_unknown)
+        unknown_prerequisites.extend(local_unknown)
+        return result
 
     def authority_record(target: str) -> dict[str, Any]:
         transitive = []
         cycles = []
+        unknown_prerequisites = []
         visited = {target}
 
         def visit(current: str, stack: tuple[str, ...]) -> None:
-            for child in child_targets(current):
+            for child in child_targets(current, unknown_prerequisites):
                 if child in stack:
                     cycles.append(stack + (child,))
                     continue
@@ -1004,14 +1465,30 @@ def _parse_make_authorities(
             "record": direct[target],
             "transitive": transitive,
             "cycles": sorted(set(cycles)),
+            "unknown_dynamic_targets": sorted(
+                unknown_dynamic_targets,
+                key=lambda item: (item["target"], item["reason"]),
+            ),
+            "unknown_dynamic_prerequisites": sorted(
+                unknown_prerequisites,
+                key=lambda item: (
+                    item["target"],
+                    item["prerequisite"],
+                    item["reason"],
+                ),
+            ),
         }
 
     selected = set(direct) if requested_targets is None else requested_targets
-    return {
+    result = {
         target: authority_record(target)
         for target in sorted(selected)
         if target in direct
     }
+    if len(_MAKE_AUTHORITY_CACHE) >= _MAKE_AUTHORITY_CACHE_LIMIT:
+        _MAKE_AUTHORITY_CACHE.pop(next(iter(_MAKE_AUTHORITY_CACHE)))
+    _MAKE_AUTHORITY_CACHE[cache_key] = result
+    return result
 
 
 def _authority_identity(authority: dict[str, Any]) -> tuple[str, ...]:

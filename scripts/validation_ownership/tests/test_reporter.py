@@ -776,6 +776,27 @@ class OwnershipGraphTests(unittest.TestCase):
                 parse(child_contract_two, "all"),
             )
 
+            target_prerequisite_one = (
+                "all: child\n"
+                "child: DEPS := grand\n"
+                "child: $(DEPS)\n"
+                "grand:\n\t@printf 'grand-one\\n'\n"
+            )
+            target_prerequisite_two = target_prerequisite_one.replace(
+                "grand-one", "grand-two"
+            )
+            self.assertNotEqual(
+                parse(target_prerequisite_one, "all"),
+                parse(target_prerequisite_two, "all"),
+            )
+            self.assertIn(
+                "grand",
+                {
+                    item["target"]
+                    for item in parse(target_prerequisite_one, "all")["transitive"]
+                },
+            )
+
             pattern_one = (
                 "all: sample.out\n"
                 "%.out: %.in\n\t@printf 'pattern-one\\n'\n"
@@ -793,10 +814,84 @@ class OwnershipGraphTests(unittest.TestCase):
                 },
             )
 
+            (scratch / "foo.c").write_text("int value;\n", encoding="ascii")
+            addprefix_one = (
+                "OBJECTS := $(addprefix build/,foo.o)\n"
+                "all: $(OBJECTS)\n"
+                "build/%.o: %.c\n"
+                "\t@mkdir -p $(@D)\n"
+                "\t@printf 'one\\n'\n"
+            )
+            addprefix_two = addprefix_one.replace("printf 'one", "printf 'two")
+            self.assertEqual(run(addprefix_one, "all").stdout, "one\n")
+            shutil.rmtree(scratch / "build")
+            self.assertEqual(run(addprefix_two, "all").stdout, "two\n")
+            self.assertNotEqual(
+                parse(addprefix_one, "all"),
+                parse(addprefix_two, "all"),
+            )
+            self.assertIn(
+                "build/%.o",
+                {
+                    item["target"]
+                    for item in parse(addprefix_one, "all")["transitive"]
+                },
+            )
+
             cycle = "all: child\nchild: all\n\t@true\n"
             cycle_record = parse(cycle, "all")
             self.assertEqual(cycle_record, parse(cycle, "all"))
             self.assertTrue(cycle_record["cycles"])
+
+    def test_make_expansion_rejects_unsupported_cycles_and_bounds(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            scratch = Path(directory)
+            makefile = scratch / "Makefile"
+            loader = reporter.AuthorityLoader(
+                scratch,
+                {
+                    "Makefile": reporter.GitTreeEntry(
+                        "Makefile", "100644", "blob", "0" * 40
+                    )
+                },
+            )
+            outside = scratch / "shell-must-not-run"
+            makefile.write_text(
+                "all: $(shell touch shell-must-not-run)\n\t@true\n",
+                encoding="ascii",
+            )
+            authority = reporter._parse_make_authorities(loader, {"all"})["all"]
+            self.assertIn(
+                "unsupported dynamic Make prerequisite function 'shell'",
+                authority["unknown_dynamic_prerequisites"][0]["reason"],
+            )
+            self.assertFalse(outside.exists())
+
+            makefile.write_text(
+                "A = $(B)\nB = $(A)\nall: $(A)\n\t@true\n",
+                encoding="ascii",
+            )
+            authority = reporter._parse_make_authorities(loader, {"all"})["all"]
+            self.assertIn(
+                "cyclic dynamic Make prerequisite variables",
+                authority["unknown_dynamic_prerequisites"][0]["reason"],
+            )
+
+            expander = reporter.SafeMakeExpander(
+                loader,
+                {
+                    "WORDS": [
+                        {
+                            "operator": ":=",
+                            "value": "one two three",
+                            "context": (),
+                        }
+                    ]
+                },
+            )
+            expander.MAX_WORDS = 2
+            with self.assertRaisesRegex(reporter.OwnershipError, "word bound"):
+                expander.expand("$(WORDS)")
 
     def test_recursive_make_authority_rejects_untracked_include(self):
         with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
@@ -938,6 +1033,121 @@ class OwnershipGraphTests(unittest.TestCase):
                     "runtime.link",
                 },
             )
+        finally:
+            modern_mk.write_bytes(original)
+
+    def test_real_compile_recipe_mutations_invalidate_exact_compile_edges(self):
+        entries, _, graph, schema = self.fixture_authority()
+        modern_mk = self.fixture_root / "modern.mk"
+        original = modern_mk.read_bytes()
+        base_loader = reporter.AuthorityLoader(
+            self.fixture_root,
+            entries,
+            "HEAD",
+        )
+        prior_graph = reporter._prior_graph(base_loader)
+        self.assertIsNotNone(prior_graph)
+        loader = reporter.AuthorityLoader(self.fixture_root, entries)
+        before = reporter._parse_make_authorities(
+            loader,
+            {"expansion-modern-all", "validation-ownership-check"},
+        )
+        self.assertTrue(
+            any(
+                "%" in item["target"]
+                for item in before["expansion-modern-all"]["transitive"]
+            )
+        )
+        mutations = {
+            "c": (
+                b'$(MODERN_OUTPUT_DIR)/%.o: %.c\n'
+                b'\t@mkdir -p "$(@D)"\n'
+                b'\t"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" '
+                b'-MQ "$@" -c "$<" -o "$@"',
+                b'$(MODERN_OUTPUT_DIR)/%.o: %.c\n'
+                b'\t@mkdir -p "$(@D)"\n'
+                b'\t"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" '
+                b'-MQ "$@" -DRECIPE_FIXTURE=1 -c "$<" -o "$@"',
+            ),
+            "data": (
+                b'$(MODERN_ALL_DATA_OBJECTS): $(MODERN_OUTPUT_DIR)/%.o: '
+                b'$(MODERN_OUTPUT_DIR)/%.pre.c\n'
+                b'\t@mkdir -p "$(@D)"\n'
+                b'\t"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" '
+                b'-MQ "$@" -c "$<" -o "$@"',
+                b'$(MODERN_ALL_DATA_OBJECTS): $(MODERN_OUTPUT_DIR)/%.o: '
+                b'$(MODERN_OUTPUT_DIR)/%.pre.c\n'
+                b'\t@mkdir -p "$(@D)"\n'
+                b'\t"$(MODERN_CC)" $(MODERN_CFLAGS) -MMD -MP -MF "$(@:.o=.d)" '
+                b'-MQ "$@" -DRECIPE_FIXTURE=1 -c "$<" -o "$@"',
+            ),
+            "assembly": (
+                b'$(MODERN_OUTPUT_DIR)/%.o: %.s\n'
+                b'\t@mkdir -p "$(@D)"\n'
+                b'\t"$(MODERN_CC)" $(MODERN_ASFLAGS) -Wa,--MD,"$(@:.o=.d)" '
+                b'-c "$<" -o "$@"',
+                b'$(MODERN_OUTPUT_DIR)/%.o: %.s\n'
+                b'\t@mkdir -p "$(@D)"\n'
+                b'\t"$(MODERN_CC)" $(MODERN_ASFLAGS) -Wa,--MD,"$(@:.o=.d)" '
+                b'-DRECIPE_FIXTURE=1 -c "$<" -o "$@"',
+            ),
+        }
+        expected_edges = {
+            "configuration.compile",
+            "configuration.link",
+            "configuration.target",
+            "generated-schema.compile",
+            "generated-schema.link",
+            "generated-schema.target",
+            "generated.compile",
+            "generated.link",
+            "generated.target",
+            "localization.compile",
+            "localization.consumer",
+            "localization.link",
+            "localization.negative",
+            "manual.compile",
+            "manual.link",
+            "runtime.compile",
+            "runtime.link",
+            "runtime.target",
+        }
+        try:
+            for label, (old, new) in mutations.items():
+                with self.subTest(recipe=label):
+                    mutated = original.replace(old, new, 1)
+                    self.assertNotEqual(mutated, original)
+                    modern_mk.write_bytes(mutated)
+                    loader = reporter.AuthorityLoader(self.fixture_root, entries)
+                    after = reporter._parse_make_authorities(
+                        loader,
+                        {"expansion-modern-all", "validation-ownership-check"},
+                    )
+                    self.assertNotEqual(
+                        before["expansion-modern-all"],
+                        after["expansion-modern-all"],
+                    )
+                    self.assertEqual(
+                        before["validation-ownership-check"],
+                        after["validation-ownership-check"],
+                    )
+                    model = reporter.validate_graph(
+                        graph,
+                        schema,
+                        loader,
+                        entries,
+                    )
+                    self.assertEqual(
+                        reporter._authority_changed_edges(
+                            graph,
+                            prior_graph,
+                            model,
+                            loader,
+                            base_loader,
+                        ),
+                        expected_edges,
+                    )
+                    modern_mk.write_bytes(original)
         finally:
             modern_mk.write_bytes(original)
 

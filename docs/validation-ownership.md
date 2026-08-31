@@ -170,11 +170,18 @@ maintenance estimate without modifying issue #176's immutable baseline
 fixture or expected report.
 
 Each Make authority also contains a cycle-safe transitive closure of exact
-prerequisite targets and matching pattern rules. A child recipe, assignment,
-prerequisite, or generated-rule change therefore changes every aggregate
-authority that consumes it while unrelated targets remain stable. Cycles emit
-a deterministic cycle record rather than recursing or silently dropping an
-edge.
+prerequisite targets and matching pattern rules. Nested variables and the
+closed nonexecuting prerequisite-function subset (`addprefix`, `addsuffix`,
+`patsubst`, `filter`, `filter-out`, `foreach`, `subst`, path transforms,
+`sort`, `strip`, and tracked-tree `wildcard`) resolve to concrete prerequisites
+before pattern matching. Unsupported dynamic functions, cyclic variables, and
+bounded expansion overflow are never discarded: unsupported/cyclic
+prerequisites are sealed as explicit unknown records and bounds reject; no
+`shell`, `eval`, or recipe is executed. A child recipe, assignment,
+prerequisite, or generated-rule change
+therefore changes every aggregate authority that consumes it while unrelated
+targets remain stable. Target cycles emit a deterministic cycle record rather
+than recursing or silently dropping an edge.
 
 Domain-separated seals cover the strict schema, probe oracle, complete graph, and resolved
 edges plus live evidence-authority fingerprints. Make authority derives from

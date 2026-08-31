@@ -539,7 +539,13 @@ only their edge IDs. Synthetic fixtures compare each fingerprint change with
 the observable GNU Make result. Cycle-safe transitive prerequisite and
 pattern-rule closure propagates child recipe/assignment/prerequisite changes
 to aggregate parents; a real `expansion-modern-budget-check` child mutation
-invalidates only the edges owned by `expansion-modern-linker-check`.
+invalidates only the edges owned by `expansion-modern-linker-check`. Nested
+variables and the closed pure prerequisite-function subset resolve concrete
+objects before pattern matching; unsupported dynamics, cycles, and expansion
+bounds are rejected or sealed as explicit unknowns without executing shell
+functions. C, data, and assembly pattern recipe mutations propagate through
+`expansion-modern-all` to its exact compile-owner edges and every real
+link/runtime aggregate that consumes the same objects.
 
 Exact current/base Git mode and provenance is mandatory. Symlinks, synthetic
 gitlinks under owned prefixes, untracked/ignored/nonexistent changed paths,
