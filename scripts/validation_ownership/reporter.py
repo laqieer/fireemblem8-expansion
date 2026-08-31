@@ -12,6 +12,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -84,6 +85,12 @@ class GitTreeEntry:
     mode: str
     object_type: str
     object_id: str
+
+
+@dataclass(frozen=True)
+class ScratchDirectory:
+    path: Path
+    created: tuple[Path, ...]
 
 
 class OwnershipError(Exception):
@@ -286,6 +293,91 @@ def validate_repository_root(root: Path) -> Path:
         return pilot_reporter.validate_repository_root(root)
     except pilot_reporter.PilotDataError as error:
         raise OwnershipError(str(error)) from error
+
+
+def prepare_validation_scratch(root: Path) -> ScratchDirectory:
+    try:
+        root_lstat = os.lstat(root)
+        resolved_root = root.resolve(strict=True)
+    except OSError as error:
+        raise OwnershipError(f"cannot inspect scratch authority root: {error}") from error
+    if stat.S_ISLNK(root_lstat.st_mode) or not stat.S_ISDIR(root_lstat.st_mode):
+        raise OwnershipError("scratch authority root must be a non-symlink directory")
+
+    parts = ("build", "test-artifacts", "validation-ownership")
+    created = []
+    current_path = resolved_root
+    flags = os.O_RDONLY | os.O_DIRECTORY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        current_fd = os.open(resolved_root, flags)
+    except OSError as error:
+        raise OwnershipError(f"cannot open scratch authority root safely: {error}") from error
+    success = False
+    try:
+        for part in parts:
+            try:
+                os.mkdir(part, mode=0o700, dir_fd=current_fd)
+                created.append(current_path / part)
+            except FileExistsError:
+                pass
+            try:
+                entry_stat = os.stat(part, dir_fd=current_fd, follow_symlinks=False)
+            except OSError as error:
+                raise OwnershipError(
+                    f"cannot lstat scratch component {current_path / part}: {error}"
+                ) from error
+            if stat.S_ISLNK(entry_stat.st_mode) or not stat.S_ISDIR(entry_stat.st_mode):
+                raise OwnershipError(
+                    f"scratch component {current_path / part} must be a non-symlink directory"
+                )
+            try:
+                next_fd = os.open(part, flags, dir_fd=current_fd)
+            except OSError as error:
+                raise OwnershipError(
+                    f"cannot open scratch component {current_path / part} safely: {error}"
+                ) from error
+            opened_stat = os.fstat(next_fd)
+            if (
+                opened_stat.st_dev != entry_stat.st_dev
+                or opened_stat.st_ino != entry_stat.st_ino
+            ):
+                os.close(next_fd)
+                raise OwnershipError(
+                    f"scratch component {current_path / part} was replaced during validation"
+                )
+            os.close(current_fd)
+            current_fd = next_fd
+            current_path = current_path / part
+            try:
+                resolved_component = current_path.resolve(strict=True)
+            except OSError as error:
+                raise OwnershipError(
+                    f"cannot resolve scratch component {current_path}: {error}"
+                ) from error
+            if resolved_root not in resolved_component.parents:
+                raise OwnershipError(
+                    f"scratch component {current_path} escapes repository root"
+                )
+        success = True
+    finally:
+        os.close(current_fd)
+        if not success:
+            for path in reversed(created):
+                try:
+                    path.rmdir()
+                except OSError:
+                    pass
+    return ScratchDirectory(current_path, tuple(created))
+
+
+def cleanup_validation_scratch(scratch: ScratchDirectory) -> None:
+    for path in reversed(scratch.created):
+        try:
+            path.rmdir()
+        except OSError:
+            pass
 
 
 def _validate_relative_path(relative: str | Path, label: str) -> str:
@@ -666,33 +758,80 @@ def _make_variable_refs(values: Iterable[str]) -> set[str]:
     }
 
 
+MAKE_ASSIGNMENT_RE = re.compile(
+    r"^([A-Za-z_][A-Za-z0-9_]*)\s*(::=|:=|\?=|\+=|!=|=)\s*(.*)$"
+)
+MAKE_CONDITIONAL_RE = re.compile(r"^(ifeq|ifneq|ifdef|ifndef)\b(.*)$")
+
+
+def _normalize_make_expression(value: str) -> str:
+    return " ".join(value.strip().split())
+
+
 def _parse_make_authorities(loader: AuthorityLoader) -> dict[str, dict[str, Any]]:
     targets: dict[str, dict[str, Any]] = defaultdict(
         lambda: {"declarations": [], "recipes": [], "phony": False}
     )
-    variables: dict[str, set[str]] = defaultdict(set)
+    variables: dict[str, list[dict[str, Any]]] = defaultdict(list)
     seen = set()
 
-    def parse_file(relative: str) -> None:
+    def parse_file(relative: str, inherited_context: tuple[str, ...] = ()) -> None:
         relative = _validate_relative_path(relative, "Make include")
-        if relative in seen:
+        identity = relative, inherited_context
+        if identity in seen:
             return
-        seen.add(relative)
+        seen.add(identity)
         try:
             text = loader.read_blob(relative, "Make authority").decode("utf-8")
         except UnicodeDecodeError as error:
             raise OwnershipError(f"Make authority {relative!r} is not UTF-8") from error
         current_targets: list[str] = []
+        conditional_stack = list(inherited_context)
         for recipe, raw_line in _make_logical_lines(text):
             if recipe:
                 command = raw_line.strip()
                 if command and not command.startswith("#"):
                     for target in current_targets:
-                        targets[target]["recipes"].append(command)
+                        targets[target]["recipes"].append(
+                            {
+                                "command": command,
+                                "context": tuple(conditional_stack),
+                            }
+                        )
                 continue
             current_targets = []
             line = _strip_make_comment(raw_line).strip()
             if not line:
+                continue
+            conditional = MAKE_CONDITIONAL_RE.match(line)
+            if conditional:
+                conditional_stack.append(
+                    conditional.group(1)
+                    + " "
+                    + _normalize_make_expression(conditional.group(2))
+                )
+                continue
+            if line == "else" or line.startswith("else "):
+                if not conditional_stack:
+                    raise OwnershipError(
+                        f"Make authority {relative!r} has unmatched else"
+                    )
+                conditional_stack[-1] = "else(" + conditional_stack[-1] + ")"
+                if line != "else":
+                    nested = MAKE_CONDITIONAL_RE.match(line[5:].strip())
+                    if nested:
+                        conditional_stack[-1] = (
+                            "else " + nested.group(1)
+                            + " "
+                            + _normalize_make_expression(nested.group(2))
+                        )
+                continue
+            if line == "endif":
+                if not conditional_stack:
+                    raise OwnershipError(
+                        f"Make authority {relative!r} has unmatched endif"
+                    )
+                conditional_stack.pop()
                 continue
             include = check_docs.MAKE_INCLUDE_RE.match(line)
             if include:
@@ -700,15 +839,16 @@ def _parse_make_authorities(loader: AuthorityLoader) -> dict[str, dict[str, Any]
                     if "$" in candidate or "*" in candidate:
                         continue
                     path = Path(relative).parent / candidate
-                    parse_file(path.as_posix())
+                    parse_file(path.as_posix(), tuple(conditional_stack))
                 continue
-            assignment = re.match(
-                r"^([A-Za-z_][A-Za-z0-9_]*)\s*([:+?]?=)\s*(.*)$",
-                line,
-            )
+            assignment = MAKE_ASSIGNMENT_RE.match(line)
             if assignment:
-                variables[assignment.group(1)].add(
-                    f"{assignment.group(2)} {' '.join(assignment.group(3).split())}"
+                variables[assignment.group(1)].append(
+                    {
+                        "operator": assignment.group(2),
+                        "value": _normalize_make_expression(assignment.group(3)),
+                        "context": tuple(conditional_stack),
+                    }
                 )
                 continue
             if ":" not in line or ":=" in line.split(":", 1)[0]:
@@ -723,28 +863,59 @@ def _parse_make_authorities(loader: AuthorityLoader) -> dict[str, dict[str, Any]
             if not target_names:
                 continue
             declaration, separator, inline_recipe = rhs.partition(";")
+            target_assignment = MAKE_ASSIGNMENT_RE.match(declaration.strip())
+            if target_assignment:
+                record = {
+                    "kind": "target-assignment",
+                    "name": target_assignment.group(1),
+                    "operator": target_assignment.group(2),
+                    "value": _normalize_make_expression(target_assignment.group(3)),
+                    "context": tuple(conditional_stack),
+                }
+                for target in target_names:
+                    targets[target]["declarations"].append(record)
+                current_targets = target_names
+                continue
             normal, marker, order_only = declaration.partition("|")
             record = {
-                "prerequisites": tuple(sorted(normal.split())),
-                "order_only": tuple(sorted(order_only.split())) if marker else (),
+                "kind": "rule",
+                "prerequisites": tuple(normal.split()),
+                "order_only": tuple(order_only.split()) if marker else (),
+                "context": tuple(conditional_stack),
             }
             for target in target_names:
                 targets[target]["declarations"].append(record)
                 if separator and inline_recipe.strip():
-                    targets[target]["recipes"].append(inline_recipe.strip())
+                    targets[target]["recipes"].append(
+                        {
+                            "command": inline_recipe.strip(),
+                            "context": tuple(conditional_stack),
+                        }
+                    )
             current_targets = target_names
+        if len(conditional_stack) != len(inherited_context):
+            raise OwnershipError(
+                f"Make authority {relative!r} has unclosed conditional"
+            )
 
     parse_file("Makefile")
     result = {}
     for target, record in targets.items():
         values = [
             *(
-                " ".join(declaration["prerequisites"])
+                declaration.get("value", "")
+                + " "
+                + " ".join(declaration.get("prerequisites", ()))
                 + " | "
-                + " ".join(declaration["order_only"])
+                + " ".join(declaration.get("order_only", ()))
+                + " "
+                + " ".join(declaration["context"])
                 for declaration in record["declarations"]
             ),
-            *record["recipes"],
+            *(
+                recipe["command"] + " " + " ".join(recipe["context"])
+                for recipe in record["recipes"]
+            ),
         ]
         referenced = set()
         pending = list(_make_variable_refs(values))
@@ -754,17 +925,18 @@ def _parse_make_authorities(loader: AuthorityLoader) -> dict[str, dict[str, Any]
                 continue
             referenced.add(name)
             pending.extend(
-                _make_variable_refs(variables.get(name, ())) - referenced
+                _make_variable_refs(
+                    assignment["value"]
+                    for assignment in variables.get(name, ())
+                )
+                - referenced
             )
         result[target] = {
-            "declarations": sorted(
-                record["declarations"],
-                key=lambda item: (item["prerequisites"], item["order_only"]),
-            ),
-            "recipes": tuple(record["recipes"]),
+            "declarations": record["declarations"],
+            "recipes": record["recipes"],
             "phony": record["phony"],
             "variables": {
-                name: sorted(variables.get(name, ()))
+                name: variables.get(name, ())
                 for name in sorted(referenced)
             },
         }
@@ -1252,7 +1424,11 @@ def _validate_semantics(
                 raise OwnershipError(
                     f"gitlink {path!r} must identify a commit object"
                 )
-            if matches or len(excluded) != 1:
+            if (
+                matches
+                or len(excluded) != 1
+                or excluded[0]["applies_to"] != "gitlink"
+            ):
                 raise OwnershipError(
                     f"gitlink {path!r} requires one explicit fail-closed exclusion"
                 )
@@ -1269,9 +1445,21 @@ def _validate_semantics(
                 f"type {entry.object_type}"
             )
         if excluded:
-            raise OwnershipError(
-                f"regular blob {path!r} cannot use a gitlink exclusion"
-            )
+            if (
+                matches
+                or len(excluded) != 1
+                or excluded[0]["applies_to"] != "external-enforcement"
+            ):
+                raise OwnershipError(
+                    f"regular blob {path!r} has an invalid fail-closed exclusion"
+                )
+            coverage[path] = {
+                "kind": "excluded",
+                "mode": entry.mode,
+                "exclusion": excluded[0]["id"],
+                "reason": excluded[0]["reason"],
+            }
+            continue
         if len(matches) == 0:
             raise OwnershipError(f"tracked path {path!r} has no ownership contract")
         if len(matches) > 1:
@@ -1541,7 +1729,11 @@ def _resolve_path(
         )
     ]
     if entry.mode == GITLINK_MODE:
-        if matches or len(exclusions) != 1:
+        if (
+            matches
+            or len(exclusions) != 1
+            or exclusions[0]["applies_to"] != "gitlink"
+        ):
             raise OwnershipError(
                 f"changed gitlink {path!r} lacks one explicit fail-closed exclusion"
             )
@@ -1556,8 +1748,18 @@ def _resolve_path(
             f"type {entry.object_type}"
         )
     if exclusions:
+        if (
+            matches
+            or len(exclusions) != 1
+            or exclusions[0]["applies_to"] != "external-enforcement"
+        ):
+            raise OwnershipError(
+                f"changed regular blob {path!r} has an invalid exclusion"
+            )
+        exclusion = exclusions[0]
         raise OwnershipError(
-            f"changed regular blob {path!r} cannot use a gitlink exclusion"
+            f"changed path {path!r} is fail-closed external enforcement "
+            f"{exclusion['id']!r}: {exclusion['reason']}"
         )
     if not matches:
         raise OwnershipError(f"changed path {path!r} has no ownership contract")
@@ -1616,14 +1818,26 @@ def validate_probe_oracle(
         for node in graph["nodes"]
         if node["kind"] == "surface"
     }
+    evidence_ids = {
+        node["id"]
+        for node in graph["nodes"]
+        if node["kind"] == "evidence"
+    }
+    exclusion_ids = {item["id"] for item in graph["exclusions"]}
     paths = set()
     for index, probe in enumerate(oracle["probes"]):
         label = f"probe oracle entry {index}"
-        if not isinstance(probe, dict) or set(probe) != {
+        if not isinstance(probe, dict):
+            raise OwnershipError(f"{label} has unknown or missing fields")
+        keys = frozenset(probe)
+        owned_keys = {
             "path",
             "expected_surface",
             "expected_edge_types",
-        }:
+            "expected_evidence_ids",
+        }
+        exclusion_keys = {"path", "expected_exclusion"}
+        if keys not in {frozenset(owned_keys), frozenset(exclusion_keys)}:
             raise OwnershipError(f"{label} has unknown or missing fields")
         path = _validate_relative_path(probe["path"], f"{label}.path")
         if path in paths:
@@ -1638,6 +1852,13 @@ def validate_probe_oracle(
             raise OwnershipError(
                 f"probe oracle path {path!r} is not a current regular blob"
             )
+        if keys == frozenset(exclusion_keys):
+            if probe["expected_exclusion"] not in exclusion_ids:
+                raise OwnershipError(
+                    f"{label} references unknown exclusion "
+                    f"{probe['expected_exclusion']!r}"
+                )
+            continue
         if probe["expected_surface"] not in surfaces:
             raise OwnershipError(
                 f"{label} references unknown surface {probe['expected_surface']!r}"
@@ -1652,6 +1873,20 @@ def validate_probe_oracle(
         unknown = sorted(set(edge_types) - EDGE_TYPES)
         if unknown:
             raise OwnershipError(f"{label} has unknown edge families {unknown}")
+        expected_evidence = probe["expected_evidence_ids"]
+        if (
+            not isinstance(expected_evidence, list)
+            or not expected_evidence
+            or len(expected_evidence) != len(set(expected_evidence))
+        ):
+            raise OwnershipError(
+                f"{label} evidence IDs must be a unique nonempty list"
+            )
+        unknown_evidence = sorted(set(expected_evidence) - evidence_ids)
+        if unknown_evidence:
+            raise OwnershipError(
+                f"{label} has unknown evidence IDs {unknown_evidence}"
+            )
     seal = oracle["seal"]
     if not isinstance(seal, str) or not re.fullmatch(r"[0-9a-f]{64}", seal):
         raise OwnershipError("probe oracle seal must be a lowercase SHA-256")
@@ -1675,19 +1910,43 @@ def _measure(
     false_negative = 0
     probes = []
     for probe in oracle["probes"]:
+        if "expected_exclusion" in probe:
+            coverage = model["coverage"].get(probe["path"])
+            actual_exclusion = (
+                coverage.get("exclusion")
+                if coverage is not None and coverage["kind"] == "excluded"
+                else None
+            )
+            if actual_exclusion != probe["expected_exclusion"]:
+                false_positive += int(actual_exclusion is not None)
+                false_negative += 1
+            probes.append(
+                {
+                    "path": probe["path"],
+                    "exclusion": actual_exclusion,
+                }
+            )
+            continue
         resolution = _resolve_path(probe["path"], graph, model)
         actual = {owner["edge_type"] for owner in resolution["owners"]}
         expected = set(probe["expected_edge_types"])
+        actual_evidence = {
+            owner["evidence_id"] for owner in resolution["owners"]
+        }
+        expected_evidence = set(probe["expected_evidence_ids"])
         if resolution["surface"] != probe["expected_surface"]:
             false_positive += 1
             false_negative += 1
         false_positive += len(actual - expected)
         false_negative += len(expected - actual)
+        false_positive += len(actual_evidence - expected_evidence)
+        false_negative += len(expected_evidence - actual_evidence)
         probes.append(
             {
                 "path": probe["path"],
                 "surface": resolution["surface"],
                 "edge_types": sorted(actual),
+                "evidence_ids": sorted(actual_evidence),
             }
         )
     if false_positive or false_negative:
@@ -1803,36 +2062,39 @@ def run_lifecycle_check(
     if check_id not in LIFECYCLE_CHECKS:
         raise OwnershipError(f"lifecycle check {check_id!r} is not allowlisted")
     authority_root = validate_repository_root(authority_root)
-    artifact_root = artifact_root.resolve(strict=True)
-    sandbox_parent = (authority_root / "build" / "test-artifacts").resolve()
-    if sandbox_parent not in artifact_root.parents:
-        raise OwnershipError("lifecycle artifact root must be in the bounded sandbox")
-    graph_path = artifact_root / GRAPH_PATH
-    if not graph_path.is_file() or graph_path.is_symlink():
-        raise OwnershipError(
-            "validation ownership graph artifact is missing: "
-            + LIFECYCLE_FAILURE_REASON
+    scratch = prepare_validation_scratch(authority_root)
+    try:
+        artifact_root = artifact_root.resolve(strict=True)
+        if scratch.path not in artifact_root.parents:
+            raise OwnershipError("lifecycle artifact root must be in the bounded sandbox")
+        graph_path = artifact_root / GRAPH_PATH
+        if not graph_path.is_file() or graph_path.is_symlink():
+            raise OwnershipError(
+                "validation ownership graph artifact is missing: "
+                + LIFECYCLE_FAILURE_REASON
+            )
+        graph = load_json(graph_path)
+        entries = git_tree_entries(authority_root)
+        loader = AuthorityLoader(authority_root, entries)
+        schema = loader.read_json(SCHEMA_PATH, "ownership graph schema")
+        oracle = loader.read_json(PROBE_ORACLE_PATH, "ownership probe oracle")
+        report = build_report(
+            graph,
+            schema,
+            oracle,
+            loader,
+            entries,
         )
-    graph = load_json(graph_path)
-    entries = git_tree_entries(authority_root)
-    loader = AuthorityLoader(authority_root, entries)
-    schema = loader.read_json(SCHEMA_PATH, "ownership graph schema")
-    oracle = loader.read_json(PROBE_ORACLE_PATH, "ownership probe oracle")
-    report = build_report(
-        graph,
-        schema,
-        oracle,
-        loader,
-        entries,
-    )
-    if check_id == "TC-WORKFLOW-GATE-OWNERSHIP-001":
-        measurement = report["measurement"]
-        if (
-            measurement["false_positive_selections"] != 0
-            or measurement["false_negative_selections"] != 0
-        ):
-            raise OwnershipError("ownership consistency check has selection loss")
-    return 0
+        if check_id == "TC-WORKFLOW-GATE-OWNERSHIP-001":
+            measurement = report["measurement"]
+            if (
+                measurement["false_positive_selections"] != 0
+                or measurement["false_negative_selections"] != 0
+            ):
+                raise OwnershipError("ownership consistency check has selection loss")
+        return 0
+    finally:
+        cleanup_validation_scratch(scratch)
 
 
 def _run_lifecycle_subprocess(
@@ -1883,11 +2145,8 @@ def validate_executable_lifecycle(
         ),
         key=lambda item: item["occurred_at"],
     )
-    build_root = root / "build"
-    sandbox_parent = build_root / "test-artifacts"
-    build_existed = build_root.exists()
-    sandbox_parent_existed = sandbox_parent.exists()
-    sandbox_parent.mkdir(parents=True, exist_ok=True)
+    scratch = prepare_validation_scratch(root)
+    sandbox_parent = scratch.path
     source_bytes = (root / GRAPH_PATH).read_bytes()
     results = []
     try:
@@ -1952,15 +2211,7 @@ def validate_executable_lifecycle(
     except OSError as error:
         raise OwnershipError(f"cannot prepare lifecycle sandbox: {error}") from error
     finally:
-        for path, existed in (
-            (sandbox_parent, sandbox_parent_existed),
-            (build_root, build_existed),
-        ):
-            if not existed:
-                try:
-                    path.rmdir()
-                except OSError:
-                    pass
+        cleanup_validation_scratch(scratch)
     if (root / GRAPH_PATH).read_bytes() != source_bytes:
         raise OwnershipError("lifecycle proof changed the source graph")
     return results

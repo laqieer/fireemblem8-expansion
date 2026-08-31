@@ -621,7 +621,8 @@
         "id",
         "include",
         "reason",
-        "fail_closed"
+        "fail_closed",
+        "applies_to"
       ],
       "additionalProperties": false,
       "properties": {
@@ -636,6 +637,12 @@
         },
         "fail_closed": {
           "const": true
+        },
+        "applies_to": {
+          "enum": [
+            "gitlink",
+            "external-enforcement"
+          ]
         }
       }
     }

@@ -202,6 +202,17 @@
       "dependencies": []
     },
     {
+      "id": "surface.pr-template",
+      "kind": "surface",
+      "label": "GitHub pull-request template",
+      "surface_type": "schema",
+      "requirements": [
+        "positive",
+        "adversarial"
+      ],
+      "dependencies": []
+    },
+    {
       "id": "surface.host",
       "kind": "surface",
       "label": "Host tooling and tests",
@@ -837,6 +848,20 @@
       "reason": "Template ownership drift is checked by the required graph gate."
     },
     {
+      "id": "pr-template.owns-test",
+      "type": "owns-test",
+      "source": "surface.pr-template",
+      "target": "owner.host-docs",
+      "reason": "The pull-request template is consumed by documentation governance."
+    },
+    {
+      "id": "pr-template.adversarial",
+      "type": "adversarial-control",
+      "source": "surface.pr-template",
+      "target": "owner.validation-check",
+      "reason": "Pull-request template ownership drift is checked by the required graph gate."
+    },
+    {
       "id": "host.owns-test",
       "type": "owns-test",
       "source": "surface.host",
@@ -1044,10 +1069,6 @@
         {
           "kind": "prefix",
           "path": ".github/copilot/"
-        },
-        {
-          "kind": "exact",
-          "path": ".github/CODEOWNERS"
         }
       ],
       "exclude": []
@@ -1059,7 +1080,14 @@
         {
           "kind": "prefix",
           "path": ".github/ISSUE_TEMPLATE/"
-        },
+        }
+      ],
+      "exclude": []
+    },
+    {
+      "id": "paths.pr-template",
+      "surface": "surface.pr-template",
+      "include": [
         {
           "kind": "exact",
           "path": ".github/PULL_REQUEST_TEMPLATE.md"
@@ -1295,7 +1323,20 @@
         }
       ],
       "reason": "A gitlink change requires explicit submodule provenance and the broader combined Build; this graph cannot infer nested ownership.",
-      "fail_closed": true
+      "fail_closed": true,
+      "applies_to": "gitlink"
+    },
+    {
+      "id": "exclude.codeowners-external-enforcement",
+      "include": [
+        {
+          "kind": "exact",
+          "path": ".github/CODEOWNERS"
+        }
+      ],
+      "reason": "CODEOWNERS is consumed by GitHub external enforcement and has no deterministic in-repository validator.",
+      "fail_closed": true,
+      "applies_to": "external-enforcement"
     }
   ]
 }

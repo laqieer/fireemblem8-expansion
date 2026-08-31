@@ -11,6 +11,13 @@
         "compile-owner",
         "link-owner",
         "target-scenario"
+      ],
+      "expected_evidence_ids": [
+        "owner.host-runtime",
+        "owner.host-build",
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.runtime-modern"
       ]
     },
     {
@@ -19,6 +26,10 @@
       "expected_edge_types": [
         "owns-test",
         "adversarial-control"
+      ],
+      "expected_evidence_ids": [
+        "owner.host-build",
+        "owner.host-workflow"
       ]
     },
     {
@@ -33,6 +44,16 @@
         "generated-by",
         "drift-check",
         "generated-consumer"
+      ],
+      "expected_evidence_ids": [
+        "owner.host-generated",
+        "owner.registry-generated",
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.runtime-modern",
+        "owner.generator-generated",
+        "owner.drift-generated",
+        "owner.consumer-generated"
       ]
     },
     {
@@ -49,6 +70,17 @@
         "generated-consumer",
         "dependent-profile",
         "negative-control"
+      ],
+      "expected_evidence_ids": [
+        "owner.host-localization",
+        "owner.host-build",
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.runtime-localization",
+        "owner.generator-localization",
+        "owner.drift-localization",
+        "owner.profile-modern",
+        "owner.negative-localization"
       ]
     },
     {
@@ -62,6 +94,15 @@
         "target-scenario",
         "dependent-profile",
         "negative-control"
+      ],
+      "expected_evidence_ids": [
+        "owner.validation-graph",
+        "owner.host-config",
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.runtime-modern",
+        "owner.profile-modern",
+        "owner.negative-config"
       ]
     },
     {
@@ -73,6 +114,13 @@
         "compile-owner",
         "link-owner",
         "target-scenario"
+      ],
+      "expected_evidence_ids": [
+        "owner.host-runtime",
+        "owner.host-build",
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.runtime-modern"
       ]
     },
     {
@@ -85,6 +133,14 @@
         "link-owner",
         "target-scenario",
         "manual-handoff"
+      ],
+      "expected_evidence_ids": [
+        "owner.host-runtime",
+        "owner.host-build",
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.runtime-visual",
+        "owner.manual-handoff"
       ]
     },
     {
@@ -97,6 +153,14 @@
         "link-owner",
         "target-scenario",
         "manual-handoff"
+      ],
+      "expected_evidence_ids": [
+        "owner.host-runtime",
+        "owner.host-build",
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.runtime-visual",
+        "owner.manual-handoff"
       ]
     },
     {
@@ -105,6 +169,10 @@
       "expected_edge_types": [
         "owns-test",
         "adversarial-control"
+      ],
+      "expected_evidence_ids": [
+        "owner.host-workflow",
+        "owner.validation-check"
       ]
     },
     {
@@ -113,15 +181,15 @@
       "expected_edge_types": [
         "owns-test",
         "adversarial-control"
+      ],
+      "expected_evidence_ids": [
+        "owner.validation-suite",
+        "owner.validation-check"
       ]
     },
     {
       "path": ".github/CODEOWNERS",
-      "expected_surface": "surface.repo-config",
-      "expected_edge_types": [
-        "owns-test",
-        "adversarial-control"
-      ]
+      "expected_exclusion": "exclude.codeowners-external-enforcement"
     },
     {
       "path": ".github/ISSUE_TEMPLATE/bug_report.yml",
@@ -129,8 +197,36 @@
       "expected_edge_types": [
         "owns-test",
         "adversarial-control"
+      ],
+      "expected_evidence_ids": [
+        "owner.host-workflow",
+        "owner.validation-check"
+      ]
+    },
+    {
+      "path": ".github/PULL_REQUEST_TEMPLATE.md",
+      "expected_surface": "surface.pr-template",
+      "expected_edge_types": [
+        "owns-test",
+        "adversarial-control"
+      ],
+      "expected_evidence_ids": [
+        "owner.host-docs",
+        "owner.validation-check"
+      ]
+    },
+    {
+      "path": ".github/requirements/build.txt",
+      "expected_surface": "surface.repo-config",
+      "expected_edge_types": [
+        "owns-test",
+        "adversarial-control"
+      ],
+      "expected_evidence_ids": [
+        "owner.host-build",
+        "owner.validation-check"
       ]
     }
   ],
-  "seal": "3a6441e07457298febdcbe746d7daf70838931094a006e31c0a45f17c88bf81c"
+  "seal": "357f742073adfe86d797aa23d72b6d3a6ff22c18cf7395731b6848ff3d8137a9"
 }

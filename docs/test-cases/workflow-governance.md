@@ -505,19 +505,21 @@ game behavior needs a compensating change.
 Every Git-tracked path resolves to exactly one complete owner set. The sole
 gitlink is a named fail-closed exclusion whose selection cannot silently
 succeed. Representative runtime/ABI, host-only, generated, localization,
-configuration, manual A/V, workflow, governance, repository configuration, and
-template paths resolve with no missing or unexpected edge families.
-`.github/CODEOWNERS` selects host evidence only. Generated paths derive from
+configuration, manual A/V, workflow, governance, repository configuration,
+issue-template, and pull-request-template paths resolve with no missing or
+unexpected edge/evidence owners. `.github/PULL_REQUEST_TEMPLATE.md` selects
+documentation governance; `.github/CODEOWNERS` selects the named fail-closed
+external-enforcement exclusion only. Generated paths derive from
 the typed generated-data registry; gate commands derive from existing Make
 targets, workflow jobs/steps, and tester cases rather than a duplicate command
 list. Both ownership commands are required, scrubbed `host-tests` gates and
 members of the complete 30-gate upstream mirror.
 
 The canonical JSON report explains each selected gate, reports zero false
-positive and false negative edge-family selections against the independently
+positive and false negative edge/evidence selections against the independently
 sealed probe oracle, and records bounded maintenance cost through the issue
-#176 artifact shape. A mismatch is a failed public check, not a successful
-report.
+#176 artifact shape. Same-type owner substitution is a mismatch and failed
+public check, not a successful report.
 Domain-separated graph, schema, and resolved-edge seals change when semantic
 authority changes. Comparing a prior Git revision invalidates review from
 authoritative edge or target-authority changes, not filenames or commit prose.
@@ -529,9 +531,11 @@ duplicate or ambiguous owners, stale Make/workflow/tester/generated/manual
 targets, missing profiles or negative controls, and every removed or
 redirected edge family fail with the missing contract named. Make and workflow
 authority uses target/job-specific normalized semantics: comments,
-declaration order, and unrelated `.mk` changes stay green, while affected
-recipes, steps, endpoints, edge types, owners, and authority targets invalidate
-only their edge IDs.
+nonsemantic spacing, and unrelated `.mk` changes stay green, while ordered
+assignments, operators/flavors, exact prerequisite/recipe order, conditional
+context, steps, endpoints, edge types, owners, and authority targets invalidate
+only their edge IDs. Synthetic fixtures compare each fingerprint change with
+the observable GNU Make result.
 
 Exact current/base Git mode and provenance is mandatory. Symlinks, synthetic
 gitlinks under owned prefixes, untracked/ignored/nonexistent changed paths,
@@ -566,7 +570,8 @@ The focused unittest suite owns parsed schema and graph invariants,
 whole-repository coverage, target existence and drift, every edge-family
 mutation, exact Git modes, confined authorities, independent oracle mutation,
 executable lifecycle deletion/restoration, review invalidation, canonical
-reporting, mixed-goal rejection, and unchanged Git state.
+reporting, mixed-goal rejection, bounded scratch symlink rejection, and
+unchanged source bytes/Git state across simulated fixture exceptions.
 `make validation-ownership-check` runs the same reporter through
 `/usr/bin/python3 -I`.
 

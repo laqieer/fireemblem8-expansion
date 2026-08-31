@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -32,25 +34,84 @@ class OwnershipGraphTests(unittest.TestCase):
                 "mgfembp",
             }
         }
-        cls.build_root = ROOT / "build"
-        cls.test_artifacts_root = cls.build_root / "test-artifacts"
-        cls.build_root_existed = cls.build_root.exists()
-        cls.test_artifacts_root_existed = cls.test_artifacts_root.exists()
-        cls.scratch_root_existed = SCRATCH_ROOT.exists()
-        SCRATCH_ROOT.mkdir(parents=True, exist_ok=True)
+        cls.source_status = reporter.repository_status(ROOT)
+        cls.protected_source_bytes = {
+            path: (ROOT / path).read_bytes()
+            for path in (
+                "Makefile",
+                reporter.BUILD_WORKFLOW_PATH.as_posix(),
+                reporter.GRAPH_PATH.as_posix(),
+                reporter.PROBE_ORACLE_PATH.as_posix(),
+            )
+        }
+        cls.scratch = reporter.prepare_validation_scratch(ROOT)
+        cls.fixture_container = tempfile.TemporaryDirectory(
+            prefix="authority-checkout-",
+            dir=cls.scratch.path,
+        )
+        cls.fixture_root = Path(cls.fixture_container.name) / "checkout"
+        subprocess.run(
+            [
+                "git",
+                "clone",
+                "-q",
+                "--no-hardlinks",
+                "--no-recurse-submodules",
+                str(ROOT),
+                str(cls.fixture_root),
+            ],
+            check=True,
+        )
+        changed = [
+            path
+            for path in subprocess.run(
+            ["git", "diff", "--name-only", "-z", "HEAD", "--"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            ).stdout.decode("utf-8").split("\0")
+            if path
+        ]
+        for relative in changed:
+            source = ROOT / relative
+            if source.is_file() and not source.is_symlink():
+                target = cls.fixture_root / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+        if changed:
+            subprocess.run(
+                ["git", "add", "-A"],
+                cwd=cls.fixture_root,
+                check=True,
+            )
+            environment = {
+                "GIT_AUTHOR_NAME": "Ownership Fixture",
+                "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
+                "GIT_COMMITTER_NAME": "Ownership Fixture",
+                "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
+                "PATH": os.environ.get("PATH", ""),
+            }
+            subprocess.run(
+                ["git", "commit", "-q", "-m", "ownership fixture"],
+                cwd=cls.fixture_root,
+                env=environment,
+                check=True,
+            )
 
     @classmethod
     def tearDownClass(cls):
-        for path, existed in (
-            (SCRATCH_ROOT, cls.scratch_root_existed),
-            (cls.test_artifacts_root, cls.test_artifacts_root_existed),
-            (cls.build_root, cls.build_root_existed),
-        ):
-            if not existed:
-                try:
-                    path.rmdir()
-                except OSError:
-                    pass
+        try:
+            current = {
+                path: (ROOT / path).read_bytes()
+                for path in cls.protected_source_bytes
+            }
+            if current != cls.protected_source_bytes:
+                raise AssertionError("ownership tests changed protected source authority")
+            if reporter.repository_status(ROOT) != cls.source_status:
+                raise AssertionError("ownership tests changed source repository status")
+        finally:
+            cls.fixture_container.cleanup()
+            reporter.cleanup_validation_scratch(cls.scratch)
 
     def validate(self, graph=None, entries=None):
         return reporter.validate_graph(
@@ -60,12 +121,42 @@ class OwnershipGraphTests(unittest.TestCase):
             self.fixture_entries if entries is None else entries,
         )
 
+    def fixture_authority(self):
+        entries = reporter.git_tree_entries(self.fixture_root)
+        loader = reporter.AuthorityLoader(self.fixture_root, entries)
+        graph = loader.read_json(reporter.GRAPH_PATH, "fixture graph")
+        schema = loader.read_json(reporter.SCHEMA_PATH, "fixture schema")
+        return entries, loader, graph, schema
+
+    def test_fixture_exception_never_changes_source_authority(self):
+        source_before = {
+            path: (ROOT / path).read_bytes()
+            for path in self.protected_source_bytes
+        }
+        status_before = reporter.repository_status(ROOT)
+        graph_path = self.fixture_root / reporter.GRAPH_PATH
+        fixture_before = graph_path.read_bytes()
+        with self.assertRaisesRegex(RuntimeError, "simulated"):
+            try:
+                graph_path.write_bytes(b"{}\n")
+                raise RuntimeError("simulated fixture failure")
+            finally:
+                graph_path.write_bytes(fixture_before)
+        self.assertEqual(
+            {
+                path: (ROOT / path).read_bytes()
+                for path in self.protected_source_bytes
+            },
+            source_before,
+        )
+        self.assertEqual(reporter.repository_status(ROOT), status_before)
+
     def test_whole_repository_has_exact_coverage(self):
         model = self.validate(entries=self.entries)
         self.assertEqual(len(model["coverage"]), len(self.entries))
         self.assertEqual(
             [path for path, record in model["coverage"].items() if record["kind"] == "excluded"],
-            ["mgfembp"],
+            [".github/CODEOWNERS", "mgfembp"],
         )
 
     def test_representative_surface_resolutions_and_measurement(self):
@@ -75,7 +166,11 @@ class OwnershipGraphTests(unittest.TestCase):
             self.oracle,
             self.loader,
             self.entries,
-            (probe["path"] for probe in self.oracle["probes"]),
+            (
+                probe["path"]
+                for probe in self.oracle["probes"]
+                if "expected_exclusion" not in probe
+            ),
         )
         self.assertEqual(report["measurement"]["false_positive_selections"], 0)
         self.assertEqual(report["measurement"]["false_negative_selections"], 0)
@@ -85,6 +180,7 @@ class OwnershipGraphTests(unittest.TestCase):
         expected = {
             probe["path"]: probe["expected_surface"]
             for probe in self.oracle["probes"]
+            if "expected_surface" in probe
         }
         self.assertEqual(actual, expected)
         for resolution in report["resolutions"]:
@@ -94,12 +190,12 @@ class OwnershipGraphTests(unittest.TestCase):
             )
         codeowners = next(
             record
-            for record in report["resolutions"]
+            for record in report["measurement"]["probes"]
             if record["path"] == ".github/CODEOWNERS"
         )
         self.assertEqual(
-            {owner["evidence_type"] for owner in codeowners["owners"]},
-            {"host"},
+            codeowners["exclusion"],
+            "exclude.codeowners-external-enforcement",
         )
         workflow = next(
             record
@@ -109,6 +205,15 @@ class OwnershipGraphTests(unittest.TestCase):
         self.assertIn(
             "Run workflow contract test suite",
             {owner["gate"].rsplit(":", 1)[-1] for owner in workflow["owners"]},
+        )
+        pr_template = next(
+            record
+            for record in report["resolutions"]
+            if record["path"] == ".github/PULL_REQUEST_TEMPLATE.md"
+        )
+        self.assertIn(
+            "Check documentation (issues #7/#17)",
+            {owner["gate"].rsplit(":", 1)[-1] for owner in pr_template["owners"]},
         )
 
     def test_generated_paths_come_from_typed_registry(self):
@@ -129,6 +234,11 @@ class OwnershipGraphTests(unittest.TestCase):
             reporter._resolve_path("unowned/new.c", self.graph, model)
         with self.assertRaisesRegex(reporter.OwnershipError, "fail-closed.*exclusion"):
             reporter._resolve_path("mgfembp", self.graph, model)
+        with self.assertRaisesRegex(
+            reporter.OwnershipError,
+            "fail-closed external enforcement",
+        ):
+            reporter._resolve_path(".github/CODEOWNERS", self.graph, model)
         with self.assertRaisesRegex(reporter.OwnershipError, "no ownership contract"):
             entries = dict(self.fixture_entries)
             entries["unowned/new.c"] = reporter.GitTreeEntry(
@@ -223,6 +333,51 @@ class OwnershipGraphTests(unittest.TestCase):
             with self.assertRaisesRegex(reporter.OwnershipError, "regular blob"):
                 loader.read_blob("authority.json", "fixture authority")
             outside.unlink()
+
+    def test_scratch_components_reject_symlinks_without_outside_writes(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            base = Path(directory)
+            outside = base / "outside"
+            outside.mkdir()
+            root_link = base / "repo"
+            root_link.symlink_to(outside, target_is_directory=True)
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "authority root must be a non-symlink directory",
+            ):
+                reporter.prepare_validation_scratch(root_link)
+            self.assertEqual(list(outside.iterdir()), [])
+
+        for symlink_component in ("build", "test-artifacts", "validation-ownership"):
+            with self.subTest(component=symlink_component):
+                with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+                    base = Path(directory)
+                    root = base / "repo"
+                    outside = base / "outside"
+                    root.mkdir()
+                    outside.mkdir()
+                    if symlink_component == "build":
+                        (root / "build").symlink_to(outside, target_is_directory=True)
+                    elif symlink_component == "test-artifacts":
+                        (root / "build").mkdir()
+                        (root / "build" / "test-artifacts").symlink_to(
+                            outside,
+                            target_is_directory=True,
+                        )
+                    else:
+                        (root / "build" / "test-artifacts").mkdir(parents=True)
+                        (
+                            root
+                            / "build"
+                            / "test-artifacts"
+                            / "validation-ownership"
+                        ).symlink_to(outside, target_is_directory=True)
+                    with self.assertRaisesRegex(
+                        reporter.OwnershipError,
+                        "non-symlink directory|open scratch component",
+                    ):
+                        reporter.prepare_validation_scratch(root)
+                    self.assertEqual(list(outside.iterdir()), [])
 
     def test_overlap_and_duplicate_rule_reject(self):
         graph = copy.deepcopy(self.graph)
@@ -390,15 +545,15 @@ class OwnershipGraphTests(unittest.TestCase):
             scratch = Path(directory)
             make_path = scratch / "Makefile"
             include_path = scratch / "rules.mk"
-            make_path.write_text(
+            make_source = (
                 "include rules.mk\n"
                 "alpha: first\n"
                 "alpha: second\n"
                 "\t@echo $(ALPHA)\n"
                 "beta:\n"
-                "\t@echo beta\n",
-                encoding="ascii",
+                "\t@echo beta\n"
             )
+            make_path.write_text(make_source, encoding="ascii")
             include_path.write_text("ALPHA := value\n", encoding="ascii")
             entries = {
                 path: reporter.GitTreeEntry(path, "100644", "blob", "0" * 40)
@@ -409,6 +564,19 @@ class OwnershipGraphTests(unittest.TestCase):
 
             make_path.write_text(
                 "# comment-only change\n"
+                "include   rules.mk\n"
+                "alpha :  first\n"
+                "alpha:   second\n"
+                "\t@echo $(ALPHA)\n"
+                "beta:\n"
+                "\t@echo beta\n",
+                encoding="ascii",
+            )
+            normalized_make = reporter._parse_make_authorities(loader)
+            self.assertEqual(before_make, normalized_make)
+
+            make_path.write_text(
+                "# declaration-order fixture\n"
                 "include rules.mk\n"
                 "alpha: second\n"
                 "alpha: first\n"
@@ -418,13 +586,10 @@ class OwnershipGraphTests(unittest.TestCase):
                 encoding="ascii",
             )
             reordered_make = reporter._parse_make_authorities(loader)
-            self.assertEqual(before_make, reordered_make)
+            self.assertNotEqual(before_make["alpha"], reordered_make["alpha"])
 
             make_path.write_text(
-                make_path.read_text(encoding="ascii").replace(
-                    "@echo beta",
-                    "@echo changed-beta",
-                ),
+                make_source.replace("@echo beta", "@echo changed-beta"),
                 encoding="ascii",
             )
             changed_make = reporter._parse_make_authorities(loader)
@@ -463,6 +628,118 @@ class OwnershipGraphTests(unittest.TestCase):
             changed_jobs["host-tests"],
         )
 
+    def test_make_fingerprints_track_actual_gnu_make_behavior(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            scratch = Path(directory)
+            makefile = scratch / "Makefile"
+            entry = reporter.GitTreeEntry("Makefile", "100644", "blob", "0" * 40)
+            loader = reporter.AuthorityLoader(scratch, {"Makefile": entry})
+
+            def parse(text, target):
+                makefile.write_text(text, encoding="ascii")
+                return reporter._parse_make_authorities(loader).get(target)
+
+            def run(text, target):
+                makefile.write_text(text, encoding="ascii")
+                return subprocess.run(
+                    ["make", "--no-print-directory", "-s", target],
+                    cwd=scratch,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+
+            assignment_a = (
+                "VALUE := first\nVALUE := second\n"
+                "assignment:\n\t@printf '%s\\n' '$(VALUE)'\n"
+            )
+            assignment_b = (
+                "VALUE := second\nVALUE := first\n"
+                "assignment:\n\t@printf '%s\\n' '$(VALUE)'\n"
+            )
+            self.assertNotEqual(
+                run(assignment_a, "assignment").stdout,
+                run(assignment_b, "assignment").stdout,
+            )
+            self.assertNotEqual(
+                parse(assignment_a, "assignment"),
+                parse(assignment_b, "assignment"),
+            )
+
+            target_assignment_a = (
+                "target-assignment: VALUE := first\n"
+                "target-assignment: VALUE += second\n"
+                "target-assignment:\n\t@printf '%s\\n' '$(VALUE)'\n"
+            )
+            target_assignment_b = (
+                "target-assignment: VALUE := second\n"
+                "target-assignment: VALUE += first\n"
+                "target-assignment:\n\t@printf '%s\\n' '$(VALUE)'\n"
+            )
+            self.assertNotEqual(
+                run(target_assignment_a, "target-assignment").stdout,
+                run(target_assignment_b, "target-assignment").stdout,
+            )
+            self.assertNotEqual(
+                parse(target_assignment_a, "target-assignment"),
+                parse(target_assignment_b, "target-assignment"),
+            )
+
+            recursive = (
+                "A = one\nVALUE = $(A)\nA = two\n"
+                "flavor:\n\t@printf '%s\\n' '$(VALUE)'\n"
+            )
+            immediate = recursive.replace("VALUE = $(A)", "VALUE := $(A)")
+            self.assertNotEqual(
+                run(recursive, "flavor").stdout,
+                run(immediate, "flavor").stdout,
+            )
+            self.assertNotEqual(
+                parse(recursive, "flavor"),
+                parse(immediate, "flavor"),
+            )
+
+            prerequisites_a = (
+                "first second:\n\t@:\n"
+                "ordered: first second\n\t@printf '%s\\n' '$<'\n"
+            )
+            prerequisites_b = prerequisites_a.replace(
+                "ordered: first second", "ordered: second first"
+            )
+            self.assertNotEqual(
+                run(prerequisites_a, "ordered").stdout,
+                run(prerequisites_b, "ordered").stdout,
+            )
+            self.assertNotEqual(
+                parse(prerequisites_a, "ordered"),
+                parse(prerequisites_b, "ordered"),
+            )
+
+            conditional_true = (
+                "ifeq (1,1)\nconditional:\n\t@printf 'yes\\n'\nendif\n"
+            )
+            conditional_false = conditional_true.replace("ifeq (1,1)", "ifeq (1,0)")
+            self.assertEqual(run(conditional_true, "conditional").returncode, 0)
+            self.assertNotEqual(run(conditional_false, "conditional").returncode, 0)
+            self.assertNotEqual(
+                parse(conditional_true, "conditional"),
+                parse(conditional_false, "conditional"),
+            )
+
+            assignment_true = (
+                "ifeq (1,1)\nVALUE := enabled\nendif\n"
+                "conditional-assignment:\n\t@printf '%s\\n' '$(VALUE)'\n"
+            )
+            assignment_false = assignment_true.replace("ifeq (1,1)", "ifeq (1,0)")
+            self.assertNotEqual(
+                run(assignment_true, "conditional-assignment").stdout,
+                run(assignment_false, "conditional-assignment").stdout,
+            )
+            self.assertNotEqual(
+                parse(assignment_true, "conditional-assignment"),
+                parse(assignment_false, "conditional-assignment"),
+            )
+
     def test_recursive_make_authority_rejects_untracked_include(self):
         with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
             scratch = Path(directory)
@@ -482,22 +759,25 @@ class OwnershipGraphTests(unittest.TestCase):
                 reporter._parse_make_authorities(loader)
 
     def test_make_invalidation_is_target_specific(self):
-        makefile = ROOT / "Makefile"
+        entries, _, graph, schema = self.fixture_authority()
+        makefile = self.fixture_root / "Makefile"
         original = makefile.read_bytes()
-        base_loader = reporter.AuthorityLoader(ROOT, self.entries, "HEAD")
+        base_loader = reporter.AuthorityLoader(
+            self.fixture_root, entries, "HEAD"
+        )
         prior_graph = reporter._prior_graph(base_loader)
         self.assertIsNotNone(prior_graph)
 
         def changed_edges():
-            loader = reporter.AuthorityLoader(ROOT, self.entries)
+            loader = reporter.AuthorityLoader(self.fixture_root, entries)
             model = reporter.validate_graph(
-                self.graph,
-                self.schema,
+                graph,
+                schema,
                 loader,
-                self.fixture_entries,
+                entries,
             )
             return reporter._authority_changed_edges(
-                self.graph,
+                graph,
                 prior_graph,
                 model,
                 loader,
@@ -530,22 +810,25 @@ class OwnershipGraphTests(unittest.TestCase):
             makefile.write_bytes(original)
 
     def test_workflow_invalidation_is_step_specific(self):
-        workflow = ROOT / reporter.BUILD_WORKFLOW_PATH
+        entries, _, graph, schema = self.fixture_authority()
+        workflow = self.fixture_root / reporter.BUILD_WORKFLOW_PATH
         original = workflow.read_bytes()
-        base_loader = reporter.AuthorityLoader(ROOT, self.entries, "HEAD")
+        base_loader = reporter.AuthorityLoader(
+            self.fixture_root, entries, "HEAD"
+        )
         prior_graph = reporter._prior_graph(base_loader)
         self.assertIsNotNone(prior_graph)
 
         def changed_edges():
-            loader = reporter.AuthorityLoader(ROOT, self.entries)
+            loader = reporter.AuthorityLoader(self.fixture_root, entries)
             model = reporter.validate_graph(
-                self.graph,
-                self.schema,
+                graph,
+                schema,
                 loader,
-                self.fixture_entries,
+                entries,
             )
             return reporter._authority_changed_edges(
-                self.graph,
+                graph,
                 prior_graph,
                 model,
                 loader,
@@ -809,9 +1092,29 @@ class OwnershipGraphTests(unittest.TestCase):
                 self.entries,
             )
 
+        graph = copy.deepcopy(self.graph)
+        edge = next(
+            item
+            for item in graph["edges"]
+            if item["id"] == "workflow.owns-test"
+        )
+        edge["target"] = "owner.host-build"
+        with self.assertRaisesRegex(reporter.OwnershipError, "selection mismatch"):
+            reporter.build_report(
+                graph,
+                self.schema,
+                self.oracle,
+                self.loader,
+                self.entries,
+            )
+
     def test_public_make_gate_surfaces_probe_mismatch(self):
-        original = ORACLE_PATH.read_bytes()
-        oracle = copy.deepcopy(self.oracle)
+        _, loader, _, _ = self.fixture_authority()
+        oracle_path = self.fixture_root / reporter.PROBE_ORACLE_PATH
+        original = oracle_path.read_bytes()
+        oracle = copy.deepcopy(
+            loader.read_json(reporter.PROBE_ORACLE_PATH, "fixture oracle")
+        )
         oracle["probes"][0]["expected_edge_types"].pop()
         payload = {
             key: oracle[key]
@@ -819,24 +1122,24 @@ class OwnershipGraphTests(unittest.TestCase):
         }
         oracle["seal"] = reporter._sha256(reporter.PROBE_SEAL_DOMAIN, payload)
         try:
-            ORACLE_PATH.write_bytes(reporter.normalized_json(oracle))
+            oracle_path.write_bytes(reporter.normalized_json(oracle))
             completed = subprocess.run(
                 ["make", "validation-ownership-check"],
-                cwd=ROOT,
+                cwd=self.fixture_root,
                 check=False,
                 capture_output=True,
                 text=True,
             )
         finally:
-            ORACLE_PATH.write_bytes(original)
+            oracle_path.write_bytes(original)
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("probe oracle selection mismatch", completed.stderr)
 
     def test_mixed_make_goal_is_rejected_before_dependency_suppression(self):
-        before = reporter.repository_status(ROOT)
+        before = reporter.repository_status(self.fixture_root)
         completed = subprocess.run(
             ["make", "-n", "validation-ownership-check", "compare"],
-            cwd=ROOT,
+            cwd=self.fixture_root,
             check=False,
             capture_output=True,
             text=True,
@@ -846,23 +1149,24 @@ class OwnershipGraphTests(unittest.TestCase):
             "validation-ownership-check must be invoked as the sole Make goal",
             completed.stderr,
         )
-        self.assertEqual(reporter.repository_status(ROOT), before)
+        self.assertEqual(reporter.repository_status(self.fixture_root), before)
 
     def test_report_is_canonical_report_only_and_preserves_git_state(self):
-        before = reporter.repository_status(ROOT)
+        _, _, fixture_graph, _ = self.fixture_authority()
+        before = reporter.repository_status(self.fixture_root)
         command = [
             "/usr/bin/python3",
             "-I",
             "scripts/validation_ownership/isolated_launcher.py",
             "resolve",
             "--repository-root",
-            str(ROOT),
+            str(self.fixture_root),
             "--changed",
             "src/bm.c",
         ]
         completed = subprocess.run(
             command,
-            cwd=ROOT,
+            cwd=self.fixture_root,
             check=True,
             capture_output=True,
         )
@@ -874,31 +1178,32 @@ class OwnershipGraphTests(unittest.TestCase):
         self.assertEqual(report["policy"]["validation_effect"], "report-only")
         self.assertFalse(report["policy"]["narrowing_authorized"])
         self.assertTrue(report["selected_gates"])
-        self.assertEqual(reporter.repository_status(ROOT), before)
+        self.assertEqual(reporter.repository_status(self.fixture_root), before)
 
-        original_graph = GRAPH_PATH.read_bytes()
-        mutated_graph = copy.deepcopy(self.graph)
+        graph_path = self.fixture_root / reporter.GRAPH_PATH
+        original_graph = graph_path.read_bytes()
+        mutated_graph = copy.deepcopy(fixture_graph)
         mutated_graph["edges"][0]["reason"] = (
             "deterministic working-tree review invalidation fixture"
         )
         try:
-            GRAPH_PATH.write_bytes(reporter.normalized_json(mutated_graph))
+            graph_path.write_bytes(reporter.normalized_json(mutated_graph))
             completed = subprocess.run(
                 command + ["--base-revision", "HEAD"],
-                cwd=ROOT,
+                cwd=self.fixture_root,
                 check=True,
                 capture_output=True,
             )
         finally:
-            GRAPH_PATH.write_bytes(original_graph)
+            graph_path.write_bytes(original_graph)
         comparison = json.loads(completed.stdout)["review_invalidation"]
         self.assertTrue(comparison["invalidated"])
         self.assertEqual(comparison["reason"], "authoritative-graph-edge-change")
         self.assertEqual(
             comparison["changed_edge_ids"],
-            [self.graph["edges"][0]["id"]],
+            [fixture_graph["edges"][0]["id"]],
         )
-        self.assertEqual(reporter.repository_status(ROOT), before)
+        self.assertEqual(reporter.repository_status(self.fixture_root), before)
 
 
 if __name__ == "__main__":

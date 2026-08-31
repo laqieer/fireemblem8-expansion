@@ -74,12 +74,16 @@ from registered table schemas. Symlinks, escapes, untracked includes,
 non-blob modes, target removal, registry drift, and workflow structural drift
 therefore fail without a second command or filename-derived owner registry.
 
-Make authority fingerprints contain normalized target declarations, recipes,
-and transitively referenced variable definitions. Comments, declaration
-order, and unrelated `.mk` targets do not invalidate another target. Workflow
-fingerprints are job/step-specific normalized structures. Review invalidation
-reports only edge IDs whose endpoint, type, owner, target authority, path
-mapping, or referenced target/job semantics changed.
+Make authority fingerprints contain normalized target declarations, exact
+prerequisite order, ordered recipes, target/global assignment operator and
+flavor, ordered repeated assignments, conditional context, and transitively
+referenced variable definitions. Comments, nonsemantic spacing, and unrelated
+`.mk` targets do not invalidate another target. First-prerequisite swaps,
+assignment reordering, operator changes, and false/different conditional
+wrapping do. Workflow fingerprints are job/step-specific normalized
+structures. Review invalidation reports only edge IDs whose endpoint, type,
+owner, target authority, path mapping, or referenced target/job semantics
+changed.
 
 The closed edge families are:
 
@@ -123,10 +127,13 @@ changes between them rejects. Untracked, ignored, and nonexistent paths never
 inherit ownership from a matching prefix.
 
 GitHub metadata is partitioned semantically: workflows, governance/schema,
-repository host configuration, templates, and manual handoff are distinct
-surfaces. In particular, `.github/workflows/build.yml` resolves to the workflow
-contract step, while `.github/CODEOWNERS` resolves only to host evidence and
-never to target compile, link, or emulator owners.
+repository host configuration, issue templates, the pull-request template,
+and manual handoff are distinct surfaces. `.github/workflows/build.yml`
+resolves to the workflow contract step, issue templates to their workflow
+tests, and `.github/PULL_REQUEST_TEMPLATE.md` to documentation governance.
+`.github/CODEOWNERS` has no deterministic repository consumer, so it is a
+named fail-closed external-GitHub-enforcement exclusion rather than a circular
+ownership-test claim.
 
 ## Manual evidence boundary
 
@@ -150,21 +157,30 @@ named semantic failure, restores the graph, and reruns both successfully.
 Self-declared replacement reasons, fabricated authorities, stale timestamps,
 or non-restoring proofs reject.
 
-The independently sealed oracle covers runtime, host-only, generated,
+The independently sealed oracle pins expected edge families **and evidence
+node IDs** for runtime, host-only, generated,
 localization, configuration, ABI, manual A/V, workflow, governance, templates,
-and host-only CODEOWNERS surfaces. Unknown families, stale paths/surfaces, or
-seal drift reject. Any missing or unexpected edge family makes the public
-check fail rather than emitting a successful report. The report exposes zero
-false-negative/false-positive counts plus the bounded maintenance estimate
-without modifying issue #176's immutable baseline fixture or expected report.
+pull-request-template, and repository-config surfaces, plus the exact
+CODEOWNERS exclusion. Unknown families/evidence IDs, same-type wrong owners,
+stale paths/surfaces, or seal drift reject. Any missing or unexpected edge or
+evidence owner makes the public check fail rather than emitting a successful
+report. The report exposes zero false-negative/false-positive counts plus the
+bounded maintenance estimate without modifying issue #176's immutable
+baseline fixture or expected report.
 
 Domain-separated seals cover the strict schema, probe oracle, complete graph, and resolved
 edges plus live evidence-authority fingerprints. Make authority derives from
 normalized target semantics; workflow authority derives from normalized parsed
 jobs and steps; tester/manual/generated authority derives from real typed
 registries. Graph-edge comparison is the review-invalidation source. Filenames,
-commit messages, comments, and non-semantic declaration ordering are not
-evidence.
+commit messages, comments, and nonsemantic whitespace are not evidence.
+
+All mutation fixtures use a bounded local clone or synthetic authority root;
+tests never overwrite the source checkout's Makefile, workflow, graph, or
+oracle and verify their bytes plus Git status even after a simulated exception.
+Before any sandbox use, no-follow traversal lstats and opens the repository
+root, `build`, `test-artifacts`, and `validation-ownership` components,
+rejecting symlinks, non-directories, escapes, and detectable replacement.
 
 ## Tester case and compatibility
 
