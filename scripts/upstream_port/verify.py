@@ -47,6 +47,20 @@ _CHECKOUT_WITH = (
     ),
     ("submodules", "recursive"),
 )
+_PATCH_CHECKOUT_WITH = (
+    ("persist-credentials", "false"),
+    ("ref", "${{ github.sha }}"),
+    ("submodules", "recursive"),
+)
+_UPLOAD_USES = (
+    "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+)
+_UPLOAD_WITH = (
+    ("if-no-files-found", "error"),
+    ("name", "modern-release-all-locales-all-features-aapcs-bps-${{ github.sha }}"),
+    ("path", "${{ runner.temp }}/patch-artifact"),
+    ("retention-days", "30"),
+)
 _EXPECTED_BUILD_SHA_EXPRESSION = (
     "${{ github.event_name == 'pull_request' && "
     "github.event.pull_request.head.sha || github.sha }}"
@@ -64,6 +78,13 @@ _EXPECTED_JOB_ENV = {
             "MGFEMBP_AGBCC_COMMIT",
             "63b22f3eb8a8051af30bd80c4795b355e439e7ef",
         ),
+    ),
+    "patch-release": (("PATCH_COMMIT", "${{ github.sha }}"),),
+    "summary": (
+        ("BUILD_RESULT", "${{ needs.build.result }}"),
+        ("EXTENDED_HOST_TESTS_RESULT", "${{ needs.extended-host-tests.result }}"),
+        ("HOST_TESTS_RESULT", "${{ needs.host-tests.result }}"),
+        ("LEGACY_RESULT", "${{ needs.legacy.result }}"),
     ),
 }
 _NON_GATE_STEP_NAMES = {
@@ -163,6 +184,8 @@ _EXPECTED_STEP_ROLES = {
         ("gate", "Build archival lane without a copyrighted baserom"),
         ("gate", "Validate pinned archival payload identities"),
     ),
+    "patch-release": (("publisher", None),) * 6,
+    "summary": (("summary", "Render fail-closed combined Build summary"),),
 }
 
 
@@ -450,10 +473,24 @@ def _parse_job_context(job_name, body):
     names = [name for name, _, _ in direct]
     if len(names) != len(set(names)):
         raise ValueError(f"job {job_name!r} contains duplicate direct keys")
-    if names != ["runs-on", "timeout-minutes", "env", "steps"]:
+    expected_names = {
+        **{
+            name: ["runs-on", "timeout-minutes", "env", "steps"]
+            for name in _COMBINED_JOBS
+        },
+        "patch-release": ["if", "runs-on", "timeout-minutes", "env", "steps"],
+        "summary": [
+            "if",
+            "needs",
+            "runs-on",
+            "timeout-minutes",
+            "env",
+            "steps",
+        ],
+    }[job_name]
+    if names != expected_names:
         raise ValueError(
-            f"job {job_name!r} direct mapping must be exactly "
-            "runs-on, timeout-minutes, env, and steps"
+            f"job {job_name!r} direct mapping differs from reviewed keys"
         )
 
     values = {}
@@ -469,16 +506,36 @@ def _parse_job_context(job_name, body):
             for line in lines[line_index + 1 : end]
             if line.strip() and not line.lstrip().startswith("#")
         ]
-        if name == "runs-on":
+        if name == "if":
+            expected = {
+                "patch-release": (
+                    "${{ github.event_name == 'push' && "
+                    "github.ref == 'refs/heads/master' }}"
+                ),
+                "summary": "always()",
+            }[job_name]
+            if value != expected or nested:
+                raise ValueError(f"job {job_name!r} if condition differs")
+            values[name] = value
+        elif name == "needs":
+            if (
+                value
+                != "[host-tests, build, extended-host-tests, legacy]"
+                or nested
+            ):
+                raise ValueError(f"job {job_name!r} needs differs")
+            values[name] = value
+        elif name == "runs-on":
             if value != "ubuntu-latest" or nested:
                 raise ValueError(
                     f"job {job_name!r} runs-on must be ubuntu-latest"
                 )
             values[name] = value
         elif name == "timeout-minutes":
-            if value != "60" or nested:
+            expected = "5" if job_name == "summary" else "60"
+            if value != expected or nested:
                 raise ValueError(
-                    f"job {job_name!r} timeout-minutes must be 60"
+                    f"job {job_name!r} timeout-minutes must be {expected}"
                 )
             values[name] = value
         elif name == "env":
@@ -540,12 +597,20 @@ def _parse_run_value(lines, start, end, value, step_label):
         commands = (tuple(shlex.split(value)),)
     elif value == "|":
         parsed = []
+        continued = ""
         for line in lines[start:end]:
             if not line.strip() or line.lstrip().startswith("#"):
                 continue
             if len(line) - len(line.lstrip(" ")) < 8:
                 raise ValueError(f"{step_label} run block has invalid indentation")
-            parsed.append(tuple(shlex.split(line.strip())))
+            text = continued + line.strip()
+            if text.endswith("\\"):
+                continued = text[:-1] + " "
+                continue
+            parsed.append(tuple(shlex.split(text)))
+            continued = ""
+        if continued:
+            raise ValueError(f"{step_label} run block has dangling continuation")
         commands = tuple(parsed)
     else:
         raise ValueError(f"{step_label} run field is empty")
@@ -648,7 +713,40 @@ def _parse_step(block, job_name, index):
             values[name] = scalar
 
     name = values.get("name")
-    if name is None:
+    if job_name == "patch-release":
+        expected_fields = (
+            {"uses", "with"}
+            if index in {0, 5}
+            else {"run", "env"}
+            if index == 4
+            else {"run"}
+        )
+        if name is not None or set(values) != expected_fields:
+            raise ValueError(f"{step_label} publisher mapping differs")
+        if index == 0 and (
+            values["uses"] != _CHECKOUT_USES
+            or values["with"] != _PATCH_CHECKOUT_WITH
+        ):
+            raise ValueError(f"{step_label} checkout action differs")
+        if index == 4 and values["env"] != (
+            ("BASEROM_URL", "${{ secrets.BASEROM_URL }}"),
+            ("PATCH_ARTIFACT_DIR", "${{ runner.temp }}/patch-artifact"),
+        ):
+            raise ValueError(f"{step_label} publication environment differs")
+        if index == 5 and (
+            values["uses"] != _UPLOAD_USES
+            or values["with"] != _UPLOAD_WITH
+        ):
+            raise ValueError(f"{step_label} upload action differs")
+        role = "publisher"
+    elif job_name == "summary":
+        if (
+            name != "Render fail-closed combined Build summary"
+            or set(values) != {"name", "run"}
+        ):
+            raise ValueError(f"{step_label} summary mapping differs")
+        role = "summary"
+    elif name is None:
         if (
             set(values) != {"uses", "with"}
             or values["uses"] != _CHECKOUT_USES
@@ -740,9 +838,10 @@ def _parse_job_steps(job_name, body):
     names = [step[1] for step in steps if step[1] is not None]
     if len(names) != len(set(names)):
         raise ValueError(f"job {job_name!r} contains duplicate step names")
-    if sum(step[1] is None for step in steps) != 1:
+    expected_unnamed = 6 if job_name == "patch-release" else 0 if job_name == "summary" else 1
+    if sum(step[1] is None for step in steps) != expected_unnamed:
         raise ValueError(
-            f"job {job_name!r} must contain exactly one checkout setup step"
+            f"job {job_name!r} unnamed step count differs"
         )
     roles = tuple((role, name) for role, name, _ in steps)
     if roles != _EXPECTED_STEP_ROLES[job_name]:
@@ -761,7 +860,7 @@ def _parse_workflow_structure_text(text):
             "workflow job order must exactly match the reviewed Build jobs"
         )
     blocks = dict(jobs)
-    for required in _COMBINED_JOBS:
+    for required in _EXPECTED_JOBS:
         if required not in blocks:
             raise ValueError(f"missing candidate Build job {required!r}")
     structures = tuple(
@@ -770,7 +869,7 @@ def _parse_workflow_structure_text(text):
             _parse_job_context(name, blocks[name]),
             _parse_job_steps(name, blocks[name]),
         )
-        for name in _COMBINED_JOBS
+        for name in _EXPECTED_JOBS
     )
     return workflow_context, names, structures
 

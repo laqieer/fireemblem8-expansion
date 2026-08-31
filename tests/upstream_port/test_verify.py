@@ -841,7 +841,7 @@ class VerifyCliCwdTests(unittest.TestCase):
             destination.write(workflow_bytes)
         return target
 
-    def append_job_steps(self, workflow, job_name, steps):
+    def job_bounds(self, workflow, job_name):
         start = workflow.index(f"\n  {job_name}:\n") + 1
         body_start = workflow.index("\n", start) + 1
         next_job = re.search(
@@ -849,23 +849,38 @@ class VerifyCliCwdTests(unittest.TestCase):
             workflow[body_start:],
             re.M,
         )
-        self.assertIsNotNone(next_job)
-        end = body_start + next_job.start()
+        end = (
+            len(workflow)
+            if next_job is None
+            else body_start + next_job.start()
+        )
+        return start, end
+
+    def job_body(self, workflow, job_name):
+        start, end = self.job_bounds(workflow, job_name)
+        return workflow[start:end]
+
+    def append_job_steps(self, workflow, job_name, steps):
+        _, end = self.job_bounds(workflow, job_name)
         return workflow[:end] + steps + "\n" + workflow[end:]
 
     def replace_in_job(self, workflow, job_name, old, new):
-        start = workflow.index(f"\n  {job_name}:\n") + 1
-        body_start = workflow.index("\n", start) + 1
-        next_job = re.search(
-            r"^  [A-Za-z_][A-Za-z0-9_-]*:",
-            workflow[body_start:],
-            re.M,
-        )
-        self.assertIsNotNone(next_job)
-        end = body_start + next_job.start()
+        start, end = self.job_bounds(workflow, job_name)
         body = workflow[start:end]
         self.assertIn(old, body)
         return workflow[:start] + body.replace(old, new, 1) + workflow[end:]
+
+    def assert_only_job_changed(self, original, changed, job_name):
+        self.assertNotEqual(
+            self.job_body(original, job_name),
+            self.job_body(changed, job_name),
+        )
+        for other in verify_mod._EXPECTED_JOBS:
+            if other != job_name:
+                self.assertEqual(
+                    self.job_body(original, other),
+                    self.job_body(changed, other),
+                )
 
     def test_normal_cli_executes_all_gates_at_selected_target_root(self):
         artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
@@ -1047,11 +1062,29 @@ class VerifyCliCwdTests(unittest.TestCase):
                         job_name,
                         "    - run: exit 1\n",
                     )
+                    self.assert_only_job_changed(original, changed, job_name)
                     with open(workflow_path, "w", encoding="utf-8") as handle:
                         handle.write(changed)
                     with self.assertRaisesRegex(
                         ValueError,
                         "unreviewed unnamed step",
+                    ):
+                        verify_mod.run_gates(target_root, dry_run=True)
+                with self.subTest(job=job_name, mutation="duplicate-setup"):
+                    changed = self.append_job_steps(
+                        original,
+                        job_name,
+                        "    - name: Build tools\n"
+                        "      run: exit 1\n\n"
+                        "    - name: Build tools\n"
+                        "      run: exit 1\n",
+                    )
+                    self.assert_only_job_changed(original, changed, job_name)
+                    with open(workflow_path, "w", encoding="utf-8") as handle:
+                        handle.write(changed)
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "duplicate step names",
                     ):
                         verify_mod.run_gates(target_root, dry_run=True)
 
@@ -1168,6 +1201,151 @@ class VerifyCliCwdTests(unittest.TestCase):
                         with self.assertRaises(ValueError):
                             verify_mod.run_gates(target_root, dry_run=True)
 
+    def test_publisher_and_summary_contexts_are_closed_before_dry_run(self):
+        artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
+        os.makedirs(artifact_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="verify-terminal-jobs-",
+            dir=artifact_root,
+        ) as temporary:
+            target_root = self.clone_target(temporary)
+            workflow_path = os.path.join(
+                target_root,
+                ".github",
+                "workflows",
+                "build.yml",
+            )
+            with open(workflow_path, "r", encoding="utf-8") as handle:
+                original = handle.read()
+            mutations = []
+            for job_name in ("patch-release", "summary"):
+                for label, old, new in (
+                        (
+                            "runner",
+                            "    runs-on: ubuntu-latest",
+                            "    runs-on: self-hosted",
+                        ),
+                        (
+                            "permissions",
+                            "    runs-on: ubuntu-latest",
+                            "    permissions: write-all\n"
+                            "    runs-on: ubuntu-latest",
+                        ),
+                        (
+                            "container",
+                            "    runs-on: ubuntu-latest",
+                            "    container: ubuntu:latest\n"
+                            "    runs-on: ubuntu-latest",
+                        ),
+                        (
+                            "defaults",
+                            "    runs-on: ubuntu-latest",
+                            "    defaults: {run: {shell: bash}}\n"
+                            "    runs-on: ubuntu-latest",
+                        ),
+                        (
+                            "unknown",
+                            "    runs-on: ubuntu-latest",
+                            "    mystery: true\n"
+                            "    runs-on: ubuntu-latest",
+                        ),
+                ):
+                        mutations.append(
+                            (
+                                job_name,
+                                label,
+                                self.replace_in_job(
+                                    original,
+                                    job_name,
+                                    old,
+                                    new,
+                                ),
+                            )
+                        )
+            for job_name, label, old, new in (
+                (
+                        "patch-release",
+                        "if",
+                        "    if: ${{ github.event_name == 'push' && "
+                        "github.ref == 'refs/heads/master' }}",
+                        "    if: always()",
+                ),
+                (
+                        "patch-release",
+                        "env",
+                        "      PATCH_COMMIT: ${{ github.sha }}",
+                        "      PATCH_COMMIT: attacker",
+                ),
+                (
+                        "patch-release",
+                        "secret",
+                        "        BASEROM_URL: ${{ secrets.BASEROM_URL }}",
+                        "        BASEROM_URL: ${{ secrets.OTHER }}",
+                ),
+                (
+                        "patch-release",
+                        "step",
+                        "    - run: make expansion-modern-all-locales-all-features-check -j1\n",
+                        "",
+                ),
+                (
+                        "patch-release",
+                        "command",
+                        "    - run: ./build_tools.sh",
+                        "    - run: exit 1",
+                ),
+                (
+                        "patch-release",
+                        "action",
+                        verify_mod._UPLOAD_USES,
+                        "actions/upload-artifact@" + "0" * 40,
+                ),
+                (
+                        "summary",
+                        "if",
+                        "    if: always()",
+                        "    if: false",
+                ),
+                (
+                        "summary",
+                        "needs",
+                        "    needs: [host-tests, build, extended-host-tests, legacy]",
+                        "    needs: [build, host-tests, legacy]",
+                ),
+                (
+                        "summary",
+                        "env",
+                        "      HOST_TESTS_RESULT: ${{ needs.host-tests.result }}",
+                        "      HOST_TESTS_RESULT: success",
+                ),
+                (
+                        "summary",
+                        "command",
+                        '            exit 1',
+                        '            exit 0',
+                ),
+                (
+                        "summary",
+                        "action",
+                        "    - name: Render fail-closed combined Build summary",
+                        "    - uses: actions/checkout@" + "0" * 40,
+                ),
+            ):
+                mutations.append(
+                        (
+                            job_name,
+                            label,
+                            self.replace_in_job(original, job_name, old, new),
+                        )
+                )
+            for job_name, label, changed in mutations:
+                with self.subTest(job=job_name, mutation=label):
+                        self.assert_only_job_changed(original, changed, job_name)
+                        with open(workflow_path, "w", encoding="utf-8") as handle:
+                            handle.write(changed)
+                        with self.assertRaises(ValueError):
+                            verify_mod.run_gates(target_root, dry_run=True)
+
             workflow_mutations = {
                 "env": original.replace(
                     "permissions:\n",
@@ -1199,23 +1377,6 @@ class VerifyCliCwdTests(unittest.TestCase):
                     ) as handle:
                         handle.write(changed)
                     with self.assertRaises(ValueError):
-                        verify_mod.run_gates(target_root, dry_run=True)
-
-                with self.subTest(job=job_name, mutation="duplicate-setup"):
-                    changed = self.append_job_steps(
-                        original,
-                        job_name,
-                        "    - name: Build tools\n"
-                        "      run: exit 1\n\n"
-                        "    - name: Build tools\n"
-                        "      run: exit 1\n",
-                    )
-                    with open(workflow_path, "w", encoding="utf-8") as handle:
-                        handle.write(changed)
-                    with self.assertRaisesRegex(
-                        ValueError,
-                        "duplicate step names",
-                    ):
                         verify_mod.run_gates(target_root, dry_run=True)
 
     def test_source_root_gate_equivalence_remains_supported(self):

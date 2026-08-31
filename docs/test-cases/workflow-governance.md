@@ -442,6 +442,12 @@ exactly name/triggers/read-only permissions/jobs with no workflow env,
 defaults, or concurrency. Every combined job is exactly Ubuntu, 60 minutes,
 its allowlisted env, and steps; self-hosted/container/service/strategy/default
 shell or any other execution field fails before dry-run.
+Patch publication and summary are also complete semantic structures:
+master-only publication condition, pinned actions, scoped secret/env and six
+publisher steps; then `always()`, exact ordered needs/result env, five-minute
+context, and one fail-closed summary step. Neither is locally executed, but any
+runner/condition/needs/permission/env/step/command/action/alternate-context
+drift rejects before dry-run.
 
 `python3 scripts/check_docs.py --check` validates this complete procedure,
 registry ownership, links, and automation evidence.

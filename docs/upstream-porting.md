@@ -217,6 +217,15 @@ Containers, services, strategies/matrices, permissions, defaults, dependency
 or condition controls, deployment environment, concurrency, reusable-job
 `uses`/secrets, custom shell context, unknown fields, and complex, duplicate,
 or reordered keys fail before dry-run.
+The same six-job structure includes the non-mirrored terminal jobs.
+`patch-release` must retain its master-push-only condition, Ubuntu/60-minute
+context, exact commit env, six ordered publisher steps, pinned checkout/upload
+actions, scoped base-image secret, and upload mapping. `summary` must retain
+`always()`, the exact four ordered needs, Ubuntu/five-minute context, exact
+result env, and its single fail-closed command. Runner, condition, needs,
+permission, env, step, command, action, container/default, or unknown-field
+drift in either job fails before local dry-run even though neither job becomes
+one of the 28 locally executed gates.
 
 CI additionally hydrates commit authority before the workflow-pilot tests with
 the strict fixture-derived helper. It derives the minimal maximal commit tips,
