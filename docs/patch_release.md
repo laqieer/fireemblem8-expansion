@@ -71,6 +71,19 @@ staging, and removes the builder user, tree, wheelhouse, and candidate
 checkout. Missing mount/cgroup-v2 capabilities fail before candidate execution;
 cleanup never uses `pkill`, `killall`, or a UID-wide signal.
 
+Before candidate code starts, its PID-1 wrapper redirects inherited standard
+input from `/dev/null`, redirects standard output/error to a private regular
+sink on a 1 MiB tmpfs, and closes every inherited descriptor above 2. Thus
+`/proc/*/fd`, `/dev/stdout`, `tee`, shell xtrace, forks, and helper/logger pipes
+can reach only that sink, never the Actions log. `/dev/console` and `/dev/kmsg`
+are absent. `GITHUB_STEP_SUMMARY`, `GITHUB_OUTPUT`, `GITHUB_ENV`, and
+`GITHUB_PATH` are not passed. Candidate-writable source, home, temporary,
+handoff, capture, `/tmp`, and shared-memory filesystems have explicit size
+limits; file size, open files, processes, virtual memory, and core dumps have
+ulimits. Candidate output is never replayed, logged, or uploaded. The wrapper
+deletes the sink and proves it absent on every exit; the trusted host reports
+only fixed success/failure text and a numeric exit classification.
+
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.
 The immediately following step runs only the staged tool through absolute

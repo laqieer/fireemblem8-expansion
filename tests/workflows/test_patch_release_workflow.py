@@ -7,6 +7,7 @@ import http.server
 import json
 import os
 import re
+import resource
 import shlex
 import subprocess
 import tempfile
@@ -216,6 +217,42 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "/usr/bin/env -i" not in isolated_step
         or "GITHUB_ENV=\"$GITHUB_ENV\"" in isolated_step
         or "BASH_ENV=\"$BASH_ENV\"" in isolated_step
+        or "GITHUB_OUTPUT=\"$GITHUB_OUTPUT\"" in isolated_step
+        or "GITHUB_PATH=\"$GITHUB_PATH\"" in isolated_step
+        or "GITHUB_STEP_SUMMARY=\"$GITHUB_STEP_SUMMARY\"" in isolated_step
+        or isolated_step.count("\n        close_inherited_fds\n") != 2
+        or 'exec < /dev/null > /dev/null 2>&1' not in isolated_step
+        or '< /dev/null > /dev/null 2>&1 &' not in isolated_step
+        or (
+            "size=1m \\\n"
+            "          builder-capture /mnt/capture"
+        )
+        not in isolated_step
+        or "candidate-output.log" not in isolated_step
+        or "ulimit -c 0" not in isolated_step
+        or "ulimit -f 131072" not in isolated_step
+        or "ulimit -n 128" not in isolated_step
+        or "ulimit -u 512" not in isolated_step
+        or "ulimit -v 8388608" not in isolated_step
+        or 'test "$sink_size" -le 1048576' not in isolated_step
+        or '/bin/rm -f -- "$candidate_sink"' not in isolated_step
+        or 'test ! -e "$candidate_sink"' not in isolated_step
+        or 'test "$cgroup_members" = "$$"' not in isolated_step
+        or 'cat "$candidate_sink"' in isolated_step
+        or 'tee "$candidate_sink"' in isolated_step
+        or "size=6g builder-source /mnt/source" not in isolated_step
+        or "size=1g builder-home /mnt/home" not in isolated_step
+        or "size=1g builder-temp /mnt/tmp" not in isolated_step
+        or "size=40m" not in isolated_step
+        or "builder-handoff /mnt/handoff" not in isolated_step
+        or 'test -z "${GITHUB_OUTPUT-}"' not in isolated_step
+        or 'test -z "${GITHUB_PATH-}"' not in isolated_step
+        or 'test -z "${GITHUB_STEP_SUMMARY-}"' not in isolated_step
+        or 'test -z "${BASH_XTRACEFD-}"' not in isolated_step
+        or 'test ! -e /dev/console' not in isolated_step
+        or 'test ! -e /dev/kmsg' not in isolated_step
+        or "candidate build failed: exit=%d" not in isolated_step
+        or "candidate build status: success" not in isolated_step
         or "/usr/bin/mount --make-rprivate /" not in isolated_step
         or "/usr/bin/mount -o remount,bind,ro /" not in isolated_step
         or "runner temp is outside the masked host tree" not in isolated_step
@@ -224,6 +261,7 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "builder-tmp /tmp" not in isolated_step
         or "builder-dev /dev" not in isolated_step
         or "builder-shm /dev/shm" not in isolated_step
+        or "hidepid=2 /proc" not in isolated_step
         or "/usr/share/dbus-1/system-services" not in isolated_step
         or "/run/dbus/system_bus_socket" not in isolated_step
         or "/run/docker.sock" not in isolated_step
@@ -255,6 +293,7 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "handoff_names=" not in isolated_step
         or "metadata.json\\ntarget.gba" not in isolated_step
         or 'test "$handoff_names" = ' not in isolated_step
+        or isolated_step.count('test "$handoff_names" = ') != 2
         or 'test -z "$(builder_uid_pids "$builder_uid")"' not in isolated_step
         or 'test -z "$(builder_group_pids "$builder_pgid")"' not in isolated_step
         or "userdel" not in isolated_step
@@ -527,6 +566,16 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertIn('test -z "$(builder_cgroup_pids)"', self.patch_job)
         self.assertIn('test ! -e "$builder_cgroup"', self.patch_job)
         self.assertNotRegex(self.patch_job, r"/bin/kill[^\n]*[\"']?\$pid")
+        self.assertIn("close_inherited_fds", self.patch_job)
+        self.assertIn('exec < /dev/null > /dev/null 2>&1', self.patch_job)
+        self.assertIn("builder-capture /mnt/capture", self.patch_job)
+        self.assertIn('test "$sink_size" -le 1048576', self.patch_job)
+        self.assertIn('/bin/rm -f -- "$candidate_sink"', self.patch_job)
+        self.assertIn('test ! -e "$candidate_sink"', self.patch_job)
+        self.assertIn("ulimit -f 131072", self.patch_job)
+        self.assertIn("size=6g builder-source /mnt/source", self.patch_job)
+        self.assertIn("candidate build failed: exit=%d", self.patch_job)
+        self.assertIn("candidate build status: success", self.patch_job)
         stop = self.patch_job.index(
             'test -z "$(builder_cgroup_pids)"',
             self.patch_job.index('wait "$builder_supervisor_pid"'),
@@ -721,6 +770,52 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             '/usr/bin/env -i BASH_ENV="$BASH_ENV" HOME=/mnt/home',
             1,
         )
+        inherited_actions_log = self.text.replace(
+            "          < /dev/null > /dev/null 2>&1 &",
+            "          &",
+            1,
+        )
+        retained_inherited_fds = self.text.replace(
+            "\n        close_inherited_fds\n",
+            "\n        true\n",
+        )
+        unbounded_capture = self.text.replace(
+            "size=1m \\\n          builder-capture /mnt/capture",
+            "size=64g \\\n          builder-capture /mnt/capture",
+            1,
+        )
+        unbounded_source = self.text.replace(
+            "size=6g builder-source /mnt/source",
+            "size=100% builder-source /mnt/source",
+            1,
+        )
+        removed_file_limit = self.text.replace(
+            "        ulimit -f 131072",
+            "        true",
+            1,
+        )
+        replayed_candidate_output = self.text.replace(
+            '        sink_size="$(/usr/bin/stat -c %s "$candidate_sink")"',
+            '        /bin/cat "$candidate_sink"\n'
+            '        sink_size="$(/usr/bin/stat -c %s "$candidate_sink")"',
+            1,
+        )
+        retained_candidate_sink = self.text.replace(
+            '        /bin/rm -f -- "$candidate_sink"\n'
+            '        test ! -e "$candidate_sink"',
+            "        true",
+            1,
+        )
+        leaked_github_output = self.text.replace(
+            "/usr/bin/env -i HOME=/mnt/home",
+            '/usr/bin/env -i GITHUB_OUTPUT="$GITHUB_OUTPUT" HOME=/mnt/home',
+            1,
+        )
+        leaked_step_summary = self.text.replace(
+            "/usr/bin/env -i HOME=/mnt/home",
+            '/usr/bin/env -i GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" HOME=/mnt/home',
+            1,
+        )
         writable_host_root = self.text.replace(
             "/usr/bin/mount -o remount,bind,ro /",
             "/usr/bin/mount -o remount,bind,rw /",
@@ -870,6 +965,15 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             ("missing-hardlink-guard", missing_hardlink_guard),
             ("leaked-github-env", leaked_github_env),
             ("leaked-bash-env", leaked_bash_env),
+            ("inherited-actions-log", inherited_actions_log),
+            ("retained-inherited-fds", retained_inherited_fds),
+            ("unbounded-capture", unbounded_capture),
+            ("unbounded-source", unbounded_source),
+            ("removed-file-limit", removed_file_limit),
+            ("replayed-candidate-output", replayed_candidate_output),
+            ("retained-candidate-sink", retained_candidate_sink),
+            ("leaked-github-output", leaked_github_output),
+            ("leaked-step-summary", leaked_step_summary),
             ("writable-host-root", writable_host_root),
             ("writable-dbus-activation", writable_dbus_activation),
             ("writable-opt", writable_opt),
@@ -1136,6 +1240,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                         **os.environ,
                         "BUILDER_ROOT": str(builder_root),
                         "builder_uid": str(os.getuid()),
+                        "host_uid": str(os.getuid()),
                     },
                     check=False,
                     capture_output=True,
@@ -1170,6 +1275,125 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             unexpected, unexpected_output = make_builder("unexpected")
             (unexpected_output / "extra").write_bytes(b"not an admitted output")
             self.assertNotEqual(validate(unexpected).returncode, 0)
+
+    def test_candidate_output_is_bounded_private_and_never_replayed(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        marker = "Uk9NX0xPR19MRUFLX01BUktFUl80ZjZmNmQ="
+        with tempfile.TemporaryDirectory(
+            prefix="candidate-output-boundary-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            command_files = {
+                name: sandbox / name.lower()
+                for name in (
+                    "GITHUB_ENV",
+                    "GITHUB_OUTPUT",
+                    "GITHUB_PATH",
+                    "GITHUB_STEP_SUMMARY",
+                )
+            }
+            for path in command_files.values():
+                path.write_bytes(b"")
+            inherited_path = sandbox / "inherited-helper-pipe"
+            inherited_fd = os.open(
+                inherited_path,
+                os.O_CREAT | os.O_WRONLY,
+                0o600,
+            )
+            os.set_inheritable(inherited_fd, True)
+
+            def limits():
+                resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+                resource.setrlimit(resource.RLIMIT_FSIZE, (65536, 65536))
+                resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
+
+            def run_adversary(script, expected_status=None):
+                sink = sandbox / "private-candidate-output.log"
+                with sink.open("wb") as output:
+                    completed = subprocess.run(
+                        [
+                            "/usr/bin/env",
+                            "-i",
+                            "HOME=" + str(sandbox),
+                            "PATH=/usr/bin:/bin",
+                            "/bin/bash",
+                            "--noprofile",
+                            "--norc",
+                            "-c",
+                            script,
+                            "--",
+                            marker,
+                            str(inherited_fd),
+                        ],
+                        stdin=subprocess.DEVNULL,
+                        stdout=output,
+                        stderr=subprocess.STDOUT,
+                        cwd=sandbox,
+                        close_fds=True,
+                        preexec_fn=limits,
+                        check=False,
+                    )
+                visible = (
+                    "candidate build status: success"
+                    if completed.returncode == 0
+                    else f"candidate build failed: exit={completed.returncode}"
+                )
+                self.assertNotIn(marker, visible)
+                self.assertLessEqual(sink.stat().st_size, 65536)
+                sink.unlink()
+                self.assertFalse(sink.exists())
+                if expected_status is not None:
+                    self.assertEqual(completed.returncode, expected_status)
+                return completed.returncode
+
+            try:
+                status = run_adversary(
+                    r'''
+set +e
+marker="$1"
+inherited_fd="$2"
+printf '%s\n' "$marker"
+printf '%s\n' "$marker" >&2
+printf '%s\n' "$marker" > /proc/self/fd/1
+printf '%s\n' "$marker" > /dev/stdout
+printf '%s\n' "$marker" | /usr/bin/tee /dev/stdout > /dev/null
+BASH_XTRACEFD=2
+PS4="$marker"
+set -x
+:
+set +x
+for name in GITHUB_ENV GITHUB_OUTPUT GITHUB_PATH GITHUB_STEP_SUMMARY; do
+  value="${!name-}"
+  if [ -n "$value" ]; then
+    printf '%s\n' "$marker" >> "$value"
+  fi
+done
+if [ -e "/proc/self/fd/$inherited_fd" ]; then
+  eval "printf '%s\n' \"\$marker\" >&$inherited_fd"
+fi
+(printf '%s\n' "$marker" >&2) &
+wait
+exit 23
+''',
+                    expected_status=23,
+                )
+                self.assertEqual(status, 23)
+                huge_status = run_adversary(
+                    r'''
+exec /usr/bin/python3 -c \
+  'import os,sys; marker=sys.argv[1].encode(); data=(marker+b"\n")*1000000; os.write(1,data); os.write(2,data)' \
+  "$1"
+''',
+                )
+                self.assertNotEqual(huge_status, 0)
+            finally:
+                os.close(inherited_fd)
+
+            self.assertEqual(inherited_path.read_bytes(), b"")
+            for path in command_files.values():
+                self.assertEqual(path.read_bytes(), b"")
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)

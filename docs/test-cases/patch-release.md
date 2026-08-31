@@ -151,6 +151,13 @@ path, invokes only that staged tool through absolute isolated Python while the
 base exists, removes it on success/failure, verifies cleanup, revalidates the
 BPS/manifest/README allowlist immediately before upload, and uploads only that
 patch artifact.
+Before candidate code, inherited descriptors above 2 close, stdin becomes
+`/dev/null`, and stdout/stderr target one quota-bounded private regular sink.
+The candidate receives no GitHub workflow command-file paths and cannot recover
+the Actions log through proc FDs, `/dev/stdout`, console/kmsg, `tee`, xtrace,
+helpers, or forks. ROM-sized output fills only the bounded sink; it is never
+replayed and is removed with absence proven. Fixed trusted text and a numeric
+exit classification preserve build failure without exposing candidate bytes.
 
 ### Negative control
 
@@ -180,7 +187,8 @@ archival-lane behavior changes.
   and namespaces, read-only host/private-filesystem probes, exact cgroup-v2 and
   process teardown, socket/daemon/cgroup-escape adversaries, two-file handoff
   rejection controls, unpredictable private path, cleanup-before-upload, late
-  artifact revalidation, and profile/verifier requirements.
+  artifact revalidation, bounded/no-replay candidate output adversaries, and
+  profile/verifier requirements.
 
 ### Cleanup and limitations
 

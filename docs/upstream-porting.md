@@ -270,6 +270,11 @@ cgroup/user/tree/process state is removed before the unpredictable
 mode-restricted private download; immediate absolute isolated patch creation,
 guaranteed base cleanup, cleanup verification, post-cleanup BPS/manifest/README
 revalidation, and the exact patch-only upload mapping remain mandatory.
+Candidate stdin must be `/dev/null`; inherited descriptors above 2 must close;
+stdout/stderr must enter a quota-bounded private regular sink with tmpfs/ulimit
+bounds. GitHub workflow command-file paths stay absent, output is never
+replayed, the sink is removed and proven absent, and only fixed trusted status
+text plus a numeric exit classification reaches the workflow log.
 `summary` must retain
 `always()`, its reliably evaluated dynamic summary name, the classifier plus exact ordered
 worker/publisher needs, Ubuntu/five-minute context, exact classifier/result

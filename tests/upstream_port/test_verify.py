@@ -1463,6 +1463,12 @@ class VerifyCliCwdTests(unittest.TestCase):
                 ),
                 (
                         "patch-release",
+                        "candidate-output-isolation",
+                        "          < /dev/null > /dev/null 2>&1 &",
+                        "          &",
+                ),
+                (
+                        "patch-release",
                         "action",
                         verify_mod._UPLOAD_USES,
                         "actions/upload-artifact@" + "0" * 40,

@@ -395,6 +395,13 @@ After that cleanup, an adjacent final check revalidates exactly regular,
 single-link BPS/manifest/README outputs immediately before upload.
 Unavailable mount/cgroup features fail closed, and cleanup sends no UID-wide
 signal.
+Before candidate code starts, the wrapper closes inherited file descriptors
+above 2, redirects stdin from `/dev/null` and stdout/stderr to a quota-bounded
+private regular sink, and passes no GitHub workflow command-file paths.
+Candidate output is never replayed, logged, or uploaded; the trusted host emits
+only fixed status text with a numeric exit classification. All writable roots
+and files have tmpfs/ulimit bounds. The sink is removed and its absence proven
+before teardown.
 No whole-file source hash pins are used.
 Before the base exists, the fresh hosted publisher proves that no
 candidate-written `GITHUB_ENV`, `BASH_ENV`, background process, checkout, or
@@ -1265,8 +1272,9 @@ revision verification, exact-after producer, no target-ROM artifact transfer,
 dedicated-UID private-mount/PID/network isolation, read-only host paths, masked
 service sockets, offline dependencies, exact cgroup-v2/process teardown, exact
 regular/single-link two-file handoff, candidate-state removal before download,
-unpredictable private path, immediate isolated patch tool, verified cleanup,
-late BPS/manifest/README revalidation, and nine fresh-job publisher steps;
+bounded non-replayed candidate output with fixed numeric status, unpredictable
+private path, immediate isolated patch tool, verified cleanup, late
+BPS/manifest/README revalidation, and nine fresh-job publisher steps;
 then `always()`, identity/classifier plus exact ordered
 worker/publisher needs/result env, dynamic full/metadata summary name, five-minute
 context, and one fail-closed summary step.

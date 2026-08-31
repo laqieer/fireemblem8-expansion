@@ -1081,8 +1081,7 @@ jobs:
         builder_root_owned=1
         /usr/bin/install -d -m 0700 \
           "$BUILDER_ROOT/control" "$BUILDER_ROOT/handoff" \
-          "$BUILDER_ROOT/home" "$BUILDER_ROOT/source" \
-          "$BUILDER_ROOT/tmp" "$BUILDER_ROOT/wheelhouse"
+          "$BUILDER_ROOT/source" "$BUILDER_ROOT/wheelhouse"
         /bin/cp -a -- "$GITHUB_WORKSPACE_PATH/." "$BUILDER_ROOT/source/"
         /bin/cp -a -- "$PATCH_WHEELHOUSE/." "$BUILDER_ROOT/wheelhouse/"
         builder_uid=60000
@@ -1105,6 +1104,7 @@ jobs:
         /usr/bin/tee "$BUILDER_ROOT/control/builder-isolation.sh" \
           > /dev/null <<'BUILDER_ISOLATION'
         #!/bin/bash
+        builder_main() {
         set -euo pipefail
         cgroup_path="$1"
         builder_uid="$2"
@@ -1112,6 +1112,42 @@ jobs:
         builder_root="$4"
         host_runner_temp="$5"
         candidate_script="$6"
+        host_uid="$7"
+        host_gid="$8"
+        candidate_sink=""
+        exec < /dev/null > /dev/null 2>&1
+        cleanup_candidate_sink() {
+          status="$?"
+          trap - EXIT INT TERM
+          exec < /dev/null > /dev/null 2>&1
+          if [ -n "$candidate_sink" ] && [ -e "$candidate_sink" ]; then
+            /bin/rm -f -- "$candidate_sink"
+          fi
+          if [ -n "$candidate_sink" ] && [ -e "$candidate_sink" ]; then
+            exit 125
+          fi
+          exit "$status"
+        }
+        trap cleanup_candidate_sink EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+        close_inherited_fds() {
+          for fd_path in /proc/$$/fd/*; do
+            fd="${fd_path##*/}"
+            case "$fd" in
+              0|1|2) ;;
+              ''|*[!0-9]*) exit 125 ;;
+              *) eval "exec ${fd}>&-" 2>/dev/null || true ;;
+            esac
+          done
+          for fd_path in /proc/$$/fd/*; do
+            case "${fd_path##*/}" in
+              0|1|2) ;;
+              *) exit 125 ;;
+            esac
+          done
+        }
+        close_inherited_fds
         printf '%s\n' "$$" > "$cgroup_path/cgroup.procs"
         /usr/bin/grep -Fqx "$$" "$cgroup_path/cgroup.procs"
         cd /
@@ -1125,21 +1161,30 @@ jobs:
         /usr/bin/mount -t tmpfs \
           -o nosuid,nodev,noexec,mode=0755,size=16m \
           builder-work /mnt
-        /usr/bin/mkdir -m 0755 /mnt/control /mnt/handoff /mnt/home \
-          /mnt/source /mnt/tmp /mnt/wheelhouse
-        /usr/bin/mount --bind "$builder_root/source" /mnt/source
-        /usr/bin/mount -o remount,bind,rw,nosuid,nodev /mnt/source
-        /usr/bin/mount --bind "$builder_root/home" /mnt/home
-        /usr/bin/mount -o remount,bind,rw,nosuid,nodev /mnt/home
-        /usr/bin/mount --bind "$builder_root/tmp" /mnt/tmp
-        /usr/bin/mount -o remount,bind,rw,nosuid,nodev /mnt/tmp
-        /usr/bin/mount --bind "$builder_root/handoff" /mnt/handoff
-        /usr/bin/mount -o remount,bind,rw,nosuid,nodev,noexec /mnt/handoff
+        /usr/bin/mkdir -m 0755 /mnt/capture /mnt/control /mnt/export \
+          /mnt/handoff /mnt/home /mnt/source /mnt/tmp /mnt/wheelhouse
+        /usr/bin/mount -t tmpfs \
+          -o nosuid,nodev,mode=0755,size=6g builder-source /mnt/source
+        /bin/cp -a -- "$builder_root/source/." /mnt/source/
+        /usr/bin/mount -t tmpfs \
+          -o nosuid,nodev,mode=0700,size=1g builder-home /mnt/home
+        /usr/bin/mount -t tmpfs \
+          -o nosuid,nodev,mode=0700,size=1g builder-temp /mnt/tmp
+        /usr/bin/mount -t tmpfs \
+          -o nosuid,nodev,noexec,mode=0700,size=40m \
+          builder-handoff /mnt/handoff
+        /usr/bin/mount -t tmpfs \
+          -o nosuid,nodev,noexec,mode=0700,size=1m \
+          builder-capture /mnt/capture
+        /usr/bin/mount --bind "$builder_root/handoff" /mnt/export
+        /usr/bin/mount -o remount,bind,ro,nosuid,nodev,noexec /mnt/export
         /usr/bin/mount --bind "$builder_root/wheelhouse" /mnt/wheelhouse
         /usr/bin/mount -o remount,bind,ro,nosuid,nodev,noexec \
           /mnt/wheelhouse
         /usr/bin/install -m 0555 "$candidate_script" \
           /mnt/control/candidate-build.sh
+        /usr/bin/chown -R "$builder_uid:$builder_gid" \
+          /mnt/handoff /mnt/home /mnt/source /mnt/tmp
         /usr/bin/mount --bind /mnt/control /mnt/control
         /usr/bin/mount -o remount,bind,ro,nosuid,nodev,noexec /mnt/control
         /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt
@@ -1180,8 +1225,19 @@ jobs:
         /usr/bin/ln -s /proc/self/fd/1 /dev/stdout
         /usr/bin/ln -s /proc/self/fd/2 /dev/stderr
         /usr/bin/mount -o remount,ro,nosuid /dev
-        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /proc
-        exec /usr/bin/setpriv --reuid="$builder_uid" \
+        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec,hidepid=2 /proc
+        candidate_sink=/mnt/capture/candidate-output.log
+        : > "$candidate_sink"
+        /bin/chmod 0600 "$candidate_sink"
+        exec < /dev/null > "$candidate_sink" 2>&1
+        close_inherited_fds
+        ulimit -c 0
+        ulimit -f 131072
+        ulimit -n 128
+        ulimit -u 512
+        ulimit -v 8388608
+        set +e
+        /usr/bin/setpriv --reuid="$builder_uid" \
           --regid="$builder_gid" --clear-groups --no-new-privs \
           --bounding-set=-all --inh-caps=-all --ambient-caps=-all \
           /usr/bin/env -i HOME=/mnt/home GITHUB_WORKSPACE=/mnt/source \
@@ -1191,6 +1247,46 @@ jobs:
           WHEELHOUSE=/mnt/wheelhouse HANDOFF=/mnt/handoff \
           /bin/bash --noprofile --norc -euo pipefail \
           /mnt/control/candidate-build.sh
+        candidate_status="$?"
+        set -e
+        exec < /dev/null > /dev/null 2>&1
+        sink_size="$(/usr/bin/stat -c %s "$candidate_sink")"
+        test "$sink_size" -ge 0
+        test "$sink_size" -le 1048576
+        /bin/rm -f -- "$candidate_sink"
+        test ! -e "$candidate_sink"
+        candidate_sink=""
+        if [ "$candidate_status" -ne 0 ]; then
+          exit "$candidate_status"
+        fi
+        cgroup_members="$(LC_ALL=C /usr/bin/sort -n \
+          "$cgroup_path/cgroup.procs")"
+        test "$cgroup_members" = "$$"
+        handoff_names="$(/usr/bin/find /mnt/handoff -mindepth 1 \
+          -maxdepth 1 -printf '%f\n' | LC_ALL=C /usr/bin/sort)"
+        test "$handoff_names" = "$(printf 'metadata.json\ntarget.gba')"
+        for output in /mnt/handoff/target.gba /mnt/handoff/metadata.json; do
+          test -f "$output"
+          test ! -L "$output"
+          test "$(/usr/bin/stat -c %F "$output")" = "regular file"
+          test "$(/usr/bin/stat -c %h "$output")" = 1
+          test "$(/usr/bin/stat -c %u "$output")" = "$builder_uid"
+        done
+        test "$(/usr/bin/stat -c %s /mnt/handoff/target.gba)" = 33554432
+        metadata_size="$(/usr/bin/stat -c %s /mnt/handoff/metadata.json)"
+        test "$metadata_size" -gt 0
+        test "$metadata_size" -le 1048576
+        /usr/bin/mount -o remount,bind,rw,nosuid,nodev,noexec /mnt/export
+        /usr/bin/install -m 0400 /mnt/handoff/target.gba \
+          /mnt/export/target.gba
+        /usr/bin/install -m 0400 /mnt/handoff/metadata.json \
+          /mnt/export/metadata.json
+        /usr/bin/chown "$host_uid:$host_gid" /mnt/export/target.gba \
+          /mnt/export/metadata.json
+        /usr/bin/mount -o remount,bind,ro,nosuid,nodev,noexec /mnt/export
+        exit 0
+        }
+        builder_main "$@"
         BUILDER_ISOLATION
         /usr/bin/tee "$BUILDER_ROOT/control/candidate-build.sh" \
           > /dev/null <<'CANDIDATE_BUILD'
@@ -1198,8 +1294,12 @@ jobs:
         set -euo pipefail
         umask 077
         test -z "${BASH_ENV-}"
+        test -z "${BASH_XTRACEFD-}"
         test -z "${ENV-}"
         test -z "${GITHUB_ENV-}"
+        test -z "${GITHUB_OUTPUT-}"
+        test -z "${GITHUB_PATH-}"
+        test -z "${GITHUB_STEP_SUMMARY-}"
         test -z "${LD_LIBRARY_PATH-}"
         test -z "${LD_PRELOAD-}"
         test -z "${PYTHONPATH-}"
@@ -1211,12 +1311,16 @@ jobs:
         done
         test ! -w "$WHEELHOUSE"
         test ! -w "$HOST_RUNNER_TEMP"
+        test ! -w /mnt/capture
+        test ! -w /mnt/export
         for writable_path in "$GITHUB_WORKSPACE" "$HOME" "$RUNNER_TEMP" \
           "$HANDOFF"
         do
           test -d "$writable_path"
           test -w "$writable_path"
         done
+        test ! -e /dev/console
+        test ! -e /dev/kmsg
         for socket_path in /run/dbus/system_bus_socket \
           /run/docker.sock /run/containerd/containerd.sock \
           /run/systemd/private /run/snapd.socket \
@@ -1232,7 +1336,7 @@ jobs:
           case ",$mount_options," in
             *,rw,*)
               case "$mount_target" in
-                /dev/shm|/mnt/handoff|/mnt/home|/mnt/source|/mnt/tmp|/tmp) ;;
+                /dev/shm|/mnt/capture|/mnt/handoff|/mnt/home|/mnt/source|/mnt/tmp|/tmp) ;;
                 *) echo "unexpected writable mount: $mount_target" >&2; exit 1 ;;
               esac
               ;;
@@ -1253,8 +1357,6 @@ jobs:
         /bin/chmod 0500 "$BUILDER_ROOT/control/builder-isolation.sh"
         /bin/chmod 0400 "$BUILDER_ROOT/control/candidate-build.sh"
         /usr/bin/sudo /bin/chown -R "$builder_uid:$builder_gid" \
-          "$BUILDER_ROOT/handoff" "$BUILDER_ROOT/home" \
-          "$BUILDER_ROOT/source" "$BUILDER_ROOT/tmp" \
           "$BUILDER_ROOT/wheelhouse"
         /usr/bin/sudo /usr/bin/unshare --fork --kill-child=KILL \
           --mount --pid --mount-proc --net --ipc --uts \
@@ -1284,21 +1386,34 @@ jobs:
         test -f "$builder_cgroup/cgroup.procs"
         test -r "$builder_cgroup/cgroup.procs"
         test -z "$(builder_cgroup_pids)"
+        host_uid="$(/usr/bin/id -u)"
+        host_gid="$(/usr/bin/id -g)"
         /usr/bin/setsid --wait /usr/bin/timeout --signal=TERM \
           --kill-after=30s 55m /usr/bin/sudo /usr/bin/unshare --fork \
           --kill-child=KILL --mount --pid --mount-proc --net --ipc --uts \
           /bin/bash "$BUILDER_ROOT/control/builder-isolation.sh" \
           "$builder_cgroup" "$builder_uid" "$builder_gid" \
           "$BUILDER_ROOT" "$RUNNER_TEMP" \
-          "$BUILDER_ROOT/control/candidate-build.sh" &
+          "$BUILDER_ROOT/control/candidate-build.sh" \
+          "$host_uid" "$host_gid" \
+          < /dev/null > /dev/null 2>&1 &
         builder_supervisor_pid="$!"
         builder_pgid="$(/usr/bin/ps -o pgid= -p "$builder_supervisor_pid" \
           | /usr/bin/tr -d ' ')"
         [[ "$builder_pgid" =~ ^[1-9][0-9]*$ ]]
         test "$builder_pgid" = "$builder_supervisor_pid"
         test "$builder_pgid" != "$shell_pgid"
+        set +e
         wait "$builder_supervisor_pid"
+        builder_status="$?"
+        set -e
         builder_supervisor_pid=""
+        if [ "$builder_status" -ne 0 ]; then
+          printf 'candidate build failed: exit=%d\n' \
+            "$builder_status" >&2
+          exit "$builder_status"
+        fi
+        printf 'candidate build status: success\n'
         test -z "$(builder_group_pids "$builder_pgid")"
         test -z "$(builder_cgroup_pids)"
         test -z "$(builder_uid_pids "$builder_uid")"
@@ -1307,11 +1422,8 @@ jobs:
         handoff_root="$BUILDER_ROOT/handoff"
         test -d "$handoff_root"
         test ! -L "$handoff_root"
-        test "$(/usr/bin/stat -c %u "$handoff_root")" = "$builder_uid"
         test "$(/usr/bin/realpath "$handoff_root")" = "$handoff_root"
-        host_uid="$(/usr/bin/id -u)"
-        host_gid="$(/usr/bin/id -g)"
-        /usr/bin/sudo /bin/chown "$host_uid:$host_gid" "$handoff_root"
+        test "$(/usr/bin/stat -c %u "$handoff_root")" = "$host_uid"
         handoff_names="$(/usr/bin/find "$handoff_root" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C /usr/bin/sort)"
         test "$handoff_names" = "$(printf 'metadata.json\ntarget.gba')"
         target_source="$handoff_root/target.gba"
@@ -1321,12 +1433,11 @@ jobs:
           test ! -L "$source"
           test "$(/usr/bin/stat -c %F "$source")" = "regular file"
           test "$(/usr/bin/stat -c %h "$source")" = 1
-          test "$(/usr/bin/stat -c %u "$source")" = "$builder_uid"
+          test "$(/usr/bin/stat -c %u "$source")" = "$host_uid"
           case "$(/usr/bin/realpath "$source")" in
             "$handoff_root"/*) ;;
             *) echo "builder output escaped isolated handoff" >&2; exit 1 ;;
           esac
-          /usr/bin/sudo /bin/chown "$host_uid:$host_gid" "$source"
         done
         test "$(/usr/bin/stat -c %s "$target_source")" = 33554432
         metadata_size="$(/usr/bin/stat -c %s "$metadata_source")"
