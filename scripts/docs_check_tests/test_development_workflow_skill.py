@@ -63,6 +63,7 @@ EVOLVING_PR_BODY_FIELDS = (
     "Deletions:",
     "Total changed lines:",
     "current SHA:",
+    "Candidate SHA:",
     "run ID:",
     "Candidate Build CI",
     "Copilot review ran",
