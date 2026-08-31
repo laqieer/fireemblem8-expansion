@@ -1,0 +1,47 @@
+{
+  "schema_version": 2,
+  "contract_seal": "94c9c0f0c68996898090a2d4fba9a2b7aa5abeeb5b8dc8518ed92ce541c8cb84",
+  "evidence_seal": "2ad5f02ccc223b3cc0f8c38e003f8df9e8f9a591a50b7ab2c7efb3bf0be84032",
+  "paths": {
+    "actors.ids": [
+      "ACTOR_COPILOT_001",
+      "ACTOR_IMPLEMENTER_001"
+    ],
+    "architecture_dispositions.ids": [],
+    "findings.ids": [],
+    "identity.candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
+    "identity.pull_request": 179,
+    "identity.pull_request_node_id": "PR_ISSUE_179_SYNTHETIC",
+    "identity.repository": "laqieer/fireemblem8-expansion",
+    "pre_review_actions.ids": [],
+    "pre_reviews.ids": [],
+    "remote_reviews.ids": [
+      "REMOTE_REVIEW_DEFAULT_001"
+    ],
+    "remote_reviews.numeric_ids": [
+      2001
+    ],
+    "results.ids": [
+      "result-actor-permission-bounds-adversarial",
+      "result-actor-permission-bounds-default",
+      "result-actor-permission-bounds-positive",
+      "result-actor-permission-bounds-runtime",
+      "result-authority-causality-adversarial",
+      "result-authority-causality-default",
+      "result-authority-causality-positive",
+      "result-authority-causality-runtime",
+      "result-remote-review-metrics-adversarial",
+      "result-remote-review-metrics-default",
+      "result-remote-review-metrics-positive",
+      "result-remote-review-metrics-runtime",
+      "result-round-lifecycle-adversarial",
+      "result-round-lifecycle-default",
+      "result-round-lifecycle-positive",
+      "result-round-lifecycle-runtime",
+      "result-sibling-family-expansion-adversarial",
+      "result-sibling-family-expansion-default",
+      "result-sibling-family-expansion-positive",
+      "result-sibling-family-expansion-runtime"
+    ]
+  }
+}

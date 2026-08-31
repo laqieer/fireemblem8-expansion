@@ -103,9 +103,14 @@ enabled/disabled resource family with evidence before the next push. Duplicate
 or overlapping review ownership fails. The fresh reviewer cannot edit, push,
 comment, request review, dispatch CI, or merge. Rounds one and two produce
 bounded family handoffs; a third consecutive change-request round blocks
-another push on an architecture/decomposition hold until disposition. Remote
-Copilot review remains mandatory for the current exact candidate even after a
-zero-finding local review.
+another push on an architecture/decomposition hold until one ordered
+timestamped disposition consumes the exact round/SHA; later progression can
+hold again. Bind the contract to actual Git `HEAD`/tree/blobs plus independently
+expected seals over canonical GitHub actor/action/review/finding/disposition
+evidence. Normalize actor aliases, enforce all declared maxima against observed
+counts/duration, and reject unrelated result IDs. Remote Copilot review remains
+mandatory for the current exact candidate even after a zero-finding local
+review.
 
 CI waiting must not occupy a reasoning subagent. The orchestrator that
 dispatches a workflow records its exact SHA and run ID, then returns

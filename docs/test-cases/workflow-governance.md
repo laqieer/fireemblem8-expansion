@@ -471,69 +471,89 @@ game behavior needs a compensating change.
 - **Feature / originating issue:** `workflow-governance` /
   [issue #179](https://github.com/laqieer/fireemblem8-expansion/issues/179).
 - **Supported configuration or artifact:** clean source checkout with Python
-  3, the issue #176 workflow-pilot reporter, and the immutable complete/default
-  review-family fixtures; no GitHub token, live PR, workflow, ROM, or emulator
-  is required.
+  3, Git, the issue #176 workflow-pilot reporter, and candidate-pinned
+  contract/evidence/expected fixtures; no GitHub token, live PR, workflow, ROM,
+  or emulator is required.
 - **Prerequisites and clean starting state:** start at the repository root
   with `scripts/workflow_pilot/review_family.py`,
-  `review_family_complete.json`, and `review_family_default.json` unchanged.
+  `review_family_complete.json`, `review_family_complete_evidence.json`,
+  `review_family_complete_expected.json`, and their default counterparts
+  unchanged. The fixture candidate
+  `a8768e4f467c36f8bec60ee823d7d1735d3fcd45` must exist locally.
 
 ### Actions
 
 1. Run
    `python3 -m unittest scripts.workflow_pilot.tests.test_review_family -v`.
-2. Run the module twice over
-   `scripts/workflow_pilot/tests/fixtures/review_family_complete.json` and
-   compare its canonical JSON bytes.
-3. Inspect the complete fixture's one accepted synthetic finding in each
+2. Run the module twice with explicit `--repository-root`,
+   `--expected-candidate`, `--contract`, `--evidence`, and `--expected` over a
+   detached local checkout whose actual `HEAD` is the fixture candidate.
+   Compare its canonical JSON bytes and both expected seals.
+3. Inspect the complete evidence snapshot's immutable PR, actor, review,
+   finding, action, full-SHA, tree/blob, and timestamp identities. Confirm the
+   complete contract's one accepted synthetic finding in each
    action, lifecycle, wire, generated, and resource family. Confirm all exact
-   siblings and typed evidence appear in the global and first-round handoffs.
-4. Remove one sibling from each family in turn. Mutate the reviewer owner,
-   permission, action, family, member, result, remote outcome, and candidate
-   SHA. Require every mutation to fail closed.
-5. Add second and third consecutive change-request rounds. Confirm rounds one
-   and two emit bounded handoffs, round three emits an
-   architecture/decomposition hold, the current SHA cannot advance, and no
-   fourth review is accepted before a typed disposition.
-6. Inspect the default fixture's current zero-finding remote Copilot review.
+   siblings and manifest-backed result IDs appear in the global and
+   first-round handoffs.
+4. Mutate actual/expected head, origin-bound candidate/tree/blob, expected
+   seals/identity paths, review/finding/action timestamps, actor case/bot
+   aliases, ownership, permission/action, frozen behavior rows, result
+   association, family/member/result/outcome, and every numeric limit. Require
+   each mutation to fail after recomputing the expected seal where needed to
+   reach the semantic validator.
+5. Supply 55 finding IDs against `max_findings_per_review: 10`; exceed the
+   reviewed-file, duration, sibling-per-finding, and sibling-per-handoff
+   maxima; and use boolean, negative, zero, or above-cap limits. Require
+   failure.
+6. Add six consecutive change-request rounds with dispositions for rounds 3
+   and 6. Confirm both holds lift independently, then remove, reuse, reorder,
+   future-date, or change the SHA of each event and require failure. Confirm a
+   current third round without disposition remains a push-blocking hold.
+7. Inspect the default fixture's current zero-finding remote Copilot review.
    Remove it and then make it stale; confirm merge remains blocked while the
    remote-review-required gate remains true.
 
 ### Expected result
 
-The complete fixture emits one exact read-only pre-review owner, five finding
-families, 18 evidenced siblings, and a bounded first-round handoff. The default
-fixture allocates no local reviewer but still requires and recognizes a clean
-remote Copilot review on the current exact candidate. The module output maps
-every behavior row to production, execution, representation, stale-state,
-host, and positive/adversarial/default/runtime evidence.
+The complete fixture validates against a real Git head/tree/object database,
+two independent domain-separated expected seals, one normalized disjoint
+read-only pre-review owner, five finding families, 18 evidenced siblings, and
+a bounded first-round handoff. The default fixture allocates no local reviewer
+but still requires and recognizes a clean remote Copilot review on actual
+`HEAD`. The exact five-row behavior inventory maps production, execution,
+representation, stale-state, host, and positive/adversarial/default/runtime
+result identities.
 
 ### Negative control
 
-The suite rejects one omitted family sibling; missing evidence; unknown family,
-member, result, action, or state; stale or malformed SHA binding; duplicate or
-overlapping owner/finding coverage; a pre-review owner equal to the implementer;
-any edit, push, comment, review-request, CI-dispatch, or merge permission;
-unbounded scope; incomplete behavior mapping; a finding without an exact sweep;
-an unreviewed or stale current candidate; and any push/review progression
-through an unresolved third-round hold.
+The suite rejects a self-asserted/stale head, repository, tree, blob, reviewer,
+outcome, action, order, or timestamp; expected-seal/identity drift; nonexistent
+or unrelated evidence; one omitted family sibling; unknown family/member/
+result/action/state; actor case or bot-suffix aliases; duplicate or overlapping
+owner/finding coverage; any edit, push, comment, review-request, CI-dispatch,
+or merge action; boolean/negative/unbounded or exceeded limits; an incomplete
+behavior inventory; semantic result reassociation with wording unchanged; a
+finding without an exact sweep; an absent/stale current remote review; and a
+missing, reused, out-of-order, future, or wrong-SHA architecture disposition.
 
 ### Interactions and save compatibility
 
-The contract depends on issue #176's risk/threshold enums, strict JSON/full-SHA
-validators, canonical report representation, lifecycle discipline, and metric
-namespace. Issue #181 depends on this contract. It conflicts with overlapping
-review agents, incomplete sibling evidence, stale candidate state, and narrow
-patching after a third consecutive change request. Remote Copilot review,
-candidate Build, and post-merge Build remain mandatory. There is no game,
-runtime, save, generated game-data, localization, ROM/RAM, modern
+The contract depends on issue #176's hardened Git authority, strict
+JSON/full-SHA and expected-seal patterns, risk/threshold enums, canonical
+representation, lifecycle discipline, and metric namespace. Issue #181 depends
+on this contract. It conflicts with self-asserted or stale evidence,
+overlapping review agents, incomplete sibling/result coverage, exceeded
+bounds, and narrow patching through an unresolved architecture hold. Remote
+Copilot review, candidate Build, and post-merge Build remain mandatory. There
+is no game, runtime, save, generated game-data, localization, ROM/RAM, modern
 debug/release, or archival impact.
 
 ### Automation
 
 `python3 -m unittest scripts.workflow_pilot.tests.test_review_family -v`
 executes the production evaluator with positive, adversarial, default, stale,
-round-progression, permission, ownership, and metric-binding fixtures.
+authority/seal, semantic-association, bound, multi-hold round-progression,
+permission, normalized ownership, and metric-binding reproducers.
 
 `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
 checks that the production review/merge policy retains the bounded read-only
@@ -545,10 +565,11 @@ ownership and automation paths.
 
 ### Cleanup and limitations
 
-No cleanup is required. The contract emits local canonical JSON and changes no
-remote state. A real delivery still obtains remote Copilot review and GitHub
-candidate facts from their authoritative services. No manual-only criterion
-applies.
+The focused suite automatically removes its ignored detached authority
+worktree. The contract emits local canonical JSON and changes no remote state.
+A real delivery captures canonical GitHub evidence independently before
+running the offline validator; the fixture does not replace that capture or
+grant remote authority. No manual-only criterion applies.
 
 Rollback is a normal revert of issue #179. The issue #176 baseline values and
 existing Build, Copilot review, merge, and post-merge gates remain unchanged.

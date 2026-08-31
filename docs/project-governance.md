@@ -37,9 +37,10 @@ it. In summary:
   review/triage evidence consumed by the development workflow.
 - High-risk or large candidates use the
   [executable review-family contract](workflow-pilot.md#sibling-family-review-convergence)
-  for one fresh read-only pre-review, complete sibling expansion, exact-SHA
-  stale-state checks, and the third-round architecture hold. It is not a human
-  approval gate and does not replace remote Copilot review.
+  for one fresh read-only pre-review, actual-head/tree/blob plus independent
+  expected-seal authority, complete sibling expansion, enforced bounds, and
+  repeatable third-round architecture holds. It is not a human approval gate
+  and does not replace remote Copilot review.
 
 ## Security reporting
 

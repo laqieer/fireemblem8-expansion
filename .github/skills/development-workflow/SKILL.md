@@ -569,13 +569,21 @@ before the first remote review. Its owner must be separate from the
 implementer and have no overlapping review owner. The fresh reviewer is
 read-only: it cannot edit, push, comment, request review, dispatch CI, or
 merge. It may only read the exact candidate and emit the local report consumed
-by `python3 -m scripts.workflow_pilot.review_family`.
+by `python3 -m scripts.workflow_pilot.review_family`. Invoke that module with
+explicit repository root, expected candidate, candidate contract, canonical
+GitHub evidence snapshot, and independently expected facts. It must verify the
+actual Git `HEAD`, origin, commit ancestry/time, tree and evidence blobs. The
+expected facts bind immutable actor/action/PR/review/finding/disposition IDs,
+timestamps, SHAs, outcomes, and both domain-separated contract/evidence seals;
+the candidate JSON cannot self-assert those facts.
 
-The executable review-family contract maps every behavior row to its
-production predicate and producer, executor and consumer, representation,
-stale-state revalidation, host validation, and positive, adversarial, default,
-and runtime evidence. A valid finding must expand to every member of exactly
-one closed sibling family before another push:
+The executable review-family contract has one exact frozen behavior-row
+inventory. It maps each row to its production predicate and producer, executor
+and consumer, representation, stale-state revalidation, host validation, and
+positive, adversarial, default, and runtime result IDs. Every result must bind
+the same row/family/assertion to an existing candidate-tree blob. A valid
+finding must expand to every member of exactly one closed sibling family before
+another push:
 
 - actions, items, and targets;
 - lifecycle entries, preservation, resets, and terminals;
@@ -586,11 +594,16 @@ one closed sibling family before another push:
 The first and second consecutive change-request rounds emit bounded family
 handoffs containing every sibling and its evidence. A third consecutive
 change-request round creates an architecture/decomposition hold and blocks
-another push until an explicit disposition is recorded. Unknown families,
-members, actions, outcomes, incomplete evidence, stale SHA bindings, duplicate
-owners, and overlapping finding ownership fail closed. A later zero-finding
-round does not waive remote Copilot review: the current exact candidate still
-needs that clean review before merge.
+another push until an ordered unique timestamped disposition consumes that
+exact held round/SHA. After disposition, progression restarts so a later sixth
+round can independently hold. Enforce the declared maxima against actual
+findings, reviewed files, elapsed minutes, siblings per finding, and siblings
+per handoff. Normalize actor case and bot suffix aliases before rejecting
+duplicate/overlapping ownership. Unknown families, members, actions, outcomes,
+incomplete or unrelated evidence, stale SHA bindings, malformed/exceeded
+bounds, noncausal dispositions, duplicate owners, and overlapping finding
+ownership fail closed. A later zero-finding round does not waive remote Copilot
+review: the current actual Git head still needs that clean review before merge.
 
 No human code review or approval is required. A CODEOWNERS request is advisory
 unless an external GitHub ruleset enforces it; this workflow does not add such

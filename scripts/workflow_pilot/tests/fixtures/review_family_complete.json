@@ -1,9 +1,9 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "repository": "laqieer/fireemblem8-expansion",
   "pull_request": 179,
-  "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "implementer": "implementation-agent",
+  "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
+  "implementer_actor_id": "ACTOR_IMPLEMENTER_001",
   "trigger": {
     "risk_boundaries": [
       "lifecycle",
@@ -14,349 +14,251 @@
       "risk-boundary"
     ]
   },
-  "pre_reviews": [
-    {
-      "owner": "fresh-adversarial-reviewer",
-      "fresh": true,
-      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "limits": {
-        "max_files": 40,
-        "max_findings": 10,
-        "max_minutes": 30
-      },
-      "permissions": [
-        "contents:read"
-      ],
-      "authorized_actions": [
-        "read-candidate",
-        "emit-local-report"
-      ],
-      "performed_actions": [
-        "read-candidate",
-        "emit-local-report"
-      ],
-      "finding_ids": [],
-      "completed_before_remote_round": 1
-    }
-  ],
+  "limits": {
+    "max_duration_minutes": 30,
+    "max_findings_per_review": 10,
+    "max_reviewed_files": 40,
+    "max_siblings_per_finding": 5,
+    "max_siblings_per_handoff": 50
+  },
   "behavior_rows": [
     {
-      "id": "review-family-convergence",
-      "production": {
-        "predicate": "high-risk or large candidate requires one fresh pre-review",
-        "producer": "workflow-pilot trigger and accepted review findings"
-      },
-      "execution": {
-        "executor": "fresh read-only reviewer and review-family evaluator",
-        "consumer": "trusted push and merge coordinator"
-      },
-      "representation": "versioned immutable review-family JSON contract",
-      "stale_state_revalidation": "all reviews, findings, sweeps, and holds bind full candidate SHAs",
-      "host_validation": "stdlib review-family unit tests and canonical CLI output",
-      "evidence": {
+      "id": "actor-permission-bounds",
+      "evidence_result_ids": {
         "positive": [
-          {
-            "kind": "host-test",
-            "source": "scripts/workflow_pilot/tests/test_review_family.py",
-            "assertion": "complete family fixture emits bounded handoff"
-          }
+          "result-actor-permission-bounds-positive"
         ],
         "adversarial": [
-          {
-            "kind": "host-test",
-            "source": "scripts/workflow_pilot/tests/test_review_family.py",
-            "assertion": "missing siblings permissions and ownership fail closed"
-          }
+          "result-actor-permission-bounds-adversarial"
         ],
         "default": [
-          {
-            "kind": "host-test",
-            "source": "scripts/workflow_pilot/tests/test_review_family.py",
-            "assertion": "low-risk fixture skips local pre-review but retains remote review"
-          }
+          "result-actor-permission-bounds-default"
         ],
         "runtime": [
-          {
-            "kind": "module-output",
-            "source": "scripts/workflow_pilot/review_family.py",
-            "assertion": "derived push merge handoff and architecture states are canonical"
-          }
+          "result-actor-permission-bounds-runtime"
+        ]
+      }
+    },
+    {
+      "id": "authority-causality",
+      "evidence_result_ids": {
+        "positive": [
+          "result-authority-causality-positive"
+        ],
+        "adversarial": [
+          "result-authority-causality-adversarial"
+        ],
+        "default": [
+          "result-authority-causality-default"
+        ],
+        "runtime": [
+          "result-authority-causality-runtime"
+        ]
+      }
+    },
+    {
+      "id": "remote-review-metrics",
+      "evidence_result_ids": {
+        "positive": [
+          "result-remote-review-metrics-positive"
+        ],
+        "adversarial": [
+          "result-remote-review-metrics-adversarial"
+        ],
+        "default": [
+          "result-remote-review-metrics-default"
+        ],
+        "runtime": [
+          "result-remote-review-metrics-runtime"
+        ]
+      }
+    },
+    {
+      "id": "round-lifecycle",
+      "evidence_result_ids": {
+        "positive": [
+          "result-round-lifecycle-positive"
+        ],
+        "adversarial": [
+          "result-round-lifecycle-adversarial"
+        ],
+        "default": [
+          "result-round-lifecycle-default"
+        ],
+        "runtime": [
+          "result-round-lifecycle-runtime"
+        ]
+      }
+    },
+    {
+      "id": "sibling-family-expansion",
+      "evidence_result_ids": {
+        "positive": [
+          "result-sibling-family-expansion-positive"
+        ],
+        "adversarial": [
+          "result-sibling-family-expansion-adversarial"
+        ],
+        "default": [
+          "result-sibling-family-expansion-default"
+        ],
+        "runtime": [
+          "result-sibling-family-expansion-runtime"
         ]
       }
     }
   ],
-  "remote_reviews": [
-    {
-      "round": 1,
-      "review_id": 1001,
-      "reviewer": "copilot-pull-request-reviewer[bot]",
-      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "outcome": "changes-requested",
-      "finding_ids": [
-        "finding-action",
-        "finding-generated",
-        "finding-lifecycle",
-        "finding-resource",
-        "finding-wire"
-      ]
-    }
-  ],
-  "findings": [
-    {
-      "id": "finding-action",
-      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "family": "action"
-    },
-    {
-      "id": "finding-generated",
-      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "family": "generated"
-    },
-    {
-      "id": "finding-lifecycle",
-      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "family": "lifecycle"
-    },
-    {
-      "id": "finding-resource",
-      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "family": "resource"
-    },
-    {
-      "id": "finding-wire",
-      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "family": "wire"
-    }
-  ],
   "family_sweeps": [
     {
-      "finding_id": "finding-action",
-      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "finding_id": "FINDING_ACTION_001",
       "siblings": [
         {
           "member": "actions",
           "result": "affected-fixed",
-          "evidence": [
-            {
-              "kind": "host-test",
-              "source": "scripts/workflow_pilot/tests/test_review_family.py",
-              "assertion": "action family actions sibling"
-            }
+          "evidence_result_ids": [
+            "result-sibling-action-actions"
           ]
         },
         {
           "member": "items",
           "result": "verified-unaffected",
-          "evidence": [
-            {
-              "kind": "host-test",
-              "source": "scripts/workflow_pilot/tests/test_review_family.py",
-              "assertion": "action family items sibling"
-            }
+          "evidence_result_ids": [
+            "result-sibling-action-items"
           ]
         },
         {
           "member": "targets",
           "result": "verified-unaffected",
-          "evidence": [
-            {
-              "kind": "host-test",
-              "source": "scripts/workflow_pilot/tests/test_review_family.py",
-              "assertion": "action family targets sibling"
-            }
+          "evidence_result_ids": [
+            "result-sibling-action-targets"
           ]
         }
       ]
     },
     {
-      "finding_id": "finding-generated",
-      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "finding_id": "FINDING_GENERATED_001",
       "siblings": [
         {
           "member": "owners",
           "result": "affected-fixed",
-          "evidence": [
-            {
-              "kind": "host-test",
-              "source": "scripts/workflow_pilot/tests/test_review_family.py",
-              "assertion": "generated family owners sibling"
-            }
+          "evidence_result_ids": [
+            "result-sibling-generated-owners"
           ]
         },
         {
           "member": "outputs",
           "result": "verified-unaffected",
-          "evidence": [
-            {
-              "kind": "host-test",
-              "source": "scripts/workflow_pilot/tests/test_review_family.py",
-              "assertion": "generated family outputs sibling"
-            }
+          "evidence_result_ids": [
+            "result-sibling-generated-outputs"
           ]
         },
         {
           "member": "consumers",
           "result": "verified-unaffected",
-          "evidence": [
-            {
-              "kind": "host-test",
-              "source": "scripts/workflow_pilot/tests/test_review_family.py",
-              "assertion": "generated family consumers sibling"
-            }
+          "evidence_result_ids": [
+            "result-sibling-generated-consumers"
           ]
         },
         {
           "member": "drift-checks",
           "result": "verified-unaffected",
-          "evidence": [
-            {
-              "kind": "host-test",
-              "source": "scripts/workflow_pilot/tests/test_review_family.py",
-              "assertion": "generated family drift checks sibling"
-            }
+          "evidence_result_ids": [
+            "result-sibling-generated-drift-checks"
           ]
         }
       ]
     },
     {
-      "finding_id": "finding-lifecycle",
-      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "finding_id": "FINDING_LIFECYCLE_001",
       "siblings": [
         {
           "member": "entries",
           "result": "affected-fixed",
-          "evidence": [
-            {
-              "kind": "host-test",
-              "source": "scripts/workflow_pilot/tests/test_review_family.py",
-              "assertion": "lifecycle family entries sibling"
-            }
+          "evidence_result_ids": [
+            "result-sibling-lifecycle-entries"
           ]
         },
         {
           "member": "preservation",
           "result": "verified-unaffected",
-          "evidence": [
-            {
-              "kind": "host-test",
-              "source": "scripts/workflow_pilot/tests/test_review_family.py",
-              "assertion": "lifecycle family preservation sibling"
-            }
+          "evidence_result_ids": [
+            "result-sibling-lifecycle-preservation"
           ]
         },
         {
           "member": "resets",
           "result": "verified-unaffected",
-          "evidence": [
-            {
-              "kind": "host-test",
-              "source": "scripts/workflow_pilot/tests/test_review_family.py",
-              "assertion": "lifecycle family resets sibling"
-            }
+          "evidence_result_ids": [
+            "result-sibling-lifecycle-resets"
           ]
         },
         {
           "member": "terminals",
           "result": "verified-unaffected",
-          "evidence": [
-            {
-              "kind": "host-test",
-              "source": "scripts/workflow_pilot/tests/test_review_family.py",
-              "assertion": "lifecycle family terminals sibling"
-            }
+          "evidence_result_ids": [
+            "result-sibling-lifecycle-terminals"
           ]
         }
       ]
     },
     {
-      "finding_id": "finding-resource",
-      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "finding_id": "FINDING_RESOURCE_001",
       "siblings": [
         {
           "member": "enabled",
           "result": "affected-fixed",
-          "evidence": [
-            {
-              "kind": "host-test",
-              "source": "scripts/workflow_pilot/tests/test_review_family.py",
-              "assertion": "resource family enabled sibling"
-            }
+          "evidence_result_ids": [
+            "result-sibling-resource-enabled"
           ]
         },
         {
           "member": "disabled",
           "result": "verified-unaffected",
-          "evidence": [
-            {
-              "kind": "host-test",
-              "source": "scripts/workflow_pilot/tests/test_review_family.py",
-              "assertion": "resource family disabled sibling"
-            }
+          "evidence_result_ids": [
+            "result-sibling-resource-disabled"
           ]
         }
       ]
     },
     {
-      "finding_id": "finding-wire",
-      "candidate_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "finding_id": "FINDING_WIRE_001",
       "siblings": [
         {
           "member": "producers",
           "result": "affected-fixed",
-          "evidence": [
-            {
-              "kind": "host-test",
-              "source": "scripts/workflow_pilot/tests/test_review_family.py",
-              "assertion": "wire family producers sibling"
-            }
+          "evidence_result_ids": [
+            "result-sibling-wire-producers"
           ]
         },
         {
           "member": "consumers",
           "result": "verified-unaffected",
-          "evidence": [
-            {
-              "kind": "host-test",
-              "source": "scripts/workflow_pilot/tests/test_review_family.py",
-              "assertion": "wire family consumers sibling"
-            }
+          "evidence_result_ids": [
+            "result-sibling-wire-consumers"
           ]
         },
         {
           "member": "validators",
           "result": "verified-unaffected",
-          "evidence": [
-            {
-              "kind": "host-test",
-              "source": "scripts/workflow_pilot/tests/test_review_family.py",
-              "assertion": "wire family validators sibling"
-            }
+          "evidence_result_ids": [
+            "result-sibling-wire-validators"
           ]
         },
         {
           "member": "replay",
           "result": "verified-unaffected",
-          "evidence": [
-            {
-              "kind": "host-test",
-              "source": "scripts/workflow_pilot/tests/test_review_family.py",
-              "assertion": "wire family replay sibling"
-            }
+          "evidence_result_ids": [
+            "result-sibling-wire-replay"
           ]
         },
         {
           "member": "stale-bindings",
           "result": "verified-unaffected",
-          "evidence": [
-            {
-              "kind": "host-test",
-              "source": "scripts/workflow_pilot/tests/test_review_family.py",
-              "assertion": "wire family stale bindings sibling"
-            }
+          "evidence_result_ids": [
+            "result-sibling-wire-stale-bindings"
           ]
         }
       ]
     }
-  ],
-  "architecture_disposition": null
+  ]
 }

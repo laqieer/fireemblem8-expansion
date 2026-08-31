@@ -1994,6 +1994,14 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "stale SHA bindings",
             "duplicate owners",
             "overlapping finding ownership",
+            "explicit repository root, expected candidate",
+            "actual Git `HEAD`",
+            "domain-separated contract/evidence seals",
+            "existing candidate-tree blob",
+            "later sixth",
+            "declared maxima",
+            "Normalize actor case and bot suffix aliases",
+            "noncausal dispositions",
         ):
             with self.subTest(skill_requirement=requirement):
                 self.assertIn(

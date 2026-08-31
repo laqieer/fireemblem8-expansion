@@ -2268,17 +2268,17 @@
       "document": "docs/test-cases/workflow-governance.md",
       "anchor": "tc-workflow-review-family-001-expand-valid-findings-across-complete-sibling-families",
       "profiles": [
-        "Clean source checkout with Python 3, immutable review-family fixtures, and no live GitHub workflow"
+        "Clean source checkout with Python 3, Git, candidate-pinned contract/evidence/expected fixtures, and no live GitHub workflow"
       ],
-      "purpose": "Prove one bounded fresh read-only pre-review, exact behavior mapping, complete sibling-family expansion, bounded round handoffs, a third-round architecture hold, and a mandatory current-candidate remote Copilot review.",
-      "prerequisites": "Start at the repository root with the issue #176 workflow-pilot reporter plus the review-family module and complete/default fixtures unchanged; no credentials, ROM, emulator, or active PR are required.",
-      "actions": "Run the focused review-family suite and canonical CLI twice; inspect one synthetic finding per family, omit each sibling, mutate ownership/permissions/actions/states/SHAs, progress three consecutive change-request rounds, and remove or stale the zero-finding remote review.",
-      "expected_result": "Every accepted finding emits all exact evidenced siblings; rounds one and two emit bounded handoffs; round three blocks push until disposition; the default path allocates no local reviewer; and merge still requires a clean remote Copilot review on the current full SHA.",
-      "negative_control": "A missing sibling/evidence/mapping, unknown family/member/result/action/state, stale SHA, duplicate or overlapping owner/finding, mutating reviewer permission, unbounded scope, unresolved third-round hold, or absent/stale remote review fails closed or leaves merge blocked.",
-      "interactions": "Depends on issue #176 reporter validators, risk/threshold decisions, lifecycle discipline, and metric namespace; issue #181 depends on it; conflicts with overlapping reviewers, incomplete sweeps, stale evidence, and bypassed architecture holds.",
+      "purpose": "Prove actual-Git-head and expected-sealed GitHub evidence authority, normalized disjoint read-only actors, enforced maxima, a frozen behavior/result inventory, complete sibling expansion, repeated architecture holds, and mandatory current-candidate Copilot review.",
+      "prerequisites": "Start at the repository root with candidate a8768e4f467c36f8bec60ee823d7d1735d3fcd45 available and the issue #176 reporter plus complete/default contract, evidence, and expected fixtures unchanged; no credentials, ROM, emulator, or active PR are required.",
+      "actions": "Run the focused suite and canonical five-input CLI twice; mutate head/tree/blob/seals/timestamps/actor aliases/permissions/bounds/result associations/families, exercise 55 findings against max 10, omit each sibling, progress six change-request rounds with two dispositions, and remove or stale the zero-finding remote review.",
+      "expected_result": "Only independently expected candidate evidence matching actual Git HEAD/tree/blobs passes; all five behavior rows and family siblings consume exact result IDs; rounds 3 and 6 hold/lift independently; and merge requires a clean canonical Copilot review on current HEAD.",
+      "negative_control": "Self-asserted or stale identity/time/action/outcome evidence, seal drift, nonexistent or unrelated results, actor aliases/overlap, mutating permissions, malformed/exceeded bounds, missing siblings/rows, semantic reassociation, invalid dispositions, or absent/stale remote review fails closed.",
+      "interactions": "Depends on issue #176 hardened Git authority, expected-seal pattern, risk/threshold decisions, lifecycle discipline, and metric namespace; issue #181 depends on it; conflicts with self-asserted evidence, overlapping reviewers, incomplete results, exceeded bounds, and bypassed architecture holds.",
       "save_compatibility": "Source-only workflow governance; no game/runtime, save, generated game-data, localization, ROM/RAM, modern debug/release, or archival impact.",
-      "cleanup": "No cleanup is required because fixtures are read-only, output is emitted to stdout, and no GitHub or workflow state changes.",
-      "limitations": "The local contract validates candidate evidence and gates but does not replace or invoke the authoritative remote Copilot review, candidate Build, or post-merge Build.",
+      "cleanup": "The suite automatically removes its ignored detached candidate-authority worktree; fixtures remain read-only, output goes to stdout, and no GitHub or workflow state changes.",
+      "limitations": "The offline contract validates an independently captured canonical evidence snapshot but does not capture live GitHub facts or replace remote Copilot review, candidate Build, or post-merge Build.",
       "automation": [
         {
           "command": "python3 -m unittest scripts.workflow_pilot.tests.test_review_family -v",

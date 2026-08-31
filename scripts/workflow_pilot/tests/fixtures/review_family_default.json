@@ -1,9 +1,9 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "repository": "laqieer/fireemblem8-expansion",
   "pull_request": 179,
-  "candidate_sha": "dddddddddddddddddddddddddddddddddddddddd",
-  "implementer": "implementation-agent",
+  "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
+  "implementer_actor_id": "ACTOR_IMPLEMENTER_001",
   "trigger": {
     "risk_boundaries": [
       "none"
@@ -12,64 +12,99 @@
       "none"
     ]
   },
-  "pre_reviews": [],
+  "limits": {
+    "max_duration_minutes": 30,
+    "max_findings_per_review": 10,
+    "max_reviewed_files": 40,
+    "max_siblings_per_finding": 5,
+    "max_siblings_per_handoff": 50
+  },
   "behavior_rows": [
     {
-      "id": "review-family-default",
-      "production": {
-        "predicate": "low-risk candidate does not trigger local adversarial pre-review",
-        "producer": "workflow-pilot trigger classification"
-      },
-      "execution": {
-        "executor": "review-family evaluator",
-        "consumer": "trusted merge coordinator"
-      },
-      "representation": "versioned immutable review-family JSON contract",
-      "stale_state_revalidation": "remote review must bind the current full candidate SHA",
-      "host_validation": "stdlib review-family unit tests and canonical CLI output",
-      "evidence": {
+      "id": "actor-permission-bounds",
+      "evidence_result_ids": {
         "positive": [
-          {
-            "kind": "host-test",
-            "source": "scripts/workflow_pilot/tests/test_review_family.py",
-            "assertion": "zero-finding current Copilot review permits merge"
-          }
+          "result-actor-permission-bounds-positive"
         ],
         "adversarial": [
-          {
-            "kind": "host-test",
-            "source": "scripts/workflow_pilot/tests/test_review_family.py",
-            "assertion": "absent or stale remote review blocks merge"
-          }
+          "result-actor-permission-bounds-adversarial"
         ],
         "default": [
-          {
-            "kind": "host-test",
-            "source": "scripts/workflow_pilot/tests/test_review_family.py",
-            "assertion": "disabled local pre-review requires no reviewer allocation"
-          }
+          "result-actor-permission-bounds-default"
         ],
         "runtime": [
-          {
-            "kind": "module-output",
-            "source": "scripts/workflow_pilot/review_family.py",
-            "assertion": "remote review gate remains true in canonical output"
-          }
+          "result-actor-permission-bounds-runtime"
+        ]
+      }
+    },
+    {
+      "id": "authority-causality",
+      "evidence_result_ids": {
+        "positive": [
+          "result-authority-causality-positive"
+        ],
+        "adversarial": [
+          "result-authority-causality-adversarial"
+        ],
+        "default": [
+          "result-authority-causality-default"
+        ],
+        "runtime": [
+          "result-authority-causality-runtime"
+        ]
+      }
+    },
+    {
+      "id": "remote-review-metrics",
+      "evidence_result_ids": {
+        "positive": [
+          "result-remote-review-metrics-positive"
+        ],
+        "adversarial": [
+          "result-remote-review-metrics-adversarial"
+        ],
+        "default": [
+          "result-remote-review-metrics-default"
+        ],
+        "runtime": [
+          "result-remote-review-metrics-runtime"
+        ]
+      }
+    },
+    {
+      "id": "round-lifecycle",
+      "evidence_result_ids": {
+        "positive": [
+          "result-round-lifecycle-positive"
+        ],
+        "adversarial": [
+          "result-round-lifecycle-adversarial"
+        ],
+        "default": [
+          "result-round-lifecycle-default"
+        ],
+        "runtime": [
+          "result-round-lifecycle-runtime"
+        ]
+      }
+    },
+    {
+      "id": "sibling-family-expansion",
+      "evidence_result_ids": {
+        "positive": [
+          "result-sibling-family-expansion-positive"
+        ],
+        "adversarial": [
+          "result-sibling-family-expansion-adversarial"
+        ],
+        "default": [
+          "result-sibling-family-expansion-default"
+        ],
+        "runtime": [
+          "result-sibling-family-expansion-runtime"
         ]
       }
     }
   ],
-  "remote_reviews": [
-    {
-      "round": 1,
-      "review_id": 2001,
-      "reviewer": "copilot-pull-request-reviewer[bot]",
-      "candidate_sha": "dddddddddddddddddddddddddddddddddddddddd",
-      "outcome": "clean",
-      "finding_ids": []
-    }
-  ],
-  "findings": [],
-  "family_sweeps": [],
-  "architecture_disposition": null
+  "family_sweeps": []
 }

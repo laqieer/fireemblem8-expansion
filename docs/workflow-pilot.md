@@ -253,44 +253,92 @@ canonical JSON:
 
 ```bash
 python3 -m scripts.workflow_pilot.review_family \
-  --contract scripts/workflow_pilot/tests/fixtures/review_family_complete.json
+  --repository-root <exact-candidate-checkout> \
+  --expected-candidate <full-head-sha> \
+  --contract <candidate-contract.json> \
+  --evidence <canonical-github-evidence.json> \
+  --expected <independent-expected-facts.json>
 ```
 
 The module reuses `PilotDataError`, strict JSON loading, full-SHA validation,
-closed risk/threshold enums, and canonical output from the issue #176 reporter.
-It is a report over candidate evidence, not a mutable status ledger. Its
-positive and default fixtures are deterministic source inputs; live ownership,
-review, push, and merge state remain GitHub facts.
+closed risk/threshold enums, hardened Git subprocesses, raw commit authority,
+and canonical output from the issue #176 reporter. `--repository-root` must be
+the real Git top level and its actual `HEAD` must equal
+`--expected-candidate`. Every retained review candidate must exist in that
+object database and be an ancestor of the expected head. Origin, commit time,
+tree ID, reviewed paths, evidence paths, and blob IDs are re-derived from Git.
+A contract or snapshot claiming an invented or stale candidate cannot make
+itself authoritative.
+
+The separate canonical evidence snapshot records immutable PR/review/finding/
+actor/action/disposition IDs, full candidate SHAs, and RFC 3339 UTC
+timestamps. A third input stores the exact identity paths plus independent
+domain-separated SHA-256 seals of the contract and evidence, following the
+issue #176 expected-facts pattern. Unknown/missing paths or simultaneous
+contract/evidence mutation without the independent expected facts fails.
+There is no network access or remote mutation. The committed complete/default
+fixtures are pinned to historical candidate
+`a8768e4f467c36f8bec60ee823d7d1735d3fcd45`; tests create a bounded detached
+local authority worktree at that commit. These are deterministic inputs, not a
+mutable delivery ledger or self-reported current GitHub state.
 
 ### Behavior-row contract
 
-Every behavior row has the same parsed shape. Unknown or missing fields fail:
+Behavior rows use one exact frozen inventory. The contract supplies only the
+row ID and four structured result-ID lists; production/execution semantics are
+owned by the module:
+
+| Required row | Owned behavior |
+| --- | --- |
+| `authority-causality` | Real head/tree/blob authority and timestamp causality |
+| `actor-permission-bounds` | Normalized disjoint actors, read-only actions, and enforced maxima |
+| `sibling-family-expansion` | Exact finding/family/member/result association |
+| `round-lifecycle` | Ordered reviews, holds, and disposition events |
+| `remote-review-metrics` | Current clean Copilot review and #176 metric bindings |
+
+Missing, duplicate, or invented rows fail. Each positive, adversarial, default,
+and runtime result ID must resolve through the sealed result manifest to an
+existing blob in the candidate tree and to the same row, evidence class,
+candidate SHA, family/member (when applicable), and closed assertion ID.
+Unused or reused results fail. Swapping two IDs while retaining all descriptive
+wording therefore fails semantically.
 
 | Required mapping | Producer / consumer contract |
 | --- | --- |
-| Production predicate and producer | #176 risk/threshold classification and accepted finding identities produce the row. |
-| Executor and consumer | The fresh read-only reviewer plus evaluator execute it; the trusted coordinator consumes the resulting gates and handoff. |
-| Representation | A versioned immutable JSON contract becomes canonical JSON module output. |
-| Stale-state revalidation | Pre-review, remote rounds, findings, sweeps, and holds carry full lowercase candidate SHAs; only a clean review on the current SHA can permit merge. |
-| Host validation | `scripts.workflow_pilot.tests.test_review_family` parses fixtures and exercises production predicates, consumers, transitions, permissions, and mutation controls. |
-| Positive / adversarial / default / runtime evidence | Each class is nonempty typed evidence (`host-test`, `module-output`, or `runtime-contract`) with a normalized source path and named assertion. |
+| Production predicate and producer | Closed module row specification plus sealed Git/GitHub evidence |
+| Executor and consumer | Authority/family/round validator to trusted delivery coordinator |
+| Representation | Candidate contract, canonical evidence snapshot, expected seals, canonical report |
+| Stale-state revalidation | Actual HEAD, commit ancestry/time, tree/blob membership, event/review/finding SHAs |
+| Host validation | Authority, seal, actor, bound, family, lifecycle, and metric reproducers |
+| Positive / adversarial / default / runtime evidence | Exact result IDs with candidate blob and semantic row/assertion association |
 
 High-risk means any named #176 risk boundary. Large means a
 `changed-files`, `changed-lines`, or `major-boundaries` threshold trigger.
 Before the first remote review of such a candidate, exactly one fresh reviewer
-separate from the implementer receives bounded files, minutes, and findings.
+separate from the implementer receives bounded files, minutes, findings, and
+sibling results. Actor logins are case-normalized and remove `[bot]`, `-bot`,
+and `_bot` aliases before role comparison; duplicate normalized actors or
+overlap with any remote reviewer fail even when raw IDs or spelling differ.
 Its only permission is `contents:read`; its only actions are reading the exact
-candidate and emitting the local report. Edit, push, comment, review request,
-CI dispatch, and merge actions fail. A second, duplicate, or overlapping owner
-also fails. A low-risk/non-large default contract allocates no pre-review
-owner.
+candidate and emitting the local report. Every action has an immutable ID and
+time inside the authoritative start/completion interval. Edit, push, comment,
+review request, CI dispatch, and merge actions fail. A second, duplicate, or
+overlapping owner also fails. A low-risk/non-large default contract allocates
+no pre-review owner.
+
+The five exact positive integer limits are maximum duration, findings per
+review, reviewed files, siblings per finding, and siblings per handoff.
+Booleans, zero/negative values, values above hard caps, or observed counts and
+durations above the declared maximum fail. The limit is enforced against the
+snapshot, not merely printed; for example, 55 findings cannot pass a
+`max_findings_per_review` value of 10.
 
 ### Executable sibling families
 
-Every accepted finding belongs to exactly one family and has exactly one sweep.
-Every listed sibling carries a closed result
-(`affected-fixed`, `verified-unaffected`, or `not-applicable`) and nonempty
-typed evidence:
+Every sealed accepted finding belongs to exactly one remote/pre-review identity
+and one family, then has exactly one contract sweep. Every listed sibling
+carries a closed result (`affected-fixed`, `verified-unaffected`, or
+`not-applicable`) and one or more manifest-backed result IDs:
 
 | Family | Exact members |
 | --- | --- |
@@ -302,22 +350,29 @@ typed evidence:
 
 Missing, duplicate, extra, or unknown siblings fail before a success-shaped
 handoff. Finding ownership is exact and non-overlapping across the local
-pre-review and remote Copilot rounds. A finding, its sweep, and its owning
-review must bind the same full SHA.
+pre-review and remote Copilot rounds. A finding, its sweep, owning review, and
+result record must bind the same full SHA and exact family/member assertion.
 
 For the first and second consecutive change-request rounds, the module emits a
 bounded family handoff with the exact finding, family, candidate, sibling
 evidence, and derived finding/family/sibling counts. A clean remote round
 resets the consecutive count. The third consecutive change-request round
 emits no narrow handoff: it derives an architecture/decomposition hold and
-sets `push_allowed` false. The candidate cannot advance and another review
-round cannot appear until one typed `decompose`, `redesign`, or
-`retain-with-evidence` disposition resolves that exact held round and SHA.
+sets `push_allowed` false.
+
+Architecture dispositions are an ordered list of unique immutable events.
+Each has an ID, held round, exact candidate SHA, non-reviewer actor, closed
+action, and timestamp strictly after the held review and before any next
+review. Each event is consumed exactly once. A missing disposition blocks a
+later round; duplicate/reused, out-of-order, mismatched, or future events fail.
+After a valid disposition the consecutive counter restarts, so rounds 3 and 6
+can independently hold and lift in one evidence history.
 
 `remote_copilot_review_required` is always true. A zero-finding local
 pre-review, no accepted finding, or an architecture disposition cannot satisfy
 the final gate. `merge_allowed` requires a zero-finding clean remote Copilot
-review bound to the contract's current exact candidate and no unresolved
+review from the canonical normalized Copilot actor, bound to actual Git `HEAD`,
+with coherent immutable finding identities/timestamps and no unresolved
 architecture hold.
 
 ### Metric and lifecycle integration
