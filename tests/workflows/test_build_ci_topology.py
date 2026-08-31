@@ -73,7 +73,7 @@ WORKER_CONDITION = (
     "((github.event_name == 'pull_request' && "
     "github.event.pull_request.head.sha != '') || "
     "(github.event_name == 'push' && github.ref == 'refs/heads/master' && "
-    "github.event.after != '' && github.sha == github.event.after))))) }}"
+    "github.event.after != '' && github.sha == github.event.after)))) }}"
 )
 CANDIDATE_FULL_JOBS = set(COMBINED_WORKERS) | {
     "event-router",
@@ -421,6 +421,42 @@ def _job_blocks(text: str) -> dict[str, str]:
 
 def _normalise(text: str) -> str:
     return " ".join(text.split())
+
+
+def _github_expression_balance_errors(expression: str) -> list[str]:
+    if not expression.startswith("${{ ") or not expression.endswith(" }}"):
+        return ["expression must use the complete GitHub expression wrapper"]
+    body = expression[4:-3]
+    depth = 0
+    in_string = False
+    index = 0
+    while index < len(body):
+        character = body[index]
+        if character == "'":
+            if in_string and index + 1 < len(body) and body[index + 1] == "'":
+                index += 2
+                continue
+            in_string = not in_string
+        elif not in_string and character == "(":
+            depth += 1
+        elif not in_string and character == ")":
+            if depth == 0:
+                return ["expression has an unmatched closing parenthesis"]
+            depth -= 1
+        index += 1
+    errors = []
+    if in_string:
+        errors.append("expression has an unterminated string")
+    if depth:
+        errors.append(f"expression has {depth} unmatched opening parenthesis")
+    return errors
+
+
+def _direct_job_if(job: str) -> str:
+    matches = re.findall(r"^    if: (?P<expression>.+)$", job, re.MULTILINE)
+    if len(matches) != 1:
+        raise ValueError("job must contain exactly one direct if expression")
+    return matches[0]
 
 
 def _run_block_commands(job: str) -> list[str]:
@@ -1115,6 +1151,13 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             key="continue-on-error",
         ):
             errors.append(f"{job_name} must not be advisory")
+        try:
+            condition = _direct_job_if(jobs[job_name])
+        except ValueError as error:
+            errors.append(f"{job_name} condition is invalid: {error}")
+        else:
+            for error in _github_expression_balance_errors(condition):
+                errors.append(f"{job_name} condition is invalid: {error}")
         errors.extend(_combined_job_contract_errors(job_name, jobs[job_name]))
 
     errors.extend(_host_environment_errors(jobs["host-tests"]))
@@ -2506,6 +2549,42 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 for error in _errors(changed, False)
             )
         )
+
+    def test_combined_worker_expressions_are_balanced_and_fully_consumed(self):
+        for job_name in COMBINED_WORKERS:
+            job = _job_blocks(self.text)[job_name]
+            expression = _direct_job_if(job)
+            with self.subTest(job=job_name, control="real"):
+                self.assertEqual(
+                    _github_expression_balance_errors(expression),
+                    [],
+                )
+            for suffix, expected in (
+                (")", "unmatched closing"),
+                ("(", "unmatched opening"),
+            ):
+                changed_expression = expression[:-3] + suffix + " }}"
+                with self.subTest(job=job_name, suffix=suffix):
+                    self.assertTrue(
+                        any(
+                            expected in error
+                            for error in _github_expression_balance_errors(
+                                changed_expression
+                            )
+                        )
+                    )
+                    changed_job = job.replace(
+                        f"    if: {expression}",
+                        f"    if: {changed_expression}",
+                        1,
+                    )
+                    changed = self.text.replace(job, changed_job, 1)
+                    self.assertTrue(
+                        any(
+                            f"{job_name} condition is invalid" in error
+                            for error in _errors(changed, False)
+                        )
+                    )
 
     def test_classifier_authority_and_outputs_fail_closed(self):
         mutations = (

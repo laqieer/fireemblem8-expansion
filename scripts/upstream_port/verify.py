@@ -132,7 +132,7 @@ _WORKER_CONDITION = (
     "((github.event_name == 'pull_request' && "
     "github.event.pull_request.head.sha != '') || "
     "(github.event_name == 'push' && github.ref == 'refs/heads/master' && "
-    "github.event.after != '' && github.sha == github.event.after))))) }}"
+    "github.event.after != '' && github.sha == github.event.after)))) }}"
 )
 _DYNAMIC_JOB_NAMES = {
     "event-classifier": (
