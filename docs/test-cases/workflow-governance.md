@@ -514,8 +514,9 @@ validates the committed ruleset `19088702` source state, desired response,
 exact owner PATCH body, preserved GitGuardian integration, and fail-closed
 preview/verify/apply-live CLI mutations for same-name wrong app, dropped
 rules, direct workers retained, conditions/bypass-actor drift, ignored
-`current_user_can_bypass` request metadata, stale strong-ETag mismatch, and
-post-apply refetch drift.
+`current_user_can_bypass` request metadata, stale strong-ETag mismatch,
+untrusted repository/ruleset/digest target confusion, and post-apply refetch
+drift.
 
 `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v` parses the
 workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
@@ -996,24 +997,31 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
 
    ```bash
    ruleset_live="$source_root/build/test-artifacts/issue-177-ruleset-live.json"
+   reviewed_contract_sha256="3d606fb1c5b623a43192555feb7543b908611271f9abddb4c19decbd8b4ff1eb"
 
-   gh api "repos/{owner}/{repo}/rulesets/19088702" > "$ruleset_live"
+   gh api "repos/laqieer/fireemblem8-expansion/rulesets/19088702" > "$ruleset_live"
    /usr/bin/python3 -I scripts/workflow_pilot/required_summary_checks.py preview \
      --contract .github/required-summary-checks.json \
      --live "$ruleset_live"
 
-   # Owner-only later step, not executed in this local task:
+   # Owner-only later step, executed from the exact reviewed commit snapshot:
    /usr/bin/python3 -I scripts/workflow_pilot/required_summary_checks.py apply-live \
-     --contract .github/required-summary-checks.json
+     --contract .github/required-summary-checks.json \
+     --repository laqieer/fireemblem8-expansion \
+     --ruleset-id 19088702 \
+     --expected-contract-sha256 "$reviewed_contract_sha256"
    ```
 
    `apply-live` must fetch the live ruleset through trusted `gh api`, require a
-   strong ETag, validate the exact encoded pre-migration source state, PUT only
-   with `If-Match`, reject `412 Precondition Failed` or missing/weak ETag
-   support, refetch, and verify the exact desired post-state. The verifier must
-   also refuse a post-state that keeps direct worker checks, a same-name wrong
-   app, any dropped or altered independent rule, or bypass-actor drift; the
-   request-scoped `current_user_can_bypass` field is ignored for policy
+   strong ETag, validate the owner-supplied repository, ruleset ID, and
+   reviewed contract SHA-256 before reading or trusting the contract, require
+   the contract/source/desired identities to match that trusted target exactly,
+   PUT only with `If-Match`, reject `412 Precondition Failed` or missing/weak
+   ETag support, refetch, and verify the exact desired post-state. The verifier
+   must also refuse a post-state that keeps direct worker checks, a same-name
+   wrong app, any dropped or altered independent rule, bypass-actor drift, or a
+   repository/ruleset mismatch hidden inside candidate-controlled contract data;
+   the request-scoped `current_user_can_bypass` field is ignored for policy
    equality.
 13. Normalize all three real runs and execute the candidate evaluator's full,
    metadata-only, combined, failed-full, and missing-full assertions:

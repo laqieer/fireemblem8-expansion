@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import io
 import json
 import subprocess
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
@@ -25,6 +28,10 @@ def load_json(path: Path):
 
 def write_json(path: Path, payload) -> None:
     path.write_bytes(required_summary_checks.normalized_json(payload))
+
+
+def sha256_hex(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 class RequiredSummaryChecksTests(unittest.TestCase):
@@ -236,14 +243,19 @@ class RequiredSummaryChecksTests(unittest.TestCase):
                     required_summary_checks.verify_live_ruleset(contract, payload)
 
     def test_apply_live_uses_strong_etag_and_refetches(self) -> None:
-        contract = required_summary_checks.validate_contract(
-            required_summary_checks.load_json(CONTRACT)
-        )
         current = load_json(CURRENT)
         desired = load_json(DESIRED)
         desired["updated_at"] = "2026-09-01T06:00:00.000Z"
+        sandbox = ARTIFACT_ROOT / "required-summary-checks-apply-live"
+        sandbox.mkdir(parents=True, exist_ok=True)
+        verified_path = sandbox / "verified.json"
 
-        def http(status: int, body: dict, *, etag: str | None = '"etag-1"') -> subprocess.CompletedProcess[bytes]:
+        def http(
+            status: int,
+            body: dict,
+            *,
+            etag: str | None = '"etag-1"',
+        ) -> subprocess.CompletedProcess[bytes]:
             headers = [
                 f"HTTP/2 {status} {'OK' if status == 200 else 'Precondition Failed'}",
                 "content-type: application/json",
@@ -267,7 +279,23 @@ class RequiredSummaryChecksTests(unittest.TestCase):
                 http(200, desired),
             ],
         ) as mocked:
-            result = required_summary_checks.apply_live(contract)
+            code = required_summary_checks.main(
+                [
+                    "apply-live",
+                    "--contract",
+                    str(CONTRACT),
+                    "--repository",
+                    "laqieer/fireemblem8-expansion",
+                    "--ruleset-id",
+                    "19088702",
+                    "--expected-contract-sha256",
+                    sha256_hex(CONTRACT),
+                    "--output",
+                    str(verified_path),
+                ]
+            )
+        self.assertEqual(code, 0)
+        result = load_json(verified_path)
         self.assertEqual(
             result,
             {
@@ -296,7 +324,11 @@ class RequiredSummaryChecksTests(unittest.TestCase):
         )
         self.assertEqual(
             calls[1].kwargs["input_bytes"],
-            required_summary_checks.normalized_json(contract.desired_patch_body),
+            required_summary_checks.normalized_json(
+                required_summary_checks.validate_contract(
+                    required_summary_checks.load_json(CONTRACT)
+                ).desired_patch_body
+            ),
         )
         self.assertEqual(calls[2].args[0], ["--include", "repos/laqieer/fireemblem8-expansion/rulesets/19088702"])
 
@@ -329,7 +361,11 @@ class RequiredSummaryChecksTests(unittest.TestCase):
                         required_summary_checks.RulesetContractError,
                         "strong ETag",
                     ):
-                        required_summary_checks.apply_live(contract)
+                        required_summary_checks.apply_live(
+                            contract,
+                            repository="laqieer/fireemblem8-expansion",
+                            ruleset_id=19088702,
+                        )
 
     def test_apply_live_rejects_precondition_failure_and_put_errors(self) -> None:
         contract = required_summary_checks.validate_contract(
@@ -358,7 +394,11 @@ class RequiredSummaryChecksTests(unittest.TestCase):
                 required_summary_checks.RulesetContractError,
                 "412 Precondition Failed",
             ):
-                required_summary_checks.apply_live(contract)
+                required_summary_checks.apply_live(
+                    contract,
+                    repository="laqieer/fireemblem8-expansion",
+                    ruleset_id=19088702,
+                )
 
         put_error = subprocess.CompletedProcess(
             [required_summary_checks.GH, "api"],
@@ -375,7 +415,11 @@ class RequiredSummaryChecksTests(unittest.TestCase):
                 required_summary_checks.RulesetContractError,
                 "PUT failed",
             ):
-                required_summary_checks.apply_live(contract)
+                required_summary_checks.apply_live(
+                    contract,
+                    repository="laqieer/fireemblem8-expansion",
+                    ruleset_id=19088702,
+                )
 
     def test_apply_live_rejects_repo_ruleset_and_post_state_drift(self) -> None:
         contract = required_summary_checks.validate_contract(
@@ -412,7 +456,11 @@ class RequiredSummaryChecksTests(unittest.TestCase):
                         required_summary_checks.RulesetContractError,
                         pattern,
                     ):
-                        required_summary_checks.apply_live(contract)
+                        required_summary_checks.apply_live(
+                            contract,
+                            repository="laqieer/fireemblem8-expansion",
+                            ruleset_id=19088702,
+                        )
 
         with mock.patch.object(
             required_summary_checks,
@@ -427,7 +475,151 @@ class RequiredSummaryChecksTests(unittest.TestCase):
                 required_summary_checks.RulesetContractError,
                 "desired post-migration state",
             ):
-                required_summary_checks.apply_live(contract)
+                required_summary_checks.apply_live(
+                    contract,
+                    repository="laqieer/fireemblem8-expansion",
+                    ruleset_id=19088702,
+                )
+
+    def test_apply_live_rejects_invalid_targets_or_contract_before_gh(self) -> None:
+        sandbox = ARTIFACT_ROOT / "required-summary-checks-invalid-targets"
+        sandbox.mkdir(parents=True, exist_ok=True)
+
+        mismatched_contract = load_json(CONTRACT)
+        mismatched_contract["repository"] = "octocat/hello-world"
+        mismatched_contract["ruleset_identity"]["source"] = "octocat/hello-world"
+        mismatched_contract["ruleset_identity"]["id"] = 1
+        for section in ("source_ruleset_response", "desired_ruleset_response"):
+            mismatched_contract[section]["source"] = "octocat/hello-world"
+            mismatched_contract[section]["id"] = 1
+            mismatched_contract[section]["_links"]["html"]["href"] = (
+                "https://github.com/octocat/hello-world/rules/1"
+            )
+            mismatched_contract[section]["_links"]["self"]["href"] = (
+                "https://api.github.com/repos/octocat/hello-world/rulesets/1"
+            )
+        mismatched_path = sandbox / "mismatched-contract.json"
+        write_json(mismatched_path, mismatched_contract)
+
+        cases = (
+            (
+                "invalid-repository-before-load",
+                [
+                    "apply-live",
+                    "--contract",
+                    str(FIXTURES),
+                    "--repository",
+                    "../foo",
+                    "--ruleset-id",
+                    "19088702",
+                    "--expected-contract-sha256",
+                    "a" * 64,
+                ],
+                "repository '../foo' is invalid",
+            ),
+            (
+                "invalid-ruleset-id",
+                [
+                    "apply-live",
+                    "--contract",
+                    str(CONTRACT),
+                    "--repository",
+                    "laqieer/fireemblem8-expansion",
+                    "--ruleset-id",
+                    "19088702/extra",
+                    "--expected-contract-sha256",
+                    sha256_hex(CONTRACT),
+                ],
+                "argument --ruleset-id must be a positive integer",
+            ),
+            (
+                "bool-ruleset-id",
+                None,
+                "argument --ruleset-id must be a positive integer",
+            ),
+            (
+                "contract-digest-mismatch",
+                [
+                    "apply-live",
+                    "--contract",
+                    str(CONTRACT),
+                    "--repository",
+                    "laqieer/fireemblem8-expansion",
+                    "--ruleset-id",
+                    "19088702",
+                    "--expected-contract-sha256",
+                    "0" * 64,
+                ],
+                "sha256 differs",
+            ),
+            (
+                "dot-path-directory",
+                [
+                    "apply-live",
+                    "--contract",
+                    str(FIXTURES),
+                    "--repository",
+                    "laqieer/fireemblem8-expansion",
+                    "--ruleset-id",
+                    "19088702",
+                    "--expected-contract-sha256",
+                    "a" * 64,
+                ],
+                "cannot read",
+            ),
+            (
+                "contract-target-mismatch",
+                [
+                    "apply-live",
+                    "--contract",
+                    str(mismatched_path),
+                    "--repository",
+                    "laqieer/fireemblem8-expansion",
+                    "--ruleset-id",
+                    "19088702",
+                    "--expected-contract-sha256",
+                    sha256_hex(mismatched_path),
+                ],
+                "trusted apply-live target",
+            ),
+            (
+                "endpoint-injection",
+                [
+                    "apply-live",
+                    "--contract",
+                    str(CONTRACT),
+                    "--repository",
+                    "owner/repo?x=1",
+                    "--ruleset-id",
+                    "19088702",
+                    "--expected-contract-sha256",
+                    sha256_hex(CONTRACT),
+                ],
+                "repository 'owner/repo?x=1' is invalid",
+            ),
+        )
+
+        for name, argv, expected in cases:
+            with self.subTest(case=name):
+                with mock.patch.object(required_summary_checks, "_run_gh_api") as mocked:
+                    if argv is None:
+                        with self.assertRaisesRegex(
+                            required_summary_checks.RulesetContractError,
+                            expected,
+                        ):
+                            required_summary_checks.apply_live_from_contract_path(
+                                CONTRACT,
+                                repository="laqieer/fireemblem8-expansion",
+                                ruleset_id=True,
+                                expected_contract_sha256=sha256_hex(CONTRACT),
+                            )
+                    else:
+                        stderr = io.StringIO()
+                        with redirect_stderr(stderr):
+                            code = required_summary_checks.main(argv)
+                        self.assertEqual(code, 2)
+                        self.assertIn(expected, stderr.getvalue())
+                    mocked.assert_not_called()
 
     def test_contract_mutations_fail_closed(self) -> None:
         raw = load_json(CONTRACT)

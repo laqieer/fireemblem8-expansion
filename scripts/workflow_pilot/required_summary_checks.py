@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Validate and preview the issue #177 required-summary ruleset migration."""
+"""Validate, preview, and apply the issue #177 required-summary ruleset migration."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -61,7 +62,11 @@ VOLATILE_RESPONSE_FIELDS = frozenset({"updated_at"})
 GH = "/usr/bin/gh"
 HEADER_STATUS_RE = re.compile(r"^HTTP/\d+(?:\.\d+)?\s+(?P<status>\d{3})\b")
 STRONG_ETAG_RE = re.compile(r'^"(?:[^"\\]|\\.)+"$')
-REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+RULESET_ID_RE = re.compile(r"^[1-9][0-9]*$")
+OWNER_COMPONENT_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
+REPO_COMPONENT_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+MAX_REPOSITORY_COMPONENT_LENGTH = 100
 
 
 class RulesetContractError(ValueError):
@@ -97,15 +102,37 @@ def normalized_json(value: Any) -> bytes:
     ).encode("ascii")
 
 
-def load_json(path: Path) -> Any:
+def _read_bytes(path: Path) -> bytes:
     try:
-        text = path.read_text(encoding="utf-8")
+        return path.read_bytes()
     except OSError as error:
         raise RulesetContractError(f"cannot read {path}: {error}") from error
+
+
+def _sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _parse_json_bytes(data: bytes, label: str) -> Any:
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise RulesetContractError(f"invalid UTF-8 in {label}: {error}") from error
     try:
         return json.loads(text, object_pairs_hook=_json_object_no_duplicates)
     except json.JSONDecodeError as error:
-        raise RulesetContractError(f"invalid JSON in {path}: {error}") from error
+        raise RulesetContractError(f"invalid JSON in {label}: {error}") from error
+
+
+def load_json(path: Path, *, expected_sha256: str | None = None) -> Any:
+    data = _read_bytes(path)
+    if expected_sha256 is not None:
+        actual_sha256 = _sha256_hex(data)
+        if actual_sha256 != expected_sha256:
+            raise RulesetContractError(
+                f"{path} sha256 differs: expected {expected_sha256}, got {actual_sha256}"
+            )
+    return _parse_json_bytes(data, str(path))
 
 
 def _gh_environment() -> dict[str, str]:
@@ -128,15 +155,97 @@ def _gh_environment() -> dict[str, str]:
 
 
 def _validate_repository(repository: str) -> str:
-    if REPOSITORY_RE.fullmatch(repository) is None:
+    repository = _expect_string(repository, "repository")
+    if any(char in repository for char in ("\\", "%", "?", "#")) or any(
+        ord(char) < 0x20 or ord(char) == 0x7F for char in repository
+    ):
+        raise RulesetContractError(f"repository {repository!r} is invalid")
+    if repository.count("/") != 1:
+        raise RulesetContractError(f"repository {repository!r} is invalid")
+    owner, name = repository.split("/")
+    if not owner or not name:
+        raise RulesetContractError(f"repository {repository!r} is invalid")
+    if OWNER_COMPONENT_RE.fullmatch(owner) is None:
+        raise RulesetContractError(f"repository {repository!r} is invalid")
+    if name in {".", ".."}:
+        raise RulesetContractError(f"repository {repository!r} is invalid")
+    if len(name) > MAX_REPOSITORY_COMPONENT_LENGTH:
+        raise RulesetContractError(f"repository {repository!r} is invalid")
+    if name[0] == "." or name[-1] == ".":
+        raise RulesetContractError(f"repository {repository!r} is invalid")
+    if name.lower().endswith(".git"):
+        raise RulesetContractError(f"repository {repository!r} is invalid")
+    if REPO_COMPONENT_RE.fullmatch(name) is None:
         raise RulesetContractError(f"repository {repository!r} is invalid")
     return repository
 
 
-def _endpoint(contract: RulesetContract) -> str:
-    repository = _validate_repository(contract.repository)
-    ruleset_id = contract.ruleset_identity["id"]
+def _validate_ruleset_id(value: Any, label: str) -> int:
+    if isinstance(value, bool):
+        raise RulesetContractError(f"{label} must be a positive integer")
+    if isinstance(value, int):
+        if value < 1:
+            raise RulesetContractError(f"{label} must be a positive integer")
+        return value
+    if not isinstance(value, str) or RULESET_ID_RE.fullmatch(value) is None:
+        raise RulesetContractError(f"{label} must be a positive integer")
+    return int(value)
+
+
+def _validate_sha256(value: str, label: str) -> str:
+    digest = _expect_string(value, label)
+    if SHA256_RE.fullmatch(digest) is None:
+        raise RulesetContractError(f"{label} must be a lowercase 64-hex sha256")
+    return digest
+
+
+def _endpoint(repository: str, ruleset_id: int) -> str:
     return f"repos/{repository}/rulesets/{ruleset_id}"
+
+
+def _load_validated_contract(
+    path: Path,
+    *,
+    expected_sha256: str | None = None,
+) -> RulesetContract:
+    return validate_contract(load_json(path, expected_sha256=expected_sha256))
+
+
+def _require_trusted_target(
+    contract: RulesetContract,
+    *,
+    repository: str,
+    ruleset_id: int,
+) -> None:
+    for label, source, expected in (
+        ("contract.repository", contract.repository, repository),
+        ("contract.ruleset_identity.source", contract.ruleset_identity["source"], repository),
+        ("contract.ruleset_identity.id", contract.ruleset_identity["id"], ruleset_id),
+        (
+            "contract.source_ruleset_response.source",
+            contract.source_ruleset_response["source"],
+            repository,
+        ),
+        (
+            "contract.source_ruleset_response.id",
+            contract.source_ruleset_response["id"],
+            ruleset_id,
+        ),
+        (
+            "contract.desired_ruleset_response.source",
+            contract.desired_ruleset_response["source"],
+            repository,
+        ),
+        (
+            "contract.desired_ruleset_response.id",
+            contract.desired_ruleset_response["id"],
+            ruleset_id,
+        ),
+    ):
+        if source != expected:
+            raise RulesetContractError(
+                f"{label} must match the trusted apply-live target"
+            )
 
 
 def _run_gh_api(
@@ -928,8 +1037,20 @@ def verify_live_ruleset(contract: RulesetContract, live_ruleset: Any) -> dict[st
     }
 
 
-def apply_live(contract: RulesetContract) -> dict[str, Any]:
-    endpoint = _endpoint(contract)
+def apply_live(
+    contract: RulesetContract,
+    *,
+    repository: str,
+    ruleset_id: int,
+) -> dict[str, Any]:
+    trusted_repository = _validate_repository(repository)
+    trusted_ruleset_id = _validate_ruleset_id(ruleset_id, "ruleset_id")
+    _require_trusted_target(
+        contract,
+        repository=trusted_repository,
+        ruleset_id=trusted_ruleset_id,
+    )
+    endpoint = _endpoint(trusted_repository, trusted_ruleset_id)
 
     get_response = _run_gh_api(["--include", endpoint])
     if get_response.returncode != 0:
@@ -1000,6 +1121,33 @@ def apply_live(contract: RulesetContract) -> dict[str, Any]:
     return verify_live_ruleset(contract, refetched_body)
 
 
+def apply_live_from_contract_path(
+    contract_path: Path,
+    *,
+    repository: str,
+    ruleset_id: Any,
+    expected_contract_sha256: str,
+) -> dict[str, Any]:
+    trusted_repository = _validate_repository(repository)
+    trusted_ruleset_id = _validate_ruleset_id(
+        ruleset_id,
+        "argument --ruleset-id",
+    )
+    trusted_contract_sha256 = _validate_sha256(
+        expected_contract_sha256,
+        "argument --expected-contract-sha256",
+    )
+    contract = _load_validated_contract(
+        contract_path,
+        expected_sha256=trusted_contract_sha256,
+    )
+    return apply_live(
+        contract,
+        repository=trusted_repository,
+        ruleset_id=trusted_ruleset_id,
+    )
+
+
 def _write_output(path: Path | None, payload: Any) -> None:
     data = normalized_json(payload)
     if path is None:
@@ -1021,6 +1169,9 @@ def build_parser() -> argparse.ArgumentParser:
         subparser.add_argument("--output", type=Path)
     apply_live_parser = subparsers.add_parser("apply-live")
     apply_live_parser.add_argument("--contract", type=Path, required=True)
+    apply_live_parser.add_argument("--repository", required=True)
+    apply_live_parser.add_argument("--ruleset-id", required=True)
+    apply_live_parser.add_argument("--expected-contract-sha256", required=True)
     apply_live_parser.add_argument("--output", type=Path)
     return parser
 
@@ -1029,10 +1180,18 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        contract = validate_contract(load_json(args.contract))
         if args.command == "apply-live":
-            _write_output(args.output, apply_live(contract))
+            _write_output(
+                args.output,
+                apply_live_from_contract_path(
+                    args.contract,
+                    repository=args.repository,
+                    ruleset_id=args.ruleset_id,
+                    expected_contract_sha256=args.expected_contract_sha256,
+                ),
+            )
             return 0
+        contract = _load_validated_contract(args.contract)
         live_ruleset = load_json(args.live)
         if args.command == "preview":
             _write_output(args.output, preview_patch(contract, live_ruleset))
