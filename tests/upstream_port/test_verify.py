@@ -1287,6 +1287,24 @@ class VerifyCliCwdTests(unittest.TestCase):
                     "        if False:\n"
                     "            json.dumps({})\n",
                 ),
+                "backslash-space": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    '        if [ "$CLASSIFIER_RESULT" != "success" ] || \\\n',
+                    '        if [ "$CLASSIFIER_RESULT" != "success" ] || \\ \n',
+                ),
+                "backslash-tab": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    '           [ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \\\n',
+                    '           [ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \\\t\n',
+                ),
+                "backslash-trailing-spaces": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    '           [ "$GITHUB_EVENT_NAME" != "pull_request" ] || \\\n',
+                    '           [ "$GITHUB_EVENT_NAME" != "pull_request" ] || \\  \n',
+                ),
             }
             for name, changed in mutations.items():
                 with self.subTest(mutation=name):

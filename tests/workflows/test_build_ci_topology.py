@@ -3434,6 +3434,21 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 '        if "title" in changes:\n            validate_change("title")\n'
                 "        0\n",
             ),
+            (
+                "backslash-space",
+                '        if [ "$CLASSIFIER_RESULT" != "success" ] || \\\n',
+                '        if [ "$CLASSIFIER_RESULT" != "success" ] || \\ \n',
+            ),
+            (
+                "backslash-tab",
+                '           [ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \\\n',
+                '           [ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \\\t\n',
+            ),
+            (
+                "backslash-trailing-spaces",
+                '           [ "$GITHUB_EVENT_NAME" != "pull_request" ] || \\\n',
+                '           [ "$GITHUB_EVENT_NAME" != "pull_request" ] || \\  \n',
+            ),
         )
         for name, old, new in mutations:
             with self.subTest(mutation=name):
@@ -3646,6 +3661,72 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "error": "payload is not valid JSON",
             },
             {
+                "name": "nan-json",
+                "raw": (
+                    b'{"action":"edited","changes":{"body":{"from":"Old body"}},'
+                    b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                    + b"2" * 40
+                    + b'"},"body":"New body","head":{"sha":"'
+                    + b"1" * 40
+                    + b'"},"title":"New title"},"unused":NaN}\n'
+                ),
+                "expected": 1,
+                "error": "contains non-finite number",
+            },
+            {
+                "name": "infinity-json",
+                "raw": (
+                    b'{"action":"edited","changes":{"body":{"from":"Old body"}},'
+                    b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                    + b"2" * 40
+                    + b'"},"body":"New body","head":{"sha":"'
+                    + b"1" * 40
+                    + b'"},"title":"New title"},"unused":Infinity}\n'
+                ),
+                "expected": 1,
+                "error": "contains non-finite number",
+            },
+            {
+                "name": "negative-infinity-json",
+                "raw": (
+                    b'{"action":"edited","changes":{"body":{"from":"Old body"}},'
+                    b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                    + b"2" * 40
+                    + b'"},"body":"New body","head":{"sha":"'
+                    + b"1" * 40
+                    + b'"},"title":"New title"},"unused":-Infinity}\n'
+                ),
+                "expected": 1,
+                "error": "contains non-finite number",
+            },
+            {
+                "name": "overflow-float-json",
+                "raw": (
+                    b'{"action":"edited","changes":{"body":{"from":"Old body"}},'
+                    b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                    + b"2" * 40
+                    + b'"},"body":"New body","head":{"sha":"'
+                    + b"1" * 40
+                    + b'"},"title":"New title"},"unused":1e999}\n'
+                ),
+                "expected": 1,
+                "error": "float overflows",
+            },
+            {
+                "name": "nested-nonfinite-unknown-field",
+                "raw": (
+                    b'{"action":"edited","changes":{"body":{"from":"Old body"}},'
+                    b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                    + b"2" * 40
+                    + b'"},"body":"New body","head":{"sha":"'
+                    + b"1" * 40
+                    + b'"},"title":"New title"},'
+                    b'"unused":{"nested":[0,{"bad":NaN}]}}\n'
+                ),
+                "expected": 1,
+                "error": "contains non-finite number",
+            },
+            {
                 "name": "oversized-payload",
                 "raw": b" " * (event_classifier.MAX_EVENT_BYTES + 1),
                 "expected": 1,
@@ -3755,6 +3836,67 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 mutated["payload"]["pull_request"]["base"]["ref"] = ref_case["ref"]
                 cases.append(mutated)
 
+        numeric_template = templates["body-only-merge-sha-ignored"]
+        numeric_runner = copy.deepcopy(numeric_template["runner"])
+        numeric_cases = (
+            (
+                "nan",
+                b'{"action":"edited","changes":{"body":{"from":"old evidence"}},'
+                b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                + b"2" * 40
+                + b'"},"body":"new evidence","head":{"sha":"'
+                + b"1" * 40
+                + b'"},"title":"Implement issue 177"},"unused":NaN}\n',
+            ),
+            (
+                "infinity",
+                b'{"action":"edited","changes":{"body":{"from":"old evidence"}},'
+                b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                + b"2" * 40
+                + b'"},"body":"new evidence","head":{"sha":"'
+                + b"1" * 40
+                + b'"},"title":"Implement issue 177"},"unused":Infinity}\n',
+            ),
+            (
+                "negative-infinity",
+                b'{"action":"edited","changes":{"body":{"from":"old evidence"}},'
+                b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                + b"2" * 40
+                + b'"},"body":"new evidence","head":{"sha":"'
+                + b"1" * 40
+                + b'"},"title":"Implement issue 177"},"unused":-Infinity}\n',
+            ),
+            (
+                "overflow-float",
+                b'{"action":"edited","changes":{"body":{"from":"old evidence"}},'
+                b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                + b"2" * 40
+                + b'"},"body":"new evidence","head":{"sha":"'
+                + b"1" * 40
+                + b'"},"title":"Implement issue 177"},"unused":1e999}\n',
+            ),
+            (
+                "nested-unknown-nonfinite",
+                b'{"action":"edited","changes":{"body":{"from":"old evidence"}},'
+                b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                + b"2" * 40
+                + b'"},"body":"new evidence","head":{"sha":"'
+                + b"1" * 40
+                + b'"},"title":"Implement issue 177"},'
+                b'"unused":{"nested":[0,{"bad":NaN}]}}\n',
+            ),
+        )
+        for case_id, raw in numeric_cases:
+            cases.append(
+                {
+                    "event_name": "pull_request",
+                    "id": f"body-only-{case_id}",
+                    "payload": copy.deepcopy(numeric_template["payload"]),
+                    "raw": raw,
+                    "runner": numeric_runner,
+                }
+            )
+
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
@@ -3772,27 +3914,35 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     "number",
                     int(match.group(1)) if match is not None else 177,
                 )
-                decision = event_classifier.classify_event(
-                    case["event_name"],
-                    payload,
-                    github_ref=case["runner"]["github_ref"],
-                    github_sha=case["runner"]["github_sha"],
-                    pr_base_sha=case["runner"]["pr_base_sha"],
-                    pr_head_sha=case["runner"]["pr_head_sha"],
-                    push_sha=case["runner"]["push_sha"],
-                )
-                expected = 0 if decision.classification == "metadata-only" else 1
+                raw = case.get("raw", _metadata_adapter_payload_bytes(payload))
                 for job_name, script in scripts.items():
                     with self.subTest(
                         case=case["id"],
                         job=job_name,
-                        classification=decision.classification,
-                        reason=decision.reason,
                     ):
                         event_path = sandbox / f"{job_name}-{case['id']}.json"
-                        event_path.write_bytes(
-                            _metadata_adapter_payload_bytes(payload)
-                        )
+                        event_path.write_bytes(raw)
+                        try:
+                            loaded = event_classifier.load_event(event_path)
+                        except event_classifier.EventClassificationError as error:
+                            expected = 1
+                            decision_label = f"loader-error:{error}"
+                        else:
+                            decision = event_classifier.classify_event(
+                                case["event_name"],
+                                loaded,
+                                github_ref=case["runner"]["github_ref"],
+                                github_sha=case["runner"]["github_sha"],
+                                pr_base_sha=case["runner"]["pr_base_sha"],
+                                pr_head_sha=case["runner"]["pr_head_sha"],
+                                push_sha=case["runner"]["push_sha"],
+                            )
+                            expected = (
+                                0 if decision.classification == "metadata-only" else 1
+                            )
+                            decision_label = (
+                                f"{decision.classification}/{decision.reason}"
+                            )
                         completed = subprocess.run(
                             ["/bin/bash", "-c", script],
                             cwd=ROOT,
@@ -3809,7 +3959,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                             completed.returncode,
                             expected,
                             (
-                                f"{case['id']} => {decision.classification}/{decision.reason}\n"
+                                f"{case['id']} => {decision_label}\n"
                                 f"{completed.stderr}"
                             ),
                         )

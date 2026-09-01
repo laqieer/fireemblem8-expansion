@@ -10,8 +10,8 @@ from dataclasses import dataclass
 
 
 _SHELL_PUNCTUATION = "|;&<>()"
-_PYTHON_AST_SHA256 = "1e7ed3f1102b5b8a6e19458008ea850a6f73381abef5f772f923996162d53dbf"
-_ALLOWED_IMPORTS = ("json", "os", "re", "stat", "sys")
+_PYTHON_AST_SHA256 = "43dcc50ebe0f13bce0b1935004dadb13821e2f39b975754e5e1b51f106710e76"
+_ALLOWED_IMPORTS = ("decimal", "json", "math", "os", "re", "stat", "sys")
 
 
 @dataclass(frozen=True)
@@ -72,9 +72,15 @@ def parse_metadata_adapter_shell(script: str) -> tuple[ParsedShellCommand, ...]:
             line_index += 1
             continue
 
+        rstripped = line.rstrip()
+        if rstripped.endswith("\\") and rstripped != line:
+            raise ValueError(
+                "metadata adapter shell has trailing whitespace after a continuation backslash"
+            )
+
         text = line.strip()
         continued.append(text)
-        if text.endswith("\\"):
+        if line.endswith("\\"):
             continued[-1] = continued[-1][:-1].rstrip()
             line_index += 1
             continue

@@ -405,7 +405,9 @@ jobs:
           exit 1
         fi
         /usr/bin/python3 -I - <<'PY'
+        import decimal
         import json
+        import math
         import os
         import re
         import stat
@@ -417,6 +419,7 @@ jobs:
         MAX_REF_BYTES = 1024
         MAX_EVENT_BYTES = 1048576
         MAX_EVENT_READ_BYTES = MAX_EVENT_BYTES + 1
+        MAX_FLOAT_LITERAL_BYTES = 128
         MAX_TITLE_BYTES = 65536
         MAX_BODY_BYTES = MAX_EVENT_BYTES
         SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -455,6 +458,36 @@ jobs:
                     fail("metadata-only raw event JSON repeats a key")
                 result[key] = value
             return result
+
+        def reject_nonfinite_constant(value):
+            fail(f"metadata-only raw event JSON contains non-finite number {value}")
+
+        def parse_strict_float(value):
+            if len(value) > MAX_FLOAT_LITERAL_BYTES:
+                fail("metadata-only raw event JSON float literal is too long")
+            try:
+                decimal_value = decimal.Decimal(value)
+                float_value = float(decimal_value)
+            except (decimal.InvalidOperation, OverflowError, ValueError):
+                fail(f"metadata-only raw event JSON float is invalid: {value}")
+            if not math.isfinite(float_value):
+                fail(f"metadata-only raw event JSON float overflows: {value}")
+            if decimal_value != 0 and float_value == 0:
+                fail(f"metadata-only raw event JSON float underflows: {value}")
+            return float_value
+
+        def ensure_finite_numbers(value):
+            if isinstance(value, float):
+                if not math.isfinite(value):
+                    fail("metadata-only raw event JSON contains non-finite float")
+                return
+            if isinstance(value, dict):
+                for item in value.values():
+                    ensure_finite_numbers(item)
+                return
+            if isinstance(value, list):
+                for item in value:
+                    ensure_finite_numbers(item)
 
         def parse_required_text(value, *, field, max_bytes):
             if not isinstance(value, str) or value == "":
@@ -559,11 +592,14 @@ jobs:
                 payload = json.loads(
                     raw.decode("utf-8"),
                     object_pairs_hook=reject_duplicates,
+                    parse_constant=reject_nonfinite_constant,
+                    parse_float=parse_strict_float,
                 )
             except (UnicodeDecodeError, json.JSONDecodeError) as error:
                 fail(f"metadata-only raw event payload is not valid JSON: {error}")
             if not isinstance(payload, dict):
                 fail("metadata-only raw event payload must be an object")
+            ensure_finite_numbers(payload)
             return payload
 
         def parse_nullable_text(value, *, field, max_bytes):
@@ -908,7 +944,9 @@ jobs:
           exit 1
         fi
         /usr/bin/python3 -I - <<'PY'
+        import decimal
         import json
+        import math
         import os
         import re
         import stat
@@ -920,6 +958,7 @@ jobs:
         MAX_REF_BYTES = 1024
         MAX_EVENT_BYTES = 1048576
         MAX_EVENT_READ_BYTES = MAX_EVENT_BYTES + 1
+        MAX_FLOAT_LITERAL_BYTES = 128
         MAX_TITLE_BYTES = 65536
         MAX_BODY_BYTES = MAX_EVENT_BYTES
         SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -958,6 +997,36 @@ jobs:
                     fail("metadata-only raw event JSON repeats a key")
                 result[key] = value
             return result
+
+        def reject_nonfinite_constant(value):
+            fail(f"metadata-only raw event JSON contains non-finite number {value}")
+
+        def parse_strict_float(value):
+            if len(value) > MAX_FLOAT_LITERAL_BYTES:
+                fail("metadata-only raw event JSON float literal is too long")
+            try:
+                decimal_value = decimal.Decimal(value)
+                float_value = float(decimal_value)
+            except (decimal.InvalidOperation, OverflowError, ValueError):
+                fail(f"metadata-only raw event JSON float is invalid: {value}")
+            if not math.isfinite(float_value):
+                fail(f"metadata-only raw event JSON float overflows: {value}")
+            if decimal_value != 0 and float_value == 0:
+                fail(f"metadata-only raw event JSON float underflows: {value}")
+            return float_value
+
+        def ensure_finite_numbers(value):
+            if isinstance(value, float):
+                if not math.isfinite(value):
+                    fail("metadata-only raw event JSON contains non-finite float")
+                return
+            if isinstance(value, dict):
+                for item in value.values():
+                    ensure_finite_numbers(item)
+                return
+            if isinstance(value, list):
+                for item in value:
+                    ensure_finite_numbers(item)
 
         def parse_required_text(value, *, field, max_bytes):
             if not isinstance(value, str) or value == "":
@@ -1062,11 +1131,14 @@ jobs:
                 payload = json.loads(
                     raw.decode("utf-8"),
                     object_pairs_hook=reject_duplicates,
+                    parse_constant=reject_nonfinite_constant,
+                    parse_float=parse_strict_float,
                 )
             except (UnicodeDecodeError, json.JSONDecodeError) as error:
                 fail(f"metadata-only raw event payload is not valid JSON: {error}")
             if not isinstance(payload, dict):
                 fail("metadata-only raw event payload must be an object")
+            ensure_finite_numbers(payload)
             return payload
 
         def parse_nullable_text(value, *, field, max_bytes):
