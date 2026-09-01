@@ -100,6 +100,241 @@ input-format/cohort checksum: it detects identity, timestamp, PR/SHA
 association, and relationship substitution that preserves aggregate metrics,
 but does not hash source files, blobs, objects, ROMs, or the repository tree.
 
+## Build event classification and candidate evidence
+
+Issue [#177](https://github.com/laqieer/fireemblem8-expansion/issues/177)
+adds a no-checkout `event-identity` validator, parsed fail-closed
+`event-router`, and mode-specific classifier check ahead of the four expensive
+workers. For pull requests with complete identity,
+the router checks out
+the exact current `pull_request.base.sha` with the pinned checkout action, no
+credentials, no submodules, and depth one. A missing PR base uses only the
+repository's trusted default-branch ref to execute the failure/bootstrap
+classifier; it never substitutes the event's merge `github.sha`. Pushes use
+their separate event `after` SHA. The job verifies exact immutable authority
+when that base/push identity exists before invoking the closed
+`/usr/bin/python3 -I` launcher's `classify-event` mode. A branch whose trusted
+base predates the classifier takes an explicit bootstrap full-build path, so
+introducing or reverting the seam cannot silently suppress evidence.
+The classifier bootstrap may use the trusted default branch when PR base
+identity is missing or unusable; worker checkouts never use a merge/default
+fallback.
+
+Check contexts are mode-separated. `event-identity` and `event-router` are
+common setup only. Every normalized full or metadata run must contain exactly
+one successful identity context and one successful router setup context;
+missing, failed, skipped, renamed, duplicate, or
+unknown setup contexts are invalid. Full candidate runs
+expose `event-classifier`, `host-tests`, `build`,
+`extended-host-tests`, `legacy`, and `summary`. The running `summary` context
+is the sole candidate attestation; it succeeds only after the same full run's
+classifier and all four workers succeed. Metadata-only runs expose the running
+`metadata-classifier` and `metadata-summary` attestations. GitHub does not
+reliably evaluate `name` expressions for skipped jobs
+([actions/runner#1215](https://github.com/actions/runner/issues/1215)), so
+candidate logic never derives mode or eligibility from skipped worker names.
+Those records are normalized only by stable worker job ID and
+`skipped`/success-shaped conclusion, then ignored as candidate evidence. A
+later green metadata run therefore cannot replace `summary` or make a
+failed/missing full run eligible even when GitHub renders skipped workers as
+successful checks or literal expressions.
+
+[`scripts/workflow_pilot/candidate_evidence.py`](../scripts/workflow_pilot/candidate_evidence.py)
+derives mode only from the running classifier/summary names and evaluates the latest
+exact-head/exact-base full run as one unit. A metadata-only run is never
+candidate evidence. A failed full run followed by green metadata remains
+ineligible; a prior successful full run remains eligible because metadata
+contexts are distinct rather than replacements. Both modes require the same
+successful common identity and router setup before their running attestations
+are admissible.
+A canonical successful `event-identity` context is mandatory in both modes.
+A canonical successful `event-router` context is mandatory in both modes.
+
+The classifier reads the bounded `GITHUB_EVENT_PATH` JSON file with duplicate
+key and non-finite `NaN`/`Infinity` rejection. JSON floats are converted
+through `Decimal` to finite binary64: positive/negative exponent overflow and
+nonzero values that underflow to zero are rejected, including huge exponents;
+normal finite values, representable subnormals, and signed zero remain valid.
+The parsed tree receives a recursive finite-number check before
+classification, so an unused overflowing field cannot accompany an otherwise
+metadata-only event. An `edited` event suppresses `host-tests`, `build`,
+`extended-host-tests`, and `legacy` only when:
+
+- the event has a complete pull-request base and exact head identity;
+- the event head/base equal the direct event identities used by every
+  expensive worker condition;
+- the nonempty `changes` key set is exactly `body`, `title`, or both; and
+- each changed metadata field has exactly the documented GitHub
+  `{"from": ...}` shape, schema-valid previous/current values, and a real
+  value transition. A title's previous/current values are nonempty strings;
+  a body may transition between null and string; same-value, missing-current,
+  nested, malformed, or extra-key claims are not metadata-only.
+
+A base edit uses the production `changes.base.ref.from` and
+`changes.base.sha.from` records. Previous and current refs are nonempty,
+previous/current SHAs are full identities, and both transitions must differ.
+The current `pull_request.base` ref/SHA remains classifier checkout authority;
+the previous base identifies the transition only and is never checked out.
+Missing, ref-only, SHA-only, same, extra, or spoofed records remain full
+fail-closed edits rather than metadata suppression.
+
+Base refs are bounded to 1024 UTF-8 bytes and must satisfy full
+`git check-ref-format refs/heads/<base.ref>` semantics; `--branch` shorthand
+is never used, and lone `@` is rejected explicitly. The Python classifier
+enforces the equivalent grammar without executing a subprocess. The trusted
+pre-classifier bootstrap passes the quoted full ref to
+`/usr/bin/git check-ref-format` and never checks out that ref.
+Empty/whitespace, control or
+DEL, space, `~`, `^`, `:`, `?`, `*`, `[`, backslash, `..`, `@{`,
+leading/trailing/repeated slash, leading-dot or `.lock` components, and a
+trailing dot are invalid. Git-valid slash, dash, and dot forms remain valid.
+An invalid base ref is incomplete base identity: a validated head runs all
+four workers at that exact head and summary fails; an invalid head runs none.
+
+Base-only edits, mixed edits, unknown fields, incomplete change records,
+unknown actions, `opened`, `synchronize`, `reopened`, and `master` pushes with
+complete identity select the complete required graph. A classifier
+parser/runtime failure (including malformed, duplicate-key, or non-finite
+JSON) on a PR with a validated authoritative event head also runs all four
+workers at that exact `pull_request.head.sha`; it never uses merge `github.sha`.
+Summary verifies that every fallback worker succeeded, then still fails to
+surface the classifier defect. On a `master` push, classifier failure with a
+validated authoritative `github.sha` similarly runs all four workers and the
+master-only publisher at that exact push SHA, audits success, then fails
+summary. A classifier failure with no validated PR/push fallback SHA or another
+unsupported result starts no worker/publisher and fails summary. Missing
+identity or stale outputs from a successful classifier cannot select a
+fallback worker. Each normal worker runs only when the classifier has a
+valid full-build decision and an exact event head. Complete identity or an
+explicit valid-head `full_fallback` decision is also required. On a
+metadata-only edit, `summary` succeeds only
+when classification succeeded, the classified head still equals the event
+head, the classified base still equals the event base, suppression is exactly
+false, and all four worker conclusions are exactly `skipped`. On a full event,
+normal workers check out the classifier's exact nonempty head output. Any
+missing, empty, malformed, or event-mismatched base ref/SHA with a valid exact
+PR head sets `head_valid=true`, `identity_valid=false`, and
+`full_fallback=true`. All four workers run at that exact head, then normal
+`summary` audits them and fails because full base identity is unavailable or
+incoherent. A syntactically valid direct base SHA remains in
+`expected_base` for diagnostics even when another base component is invalid;
+it never becomes checkout authority. A missing, malformed, stale, or spoofed
+head sets no full fallback, runs no worker, and fails. Failure
+fallback workers check out only the trusted event setup's validated PR/push
+SHA. Both paths retain revision verification, commands, and environments.
+Summary now joins the publisher as well: PR and metadata paths require it to
+be skipped, while master-push paths require success.
+Default-branch ref validation is deferred until a missing/unusable PR base
+actually needs classifier bootstrap. Missing or malformed default-branch data
+does not abort an independently valid PR-head or push fallback. If classifier
+authority is unavailable, router checkout/classification never runs, router
+and classifier fail, exact fallback workers plus any guarded push publisher
+run, and summary remains failed.
+
+Trusted event setup accepts an event identity only as an exact lowercase
+40-hex SHA. A PR additionally requires its numeric event number and exact
+`refs/pull/<number>/merge` ref; a push requires event `push`,
+`refs/heads/master`, and equal event `after`/`github.sha`. Successful full and
+metadata classifications, normal workers, and summary must all bind their
+classified head to that same kind and SHA.
+Metadata-only classification is accepted only for a coherently bound
+`pull_request`; metadata-shaped router output on push or another event fails
+the classifier and takes the validated full fallback path. Missing, uppercase,
+short, nonhex,
+ref-name, ref-number-mismatched, malformed, or cross-event identities select
+no worker and cannot produce a successful summary. Classifier-failure workers
+also consume only that validated output. Workers consume only that validated
+SHA. The
+publisher consumes the same validated push SHA, verifies
+`/usr/bin/git rev-parse HEAD` immediately after checkout, and stages the
+three-file producer from that exact validated after commit without whole-file
+source hash pins. Before private download, the exact after tree builds as a
+dedicated unprivileged UID inside mount, PID, and network namespaces with no
+network, capabilities, secrets, `BASH_ENV`, or `GITHUB_ENV`. Private mount
+propagation, recursively read-only host root/system/tool paths, private
+`/tmp`/`run`/`proc`/`dev`, and masked D-Bus/container/service sockets leave only
+exact candidate source/home/tmp/handoff mounts writable. Every descendant stays
+in one exact cgroup v2. The trusted host stops the exact process group and
+cgroup, verifies `cgroup.procs` is empty, proves no builder-UID process remains,
+and removes the
+owned cgroup, then admits only the expected regular, nonsymlink, single-link
+32 MiB target and bounded metadata handoff; device, escaped, or unexpected
+outputs fail. It removes the builder user, tree, wheelhouse, and candidate
+checkout. No complete target ROM enters an Actions artifact, cache, release,
+or log.
+Before `/sys` is masked, the exact owned cgroup is bound read-only below a
+root-only `0700` `/mnt/supervisor`; the candidate cannot traverse it. The
+wrapper reads that supervisor view after `/sys` is masked and permits handoff
+only when its own PID is the sole member. Host-side kill/removal still uses the
+actual cgroup path.
+Unavailable mount/cgroup features fail closed, and cleanup sends no UID-wide
+signal.
+Before candidate code starts, a trusted child launcher closes inherited file descriptors
+above 2, redirects stdin/stdout/stderr permanently to private `/dev/null`, and
+passes no GitHub workflow command-file paths.
+Candidate output is never replayed, logged, or uploaded; the trusted host emits
+only fixed status text with a numeric exit classification. Arbitrary output
+volume cannot change an otherwise successful build. All other writable roots
+and regular files retain tmpfs/ulimit bounds; no output sink exists.
+The minimal `BASEROM_URL` step then creates an unpredictable, mode-restricted
+private path and exposes only that path through trusted output. The immediately
+following step runs the staged producer with absolute isolated Python, an
+empty runtime CWD/environment, and no repository import path. No candidate
+command runs while the base exists. Traps delete the base on success or
+failure, cleanup is verified before upload, and later steps see only the patch
+artifact.
+After private cleanup, a final adjacent step revalidates exactly regular,
+single-link BPS/manifest/README outputs immediately before upload.
+All repository/candidate-controlled commands finish before private download.
+Cleanup is verified before upload.
+No whole-file source hash pins are used.
+Before the base exists, the fresh hosted publisher proves that no
+candidate-written `GITHUB_ENV`, `BASH_ENV`, background process, checkout, or
+executable state can survive the builder teardown.
+The current Build workflow has no explicit final-dispatch trigger; if that
+supported surface is introduced later, `workflow_dispatch` classifies as full
+and the trigger/topology contracts must be updated together.
+
+A live metadata exercise must use a disposable validation-only PR whose base
+is the exact candidate branch containing the classifier and whose head is a
+direct, nonempty, non-merge descendant carrying one deterministic tracked
+probe. Editing an implementation PR whose base predates the classifier
+correctly selects `classifier-bootstrap` and the full graph; it does not test
+metadata suppression. The indexed
+[`TC-WORKFLOW-BODY-EDIT-001`](test-cases/workflow-governance.md#planned-live-title-only-exercise-after-push)
+procedure freezes creation, opened/full evidence, title-edit and title-restore
+metadata evidence, evaluator input, and complete PR/branch/worktree cleanup.
+Its bounded direct shell helper paginates and excludes all prior IDs, validates
+created/event/branch/head fields before each exact-ID watcher, and installs
+idempotent compare-and-swap cleanup before remote mutation. The evaluator
+scans all raw REST jobs before normalization: metadata workers are admissible
+only when skipped with no assigned runner, including the documented
+platform-only `started_at` timestamp quirk.
+
+The pull-request body/template remains the stable frozen scope, non-goals,
+classification, dependency, acceptance, tester procedure, and compatibility
+contract. It must contain neither evolving evidence fields nor the canonical
+marker. Evolving commands/results, tester actual results, candidate SHA, Build
+run, Copilot/security review, unresolved-thread, completion, budget, and
+review-size evidence belongs in exactly one canonical PR evidence comment
+carrying this standalone marker:
+
+<!-- workflow-pilot-candidate-evidence -->
+
+Update that comment in place. A missing marker, duplicate markers in one or
+more comments, a non-standalone marker, or a marker/body evidence field in the
+PR body violates the contract. Do not append those facts to the body, title,
+decision record, fixture, or another tracked/current-state ledger. Comment
+edits emit no `pull_request: edited` event, while Git, GitHub, and Actions
+remain authoritative for every value.
+
+The issue #176 reporter's duplicate unchanged-SHA formula needs no new state:
+capture the post-pilot Actions cohort with the same inclusive-window and
+identity rules, group Build runs by exact `head_sha`, and compare its
+`sum(group size - 1)` with the frozen pre-pilot value of 51. The canonical
+comment may link the derived before/after report; it does not become reporter
+input or an editable metric source.
+
 `--repository-root` is required and must resolve to the exact checked-out Git
 top level. Before any metric or report section is constructed, the reporter
 requires its `origin` to identify the fixture repository, loads every listed
@@ -178,14 +413,25 @@ safe values and pin `PATH=/usr/bin:/bin`; the isolated launcher removes every
 ambient `GIT_*` name before dispatch. Runner environment files,
 repository/user `sitecustomize.py`, shell startup hooks, and ambient Git
 controls therefore cannot replace either executable or authority root.
-At job scope, every combined worker has a closed direct mapping: exact
-`runs-on: ubuntu-latest`, `timeout-minutes: 60`, its reviewed environment, and
-`steps` only. Host, modern, extended-host, and legacy therefore reject
+At job scope, router and mode-classifier have separate closed setup mappings.
+Every combined worker has a closed direct mapping: classifier dependency and
+fail-closed condition,
+`runs-on: ubuntu-latest`, its reviewed environment, and `steps`. The
+comprehensive `build` worker has `timeout-minutes: 90`; `host-tests`,
+`extended-host-tests`, and `legacy` remain 60 minutes, while all setup jobs and
+summary remain 5. Host, modern, extended-host, and legacy therefore reject
 containers, services, matrices/strategies, job permissions/defaults,
-dependencies, conditions/advisory mode, deployment environments, concurrency,
+other dependencies, conditions/advisory mode, deployment environments, concurrency,
 reusable-job `uses`/secrets, custom shell context, unknown fields, duplicate
 keys, reordered keys, and complex key aliases. Patch publication and summary
-retain their separate existing contracts.
+retain separate closed contracts, including coherent push identity,
+worker/publisher audit, and dynamic full/metadata summary name.
+
+The 90-minute build ceiling covers observed shared-runner compile variance
+without changing any Build content. The coordinator's
+`timeout 90m gh run watch <run-id> --interval 30 --exit-status` can expire near
+that ceiling; after one exact status query, it re-arms one watcher once only if
+the run remains nonterminal.
 
 Before the command succeeds, it creates a bounded mutable artifact sandbox
 under the checkout's ignored `build/test-artifacts/` directory and copies only
@@ -387,8 +633,9 @@ association without copying Git objects or adding a source/ROM identity gate.
 Review-size evidence is deliberately not stored as mutable current-head
 numbers in this document. At each candidate, the coordinator derives the
 changed-file list, per-file numstat, and shortstat from
-`git diff <immediate-base>...HEAD` and publishes that exact-head preflight
-through the canonical remote workflow action.
+`git diff <immediate-base>...HEAD` and publishes that exact-head preflight in
+the canonical evidence comment. Updating that comment never edits the stable
+PR body and never emits a Build-triggering pull-request event.
 
 The unavailable clean-review result is the actual historical boundary, not a
 zero, success, or estimate. It makes that metric ineligible for pilot
@@ -405,7 +652,7 @@ numeric clean-review duration.
 | Relationship | Contract |
 | --- | --- |
 | Dependencies | None |
-| Dependents | Issues #177, #178, #179, #180, and #181 |
+| Dependents | Issue #177 (event classification), plus issues #178, #179, #180, and #181 |
 | Conflicts | None with runtime, configuration, save, generated game data, localization, or archival behavior |
 
 Modern debug impact: none. Modern release impact: none. Archival impact: none.

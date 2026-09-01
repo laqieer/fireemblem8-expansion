@@ -44,8 +44,70 @@ Sacred Stones (USA), revision 0** / FE8U image:
 The publisher checks size, both hashes, every header value, and recomputed
 checksum before creating a patch. Missing, malformed, wrong, or modified
 inputs fail before an artifact is created. The trusted workflow may obtain its
-local input from a protected secret, but no URL, base bytes, base image, ROM,
-ELF, map, save, or savestate is published, cached, or logged.
+local input from a protected secret, but no URL, base bytes, or base image is
+published, cached, or logged. No complete target ROM is uploaded to or
+downloaded from an Actions artifact, cache, release, or log.
+
+The fresh publisher checks out and verifies the exact validated master-push
+after SHA. It stages the producer from that same immutable commit with no
+whole-file source hash ledger. Before any secret or base exists, the candidate
+tree is copied to a disposable workspace owned by a dedicated unprivileged
+UID and built inside mount, PID, network, IPC, and UTS namespaces with no
+network, capabilities, secrets, `BASH_ENV`, or `GITHUB_ENV`. Mount propagation
+is private and all recursively visible host root/system/tool mounts, including
+`/usr/share` and `/opt`, must be read-only. Only exact private source, home,
+temporary, and handoff mounts are writable. Private tmpfs `/tmp`, `/run`,
+`/dev`, and `/dev/shm` plus private `/proc` hide host D-Bus activation/service,
+Docker, containerd, systemd, snap, and other UNIX sockets and runtime paths.
+The trusted PID-1 wrapper is loaded into Bash `-c` memory before
+`/home/runner` is masked, so no open script descriptor pins the host mount.
+The private `/dev` is mounted over the host path without trying to unmount the
+trusted wrapper's already-open null descriptors.
+Hash-locked wheels are fetched by the trusted host before isolation and
+installed offline inside it. Every builder descendant is placed in one exact
+cgroup v2 that the candidate cannot see or leave. The trusted host stops the
+exact process group and cgroup, verifies `cgroup.procs` and the builder UID are
+empty, removes only that owned cgroup, then admits a regular, nonsymlink,
+single-link 32 MiB ROM and bounded metadata from the exact two-file handoff.
+Devices, escaped paths, and unexpected outputs fail. It validates metadata
+against the after SHA, copies only those public inputs into runner-owned `0400`
+staging, and removes the builder user, tree, wheelhouse, and candidate
+checkout. Missing mount/cgroup-v2 capabilities fail before candidate execution;
+cleanup never uses `pkill`, `killall`, or a UID-wide signal.
+After descendants terminate, privileged cleanup removes only the exact
+owned builder root so builder-UID files cannot make teardown fail.
+Before hiding `/sys`, the wrapper bind-mounts only the exact owned cgroup
+read-only under root-owned mode-`0700` `/mnt/supervisor`. The candidate cannot
+traverse or receive an FD for that path. After candidate exit, the wrapper
+reads membership there and exports the ROM only when the wrapper PID is the
+sole member; the host continues to use the actual cgroup path for kill and
+removal.
+
+Before candidate code starts, its PID-1 wrapper redirects inherited standard
+input/output/error permanently to private `/dev/null`. A trusted isolated
+Python child launcher closes every inherited descriptor above 2, loads the
+root-owned candidate script into Bash `-c` argv, and then executes `setpriv`.
+Thus
+`/proc/*/fd`, `/dev/stdout`, `tee`, shell xtrace, forks, and helper/logger pipes
+can reach only the null device, never the Actions log. `/dev/console` and `/dev/kmsg`
+are absent. `GITHUB_STEP_SUMMARY`, `GITHUB_OUTPUT`, `GITHUB_ENV`, and
+`GITHUB_PATH` are not passed. Candidate-writable source, home, temporary,
+handoff, `/tmp`, and shared-memory filesystems have explicit size limits; file
+size, open files, processes, virtual memory, and core dumps have ulimits.
+Candidate output is never replayed, logged, or uploaded, and arbitrary output
+volume cannot fail an otherwise successful build. No output sink exists. The
+trusted host reports only fixed success/failure text and a numeric exit
+classification.
+
+Only after that teardown does the curl-only secret step create an
+unpredictable `0700` directory and `0400` regular 16 MiB file.
+The immediately following step runs only the staged tool through absolute
+isolated Python from an empty runtime CWD/environment. No repository command
+runs while the base exists. Success/failure traps remove the base and its
+directory, a separate step verifies absence, and only then may the three-file
+patch artifact be uploaded. A separate final step revalidates the exact regular,
+single-link BPS/manifest/README allowlist after private cleanup and immediately
+before upload, so no late candidate or process mutation can enter the artifact.
 
 ## Artifact contents and verification
 

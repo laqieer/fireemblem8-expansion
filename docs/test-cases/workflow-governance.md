@@ -179,11 +179,19 @@ issue rather than this repository.
 
 ### Expected result
 
-The synthetic non-master-base pull request selects the existing `host-tests`,
-`build`, `extended-host-tests`, `legacy`, and fail-closed `summary` jobs. Every
-candidate worker still checks out and verifies `pull_request.head.sha`. The
-publisher is absent from pull-request execution, while a push to `master`
-selects it and a push to any other branch selects no workflow jobs.
+The synthetic non-master-base pull request selects the mandatory
+`event-identity` setup before `event-router`, `event-classifier`, the existing
+`host-tests`, `build`, `extended-host-tests`, `legacy`, and fail-closed
+`summary` jobs.
+
+- **Parsed full-PR job set:** {`event-identity`, `event-router`,
+  `event-classifier`, `host-tests`, `build`, `extended-host-tests`, `legacy`,
+  `summary`}.
+
+Every candidate worker still checks out and verifies
+`pull_request.head.sha`. The publisher is absent from pull-request execution,
+while a push to `master` selects it and a push to any other branch selects no
+workflow jobs.
 
 The child remains based on its immediate parent while that parent is open, and
 exact-head Build CI and Copilot review run against that genuine base. After the
@@ -203,7 +211,8 @@ verified.
 ### Negative control
 
 Adding inline or block `branches` or `branches-ignore` filters under
-`pull_request`, removing `edited` or another required activity type, enabling
+`pull_request`, omitting either mandatory `event-identity` or `event-router`
+setup context, removing `edited` or another required activity type, enabling
 `closed`/`labeled` activity, removing either trigger, allowing non-master
 pushes, exposing the patch publisher to pull requests, weakening exact-head
 checkout verification, accepting an old child run after its parent head
@@ -238,6 +247,883 @@ temporary base flip solely to trigger CI.
 No cleanup is required. The case evaluates committed workflow and governance
 contracts without dispatching GitHub Actions; it does not prove live service
 availability or grant credentials.
+
+## TC-WORKFLOW-BODY-EDIT-001: Suppress metadata-only Build workers
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #177](https://github.com/laqieer/fireemblem8-expansion/issues/177).
+- **Supported configuration or artifact:** clean source checkout with Python
+  3, the Build workflow, and the committed GitHub event fixture; no token,
+  live pull request, workflow run, ROM, emulator, or game build is required.
+- **Prerequisites and clean starting state:** start at the repository root
+  with `.github/workflows/build.yml`,
+  `scripts/workflow_pilot/event_classifier.py`, the isolated launcher, and
+  `scripts/workflow_pilot/tests/fixtures/event_classification.json` plus the
+  preserved `pre_fix_build.yml` parsed graph unchanged.
+  The fixture declares that the current workflow has no explicit final
+  dispatch surface.
+
+### Actions
+
+1. Run
+   `python3 -m unittest scripts.workflow_pilot.tests.test_event_classifier -v`.
+2. Run
+   `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`.
+3. Run
+   `python3 -m unittest tests.upstream_port.test_verify -v`.
+4. Inspect the parsed body-only, title-only, body-and-title, base-only,
+   base-plus-body, unknown-field, incomplete-change, `opened`, `synchronize`,
+   `reopened`, missing/empty/malformed/mismatched base components, missing-head,
+   missing-both, stacked-base,
+   merge-`github.sha`, and `master`-push cases. Confirm every fixture provides
+   separate PR base/head and push identity, GitHub-shaped payload, exact
+   classifier result, exact selected job set, exact head/base, and expected
+   summary conclusion. Base-only, mixed, and stack-retarget fixtures carry the
+   production `changes.base.ref.from` plus `changes.base.sha.from` transition.
+5. Inspect the disposable-event replay. It writes each payload beneath ignored
+   `build/test-artifacts/`, invokes the real `/usr/bin/python3 -I` launcher and
+   output-file protocol, parses the resulting job outputs, and removes the
+   sandbox without reading or mutating remote state.
+6. Inspect a pull request's stable body contract and canonical evidence
+   comment protocol in [`../workflow-pilot.md`](../workflow-pilot.md). The
+   comment carries this standalone marker:
+
+   <!-- workflow-pilot-candidate-evidence -->
+
+   Evolving SHA/run/review/budget/preflight values are updated there in place
+   rather than in the body, title, baseline fixture, decision record, or
+   another mutable ledger.
+7. Parse `.github/PULL_REQUEST_TEMPLATE.md`. Confirm it contains only frozen
+   scope/non-goals, classification/relationships, acceptance criteria, tester
+   procedure, and compatibility decisions. Replay one canonical comment,
+   missing/duplicate/non-standalone marker comments, a body marker, and every
+   prohibited evolving body field.
+8. Replay the same body-only event through the preserved pre-fix Build graph.
+   Compare these unordered parsed sets:
+   - **Parsed preserved pre-fix body-only job set:** {`host-tests`, `build`,
+     `extended-host-tests`, `legacy`, `summary`}.
+   - **Parsed current metadata-only job/check set:** {`event-identity`,
+     `event-router`, `metadata-classifier`, `patch-release`,
+     `metadata-summary`}.
+   The pre-fix graph therefore starts all four expensive workers and summary;
+   the current graph retains both mandatory setup contexts, canonical skipped
+   patch publication, and only the running metadata classifier/summary checks.
+
+### Expected result
+
+Body-only, title-only, and combined body/title edits select only
+`event-identity`, `event-router`, `metadata-classifier`, and
+`metadata-summary`; the four expensive workers do not start. Skipped worker
+names and success-shaped records are ignored by stable job identity; only the
+running metadata classifier/summary establish metadata mode.
+The summary succeeds only when classifier status is `success`, the classified
+SHA equals the event's validated exact `pull_request.head.sha`, event number
+matches the exact `refs/pull/<number>/merge` ref, suppression is exactly false,
+and all four workers are exactly `skipped`.
+
+Base-only edits, mixed edits, unknown and incomplete change records, `opened`,
+`synchronize`, and `reopened` select the classifier, all four expensive
+workers, and summary at the exact PR head. A `master` push additionally selects
+the existing patch publisher and runs the complete graph from its separate
+push SHA. Malformed/duplicate/non-finite JSON or another classifier failure with a
+validated authoritative PR head runs all four workers at that exact head, then
+summary still fails to expose the classifier defect. A classifier failure on a
+master push with validated `github.sha` runs all four workers and the publisher
+at that exact push SHA, then summary still fails. Any
+missing, empty, malformed, or event-mismatched base ref/SHA with a valid exact
+PR head runs all four workers at that head and fails normal summary; a
+syntactically valid direct base SHA may remain diagnostic output but is never
+checkout authority. Missing, malformed, stale, or spoofed PR head or missing
+push SHA starts no combined worker/publisher and fails summary.
+Missing/stale successful output cannot select a fallback ref.
+An accepted base retarget requires valid, differing previous/current ref and
+SHA pairs; ref-only, SHA-only, same, missing, extra, or spoofed transition
+records remain full fail-closed edits and never metadata suppression.
+Base refs are bounded to 1024 UTF-8 bytes and must satisfy full
+`git check-ref-format refs/heads/<base.ref>` semantics; `--branch` shorthand
+is not used, and lone `@` is rejected. Python applies the equivalent grammar
+without a subprocess; the trusted bootstrap quotes the full ref to system Git
+and never checks it out. Invalid base refs are incomplete identity: a valid
+exact head runs all four workers and fails summary; an invalid head runs none.
+The classifier executes from the verified current PR base SHA; a missing base
+uses the trusted default branch only to report invalid identity, while a base
+without the new classifier uses the explicit strict bootstrap. The current
+workflow has no `workflow_dispatch`, so the fixture and topology test assert
+that no final-dispatch job selection exists to preserve.
+The classifier bootstrap may use the trusted default branch when PR base
+identity is missing or unusable; worker checkouts never use a merge/default
+fallback.
+Trusted event setup accepts identity only as an exact lowercase 40-hex SHA. A
+PR also requires its numeric event number and exact
+`refs/pull/<number>/merge` ref; a push requires `refs/heads/master` and equal
+event `after`/`github.sha`. Successful full/metadata classifications, workers,
+and summary all bind to that same kind and SHA. Missing, uppercase, short,
+nonhex, ref-name, ref-number-mismatched, malformed, or cross-event identities
+run no worker and cannot produce a successful summary. Candidate normalization
+requires exactly one successful identity context for both full and metadata
+modes and exactly one successful router setup
+context; missing, failed, skipped, renamed, duplicate, or unknown setup
+contexts reject the run.
+A canonical successful `event-identity` context is mandatory in both modes.
+A canonical successful `event-router` context is mandatory in both modes.
+Metadata-only mode is accepted only for a coherently
+bound pull request. Push-shaped or cross-event metadata output fails the
+classifier, runs the validated full fallback workers/publisher, and leaves
+normal summary failed. Workers consume only that validated SHA. The publisher
+uses the same validated push SHA, verifies `/usr/bin/git rev-parse HEAD`
+immediately after checkout, and stages the three-file producer from that exact
+validated after commit without whole-file source hash pins. Before private
+download, the exact after tree builds as a dedicated unprivileged UID inside
+mount, PID, and network namespaces with no network, capabilities, secrets,
+`BASH_ENV`, or `GITHUB_ENV`. Private mount propagation, recursively read-only host
+root/system/tool paths, private `/tmp`/`run`/`proc`/`dev`, and masked host
+D-Bus/container/service sockets leave only exact candidate-owned mounts
+writable. Every descendant stays in one exact cgroup v2. The trusted host stops
+the exact process group and cgroup, verifies `cgroup.procs` is empty, proves no
+builder-UID process remains, removes only the owned cgroup, then admits the expected regular,
+nonsymlink, single-link 32 MiB target and bounded metadata handoff; device,
+escaped, and unexpected outputs fail. It removes the builder user, tree,
+wheelhouse, and candidate checkout. No complete target ROM enters an Actions
+artifact, cache, release, or log. The minimal `BASEROM_URL` step then creates an
+unpredictable mode-restricted path and exposes only its trusted output. The
+next step uses absolute isolated Python from an empty runtime CWD/environment;
+no candidate command runs while the base exists. Cleanup traps delete the base
+on success/failure, cleanup is verified, and only the patch artifact reaches
+upload.
+Before `/sys` is masked, the exact owned cgroup is bound read-only below a
+root-only `0700` `/mnt/supervisor`; the candidate cannot traverse it. The
+wrapper reads that supervisor view after `/sys` is masked and permits handoff
+only when its own PID is the sole member. Host-side kill/removal still uses the
+actual cgroup path.
+All repository/candidate-controlled commands finish before private download.
+Cleanup is verified before upload.
+After that cleanup, an adjacent final check revalidates exactly regular,
+single-link BPS/manifest/README outputs immediately before upload.
+Unavailable mount/cgroup features fail closed, and cleanup sends no UID-wide
+signal.
+Before candidate code starts, a trusted child launcher closes inherited file descriptors
+above 2, redirects stdin/stdout/stderr permanently to private `/dev/null`, and
+passes no GitHub workflow command-file paths.
+Candidate output is never replayed, logged, or uploaded; the trusted host emits
+only fixed status text with a numeric exit classification. Arbitrary output
+volume cannot change an otherwise successful build. All other writable roots
+and regular files retain tmpfs/ulimit bounds; no output sink exists.
+No whole-file source hash pins are used.
+Before the base exists, the fresh hosted publisher proves that no
+candidate-written `GITHUB_ENV`, `BASH_ENV`, background process, checkout, or
+executable state can survive the builder teardown.
+Default-branch validation is deferred until classifier bootstrap is actually
+needed. A missing or malformed default branch never invalidates an
+independently valid PR-head or push fallback. With no classifier authority,
+the router performs no checkout and fails safely, the classifier fails, exact
+fallback workers plus any guarded push publisher run, and summary remains
+fail-closed.
+
+### Negative control
+
+The preserved parsed pre-fix workflow fixture selects `host-tests`, `build`,
+`extended-host-tests`, `legacy`, and `summary` for the same body-only fixture
+despite its unchanged head SHA. The focused suites also reject metadata
+topology that omits either mandatory `event-identity` or `event-router` setup,
+suppression for same-value/spoofed/missing-current/extra-key/nested metadata
+records, invalid title/body values, malformed `changes`, missing PR identity,
+body/title metadata with whitespace, control, forbidden-character, dot,
+slash, `.lock`, `@{`, lone-`@`, or oversized base refs,
+valid-head events with malformed or mismatched base components that skip
+workers or produce a successful summary,
+duplicate JSON keys, `NaN`/positive or negative `Infinity`, positive/negative
+exponent overflow, nonzero-to-zero underflow, huge exponents, an unused
+overflow field on metadata-only input, oversized event
+files, base or mixed edits, merge-SHA fallback, malformed fallback identities,
+successful classification with a cross-event/malformed/number-mismatched ref,
+missing/failed/skipped/renamed/duplicate event-identity or event-router
+evidence, push-shaped metadata router output,
+an unverified/mutable
+classifier checkout, classifier output drift, worker conditions that accept
+invalid/stale identity, worker skipping after classifier exit 2 with a valid
+PR/push head, cross-event fallback, worker/publisher execution after classifier
+failure with no event SHA, summary success after any classifier failure, weakened
+exact-head checkout, body/template evolving evidence or marker placement, and
+source/target workflow mirror drift.
+
+### Interactions and save compatibility
+
+This confirmed workflow-efficiency fix depends on issue #176's immutable
+baseline, closed workflow mirror, isolated launcher, exact-head checkout, and
+summary authority. Issue #181 depends on this classification. It deliberately
+changes only pull-request metadata-event selection and the evidence-comment
+contract. It conflicts with manual labels, `pull_request_target`, head-authored
+classifier execution, success-shaped defaults, mutable metric ledgers, and
+suppression of genuine stacked-PR base edits. It has no feature flag and no
+game/runtime, modern debug/release output, save, generated-data, localization,
+ROM/RAM, or archival impact.
+
+### Automation
+
+`python3 -m unittest scripts.workflow_pilot.tests.test_event_classifier -v`
+parses every fixture, replays the real isolated event-file/output protocol, and
+exercises strict identity, semantic transition, non-finite JSON, malformed,
+and unknown fail-closed controls.
+
+`python3 -m unittest scripts.workflow_pilot.tests.test_candidate_evidence -v`
+derives full versus metadata mode from running classifier/summary contexts and proves a
+later green metadata run cannot replace a failed/missing candidate full run.
+
+`python3 -m unittest discover -s tests/workflows -p "test_*.py" -v` parses the
+workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
+pin, and environment semantics, including the pre-fix negative selection.
+
+`python3 -m unittest tests.upstream_port.test_verify -v` preserves the 28 local
+gates while requiring complete nine-job source/target equivalence: the six
+issue #176 jobs remain closed and the identity/router/classifier are closed
+setup-only jobs, never 29th/30th/31st local gates.
+
+`python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
+parses the frozen PR template/body and comment collection, requiring exactly
+one standalone canonical marker while rejecting missing, duplicate, inline,
+or body markers and every evolving body field.
+
+### Cleanup and limitations
+
+The disposable sandbox is removed automatically. No remote state is read or
+changed. The local replay proves GitHub's documented event-file semantics and
+the exact workflow graph contract, not live service availability. No
+manual-only criterion applies. Rollback is a normal revert; the prior broad
+`edited` behavior then resumes.
+
+### Planned live title-only exercise after push
+
+The owner performs this validation-only remote exercise only after the
+candidate branch is pushed. The disposable PR is never merged and does not
+implement an independent issue. Do not edit the implementation PR: while its
+base predates `event_classifier.py`, base-authoritative routing correctly
+reports `classifier-bootstrap` and runs the full graph, so it is not a valid
+metadata-suppression probe until the classifier is merged into that base.
+
+Run all commands below in one Bash session. The discovery helper snapshots all
+prior run IDs, then makes at most 60 attempts five seconds apart. It accepts
+exactly one unseen `Build CI` pull-request run created after the mutation with
+the exact branch and head; timeout or ambiguity fails before `gh run watch`.
+
+1. From the issue worktree, choose unused temporary names and create a direct
+   child of the exact candidate branch with one deterministic tracked probe.
+   Install cleanup before the first remote mutation:
+
+   ```bash
+   set -euo pipefail
+   source_root="$PWD"
+   repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+   head_owner="${repo%%/*}"
+   candidate_branch="${candidate_branch:-agent/issue-177}"
+   probe_branch="${probe_branch:-validation/issue-177-title-probe}"
+   probe_worktree="$(dirname "$source_root")/issue-177-title-probe"
+   probe_file=".github/workflow-probes/issue-177-title-only.json"
+   evidence_dir="$source_root/build/test-artifacts/issue-177-live-probe"
+   pr=""
+   probe_head_sha=""
+   original_title="TC-WORKFLOW-BODY-EDIT-001 validation"
+   probe_title="$original_title [title-only metadata probe]"
+   evidence_dir_created=false
+   local_ownership_intent=false
+   push_ownership_intent=false
+   pr_ownership_intent=false
+
+   list_build_run_ids() {
+     gh api --method GET --paginate --slurp \
+       "repos/{owner}/{repo}/actions/workflows/build.yml/runs" \
+       -f event=pull_request -f branch="$probe_branch" -f per_page=100 \
+       --jq '.[].workflow_runs[].id'
+   }
+
+   discover_build_run() {
+     prior_ids="$1"
+     created_after="$2"
+     attempt=0
+     while [ "$attempt" -lt 60 ]; do
+       runs_json="$(gh api --method GET --paginate --slurp \
+         "repos/{owner}/{repo}/actions/workflows/build.yml/runs" \
+         -f event=pull_request -f branch="$probe_branch" -f per_page=100)"
+       if run_id="$(RUNS_JSON="$runs_json" PRIOR_IDS="$prior_ids" \
+           EXPECTED_CREATED_AFTER="$created_after" \
+           EXPECTED_BRANCH="$probe_branch" EXPECTED_HEAD="$head_sha" \
+           python3 - <<'PY'
+   import json
+   import os
+
+   prior = set(os.environ["PRIOR_IDS"].splitlines())
+   records = [
+       record
+       for page in json.loads(os.environ["RUNS_JSON"])
+       for record in page["workflow_runs"]
+   ]
+   matches = [
+       record
+       for record in records
+       if str(record["id"]) not in prior
+       and record["name"] == "Build CI"
+       and record["event"] == "pull_request"
+       and record["head_branch"] == os.environ["EXPECTED_BRANCH"]
+       and record["head_sha"] == os.environ["EXPECTED_HEAD"]
+       and record["created_at"] >= os.environ["EXPECTED_CREATED_AFTER"]
+   ]
+   if len(matches) != 1:
+       raise SystemExit(1)
+   print(matches[0]["id"])
+   PY
+       )"; then
+         test -n "$run_id"
+         printf '%s\n' "$run_id"
+         return 0
+       fi
+       attempt=$((attempt + 1))
+       sleep 5
+     done
+     echo "timed out waiting for one unseen exact Build CI run" >&2
+     return 1
+   }
+
+   watch_build_run() {
+     run_id="$1"
+     case "$run_id" in
+       ''|*[!0-9]*) echo "invalid Build run ID" >&2; return 1 ;;
+     esac
+     set +e
+     timeout 90m gh run watch "$run_id" --interval 30 --exit-status
+     watch_status="$?"
+     set -e
+     if [ "$watch_status" -ne 124 ]; then
+       return "$watch_status"
+     fi
+
+     run_state="$(gh run view "$run_id" --json status,conclusion \
+       --jq '[.status, (.conclusion // "")] | @tsv')"
+     run_status="${run_state%%$'\t'*}"
+     run_conclusion="${run_state#*$'\t'}"
+     case "$run_status" in
+       queued|in_progress|waiting)
+         test -z "$run_conclusion"
+         set +e
+         timeout 90m gh run watch "$run_id" --interval 30 --exit-status
+         watch_status="$?"
+         set -e
+         if [ "$watch_status" -eq 124 ]; then
+           echo "second watcher timed out for exact Build run" >&2
+           return 124
+         fi
+         return "$watch_status"
+         ;;
+       completed)
+         if [ "$run_conclusion" = success ]; then
+           return 0
+         fi
+         test -n "$run_conclusion"
+         echo "exact Build run completed unsuccessfully" >&2
+         return 1
+         ;;
+       *)
+         echo "exact Build run has unsupported status" >&2
+         return 1
+         ;;
+     esac
+   }
+
+   # Each exact run uses watch_build_run. A first watcher timeout (124)
+   # triggers exactly one status/conclusion query for that run. Only queued,
+   # in_progress, or waiting re-arms one final 90-minute watcher; a terminal
+   # result is consumed immediately, any terminal failure is preserved, and a
+   # second timeout fails.
+
+   owned_probe_pr_numbers() {
+     pulls_json="$(gh api --method GET --paginate --slurp \
+       "repos/$repo/pulls" -f state=open -f head="$head_owner:$probe_branch" \
+       -f base="$candidate_branch" -f per_page=100)"
+     PULLS_JSON="$pulls_json" EXPECTED_OWNER="$head_owner" \
+       EXPECTED_BRANCH="$probe_branch" EXPECTED_BASE="$candidate_branch" \
+       EXPECTED_HEAD_SHA="$probe_head_sha" \
+       EXPECTED_BASE_SHA="$candidate_sha" \
+       python3 - <<'PY'
+   import json
+   import os
+
+   records = [
+       record
+       for page in json.loads(os.environ["PULLS_JSON"])
+       for record in page
+   ]
+   matches = [
+       record
+       for record in records
+       if record["state"] == "open"
+       and record["merged_at"] is None
+       and record["head"]["user"]["login"] == os.environ["EXPECTED_OWNER"]
+       and record["head"]["ref"] == os.environ["EXPECTED_BRANCH"]
+       and record["head"]["sha"] == os.environ["EXPECTED_HEAD_SHA"]
+       and record["base"]["ref"] == os.environ["EXPECTED_BASE"]
+       and record["base"]["sha"] == os.environ["EXPECTED_BASE_SHA"]
+   ]
+   for record in matches:
+       print(record["number"])
+   PY
+   }
+
+   cleanup_probe() {
+     cleanup_failed=0
+     set +e
+     if [ "${pr_ownership_intent:-false}" = true ]; then
+       matching_prs="$(owned_probe_pr_numbers)"
+       query_status=$?
+       if [ "$query_status" -ne 0 ]; then
+         echo "cannot discover exact validation PR during cleanup" >&2
+         cleanup_failed=1
+       elif [ -n "$matching_prs" ]; then
+         if [ "$(printf '%s\n' "$matching_prs" | grep -c .)" -ne 1 ]; then
+           echo "ambiguous exact validation PRs; preserving all" >&2
+           cleanup_failed=1
+         else
+           cleanup_pr="$matching_prs"
+           cleanup_pr_body="$(gh api "repos/$repo/pulls/$cleanup_pr" \
+             --jq .body)"
+           cleanup_pr_title="$(gh api "repos/$repo/pulls/$cleanup_pr" \
+             --jq .title)"
+           if [ "$cleanup_pr_body" != \
+                "Validation-only disposable PR. Never merge." ] || \
+              { [ "$cleanup_pr_title" != "$original_title" ] && \
+                [ "$cleanup_pr_title" != "$probe_title" ]; }; then
+             echo "validation PR contract changed; preserving it" >&2
+             cleanup_failed=1
+           else
+             if [ "$cleanup_pr_title" != "$original_title" ]; then
+               gh api --method PATCH "repos/$repo/pulls/$cleanup_pr" \
+                 -f title="$original_title" > /dev/null 2>&1 \
+                 || cleanup_failed=1
+             fi
+             gh pr close "$cleanup_pr" > /dev/null 2>&1 || cleanup_failed=1
+             pr_state="$(gh api "repos/$repo/pulls/$cleanup_pr" \
+               --jq '[.state, (.merged_at // "")] | @tsv')"
+             test "$pr_state" = "$(printf 'closed\t')" || cleanup_failed=1
+           fi
+         fi
+       elif [ -n "${pr:-}" ]; then
+         existing_pr_state="$(gh api "repos/$repo/pulls/$pr" \
+           --jq '[.state, (.merged_at // "")] | @tsv')"
+         if [ "$existing_pr_state" != "$(printf 'closed\t')" ]; then
+           echo "recorded validation PR changed or merged; preserving it" >&2
+           cleanup_failed=1
+         fi
+       fi
+     fi
+     if [ "${push_ownership_intent:-false}" = true ]; then
+       remote_probe_ref="$(git ls-remote --heads origin \
+         "refs/heads/$probe_branch")" || cleanup_failed=1
+       if [ -n "$remote_probe_ref" ]; then
+         remote_sha="$(printf '%s\n' "$remote_probe_ref" | awk 'NR == 1 {print $1}')"
+         remote_ref="$(printf '%s\n' "$remote_probe_ref" | awk 'NR == 1 {print $2}')"
+         if [ "$(printf '%s\n' "$remote_probe_ref" | grep -c .)" -ne 1 ] || \
+            [ "$remote_ref" != "refs/heads/$probe_branch" ] || \
+            [ -z "$probe_head_sha" ] || [ "$remote_sha" != "$probe_head_sha" ]; then
+           echo "remote probe ref changed; preserving it for inspection" >&2
+           cleanup_failed=1
+         else
+           git push --force-with-lease="refs/heads/$probe_branch:$probe_head_sha" \
+             origin ":refs/heads/$probe_branch" > /dev/null 2>&1 \
+             || cleanup_failed=1
+         fi
+       fi
+       remote_probe_ref="$(git ls-remote --heads origin \
+         "refs/heads/$probe_branch")" || cleanup_failed=1
+       if [ -n "$remote_probe_ref" ]; then
+         cleanup_failed=1
+       fi
+     fi
+     if [ "${local_ownership_intent:-false}" = true ]; then
+       if [ -d "$probe_worktree" ]; then
+         local_head="$(git -C "$probe_worktree" rev-parse HEAD 2>/dev/null)"
+         local_ref="$(git -C "$probe_worktree" symbolic-ref -q HEAD 2>/dev/null)"
+         local_root="$(git -C "$probe_worktree" rev-parse --show-toplevel \
+           2>/dev/null)"
+         local_dirty="$(git -C "$probe_worktree" status --porcelain \
+           --untracked-files=all 2>/dev/null)"
+         if [ -z "$probe_head_sha" ] || [ "$local_head" != "$probe_head_sha" ] || \
+            [ "$local_ref" != "refs/heads/$probe_branch" ] || \
+            [ "$local_root" != "$probe_worktree" ] || [ -n "$local_dirty" ]; then
+           echo "local probe worktree changed or dirty; preserving it" >&2
+           cleanup_failed=1
+         else
+           git -C "$source_root" worktree remove "$probe_worktree" \
+             || cleanup_failed=1
+         fi
+       fi
+       if git -C "$source_root" show-ref --verify --quiet \
+            "refs/heads/$probe_branch"; then
+         local_branch_sha="$(git -C "$source_root" rev-parse \
+           "refs/heads/$probe_branch")"
+         if [ -z "$probe_head_sha" ] || \
+            [ "$local_branch_sha" != "$probe_head_sha" ] || \
+            [ -d "$probe_worktree" ]; then
+           echo "local probe branch changed or remains checked out; preserving it" >&2
+           cleanup_failed=1
+         else
+           git -C "$source_root" update-ref -d \
+             "refs/heads/$probe_branch" "$probe_head_sha" \
+             || cleanup_failed=1
+         fi
+       fi
+     fi
+     if [ "${evidence_dir_created:-false}" = true ] && \
+        [ "$evidence_dir" = \
+          "$source_root/build/test-artifacts/issue-177-live-probe" ]; then
+       rm -rf -- "$evidence_dir" || cleanup_failed=1
+     elif [ "${evidence_dir_created:-false}" = true ]; then
+       cleanup_failed=1
+     fi
+     return "$cleanup_failed"
+   }
+
+   finish_probe() {
+     primary_status="$?"
+     trap - EXIT INT TERM
+     set +e
+     cleanup_probe
+     cleanup_status="$?"
+     if [ "$cleanup_status" -ne 0 ]; then
+       echo "live probe cleanup failed; inspect preserved exact resources" >&2
+     fi
+     if [ "$primary_status" -ne 0 ]; then
+       exit "$primary_status"
+     fi
+     exit "$cleanup_status"
+   }
+   trap finish_probe EXIT
+   trap 'exit 130' INT
+   trap 'exit 143' TERM
+
+   test ! -e "$probe_worktree"
+   test ! -e "$evidence_dir"
+   if git -C "$source_root" show-ref --verify --quiet \
+        "refs/heads/$probe_branch"; then
+     echo "local probe branch already exists" >&2
+     exit 1
+   fi
+   remote_probe_ref="$(git ls-remote --heads origin \
+     "refs/heads/$probe_branch")"
+   if [ -n "$remote_probe_ref" ]; then
+     echo "remote probe branch already exists" >&2
+     exit 1
+   fi
+   mkdir -p "$evidence_dir"
+   evidence_dir_created=true
+   candidate_sha="$(git rev-parse "$candidate_branch^{commit}")"
+   local_ownership_intent=true
+   git worktree add -b "$probe_branch" "$probe_worktree" "$candidate_sha"
+   cd "$probe_worktree"
+   mkdir -p "$(dirname "$probe_file")"
+   printf '{"candidate_sha":"%s","case":"TC-WORKFLOW-BODY-EDIT-001"}\n' \
+     "$candidate_sha" > "$probe_file"
+   git add "$probe_file"
+   git diff --cached --quiet && { echo "probe change is empty" >&2; exit 1; }
+   git commit -m "test(ci): add title-only validation probe" \
+     -m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+   head_sha="$(git rev-parse HEAD)"
+   probe_head_sha="$head_sha"
+   test "$(git rev-parse "$head_sha^")" = "$candidate_sha"
+   test "$(git diff-tree --no-commit-id --name-only -r "$head_sha")" = "$probe_file"
+   opened_prior_ids="$(list_build_run_ids)"
+   opened_created_after="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+   push_ownership_intent=true
+   git push -u origin "$probe_branch"
+   existing_prs="$(owned_probe_pr_numbers)"
+   test -z "$existing_prs"
+   pr_ownership_intent=true
+   set +e
+   pr_url="$(gh pr create --head "$probe_branch" --base "$candidate_branch" \
+     --title "$original_title" \
+     --body "Validation-only disposable PR. Never merge.")"
+   create_status="$?"
+   set -e
+   matching_prs="$(owned_probe_pr_numbers)"
+   test "$(printf '%s\n' "$matching_prs" | grep -c .)" -eq 1
+   pr="$matching_prs"
+   test "$(gh api "repos/$repo/pulls/$pr" --jq .title)" = "$original_title"
+   test "$(gh api "repos/$repo/pulls/$pr" --jq .body)" = \
+     "Validation-only disposable PR. Never merge."
+   if [ "$create_status" -ne 0 ]; then
+     echo "PR create response failed; recovered exact validation PR $pr" >&2
+   fi
+   base_ref="$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.ref)"
+   base_sha="$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)"
+   test "$base_ref" = "$candidate_branch"
+   test "$base_sha" = "$candidate_sha"
+   ```
+
+   Never use `git commit --allow-empty`, an empty commit, or a merge commit.
+   The tracked probe is deterministic for the candidate SHA and the direct
+   parent assertion proves the head is a strict nonempty descendant.
+2. Discover, watch, and save the opened-event full run:
+
+   ```bash
+   opened_run_id="$(discover_build_run \
+     "$opened_prior_ids" "$opened_created_after")"
+   test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" = "$head_sha"
+   test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)" = "$base_sha"
+   watch_build_run "$opened_run_id"
+   test "$(gh run view "$opened_run_id" --json event --jq .event)" = "pull_request"
+   test "$(gh run view "$opened_run_id" --json headSha --jq .headSha)" = "$head_sha"
+   gh run view "$opened_run_id" \
+     --json event,headSha,conclusion,url > "$evidence_dir/opened.json"
+   gh api --method GET --paginate --slurp \
+     "repos/$repo/actions/runs/$opened_run_id/jobs" -f per_page=100 \
+     > "$evidence_dir/opened-jobs.json"
+   ```
+
+   - **Parsed live opened-run job set:** {`event-identity`, `event-router`,
+     `event-classifier`, `host-tests`, `build`, `extended-host-tests`, `legacy`,
+     `patch-release`, `summary`}.
+3. Snapshot prior IDs, apply the title-only mutation through the owner REST
+   endpoint, then discover, watch, and save its distinct metadata run:
+
+   ```bash
+   title_prior_ids="$(list_build_run_ids)"
+   title_created_after="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+   gh api --method PATCH "repos/{owner}/{repo}/pulls/$pr" \
+     -f title="$probe_title" > /dev/null
+   title_run_id="$(discover_build_run "$title_prior_ids" "$title_created_after")"
+   test "$title_run_id" != "$opened_run_id"
+   test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" = "$head_sha"
+   test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)" = "$base_sha"
+   watch_build_run "$title_run_id"
+   test "$(gh run view "$title_run_id" --json event --jq .event)" = "pull_request"
+   test "$(gh run view "$title_run_id" --json headSha --jq .headSha)" = "$head_sha"
+   gh run view "$title_run_id" \
+     --json event,headSha,conclusion,url > "$evidence_dir/title.json"
+   gh api --method GET --paginate --slurp \
+     "repos/$repo/actions/runs/$title_run_id/jobs" -f per_page=100 \
+     > "$evidence_dir/title-jobs.json"
+   ```
+
+   - **Parsed live title-edit job/check set:** {`event-identity`,
+     `event-router`, `metadata-classifier`, `patch-release`,
+     `metadata-summary`}.
+
+   Every raw REST job record is scanned before normalization. Duplicate API
+   IDs, duplicate names/stable IDs, unknown jobs, or a metadata worker with an
+   assigned `runner_name` or non-`skipped` conclusion fail. GitHub may stamp
+   `started_at` on a platform-skipped record; that timestamp is admissible only
+   when `runner_name` is null and the conclusion is exactly `skipped`. Every
+   known worker record that appears is included with its stable ID and
+   conclusion rather than hidden by the four running metadata names.
+   `patch-release` is mandatory in every pull-request run and must have exact
+   stable ID/name `patch-release`, conclusion `skipped`, and no runner.
+   Missing, successful, failed, renamed, or duplicate publisher context
+   rejects both full and metadata evidence.
+4. Snapshot IDs before restoring the original title through the owner REST
+   endpoint. Discover, watch, and save the distinct restore metadata run:
+
+   ```bash
+   restore_prior_ids="$(list_build_run_ids)"
+   restore_created_after="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+   gh api --method PATCH "repos/{owner}/{repo}/pulls/$pr" \
+     -f title="$original_title" > /dev/null
+   restore_run_id="$(discover_build_run \
+     "$restore_prior_ids" "$restore_created_after")"
+   test "$restore_run_id" != "$title_run_id"
+   test "$(gh pr view "$pr" --json headRefOid --jq .headRefOid)" = "$head_sha"
+   test "$(gh api "repos/{owner}/{repo}/pulls/$pr" --jq .base.sha)" = "$base_sha"
+   watch_build_run "$restore_run_id"
+   test "$(gh run view "$restore_run_id" --json event --jq .event)" = "pull_request"
+   test "$(gh run view "$restore_run_id" --json headSha --jq .headSha)" = "$head_sha"
+   gh run view "$restore_run_id" \
+     --json event,headSha,conclusion,url > "$evidence_dir/restore.json"
+   gh api --method GET --paginate --slurp \
+     "repos/$repo/actions/runs/$restore_run_id/jobs" -f per_page=100 \
+     > "$evidence_dir/restore-jobs.json"
+   ```
+
+   - **Parsed live title-restore job/check set:** {`event-identity`,
+     `event-router`, `metadata-classifier`, `patch-release`,
+     `metadata-summary`}.
+5. Normalize all three real runs and execute the candidate evaluator's full,
+   metadata-only, combined, failed-full, and missing-full assertions:
+
+   ```bash
+   python3 - "$head_sha" "$base_sha" \
+     "$opened_run_id" "$evidence_dir/opened.json" "$evidence_dir/opened-jobs.json" \
+     "$title_run_id" "$evidence_dir/title.json" "$evidence_dir/title-jobs.json" \
+     "$restore_run_id" "$evidence_dir/restore.json" \
+     "$evidence_dir/restore-jobs.json" <<'PY'
+   import copy
+   import json
+   import sys
+
+   from scripts.workflow_pilot import candidate_evidence
+
+   head_sha, base_sha = sys.argv[1:3]
+   run_specs = (
+       ("full", int(sys.argv[3]), sys.argv[4], sys.argv[5]),
+       ("metadata-only", int(sys.argv[6]), sys.argv[7], sys.argv[8]),
+       ("metadata-only", int(sys.argv[9]), sys.argv[10], sys.argv[11]),
+   )
+
+   def normalize_run(mode, run_id, run_path, jobs_path):
+       with open(run_path, encoding="utf-8") as source:
+           raw = json.load(source)
+       assert raw["event"] == "pull_request"
+       assert raw["headSha"] == head_sha
+       assert raw["conclusion"] == "success"
+       with open(jobs_path, encoding="utf-8") as source:
+           pages = json.load(source)
+       raw_jobs = [
+           job
+           for page in pages
+           for job in page["jobs"]
+       ]
+       stable_by_name = {
+           "event-identity": "event-identity",
+           "event-router": "event-router",
+           "event-classifier": "event-classifier",
+           "metadata-classifier": "event-classifier",
+           "host-tests": "host-tests",
+           "build": "build",
+           "extended-host-tests": "extended-host-tests",
+           "legacy": "legacy",
+           "patch-release": "patch-release",
+           "summary": "summary",
+           "metadata-summary": "summary",
+       }
+       workers = {
+           "host-tests",
+           "build",
+           "extended-host-tests",
+           "legacy",
+       }
+       required_names = (
+           {
+               "event-identity",
+               "event-router",
+               "event-classifier",
+               "host-tests",
+               "build",
+               "extended-host-tests",
+               "legacy",
+               "patch-release",
+               "summary",
+           }
+           if mode == "full"
+           else {
+               "event-identity",
+               "event-router",
+               "metadata-classifier",
+               "patch-release",
+               "metadata-summary",
+           }
+       )
+       seen_api_ids = set()
+       seen_names = set()
+       seen_stable_ids = set()
+       contexts = []
+       for job in raw_jobs:
+           api_id = job["id"]
+           name = job["name"]
+           started_at = job["started_at"]
+           assert isinstance(api_id, int) and api_id > 0
+           assert api_id not in seen_api_ids
+           assert isinstance(name, str) and name
+           assert name not in seen_names
+           assert name in stable_by_name
+           job_id = stable_by_name[name]
+           assert job_id not in seen_stable_ids
+           seen_api_ids.add(api_id)
+           seen_names.add(name)
+           seen_stable_ids.add(job_id)
+           if mode == "metadata-only" and job_id in workers:
+               # GitHub may stamp started_at on a skipped job, but a real
+               # runner is never assigned: both facts are required together.
+               assert job["conclusion"] == "skipped"
+               assert job["runner_name"] is None
+               assert started_at is None or isinstance(started_at, str)
+           elif job_id == "patch-release":
+               assert job["conclusion"] == "skipped"
+               assert job["runner_name"] is None
+           else:
+               assert name in required_names
+               assert job["conclusion"] == "success"
+           contexts.append(
+               {
+                   "conclusion": job["conclusion"],
+                   "job_id": job_id,
+                   "name": name,
+               }
+           )
+       assert required_names <= seen_names
+       return {
+           "base_sha": base_sha,
+           "contexts": contexts,
+           "event": "pull_request",
+           "head_sha": head_sha,
+           "run_id": run_id,
+       }
+
+   opened, title, restore = [
+       normalize_run(*spec)
+       for spec in run_specs
+   ]
+   opened_result = candidate_evidence.evaluate_candidate_runs(
+       [opened], head_sha=head_sha, base_sha=base_sha
+   )
+   assert opened_result.eligible and opened_result.run_id == opened["run_id"]
+   title_result = candidate_evidence.evaluate_candidate_runs(
+       [title], head_sha=head_sha, base_sha=base_sha
+   )
+   assert not title_result.eligible and title_result.mode == "metadata-only"
+   full_title_result = candidate_evidence.evaluate_candidate_runs(
+       [opened, title], head_sha=head_sha, base_sha=base_sha
+   )
+   assert full_title_result.eligible
+   assert full_title_result.run_id == opened["run_id"]
+   failed_opened = copy.deepcopy(opened)
+   next(
+       context
+       for context in failed_opened["contexts"]
+       if context["job_id"] == "summary"
+   )["conclusion"] = "failure"
+   failed_result = candidate_evidence.evaluate_candidate_runs(
+       [failed_opened, title], head_sha=head_sha, base_sha=base_sha
+   )
+   assert not failed_result.eligible
+   all_runs_result = candidate_evidence.evaluate_candidate_runs(
+       [opened, title, restore], head_sha=head_sha, base_sha=base_sha
+   )
+   assert all_runs_result.eligible
+   assert all_runs_result.run_id == opened["run_id"]
+   restore_result = candidate_evidence.evaluate_candidate_runs(
+       [restore], head_sha=head_sha, base_sha=base_sha
+   )
+   assert not restore_result.eligible and restore_result.mode == "metadata-only"
+   failed_restore_result = candidate_evidence.evaluate_candidate_runs(
+       [failed_opened, title, restore], head_sha=head_sha, base_sha=base_sha
+   )
+   assert not failed_restore_result.eligible
+   PY
+   ```
+
+   The title-only and restore runs alone prove the missing-full negative; the
+   copied failed summary proves the failed-full negative without inventing a
+   success-shaped fallback.
+6. Run exact idempotent cleanup explicitly. The EXIT trap performs the same
+   cleanup automatically on any earlier failure:
+
+   ```bash
+   exit 0
+   ```
+
+   Cleanup restores the original title if necessary, closes without merging,
+   deletes the exact remote ref only through a SHA compare-and-swap lease,
+   removes the exact isolated worktree/local ref only when their head/ref match
+   and the worktree is clean, and deletes only the guarded exact evidence
+   directory. A mismatched remote SHA, PR identity, local head/ref/path, or
+   dirty worktree is preserved and reported. The EXIT trap retains the primary
+   failure status while surfacing cleanup failure.
+   Architecture/review comments remain unmarked; only the canonical evolving
+   evidence comment carries the one marker.
 
 ## TC-WORKFLOW-PILOT-BASELINE-001: Freeze reproducible pilot baseline and decisions
 
@@ -299,13 +1185,15 @@ availability or grant credentials.
    in the committed full baseline and that setup remains absent from the 28
    local gates.
 9. Mutate every combined worker with container/services/strategy/permissions/
-   defaults/needs/if/advisory/environment/concurrency/uses/secrets/shell
-   execution context, including spaced, quoted, escaped, tagged, explicit,
-   flow, duplicate, reordered, and wrong-value forms.
+   defaults/advisory/environment/concurrency/uses/secrets/shell execution
+   context, and mutate the exact classifier `needs`/`if` edge, including
+   spaced, quoted, escaped, tagged, explicit, flow, duplicate, reordered, and
+   wrong-value forms.
 10. Place a real `sitecustomize.py` that exits successfully before ordinary
-    Python commands. Confirm normal startup is bypassed while all three
-    `/usr/bin/python3 -I` launcher modes execute, and arbitrary modes,
-    arguments, roots, or launcher/`-I` changes fail.
+    Python commands. Confirm normal startup is bypassed while the three
+    baseline `/usr/bin/python3 -I` launcher modes and the event-classifier mode
+    execute, and arbitrary modes, arguments, roots, or launcher/`-I` changes
+    fail.
 11. Feed the workflow mirror parser a long repeated
     `a\n        ` environment adversary and require bounded completion with
     the same accepted/rejected structural results.
@@ -424,12 +1312,14 @@ above. Build CI runs the same command plus the baseline reporter with
 `--repository-root "$GITHUB_WORKSPACE"` in its existing required `host-tests`
 job. Before those reporter commands, CI hydrates the fixture's exact commit
 authority and proves exact `HEAD` and refs are unchanged. The parsed workflow
-topology suite fails if hydration, pre-pilot step order/content, scrubbed
-protected-step environments, ownership, or checked-out-root binding is removed
-or weakened. It also requires each combined worker's exact direct job mapping
-and values; no container or alternate execution context can replace the
-reviewed Ubuntu host.
-The protected Python steps use the closed isolated launcher, so repository or
+topology suite fails if classification, hydration, pre-pilot step
+order/content, scrubbed protected-step environments, ownership, or
+checked-out-root binding is removed or weakened. It also requires the
+router, mode-classifier, and each combined worker's exact direct job mapping and values; no
+container or alternate execution context can replace the reviewed Ubuntu
+host.
+The no-checkout identity validator and protected Python steps use only closed
+trusted setup, so repository or
 user site customization cannot run before control. The workflow mirror parser
 uses deterministic line/indent parsing rather than an ambiguous multiline
 regular expression. Cross-checkout verification parses target workflow data
@@ -439,13 +1329,28 @@ actions, run argv, `env`/`with` mappings, direct fields, and root execution
 before dry-run or execution. Unnamed non-checkout steps, duplicate setup names,
 complex keys, and extra jobs fail closed. Workflow execution context is
 exactly name/triggers/read-only permissions/jobs with no workflow env,
-defaults, or concurrency. Every combined job is exactly Ubuntu, 60 minutes,
-its allowlisted env, and steps; self-hosted/container/service/strategy/default
-shell or any other execution field fails before dry-run.
+defaults, or concurrency. The identity validator is exactly Ubuntu, five minutes, its
+outputs/environment, and one trusted shell step. The router is exactly Ubuntu,
+five minutes, its outputs/environment, and three setup steps; the
+mode-classifier is a separate five-minute one-step check. The comprehensive
+`build` job has exact identity/classifier edges, Ubuntu, 90 minutes, its
+allowlisted env, and steps; host, extended-host, legacy, and patch publication
+remain 60 minutes, while identity/router/classifier and summary remain 5;
+self-hosted/container/service/strategy/default shell or any other execution
+field fails before dry-run.
 Patch publication and summary are also complete semantic structures:
-master-only publication condition, pinned actions, scoped secret/env and six
-publisher steps; then `always()`, exact ordered needs/result env, five-minute
-context, and one fail-closed summary step. Neither is locally executed, but any
+validated master-only publication condition, pinned actions, immediate exact
+revision verification, exact-after producer, no target-ROM artifact transfer,
+dedicated-UID private-mount/PID/network isolation, read-only host paths, masked
+service sockets, offline dependencies, exact cgroup-v2/process teardown, exact
+regular/single-link two-file handoff, candidate-state removal before download,
+discarded non-replayed candidate output with fixed numeric status, unpredictable
+private path, immediate isolated patch tool, verified cleanup, late
+BPS/manifest/README revalidation, and nine fresh-job publisher steps;
+then `always()`, identity/classifier plus exact ordered
+worker/publisher needs/result env, dynamic full/metadata summary name, five-minute
+context, and one fail-closed summary step.
+Neither is locally executed, but any
 runner/condition/needs/permission/env/step/command/action/alternate-context
 drift rejects before dry-run.
 
