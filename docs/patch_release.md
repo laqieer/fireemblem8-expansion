@@ -68,9 +68,10 @@ validates every target, writes the NUL-delimited result into checked root-owned
 regular temp files under `/mnt/supervisor`, and unmounts only descendants
 deepest-first. This removes inherited `/dev/pts`, `/dev/mqueue`, `/dev/shm`,
 and runner-specific child mounts without touching the root-owned mode-`0700`
-supervisor parent. The candidate's writable-mount audit also consumes raw
-`findmnt` targets so terminal tree decoration can never be mistaken for an
-unapproved path.
+supervisor parent. The candidate's writable-mount audit also consumes only
+decoded structured JSON target records through checked NUL-delimited
+transport, so raw escaped or whitespace-delimited mount text can never be
+mistaken for an unapproved path.
 Hash-locked wheels are fetched by the trusted host before isolation and
 installed offline inside it. Every builder descendant is placed in one exact
 cgroup v2 that the candidate cannot see or leave. The trusted host stops the

@@ -26,6 +26,7 @@ from scripts.modernize import patch_release
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
 PATCH_RELEASE_CASE = ROOT / "docs" / "test-cases" / "patch-release.md"
+PATCH_RELEASE_OVERVIEW = ROOT / "docs" / "patch_release.md"
 ARTIFACT_FILENAMES = (
     "README.txt",
     "fireemblem8-expansion-all-locales-all-features-aapcs.bps",
@@ -2944,6 +2945,7 @@ exit 37
 
     def test_patch_release_docs_publish_no_internal_rom_artifact(self):
         text = PATCH_RELEASE_CASE.read_text(encoding="utf-8")
+        compact = " ".join(text.split())
         self.assertIn(
             "target ROM remains only in the publisher-local isolated handoff "
             "and private\nstaging",
@@ -2969,12 +2971,16 @@ exit 37
             text,
         )
         self.assertIn(
-            "Retained descendants, raw escaped target text, paths outside `/dev`,",
+            "raw escaped or whitespace-delimited mount-target transport",
+            compact,
+        )
+        self.assertIn(
+            "paths outside `/dev`",
             text,
         )
         self.assertIn(
-            "unsafe transport\nfiles are rejected",
-            text,
+            "unsafe transport files are rejected",
+            compact,
         )
         self.assertIn(
             "structured\n`findmnt --json --list --uniq --output TARGET,OPTIONS -R /` output, "
@@ -3000,6 +3006,25 @@ exit 37
         self.assertIn(
             "malformed option-token grammar",
             text,
+        )
+
+    def test_patch_release_overview_docs_require_structured_mount_records(self):
+        text = PATCH_RELEASE_OVERVIEW.read_text(encoding="utf-8")
+        compact = " ".join(text.split())
+        self.assertIn(
+            "consumes only decoded structured JSON target records through checked NUL-delimited "
+            "transport",
+            compact,
+        )
+        self.assertIn(
+            "raw escaped or whitespace-delimited mount text can never be "
+            "mistaken for an "
+            "unapproved path",
+            compact,
+        )
+        self.assertNotIn(
+            "consumes raw `findmnt` targets",
+            compact,
         )
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):

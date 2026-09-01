@@ -40,9 +40,10 @@ classifies exact prior runs newest-first, skips only conclusively metadata
 runs, and confirms the newest conclusively full Build CI run for the same
 repository, PR number, authoritative base SHA, and immutable head SHA
 completed successfully. That proof first requires complete paginated results
-with stable `total_count`/`Link` consistency, exact per-page cardinality,
-stable `workflow_id`, ordered positive `run_number`/`run_attempt` values, one
-exact current-run observation, and rejects redirects before any second
+with stable `total_count`, single-page `Link` omission, exact non-final
+`next`/`last` relations, no final `next`, exact per-page cardinality, stable
+`workflow_id`, ordered positive `run_number`/`run_attempt` values, one exact
+current-run observation, and rejects redirects before any second
 authenticated request. A newer failed,
 cancelled, in-progress, or malformed full run blocks older successes. Live
 branch protection therefore remains the current canonical `host-tests` +
@@ -247,9 +248,10 @@ Actions API proof classifies exact prior runs newest-first, skips only
 conclusively metadata runs, and confirms the newest conclusively full Build CI
 run for the same repository, PR number, authoritative base SHA, and immutable
 head SHA completed successfully. It first requires complete paginated results
-with stable `total_count`/`Link` consistency, exact per-page cardinality,
-stable `workflow_id`, ordered positive `run_number`/`run_attempt` values, one
-exact current-run observation, and rejects redirects before any second
+with stable `total_count`, single-page `Link` omission, exact non-final
+`next`/`last` relations, no final `next`, exact per-page cardinality, stable
+`workflow_id`, ordered positive `run_number`/`run_attempt` values, one exact
+current-run observation, and rejects redirects before any second
 authenticated request. A newer failed,
 cancelled, in-progress, or malformed full run blocks older successes. Normal
 `summary` remains the sole

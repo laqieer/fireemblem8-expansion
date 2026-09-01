@@ -143,7 +143,8 @@ therefore keeps the live canonical `host-tests`, `build`, and `summary`
 contexts unchanged. The canonical metadata `summary` is branch-protection
 continuity only: it succeeds only after a trusted no-checkout Actions API
 proof enumerates the complete exact paginated result set with stable
-`total_count`/`Link` consistency and exact per-page cardinality, rejects
+`total_count`, single-page `Link` omission, exact non-final `next`/`last`
+relations, and no final `next`, plus exact per-page cardinality, rejects
 redirects before any second authenticated request, validates stable
 `workflow_id` plus positive `run_number`/`run_attempt`, classifies exact prior
 runs newest-first by `run_number`, requires the in-progress current run to
@@ -161,8 +162,9 @@ even when the adapters and canonical `summary` succeed.
 derives mode only from the running classifier/summary names and evaluates the latest
 exact-head/exact-base full run as one unit. A metadata-only run is never
 candidate evidence. A failed full run followed by green metadata remains
-ineligible; a prior successful full run remains eligible because metadata
-contexts are distinct rather than replacements. Both modes require the same
+ineligible; a prior successful full run remains eligible because the later
+metadata continuity run advances only the required canonical `summary`
+context after proving that prior full run. Both modes require the same
 successful common identity and router setup before their running attestations
 are admissible.
 A canonical successful `event-identity` context is mandatory in both modes.

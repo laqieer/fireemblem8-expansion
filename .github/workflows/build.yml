@@ -3387,7 +3387,9 @@ jobs:
 
           def parse_next_page(link, *, request_url, current_page, total_pages):
               if not link:
-                  return None
+                  if total_pages == 1 or current_page == total_pages:
+                      return None
+                  fail("metadata-only summary workflow runs pagination truncated")
               if utf8_len(link) > MAX_HEADER_BYTES:
                   fail("metadata-only summary workflow runs Link header exceeds bounds")
               rels = {}
@@ -3418,8 +3420,13 @@ jobs:
                       fail("metadata-only summary workflow runs next page is not sequential")
                   if next_page > MAX_RUN_PAGES:
                       fail("metadata-only summary workflow runs exceed the reviewed pagination bound")
-              if current_page < total_pages and next_page is None:
-                  fail("metadata-only summary workflow runs pagination truncated")
+              if total_pages == 1:
+                  fail("metadata-only summary workflow runs reported pagination for a single page")
+              if current_page < total_pages:
+                  if next_page is None:
+                      fail("metadata-only summary workflow runs pagination truncated")
+                  if "last" not in rels:
+                      fail("metadata-only summary workflow runs last page is required")
               if current_page == total_pages and next_page is not None:
                   fail("metadata-only summary workflow runs reported an unexpected next page")
               if "last" in rels:

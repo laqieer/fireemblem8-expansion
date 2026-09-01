@@ -76,11 +76,11 @@ rather than failing on legitimate duplicate rows from hidden lower mounts.
 Only `/dev/shm`, `/mnt/handoff`, `/mnt/home`, `/mnt/source`, `/mnt/tmp`, and
 `/tmp` may carry an exact `rw` option token; spaces and backslashes in decoded
 target paths are handled losslessly, while control-character targets,
-malformed option-token grammar, duplicate or extra JSON rows, raw escaped
-text, and any unexpected writable effective mount fail closed. Hidden lower
-layers remain irrelevant unless the wrapper or candidate can expose them; this
-publisher denies that by keeping the candidate unprivileged and never granting
-mount or unmount capability.
+malformed option-token grammar, duplicate or extra JSON rows, raw escaped or
+whitespace-delimited mount-target transport, and any unexpected writable
+effective mount fail closed. Hidden lower layers remain irrelevant unless the
+wrapper or candidate can expose them; this publisher denies that by keeping
+the candidate unprivileged and never granting mount or unmount capability.
 
 ### Negative control
 
@@ -191,9 +191,9 @@ the wrapper PID before ROM handoff. Decoded recursive `/dev` mount targets are
 emitted through NUL-delimited trusted JSON parsing, staged through checked
 root-owned regular temp files under `/mnt/supervisor`, unmounted deepest-first,
 and rechecked so only `/dev` remains before the private device tree is
-recreated. Retained descendants, raw escaped target text, paths outside `/dev`,
-malformed JSON, duplicate targets, NUL-bearing targets, and unsafe transport
-files are rejected.
+recreated. Retained descendants, raw escaped or whitespace-delimited
+mount-target transport, paths outside `/dev`, malformed JSON, duplicate
+targets, NUL-bearing targets, and unsafe transport files are rejected.
 After the private device tree is recreated and before candidate code starts,
 the trusted wrapper decodes structured `findmnt --json --list --uniq --output
 TARGET,OPTIONS -R /` output into checked NUL-framed mount target/option
@@ -204,10 +204,11 @@ not hide the topmost visible mount. Only `/dev/shm`, `/mnt/handoff`,
 `/mnt/home`, `/mnt/source`, `/mnt/tmp`, and `/tmp` may expose an exact `rw`
 option token. Decoded targets with spaces or backslashes remain lossless;
 control-character targets, malformed or ambiguous option-token grammar,
-duplicate or extra JSON rows, parser failure, unchecked process substitution,
-and any unexpected writable effective mount fail closed. Hidden lower layers
-remain irrelevant unless the wrapper or candidate can expose them, and this
-publisher never grants that capability.
+duplicate or extra JSON rows, raw escaped or whitespace-delimited mount-target
+transport, parser failure, unchecked process substitution, and any unexpected
+writable effective mount fail closed. Hidden lower layers remain irrelevant
+unless the wrapper or candidate can expose them, and this publisher never
+grants that capability.
 
 ### Negative control
 

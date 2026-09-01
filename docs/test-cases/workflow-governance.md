@@ -340,14 +340,18 @@ only conclusively metadata runs, and confirms the newest conclusively full
 Build CI run for the same repository, PR number, authoritative base SHA, and
 immutable head SHA completed successfully; a newer failed, cancelled,
 in-progress, or malformed full run blocks older successes. That proof first
-requires complete paginated results with stable `total_count`/`Link`
-consistency, exact per-page cardinality, stable `workflow_id`, ordered
-positive `run_number`/`run_attempt` values, one exact current-run observation,
-and rejects redirects before any second authenticated request.
+requires complete paginated results with stable `total_count`, single-page
+`Link` omission, exact non-final `next`/`last` relations, no final `next`,
+exact per-page cardinality, stable `workflow_id`, ordered positive
+`run_number`/`run_attempt` values, one exact current-run observation, and
+rejects redirects before any second authenticated request.
 Without that prior green full run, metadata-only edits still block merge.
 Metadata runs remain
 ineligible candidate evidence even when their continuity adapters and canonical
-`summary` succeed. Evaluated metadata labels, duplicates,
+`summary` succeed. A later metadata continuity run advances the required
+canonical `summary` context only after proving that newest prior full run,
+while candidate eligibility remains bound to the newest prior complete full
+run. Evaluated metadata labels, duplicates,
 unknown names, or spoofed worker names reject instead of becoming candidate
 evidence.
 The recorded `gh pr checks --required` output after the title edit and restore
@@ -363,10 +367,11 @@ trusted Actions API proof classifies exact prior runs newest-first so only the
 newest conclusively full run with the same repository, PR number,
 authoritative base SHA, and immutable head SHA can authorize continuity.
 That proof first requires complete paginated results with stable
-`total_count`/`Link` consistency, exact per-page cardinality, stable
-`workflow_id`, ordered positive `run_number`/`run_attempt` values, one exact
-current-run observation, and rejects redirects before any second authenticated
-request. Older full
+`total_count`, single-page `Link` omission, exact non-final `next`/`last`
+relations, no final `next`, exact per-page cardinality, stable `workflow_id`,
+ordered positive `run_number`/`run_attempt` values, one exact current-run
+observation, and rejects redirects before any second authenticated request.
+Older full
 successes never override a newer failed, cancelled, in-progress, or malformed
 full run.
 
@@ -520,8 +525,9 @@ and unknown fail-closed controls.
 `python3 -m unittest scripts.workflow_pilot.tests.test_candidate_evidence -v`
 derives full versus metadata mode from running classifier/summary contexts and
 proves a later green metadata run cannot replace a failed/missing candidate
-full run; the required canonical `summary` context remains on the latest
-successful full run even though later metadata runs reuse the worker names.
+full run; a later metadata continuity run advances the required canonical
+`summary` context only after proving the newest prior successful full run,
+while candidate eligibility remains bound to that prior full run.
 
 `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v` parses the
 workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
