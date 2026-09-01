@@ -2124,9 +2124,9 @@ class ExactHandoffTests(unittest.TestCase):
             receipt_validator.validate(wrong_type_receipt)
 
     def test_time_schema_and_parser_limit_fractional_precision(self):
-        validator = validator_for_schema(
-            schema_ref(load_handoff_schema(), "#/$defs/time")
-        )
+        schema = schema_ref(load_handoff_schema(), "#/$defs/time")
+        Draft202012Validator.check_schema(schema)
+        validator = Draft202012Validator(schema)
         accepted = {
             "2026-01-01T00:00:00Z": 0,
             "2026-01-01T00:00:00.1Z": 100000,
@@ -2135,12 +2135,19 @@ class ExactHandoffTests(unittest.TestCase):
             "2026-01-01T00:00:00.1234Z": 123400,
             "2026-01-01T00:00:00.12345Z": 123450,
             "2026-01-01T00:00:00.123456Z": 123456,
+            "2024-02-29T23:59:59.123456Z": 123456,
         }
         for stamp, microseconds in accepted.items():
             with self.subTest(stamp=stamp):
                 validator.validate(stamp)
                 self.assertEqual(reporter.parse_time(stamp, "stamp").microsecond, microseconds)
         for stamp in (
+            "2026-02-29T00:00:00Z",
+            "2024-13-01T00:00:00Z",
+            "2024-04-31T00:00:00Z",
+            "2024-01-01T24:00:00Z",
+            "2024-01-01T00:60:00Z",
+            "2024-01-01T23:59:60Z",
             "2026-01-01T00:00:00.1234567Z",
             "2026-01-01T00:00:00.123456789Z",
             "2026-01-01T00:00:00+00:00",
@@ -2148,7 +2155,7 @@ class ExactHandoffTests(unittest.TestCase):
             with self.subTest(invalid=stamp):
                 with self.assertRaises(ValidationError):
                     validator.validate(stamp)
-                with self.assertRaisesRegex(reporter.PilotDataError, "RFC 3339 UTC timestamp"):
+                with self.assertRaises(reporter.PilotDataError):
                     reporter.parse_time(stamp, "stamp")
 
     def test_schema_v2_matches_runtime_structural_mutation_corpus(self):
