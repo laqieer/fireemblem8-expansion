@@ -437,10 +437,12 @@ class AuthorityLoader:
         root: Path,
         entries: dict[str, GitTreeEntry],
         revision: str | None = None,
+        scratch_root: Path | None = None,
     ):
         self.root = root
         self.entries = entries
         self.revision = revision
+        self.scratch_root = scratch_root
 
     def entry(self, relative: str | Path, label: str) -> GitTreeEntry:
         path = _validate_relative_path(relative, label)
@@ -514,10 +516,14 @@ def _generated_registry_records(
         output, probe_authority = make_probe.probe_generated_registry(
             loader,
             scratch_root=(
-                loader.root
-                / "build"
-                / "test-artifacts"
-                / "validation-ownership"
+                loader.scratch_root
+                if loader.scratch_root is not None
+                else (
+                    loader.root
+                    / "build"
+                    / "test-artifacts"
+                    / "validation-ownership"
+                )
             ),
         )
     except make_probe.MakeProbeError as error:
@@ -1563,10 +1569,14 @@ def _parse_make_authorities(
             environment_names=set(ambient_contracts),
             symbolic_recipe_names=symbolic_recipe_names,
             scratch_root=(
-                loader.root
-                / "build"
-                / "test-artifacts"
-                / "validation-ownership"
+                loader.scratch_root
+                if loader.scratch_root is not None
+                else (
+                    loader.root
+                    / "build"
+                    / "test-artifacts"
+                    / "validation-ownership"
+                )
             ),
         )
     except make_probe.MakeProbeError as error:

@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import struct
 import subprocess
 import tempfile
@@ -46,6 +47,130 @@ READING_RE = re.compile(
 
 class MakeProbeError(RuntimeError):
     """Raised when GNU Make authority cannot be observed safely and exactly."""
+
+
+def _prepare_confined_scratch(loader: Any, scratch_root: Path) -> Path:
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise MakeProbeError("probe scratch requires O_NOFOLLOW")
+    configured_scratch = getattr(loader, "scratch_root", None)
+    if configured_scratch is not None:
+        configured = Path(os.path.abspath(configured_scratch))
+        scratch = Path(os.path.abspath(scratch_root))
+        if scratch != configured:
+            raise MakeProbeError("probe scratch differs from trusted external root")
+        try:
+            entry_stat = os.lstat(configured)
+            flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+            descriptor = os.open(configured, flags)
+        except OSError as error:
+            raise MakeProbeError(
+                f"cannot open trusted external probe scratch: {error}"
+            ) from error
+        try:
+            opened_stat = os.fstat(descriptor)
+            if (
+                stat.S_ISLNK(entry_stat.st_mode)
+                or not stat.S_ISDIR(entry_stat.st_mode)
+                or opened_stat.st_dev != entry_stat.st_dev
+                or opened_stat.st_ino != entry_stat.st_ino
+            ):
+                raise MakeProbeError(
+                    "trusted external probe scratch is not a stable directory"
+                )
+        finally:
+            os.close(descriptor)
+        return configured
+
+    root = Path(os.path.abspath(loader.root))
+    scratch = Path(os.path.abspath(scratch_root))
+    try:
+        relative = scratch.relative_to(root)
+        root_lstat = os.lstat(root)
+        resolved_root = root.resolve(strict=True)
+    except (OSError, ValueError) as error:
+        raise MakeProbeError(f"cannot inspect probe scratch root: {error}") from error
+    if (
+        not relative.parts
+        or stat.S_ISLNK(root_lstat.st_mode)
+        or not stat.S_ISDIR(root_lstat.st_mode)
+    ):
+        raise MakeProbeError(
+            "probe scratch must be below a non-symlink authority root"
+        )
+    component_path = Path()
+    for part in relative.parts:
+        component_path /= part
+        if component_path.as_posix() in loader.entries:
+            raise MakeProbeError(
+                f"probe scratch component {component_path} is a tracked Git object"
+            )
+
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    created: list[Path] = []
+    try:
+        current_fd = os.open(root, flags)
+    except OSError as error:
+        raise MakeProbeError(f"cannot open probe authority root safely: {error}") from error
+    current_path = root
+    success = False
+    try:
+        for part in relative.parts:
+            try:
+                os.mkdir(part, mode=0o700, dir_fd=current_fd)
+                created.append(current_path / part)
+            except FileExistsError:
+                pass
+            try:
+                entry_stat = os.stat(
+                    part,
+                    dir_fd=current_fd,
+                    follow_symlinks=False,
+                )
+            except OSError as error:
+                raise MakeProbeError(
+                    f"cannot lstat probe scratch component {current_path / part}: "
+                    f"{error}"
+                ) from error
+            if (
+                stat.S_ISLNK(entry_stat.st_mode)
+                or not stat.S_ISDIR(entry_stat.st_mode)
+            ):
+                raise MakeProbeError(
+                    f"probe scratch component {current_path / part} must be "
+                    "a non-symlink directory"
+                )
+            try:
+                next_fd = os.open(part, flags, dir_fd=current_fd)
+            except OSError as error:
+                raise MakeProbeError(
+                    f"cannot open probe scratch component {current_path / part} "
+                    f"safely: {error}"
+                ) from error
+            opened_stat = os.fstat(next_fd)
+            if (
+                opened_stat.st_dev != entry_stat.st_dev
+                or opened_stat.st_ino != entry_stat.st_ino
+            ):
+                os.close(next_fd)
+                raise MakeProbeError(
+                    f"probe scratch component {current_path / part} was replaced"
+                )
+            os.close(current_fd)
+            current_fd = next_fd
+            current_path /= part
+        resolved_scratch = current_path.resolve(strict=True)
+        if resolved_root not in resolved_scratch.parents:
+            raise MakeProbeError("probe scratch escaped the authority root")
+        success = True
+        return current_path
+    finally:
+        os.close(current_fd)
+        if not success:
+            for path in reversed(created):
+                try:
+                    path.rmdir()
+                except OSError:
+                    pass
 
 
 def _sha256_file(path: Path) -> str:
@@ -639,8 +764,8 @@ def probe_generated_registry(
     scratch_root: Path,
 ) -> tuple[bytes, dict[str, Any]]:
     """Run candidate generated registry code in a credential-free sandbox."""
+    scratch_root = _prepare_confined_scratch(loader, scratch_root)
     tools = _ensure_tools()
-    scratch_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
         prefix="generated-registry-probe-",
         dir=scratch_root,
@@ -1084,8 +1209,8 @@ def run_probe(
             f"authority (unclassified={sorted(unclassified)}, "
             f"stale_symbolic={sorted(stale_symbolic)})"
         )
+    scratch_root = _prepare_confined_scratch(loader, scratch_root)
     tools = _ensure_tools()
-    scratch_root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
         prefix="gnu-make-probe-",
         dir=scratch_root,

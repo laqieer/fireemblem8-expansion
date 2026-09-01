@@ -183,6 +183,10 @@ Make authority comes from `/usr/bin/make`, not a repository implementation of
 Make syntax. The reporter creates a new scratch root from the selected exact
 Git tree, materializes the exact `mgfembp` gitlink commit from the shared object
 database, and starts GNU Make through user, mount, PID, and network namespaces.
+Every in-repository scratch component is created and reopened relative to a
+trusted directory descriptor with `O_NOFOLLOW`; an existing file or symlink at
+`build`, `test-artifacts`, or `validation-ownership` rejects before a probe,
+temporary directory, deletion, or external write.
 The superproject and gitlink trees are read-only mounts. Only separate ignored
 Make scratch, registered-command scratch, and generated `build` output mounts
 are writable. Supervisor control is outside all candidate-visible mounts.
@@ -286,18 +290,27 @@ or fails during trusted bootstrap.
 
 Candidate CI does not use these candidate-authored modules as its own trust
 root. On pull requests, `host-tests` first checks the exact GitHub PR-base
-commit for `ci_verifier.py` and `ci_gate.mk`. When present, it archives the
-complete clean base tree, invokes the base gate, verifies every staged verifier
-package file and every loaded transitive `scripts.*` module against base Git
-objects, excludes the candidate checkout from `sys.path`, and overlays the
-base validation package/schema/oracle while reading all other graph and Make
+commit for `ci_verifier.py` and `ci_gate.mk`. When present, it creates an
+unpredictable mode-`0700` directory under the lstat-checked GitHub runner
+temporary root, records its device/inode identity, and archives the complete
+clean base tree there. It never removes or creates a verifier staging path
+through the candidate checkout; base and candidate Make/registry probes use a
+mode-`0700` runtime child under the same external trusted root, and cleanup
+removes only that unchanged external identity. The base gate verifies every
+staged verifier package file and every loaded transitive `scripts.*` module against base Git objects,
+excludes the candidate checkout from `sys.path`, and overlays the base
+validation package/schema/oracle while reading all other graph and Make
 authority from the exact candidate commit. Candidate modifications to
 `reporter.py`, `make_probe.py`, the interceptor, or their tests therefore
-cannot authorize themselves. After trusted `validate_graph`, the base verifier
-resolves every independent-oracle probe through the candidate model, sorts its
-exact `(edge_type, evidence_id)` pairs, and requires byte-for-byte equality
-with the base oracle representation. A candidate self-checker redirect or
-owner update therefore rejects even when graph shape remains valid.
+cannot authorize themselves. After trusted validation of both exact-base and
+candidate graphs, the verifier resolves every independent-oracle probe,
+requires byte-identical `(edge_type, evidence_id)` selections, compares the
+resolved base/candidate authority fingerprints, and intersects trusted
+graph-edge invalidation with the oracle-backed edge set. Any authority target,
+gate, Make target/command/probe, workflow step, or fingerprint redirect on an
+oracle-backed edge therefore rejects even when stable IDs and pairs remain.
+Normalized unrelated workflow or Make semantics do not invalidate those
+edges.
 This introducing PR's base lacks that package,
 so CI emits `bootstrap-not-authoritative`; candidate tests and the public gate
 still run, but direct adversarial review is the introduction evidence. After

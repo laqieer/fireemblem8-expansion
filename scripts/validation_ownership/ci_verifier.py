@@ -39,6 +39,7 @@ class PinnedAuthorityLoader(reporter.AuthorityLoader):
         super().__init__(candidate_root, entries, candidate_sha)
         self.base_loader = base_loader
         self.trusted_paths = trusted_paths
+        self.scratch_root = base_loader.scratch_root
 
     def read_blob(self, relative: str | Path, label: str) -> bytes:
         path = reporter._validate_relative_path(relative, label)
@@ -85,6 +86,37 @@ def _exact_commit(root: Path, value: str, label: str) -> str:
             f"{label} must be an exact full commit SHA"
         )
     return resolved
+
+
+def _prepare_trusted_runtime_root(trusted_root: Path) -> Path:
+    if not hasattr(os, "O_NOFOLLOW"):
+        raise reporter.OwnershipError(
+            "trusted verifier runtime root requires O_NOFOLLOW"
+        )
+    runtime_root = trusted_root / ".validation-ownership-runtime"
+    try:
+        os.mkdir(runtime_root, mode=0o700)
+        entry_stat = os.lstat(runtime_root)
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        descriptor = os.open(runtime_root, flags)
+    except OSError as error:
+        raise reporter.OwnershipError(
+            f"cannot create trusted verifier runtime root: {error}"
+        ) from error
+    try:
+        opened_stat = os.fstat(descriptor)
+        if (
+            opened_stat.st_dev != entry_stat.st_dev
+            or opened_stat.st_ino != entry_stat.st_ino
+            or opened_stat.st_uid != os.getuid()
+            or opened_stat.st_mode & 0o777 != 0o700
+        ):
+            raise reporter.OwnershipError(
+                "trusted verifier runtime root identity is invalid"
+            )
+    finally:
+        os.close(descriptor)
+    return runtime_root
 
 
 def _trusted_paths(
@@ -240,8 +272,9 @@ def _verify_oracle_pairs(
     oracle: dict[str, Any],
     graph: dict[str, Any],
     model: dict[str, Any],
-) -> str:
-    measurement = reporter._measure(oracle, graph, model)
+    base_graph: dict[str, Any],
+    base_model: dict[str, Any],
+) -> tuple[str, str]:
     expected = []
     for probe in oracle["probes"]:
         if "expected_exclusion" in probe:
@@ -266,13 +299,115 @@ def _verify_oracle_pairs(
             }
         )
     expected_bytes = reporter.normalized_json(expected)
-    actual_bytes = reporter.normalized_json(measurement["probes"])
-    if actual_bytes != expected_bytes:
-        raise reporter.OwnershipError(
-            "candidate resolved owner pairs differ byte-for-byte from "
-            "the independent base oracle"
+    measurements = (
+        ("exact base", reporter._measure(oracle, base_graph, base_model)),
+        ("candidate", reporter._measure(oracle, graph, model)),
+    )
+    candidate_bytes = b""
+    for label, measurement in measurements:
+        actual_bytes = reporter.normalized_json(measurement["probes"])
+        if actual_bytes != expected_bytes:
+            raise reporter.OwnershipError(
+                f"{label} resolved owner pairs differ byte-for-byte from "
+                "the independent base oracle"
+            )
+        if label == "candidate":
+            candidate_bytes = actual_bytes
+
+    def authority_records(
+        selected_graph: dict[str, Any],
+        selected_model: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        records = []
+        for probe in oracle["probes"]:
+            if "expected_exclusion" in probe:
+                continue
+            owners = []
+            for expected_owner in sorted(
+                probe["expected_owners"],
+                key=lambda item: (
+                    item["edge_type"],
+                    item["evidence_id"],
+                ),
+            ):
+                matches = [
+                    edge
+                    for edge in selected_graph["edges"]
+                    if edge["source"] == probe["expected_surface"]
+                    and edge["type"] == expected_owner["edge_type"]
+                    and edge["target"] == expected_owner["evidence_id"]
+                ]
+                if len(matches) != 1:
+                    raise reporter.OwnershipError(
+                        "oracle owner pair does not resolve to one exact graph edge"
+                    )
+                evidence_id = expected_owner["evidence_id"]
+                authority = selected_model["authorities"].get(evidence_id)
+                if authority is None:
+                    raise reporter.OwnershipError(
+                        f"oracle owner {evidence_id!r} lacks resolved authority"
+                    )
+                owners.append(
+                    {
+                        "edge_id": matches[0]["id"],
+                        "edge_type": expected_owner["edge_type"],
+                        "evidence_id": evidence_id,
+                        "authority": authority,
+                    }
+                )
+            records.append(
+                {
+                    "path": probe["path"],
+                    "surface": probe["expected_surface"],
+                    "owners": owners,
+                }
+            )
+        return records
+
+    base_records = authority_records(base_graph, base_model)
+    candidate_records = authority_records(graph, model)
+    changed_authorities = {
+        node_id
+        for node_id in (
+            set(base_model["authorities"]) | set(model["authorities"])
         )
-    return hashlib.sha256(actual_bytes).hexdigest()
+        if base_model["authorities"].get(node_id)
+        != model["authorities"].get(node_id)
+    }
+    authority_edges = {
+        edge["id"]
+        for selected_graph in (base_graph, graph)
+        for edge in selected_graph["edges"]
+        if edge["target"] in changed_authorities
+    }
+    invalidation = reporter.compare_graph_edges(
+        graph,
+        base_graph,
+        authority_edges,
+    )
+    oracle_edge_ids = {
+        owner["edge_id"]
+        for records in (base_records, candidate_records)
+        for record in records
+        for owner in record["owners"]
+    }
+    invalidated_oracle_edges = sorted(
+        oracle_edge_ids & set(invalidation["changed_edge_ids"])
+    )
+    base_authority_bytes = reporter.normalized_json(base_records)
+    candidate_authority_bytes = reporter.normalized_json(candidate_records)
+    if (
+        candidate_authority_bytes != base_authority_bytes
+        or invalidated_oracle_edges
+    ):
+        raise reporter.OwnershipError(
+            "candidate retargets exact-base oracle authority "
+            f"(invalidated_edges={invalidated_oracle_edges})"
+        )
+    return (
+        hashlib.sha256(candidate_bytes).hexdigest(),
+        hashlib.sha256(candidate_authority_bytes).hexdigest(),
+    )
 
 
 def verify(
@@ -309,10 +444,12 @@ def verify(
             "candidate SHA does not match the checked-out HEAD"
         )
     base_entries = reporter.git_tree_entries(repository_root, base_sha)
+    runtime_root = _prepare_trusted_runtime_root(trusted_root)
     base_loader = reporter.AuthorityLoader(
         repository_root,
         base_entries,
         base_sha,
+        runtime_root,
     )
     trusted_paths = _trusted_paths(trusted_root, base_loader)
     loaded_before = _verify_loaded_modules(trusted_root, base_loader)
@@ -332,9 +469,29 @@ def verify(
         reporter.PROBE_ORACLE_PATH,
         "base ownership oracle",
     )
+    base_graph = base_loader.read_json(
+        reporter.GRAPH_PATH,
+        "base ownership graph",
+    )
+    reporter.validate_probe_oracle(oracle, base_graph, base_entries)
+    base_model = reporter.validate_graph(
+        base_graph,
+        schema,
+        base_loader,
+        base_entries,
+    )
     reporter.validate_probe_oracle(oracle, graph, entries)
     model = reporter.validate_graph(graph, schema, loader, entries)
-    oracle_pairs_sha256 = _verify_oracle_pairs(oracle, graph, model)
+    (
+        oracle_pairs_sha256,
+        oracle_authority_sha256,
+    ) = _verify_oracle_pairs(
+        oracle,
+        graph,
+        model,
+        base_graph,
+        base_model,
+    )
     loaded_after = _verify_loaded_modules(trusted_root, base_loader)
     return {
         "base_sha": base_sha,
@@ -343,6 +500,7 @@ def verify(
         "coverage_paths": len(model["coverage"]),
         "evidence_authorities": len(model["authorities"]),
         "mode": "exact-base-pinned",
+        "oracle_authority_sha256": oracle_authority_sha256,
         "oracle_pairs_sha256": oracle_pairs_sha256,
         "trusted_modules": sorted(set(loaded_before) | set(loaded_after)),
         "trusted_package_files": len(trusted_paths),

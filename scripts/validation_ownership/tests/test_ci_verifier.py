@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import subprocess
 import tempfile
@@ -15,6 +16,91 @@ SCRATCH_ROOT = ROOT / "build" / "test-artifacts" / "validation-ownership"
 
 
 class BasePinnedVerifierTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.scratch = reporter.prepare_validation_scratch(ROOT)
+
+    @classmethod
+    def tearDownClass(cls):
+        reporter.cleanup_validation_scratch(cls.scratch)
+
+    @staticmethod
+    def authority_fixture():
+        graph = {
+            "nodes": [
+                {
+                    "id": "surface.validation",
+                    "kind": "surface",
+                    "surface_type": "host",
+                    "requirements": [],
+                    "dependencies": [],
+                },
+                {
+                    "id": "surface.host-runtime",
+                    "kind": "surface",
+                    "surface_type": "host",
+                    "requirements": [],
+                    "dependencies": [],
+                },
+                {
+                    "id": "owner.validation-check",
+                    "kind": "evidence",
+                    "evidence_type": "host",
+                    "authority": {
+                        "kind": "workflow-step",
+                        "job": "host-tests",
+                        "step": "Validate validation ownership graph (issue #180)",
+                    },
+                },
+                {
+                    "id": "owner.host-runtime",
+                    "kind": "evidence",
+                    "evidence_type": "host",
+                    "authority": {
+                        "kind": "workflow-step",
+                        "job": "host-tests",
+                        "step": "Run gba-playtest host test suite",
+                    },
+                },
+            ],
+            "edges": [
+                {
+                    "id": "validation.owns-test",
+                    "type": "owns-test",
+                    "source": "surface.validation",
+                    "target": "owner.validation-check",
+                    "reason": "exact ownership fixture",
+                },
+                {
+                    "id": "host-runtime.owns-test",
+                    "type": "owns-test",
+                    "source": "surface.host-runtime",
+                    "target": "owner.host-runtime",
+                    "reason": "host runtime fixture",
+                },
+            ],
+            "path_rules": [],
+        }
+        model = {
+            "authorities": {
+                "owner.validation-check": {
+                    "display": (
+                        ".github/workflows/build.yml:host-tests:"
+                        "Validate validation ownership graph (issue #180)"
+                    ),
+                    "fingerprint": "base-validation-fingerprint",
+                },
+                "owner.host-runtime": {
+                    "display": (
+                        ".github/workflows/build.yml:host-tests:"
+                        "Run gba-playtest host test suite"
+                    ),
+                    "fingerprint": "gba-playtest-fingerprint",
+                },
+            }
+        }
+        return graph, model
+
     def test_candidate_owner_redirect_rejects_exact_base_oracle(self):
         oracle = {
             "probes": [
@@ -44,12 +130,19 @@ class BasePinnedVerifierTests(unittest.TestCase):
                 }
             ]
         }
+        graph, model = self.authority_fixture()
         with mock.patch.object(
             reporter,
             "_measure",
             return_value=matching,
         ):
-            ci_verifier._verify_oracle_pairs(oracle, {}, {})
+            ci_verifier._verify_oracle_pairs(
+                oracle,
+                graph,
+                model,
+                graph,
+                model,
+            )
 
         redirected = {
             "probes": [
@@ -73,7 +166,182 @@ class BasePinnedVerifierTests(unittest.TestCase):
             reporter.OwnershipError,
             "differ byte-for-byte",
         ):
-            ci_verifier._verify_oracle_pairs(oracle, {}, {})
+            ci_verifier._verify_oracle_pairs(
+                oracle,
+                graph,
+                model,
+                graph,
+                model,
+            )
+
+    def test_exact_base_oracle_rejects_authority_retarget_and_fingerprint(self):
+        oracle = {
+            "probes": [
+                {
+                    "path": "scripts/validation_ownership/reporter.py",
+                    "expected_surface": "surface.validation",
+                    "expected_owners": [
+                        {
+                            "edge_type": "owns-test",
+                            "evidence_id": "owner.validation-check",
+                        }
+                    ],
+                }
+            ]
+        }
+        measurement = {
+            "probes": [
+                {
+                    "path": "scripts/validation_ownership/reporter.py",
+                    "surface": "surface.validation",
+                    "owners": [
+                        {
+                            "edge_type": "owns-test",
+                            "evidence_id": "owner.validation-check",
+                        }
+                    ],
+                }
+            ]
+        }
+        base_graph, base_model = self.authority_fixture()
+
+        retargeted_graph = copy.deepcopy(base_graph)
+        retargeted_node = next(
+            node
+            for node in retargeted_graph["nodes"]
+            if node["id"] == "owner.validation-check"
+        )
+        runtime_node = next(
+            node
+            for node in retargeted_graph["nodes"]
+            if node["id"] == "owner.host-runtime"
+        )
+        retargeted_node["authority"], runtime_node["authority"] = (
+            runtime_node["authority"],
+            retargeted_node["authority"],
+        )
+        retargeted_model = copy.deepcopy(base_model)
+        (
+            retargeted_model["authorities"]["owner.validation-check"],
+            retargeted_model["authorities"]["owner.host-runtime"],
+        ) = (
+            retargeted_model["authorities"]["owner.host-runtime"],
+            retargeted_model["authorities"]["owner.validation-check"],
+        )
+        with mock.patch.object(
+            reporter,
+            "_measure",
+            return_value=measurement,
+        ), self.assertRaisesRegex(
+            reporter.OwnershipError,
+            "retargets exact-base oracle authority",
+        ):
+            ci_verifier._verify_oracle_pairs(
+                oracle,
+                retargeted_graph,
+                retargeted_model,
+                base_graph,
+                base_model,
+            )
+
+        changed_fingerprint = copy.deepcopy(base_model)
+        changed_fingerprint["authorities"]["owner.validation-check"][
+            "fingerprint"
+        ] = "redirected-command-fingerprint"
+        with mock.patch.object(
+            reporter,
+            "_measure",
+            return_value=measurement,
+        ), self.assertRaisesRegex(
+            reporter.OwnershipError,
+            "retargets exact-base oracle authority",
+        ):
+            ci_verifier._verify_oracle_pairs(
+                oracle,
+                base_graph,
+                changed_fingerprint,
+                base_graph,
+                base_model,
+            )
+
+    def test_exact_base_oracle_allows_unrelated_semantic_stability(self):
+        oracle = {
+            "probes": [
+                {
+                    "path": "scripts/validation_ownership/reporter.py",
+                    "expected_surface": "surface.validation",
+                    "expected_owners": [
+                        {
+                            "edge_type": "owns-test",
+                            "evidence_id": "owner.validation-check",
+                        }
+                    ],
+                }
+            ]
+        }
+        measurement = {
+            "probes": [
+                {
+                    "path": "scripts/validation_ownership/reporter.py",
+                    "surface": "surface.validation",
+                    "owners": [
+                        {
+                            "edge_type": "owns-test",
+                            "evidence_id": "owner.validation-check",
+                        }
+                    ],
+                }
+            ]
+        }
+        base_graph, base_model = self.authority_fixture()
+        candidate_graph = copy.deepcopy(base_graph)
+        candidate_graph["nodes"].extend(
+            [
+                {
+                    "id": "surface.unrelated",
+                    "kind": "surface",
+                    "surface_type": "host",
+                    "requirements": [],
+                    "dependencies": [],
+                },
+                {
+                    "id": "owner.unrelated",
+                    "kind": "evidence",
+                    "evidence_type": "host",
+                    "authority": {
+                        "kind": "workflow-step",
+                        "job": "host-tests",
+                        "step": "Unrelated step",
+                    },
+                },
+            ]
+        )
+        candidate_graph["edges"].append(
+            {
+                "id": "unrelated.owns-test",
+                "type": "owns-test",
+                "source": "surface.unrelated",
+                "target": "owner.unrelated",
+                "reason": "unrelated semantic fixture",
+            }
+        )
+        candidate_model = copy.deepcopy(base_model)
+        candidate_model["authorities"]["owner.unrelated"] = {
+            "display": ".github/workflows/build.yml:host-tests:Unrelated step",
+            "fingerprint": "unrelated-fingerprint",
+        }
+        with mock.patch.object(
+            reporter,
+            "_measure",
+            return_value=measurement,
+        ):
+            ci_verifier._verify_oracle_pairs(
+                oracle,
+                candidate_graph,
+                candidate_model,
+                base_graph,
+                base_model,
+            )
 
     def test_base_verifier_step_is_a_pinned_security_boundary(self):
         step = (
@@ -93,6 +361,45 @@ class BasePinnedVerifierTests(unittest.TestCase):
             ci_verifier._base_step(changed),
             ci_verifier._base_step(workflow),
         )
+
+    def test_trusted_runtime_root_is_external_unique_and_no_follow(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            base = Path(directory)
+            trusted = base / "trusted"
+            trusted.mkdir(mode=0o700)
+            runtime = ci_verifier._prepare_trusted_runtime_root(trusted)
+            self.assertEqual(runtime.parent, trusted)
+            self.assertTrue(runtime.is_dir())
+            self.assertFalse(runtime.is_symlink())
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "cannot create trusted verifier runtime root",
+            ):
+                ci_verifier._prepare_trusted_runtime_root(trusted)
+
+            outside = base / "outside"
+            sentinel = outside / "sentinel"
+            outside.mkdir()
+            sentinel.write_text("preserve\n", encoding="ascii")
+            linked_trusted = base / "linked-trusted"
+            linked_trusted.mkdir(mode=0o700)
+            (linked_trusted / ".validation-ownership-runtime").symlink_to(
+                outside,
+                target_is_directory=True,
+            )
+            with self.assertRaisesRegex(
+                reporter.OwnershipError,
+                "cannot create trusted verifier runtime root",
+            ):
+                ci_verifier._prepare_trusted_runtime_root(linked_trusted)
+            self.assertEqual(
+                sentinel.read_text(encoding="ascii"),
+                "preserve\n",
+            )
+            self.assertEqual(
+                {item.name for item in outside.iterdir()},
+                {"sentinel"},
+            )
 
     def test_candidate_reporter_and_interceptor_cannot_replace_base_authority(self):
         with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:

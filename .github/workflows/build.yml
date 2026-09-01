@@ -539,6 +539,7 @@ jobs:
         MFLAGS: ''
         PATH: /usr/bin:/bin
         PYTHONPATH: ''
+        VALIDATION_OWNERSHIP_TEMP: ${{ runner.temp }}
       run: |
         set -euo pipefail
         if [ "$BUILD_EVENT_NAME" != pull_request ]; then
@@ -546,9 +547,36 @@ jobs:
             "$BUILD_EVENT_NAME"
           exit 0
         fi
-        trusted_root="$GITHUB_WORKSPACE/build/test-artifacts/validation-ownership-base"
-        rm -rf -- "$trusted_root"
-        mkdir -p "$trusted_root"
+        test -d "$VALIDATION_OWNERSHIP_TEMP"
+        test ! -L "$VALIDATION_OWNERSHIP_TEMP"
+        validation_temp="$(/usr/bin/realpath "$VALIDATION_OWNERSHIP_TEMP")"
+        test "$(/usr/bin/stat -c %u "$validation_temp")" = "$(/usr/bin/id -u)"
+        trusted_root="$(/usr/bin/mktemp --directory \
+          --tmpdir="$validation_temp" validation-ownership-base.XXXXXXXXXX)"
+        test -d "$trusted_root"
+        test ! -L "$trusted_root"
+        test "$(/usr/bin/dirname "$trusted_root")" = "$validation_temp"
+        test "$(/usr/bin/stat -c %a "$trusted_root")" = 700
+        trusted_root_identity="$(/usr/bin/stat -Lc %d:%i "$trusted_root")"
+        cleanup_trusted_root() {
+          status="$?"
+          trap - EXIT
+          cleanup_status=0
+          if [ ! -d "$trusted_root" ] ||
+             [ -L "$trusted_root" ] ||
+             [ "$(/usr/bin/realpath "$trusted_root")" != "$trusted_root" ] ||
+             [ "$(/usr/bin/stat -Lc %d:%i "$trusted_root")" != \
+               "$trusted_root_identity" ]; then
+            cleanup_status=1
+          elif ! /bin/rm -rf --one-file-system -- "$trusted_root"; then
+            cleanup_status=1
+          fi
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          exit "$cleanup_status"
+        }
+        trap cleanup_trusted_root EXIT
         test "$(/usr/bin/git rev-parse HEAD)" = "$EXPECTED_CANDIDATE_SHA"
         /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA^{commit}"
         if /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA:scripts/validation_ownership/ci_verifier.py" &&

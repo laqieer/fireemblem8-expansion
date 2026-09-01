@@ -22,6 +22,14 @@ PROBE_INPUTS = (
 
 
 class AuthoritativeMakeProbeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.scratch = reporter.prepare_validation_scratch(ROOT)
+
+    @classmethod
+    def tearDownClass(cls):
+        reporter.cleanup_validation_scratch(cls.scratch)
+
     def test_candidate_generated_registry_is_confined_typed_authority(self):
         registry = (
             "import os\n"
@@ -102,6 +110,71 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 "0" * 40,
             )
         return directory, root, entries
+
+    def test_live_probe_rejects_every_scratch_symlink_before_writes(self):
+        parts = ("build", "test-artifacts", "validation-ownership")
+        for symlink_component in parts:
+            with self.subTest(component=symlink_component):
+                with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+                    base = Path(directory)
+                    root = base / "repo"
+                    outside = base / "outside"
+                    root.mkdir()
+                    outside.mkdir()
+                    sentinel = outside / "sentinel"
+                    sentinel.write_text("preserve\n", encoding="ascii")
+                    (root / "Makefile").write_text(
+                        "all:\n\t@true\n",
+                        encoding="ascii",
+                    )
+                    entries = {
+                        "Makefile": reporter.GitTreeEntry(
+                            "Makefile",
+                            "100644",
+                            "blob",
+                            "0" * 40,
+                        )
+                    }
+                    current = root
+                    for part in parts:
+                        target = current / part
+                        if part == symlink_component:
+                            target.symlink_to(outside, target_is_directory=True)
+                            if part == "build":
+                                entries["build"] = reporter.GitTreeEntry(
+                                    "build",
+                                    "120000",
+                                    "blob",
+                                    "0" * 40,
+                                )
+                            break
+                        target.mkdir()
+                        current = target
+
+                    with self.assertRaisesRegex(
+                        make_probe.MakeProbeError,
+                        "tracked Git object|non-symlink directory",
+                    ):
+                        make_probe.run_probe(
+                            reporter.AuthorityLoader(root, entries),
+                            {"all"},
+                            {},
+                            {},
+                            scratch_root=(
+                                root
+                                / "build"
+                                / "test-artifacts"
+                                / "validation-ownership"
+                            ),
+                        )
+                    self.assertEqual(
+                        sentinel.read_text(encoding="ascii"),
+                        "preserve\n",
+                    )
+                    self.assertEqual(
+                        {item.name for item in outside.iterdir()},
+                        {"sentinel"},
+                    )
 
     def probe(
         self,

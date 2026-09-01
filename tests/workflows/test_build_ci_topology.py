@@ -13,6 +13,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from scripts.validation_ownership import reporter as ownership_reporter
 from scripts.workflow_pilot import (
     candidate_evidence,
     event_classifier,
@@ -160,6 +161,9 @@ VALIDATION_OWNERSHIP_CANDIDATE_SHA_ENV = (
     "'success' && needs.event-classifier.outputs.expected_head) || "
     "needs.event-identity.outputs.fallback_sha || '' }}"
 )
+VALIDATION_OWNERSHIP_TEMP_ENV = (
+    "        VALIDATION_OWNERSHIP_TEMP: ${{ runner.temp }}"
+)
 VALIDATION_OWNERSHIP_BASE_CONTRACT = (
     "        BUILD_EVENT_NAME: ${{ github.event_name }}",
     VALIDATION_OWNERSHIP_BASE_SHA_ENV,
@@ -171,6 +175,10 @@ VALIDATION_OWNERSHIP_BASE_CONTRACT = (
     'VO_REPOSITORY_ROOT="$GITHUB_WORKSPACE"',
     'VO_BASE_SHA="$EXPECTED_BASE_SHA"',
     'VO_CANDIDATE_SHA="$EXPECTED_CANDIDATE_SHA"',
+    'test ! -L "$VALIDATION_OWNERSHIP_TEMP"',
+    "/usr/bin/mktemp --directory",
+    'validation-ownership-base.XXXXXXXXXX',
+    '/bin/rm -rf --one-file-system -- "$trusted_root"',
     "validation-ownership: bootstrap-not-authoritative",
 )
 EXPECTED_BUILD_SHA_EXPRESSION = (
@@ -652,6 +660,7 @@ def _base_step_has_scrubbed_environment(step: str) -> bool:
         VALIDATION_OWNERSHIP_BASE_SHA_ENV,
         VALIDATION_OWNERSHIP_CANDIDATE_SHA_ENV,
         *VALIDATION_OWNERSHIP_STEP_ENV[2:],
+        VALIDATION_OWNERSHIP_TEMP_ENV,
     )
     return tuple(entries) == expected
 
@@ -3899,6 +3908,14 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 'if [ "$BUILD_EVENT_NAME" != pull_request ]; then',
                 'if [ "$BUILD_EVENT_NAME" = pull_request ]; then',
             ),
+            (
+                '--tmpdir="$validation_temp" validation-ownership-base.XXXXXXXXXX',
+                '--tmpdir="$GITHUB_WORKSPACE/build" validation-ownership-base',
+            ),
+            (
+                'test ! -L "$VALIDATION_OWNERSHIP_TEMP"',
+                'test -d "$VALIDATION_OWNERSHIP_TEMP"',
+            ),
         )
         for original, replacement in mutations:
             with self.subTest(original=original):
@@ -3911,6 +3928,93 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         for error in _errors(changed, False)
                     )
                 )
+
+    def test_validation_ownership_base_scratch_ignores_candidate_build_symlink(self):
+        host_tests = _job_blocks(self.text)["host-tests"]
+        step = next(
+            item
+            for item in _step_blocks(host_tests)
+            if _step_name(item) == VALIDATION_OWNERSHIP_BASE_STEP
+        )
+        run_block = step.split("      run: |\n", 1)[1]
+        script = "\n".join(
+            line[8:] for line in run_block.splitlines()
+        )
+        prelude = script[
+            : script.index('test "$(/usr/bin/git rev-parse HEAD)"')
+        ]
+        scratch = ownership_reporter.prepare_validation_scratch(ROOT)
+        try:
+            with tempfile.TemporaryDirectory(dir=scratch.path) as directory:
+                base = Path(directory)
+                candidate = base / "candidate"
+                outside = base / "outside"
+                runner_temp = base / "runner-temp"
+                candidate.mkdir()
+                outside.mkdir()
+                runner_temp.mkdir()
+                sentinel = outside / "sentinel"
+                sentinel.write_text("preserve\n", encoding="ascii")
+                (candidate / "build").symlink_to(
+                    outside,
+                    target_is_directory=True,
+                )
+                environment = {
+                    "BASH_ENV": "",
+                    "BUILD_EVENT_NAME": "pull_request",
+                    "ENV": "",
+                    "PATH": "/usr/bin:/bin",
+                    "VALIDATION_OWNERSHIP_TEMP": str(runner_temp),
+                }
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "--noprofile",
+                        "--norc",
+                        "-c",
+                        prelude,
+                    ],
+                    cwd=candidate,
+                    env=environment,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(
+                    sentinel.read_text(encoding="ascii"),
+                    "preserve\n",
+                )
+                self.assertEqual(
+                    {item.name for item in outside.iterdir()},
+                    {"sentinel"},
+                )
+                self.assertEqual(list(runner_temp.iterdir()), [])
+
+                runner_link = base / "runner-link"
+                runner_link.symlink_to(outside, target_is_directory=True)
+                environment["VALIDATION_OWNERSHIP_TEMP"] = str(runner_link)
+                rejected = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "--noprofile",
+                        "--norc",
+                        "-c",
+                        prelude,
+                    ],
+                    cwd=candidate,
+                    env=environment,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertEqual(
+                    {item.name for item in outside.iterdir()},
+                    {"sentinel"},
+                )
+        finally:
+            ownership_reporter.cleanup_validation_scratch(scratch)
 
     def test_workflow_pilot_steps_reject_spaced_protected_keys(self):
         changed = self.text

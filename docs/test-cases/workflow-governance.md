@@ -1403,7 +1403,10 @@ game behavior needs a compensating change.
    every edge family, delete and restore the graph copy, mutate Make/workflow
    authority, add unknown and overlapping paths, create cycles, duplicate
    owners, remove dependents, replace targets with stale identities, introduce
-   symlink/gitlink modes, and disconnect each lifecycle trigger. Confirm direct
+   symlink/gitlink modes, replace every scratch path component with an external
+   symlink, retarget an oracle owner to another live workflow step, and
+   disconnect each lifecycle trigger. Confirm outside sentinels survive and no
+   external directory is created. Confirm direct
    GNU Make comparisons cover all 80 CLI domains, environment/fallback origins,
    `MODE=two`, `$(eval $(RULE))`, a concrete `%.out: %.in` recipe mutation,
    target-local/automatic/braced/one-character variables, literal missing
@@ -1439,6 +1442,9 @@ workflow owners are mismatches and failed public checks.
 Domain-separated graph, schema, and resolved-edge seals change when semantic
 authority changes. Comparing a prior Git revision invalidates review from
 authoritative edge or target-authority changes, not filenames or commit prose.
+The base-pinned verifier additionally requires every oracle-backed edge's
+resolved authority fingerprint to equal the exact base and rejects trusted
+edge invalidation even when the surface, evidence ID, and edge type stay fixed.
 
 ### Negative control
 
@@ -1456,6 +1462,10 @@ evaluator; exact concrete closures, pattern stems, expanded recipes, terminal
 inputs, includes, dynamic outputs, errors, argv, environment, and tool
 identities participate in authority. Comments and unrelated targets stay
 stable only when their observed target semantics stay stable.
+Every local scratch path component is opened relative to the trusted
+repository descriptor with no symlink following before any temporary
+directory is created. Tracked `build` and intermediate `test-artifacts` or
+`validation-ownership` symlinks reject without touching their destinations.
 
 Behavioral fixtures compare direct GNU Make with `MODE=two` conditional
 selection, multiple words, nested functions and variables, `$(eval $(RULE))`,
@@ -1503,13 +1513,19 @@ Loss of both modes, a different sudo/unshare path, or retained root identity
 rejects.
 
 For pull requests whose exact base contains the verifier package, host CI
-archives the clean base and invokes its `ci_gate.mk`/`ci_verifier.py` against
-the exact candidate Git tree. Every trusted package and loaded module identity
-comes from base Git objects, and candidate paths never enter verifier
+archives the clean base into an unpredictable, inode-checked directory below
+the trusted runner temporary root and invokes its `ci_gate.mk`/`ci_verifier.py`
+against the exact candidate Git tree. It never creates or recursively removes
+staging below candidate `build`; trusted Make and registry probes also use
+that external verifier runtime. Every trusted package and loaded module
+identity comes from base Git objects, and candidate paths never enter verifier
 `sys.path`; compromised candidate reporter/interceptor fixtures remain data,
-not authority. After full trusted graph validation, resolved candidate
-`(edge_type, evidence_id)` pairs must also equal the independent base oracle
-byte-for-byte; a shape-valid self-checker/owner redirect rejects.
+not authority. After full trusted validation of both graph versions, resolved
+candidate `(edge_type, evidence_id)` pairs must equal the independent base
+oracle byte-for-byte, oracle-backed authority fingerprints must equal the
+exact base, and trusted edge invalidation must be empty for those edges. A
+shape-valid retarget from `owner.validation-check` to the live gba-playtest
+workflow step therefore rejects; an unrelated semantics-stable change passes.
 This introducing PR emits the explicit
 `bootstrap-not-authoritative` state because its base lacks the package, while
 candidate tests/public checks continue and direct adversarial review supplies

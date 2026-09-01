@@ -818,6 +818,7 @@ _BASE_VERIFIER_ENV = (
     "EXPECTED_CANDIDATE_SHA: ${{ (needs.event-classifier.result == 'success' && "
     "needs.event-classifier.outputs.expected_head) || "
     "needs.event-identity.outputs.fallback_sha || '' }}",
+    "VALIDATION_OWNERSHIP_TEMP: ${{ runner.temp }}",
 )
 _PRIVATE_STEP_ENV = (
     ("BASH_ENV", "''"),
