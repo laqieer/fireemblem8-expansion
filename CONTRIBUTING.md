@@ -93,18 +93,23 @@ invoke `trusted_review_gate.py` only from the exact clean authoritative PR
 base, object-bind the complete local import graph before imports, and reject
 any tracked/index/untracked state or candidate path. The introducing PR uses
 fail-closed `introduction` mode because its actual base lacks the checker.
-Later PRs require exact `baseRefOid`/`headRefOid`, status-aware base/head blob
-records, an immutable local-finding receipt issued before remote review,
-separately collected GitHub findings, and class/outcome-specific base-owned
-assertions. The original pre-review receipt remains bound to first-reviewed
-head A; every B/C remediation head has separate chronological Git coverage,
-execution receipt, and remote review evidence. Candidates reference
-member-specific registry assertion IDs only and cannot choose one arbitrary
-file as unrelated evidence. The checker runs the exact-base assertion program
-with fixed isolated argv over read-only finding-origin/remediation artifacts
-and binds program/input/output identities in each receipt. Only exact
-top-level green approval or legacy exact clean text is clean. `pushedDate`
-never reconstructs head history.
+Later PRs require exact `baseRefOid`/`headRefOid`, an authoritative trigger
+decision (currently the reviewed `.github/workflow-pilot-decisions.json`
+record) whose risk/threshold evidence exactly matches the candidate contract,
+status-aware base/head blob records, an immutable local-finding receipt issued
+before remote review, separately collected GitHub findings, and
+class/outcome-specific base-owned assertions. The original pre-review receipt
+remains bound to first-reviewed head A; every remediation head has separate
+chronological Git coverage, execution receipt, and remote review evidence.
+Held-head pre-push checks bind current remote head A separately from clean
+local candidate B, and B must descend from A before `trusted_push_allowed`
+can become true. Candidates reference member-specific registry assertion IDs
+only and cannot choose one arbitrary file or witness sidecar as unrelated
+evidence. The checker runs the exact-base assertion program with fixed
+isolated argv over read-only real production workflow-governance artifacts and
+binds program/input/output identities in each receipt. Only exact top-level
+green approval or legacy exact clean text is clean. `pushedDate` never
+reconstructs head history.
 
 Both PR and master Build runs execute `host-tests`, `build`,
 `extended-host-tests`, `legacy`, and the seconds-only fail-closed `summary` in

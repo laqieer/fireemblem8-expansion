@@ -25,6 +25,7 @@ GIT = "/usr/bin/git"
 BASE_CHECKER_PATH = "scripts/workflow_pilot/review_base_checker.py"
 ASSERTION_PROGRAM_PATH = "scripts/workflow_pilot/review_assertions.py"
 TRUSTED_GATE_PATH = "scripts/workflow_pilot/trusted_review_gate.py"
+DECISION_RECORD_PATH = ".github/workflow-pilot-decisions.json"
 TRUSTED_REQUIRED_PATHS = {
     "scripts/workflow_pilot/__init__.py",
     TRUSTED_GATE_PATH,
@@ -46,16 +47,21 @@ ASSERTION_PROGRAM_ARGV = (
     "review_assertions.py",
     "--stdin",
 )
-ASSERTION_SUBJECT_PATHS = tuple(
-    f"scripts/workflow_pilot/assertion_subjects/{family}_{member.replace('-', '_')}.json"
-    for family, members in {
-        "action": ("actions", "items", "targets"),
-        "generated": ("owners", "outputs", "consumers", "drift-checks"),
-        "lifecycle": ("entries", "preservation", "resets", "terminals"),
-        "resource": ("enabled", "disabled"),
-        "wire": ("producers", "consumers", "validators", "replay", "stale-bindings"),
-    }.items()
-    for member in members
+ASSERTION_INPUT_PATHS = (
+    DECISION_RECORD_PATH,
+    ".github/skills/development-workflow/SKILL.md",
+    "docs/test-cases/registry.json",
+    "docs/test-cases/workflow-governance.md",
+    "docs/workflow-pilot.md",
+    "scripts/docs_check_tests/test_check_docs.py",
+    "scripts/docs_check_tests/test_development_workflow_skill.py",
+    "scripts/workflow_pilot/candidate_evidence.py",
+    "scripts/workflow_pilot/event_classifier.py",
+    "scripts/workflow_pilot/review_assertions.py",
+    "scripts/workflow_pilot/review_base_checker.py",
+    "scripts/workflow_pilot/review_family.py",
+    "scripts/workflow_pilot/trusted_review_gate.py",
+    "tests/workflows/test_build_ci_topology.py",
 )
 RECEIPT_DOMAIN = b"workflow-review-authenticated-envelope-v2\0"
 EXECUTION_RECEIPT_DOMAIN = b"workflow-review-execution-receipt-v2\0"
@@ -581,13 +587,123 @@ def _base_contains_gate(repository_root: Path, base_sha: str) -> bool:
         TRUSTED_GATE_PATH,
         BASE_CHECKER_PATH,
         ASSERTION_PROGRAM_PATH,
-        *ASSERTION_SUBJECT_PATHS,
+        *ASSERTION_INPUT_PATHS,
     ):
         try:
             reporter.run_git(repository_root, "cat-file", "-e", f"{base_sha}:{path}")
         except reporter.PilotDataError:
             return False
     return True
+
+
+def _load_authoritative_trigger(
+    contract: dict[str, Any],
+    repository_root: Path,
+    candidate_sha: str,
+    *,
+    decision_record_path: Path | None = None,
+) -> dict[str, Any]:
+    root = reporter.validate_repository_root(repository_root)
+    path = (
+        (root / DECISION_RECORD_PATH)
+        if decision_record_path is None
+        else decision_record_path.resolve()
+    )
+    if path.is_symlink() or not path.is_file():
+        raise reporter.PilotDataError(
+            "authoritative trigger decision record is unavailable"
+        )
+    try:
+        raw = reporter.parse_json(
+            path.read_text(encoding="utf-8"),
+            str(path),
+        )
+    except OSError as error:
+        raise reporter.PilotDataError(
+            "authoritative trigger decision record is unavailable"
+        ) from error
+    decisions = reporter.expect_object(raw, "authoritative trigger decisions")
+    reporter.expect_keys(
+        decisions,
+        "authoritative trigger decisions",
+        ("schema_version", "pull_requests", "artifacts"),
+    )
+    if reporter.expect_int(
+        decisions["schema_version"],
+        "authoritative trigger decisions.schema_version",
+        1,
+    ) != reporter.SCHEMA_VERSION:
+        raise reporter.PilotDataError(
+            "authoritative trigger decision schema version is invalid"
+        )
+    matches = []
+    seen_prs = set()
+    for index, raw_record in enumerate(
+        reporter.expect_list(
+            decisions["pull_requests"],
+            "authoritative trigger decisions.pull_requests",
+        )
+    ):
+        label = f"authoritative trigger decisions.pull_requests[{index}]"
+        record = reporter.expect_object(raw_record, label)
+        reporter.expect_keys(
+            record,
+            label,
+            (
+                "pull_request",
+                "risk_boundaries",
+                "threshold",
+                "gate_mode",
+                "stack",
+                "pilot",
+            ),
+        )
+        pull_request = reporter.expect_int(
+            record["pull_request"], f"{label}.pull_request", 1
+        )
+        if pull_request in seen_prs:
+            raise reporter.PilotDataError(
+                f"authoritative trigger decision record repeats PR {pull_request}"
+            )
+        seen_prs.add(pull_request)
+        if pull_request != contract["pull_request"]:
+            continue
+        threshold = reporter.expect_object(record["threshold"], f"{label}.threshold")
+        reporter.expect_keys(
+            threshold, f"{label}.threshold", ("triggers", "override_history")
+        )
+        matches.append(
+            review_family.normalize_trigger_fields(
+                record["risk_boundaries"],
+                threshold["triggers"],
+                label=label,
+            )
+        )
+    if not matches:
+        raise reporter.PilotDataError(
+            "authoritative trigger decision record has no entry for the exact PR"
+        )
+    trigger = matches[0]
+    if trigger != contract["trigger"]:
+        raise reporter.PilotDataError(
+            "candidate trigger does not match the authoritative decision record"
+        )
+    blob_oid = _minimal_git(
+        root,
+        "hash-object",
+        "--no-filters",
+        str(path),
+    ).decode("ascii").strip()
+    return {
+        "path": DECISION_RECORD_PATH,
+        "blob_oid": blob_oid,
+        "pull_request": contract["pull_request"],
+        "base_sha": contract["base_sha"],
+        "candidate_sha": candidate_sha,
+        "risk_boundaries": trigger["risk_boundaries"],
+        "threshold_triggers": trigger["threshold_triggers"],
+        "pre_review_required": review_family.trigger_requires_pre_review(trigger),
+    }
 
 
 def run_base_pinned_checker(
@@ -689,7 +805,6 @@ def run_base_pinned_checker(
         "all_remote_reviews": all_remote_reviews,
         "remote_findings": remote_findings,
         "trust_mode": contract["trust_mode"],
-        "pre_review_required": contract["pre_review_required"],
         "changed_files": changed_files,
         "changes": changes,
         "remote_finding_ids": sorted(remote_finding_ids),
@@ -717,7 +832,7 @@ def run_base_pinned_checker(
     origin_root.mkdir()
     head_root.mkdir()
     assertion_input_artifacts = []
-    for relative in ASSERTION_SUBJECT_PATHS:
+    for relative in ASSERTION_INPUT_PATHS:
         origin_bytes = reporter.run_git(
             root, "show", f"{finding_origin_sha}:{relative}"
         )
@@ -1027,17 +1142,26 @@ def _parse_disposition_comments(
 def collect_live_evidence_bytes(
     raw_contract: Any,
     repository_root: Path,
+    expected_remote_head: str,
     expected_candidate: str,
     review_report: dict[str, Any],
     receipt_envelope: dict[str, Any],
     execution_receipts: list[dict[str, Any]],
     *,
+    authoritative_trigger: dict[str, Any] | None = None,
     adapter: GhApiAdapter | None = None,
     clock: Callable[[], datetime] = _utc_now,
 ) -> bytes:
     """Collect credentialed state without executing any candidate module."""
     contract = review_family.validate_contract(raw_contract)
     root = reporter.validate_repository_root(repository_root)
+    local_head = reporter.run_git(
+        root, "rev-parse", "--verify", "HEAD^{commit}"
+    ).decode("ascii").strip()
+    if local_head != expected_candidate or contract["candidate_sha"] != expected_candidate:
+        raise reporter.PilotDataError(
+            "candidate checkout does not match the exact local candidate head"
+        )
     payload = reporter.expect_object(
         (adapter or GhApiAdapter()).fetch(
             contract["repository"], contract["pull_request"]
@@ -1082,9 +1206,9 @@ def collect_live_evidence_bytes(
         raise reporter.PilotDataError(
             "contract/trusted checker base does not equal authoritative PR base OID"
         )
-    if head != expected_candidate or head != contract["candidate_sha"]:
+    if head != expected_remote_head:
         raise reporter.PilotDataError(
-            "authoritative PR head does not equal the exact candidate"
+            "authoritative PR head does not equal the expected remote head"
         )
     if review_report["candidate_sha"] != contract["original_pre_review_head"]:
         raise reporter.PilotDataError(
@@ -1318,7 +1442,7 @@ def collect_live_evidence_bytes(
                 "the immutable pre-review receipt"
             )
     pre_reviews = []
-    if contract["pre_review_required"]:
+    if authoritative_trigger is not None and authoritative_trigger["pre_review_required"]:
         pre_reviews.append(
             {
                 "id": review_report["report_id"],
@@ -1350,7 +1474,7 @@ def collect_live_evidence_bytes(
         "repository": contract["repository"],
         "source": {"kind": "live-gh-api", "complete": True},
         "captured_at": _format_time(clock()),
-        "candidate": {"sha": head},
+        "candidate": {"sha": expected_candidate},
         "original_pre_review_head": contract["original_pre_review_head"],
         "original_receipt_sha256": hashlib.sha256(
             reporter.normalized_json(receipt_envelope)
@@ -1360,8 +1484,10 @@ def collect_live_evidence_bytes(
             "node_id": pr["id"],
             "created_at": pr["createdAt"],
             "base_sha": base,
+            "head_sha": head,
             "author_actor_id": author["id"],
         },
+        "authoritative_trigger": authoritative_trigger,
         "result_source_path": review_family.RESULT_SOURCE_PATH,
         "actors": actors,
         "pre_reviews": pre_reviews,
@@ -1444,6 +1570,7 @@ def _run_trusted_gate(
     raw_contract: Any,
     repository_root: Path,
     expected_candidate: str,
+    expected_remote_head: str | None,
     expected_base: str,
     review_receipt_bytes: bytes,
     replay_store: Path,
@@ -1452,16 +1579,43 @@ def _run_trusted_gate(
     trusted_key: bytes,
     current_time: datetime,
     pre_review_state: str = "new",
+    decision_record_path: Path | None = None,
     adapter: GhApiAdapter | None = None,
     clock: Callable[[], datetime] = _utc_now,
 ) -> dict[str, Any]:
     contract = review_family.validate_contract(raw_contract)
+    expected_remote_head = (
+        expected_candidate
+        if expected_remote_head is None
+        else reporter.expect_sha(expected_remote_head, "expected remote head")
+    )
     if pre_review_state not in {"new", "preserved"}:
         raise reporter.PilotDataError("pre-review state is not supported")
     if contract["base_sha"] != expected_base:
         raise reporter.PilotDataError(
             "contract base does not equal externally authoritative PR base"
         )
+    root = reporter.validate_repository_root(repository_root)
+    local_head = reporter.run_git(
+        root, "rev-parse", "--verify", "HEAD^{commit}"
+    ).decode("ascii").strip()
+    if local_head != expected_candidate:
+        raise reporter.PilotDataError(
+            "candidate checkout does not match the exact local candidate head"
+        )
+    if expected_remote_head != expected_candidate:
+        try:
+            reporter.run_git(
+                root,
+                "merge-base",
+                "--is-ancestor",
+                expected_remote_head,
+                expected_candidate,
+            )
+        except reporter.PilotDataError as error:
+            raise reporter.PilotDataError(
+                "proposed local candidate is not a descendant of the current remote head"
+            ) from error
     report_bytes, envelope = _verify_signed_receipt_bytes(
         review_receipt_bytes,
         repository=contract["repository"],
@@ -1482,13 +1636,25 @@ def _run_trusted_gate(
         ),
         "authenticated independent pre-review",
     )
+    authoritative_trigger = None
+    if contract["trust_mode"] != "introduction" and _base_contains_gate(
+        repository_root, expected_base
+    ):
+        authoritative_trigger = _load_authoritative_trigger(
+            contract,
+            repository_root,
+            expected_candidate,
+            decision_record_path=decision_record_path,
+        )
     first_evidence_bytes = collect_live_evidence_bytes(
         raw_contract,
         repository_root,
+        expected_remote_head,
         expected_candidate,
         review_report,
         envelope,
         [],
+        authoritative_trigger=authoritative_trigger,
         adapter=adapter,
         clock=clock,
     )
@@ -1574,10 +1740,12 @@ def _run_trusted_gate(
     second_evidence = collect_live_evidence_bytes(
         raw_contract,
         repository_root,
+        expected_remote_head,
         expected_candidate,
         review_report,
         envelope,
         execution_receipts,
+        authoritative_trigger=authoritative_trigger,
         adapter=adapter,
         clock=clock,
     )
@@ -1621,7 +1789,9 @@ def parse_args(argv: list[str] | None = None) -> Any:
     parser.add_argument("--candidate-root", type=Path, required=True)
     parser.add_argument("--expected-base", required=True)
     parser.add_argument("--expected-candidate", required=True)
+    parser.add_argument("--expected-remote-head")
     parser.add_argument("--contract", type=Path, required=True)
+    parser.add_argument("--decision-record", type=Path)
     parser.add_argument("--review-receipt", type=Path)
     parser.add_argument(
         "--pre-review-state",
@@ -1696,6 +1866,7 @@ def main(argv: list[str] | None = None) -> int:
             raw_contract=raw_contract,
             repository_root=args.candidate_root,
             expected_candidate=args.expected_candidate,
+            expected_remote_head=args.expected_remote_head,
             expected_base=args.expected_base,
             review_receipt_bytes=review_receipt_bytes,
             replay_store=Path(replay_store),
@@ -1704,6 +1875,7 @@ def main(argv: list[str] | None = None) -> int:
             trusted_key=key.encode("utf-8"),
             current_time=_utc_now(),
             pre_review_state=args.pre_review_state,
+            decision_record_path=args.decision_record,
         )
     except (OSError, reporter.PilotDataError) as error:
         print(f"trusted review gate error: {error}", file=sys.stderr)

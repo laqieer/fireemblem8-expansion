@@ -545,13 +545,15 @@ identity with `... on Node { id }`; the query is validated against GitHub's
 live schema. `Commit.pushedDate` is nullable metadata. It is never used to
 reconstruct normal ref advances or to attest complete head history.
 
-Issue #179 is the introducing PR. Its actual base
-`853cff1eb7bdb3ecce46f780473e81be73e24315` has no trusted checker or gate.
-Therefore its contract uses explicit `introduction` mode. That mode always
-returns `merge_allowed: false` and `trusted_push_allowed: false`, cannot
-self-attest, and requires the external delivery coordinator to review this
-PR. After merge, later PRs use `base-pinned` mode with the exact actual base
-that contains both trusted files.
+The committed fixtures and unit tests are synthetic and version-independent:
+they use temporary PR identities and temporary exact Git histories rather than
+pinning a live implementation PR or a self-referential candidate SHA.
+`introduction` mode models any PR whose exact base lacks the trusted checker
+or trusted decision consumer. That mode always returns
+`merge_allowed: false` and `trusted_push_allowed: false`, cannot self-attest,
+and requires the external delivery coordinator to validate live evidence
+outside candidate authority. After merge, later PRs use `base-pinned` mode
+with the exact actual base that contains both trusted files.
 
 ### Independent and remote chronology
 
@@ -570,6 +572,14 @@ receipt under its repository/PR/base/A scope. Later B/C evaluations use
 `preserved`; they require byte equality with that trusted stored receipt and
 do not consume or re-sign it. A second `new` receipt, including a different
 nonce over the same scope, is rejected.
+
+For a held-head pre-push decision, the authoritative current remote head A and
+the proposed clean local descendant B are distinct identities. GitHub must
+still report A at evaluation time; local Git independently proves B, B must
+descend from A, and the authenticated disposition must authorize exactly the
+A→B transition before `trusted_push_allowed` can become true. After push,
+normal exact-remote-head validation still requires GitHub's `headRefOid` to
+equal B.
 
 Later GitHub review IDs and inline finding node IDs are collected and
 validated separately after they exist. They never replace, backdate, or
@@ -594,15 +604,27 @@ Positive/default/runtime checks execute distinct row-specific probes.
 Adversarial checks construct a row-specific invalid input, execute it, and
 require an observed rejection.
 
+High-risk/large pre-review requirement is derived from authoritative decision
+data, currently the reviewed
+`.github/workflow-pilot-decisions.json` entry for the exact PR. Candidate
+`trigger.risk_boundaries` and `trigger.threshold_triggers` are evidence only:
+they must match that authoritative decision record exactly. Missing,
+duplicate, stale-head, wrong-base, or mismatched trigger decisions fail
+closed.
+
 The registry and executable live in exact-base
 `scripts/workflow_pilot/review_assertions.py`; the checker invokes its base
 blob with fixed `/usr/bin/python3 -I review_assertions.py --stdin` argv.
-Each member has a distinct fixed JSON subject under `assertion_subjects/`.
-The trusted launcher materializes those allowlisted inputs from the exact
-finding-origin and remediation Git trees in read-only roots. Candidate
-registry/program additions or edits are never executed, and the child receives
-a closed environment without GitHub/HMAC credentials, proxy/PYTHONPATH
-injection, network-capable candidate programs, or inherited startup hooks.
+The trusted launcher materializes a closed allowlist of real production
+artifacts from the exact finding-origin and remediation Git trees in read-only
+roots: the reviewed decision record, workflow-governance docs/registry, docs
+check tests, event-classifier/candidate-evidence contracts, and the trusted
+review-family Python modules themselves. There is no standalone witness JSON:
+candidate-authored sidecar files cannot self-attest a member outcome.
+Candidate registry/program additions or edits are never executed, and the
+child receives a closed environment without GitHub/HMAC credentials,
+proxy/PYTHONPATH injection, network-capable candidate programs, or inherited
+startup hooks.
 
 Each `affected-fixed` assertion executes the fixed member program against the
 origin artifact and requires failing semantics, then executes it against the

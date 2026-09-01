@@ -117,6 +117,8 @@ class ReviewFamilyContractTests(unittest.TestCase):
             report["round_handoffs"][0]["bounds"],
             {"findings": 5, "families": 5, "siblings": 18},
         )
+        self.assertTrue(report["trigger"]["adversarial_pre_review_required"])
+        self.assertTrue(report["trigger"]["authoritative"])
         self.assertFalse(report["provenance"]["authoritative"])
         self.assertFalse(report["structural_eligibility"]["merge"])
         self.assertFalse(report["gates"]["merge_allowed"])
@@ -126,11 +128,45 @@ class ReviewFamilyContractTests(unittest.TestCase):
         report = self.report(contract, evidence)
         self.assertTrue(report["gates"]["current_candidate_reviewed"])
         self.assertTrue(report["gates"]["current_candidate_clean"])
+        self.assertFalse(report["trigger"]["adversarial_pre_review_required"])
+        self.assertTrue(report["trigger"]["authoritative"])
         self.assertFalse(report["structural_eligibility"]["merge"])
         evidence["remote_reviews"] = []
         report = self.report(contract, evidence)
         self.assertFalse(report["gates"]["current_candidate_reviewed"])
         self.assertTrue(report["gates"]["remote_copilot_review_required"])
+
+    def test_authoritative_trigger_is_required_and_exact_for_base_pinned_mode(self):
+        contract, evidence = fixture("default")
+        evidence["authoritative_trigger"]["risk_boundaries"] = ["lifecycle"]
+        evidence["authoritative_trigger"]["threshold_triggers"] = ["risk-boundary"]
+        evidence["authoritative_trigger"]["pre_review_required"] = True
+        self.assert_rejected(
+            contract,
+            evidence,
+            "candidate trigger does not match the authoritative decision record",
+        )
+
+        contract, evidence = fixture("default")
+        contract["trust_mode"] = "base-pinned"
+        evidence["authoritative_trigger"] = None
+        self.assert_rejected(
+            contract,
+            evidence,
+            "base-pinned mode requires an authoritative trigger decision",
+        )
+
+        contract, evidence = fixture("default")
+        evidence["authoritative_trigger"]["pull_request"] = 902
+        self.assert_rejected(contract, evidence, "contract PR")
+
+        contract, evidence = fixture("default")
+        evidence["authoritative_trigger"]["base_sha"] = "f" * 40
+        self.assert_rejected(contract, evidence, "exact contract base")
+
+        contract, evidence = fixture("default")
+        evidence["authoritative_trigger"]["candidate_sha"] = "f" * 40
+        self.assert_rejected(contract, evidence, "exact candidate head")
 
     def test_exact_base_and_head_are_not_ancestor_substitutions(self):
         contract, evidence = fixture("default")

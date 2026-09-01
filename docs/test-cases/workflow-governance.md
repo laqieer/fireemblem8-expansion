@@ -1386,9 +1386,9 @@ game behavior needs a compensating change.
   `scripts/workflow_pilot/trusted_review_gate.py`,
   `review_family_complete.json`, `review_family_complete_evidence.json`,
   their default counterparts, and `review_family_github_adapter.json`
-  unchanged. The actual introducing base
-  `853cff1eb7bdb3ecce46f780473e81be73e24315` and fixture candidate
-  `a8768e4f467c36f8bec60ee823d7d1735d3fcd45` must exist locally.
+  unchanged. The committed fixtures are synthetic and version-independent:
+  they use temporary PR identities and temporary exact Git histories rather
+  than pinning a live implementation PR or a self-referential candidate SHA.
 
 ### Actions
 
@@ -1396,7 +1396,8 @@ game behavior needs a compensating change.
    `python3 -m unittest scripts.workflow_pilot.tests.test_review_base_checker scripts.workflow_pilot.tests.test_review_family scripts.workflow_pilot.tests.test_github_review -v`.
 2. Run the module twice with explicit `--repository-root`,
    `--expected-candidate`, `--contract`, and offline `--evidence` over a
-   detached local checkout whose actual `HEAD` is the fixture candidate.
+   detached local checkout whose actual `HEAD` matches the synthetic fixture
+   candidate.
    Compare its canonical JSON bytes and confirm it cannot authorize push or
    merge.
 3. Confirm `github_review.py` and `isolated_review_gate.py` are absent, no
@@ -1409,8 +1410,8 @@ game behavior needs a compensating change.
 4. Inspect the GraphQL query and fixture. Validate every polymorphic Actor ID
    through `... on Node { id }`, exact `baseRefOid`/`headRefOid`, bounded
    pagination, review bodies/states/threads, and nullable `pushedDate`.
-5. Confirm the actual introducing base lacks both trusted gate files.
-   Evaluate explicit `introduction` mode and require false merge/push
+5. Confirm a synthetic exact base without the trusted checker or decision
+   consumer takes explicit `introduction` mode. Require false merge/push
    authority plus an external-coordinator requirement. Do not substitute a
    later candidate ancestor as the trusted base.
 6. Create an independent two-commit repository under
@@ -1425,7 +1426,8 @@ game behavior needs a compensating change.
    extracts exact-base `review_assertions.py` with fixed isolated argv. Verify
    the child has no credentials or proxy/PYTHONPATH injection and receipts
    bind both tree OIDs, member artifact blobs, exit/status, canonical stdout
-   digest, and semantic output.
+   digest, and semantic output over real production workflow-governance
+   artifacts rather than standalone witness JSON.
 7. Sign canonical pre-review bytes with a test-only external key. Verify exact
    repository/PR/base/head, epoch, purpose, expiry, nonce, and atomic replay.
    Keep `LOCAL-` findings in that immutable receipt, separately collect later
@@ -1436,8 +1438,9 @@ game behavior needs a compensating change.
    duration, sibling, and handoff bounds. Confirm candidates provide assertion
    IDs only. Require `affected-fixed` to execute a member-specific failing
    before-probe and passing after-probe; require `verified-unaffected` to
-   compare a member-specific invariant rather than one shared file; permit
-   `not-applicable` only for its explicit member/reason registry entry.
+   compare a member-specific invariant over parsed production docs/tests/code
+   rather than one shared file or a witness sidecar; permit `not-applicable`
+   only for its explicit member/reason registry entry.
    Reuse the current checkout or swap dirty materialized roots and require the
    authoritative origin/head Git-tree binding to fail before execution.
 9. Parse the captured clean PR #183 body and accept its first-line exact
@@ -1452,6 +1455,9 @@ game behavior needs a compensating change.
     exact head, then require success. Replay it or overlap its actor with the
     implementer/PR author, pre-reviewer, remote reviewer, or finding author and
     require failure.
+    Separately exercise the pre-push case where GitHub still reports held head
+    A while clean local Git proves descendant B, and require the trusted gate
+    to bind `--expected-remote-head A` separately from `--expected-candidate B`.
 11. Add a second independent round-6 hold and disposition. Confirm rounds 3
     and 6 consume distinct receipts once and do not infer advancement from
     commit or push timestamps.
@@ -1528,3 +1534,27 @@ introducing mode never grant delivery. No manual-only criterion applies.
 
 Rollback is a normal revert of issue #179. The issue #176 baseline values and
 existing Build, Copilot review, merge, and post-merge gates remain unchanged.
+
+### External live evidence after push
+
+After a replacement push, the delivery coordinator runs the live read-only
+gate outside candidate authority with runtime-supplied exact identities. The
+committed fixtures above remain synthetic; they never claim to be the live PR.
+
+```bash
+/usr/bin/python3 -I \
+  <trusted-base>/scripts/workflow_pilot/trusted_review_gate.py \
+  --trusted-root <trusted-base> \
+  --candidate-root <clean-local-candidate-checkout> \
+  --expected-base <actual-pr-base-sha> \
+  --expected-remote-head <current-github-pr-head-a> \
+  --expected-candidate <clean-local-candidate-b> \
+  --contract <candidate-contract.json> \
+  --review-receipt <independent-pre-review-receipt.json>
+```
+
+For a post-push exact-head recheck, `--expected-remote-head` and
+`--expected-candidate` are the same SHA. For a held-head pre-push decision,
+they differ: GitHub must still report A while local Git proves descendant B.
+Missing or mismatched decision records, PR/base/head identities, or replay
+scope still fail closed.

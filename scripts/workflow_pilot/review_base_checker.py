@@ -43,10 +43,21 @@ ASSERTION_PROGRAM_ARGV = (
     "review_assertions.py",
     "--stdin",
 )
-ASSERTION_SUBJECT_PATHS = tuple(
-    f"scripts/workflow_pilot/assertion_subjects/{family}_{member.replace('-', '_')}.json"
-    for family, members in FAMILY_MEMBERS.items()
-    for member in members
+ASSERTION_INPUT_PATHS = (
+    ".github/workflow-pilot-decisions.json",
+    ".github/skills/development-workflow/SKILL.md",
+    "docs/test-cases/registry.json",
+    "docs/test-cases/workflow-governance.md",
+    "docs/workflow-pilot.md",
+    "scripts/docs_check_tests/test_check_docs.py",
+    "scripts/docs_check_tests/test_development_workflow_skill.py",
+    "scripts/workflow_pilot/candidate_evidence.py",
+    "scripts/workflow_pilot/event_classifier.py",
+    "scripts/workflow_pilot/review_assertions.py",
+    "scripts/workflow_pilot/review_base_checker.py",
+    "scripts/workflow_pilot/review_family.py",
+    "scripts/workflow_pilot/trusted_review_gate.py",
+    "tests/workflows/test_build_ci_topology.py",
 )
 BEHAVIOR_ROWS = {
     "actor-permission-bounds",
@@ -690,16 +701,16 @@ def _expected_assertion_artifacts(
                     repository_root,
                     finding_origin_sha,
                     path,
-                    f"checker input origin assertion subject {path!r}",
+                    f"checker input origin production input {path!r}",
                 ),
                 "head_blob_oid": git_blob_oid_at_revision(
                     repository_root,
                     head_sha,
                     path,
-                    f"checker input head assertion subject {path!r}",
+                    f"checker input head production input {path!r}",
                 ),
             }
-            for path in ASSERTION_SUBJECT_PATHS
+            for path in ASSERTION_INPUT_PATHS
         ],
         key=lambda item: item["path"],
     )
@@ -749,7 +760,7 @@ def _validate_materialized_root(
         relative = path.relative_to(root).as_posix()
         discovered[relative] = path
     if set(discovered) != set(expected_blobs):
-        raise CheckError(f"{label} does not exactly materialize the assertion subjects")
+        raise CheckError(f"{label} does not exactly materialize the production inputs")
     for relative, expected_blob_oid in expected_blobs.items():
         payload = read_regular_file(
             discovered[relative], f"{label}/{relative}"
@@ -852,7 +863,6 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
             "all_remote_reviews",
             "remote_findings",
             "trust_mode",
-            "pre_review_required",
             "changed_files",
             "changes",
             "remote_finding_ids",
@@ -993,8 +1003,6 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
     trust_mode = expect_string(data["trust_mode"], "checker input.trust_mode")
     if trust_mode not in {"introduction", "base-pinned"}:
         raise CheckError("checker input.trust_mode is not supported")
-    if not isinstance(data["pre_review_required"], bool):
-        raise CheckError("checker input.pre_review_required must be a boolean")
     changed_files = [
         normalized_path(path, f"checker input.changed_files[{index}]")
         for index, path in enumerate(
@@ -1197,7 +1205,6 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         "all_remote_reviews": all_remote_reviews,
         "remote_findings": remote_findings,
         "trust_mode": trust_mode,
-        "pre_review_required": data["pre_review_required"],
         "changed_files": changed_files,
         "changes": changes,
         "remote_finding_ids": remote_finding_ids,

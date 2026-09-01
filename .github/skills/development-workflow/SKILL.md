@@ -618,16 +618,26 @@ in that collection, match the asserted family/member registry entry, and carry
 the authoritative origin/head commit-tree identities for that remediation
 step.
 
+High-risk/large pre-review requirement also comes from authoritative decision
+data, currently the reviewed `.github/workflow-pilot-decisions.json` entry for
+the exact PR. Candidate trigger lists are evidence only: they must match that
+decision record exactly, and missing, duplicate, stale-head, wrong-base, or
+mismatched trigger decisions fail closed.
+
 Execute exact-base `review_assertions.py` with fixed isolated `--stdin` argv
-over registry-fixed, read-only member artifacts materialized from the exact
-finding-origin and remediation Git trees. Give the child a closed environment
-with no credentials, proxy/PYTHONPATH injection, network-capable candidate
-program, or inherited startup hooks. Bind program base blob/argv, both tree
-OIDs, artifact blobs, exit/status, canonical stdout digest, and semantic output
-to the receipt. Candidate-added registry/program code, arbitrary shared files,
-nonexistent callable names, and self-authored success output are not evidence.
-Allow multiple affected siblings only when each referenced assertion
-independently fails on the finding-origin tree and passes on remediation.
+over registry-fixed, read-only production workflow-governance artifacts
+materialized from the exact finding-origin and remediation Git trees. Those
+allowlisted inputs are the reviewed decision record, workflow-governance docs
+and registry, docs-check tests, event-classifier/candidate-evidence contracts,
+and the trusted review-family Python modules themselves. Give the child a
+closed environment with no credentials, proxy/PYTHONPATH injection,
+network-capable candidate program, or inherited startup hooks. Bind program
+base blob/argv, both tree OIDs, artifact blobs, exit/status, canonical stdout
+digest, and semantic output to the receipt. Candidate-added registry/program
+code, arbitrary shared files, nonexistent callable names, standalone witness
+JSON sidecars, and self-authored success output are not evidence. Allow
+multiple affected siblings only when each referenced assertion independently
+fails on the finding-origin tree and passes on remediation.
 The checker independently re-derives the authoritative checker blob,
 assertion-program blob, finding-origin tree, remediation-head tree, and every
 materialized subject blob from trusted Git objects before execution. Reusing
@@ -650,6 +660,10 @@ single-use disposition binds the held round/head and authorized next exact
 head. Its actor must be disjoint from the implementer/PR author, pre-reviewer,
 remote reviewers, and finding authors; repository ownership never overrides
 an overlap. After disposition, a later sixth round can independently hold.
+For the held-head pre-push decision, the authoritative current remote head A
+and the proposed clean local descendant B are distinct identities: GitHub must
+still report A while local Git proves B, and only then may
+`trusted_push_allowed` become true.
 
 Keep immutable pre-review findings in the `LOCAL-` namespace and inside the
 pre-review receipt. Bind that receipt to `original_pre_review_head` A and issue
@@ -659,9 +673,10 @@ Consume it once as `new`; later evaluations use only the byte-identical
 trusted-store `preserved` record. Reject a second new nonce for the same scope.
 Every remote round/head requires separate exact Git coverage, a chronological
 base-owned execution receipt, and its GitHub review evidence. Result IDs derive
-from round/head/assertion/finding and cannot replay. Enforce configured file,
-duration, finding, sibling, and handoff bounds. Collect later GitHub finding
-IDs separately after they exist. Actor selections use
+from round/head/assertion plus the authoritative
+finding/family/member/origin/head binding and cannot replay. Enforce
+configured file, duration, finding, sibling, and handoff bounds. Collect later
+GitHub finding IDs separately after they exist. Actor selections use
 valid Node fragments, `Commit.pushedDate` is nullable and never head authority,
 and normal ref advancement is not reconstructed from commit timestamps.
 Require globally unique node identities and semantic body parsing: only exact

@@ -12,7 +12,8 @@ from scripts.workflow_pilot import reporter, review_base_checker, review_family
 
 ROOT = Path(__file__).resolve().parents[3]
 ASSERTION_PROGRAM = "scripts/workflow_pilot/review_assertions.py"
-ASSERTION_SUBJECTS = review_base_checker.ASSERTION_SUBJECT_PATHS
+ASSERTION_INPUTS = review_base_checker.ASSERTION_INPUT_PATHS
+ISSUE_179_URL = "https://github.com/laqieer/fireemblem8-expansion/issues/179"
 
 
 def git_text(root, *arguments):
@@ -55,9 +56,8 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         cls.root.mkdir(parents=True)
         cls.repo.mkdir()
         cls.case_ids = count()
-        cls.subject_snapshots = {
-            relative: (ROOT / relative).read_bytes()
-            for relative in ASSERTION_SUBJECTS
+        cls.input_snapshots = {
+            relative: (ROOT / relative).read_bytes() for relative in ASSERTION_INPUTS
         }
         subprocess.run(
             reporter.git_command(cls.repo, "init", "-q"),
@@ -79,65 +79,22 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             check=True,
             capture_output=True,
         )
-        for relative in (
-            review_base_checker.CHECKER_RELPATH,
-            ASSERTION_PROGRAM,
-            *ASSERTION_SUBJECTS,
-        ):
-            target = cls.repo / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes((ROOT / relative).read_bytes())
         (cls.repo / ".gitignore").write_text("build/\n", encoding="utf-8")
-        cls._restore_subject("action", "actions")
-        cls._restore_subject("action", "items")
-        cls._break_subject("action", "actions")
-        subprocess.run(
-            reporter.git_command(cls.repo, "add", "-A"),
-            env=reporter.git_environment(offline=True),
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            reporter.git_command(cls.repo, "commit", "-q", "-m", "base"),
-            env=reporter.git_environment(offline=True),
-            check=True,
-            capture_output=True,
-        )
-        cls.base = git_text(cls.repo, "rev-parse", "HEAD")
-        cls.base_tree = git_text(cls.repo, "rev-parse", "HEAD^{tree}")
 
-        cls._restore_subject("action", "actions")
-        cls._break_subject("action", "items")
-        subprocess.run(
-            reporter.git_command(cls.repo, "add", "-A"),
-            env=reporter.git_environment(offline=True),
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            reporter.git_command(cls.repo, "commit", "-q", "-m", "head-1"),
-            env=reporter.git_environment(offline=True),
-            check=True,
-            capture_output=True,
-        )
-        cls.head1 = git_text(cls.repo, "rev-parse", "HEAD")
-        cls.head1_tree = git_text(cls.repo, "rev-parse", "HEAD^{tree}")
+        cls._restore_baseline()
+        cls._set_generated_owners_health(False)
+        cls.base = cls._commit("base")
+        cls.base_tree = git_text(cls.repo, "rev-parse", f"{cls.base}^{{tree}}")
 
-        cls._restore_subject("action", "items")
-        subprocess.run(
-            reporter.git_command(cls.repo, "add", "-A"),
-            env=reporter.git_environment(offline=True),
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run(
-            reporter.git_command(cls.repo, "commit", "-q", "-m", "head-2"),
-            env=reporter.git_environment(offline=True),
-            check=True,
-            capture_output=True,
-        )
-        cls.head2 = git_text(cls.repo, "rev-parse", "HEAD")
-        cls.head2_tree = git_text(cls.repo, "rev-parse", "HEAD^{tree}")
+        cls._restore_baseline()
+        cls._set_action_items_health(False)
+        cls.head1 = cls._commit("head-1")
+        cls.head1_tree = git_text(cls.repo, "rev-parse", f"{cls.head1}^{{tree}}")
+
+        cls._restore_baseline()
+        cls.head2 = cls._commit("head-2")
+        cls.head2_tree = git_text(cls.repo, "rev-parse", f"{cls.head2}^{{tree}}")
+
         cls.program_blob_oid = git_text(
             cls.repo, "rev-parse", f"{cls.base}:{ASSERTION_PROGRAM}"
         )
@@ -150,47 +107,179 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         shutil.rmtree(cls.root)
 
     @classmethod
-    def _subject_path(cls, family, member):
-        return (
-            cls.repo
-            / "scripts/workflow_pilot/assertion_subjects"
-            / f"{family}_{member.replace('-', '_')}.json"
-        )
-
-    @classmethod
-    def _restore_subject(cls, family, member):
-        relative = (
-            "scripts/workflow_pilot/assertion_subjects/"
-            f"{family}_{member.replace('-', '_')}.json"
-        )
-        cls._subject_path(family, member).write_bytes(cls.subject_snapshots[relative])
-
-    @classmethod
-    def _break_subject(cls, family, member):
-        path = cls._subject_path(family, member)
-        subject = json.loads(path.read_text(encoding="utf-8"))
-        if (family, member) == ("action", "actions"):
-            subject["payload"]["actions"] = [
-                "emit-local-report",
-                "read-candidate",
-            ]
-        elif (family, member) == ("action", "items"):
-            subject["payload"]["items"] = [
-                "semantic-output",
-                "semantic-output",
-            ]
+    def _write_relative(cls, relative, data):
+        target = cls.repo / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(data, bytes):
+            target.write_bytes(data)
         else:
-            raise AssertionError(f"unsupported broken subject {family}/{member}")
-        path.write_bytes(reporter.normalized_json(subject))
+            target.write_text(data, encoding="utf-8")
+
+    @classmethod
+    def _restore_baseline(cls):
+        for relative, payload in cls.input_snapshots.items():
+            cls._write_relative(relative, payload)
+        obsolete = cls.repo / "scripts/workflow_pilot/assertion_subjects"
+        if obsolete.exists():
+            shutil.rmtree(obsolete)
+
+    @classmethod
+    def _replace_once(cls, relative, old, new):
+        path = cls.repo / relative
+        text = path.read_text(encoding="utf-8")
+        if old not in text:
+            raise AssertionError(f"missing pattern in {relative}: {old}")
+        path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+    @classmethod
+    def _commit(cls, message):
+        subprocess.run(
+            reporter.git_command(cls.repo, "add", "-A"),
+            env=reporter.git_environment(offline=True),
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            reporter.git_command(cls.repo, "commit", "-q", "-m", message),
+            env=reporter.git_environment(offline=True),
+            check=True,
+            capture_output=True,
+        )
+        return git_text(cls.repo, "rev-parse", "HEAD")
+
+    @classmethod
+    def _set_action_actions_health(cls, healthy):
+        cls._replace_once(
+            "scripts/workflow_pilot/review_base_checker.py",
+            'ACTION_SEQUENCE = ("read-candidate", "emit-local-report")',
+            'ACTION_SEQUENCE = ("emit-local-report", "read-candidate")',
+        )
+        if healthy:
+            cls._replace_once(
+                "scripts/workflow_pilot/review_base_checker.py",
+                'ACTION_SEQUENCE = ("emit-local-report", "read-candidate")',
+                'ACTION_SEQUENCE = ("read-candidate", "emit-local-report")',
+            )
+
+    @classmethod
+    def _set_action_items_health(cls, healthy):
+        cls._replace_once(
+            "scripts/workflow_pilot/review_base_checker.py",
+            '"finding_member": parsed["member"],',
+            '"finding_member": parsed["family"],',
+        )
+        if healthy:
+            cls._replace_once(
+                "scripts/workflow_pilot/review_base_checker.py",
+                '"finding_member": parsed["family"],',
+                '"finding_member": parsed["member"],',
+            )
+
+    @classmethod
+    def _set_generated_owners_health(cls, healthy):
+        registry_path = cls.repo / "docs/test-cases/registry.json"
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        feature = next(
+            item
+            for item in registry["features"]
+            if item["id"] == "workflow-governance"
+        )
+        urls = [url for url in feature["issue_urls"] if url != ISSUE_179_URL]
+        feature["issue_urls"] = (
+            sorted(set(feature["issue_urls"])) if healthy else urls
+        )
+        registry_path.write_bytes(reporter.normalized_json(registry))
+
+    @classmethod
+    def _set_lifecycle_entries_health(cls, healthy):
+        cls._replace_once(
+            "scripts/workflow_pilot/review_family.py",
+            '"reason": "third-consecutive-change-request",',
+            '"reason": "third-consecutive-change-request-broken",',
+        )
+        if healthy:
+            cls._replace_once(
+                "scripts/workflow_pilot/review_family.py",
+                '"reason": "third-consecutive-change-request-broken",',
+                '"reason": "third-consecutive-change-request",',
+            )
+
+    @classmethod
+    def _set_resource_enabled_health(cls, healthy):
+        decision_path = cls.repo / ".github/workflow-pilot-decisions.json"
+        decisions = json.loads(decision_path.read_text(encoding="utf-8"))
+        decisions["pull_requests"] = [
+            record
+            for record in decisions["pull_requests"]
+            if healthy or record["pull_request"] != 189
+        ]
+        if healthy and all(
+            record["pull_request"] != 189 for record in decisions["pull_requests"]
+        ):
+            decisions["pull_requests"].append(
+                {
+                    "pull_request": 189,
+                    "risk_boundaries": ["lifecycle", "protocol"],
+                    "threshold": {
+                        "triggers": [
+                            "changed-files",
+                            "changed-lines",
+                            "major-boundaries",
+                            "risk-boundary",
+                        ],
+                        "override_history": [],
+                    },
+                    "gate_mode": "concurrent",
+                    "stack": {
+                        "depth": 0,
+                        "parent_pr": None,
+                        "exception_reason": None,
+                    },
+                    "pilot": {"included": False, "disposition": "baseline-only"},
+                }
+            )
+        decision_path.write_bytes(reporter.normalized_json(decisions))
+
+    @classmethod
+    def _set_wire_producers_health(cls, healthy):
+        cls._replace_once(
+            "scripts/workflow_pilot/trusted_review_gate.py",
+            '"result_manifest": [',
+            '"candidate_manifest": [',
+        )
+        if healthy:
+            cls._replace_once(
+                "scripts/workflow_pilot/trusted_review_gate.py",
+                '"candidate_manifest": [',
+                '"result_manifest": [',
+            )
+
+    @classmethod
+    def _make_witness_only_head(cls):
+        cls._restore_baseline()
+        cls._set_action_items_health(False)
+        cls._write_relative(
+            "scripts/workflow_pilot/assertion_subjects/action_items.json",
+            reporter.normalized_json(
+                {
+                    "schema_version": 1,
+                    "family": "action",
+                    "member": "items",
+                    "payload": {"items": ["looks", "valid"]},
+                }
+            ),
+        )
+        witness_head = cls._commit("witness-only-head")
+        return witness_head, git_text(cls.repo, "rev-parse", f"{witness_head}^{{tree}}")
 
     def case_dir(self):
         case_root = self.root / f"case-{next(self.case_ids)}"
         case_root.mkdir()
         return case_root
 
-    def materialize_subject_root(self, commit_sha, destination):
+    def materialize_input_root(self, commit_sha, destination):
         destination.mkdir()
-        for relative in ASSERTION_SUBJECTS:
+        for relative in ASSERTION_INPUTS:
             target = destination / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(git_bytes(self.repo, "show", f"{commit_sha}:{relative}"))
@@ -220,14 +309,15 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             "reviewed_changes": copy.deepcopy(self.original_changes),
             "findings": [
                 {
-                    "id": "LOCAL-ACTION-1",
-                    "family": "action",
+                    "id": "LOCAL-GENERATED-1",
+                    "family": "generated",
                     "created_at": "2026-09-01T00:00:30Z",
                 }
             ],
         }
 
-    def remote_reviews(self):
+    def remote_reviews(self, second_head=None):
+        second_head = self.head2 if second_head is None else second_head
         round1 = {
             "id": 1001,
             "node_id": "REMOTE_REVIEW_1",
@@ -247,7 +337,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             "node_id": "REMOTE_REVIEW_2",
             "round": 2,
             "reviewer_actor_id": "COPILOT",
-            "candidate_sha": self.head2,
+            "candidate_sha": second_head,
             "submitted_at": "2026-09-01T00:04:00Z",
             "state": "COMMENTED",
             "body": "### 🟢 Approval recommended",
@@ -281,20 +371,21 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                     self.repo, "rev-parse", f"{head_sha}:{relative}"
                 ),
             }
-            for relative in ASSERTION_SUBJECTS
+            for relative in ASSERTION_INPUTS
         ]
 
-    def build_input(self, *, review_round, assertion_requests=None):
+    def build_input(self, *, review_round, candidate_sha=None, candidate_tree=None, assertion_requests=None):
         case_root = self.case_dir()
         origin_sha = self.base if review_round == 1 else self.head1
-        head_sha = self.head1 if review_round == 1 else self.head2
+        head_sha = (self.head1 if review_round == 1 else self.head2) if candidate_sha is None else candidate_sha
+        head_tree = git_text(self.repo, "rev-parse", f"{head_sha}^{{tree}}") if candidate_tree is None else candidate_tree
         origin_root = case_root / "origin"
         head_root = case_root / "head"
-        self.materialize_subject_root(origin_sha, origin_root)
-        self.materialize_subject_root(head_sha, head_root)
+        self.materialize_input_root(origin_sha, origin_root)
+        self.materialize_input_root(head_sha, head_root)
         program_path = case_root / "review_assertions.py"
         self.materialize_program(program_path)
-        round1, round2 = self.remote_reviews()
+        round1, round2 = self.remote_reviews(second_head=head_sha)
         all_remote_reviews = [round1] if review_round == 1 else [round1, round2]
         review_context = all_remote_reviews[review_round - 1]
         changes = review_family.derive_change_records(self.repo, self.base, head_sha)
@@ -317,14 +408,13 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             "head_root": str(head_root),
             "assertion_input_artifacts": self.assertion_artifacts(origin_sha, head_sha),
             "candidate_sha": head_sha,
-            "candidate_tree": git_text(self.repo, "rev-parse", f"{head_sha}^{{tree}}"),
+            "candidate_tree": head_tree,
             "head_sha": head_sha,
             "review_round": review_round,
             "review_context": copy.deepcopy(review_context),
             "all_remote_reviews": copy.deepcopy(all_remote_reviews),
             "remote_findings": copy.deepcopy(self.remote_findings()),
             "trust_mode": "base-pinned",
-            "pre_review_required": True,
             "changed_files": changed_files(changes),
             "changes": changes,
             "remote_finding_ids": copy.deepcopy(review_context["finding_ids"]),
@@ -348,9 +438,9 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                         },
                         {
                             "assertion_id": (
-                                "registry:sibling:action:actions:affected-fixed:v2"
+                                "registry:sibling:generated:owners:affected-fixed:v2"
                             ),
-                            "finding_id": "LOCAL-ACTION-1",
+                            "finding_id": "LOCAL-GENERATED-1",
                         },
                     ]
                     if review_round == 1
@@ -394,10 +484,10 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         member = next(
             item
             for item in result["results"]
-            if item["authority_binding"]["finding_id"] == "LOCAL-ACTION-1"
+            if item["authority_binding"]["finding_id"] == "LOCAL-GENERATED-1"
         )
-        self.assertEqual(member["authority_binding"]["finding_family"], "action")
-        self.assertEqual(member["authority_binding"]["finding_member"], "actions")
+        self.assertEqual(member["authority_binding"]["finding_family"], "generated")
+        self.assertEqual(member["authority_binding"]["finding_member"], "owners")
         self.assertEqual(member["authority_binding"]["finding_review_round"], 0)
         self.assertEqual(member["authority_binding"]["finding_head_sha"], self.head1)
         self.assertEqual(member["authority_binding"]["finding_origin_sha"], self.base)
@@ -436,7 +526,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             review_round=1,
             assertion_requests=[
                 {
-                    "assertion_id": "registry:sibling:action:items:verified-unaffected:v2",
+                    "assertion_id": "registry:sibling:generated:outputs:verified-unaffected:v2",
                     "finding_id": "LOCAL-FAKE-99",
                 }
             ],
@@ -448,7 +538,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             assertion_requests=[
                 {
                     "assertion_id": "registry:sibling:wire:producers:verified-unaffected:v2",
-                    "finding_id": "LOCAL-ACTION-1",
+                    "finding_id": "LOCAL-GENERATED-1",
                 }
             ],
         )
@@ -458,7 +548,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         data = self.build_input(review_round=1)
         data["origin_root"] = str(self.repo)
         data["head_root"] = str(self.repo)
-        self.assert_rejected(data, "assertion subjects|reuse one checkout")
+        self.assert_rejected(data, "production inputs|reuse one checkout")
 
         data = self.build_input(review_round=1)
         data["finding_origin_sha"] = "f" * 40
@@ -477,7 +567,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         dirty = Path(data["head_root"]) / "dirty.txt"
         dirty.write_text("dirty\n", encoding="utf-8")
         try:
-            self.assert_rejected(data, "assertion subjects")
+            self.assert_rejected(data, "production inputs")
         finally:
             dirty.unlink()
 
@@ -525,6 +615,15 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         data = self.build_input(review_round=1)
         data["limits"]["max_reviewed_files"] = True
         self.assert_rejected(data, "must be an integer")
+
+    def test_obsolete_witness_json_cannot_manufacture_pass(self):
+        witness_head, witness_tree = self._make_witness_only_head()
+        data = self.build_input(
+            review_round=2,
+            candidate_sha=witness_head,
+            candidate_tree=witness_tree,
+        )
+        self.assert_rejected(data, "member-item authority binding is incomplete")
 
     def test_round_two_remote_finding_executes_real_remediation_round(self):
         data = self.build_input(review_round=2)

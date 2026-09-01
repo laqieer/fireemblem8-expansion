@@ -76,10 +76,22 @@ MEMBER_OUTCOME_REGISTRY = {
 }
 RESULT_SOURCE_PATH = "scripts/workflow_pilot/tests/test_review_family.py"
 ASSERTION_PROGRAM_PATH = "scripts/workflow_pilot/review_assertions.py"
-ASSERTION_SUBJECT_PATHS = tuple(
-    f"scripts/workflow_pilot/assertion_subjects/{family}_{member.replace('-', '_')}.json"
-    for family, members in FAMILY_MEMBERS.items()
-    for member in members
+TRIGGER_DECISION_PATH = reporter.DECISION_RECORD_PATH.as_posix()
+ASSERTION_INPUT_PATHS = (
+    TRIGGER_DECISION_PATH,
+    ".github/skills/development-workflow/SKILL.md",
+    "docs/test-cases/registry.json",
+    "docs/test-cases/workflow-governance.md",
+    "docs/workflow-pilot.md",
+    "scripts/docs_check_tests/test_check_docs.py",
+    "scripts/docs_check_tests/test_development_workflow_skill.py",
+    "scripts/workflow_pilot/candidate_evidence.py",
+    "scripts/workflow_pilot/event_classifier.py",
+    "scripts/workflow_pilot/review_assertions.py",
+    "scripts/workflow_pilot/review_base_checker.py",
+    "scripts/workflow_pilot/review_family.py",
+    "scripts/workflow_pilot/trusted_review_gate.py",
+    "tests/workflows/test_build_ci_topology.py",
 )
 COPILOT_ACTOR = "copilot-pull-request-reviewer"
 COPILOT_APPROVAL_MARKER = "### 🟢 Approval recommended"
@@ -520,42 +532,117 @@ def classify_copilot_body(value: Any, label: str = "Copilot review body") -> str
     return "needs-closer-look"
 
 
-def _validate_trigger(value: Any):
+def normalize_trigger_fields(
+    risk_boundaries: Any,
+    threshold_triggers: Any,
+    *,
+    label: str,
+) -> dict[str, list[str]]:
+    risks = _expect_string_list(
+        risk_boundaries,
+        f"{label}.risk_boundaries",
+        allowed=reporter.RISK_BOUNDARIES,
+    )
+    thresholds = _expect_string_list(
+        threshold_triggers,
+        f"{label}.threshold_triggers",
+        allowed=reporter.THRESHOLD_TRIGGERS,
+    )
+    if "none" in risks and len(risks) != 1:
+        raise reporter.PilotDataError(
+            f"{label}.risk_boundaries none must stand alone"
+        )
+    if "none" in thresholds and len(thresholds) != 1:
+        raise reporter.PilotDataError(
+            f"{label}.threshold_triggers none must stand alone"
+        )
+    if "risk-boundary" in thresholds and risks == ["none"]:
+        raise reporter.PilotDataError(
+            f"{label} risk-boundary requires a named risk"
+        )
+    return {
+        "risk_boundaries": sorted(risks),
+        "threshold_triggers": sorted(thresholds),
+    }
+
+
+def trigger_requires_pre_review(trigger: dict[str, list[str]]) -> bool:
+    return trigger["risk_boundaries"] != ["none"] or bool(
+        set(trigger["threshold_triggers"]) & LARGE_TRIGGERS
+    )
+
+
+def _validate_trigger(value: Any) -> dict[str, list[str]]:
     trigger = reporter.expect_object(value, "contract.trigger")
     reporter.expect_keys(
         trigger,
         "contract.trigger",
         ("risk_boundaries", "threshold_triggers"),
     )
-    risks = _expect_string_list(
+    return normalize_trigger_fields(
         trigger["risk_boundaries"],
-        "contract.trigger.risk_boundaries",
-        allowed=reporter.RISK_BOUNDARIES,
-    )
-    thresholds = _expect_string_list(
         trigger["threshold_triggers"],
-        "contract.trigger.threshold_triggers",
-        allowed=reporter.THRESHOLD_TRIGGERS,
+        label="contract.trigger",
     )
-    if "none" in risks and len(risks) != 1:
-        raise reporter.PilotDataError(
-            "contract.trigger.risk_boundaries none must stand alone"
-        )
-    if "none" in thresholds and len(thresholds) != 1:
-        raise reporter.PilotDataError(
-            "contract.trigger.threshold_triggers none must stand alone"
-        )
-    if "risk-boundary" in thresholds and risks == ["none"]:
-        raise reporter.PilotDataError(
-            "contract.trigger risk-boundary requires a named risk"
-        )
-    return (
-        {
-            "risk_boundaries": sorted(risks),
-            "threshold_triggers": sorted(thresholds),
-        },
-        risks != ["none"] or bool(set(thresholds) & LARGE_TRIGGERS),
+
+
+def _validate_authoritative_trigger(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    trigger = reporter.expect_object(
+        value, "evidence.authoritative_trigger"
     )
+    reporter.expect_keys(
+        trigger,
+        "evidence.authoritative_trigger",
+        (
+            "path",
+            "blob_oid",
+            "pull_request",
+            "base_sha",
+            "candidate_sha",
+            "risk_boundaries",
+            "threshold_triggers",
+            "pre_review_required",
+        ),
+    )
+    path = _validate_path(
+        trigger["path"], "evidence.authoritative_trigger.path"
+    )
+    if path != TRIGGER_DECISION_PATH:
+        raise reporter.PilotDataError(
+            "authoritative trigger decision must use .github/workflow-pilot-decisions.json"
+        )
+    normalized_trigger = normalize_trigger_fields(
+        trigger["risk_boundaries"],
+        trigger["threshold_triggers"],
+        label="evidence.authoritative_trigger",
+    )
+    pre_review_required = reporter.expect_bool(
+        trigger["pre_review_required"],
+        "evidence.authoritative_trigger.pre_review_required",
+    )
+    if pre_review_required != trigger_requires_pre_review(normalized_trigger):
+        raise reporter.PilotDataError(
+            "authoritative trigger decision pre_review_required is inconsistent"
+        )
+    return {
+        "path": path,
+        "blob_oid": reporter.expect_sha(
+            trigger["blob_oid"], "evidence.authoritative_trigger.blob_oid"
+        ),
+        "pull_request": reporter.expect_int(
+            trigger["pull_request"], "evidence.authoritative_trigger.pull_request", 1
+        ),
+        "base_sha": reporter.expect_sha(
+            trigger["base_sha"], "evidence.authoritative_trigger.base_sha"
+        ),
+        "candidate_sha": reporter.expect_sha(
+            trigger["candidate_sha"], "evidence.authoritative_trigger.candidate_sha"
+        ),
+        "trigger": normalized_trigger,
+        "pre_review_required": pre_review_required,
+    }
 
 
 def _validate_limits(value: Any) -> dict[str, int]:
@@ -792,7 +879,7 @@ def validate_contract(raw_contract: Any) -> dict[str, Any]:
         raise reporter.PilotDataError(
             f"contract.schema_version must be {SCHEMA_VERSION}"
         )
-    trigger, pre_review_required = _validate_trigger(contract["trigger"])
+    trigger = _validate_trigger(contract["trigger"])
     base_sha = reporter.expect_sha(contract["base_sha"], "contract.base_sha")
     candidate_sha = reporter.expect_sha(
         contract["candidate_sha"], "contract.candidate_sha"
@@ -825,7 +912,6 @@ def validate_contract(raw_contract: Any) -> dict[str, Any]:
             contract["implementer_actor_id"], "contract.implementer_actor_id"
         ),
         "trigger": trigger,
-        "pre_review_required": pre_review_required,
         "limits": _validate_limits(contract["limits"]),
         "behavior_rows": _validate_behavior_rows(contract["behavior_rows"]),
         "family_sweeps": _validate_sweeps(contract["family_sweeps"]),
@@ -1850,6 +1936,7 @@ def validate_evidence(raw_evidence: Any) -> dict[str, Any]:
             "original_pre_review_head",
             "original_receipt_sha256",
             "pull_request",
+            "authoritative_trigger",
             "result_source_path",
             "actors",
             "pre_reviews",
@@ -1894,7 +1981,14 @@ def validate_evidence(raw_evidence: Any) -> dict[str, Any]:
     reporter.expect_keys(
         pull_request,
         "evidence.pull_request",
-        ("number", "node_id", "created_at", "base_sha", "author_actor_id"),
+        (
+            "number",
+            "node_id",
+            "created_at",
+            "base_sha",
+            "head_sha",
+            "author_actor_id",
+        ),
     )
     created_at, created = _expect_time(
         pull_request["created_at"], "evidence.pull_request.created_at"
@@ -1944,11 +2038,17 @@ def validate_evidence(raw_evidence: Any) -> dict[str, Any]:
             "base_sha": reporter.expect_sha(
                 pull_request["base_sha"], "evidence.pull_request.base_sha"
             ),
+            "head_sha": reporter.expect_sha(
+                pull_request["head_sha"], "evidence.pull_request.head_sha"
+            ),
             "author_actor_id": reporter.expect_string(
                 pull_request["author_actor_id"],
                 "evidence.pull_request.author_actor_id",
             ),
         },
+        "authoritative_trigger": _validate_authoritative_trigger(
+            evidence["authoritative_trigger"]
+        ),
         "result_source_path": result_source_path,
         "actors": _validate_actors(evidence["actors"]),
         "pre_reviews": _validate_pre_reviews(evidence["pre_reviews"]),
@@ -2139,10 +2239,54 @@ def _global_identity_check(evidence: dict[str, Any]) -> None:
         )
 
 
+def _resolve_authoritative_trigger(
+    contract: dict[str, Any],
+    evidence: dict[str, Any],
+    authority: dict[str, Any],
+) -> dict[str, Any]:
+    trigger = evidence["authoritative_trigger"]
+    if trigger is None:
+        if contract["trust_mode"] == "introduction":
+            return {
+                "authoritative": False,
+                "path": None,
+                "blob_oid": None,
+                "trigger": contract["trigger"],
+                "pre_review_required": False,
+            }
+        raise reporter.PilotDataError(
+            "base-pinned mode requires an authoritative trigger decision"
+        )
+    if trigger["pull_request"] != contract["pull_request"]:
+        raise reporter.PilotDataError(
+            "authoritative trigger decision does not match the contract PR"
+        )
+    if trigger["base_sha"] != contract["base_sha"]:
+        raise reporter.PilotDataError(
+            "authoritative trigger decision does not match the exact contract base"
+        )
+    if trigger["candidate_sha"] != authority["head"]:
+        raise reporter.PilotDataError(
+            "authoritative trigger decision does not match the exact candidate head"
+        )
+    if trigger["trigger"] != contract["trigger"]:
+        raise reporter.PilotDataError(
+            "candidate trigger does not match the authoritative decision record"
+        )
+    return {
+        "authoritative": True,
+        "path": trigger["path"],
+        "blob_oid": trigger["blob_oid"],
+        "trigger": trigger["trigger"],
+        "pre_review_required": trigger["pre_review_required"],
+    }
+
+
 def _validate_roles_and_causality(
     contract: dict[str, Any],
     evidence: dict[str, Any],
     authority: dict[str, Any],
+    pre_review_required: bool,
 ) -> dict[str, Any]:
     if contract["repository"] != evidence["repository"]:
         raise reporter.PilotDataError("contract/evidence repository mismatch")
@@ -2157,7 +2301,7 @@ def _validate_roles_and_causality(
     if implementer_id not in actors:
         raise reporter.PilotDataError("implementer references unknown actor")
     implementer = actors[implementer_id]
-    expected_pre_reviews = 1 if contract["pre_review_required"] else 0
+    expected_pre_reviews = 1 if pre_review_required else 0
     if len(evidence["pre_reviews"]) != expected_pre_reviews:
         raise reporter.PilotDataError(
             "contract has the wrong number of independent pre-reviews"
@@ -2444,7 +2588,7 @@ def _validate_execution(
                     f"{target_head}:{path}",
                 ).decode("ascii").strip(),
             }
-            for path in ASSERTION_SUBJECT_PATHS
+            for path in ASSERTION_INPUT_PATHS
         ]
         if (
             receipt["base_sha"] != contract["base_sha"]
@@ -2757,7 +2901,15 @@ def build_report(
         repository_root, expected_candidate, contract, evidence
     )
     _global_identity_check(evidence)
-    roles = _validate_roles_and_causality(contract, evidence, authority)
+    trigger_authority = _resolve_authoritative_trigger(
+        contract, evidence, authority
+    )
+    roles = _validate_roles_and_causality(
+        contract,
+        evidence,
+        authority,
+        trigger_authority["pre_review_required"],
+    )
     sweeps, family_counts = _validate_findings_and_sweeps(contract, evidence)
     execution_seals = _validate_execution(contract, evidence, authority)
     forbidden_disposition_actors = {
@@ -2806,6 +2958,7 @@ def build_report(
             "pull_request": contract["pull_request"],
             "pull_request_node_id": evidence["pull_request"]["node_id"],
             "base_sha": contract["base_sha"],
+            "remote_head_sha": evidence["pull_request"]["head_sha"],
             "original_pre_review_head": contract["original_pre_review_head"],
             "candidate_sha": authority["head"],
             "candidate_tree_oid": authority["tree"],
@@ -2821,7 +2974,12 @@ def build_report(
         },
         "trigger": {
             **contract["trigger"],
-            "adversarial_pre_review_required": contract["pre_review_required"],
+            "adversarial_pre_review_required": trigger_authority[
+                "pre_review_required"
+            ],
+            "authoritative": trigger_authority["authoritative"],
+            "authoritative_path": trigger_authority["path"],
+            "authoritative_blob_oid": trigger_authority["blob_oid"],
         },
         "limits": contract["limits"],
         "actors": {

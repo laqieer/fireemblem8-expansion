@@ -11,8 +11,8 @@
         "login": "repository-owner"
       },
       "pullRequest": {
-        "id": "PR_LIVE_179",
-        "number": 179,
+        "id": "PR_SYNTHETIC_901",
+        "number": 901,
         "createdAt": "2026-08-31T03:35:00Z",
         "baseRefOid": "853cff1eb7bdb3ecce46f780473e81be73e24315",
         "headRefOid": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",

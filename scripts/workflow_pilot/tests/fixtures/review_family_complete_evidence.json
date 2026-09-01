@@ -12,11 +12,28 @@
   "original_pre_review_head": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
   "original_receipt_sha256": "9999999999999999999999999999999999999999999999999999999999999999",
   "pull_request": {
-    "number": 179,
-    "node_id": "PR_ISSUE_179_SYNTHETIC",
+    "number": 901,
+    "node_id": "PR_SYNTHETIC_901",
     "created_at": "2026-08-31T03:08:10Z",
     "base_sha": "853cff1eb7bdb3ecce46f780473e81be73e24315",
+    "head_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
     "author_actor_id": "ACTOR_IMPLEMENTER_001"
+  },
+  "authoritative_trigger": {
+    "path": ".github/workflow-pilot-decisions.json",
+    "blob_oid": "2222222222222222222222222222222222222222",
+    "pull_request": 901,
+    "base_sha": "853cff1eb7bdb3ecce46f780473e81be73e24315",
+    "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
+    "risk_boundaries": [
+      "lifecycle",
+      "protocol"
+    ],
+    "threshold_triggers": [
+      "changed-files",
+      "risk-boundary"
+    ],
+    "pre_review_required": true
   },
   "result_source_path": "scripts/workflow_pilot/tests/test_review_family.py",
   "actors": [
