@@ -75,6 +75,15 @@
       "type": "string",
       "format": "date-time"
     },
+    "githubLogin": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?(?:\\[bot\\])?$"
+    },
+    "repositoryPath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)(?:\\.|\\.\\.)(?:/|$)).+$"
+    },
     "actor": {
       "type": "object",
       "additionalProperties": false,
@@ -84,8 +93,7 @@
       ],
       "properties": {
         "login": {
-          "type": "string",
-          "minLength": 1
+          "$ref": "#/$defs/githubLogin"
         },
         "database_id": {
           "type": "integer",
@@ -107,14 +115,1142 @@
           "minLength": 1
         },
         "login": {
-          "type": "string",
-          "minLength": 1
+          "$ref": "#/$defs/githubLogin"
         },
         "database_id": {
           "type": "integer",
           "minimum": 1
         }
       }
+    },
+    "acceptanceCriterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text",
+        "evidence_ids"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "requiredCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "contract",
+        "receipt_id",
+        "evidence_id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contract": {
+          "enum": [
+            "git-diff-check"
+          ]
+        },
+        "receipt_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "budgetEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "changed_lines",
+        "rom_bytes",
+        "ram_bytes",
+        "protocol_changes"
+      ],
+      "properties": {
+        "changed_lines": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rom_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ram_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "protocol_changes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "prohibitedRemoteActions": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "comment",
+          "create_remote_ref",
+          "dispatch_ci",
+          "merge",
+          "open_pull_request",
+          "push",
+          "request_review",
+          "update_pull_request"
+        ]
+      },
+      "allOf": [
+        {
+          "contains": {
+            "const": "comment"
+          }
+        },
+        {
+          "contains": {
+            "const": "create_remote_ref"
+          }
+        },
+        {
+          "contains": {
+            "const": "dispatch_ci"
+          }
+        },
+        {
+          "contains": {
+            "const": "merge"
+          }
+        },
+        {
+          "contains": {
+            "const": "open_pull_request"
+          }
+        },
+        {
+          "contains": {
+            "const": "push"
+          }
+        },
+        {
+          "contains": {
+            "const": "request_review"
+          }
+        },
+        {
+          "contains": {
+            "const": "update_pull_request"
+          }
+        }
+      ]
+    },
+    "historySnapshotFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "mode",
+        "sha256",
+        "content_base64"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/repositoryPath"
+        },
+        "mode": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "content_base64": {
+          "type": "string"
+        }
+      }
+    },
+    "historyInterruptionSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status_sha256",
+        "dirty_paths",
+        "preserved_paths",
+        "files"
+      ],
+      "properties": {
+        "status_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "dirty_paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/repositoryPath"
+          }
+        },
+        "preserved_paths": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/repositoryPath"
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/historySnapshotFile"
+          }
+        }
+      }
+    },
+    "historyAssignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "issue",
+        "pull_request",
+        "owner_id",
+        "owner_database_id",
+        "handoff_kind",
+        "replaces_handoff_id",
+        "assigned_parent_sha",
+        "expected_branch",
+        "allowed_worktree",
+        "allowed_scope",
+        "finding_ids",
+        "acceptance_criteria",
+        "required_checks",
+        "budgets",
+        "prohibited_remote_actions",
+        "max_lifetime_seconds",
+        "max_peak_rss_bytes"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "issue": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pull_request": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "owner_id": {
+          "$ref": "#/$defs/githubLogin"
+        },
+        "owner_database_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "handoff_kind": {
+          "enum": [
+            "root",
+            "oom_replacement",
+            "review_successor"
+          ]
+        },
+        "replaces_handoff_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "assigned_parent_sha": {
+          "$ref": "#/$defs/sha"
+        },
+        "expected_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_worktree": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_scope": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/repositoryPath"
+          }
+        },
+        "finding_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "acceptance_criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/acceptanceCriterion"
+          }
+        },
+        "required_checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/requiredCheck"
+          }
+        },
+        "budgets": {
+          "$ref": "#/$defs/budgetEnvelope"
+        },
+        "prohibited_remote_actions": {
+          "$ref": "#/$defs/prohibitedRemoteActions"
+        },
+        "max_lifetime_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_peak_rss_bytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "userBypassActor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actor_type",
+        "actor_id",
+        "database_id",
+        "bypass_mode"
+      ],
+      "properties": {
+        "actor_type": {
+          "const": "User"
+        },
+        "actor_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "database_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bypass_mode": {
+          "const": "always"
+        }
+      }
+    },
+    "typedBypassActor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actor_type",
+        "actor_id",
+        "bypass_mode"
+      ],
+      "properties": {
+        "actor_type": {
+          "type": "string",
+          "minLength": 1,
+          "not": {
+            "const": "User"
+          }
+        },
+        "actor_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bypass_mode": {
+          "const": "always"
+        }
+      }
+    },
+    "rulesetBypassActor": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/userBypassActor"
+        },
+        {
+          "$ref": "#/$defs/typedBypassActor"
+        }
+      ]
+    },
+    "signerIsolationAttestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "private_key_in_implementation_namespace",
+        "signing_api"
+      ],
+      "properties": {
+        "kind": {
+          "const": "external-isolated-service"
+        },
+        "private_key_in_implementation_namespace": {
+          "const": false
+        },
+        "signing_api": {
+          "const": "single-use-terminal-attestation"
+        }
+      }
+    },
+    "signerPublic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "key_id",
+        "modulus_hex",
+        "exponent",
+        "service_identity",
+        "isolation_attestation"
+      ],
+      "properties": {
+        "algorithm": {
+          "const": "rsa-pkcs1v15-sha256"
+        },
+        "key_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "modulus_hex": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{2}){256,}$"
+        },
+        "exponent": {
+          "type": "integer",
+          "minimum": 3
+        },
+        "service_identity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "isolation_attestation": {
+          "$ref": "#/$defs/signerIsolationAttestation"
+        }
+      }
+    },
+    "deliveryExpectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_id",
+        "repository_full_name",
+        "immediate_base_branch",
+        "immediate_base_oid",
+        "delivery_branch",
+        "head_repository_full_name"
+      ],
+      "properties": {
+        "repository_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "repository_full_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "immediate_base_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "immediate_base_oid": {
+          "$ref": "#/$defs/sha"
+        },
+        "delivery_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "head_repository_full_name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "prObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "repository_id",
+        "repository_full_name",
+        "pull_request",
+        "state",
+        "merged",
+        "base_branch",
+        "head_branch",
+        "head_repository_full_name",
+        "base_oid",
+        "head_oid",
+        "created_at",
+        "coordinator_database_id",
+        "observed_at",
+        "authority_object_id",
+        "anchor_object_id",
+        "expected_handoff_branch",
+        "delivery_branch",
+        "signature"
+      ],
+      "properties": {
+        "source": {
+          "const": "github-pull-request-api"
+        },
+        "repository_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "repository_full_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pull_request": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "state": {
+          "const": "OPEN"
+        },
+        "merged": {
+          "const": false
+        },
+        "base_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "head_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "head_repository_full_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "base_oid": {
+          "$ref": "#/$defs/sha"
+        },
+        "head_oid": {
+          "$ref": "#/$defs/sha"
+        },
+        "created_at": {
+          "$ref": "#/$defs/time"
+        },
+        "coordinator_database_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "observed_at": {
+          "$ref": "#/$defs/time"
+        },
+        "authority_object_id": {
+          "$ref": "#/$defs/sha"
+        },
+        "anchor_object_id": {
+          "$ref": "#/$defs/sha"
+        },
+        "expected_handoff_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "delivery_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "publicationBindingExpectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_id",
+        "repository_full_name",
+        "pull_request",
+        "state",
+        "merged",
+        "base_branch",
+        "frozen_base_oid",
+        "current_base_oid",
+        "head_branch",
+        "head_repository_full_name",
+        "head_oid",
+        "coordinator_database_id"
+      ],
+      "properties": {
+        "repository_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "repository_full_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pull_request": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "state": {
+          "const": "OPEN"
+        },
+        "merged": {
+          "const": false
+        },
+        "base_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "frozen_base_oid": {
+          "$ref": "#/$defs/sha"
+        },
+        "current_base_oid": {
+          "$ref": "#/$defs/sha"
+        },
+        "head_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "head_repository_full_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "head_oid": {
+          "$ref": "#/$defs/sha"
+        },
+        "coordinator_database_id": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "rulesetResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "enforcement",
+        "target",
+        "include_refs",
+        "exclude_refs",
+        "update_restricted",
+        "non_fast_forward_restricted",
+        "deletion_restricted",
+        "bypass_actors"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "enforcement": {
+          "const": "active"
+        },
+        "target": {
+          "const": "branch"
+        },
+        "include_refs": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "exclude_refs": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "update_restricted": {
+          "const": true
+        },
+        "non_fast_forward_restricted": {
+          "const": true
+        },
+        "deletion_restricted": {
+          "const": true
+        },
+        "bypass_actors": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/rulesetBypassActor"
+          }
+        }
+      }
+    },
+    "publicationAttestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "repository",
+        "repository_id",
+        "ruleset_source",
+        "issue",
+        "authority_object_id",
+        "anchor_object_id",
+        "operation_nonce",
+        "operation",
+        "new_head_seal",
+        "history_receipt_digest",
+        "pull_request_observation_digest",
+        "binding_expectation",
+        "observed_at",
+        "coordinator_database_id",
+        "ruleset_response",
+        "signature"
+      ],
+      "properties": {
+        "source": {
+          "const": "external-coordinator-service"
+        },
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repository_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ruleset_source": {
+          "const": "github-rulesets-api"
+        },
+        "issue": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "authority_object_id": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/sha"
+            }
+          ]
+        },
+        "anchor_object_id": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/sha"
+            }
+          ]
+        },
+        "operation_nonce": {
+          "$ref": "#/$defs/sha256"
+        },
+        "operation": {
+          "enum": [
+            "bootstrap",
+            "advance",
+            "bind"
+          ]
+        },
+        "new_head_seal": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/sha256"
+            }
+          ]
+        },
+        "history_receipt_digest": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/sha256"
+            }
+          ]
+        },
+        "pull_request_observation_digest": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/sha256"
+            }
+          ]
+        },
+        "binding_expectation": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/publicationBindingExpectation"
+            }
+          ]
+        },
+        "observed_at": {
+          "$ref": "#/$defs/time"
+        },
+        "coordinator_database_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ruleset_response": {
+          "$ref": "#/$defs/rulesetResponse"
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "historyObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "remote",
+        "ref",
+        "object_id",
+        "anchor_ref",
+        "anchor_object_id",
+        "attempt",
+        "token"
+      ],
+      "properties": {
+        "remote": {
+          "const": "origin"
+        },
+        "ref": {
+          "type": "string",
+          "pattern": "^refs/heads/workflow-pilot/authority/issue-[1-9][0-9]*$"
+        },
+        "object_id": {
+          "$ref": "#/$defs/sha"
+        },
+        "anchor_ref": {
+          "type": "string",
+          "pattern": "^refs/heads/workflow-pilot/authority-anchor/issue-[1-9][0-9]*$"
+        },
+        "anchor_object_id": {
+          "$ref": "#/$defs/sha"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "token": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "genesisEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "handoff_seal",
+        "handoff_id",
+        "handoff_kind",
+        "lifecycle_state",
+        "candidate_sha",
+        "closed_at",
+        "operation_nonce",
+        "consume_store_id",
+        "consume_sequence",
+        "consume_anchor",
+        "assignment",
+        "interruption_snapshot"
+      ],
+      "properties": {
+        "kind": {
+          "const": "genesis"
+        },
+        "handoff_seal": {
+          "type": "null"
+        },
+        "handoff_id": {
+          "type": "null"
+        },
+        "handoff_kind": {
+          "type": "null"
+        },
+        "lifecycle_state": {
+          "type": "null"
+        },
+        "candidate_sha": {
+          "type": "null"
+        },
+        "closed_at": {
+          "type": "null"
+        },
+        "operation_nonce": {
+          "type": "null"
+        },
+        "consume_store_id": {
+          "type": "null"
+        },
+        "consume_sequence": {
+          "type": "null"
+        },
+        "consume_anchor": {
+          "type": "null"
+        },
+        "assignment": {
+          "type": "null"
+        },
+        "interruption_snapshot": {
+          "type": "null"
+        }
+      }
+    },
+    "prBindingEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "handoff_seal",
+        "handoff_id",
+        "handoff_kind",
+        "lifecycle_state",
+        "candidate_sha",
+        "closed_at",
+        "operation_nonce",
+        "consume_store_id",
+        "consume_sequence",
+        "consume_anchor",
+        "assignment",
+        "interruption_snapshot"
+      ],
+      "properties": {
+        "kind": {
+          "const": "pr_binding"
+        },
+        "handoff_seal": {
+          "type": "null"
+        },
+        "handoff_id": {
+          "type": "null"
+        },
+        "handoff_kind": {
+          "type": "null"
+        },
+        "lifecycle_state": {
+          "type": "null"
+        },
+        "candidate_sha": {
+          "type": "null"
+        },
+        "closed_at": {
+          "type": "null"
+        },
+        "operation_nonce": {
+          "type": "null"
+        },
+        "consume_store_id": {
+          "type": "null"
+        },
+        "consume_sequence": {
+          "type": "null"
+        },
+        "consume_anchor": {
+          "type": "null"
+        },
+        "assignment": {
+          "type": "null"
+        },
+        "interruption_snapshot": {
+          "type": "null"
+        }
+      }
+    },
+    "handedOffHistoryEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "handoff_seal",
+        "handoff_id",
+        "handoff_kind",
+        "lifecycle_state",
+        "candidate_sha",
+        "closed_at",
+        "operation_nonce",
+        "consume_store_id",
+        "consume_sequence",
+        "consume_anchor",
+        "assignment",
+        "interruption_snapshot"
+      ],
+      "properties": {
+        "kind": {
+          "const": "handoff"
+        },
+        "handoff_seal": {
+          "$ref": "#/$defs/sha256"
+        },
+        "handoff_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "handoff_kind": {
+          "enum": [
+            "root",
+            "oom_replacement",
+            "review_successor"
+          ]
+        },
+        "lifecycle_state": {
+          "const": "handed_off"
+        },
+        "candidate_sha": {
+          "$ref": "#/$defs/sha"
+        },
+        "closed_at": {
+          "$ref": "#/$defs/time"
+        },
+        "operation_nonce": {
+          "$ref": "#/$defs/sha256"
+        },
+        "consume_store_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "consume_sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "consume_anchor": {
+          "$ref": "#/$defs/sha256"
+        },
+        "assignment": {
+          "$ref": "#/$defs/historyAssignment"
+        },
+        "interruption_snapshot": {
+          "type": "null"
+        }
+      }
+    },
+    "interruptedHistoryEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "handoff_seal",
+        "handoff_id",
+        "handoff_kind",
+        "lifecycle_state",
+        "candidate_sha",
+        "closed_at",
+        "operation_nonce",
+        "consume_store_id",
+        "consume_sequence",
+        "consume_anchor",
+        "assignment",
+        "interruption_snapshot"
+      ],
+      "properties": {
+        "kind": {
+          "const": "handoff"
+        },
+        "handoff_seal": {
+          "$ref": "#/$defs/sha256"
+        },
+        "handoff_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "handoff_kind": {
+          "enum": [
+            "root",
+            "oom_replacement",
+            "review_successor"
+          ]
+        },
+        "lifecycle_state": {
+          "const": "interrupted"
+        },
+        "candidate_sha": {
+          "type": "null"
+        },
+        "closed_at": {
+          "$ref": "#/$defs/time"
+        },
+        "operation_nonce": {
+          "$ref": "#/$defs/sha256"
+        },
+        "consume_store_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "consume_sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "consume_anchor": {
+          "$ref": "#/$defs/sha256"
+        },
+        "assignment": {
+          "$ref": "#/$defs/historyAssignment"
+        },
+        "interruption_snapshot": {
+          "$ref": "#/$defs/historyInterruptionSnapshot"
+        }
+      }
+    },
+    "authorityEvent": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/genesisEvent"
+        },
+        {
+          "$ref": "#/$defs/prBindingEvent"
+        },
+        {
+          "$ref": "#/$defs/handedOffHistoryEvent"
+        },
+        {
+          "$ref": "#/$defs/interruptedHistoryEvent"
+        }
+      ]
     },
     "historyAuthority": {
       "type": "object",
@@ -140,9 +1276,113 @@
         "event",
         "previous_object_id",
         "observation"
-      ]
+      ],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "pattern": "^refs/heads/workflow-pilot/authority/issue-[1-9][0-9]*$"
+        },
+        "object_id": {
+          "$ref": "#/$defs/sha"
+        },
+        "anchor_ref": {
+          "type": "string",
+          "pattern": "^refs/heads/workflow-pilot/authority-anchor/issue-[1-9][0-9]*$"
+        },
+        "anchor_object_id": {
+          "$ref": "#/$defs/sha"
+        },
+        "history_events": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/handedOffHistoryEvent"
+              },
+              {
+                "$ref": "#/$defs/interruptedHistoryEvent"
+              }
+            ]
+          }
+        },
+        "schema_version": {
+          "const": 2
+        },
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "issue": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "handoff_sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "head_seal": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/sha256"
+            }
+          ]
+        },
+        "pr_binding": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/prObservation"
+            }
+          ]
+        },
+        "signer": {
+          "$ref": "#/$defs/signerPublic"
+        },
+        "ruleset_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "authorized_bypass_actors": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/rulesetBypassActor"
+          }
+        },
+        "delivery_expectation": {
+          "$ref": "#/$defs/deliveryExpectation"
+        },
+        "publication_attestation": {
+          "$ref": "#/$defs/publicationAttestation"
+        },
+        "event": {
+          "$ref": "#/$defs/authorityEvent"
+        },
+        "previous_object_id": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/sha"
+            }
+          ]
+        },
+        "observation": {
+          "$ref": "#/$defs/historyObservation"
+        }
+      }
     },
-    "historyReceipt": {
+    "historyReceiptHandedOff": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -172,6 +1412,248 @@
         "consume_anchor",
         "assignment",
         "seal"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "previous_seal": {
+          "$ref": "#/$defs/sha256"
+        },
+        "handoff_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner_id": {
+          "$ref": "#/$defs/githubLogin"
+        },
+        "owner_database_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "handoff_kind": {
+          "enum": [
+            "root",
+            "oom_replacement",
+            "review_successor"
+          ]
+        },
+        "replaces_handoff_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "issue": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pull_request": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "assigned_parent_sha": {
+          "$ref": "#/$defs/sha"
+        },
+        "expected_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_worktree": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidate_sha": {
+          "$ref": "#/$defs/sha"
+        },
+        "lifecycle_state": {
+          "const": "handed_off"
+        },
+        "interruption_snapshot": {
+          "type": "null"
+        },
+        "assigned_at": {
+          "$ref": "#/$defs/time"
+        },
+        "closed_at": {
+          "$ref": "#/$defs/time"
+        },
+        "input_seal": {
+          "$ref": "#/$defs/sha256"
+        },
+        "git_seal": {
+          "$ref": "#/$defs/sha256"
+        },
+        "result_seal": {
+          "$ref": "#/$defs/sha256"
+        },
+        "operation_nonce": {
+          "$ref": "#/$defs/sha256"
+        },
+        "consume_store_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "consume_sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "consume_anchor": {
+          "$ref": "#/$defs/sha256"
+        },
+        "assignment": {
+          "$ref": "#/$defs/historyAssignment"
+        },
+        "seal": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "historyReceiptInterrupted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence",
+        "previous_seal",
+        "handoff_id",
+        "owner_id",
+        "owner_database_id",
+        "handoff_kind",
+        "replaces_handoff_id",
+        "issue",
+        "pull_request",
+        "assigned_parent_sha",
+        "expected_branch",
+        "allowed_worktree",
+        "candidate_sha",
+        "lifecycle_state",
+        "interruption_snapshot",
+        "assigned_at",
+        "closed_at",
+        "input_seal",
+        "git_seal",
+        "result_seal",
+        "operation_nonce",
+        "consume_store_id",
+        "consume_sequence",
+        "consume_anchor",
+        "assignment",
+        "seal"
+      ],
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "previous_seal": {
+          "$ref": "#/$defs/sha256"
+        },
+        "handoff_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner_id": {
+          "$ref": "#/$defs/githubLogin"
+        },
+        "owner_database_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "handoff_kind": {
+          "enum": [
+            "root",
+            "oom_replacement",
+            "review_successor"
+          ]
+        },
+        "replaces_handoff_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "issue": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pull_request": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "assigned_parent_sha": {
+          "$ref": "#/$defs/sha"
+        },
+        "expected_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_worktree": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidate_sha": {
+          "type": "null"
+        },
+        "lifecycle_state": {
+          "const": "interrupted"
+        },
+        "interruption_snapshot": {
+          "$ref": "#/$defs/historyInterruptionSnapshot"
+        },
+        "assigned_at": {
+          "$ref": "#/$defs/time"
+        },
+        "closed_at": {
+          "$ref": "#/$defs/time"
+        },
+        "input_seal": {
+          "$ref": "#/$defs/sha256"
+        },
+        "git_seal": {
+          "$ref": "#/$defs/sha256"
+        },
+        "result_seal": {
+          "$ref": "#/$defs/sha256"
+        },
+        "operation_nonce": {
+          "$ref": "#/$defs/sha256"
+        },
+        "consume_store_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "consume_sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "consume_anchor": {
+          "$ref": "#/$defs/sha256"
+        },
+        "assignment": {
+          "$ref": "#/$defs/historyAssignment"
+        },
+        "seal": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "historyReceipt": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/historyReceiptHandedOff"
+        },
+        {
+          "$ref": "#/$defs/historyReceiptInterrupted"
+        }
       ]
     },
     "handoff": {
@@ -220,8 +1702,7 @@
           "minimum": 1
         },
         "owner_id": {
-          "type": "string",
-          "minLength": 1
+          "$ref": "#/$defs/githubLogin"
         },
         "owner_database_id": {
           "type": "integer",
@@ -238,7 +1719,8 @@
           "type": [
             "string",
             "null"
-          ]
+          ],
+          "minLength": 1
         },
         "assigned_parent_sha": {
           "$ref": "#/$defs/sha"
@@ -344,8 +1826,7 @@
           "minimum": 1
         },
         "collector_login": {
-          "type": "string",
-          "minLength": 1
+          "$ref": "#/$defs/githubLogin"
         },
         "collector_database_id": {
           "type": "integer",
@@ -361,9 +1842,13 @@
           "type": "object"
         },
         "pull_request_observation": {
-          "type": [
-            "object",
-            "null"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/prObservation"
+            }
           ]
         },
         "availability": {

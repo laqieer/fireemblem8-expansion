@@ -13,6 +13,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
+from jsonschema import Draft202012Validator, FormatChecker, ValidationError
+
 from scripts.workflow_pilot import agent_handoff, reporter
 from scripts.workflow_pilot.tests import test_reporter
 
@@ -24,6 +26,31 @@ AUTHORITY_OWNERS = {}
 COORDINATOR_INSTALLATIONS = {}
 SIGNER_SERVICES = {}
 SIGNER_CONSUME_STATES = {}
+
+
+def load_handoff_schema():
+    return json.loads(
+        (
+            ROOT / agent_handoff.HANDOFF_SCHEMA_REPOSITORY_PATH
+        ).read_text(encoding="utf-8")
+    )
+
+
+def validator_for_schema(schema):
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema, format_checker=FormatChecker())
+
+
+def schema_ref(schema, ref):
+    return {
+        "$schema": schema["$schema"],
+        "$defs": copy.deepcopy(schema["$defs"]),
+        "$ref": ref,
+    }
+
+
+def iso_utc(value):
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 SIGNER_SERVICE = r"""
 import base64
@@ -1155,6 +1182,26 @@ def shift_handoff_times(document, seconds):
             receipt["seal"] = agent_handoff.seal_check_receipt(receipt)
 
 
+def retime_handoff(
+    document,
+    *,
+    assignment_sent,
+    state_offsets,
+    evidence_offset,
+    receipt_offsets,
+):
+    handoff = document["handoffs"][0]
+    for state, offset in zip(handoff["states"], state_offsets):
+        state["at"] = iso_utc(assignment_sent + offset)
+    for item in handoff["evidence"]:
+        item["completed_at"] = iso_utc(assignment_sent + evidence_offset)
+    receipt_start, receipt_end = receipt_offsets
+    for receipt in handoff["check_receipts"]:
+        receipt["started_at"] = iso_utc(assignment_sent + receipt_start)
+        receipt["completed_at"] = iso_utc(assignment_sent + receipt_end)
+        receipt["seal"] = agent_handoff.seal_check_receipt(receipt)
+
+
 def coordinator_receipt(
     document,
     repository_root,
@@ -1945,11 +1992,8 @@ class AuthorityReadRaceTests(unittest.TestCase):
 
 class ExactHandoffTests(unittest.TestCase):
     def test_schema_v2_closes_candidate_reported_authority(self):
-        schema = json.loads(
-            (
-                ROOT / agent_handoff.HANDOFF_SCHEMA_REPOSITORY_PATH
-            ).read_text(encoding="utf-8")
-        )
+        schema = load_handoff_schema()
+        validator_for_schema(schema)
         self.assertEqual(schema["protocol_version"], 8)
         self.assertEqual(schema["properties"]["schema_version"]["const"], 2)
         self.assertIn(
@@ -1961,6 +2005,98 @@ class ExactHandoffTests(unittest.TestCase):
             "peak_rss_bytes",
             schema["$defs"]["handoff"]["properties"],
         )
+        self.assertIn(
+            "properties",
+            schema["$defs"]["historyAuthority"],
+        )
+        self.assertIn(
+            "properties",
+            schema["$defs"]["historyReceiptHandedOff"],
+        )
+        self.assertIn(
+            "properties",
+            schema["$defs"]["historyReceiptInterrupted"],
+        )
+
+    def test_schema_v2_has_no_closed_object_without_properties(self):
+        schema = load_handoff_schema()
+
+        def walk(node, path):
+            if isinstance(node, dict):
+                if (
+                    node.get("type") == "object"
+                    and node.get("additionalProperties") is False
+                    and node.get("required")
+                    and "properties" not in node
+                ):
+                    self.fail(f"{path} closes object fields without properties")
+                for key, value in node.items():
+                    walk(value, f"{path}.{key}")
+            elif isinstance(node, list):
+                for index, value in enumerate(node):
+                    walk(value, f"{path}[{index}]")
+
+        walk(schema, "$")
+
+    def test_schema_v2_validates_real_document_and_prior_history(self):
+        schema = load_handoff_schema()
+        document_validator = validator_for_schema(schema)
+        authority_validator = validator_for_schema(
+            schema_ref(schema, "#/$defs/historyAuthority")
+        )
+        receipt_validator = validator_for_schema(
+            schema_ref(schema, "#/$defs/historyReceipt")
+        )
+
+        with handoff_repository() as (root, _base, parent, result):
+            document = handoff_document(root, parent, result)
+            document_validator.validate(document)
+            authority_validator.validate(document["history_authority"])
+
+            handoff_result = agent_handoff.validate_document(document, root)
+            receipt = agent_handoff.make_history_receipt(
+                document,
+                handoff_result,
+                "issue-178-round-1",
+            )
+            receipt_validator.validate(receipt)
+
+            with_prior = copy.deepcopy(document)
+            with_prior["prior_handoffs"] = [receipt]
+            document_validator.validate(with_prior)
+
+    def test_schema_v2_rejects_authority_history_unknown_missing_and_wrong_types(self):
+        schema = load_handoff_schema()
+        authority_validator = validator_for_schema(
+            schema_ref(schema, "#/$defs/historyAuthority")
+        )
+        receipt_validator = validator_for_schema(
+            schema_ref(schema, "#/$defs/historyReceipt")
+        )
+
+        with handoff_repository() as (root, _base, parent, result):
+            document = handoff_document(root, parent, result)
+            handoff_result = agent_handoff.validate_document(document, root)
+            receipt = agent_handoff.make_history_receipt(
+                document,
+                handoff_result,
+                "issue-178-round-1",
+            )
+
+        unknown_authority = copy.deepcopy(document["history_authority"])
+        unknown_authority["unexpected"] = True
+        with self.assertRaises(ValidationError):
+            authority_validator.validate(unknown_authority)
+
+        missing_receipt = copy.deepcopy(receipt)
+        del missing_receipt["assignment"]
+        with self.assertRaises(ValidationError):
+            receipt_validator.validate(missing_receipt)
+
+        wrong_type_receipt = copy.deepcopy(receipt)
+        wrong_type_receipt["consume_sequence"] = "1"
+        with self.assertRaises(ValidationError):
+            receipt_validator.validate(wrong_type_receipt)
 
     def test_exact_clean_strict_descendant_is_accepted(self):
         with handoff_repository() as (root, _base, parent, result):
@@ -2654,6 +2790,85 @@ class ExactHandoffTests(unittest.TestCase):
                 with self.subTest(name=name):
                     report = agent_handoff.validate_document(document, root)
                     self.assertIn(code, report["summary"]["rejection_codes"])
+
+    def test_fractional_runtime_telemetry_must_resolve_to_whole_seconds(self):
+        with handoff_repository() as (root, _base, parent, result):
+            exact = handoff_document(root, parent, result)
+            exact["handoffs"][0]["max_lifetime_seconds"] = 1
+            retime_handoff(
+                exact,
+                assignment_sent=(
+                    datetime.now(timezone.utc).replace(microsecond=100000)
+                    - timedelta(minutes=10)
+                ),
+                state_offsets=[
+                    timedelta(seconds=0),
+                    timedelta(milliseconds=100),
+                    timedelta(milliseconds=200),
+                    timedelta(milliseconds=900),
+                    timedelta(seconds=1),
+                ],
+                evidence_offset=timedelta(milliseconds=600),
+                receipt_offsets=(
+                    timedelta(milliseconds=300),
+                    timedelta(milliseconds=700),
+                ),
+            )
+            refresh_coordinator_receipt(exact, root)
+            exact_report = agent_handoff.validate_document(exact, root)
+            self.assertTrue(exact_report["summary"]["trusted_push_eligible"])
+            self.assertEqual(exact_report["handoffs"][0]["lifetime_seconds"], 1)
+
+            fractional_cases = {
+                "fractional-span": (
+                    datetime.now(timezone.utc).replace(microsecond=100000)
+                    - timedelta(minutes=8),
+                    [
+                        timedelta(seconds=0),
+                        timedelta(milliseconds=100),
+                        timedelta(milliseconds=200),
+                        timedelta(seconds=1, milliseconds=800),
+                        timedelta(seconds=1, milliseconds=900),
+                    ],
+                ),
+                "fractional-endpoint": (
+                    datetime.now(timezone.utc).replace(microsecond=0)
+                    - timedelta(minutes=6),
+                    [
+                        timedelta(seconds=0),
+                        timedelta(milliseconds=100),
+                        timedelta(milliseconds=200),
+                        timedelta(seconds=1),
+                        timedelta(seconds=1, milliseconds=100),
+                    ],
+                ),
+            }
+            for name, (assignment_sent, offsets) in fractional_cases.items():
+                with self.subTest(name=name):
+                    document = handoff_document(root, parent, result)
+                    document["handoffs"][0]["max_lifetime_seconds"] = 1
+                    retime_handoff(
+                        document,
+                        assignment_sent=assignment_sent,
+                        state_offsets=offsets,
+                        evidence_offset=timedelta(milliseconds=600),
+                        receipt_offsets=(
+                            timedelta(milliseconds=300),
+                            timedelta(milliseconds=700),
+                        ),
+                    )
+                    refresh_coordinator_receipt(document, root)
+                    report = agent_handoff.validate_document(document, root)
+                    self.assertFalse(report["summary"]["trusted_push_eligible"])
+                    self.assertIn(
+                        "invalid-runtime-telemetry",
+                        report["summary"]["rejection_codes"],
+                    )
+                    self.assertNotIn(
+                        "owner-lifetime-exceeded",
+                        report["summary"]["rejection_codes"],
+                    )
+                    self.assertEqual(report["handoffs"][0]["lifetime_seconds"], 0)
 
     def test_duplicate_owner_and_watcher_reject(self):
         with handoff_repository() as (root, _base, parent, result):
@@ -5304,6 +5519,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             {
                 "records": 2,
                 "accepted": 1,
+                "bundle_rejected": 0,
                 "rejected": 1,
                 "interrupted": 0,
                 "in_progress": 0,
@@ -5312,6 +5528,9 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 "max_peak_rss_bytes": 134217728,
                 "coordination_turns": 4,
                 "recovery_minutes": 0,
+                "rejection_codes": sorted(
+                    stale_result["summary"]["rejection_codes"]
+                ),
             },
         )
         tampered = copy.deepcopy(fixture)
@@ -5339,6 +5558,184 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             "result signature does not verify",
         ):
             reporter.validate_fixture(rehashed)
+
+    def test_reporter_counts_bundle_rejections_without_losing_failure_codes(self):
+        with handoff_repository() as (root, _base, parent, result):
+            accepted_document = handoff_document(root, parent, result)
+            accepted_result = agent_handoff.validate_document(
+                accepted_document,
+                root,
+            )
+            accepted_record = reporter_record(
+                root,
+                accepted_document,
+                accepted_result,
+            )
+
+            def relabel_handoff(document, handoff_id, owner_id, owner_database_id):
+                handoff = document["handoffs"][0]
+                handoff["id"] = handoff_id
+                handoff["owner_id"] = owner_id
+                handoff["owner_database_id"] = owner_database_id
+                document["delivery_graph"]["relationships"][0][
+                    "handoff_id"
+                ] = handoff_id
+                next(
+                    task
+                    for task in document["delivery_graph"]["tasks"]
+                    if task["phase"] == "implementation"
+                )["handoff_id"] = handoff_id
+
+            def duplicate_watcher(document):
+                add_run(document, result)
+                duplicate = copy.deepcopy(document["watchers"][0])
+                duplicate["id"] = "watcher-9001-duplicate"
+                document["watchers"].append(duplicate)
+                refresh_coordinator_receipt(document, root)
+
+            def watcher_owner_mismatch(document):
+                add_run(document, result)
+                document["watchers"][0]["coordinator_id"] = "coordinator-2"
+                refresh_coordinator_receipt(document, root)
+
+            def incomplete_coverage(document):
+                refresh_coordinator_receipt(
+                    document,
+                    root,
+                    incomplete_sources=["github-audit-log"],
+                )
+                document["coordinator_receipt"]["remote_coverage"][
+                    "implementation_processes"
+                ][0]["credentials_available"] = True
+                sign_coordinator_document(document, root)
+
+            cases = {
+                "duplicate-watcher": (
+                    "issue-178-duplicate-watcher",
+                    "owner-2",
+                    102,
+                    "bundle_rejected",
+                    {
+                        "accepted": 1,
+                        "bundle_rejected": 1,
+                        "rejected": 0,
+                        "interrupted": 0,
+                        "in_progress": 0,
+                        "stale_responses": 0,
+                    },
+                    duplicate_watcher,
+                ),
+                "watcher-owner-mismatch": (
+                    "issue-178-watcher-owner",
+                    "owner-3",
+                    103,
+                    "bundle_rejected",
+                    {
+                        "accepted": 1,
+                        "bundle_rejected": 1,
+                        "rejected": 0,
+                        "interrupted": 0,
+                        "in_progress": 0,
+                        "stale_responses": 0,
+                    },
+                    watcher_owner_mismatch,
+                ),
+                "remote-coverage-incomplete": (
+                    "issue-178-incomplete-coverage",
+                    "owner-4",
+                    104,
+                    "rejected",
+                    {
+                        "accepted": 1,
+                        "bundle_rejected": 0,
+                        "rejected": 1,
+                        "interrupted": 0,
+                        "in_progress": 0,
+                        "stale_responses": 0,
+                    },
+                    incomplete_coverage,
+                ),
+            }
+
+            for code, (
+                handoff_id,
+                owner_id,
+                owner_database_id,
+                expected_reported_outcome,
+                expected_metrics,
+                mutate,
+            ) in cases.items():
+                with self.subTest(code=code):
+                    document = handoff_document(root, parent, result)
+                    relabel_handoff(
+                        document,
+                        handoff_id,
+                        owner_id,
+                        owner_database_id,
+                    )
+                    mutate(document)
+                    result_report = agent_handoff.validate_document(
+                        document,
+                        root,
+                    )
+                    record = reporter_record(
+                        root,
+                        document,
+                        result_report,
+                    )
+                    fixture = reporter_fixture_with_handoffs(
+                        accepted_record,
+                        record,
+                    )
+                    data = reporter.validate_fixture(fixture)
+                    normalized = data["implementation_handoffs"][handoff_id]
+                    self.assertEqual(
+                        normalized["reported_outcome"],
+                        expected_reported_outcome,
+                    )
+                    if expected_reported_outcome == "bundle_rejected":
+                        self.assertEqual(
+                            normalized["outcome"],
+                            "accepted",
+                        )
+                        self.assertEqual(
+                            normalized["bundle_rejection_codes"],
+                            sorted(result_report["summary"]["rejection_codes"]),
+                        )
+                    else:
+                        self.assertEqual(
+                            normalized["bundle_rejection_codes"],
+                            [],
+                        )
+                    report = test_reporter.authoritative_report(
+                        fixture,
+                        test_reporter.minimal_decisions(),
+                    )
+                    self.assertEqual(
+                        report["implementation_handoffs"]["records"],
+                        2,
+                    )
+                    self.assertEqual(
+                        report["implementation_handoffs"]["max_peak_rss_bytes"],
+                        134217728,
+                    )
+                    self.assertEqual(
+                        report["implementation_handoffs"]["coordination_turns"],
+                        4,
+                    )
+                    self.assertEqual(
+                        report["implementation_handoffs"]["recovery_minutes"],
+                        0,
+                    )
+                    for field, expected_value in expected_metrics.items():
+                        self.assertEqual(
+                            report["implementation_handoffs"][field],
+                            expected_value,
+                        )
+                    self.assertEqual(
+                        report["implementation_handoffs"]["rejection_codes"],
+                        sorted(result_report["summary"]["rejection_codes"]),
+                    )
 
     def test_frozen_version_one_schema_remains_closed_and_unchanged(self):
         baseline = reporter.load_json(test_reporter.BASELINE)

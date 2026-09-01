@@ -1454,6 +1454,63 @@ def validate_implementation_handoffs(
             )
         except agent_handoff.HandoffDataError as error:
             raise PilotDataError(f"{label}: {error}") from error
+        summary = expect_object(bundle["result"]["summary"], f"{label}.result.summary")
+        expect_keys(
+            summary,
+            f"{label}.result.summary",
+            (
+                "trusted_push_eligible",
+                "delivery_eligible",
+                "accepted_handoffs",
+                "rejected_handoffs",
+                "interrupted_handoffs",
+                "stale_responses",
+                "max_owner_lifetime_seconds",
+                "max_peak_rss_bytes",
+                "coordination_turns",
+                "recovery_count",
+                "recovery_minutes",
+                "rejection_codes",
+            ),
+        )
+        bundle_trusted_push_eligible = expect_bool(
+            summary["trusted_push_eligible"],
+            f"{label}.result.summary.trusted_push_eligible",
+        )
+        expect_bool(
+            summary["delivery_eligible"],
+            f"{label}.result.summary.delivery_eligible",
+        )
+        for field in (
+            "accepted_handoffs",
+            "rejected_handoffs",
+            "interrupted_handoffs",
+            "stale_responses",
+            "max_owner_lifetime_seconds",
+            "max_peak_rss_bytes",
+            "coordination_turns",
+            "recovery_count",
+            "recovery_minutes",
+        ):
+            expect_int(
+                summary[field],
+                f"{label}.result.summary.{field}",
+                0,
+            )
+        bundle_rejection_codes = expect_list(
+            summary["rejection_codes"],
+            f"{label}.result.summary.rejection_codes",
+        )
+        for code_index, code in enumerate(bundle_rejection_codes):
+            expect_enum(
+                code,
+                HANDOFF_REJECTION_CODES,
+                f"{label}.result.summary.rejection_codes[{code_index}]",
+            )
+        expect_unique(
+            bundle_rejection_codes,
+            f"{label}.result.summary.rejection_codes",
+        )
         identity = bundle["input_seal"]
         if identity in bundles:
             raise PilotDataError(
@@ -1591,6 +1648,19 @@ def validate_implementation_handoffs(
                 raise PilotDataError(
                     f"{handoff_label} in_progress outcome cannot have closed_at"
                 )
+            if outcome == "accepted" and not bundle_trusted_push_eligible:
+                if not bundle_rejection_codes:
+                    raise PilotDataError(
+                        f"{handoff_label} trusted-ineligible bundle lacks "
+                        "bundle rejection codes"
+                    )
+                handoff["bundle_rejection_codes"] = copy.deepcopy(
+                    bundle_rejection_codes
+                )
+                handoff["reported_outcome"] = "bundle_rejected"
+            else:
+                handoff["bundle_rejection_codes"] = []
+                handoff["reported_outcome"] = outcome
             handoffs[handoff_id] = handoff
     expect_unique(owner_ids, "implementation handoff owner IDs")
     return {"bundles": bundles, "handoffs": handoffs}
@@ -3817,7 +3887,9 @@ def report_efficiency(data: dict[str, Any]) -> dict[str, int]:
     }
 
 
-def report_implementation_handoffs(data: dict[str, Any]) -> dict[str, int]:
+def report_implementation_handoffs(
+    data: dict[str, Any]
+) -> dict[str, int | list[str]]:
     handoffs = list(data["implementation_handoffs"].values())
     lifecycle_as_of = parse_time(
         data["fixture"]["lifecycle_as_of"],
@@ -3845,15 +3917,33 @@ def report_implementation_handoffs(data: dict[str, Any]) -> dict[str, int]:
                 "must resolve to whole seconds"
             )
         lifetimes.append(int(elapsed))
+    rejection_codes = sorted(
+        {
+            code
+            for item in handoffs
+            for code in [
+                *item["rejection_codes"],
+                *item["bundle_rejection_codes"],
+            ]
+        }
+    )
     return {
         "records": len(handoffs),
-        "accepted": sum(item["outcome"] == "accepted" for item in handoffs),
-        "rejected": sum(item["outcome"] == "rejected" for item in handoffs),
+        "accepted": sum(
+            item["reported_outcome"] == "accepted" for item in handoffs
+        ),
+        "bundle_rejected": sum(
+            item["reported_outcome"] == "bundle_rejected"
+            for item in handoffs
+        ),
+        "rejected": sum(
+            item["reported_outcome"] == "rejected" for item in handoffs
+        ),
         "interrupted": sum(
-            item["outcome"] == "interrupted" for item in handoffs
+            item["reported_outcome"] == "interrupted" for item in handoffs
         ),
         "in_progress": sum(
-            item["outcome"] == "in_progress" for item in handoffs
+            item["reported_outcome"] == "in_progress" for item in handoffs
         ),
         "stale_responses": sum(
             "stale-result" in item["rejection_codes"] for item in handoffs
@@ -3869,6 +3959,7 @@ def report_implementation_handoffs(data: dict[str, Any]) -> dict[str, int]:
         "recovery_minutes": sum(
             item["recovery_minutes"] for item in handoffs
         ),
+        "rejection_codes": rejection_codes,
     }
 
 

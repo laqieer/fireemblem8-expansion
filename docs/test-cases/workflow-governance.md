@@ -1386,7 +1386,13 @@ game behavior needs a compensating change.
 
 1. Run
    `python3 -m unittest scripts.workflow_pilot.tests.test_agent_handoff -v`.
-2. Inspect the temporary real-Git success fixture. Confirm its result is the
+2. Parse `scripts/workflow_pilot/agent_handoff.schema.json` with a draft
+   2020-12 JSON Schema validator. Validate one real generated handoff
+   document, its `history_authority`, and a sealed `prior_handoffs` receipt.
+   Reject unknown, missing, and wrong-type authority/history adversaries, and
+   confirm no closed object definition combines required fields with
+   `additionalProperties: false` while omitting `properties`.
+3. Inspect the temporary real-Git success fixture. Confirm its result is the
    clean worktree `HEAD`, has exactly the assigned direct parent and expected
    branch, changes only allowlisted paths within the numeric line budget, ends
    in the exact Copilot trailer, supplies every acceptance/check/budget
@@ -1402,15 +1408,18 @@ game behavior needs a compensating change.
    config, ambient global/system/external-diff controls, and tracked diff
    attributes; trailing whitespace must still fail under the pinned argv.
    Confirm nonempty local `.git/info/attributes` rejects.
-3. Exercise the repeated-parent/stale, wrong-parent, unrelated-branch, dirty,
+4. Exercise the repeated-parent/stale, wrong-parent, unrelated-branch, dirty,
    incomplete, missing-evidence, missing-trailer, out-of-scope, line-budget,
    lifetime, and RSS fixtures. Confirm script-only diffs derive zero ROM, RAM,
-   and protocol usage. Then change a resource path and require a closed
+   and protocol usage. Confirm a whole one-second lifetime is accepted even
+   when its RFC 3339 endpoints include fractional seconds, while 1.9-second
+   and other non-whole-second telemetry deltas reject before integer
+   truncation. Then change a resource path and require a closed
    build/map/resource receipt. Prove `ldscript.txt`, Makefiles, assets,
    configuration, fonts, text, generated data, and every unclassified input
    cannot derive zero. Change the parsed schema and require a monotonic
    protocol version. Tampering telemetry/resource claims must reject.
-4. Exercise reused-owner and duplicate-watcher fixtures. Add an
+5. Exercise reused-owner and duplicate-watcher fixtures. Add an
    implementation-owner push, comment, review-request, and CI-dispatch event
    in separate trusted sources and confirm each rejects. Remove each from the
    normalized coverage index and confirm omission detection. Require numeric
@@ -1443,10 +1452,10 @@ game behavior needs a compensating change.
    `authority_object_id`/`anchor_object_id` point at the pre-handoff state and
    confirm the bind derives those identities from the canonical prior
    authority/anchor chain instead of the stored observation fields.
-5. Reconcile a direct watcher timeout with an authoritative successful
+6. Reconcile a direct watcher timeout with an authoritative successful
    `github-actions-api` run. Then use an authoritative failed run plus a
    watcher process error and confirm delivery remains failed.
-6. Exercise the SIGKILL/OOM fixture. Confirm kernel evidence names signal 9,
+7. Exercise the SIGKILL/OOM fixture. Confirm kernel evidence names signal 9,
    the interrupted check remains incomplete, and protected authority stores
    content bytes plus path/mode/hash/status and the complete original
    assignment contract. Clean the old worktree and commit the restored
@@ -1455,7 +1464,7 @@ game behavior needs a compensating change.
    sent/received, and sent/received/progressing prefixes report `in_progress`
    without trusted/delivery eligibility. Equal, predated, and multiple
    replacement assignments reject.
-7. Exercise coordinator-sealed availability. Reject future, stale, or
+8. Exercise coordinator-sealed availability. Reject future, stale, or
    post-assignment observations, expired coverage, and either enabled stop
    trigger. Accept only a fresh observation made before assignment and valid
    through the validation/lifecycle cutoff and unattended interval. Validate a
@@ -1476,7 +1485,7 @@ game behavior needs a compensating change.
    all reject the rewritten-base record. Also publish wrong
    `handoff_sequence`/`head_seal` bind variants and confirm copied or stale
    carried handoff identity cannot substitute for the last sealed handoff.
-8. Parse the typed delivery graph. Confirm a merged parent makes child
+9. Parse the typed delivery graph. Confirm a merged parent makes child
    implementation ready while its exact-master Build is in progress and
    remote completion is pending; an unmerged parent blocks the child; a
    healthy pending watcher never appears in todo dependencies; terminal
@@ -1487,7 +1496,7 @@ game behavior needs a compensating change.
    handoff to one exact child relationship/task and bind the parent Build task
    to one authoritative run SHA/status/conclusion. Reject issue `999`, blocked
    or done status relabels, and missing/duplicate relationships/tasks.
-9. Exercise reporter fixture schema version 2 with sequential root and
+10. Exercise reporter fixture schema version 2 with sequential root and
    review-successor bundles. Confirm original asymmetric attestation plus
    authority/anchor ancestry and the external one-time finalize signature over
    canonical source, result, outcomes, summary, and verified metrics,
@@ -1496,7 +1505,7 @@ game behavior needs a compensating change.
    metrics without requiring old HEAD. Change RSS/outcomes/summary, recompute
    every unkeyed hash, and require signature failure. Reject hand-authored,
    double-finalized, tampered, and nonancestor rows.
-10. Run
+11. Run
    `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`,
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`,
    and `python3 scripts/check_docs.py --check`.
@@ -1563,7 +1572,10 @@ active or failed state keeps parent delivery ineligible while leaving an
 already merged child contract implementation-ready.
 
 The issue #176 reporter consumes version 2 normalized handoff evidence and
-reports failures, stale responses, maximum owner lifetime and RSS,
+validates the public handoff schema against real authority/history examples,
+rejects unsatisfied closed definitions, and reports
+accepted/bundle-rejected/rejected/interrupted/in-progress counts together
+with rejection codes, stale responses, maximum owner lifetime and RSS,
 coordination turns, and recovery cost only from coordinator telemetry. Git
 derives line usage, parsed schema derives protocol changes, and only exact
 proven host-only paths derive zero ROM/RAM; all other tracked inputs require

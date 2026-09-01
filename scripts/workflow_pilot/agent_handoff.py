@@ -256,6 +256,21 @@ def require_fresh_live_timestamp(
         raise HandoffDataError(f"{label} is future-dated or stale")
 
 
+def whole_second_duration(
+    start: datetime,
+    end: datetime,
+    *,
+    label: str,
+) -> int | None:
+    try:
+        elapsed = reporter.duration_seconds(start, end, label)
+    except reporter.PilotDataError as error:
+        raise HandoffDataError(str(error)) from error
+    if elapsed != elapsed.to_integral_value():
+        return None
+    return int(elapsed)
+
+
 def git_commit_is_ancestor(
     repository_root: Path,
     ancestor: str,
@@ -6887,9 +6902,15 @@ def validate_document(
                 telemetry["ended_at"],
                 f"telemetry {handoff_id}.ended_at",
             )
-            result["lifetime_seconds"] = int(
-                (telemetry_end - telemetry_start).total_seconds()
+            lifetime_seconds = whole_second_duration(
+                telemetry_start,
+                telemetry_end,
+                label=f"telemetry {handoff_id} lifetime",
             )
+            if lifetime_seconds is None:
+                reject("invalid-runtime-telemetry", handoff_id)
+            else:
+                result["lifetime_seconds"] = lifetime_seconds
             if (
                 telemetry["owner_database_id"]
                 != handoff["_owner"]["database_id"]

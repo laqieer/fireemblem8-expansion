@@ -990,34 +990,49 @@ ineffective, or unsealed observations reject.
 The unchanged frozen issue #176 baseline remains strict fixture/report schema
 version 1 and rejects a handoff field. Version 2 is an additive operational
 fixture schema that requires normalized `implementation_handoffs` records from
-the validator. Each record contains the complete source document, source
-handoff identities, and matching input/Git/check/coordinator/result seals. The
-reporter separates live eligibility from historical verification. The
-external service finalizes once and signs the complete canonical
-source-plus-result payload, including outcomes, reporter summary, RSS, and all
-verified metrics. The unkeyed result hash is integrity-only. Historical
-verification requires the finalize signature and proves the original
-authority/anchor OIDs remain ancestors of current protected heads. It does not
-require the old worktree HEAD or live-receipt freshness, so sequential root,
-OOM-replacement, and review-successor metrics remain aggregatable, but that
-historical authenticity never restores current trusted-push eligibility for a
-stale receipt. It also fails if the current protected history replays a stored
-PR binding whose digest, publication binding expectation, or frozen-base
-ancestry no longer verifies. A hand-authored or nonancestor row rejects. The
-reporter then
-reports
-accepted/rejected/interrupted/in-progress counts, stale responses, maximum
-owner lifetime/RSS, coordination turns, and recovery minutes exclusively from
-verified results. Line usage remains Git-derived. Protocol changes come from
-the parsed, monotonically versioned
-`scripts/workflow_pilot/agent_handoff.schema.json`. ROM/RAM derives zero only
-for exact proven host-only path prefixes. Linker scripts, Makefiles, assets,
-configuration, fonts, text, generated data, and every unclassified tracked
-input require a closed build/map/resource receipt whose dependency inputs
-exactly equal the conservative Git-derived set. RSS, lifetime, turns, recovery
-come from coordinator runtime telemetry. Claim-only tampering fails its seal.
-This adds no mutable decision record and does not alter version 1 expected
-paths, values, or seals.
+the validator. The public handoff document format itself stays at protocol
+version 8 / `schema_version: 2`: the shipped JSON Schema now closes
+`history_authority` and `prior_handoffs` with standards-compliant field
+definitions that match the runtime parser's nested objects, enums, nullability,
+numeric bounds, and `additionalProperties: false` behavior instead of leaving
+those objects unsatisfiable.
+
+Each normalized record contains the complete source document, source handoff
+identities, and matching input/Git/check/coordinator/result seals. The
+reporter separates live eligibility from historical verification. The external
+service finalizes once and signs the complete canonical source-plus-result
+payload, including outcomes, reporter summary, RSS, and all verified metrics.
+The unkeyed result hash is integrity-only. Historical verification requires
+the finalize signature and proves the original authority/anchor OIDs remain
+ancestors of current protected heads. It does not require the old worktree
+HEAD or live-receipt freshness, so sequential root, OOM-replacement, and
+review-successor metrics remain aggregatable, but that historical authenticity
+never restores current trusted-push eligibility for a stale receipt. It also
+fails if the current protected history replays a stored PR binding whose
+digest, publication binding expectation, or frozen-base ancestry no longer
+verifies. A hand-authored or nonancestor row rejects.
+
+Runtime lifetime telemetry remains owner-supplied evidence, not a rounding
+hint. The validator rejects any non-whole-second owner lifetime delta before
+integer conversion, even when the timestamps are RFC 3339 fractions. Exact
+whole-second deltas remain valid.
+
+The reporter preserves handoff-local outcomes from sealed results, but its
+normalized aggregation treats an otherwise accepted handoff inside a
+trusted-ineligible bundle as `bundle_rejected` instead of counting it as
+accepted. The aggregate output therefore reports
+accepted/bundle-rejected/rejected/interrupted/in-progress counts plus the
+union of rejection codes, stale responses, maximum owner lifetime/RSS,
+coordination turns, and recovery minutes exclusively from verified results.
+Line usage remains Git-derived. Protocol changes come from the parsed,
+monotonically versioned `scripts/workflow_pilot/agent_handoff.schema.json`.
+ROM/RAM derives zero only for exact proven host-only path prefixes. Linker
+scripts, Makefiles, assets, configuration, fonts, text, generated data, and
+every unclassified tracked input require a closed build/map/resource receipt
+whose dependency inputs exactly equal the conservative Git-derived set. RSS,
+lifetime, turns, and recovery come from coordinator runtime telemetry.
+Claim-only tampering fails its seal. This adds no mutable decision record and
+does not alter version 1 expected paths, values, or seals.
 Run a version 2 operational fixture without the version 1-only `--expected`
 argument:
 
