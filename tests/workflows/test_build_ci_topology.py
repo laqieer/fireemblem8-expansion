@@ -922,7 +922,10 @@ def _summary_workflow_run(
             f"{urllib.parse.quote(name, safe='')}/actions/runs/{run_id}"
         )
     if run_number is None:
-        run_number = run_id
+        run_number = SUMMARY_TEST_RUN_NUMBER if run_id == SUMMARY_TEST_RUN_ID else run_id
+    if run_id == SUMMARY_TEST_RUN_ID and status == "completed" and conclusion == "success":
+        status = "in_progress"
+        conclusion = None
     return {
         "id": run_id,
         "workflow_id": workflow_id,
@@ -6288,41 +6291,39 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
         page_one_runs = [
-            _summary_workflow_run(SUMMARY_TEST_RUN_ID, run_attempt=SUMMARY_TEST_RUN_ATTEMPT),
-            *[
-                _summary_workflow_run(
-                    9200 + index,
-                    event="push",
-                    head_sha=SUMMARY_TEST_HEAD_SHA,
-                    base_sha=SUMMARY_TEST_BASE_SHA,
-                    run_number=8199 - index,
-                )
-                for index in range(98)
-            ],
             _summary_workflow_run(
-                8101,
-                created_at=_summary_timestamp(5),
-                run_started_at=_summary_timestamp(6),
-                run_number=8101,
-            ),
+                9300 + index,
+                event="push",
+                head_sha=SUMMARY_TEST_HEAD_SHA,
+                base_sha=SUMMARY_TEST_BASE_SHA,
+                run_number=9200 - index,
+            )
+            for index in range(100)
         ]
         link_header = f'<{{api_base}}{_summary_runs_path(page=2)}>; rel="next"'
         routes = {
             _summary_runs_path(page=1): _summary_response(
-                _summary_api_payload("workflow_runs", page_one_runs, total_count=101),
+                _summary_api_payload("workflow_runs", page_one_runs, total_count=103),
                 headers={"Link": link_header},
             ),
             _summary_runs_path(page=2): _summary_response(
                 _summary_api_payload(
                     "workflow_runs",
                     [
+                        _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                        _summary_workflow_run(
+                            8101,
+                            created_at=_summary_timestamp(5),
+                            run_started_at=_summary_timestamp(6),
+                            run_number=8101,
+                        ),
                         _summary_workflow_run(
                             8100,
                             created_at=_summary_timestamp(4),
                             run_started_at=_summary_timestamp(5),
                         )
                     ],
-                    total_count=101,
+                    total_count=103,
                 )
             ),
             _summary_jobs_path(8101): _summary_response(
@@ -6354,6 +6355,353 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             self.assertEqual(
                 headers.get("Accept"), "application/vnd.github+json"
             )
+
+    def test_summary_runtime_metadata_only_requires_current_run_observation(self):
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        completed = subprocess.run(
+            ["/bin/bash", "-n"],
+            input=script,
+            text=True,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        later_page_push_runs = [
+            _summary_workflow_run(
+                9500 + index,
+                event="push",
+                head_sha=SUMMARY_TEST_HEAD_SHA,
+                base_sha=SUMMARY_TEST_BASE_SHA,
+                run_number=9400 - index,
+            )
+            for index in range(100)
+        ]
+        duplicate_current = _summary_workflow_run(SUMMARY_TEST_RUN_ID)
+        mismatch_number_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            run_number=SUMMARY_TEST_RUN_NUMBER - 1,
+        )
+        mismatch_attempt_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            run_attempt=SUMMARY_TEST_RUN_ATTEMPT + 1,
+        )
+        mismatch_status_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            status="completed",
+            conclusion=None,
+        )
+        mismatch_head_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            head_sha="4" * 40,
+        )
+        mismatch_base_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            pull_requests=[
+                {
+                    "number": SUMMARY_TEST_PR_NUMBER,
+                    "head": {"sha": SUMMARY_TEST_HEAD_SHA},
+                    "base": {"sha": "4" * 40},
+                }
+            ],
+        )
+        mismatch_pr_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            pr_number=SUMMARY_TEST_PR_NUMBER + 1,
+            pull_requests=[
+                {
+                    "number": SUMMARY_TEST_PR_NUMBER + 1,
+                    "head": {"sha": SUMMARY_TEST_HEAD_SHA},
+                    "base": {"sha": SUMMARY_TEST_BASE_SHA},
+                }
+            ],
+        )
+        mismatch_workflow_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            workflow_id=SUMMARY_TEST_WORKFLOW_ID + 1,
+        )
+        mismatch_path_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            path=".github/workflows/other.yml@refs/pull/177/merge",
+        )
+        mismatch_started_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            run_started_at=None,
+        )
+        inconsistent_timestamps_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            created_at=_summary_timestamp(9),
+            run_started_at=_summary_timestamp(8),
+        )
+        newer_exact_run = _summary_workflow_run(
+            9002,
+            pr_number=SUMMARY_TEST_PR_NUMBER,
+            base_sha=SUMMARY_TEST_BASE_SHA,
+            head_sha=SUMMARY_TEST_HEAD_SHA,
+            run_number=SUMMARY_TEST_RUN_NUMBER + 1,
+            created_at=_summary_timestamp(9),
+            run_started_at=_summary_timestamp(10),
+            pull_requests=[
+                {
+                    "number": SUMMARY_TEST_PR_NUMBER,
+                    "head": {"sha": SUMMARY_TEST_HEAD_SHA},
+                    "base": {"sha": SUMMARY_TEST_BASE_SHA},
+                }
+            ],
+        )
+        cases = (
+            (
+                "missing-current-older-success-only",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload("workflow_runs", [_summary_workflow_run(8100)])
+                    )
+                },
+                "metadata-only summary current workflow run was not observed",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "duplicate-current",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [duplicate_current, duplicate_current],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run was duplicated",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-number-mismatch",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [mismatch_number_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run sequence drifted",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-attempt-mismatch",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [mismatch_attempt_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run sequence drifted",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-workflow-mismatch",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [mismatch_workflow_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary workflow runs workflow_id drifted",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-status-mismatch",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [mismatch_status_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run status drifted",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-head-mismatch",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [mismatch_head_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run identity drifted",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-base-mismatch",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [mismatch_base_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run identity drifted",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-pr-mismatch",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [mismatch_pr_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run identity drifted",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-path-mismatch",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [mismatch_path_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run identity drifted",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-started-at-missing",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [mismatch_started_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run run_started_at is invalid",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-timestamps-inconsistent",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [inconsistent_timestamps_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run timestamps are inconsistent",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-not-first-exact-page",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            later_page_push_runs[:99] + [_summary_workflow_run(8100)],
+                            total_count=101,
+                        ),
+                        headers={
+                            "Link": f'<{{api_base}}{_summary_runs_path(page=2)}>; rel="next"'
+                        },
+                    ),
+                    _summary_runs_path(page=2): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(SUMMARY_TEST_RUN_ID)],
+                            total_count=101,
+                        )
+                    ),
+                },
+                "metadata-only summary workflow runs are not ordered by run_number",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_runs_path(page=2),
+                ],
+            ),
+            (
+                "current-eventual-omission",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            later_page_push_runs,
+                            total_count=101,
+                        ),
+                        headers={
+                            "Link": f'<{{api_base}}{_summary_runs_path(page=2)}>; rel="next"'
+                        },
+                    ),
+                    _summary_runs_path(page=2): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(8100)],
+                            total_count=101,
+                        )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", _summary_full_jobs())
+                    ),
+                },
+                "metadata-only summary current workflow run was not observed",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_runs_path(page=2),
+                ],
+            ),
+            (
+                "newer-exact-run-supersedes-current",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [newer_exact_run, _summary_workflow_run(SUMMARY_TEST_RUN_ID), _summary_workflow_run(8100)],
+                            total_count=3,
+                        )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", _summary_full_jobs())
+                    ),
+                },
+                "metadata-only summary current workflow run is superseded",
+                [_summary_runs_path(page=1)],
+            ),
+        )
+        for name, routes, error_fragment, expected_requests in cases:
+            with self.subTest(name=name):
+                completed, requests = _run_summary_with_api(
+                    script,
+                    environment=_summary_metadata_env(),
+                    routes=routes,
+                )
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn(error_fragment, completed.stderr)
+                self.assertEqual(
+                    [request["path"] for request in requests],
+                    expected_requests,
+                )
 
     def test_summary_runtime_metadata_only_skips_failed_metadata_retry(self):
         script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
@@ -7247,7 +7595,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     )
                 },
                 1,
-                "metadata-only summary workflow runs are not older than the current run",
+                "metadata-only summary workflow runs are not ordered by run_number",
             ),
             (
                 "missing-run-number",

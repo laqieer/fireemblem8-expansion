@@ -11,13 +11,13 @@ from . import metadata_adapter_contract
 _EXPECTED_HEREDOC_INTRODUCER = "  /usr/bin/python3 -I -S - <<'PY' || exit 1"
 _EXPECTED_MAIN_DECLARATION = "def main():"
 _EXPECTED_MAIN_CALL = "main()"
-_PYTHON_SEMANTIC_SHA256 = "38be7c60ad0b90f2bb70dcef1c5a003293c418596f0d7400602c1896984e5adf"
+_PYTHON_SEMANTIC_SHA256 = "cf27b627f1d9244b40498af13fabaf7de44928c975be43e011ab05498df679a2"
 # Security-boundary static-contract exception: Bash lexical details such as
 # quoting, continuation, and heredoc termination are still hashed exactly as
 # defense in depth because reproducing shell tokenization safely without
 # execution is incomplete. Parsed Python AST semantics remain the primary
 # independent proof that the reviewed no-checkout continuity logic is unchanged.
-_RAW_SCRIPT_SHA256 = "b357f2a824ddba67158247c892fa1a7dada627a10aefa84466bea119f7c9634f"
+_RAW_SCRIPT_SHA256 = "43c250fe0ab6aefd5e1e24cfc5f8dea55a0e5a4b67cd2ebdabc73f0e631e2889"
 MAX_PYTHON_SOURCE_BYTES = 32768
 
 

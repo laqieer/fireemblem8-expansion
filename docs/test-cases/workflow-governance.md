@@ -342,8 +342,8 @@ immutable head SHA completed successfully; a newer failed, cancelled,
 in-progress, or malformed full run blocks older successes. That proof first
 requires complete paginated results with stable `total_count`/`Link`
 consistency, exact per-page cardinality, stable `workflow_id`, ordered
-positive `run_number`/`run_attempt` values, and rejects redirects before any
-second authenticated request.
+positive `run_number`/`run_attempt` values, one exact current-run observation,
+and rejects redirects before any second authenticated request.
 Without that prior green full run, metadata-only edits still block merge.
 Metadata runs remain
 ineligible candidate evidence even when their continuity adapters and canonical
@@ -364,8 +364,9 @@ newest conclusively full run with the same repository, PR number,
 authoritative base SHA, and immutable head SHA can authorize continuity.
 That proof first requires complete paginated results with stable
 `total_count`/`Link` consistency, exact per-page cardinality, stable
-`workflow_id`, ordered positive `run_number`/`run_attempt` values, and
-rejects redirects before any second authenticated request. Older full
+`workflow_id`, ordered positive `run_number`/`run_attempt` values, one exact
+current-run observation, and rejects redirects before any second authenticated
+request. Older full
 successes never override a newer failed, cancelled, in-progress, or malformed
 full run.
 

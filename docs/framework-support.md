@@ -41,8 +41,9 @@ runs, and confirms the newest conclusively full Build CI run for the same
 repository, PR number, authoritative base SHA, and immutable head SHA
 completed successfully. That proof first requires complete paginated results
 with stable `total_count`/`Link` consistency, exact per-page cardinality,
-stable `workflow_id`, ordered positive `run_number`/`run_attempt` values, and
-rejects redirects before any second authenticated request. A newer failed,
+stable `workflow_id`, ordered positive `run_number`/`run_attempt` values, one
+exact current-run observation, and rejects redirects before any second
+authenticated request. A newer failed,
 cancelled, in-progress, or malformed full run blocks older successes. Live
 branch protection therefore remains the current canonical `host-tests` +
 `build` + `summary` Build contract while preserving any existing independent
@@ -247,8 +248,9 @@ conclusively metadata runs, and confirms the newest conclusively full Build CI
 run for the same repository, PR number, authoritative base SHA, and immutable
 head SHA completed successfully. It first requires complete paginated results
 with stable `total_count`/`Link` consistency, exact per-page cardinality,
-stable `workflow_id`, ordered positive `run_number`/`run_attempt` values, and
-rejects redirects before any second authenticated request. A newer failed,
+stable `workflow_id`, ordered positive `run_number`/`run_attempt` values, one
+exact current-run observation, and rejects redirects before any second
+authenticated request. A newer failed,
 cancelled, in-progress, or malformed full run blocks older successes. Normal
 `summary` remains the sole
 candidate attestation, and

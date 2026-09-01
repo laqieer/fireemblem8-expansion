@@ -3397,40 +3397,6 @@ jobs:
               )
               split = urllib.parse.urlsplit(url)
               url_matches = split.path == f"{expected_run_url_prefix}/{run_id}"
-              if run_id == current_run_id:
-                  if run_number != current_run_number:
-                      fail("metadata-only summary current workflow run number drifted")
-                  if run_attempt != current_run_attempt:
-                      fail("metadata-only summary current workflow run attempt drifted")
-                  if (
-                      event != "pull_request"
-                      or run_head_sha != head_sha
-                      or not path_matches
-                      or not url_matches
-                  ):
-                      fail("metadata-only summary current workflow run identity drifted")
-              elif run_number >= current_run_number:
-                  fail("metadata-only summary workflow runs are not older than the current run")
-              if event != "pull_request":
-                  return {
-                      "exact_candidate": False,
-                      "run_attempt": run_attempt,
-                      "run_id": run_id,
-                      "run_number": run_number,
-                      "run_started_at": run_started_at,
-                      "status": status,
-                      "workflow_id": workflow_id,
-                  }
-              if run_head_sha != head_sha or not path_matches or not url_matches:
-                  return {
-                      "exact_candidate": False,
-                      "run_attempt": run_attempt,
-                      "run_id": run_id,
-                      "run_number": run_number,
-                      "run_started_at": run_started_at,
-                      "status": status,
-                      "workflow_id": workflow_id,
-                  }
               matches = 0
               for pull_request in pull_requests:
                   number, pull_head_sha, pull_base_sha = parse_pull_request_binding(
@@ -3442,15 +3408,47 @@ jobs:
                       and pull_base_sha == base_sha
                   ):
                       matches += 1
-              if run_id == current_run_id and matches != 1:
-                  fail("metadata-only summary current workflow run identity drifted")
               if matches > 1:
                   fail("metadata-only summary workflow run pull request binding is ambiguous")
-              exact_candidate = matches == 1 and run_id != current_run_id
+              exact_candidate = (
+                  event == "pull_request"
+                  and run_head_sha == head_sha
+                  and path_matches
+                  and url_matches
+                  and matches == 1
+              )
+              is_current = run_id == current_run_id
+              if event != "pull_request":
+                  return {
+                      "exact_candidate": False,
+                      "is_current": is_current,
+                      "conclusion": conclusion,
+                      "created_at": created_at,
+                      "run_attempt": run_attempt,
+                      "run_id": run_id,
+                      "run_number": run_number,
+                      "run_started_at": run_started_at,
+                      "status": status,
+                      "workflow_id": workflow_id,
+                  }
+              if not exact_candidate:
+                  return {
+                      "exact_candidate": False,
+                      "is_current": is_current,
+                      "conclusion": conclusion,
+                      "created_at": created_at,
+                      "run_attempt": run_attempt,
+                      "run_id": run_id,
+                      "run_number": run_number,
+                      "run_started_at": run_started_at,
+                      "status": status,
+                      "workflow_id": workflow_id,
+                  }
               return {
                   "conclusion": conclusion,
                   "created_at": created_at,
-                  "exact_candidate": exact_candidate,
+                  "exact_candidate": True,
+                  "is_current": is_current,
                   "run_attempt": run_attempt,
                   "run_id": run_id,
                   "run_number": run_number,
@@ -3620,6 +3618,7 @@ jobs:
           expected_total_count = None
           expected_workflow_id = None
           prior_runs = []
+          current_run = None
           seen_run_ids = set()
           seen_run_numbers = {}
           previous_visible_run_number = None
@@ -3662,6 +3661,8 @@ jobs:
                       field="metadata-only summary workflow run id",
                   )
                   if run_id in seen_run_ids:
+                      if run_id == current_run_id:
+                          fail("metadata-only summary current workflow run was duplicated")
                       fail("metadata-only summary workflow runs repeated a run")
                   seen_run_ids.add(run_id)
                   visible_run = parse_visible_run(run, run_id=run_id)
@@ -3678,7 +3679,11 @@ jobs:
                   ):
                       fail("metadata-only summary workflow runs are not ordered by run_number")
                   previous_visible_run_number = visible_run["run_number"]
-                  if visible_run["exact_candidate"]:
+                  if visible_run["is_current"]:
+                      if current_run is not None:
+                          fail("metadata-only summary current workflow run was duplicated")
+                      current_run = visible_run
+                  elif visible_run["exact_candidate"]:
                       prior_runs.append(visible_run)
               visible_run_count = len(seen_run_ids)
               if visible_run_count > total_count:
@@ -3693,7 +3698,27 @@ jobs:
                   break
               page = next_page
 
+          if current_run is None:
+              fail("metadata-only summary current workflow run was not observed")
+          if (
+              current_run["run_number"] != current_run_number
+              or current_run["run_attempt"] != current_run_attempt
+          ):
+              fail("metadata-only summary current workflow run sequence drifted")
+          if not current_run["exact_candidate"]:
+              fail("metadata-only summary current workflow run identity drifted")
+          if (
+              current_run["status"] != "in_progress"
+              or current_run["conclusion"] is not None
+          ):
+              fail("metadata-only summary current workflow run status drifted")
+          if current_run["run_started_at"] is None:
+              fail("metadata-only summary current workflow run run_started_at is invalid")
+          if current_run["created_at"] > current_run["run_started_at"]:
+              fail("metadata-only summary current workflow run timestamps are inconsistent")
           for prior_run in prior_runs:
+              if prior_run["run_number"] >= current_run_number:
+                  fail("metadata-only summary current workflow run is superseded")
               mode, by_name = classify_prior_run(
                   prior_run["run_id"],
                   prior_run["run_attempt"],

@@ -146,8 +146,10 @@ proof enumerates the complete exact paginated result set with stable
 `total_count`/`Link` consistency and exact per-page cardinality, rejects
 redirects before any second authenticated request, validates stable
 `workflow_id` plus positive `run_number`/`run_attempt`, classifies exact prior
-runs newest-first by `run_number`, skips only conclusively metadata-shaped
-runs, and confirms the newest conclusively full Build CI run for the same
+runs newest-first by `run_number`, requires the in-progress current run to
+appear exactly once with matching sequence and exact PR/base/head identity,
+skips only conclusively metadata-shaped runs, and confirms the newest
+conclusively full Build CI run for the same
 repository, PR number, authoritative base SHA, and immutable head SHA
 completed successfully. A newer failed, cancelled, in-progress, or malformed
 full run blocks older successes.
@@ -237,8 +239,9 @@ runs newest-first so only the newest conclusively full run for the same
 repository, PR number, authoritative base SHA, and immutable head SHA can
 authorize continuity. That query first proves pagination completeness with
 stable counts, exact page sizes, valid next/last links, stable `workflow_id`,
-and ordered `run_number` values, then rejects redirects before any second
-authenticated request. Older full successes never override a newer failed,
+ordered `run_number` values, and one exact current-run observation, then
+rejects redirects before any second authenticated request. Older full
+successes never override a newer failed,
 cancelled, in-progress, or malformed full run. That canonical metadata
 `summary` preserves live required-check continuity only; it is never full-build
 evidence by itself. On a full event, normal workers check out the classifier's
