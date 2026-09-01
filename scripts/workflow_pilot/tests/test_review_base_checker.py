@@ -272,6 +272,48 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         witness_head = cls._commit("witness-only-head")
         return witness_head, git_text(cls.repo, "rev-parse", f"{witness_head}^{{tree}}")
 
+    @classmethod
+    def _make_item_spoof_head(cls, kind):
+        cls._restore_baseline()
+        cls._set_action_items_health(False)
+        path = cls.repo / "scripts/workflow_pilot/review_base_checker.py"
+        text = path.read_text(encoding="utf-8")
+        if kind == "comment":
+            text += '\n# "finding_member": parsed["member"],\n'
+        elif kind == "docstring":
+            text += '\n""" "finding_member": parsed["member"], """\n'
+        elif kind == "dead-if":
+            text += (
+                '\nif False:\n'
+                '    SPOOF = {"finding_member": parsed["member"]}\n'
+            )
+        elif kind == "constant":
+            text += '\nSPOOF_FINDING_MEMBER = \'"finding_member": parsed["member"],\'\n'
+        else:
+            raise AssertionError(kind)
+        path.write_text(text, encoding="utf-8")
+        head = cls._commit(f"item-spoof-{kind}")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
+
+    @classmethod
+    def _make_item_refactor_head(cls):
+        cls._restore_baseline()
+        path = cls.repo / "scripts/workflow_pilot/review_base_checker.py"
+        text = path.read_text(encoding="utf-8")
+        old = (
+            '        "finding_member": parsed["member"],\n'
+            '        "finding_review_id": finding["review_id"],\n'
+        )
+        new = (
+            '        "finding_review_id": finding["review_id"],\n'
+            '        "finding_member"   :   parsed["member"],\n'
+        )
+        if old not in text:
+            raise AssertionError("missing refactor block")
+        path.write_text(text.replace(old, new, 1), encoding="utf-8")
+        head = cls._commit("item-refactor")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
+
     def case_dir(self):
         case_root = self.root / f"case-{next(self.case_ids)}"
         case_root.mkdir()
@@ -624,6 +666,35 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             candidate_tree=witness_tree,
         )
         self.assert_rejected(data, "member-item authority binding is incomplete")
+
+    def test_comment_docstring_dead_branch_and_constant_spoofs_fail(self):
+        for kind in ("comment", "docstring", "dead-if", "constant"):
+            with self.subTest(kind=kind):
+                spoof_head, spoof_tree = self._make_item_spoof_head(kind)
+                data = self.build_input(
+                    review_round=2,
+                    candidate_sha=spoof_head,
+                    candidate_tree=spoof_tree,
+                )
+                self.assert_rejected(
+                    data, "member-item authority binding is incomplete"
+                )
+
+    def test_whitespace_and_order_refactor_preserves_member_fix(self):
+        refactor_head, refactor_tree = self._make_item_refactor_head()
+        data = self.build_input(
+            review_round=2,
+            candidate_sha=refactor_head,
+            candidate_tree=refactor_tree,
+        )
+        result = self.execute(data)
+        member = next(
+            item
+            for item in result["results"]
+            if item["authority_binding"]["finding_id"] == "FINDING-ACTION-1"
+        )
+        self.assertEqual(member["output"]["origin_status"], "fail")
+        self.assertEqual(member["output"]["head_status"], "pass")
 
     def test_round_two_remote_finding_executes_real_remediation_round(self):
         data = self.build_input(review_round=2)

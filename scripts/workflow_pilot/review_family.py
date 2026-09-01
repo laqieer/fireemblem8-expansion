@@ -2269,6 +2269,15 @@ def _resolve_authoritative_trigger(
         raise reporter.PilotDataError(
             "authoritative trigger decision does not match the exact candidate head"
         )
+    actual_blob_oid = reporter.run_git(
+        authority["root"],
+        "rev-parse",
+        f"{contract['base_sha']}:{TRIGGER_DECISION_PATH}",
+    ).decode("ascii").strip()
+    if trigger["blob_oid"] != actual_blob_oid:
+        raise reporter.PilotDataError(
+            "authoritative trigger decision does not bind the exact base blob"
+        )
     if trigger["trigger"] != contract["trigger"]:
         raise reporter.PilotDataError(
             "candidate trigger does not match the authoritative decision record"

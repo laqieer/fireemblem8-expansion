@@ -596,59 +596,28 @@ def _base_contains_gate(repository_root: Path, base_sha: str) -> bool:
     return True
 
 
-def _load_authoritative_trigger(
-    contract: dict[str, Any],
-    repository_root: Path,
-    candidate_sha: str,
+def _parse_trigger_decision_records(
+    decisions: dict[str, Any],
     *,
-    decision_record_path: Path | None = None,
-) -> dict[str, Any]:
-    root = reporter.validate_repository_root(repository_root)
-    path = (
-        (root / DECISION_RECORD_PATH)
-        if decision_record_path is None
-        else decision_record_path.resolve()
-    )
-    if path.is_symlink() or not path.is_file():
-        raise reporter.PilotDataError(
-            "authoritative trigger decision record is unavailable"
-        )
-    try:
-        raw = reporter.parse_json(
-            path.read_text(encoding="utf-8"),
-            str(path),
-        )
-    except OSError as error:
-        raise reporter.PilotDataError(
-            "authoritative trigger decision record is unavailable"
-        ) from error
-    decisions = reporter.expect_object(raw, "authoritative trigger decisions")
+    pull_request: int,
+    label: str,
+) -> tuple[dict[str, Any] | None, bool]:
     reporter.expect_keys(
         decisions,
-        "authoritative trigger decisions",
+        label,
         ("schema_version", "pull_requests", "artifacts"),
     )
-    if reporter.expect_int(
-        decisions["schema_version"],
-        "authoritative trigger decisions.schema_version",
-        1,
-    ) != reporter.SCHEMA_VERSION:
-        raise reporter.PilotDataError(
-            "authoritative trigger decision schema version is invalid"
-        )
-    matches = []
-    seen_prs = set()
-    for index, raw_record in enumerate(
-        reporter.expect_list(
-            decisions["pull_requests"],
-            "authoritative trigger decisions.pull_requests",
-        )
-    ):
-        label = f"authoritative trigger decisions.pull_requests[{index}]"
-        record = reporter.expect_object(raw_record, label)
+    reporter.expect_int(decisions["schema_version"], f"{label}.schema_version", 1)
+    records = reporter.expect_list(decisions["pull_requests"], f"{label}.pull_requests")
+    reporter.expect_list(decisions["artifacts"], f"{label}.artifacts")
+    seen = set()
+    match = None
+    for index, raw_record in enumerate(records):
+        record_label = f"{label}.pull_requests[{index}]"
+        record = reporter.expect_object(raw_record, record_label)
         reporter.expect_keys(
             record,
-            label,
+            record_label,
             (
                 "pull_request",
                 "risk_boundaries",
@@ -658,51 +627,104 @@ def _load_authoritative_trigger(
                 "pilot",
             ),
         )
-        pull_request = reporter.expect_int(
-            record["pull_request"], f"{label}.pull_request", 1
+        number = reporter.expect_int(
+            record["pull_request"], f"{record_label}.pull_request", 1
         )
-        if pull_request in seen_prs:
+        if number in seen:
             raise reporter.PilotDataError(
-                f"authoritative trigger decision record repeats PR {pull_request}"
+                f"{label} repeats PR {number}"
             )
-        seen_prs.add(pull_request)
-        if pull_request != contract["pull_request"]:
+        seen.add(number)
+        if number != pull_request:
             continue
-        threshold = reporter.expect_object(record["threshold"], f"{label}.threshold")
+        threshold = reporter.expect_object(record["threshold"], f"{record_label}.threshold")
         reporter.expect_keys(
-            threshold, f"{label}.threshold", ("triggers", "override_history")
+            threshold,
+            f"{record_label}.threshold",
+            ("triggers", "override_history"),
         )
-        matches.append(
-            review_family.normalize_trigger_fields(
-                record["risk_boundaries"],
-                threshold["triggers"],
-                label=label,
-            )
+        trigger = review_family.normalize_trigger_fields(
+            record["risk_boundaries"],
+            threshold["triggers"],
+            label=record_label,
         )
-    if not matches:
+        match = {
+            "pull_request": number,
+            "trigger": trigger,
+            "pre_review_required": review_family.trigger_requires_pre_review(trigger),
+        }
+    return match, bool(records)
+
+
+def _load_authoritative_trigger(
+    contract: dict[str, Any],
+    repository_root: Path,
+    candidate_sha: str,
+    *,
+    decision_record_path: Path | None = None,
+) -> dict[str, Any] | None:
+    root = reporter.validate_repository_root(repository_root)
+    if decision_record_path is not None:
         raise reporter.PilotDataError(
-            "authoritative trigger decision record has no entry for the exact PR"
+            "trusted trigger authority must derive from the exact base commit"
         )
-    trigger = matches[0]
-    if trigger != contract["trigger"]:
+    try:
+        decisions = reporter.load_decisions_from_commit(root, contract["base_sha"])
+    except reporter.PilotDataError as error:
+        raise reporter.PilotDataError(
+            "authoritative trigger decision record is unavailable from the exact base commit"
+        ) from error
+    authoritative, _ = _parse_trigger_decision_records(
+        decisions,
+        pull_request=contract["pull_request"],
+        label=f"decision record at commit {contract['base_sha']}",
+    )
+    if authoritative is None:
+        return None
+    if authoritative["trigger"] != contract["trigger"]:
         raise reporter.PilotDataError(
             "candidate trigger does not match the authoritative decision record"
         )
     blob_oid = _minimal_git(
         root,
-        "hash-object",
-        "--no-filters",
-        str(path),
+        "rev-parse",
+        f"{contract['base_sha']}:{DECISION_RECORD_PATH}",
     ).decode("ascii").strip()
+    candidate_path = (root / DECISION_RECORD_PATH).resolve()
+    if candidate_path.is_symlink() or not candidate_path.is_file():
+        raise reporter.PilotDataError(
+            "candidate decision record is unavailable for drift validation"
+        )
+    try:
+        candidate_decisions = reporter.expect_object(
+            reporter.parse_json(
+                candidate_path.read_text(encoding="utf-8"),
+                str(candidate_path),
+            ),
+            "candidate trigger decisions",
+        )
+    except OSError as error:
+        raise reporter.PilotDataError(
+            "candidate decision record is unavailable for drift validation"
+        ) from error
+    candidate_record, _ = _parse_trigger_decision_records(
+        candidate_decisions,
+        pull_request=contract["pull_request"],
+        label="candidate trigger decisions",
+    )
+    if candidate_record is not None and candidate_record["trigger"] != authoritative["trigger"]:
+        raise reporter.PilotDataError(
+            "candidate decision record drifts from the authoritative base decision"
+        )
     return {
         "path": DECISION_RECORD_PATH,
         "blob_oid": blob_oid,
         "pull_request": contract["pull_request"],
         "base_sha": contract["base_sha"],
         "candidate_sha": candidate_sha,
-        "risk_boundaries": trigger["risk_boundaries"],
-        "threshold_triggers": trigger["threshold_triggers"],
-        "pre_review_required": review_family.trigger_requires_pre_review(trigger),
+        "risk_boundaries": authoritative["trigger"]["risk_boundaries"],
+        "threshold_triggers": authoritative["trigger"]["threshold_triggers"],
+        "pre_review_required": authoritative["pre_review_required"],
     }
 
 
@@ -1636,10 +1658,9 @@ def _run_trusted_gate(
         ),
         "authenticated independent pre-review",
     )
+    base_supports_gate = _base_contains_gate(repository_root, expected_base)
     authoritative_trigger = None
-    if contract["trust_mode"] != "introduction" and _base_contains_gate(
-        repository_root, expected_base
-    ):
+    if contract["trust_mode"] != "introduction" and base_supports_gate:
         authoritative_trigger = _load_authoritative_trigger(
             contract,
             repository_root,
@@ -1662,8 +1683,10 @@ def _run_trusted_gate(
         reporter.parse_json(first_evidence_bytes.decode("utf-8"), "first evidence"),
         "first evidence",
     )
-    if contract["trust_mode"] == "introduction" or not _base_contains_gate(
-        repository_root, expected_base
+    if (
+        contract["trust_mode"] == "introduction"
+        or not base_supports_gate
+        or authoritative_trigger is None
     ):
         return _bootstrap_result(contract, expected_base, expected_candidate)
     if contract["trust_mode"] != "base-pinned":

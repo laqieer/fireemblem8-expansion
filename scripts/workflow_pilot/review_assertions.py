@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import ast
 import hashlib
+import importlib.util
 import json
 import re
 import sys
@@ -203,10 +204,6 @@ def read_text(root: Path, relative: str) -> str:
         raise AssertionFailure(f"member artifact {relative!r} is unavailable") from error
 
 
-def normalized_source(root: Path, relative: str) -> str:
-    return " ".join(read_text(root, relative).split())
-
-
 def load_json_file(root: Path, relative: str) -> Any:
     try:
         return json.loads(read_text(root, relative), object_pairs_hook=object_no_duplicates)
@@ -219,6 +216,223 @@ def load_python_ast(root: Path, relative: str) -> ast.Module:
         return ast.parse(read_text(root, relative), filename=relative)
     except SyntaxError as error:
         raise AssertionFailure(f"member artifact {relative!r} is not valid Python") from error
+
+
+def load_plain_module(root: Path, relative: str):
+    path = root / relative
+    module_name = "review_assertions_" + hashlib.sha256(
+        str(path).encode("utf-8")
+    ).hexdigest()
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise AssertionFailure(f"member artifact {relative!r} is not importable")
+    module = importlib.util.module_from_spec(spec)
+    previous_module = sys.modules.get(module_name)
+    sys.modules[module_name] = module
+    previous = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.dont_write_bytecode = previous
+        if previous_module is None:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = previous_module
+    return module
+
+
+def function_def(module: ast.Module, name: str) -> ast.FunctionDef:
+    for statement in module.body:
+        if isinstance(statement, ast.FunctionDef) and statement.name == name:
+            return statement
+    raise AssertionFailure(f"{name} is unavailable")
+
+
+def constant_truth(node: ast.AST) -> bool | None:
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, bool):
+            return node.value
+        if node.value in (0, 1, None):
+            return bool(node.value)
+    return None
+
+
+def statement_blocks(node: ast.AST) -> list[list[ast.stmt]]:
+    result: list[list[ast.stmt]] = []
+    for name in ("body", "orelse", "finalbody"):
+        value = getattr(node, name, None)
+        if isinstance(value, list) and value and all(
+            isinstance(item, ast.stmt) for item in value
+        ):
+            result.append(value)
+    handlers = getattr(node, "handlers", None)
+    if isinstance(handlers, list):
+        for handler in handlers:
+            if isinstance(handler, ast.ExceptHandler):
+                result.append(handler.body)
+    cases = getattr(node, "cases", None)
+    if isinstance(cases, list):
+        for case in cases:
+            body = getattr(case, "body", None)
+            if isinstance(body, list):
+                result.append(body)
+    return result
+
+
+def iter_value_nodes(value: Any):
+    if isinstance(value, ast.AST):
+        yield value
+        for field, child in ast.iter_fields(value):
+            if field in {"body", "orelse", "finalbody", "handlers", "cases"}:
+                continue
+            yield from iter_value_nodes(child)
+        return
+    if isinstance(value, list):
+        for item in value:
+            yield from iter_value_nodes(item)
+
+
+def iter_live_nodes(node: ast.AST):
+    bodies = []
+    if isinstance(node, ast.Module):
+        bodies.append(node.body)
+    elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        bodies.append(node.body)
+    elif isinstance(node, ast.stmt):
+        bodies.append([node])
+    else:
+        yield from iter_value_nodes(node)
+        return
+    while bodies:
+        statements = bodies.pop()
+        for statement in statements:
+            if (
+                isinstance(statement, ast.Expr)
+                and isinstance(statement.value, ast.Constant)
+                and isinstance(statement.value.value, str)
+            ):
+                continue
+            if isinstance(statement, ast.If):
+                truth = constant_truth(statement.test)
+                if truth is True:
+                    bodies.append(statement.body)
+                    continue
+                if truth is False:
+                    bodies.append(statement.orelse)
+                    continue
+            yield statement
+            for field, value in ast.iter_fields(statement):
+                if field in {"body", "orelse", "finalbody", "handlers", "cases"}:
+                    continue
+                yield from iter_value_nodes(value)
+            for block in reversed(statement_blocks(statement)):
+                bodies.append(block)
+
+
+def dict_entry_value(node: ast.AST, key: str) -> ast.AST | None:
+    if not isinstance(node, ast.Dict):
+        return None
+    for raw_key, value in zip(node.keys, node.values):
+        if isinstance(raw_key, ast.Constant) and raw_key.value == key:
+            return value
+    return None
+
+
+def literal_string_set(node: ast.AST) -> set[str]:
+    if not isinstance(node, (ast.Set, ast.List, ast.Tuple)):
+        raise AssertionFailure("expected a string collection literal")
+    result = set()
+    for item in node.elts:
+        if not isinstance(item, ast.Constant) or not isinstance(item.value, str):
+            raise AssertionFailure("collection contains a non-string literal")
+        result.add(item.value)
+    return result
+
+
+def path_of(node: ast.AST) -> tuple[str, ...] | None:
+    if isinstance(node, ast.Name):
+        return (node.id,)
+    if isinstance(node, ast.Attribute):
+        prefix = path_of(node.value)
+        if prefix is None:
+            return None
+        return (*prefix, node.attr)
+    return None
+
+
+def is_subscript(node: ast.AST, base_name: str, key: str) -> bool:
+    if not isinstance(node, ast.Subscript):
+        return False
+    if not isinstance(node.value, ast.Name) or node.value.id != base_name:
+        return False
+    slice_node = node.slice
+    return isinstance(slice_node, ast.Constant) and slice_node.value == key
+
+
+def has_live_call(node: ast.AST, path: tuple[str, ...]) -> bool:
+    return any(
+        isinstance(candidate, ast.Call) and path_of(candidate.func) == path
+        for candidate in iter_live_nodes(node)
+    )
+
+
+def assignment_values(node: ast.AST, target_name: str) -> list[ast.AST]:
+    values = []
+    for candidate in iter_live_nodes(node):
+        if isinstance(candidate, ast.Assign):
+            if any(
+                isinstance(target, ast.Name) and target.id == target_name
+                for target in candidate.targets
+            ):
+                values.append(candidate.value)
+        elif isinstance(candidate, ast.AnnAssign):
+            target = candidate.target
+            if isinstance(target, ast.Name) and target.id == target_name:
+                values.append(candidate.value)
+    return values
+
+
+def return_values(node: ast.AST) -> list[ast.AST]:
+    return [
+        candidate.value
+        for candidate in iter_live_nodes(node)
+        if isinstance(candidate, ast.Return) and candidate.value is not None
+    ]
+
+
+def compare_paths(node: ast.AST) -> tuple[tuple[str, str], str, str | None] | None:
+    if not isinstance(node, ast.Compare) or len(node.ops) != 1 or len(node.comparators) != 1:
+        return None
+    if isinstance(node.ops[0], ast.NotEq):
+        operator = "!="
+    elif isinstance(node.ops[0], ast.Eq):
+        operator = "=="
+    elif isinstance(node.ops[0], ast.Is):
+        operator = "is"
+    else:
+        return None
+    left = node.left
+    right = node.comparators[0]
+    left_key = None
+    for base in ("binding", "finding", "review_context", "data", "trigger"):
+        if isinstance(left, ast.Subscript) and isinstance(left.value, ast.Name):
+            if left.value.id == base and isinstance(left.slice, ast.Constant):
+                left_key = (base, left.slice.value)
+    if left_key is None:
+        return None
+    if isinstance(right, ast.Name):
+        return left_key, operator, right.id
+    if isinstance(right, ast.Constant):
+        return left_key, operator, str(right.value)
+    return None
+
+
+def call_keyword(call: ast.Call, name: str) -> ast.AST | None:
+    for keyword in call.keywords:
+        if keyword.arg == name:
+            return keyword.value
+    return None
 
 
 def assign_string_sequence(module: ast.Module, name: str) -> tuple[str, ...]:
@@ -274,10 +488,6 @@ def function_string_constants(module: ast.Module, name: str) -> set[str]:
     raise AssertionFailure(f"{name} is unavailable")
 
 
-def count_fragment(text: str, fragment: str) -> int:
-    return text.count(" ".join(fragment.split()))
-
-
 def workflow_registry(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     registry = expect_object(load_json_file(root, "docs/test-cases/registry.json"), "workflow registry")
     features = expect_object(
@@ -296,9 +506,9 @@ def workflow_registry(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def evaluate_action_actions(root: Path) -> dict[str, Any]:
-    checker = load_python_ast(root, "scripts/workflow_pilot/review_base_checker.py")
+    checker = load_plain_module(root, "scripts/workflow_pilot/review_base_checker.py")
     family = load_python_ast(root, "scripts/workflow_pilot/review_family.py")
-    producer = assign_string_sequence(checker, "ACTION_SEQUENCE")
+    producer = tuple(checker.ACTION_SEQUENCE)
     consumer = assign_string_sequence(family, "READ_ONLY_ACTIONS")
     expected = ("read-candidate", "emit-local-report")
     if producer != expected or consumer != expected:
@@ -307,52 +517,121 @@ def evaluate_action_actions(root: Path) -> dict[str, Any]:
 
 
 def evaluate_action_items(root: Path) -> dict[str, Any]:
-    checker = normalized_source(root, "scripts/workflow_pilot/review_base_checker.py")
-    assertions = normalized_source(root, "scripts/workflow_pilot/review_assertions.py")
-    required_checker = (
-        '"finding_member": parsed["member"]',
-        '"authority_binding": authority_binding',
+    checker = load_plain_module(root, "scripts/workflow_pilot/review_base_checker.py")
+    binding = checker._bind_member_request(
+        {
+            "round_findings": {
+                "FINDING": {
+                    "family": "action",
+                    "review_id": "REMOTE",
+                    "review_round": 1,
+                    "finding_head_sha": "a" * 40,
+                    "finding_head_tree": "b" * 40,
+                    "finding_origin_sha": "c" * 40,
+                    "finding_origin_tree": "d" * 40,
+                }
+            },
+            "candidate_sha": "e" * 40,
+            "candidate_tree": "f" * 40,
+        },
+        {
+            "family": "action",
+            "member": "items",
+            "outcome": "affected-fixed",
+            "reason": None,
+        },
+        "FINDING",
     )
-    required_assertions = (
-        'binding["finding_member"] != member',
-        '"finding_member": member',
-    )
-    if any(fragment not in checker for fragment in required_checker):
+    if binding["finding_member"] != "items":
         raise AssertionFailure("member-item authority binding is incomplete")
-    if any(fragment not in assertions for fragment in required_assertions):
-        raise AssertionFailure("member-item assertion does not validate the bound member")
+    if binding["finding_family"] != "action":
+        raise AssertionFailure("member-item finding family is incorrect")
+    if binding["head_sha"] != "e" * 40 or binding["head_tree"] != "f" * 40:
+        raise AssertionFailure("member-item head binding is incorrect")
+    if binding["finding_origin_sha"] != "c" * 40:
+        raise AssertionFailure("member-item origin binding is incorrect")
     return {"checker_binding": True, "assertion_binding": True}
 
 
 def evaluate_action_targets(root: Path) -> dict[str, Any]:
-    checker = load_python_ast(root, "scripts/workflow_pilot/review_base_checker.py")
-    family = load_python_ast(root, "scripts/workflow_pilot/review_family.py")
-    checker_statuses = function_string_constants(checker, "validate_change_records") & {
-        "A",
-        "D",
-        "M",
-        "R",
-        "C",
-    }
-    family_statuses = function_string_constants(family, "derive_change_records") & {
-        "A",
-        "D",
-        "M",
-        "R",
-        "C",
-    }
-    coverage = normalized_source(root, "scripts/workflow_pilot/review_base_checker.py")
-    if checker_statuses != {"A", "D", "M", "R", "C"} or family_statuses != {
-        "A",
-        "D",
-        "M",
-        "R",
-        "C",
-    }:
-        raise AssertionFailure("status-aware target coverage is incomplete")
-    if "independent review does not cover every exact changed file" not in coverage:
+    checker = load_plain_module(root, "scripts/workflow_pilot/review_base_checker.py")
+    checker_ast = load_python_ast(root, "scripts/workflow_pilot/review_base_checker.py")
+    changes = checker.validate_change_records(
+        [
+            {
+                "status": "A",
+                "similarity": None,
+                "old_path": None,
+                "new_path": "docs/new.md",
+                "base_mode": None,
+                "base_blob_oid": None,
+                "head_mode": "100644",
+                "head_blob_oid": "1" * 40,
+            },
+            {
+                "status": "D",
+                "similarity": None,
+                "old_path": "docs/deleted.md",
+                "new_path": None,
+                "base_mode": "100644",
+                "base_blob_oid": "2" * 40,
+                "head_mode": None,
+                "head_blob_oid": None,
+            },
+            {
+                "status": "M",
+                "similarity": None,
+                "old_path": "docs/a.md",
+                "new_path": "docs/a.md",
+                "base_mode": "100644",
+                "base_blob_oid": "3" * 40,
+                "head_mode": "100644",
+                "head_blob_oid": "4" * 40,
+            },
+            {
+                "status": "R",
+                "similarity": 90,
+                "old_path": "docs/old.md",
+                "new_path": "docs/renamed.md",
+                "base_mode": "100644",
+                "base_blob_oid": "5" * 40,
+                "head_mode": "100644",
+                "head_blob_oid": "6" * 40,
+            },
+            {
+                "status": "C",
+                "similarity": 100,
+                "old_path": "docs/source.md",
+                "new_path": "docs/copied.md",
+                "base_mode": "100644",
+                "base_blob_oid": "7" * 40,
+                "head_mode": "100644",
+                "head_blob_oid": "8" * 40,
+            },
+        ],
+        "changes",
+    )
+    report = function_def(checker_ast, "_validate_report")
+    if not any(
+        isinstance(node, ast.Compare)
+        and len(node.ops) == 1
+        and isinstance(node.ops[0], ast.NotEq)
+        and len(node.comparators) == 1
+        and isinstance(node.left, ast.Call)
+        and isinstance(node.comparators[0], ast.Call)
+        and path_of(node.left.func) == ("set",)
+        and path_of(node.comparators[0].func) == ("set",)
+        and {
+            path_of(node.left.args[0])[0] if node.left.args and path_of(node.left.args[0]) else None,
+            path_of(node.comparators[0].args[0])[0]
+            if node.comparators[0].args and path_of(node.comparators[0].args[0])
+            else None,
+        }
+        == {"reviewed_files", "changed_files"}
+        for node in iter_live_nodes(report)
+    ):
         raise AssertionFailure("exact changed-file coverage is not enforced")
-    return {"statuses": sorted(checker_statuses)}
+    return {"statuses": sorted({change["status"] for change in changes})}
 
 
 def evaluate_generated_owners(root: Path) -> dict[str, Any]:
@@ -367,14 +646,14 @@ def evaluate_generated_owners(root: Path) -> dict[str, Any]:
 
 
 def evaluate_generated_outputs(root: Path) -> dict[str, Any]:
-    candidate = load_python_ast(root, "scripts/workflow_pilot/candidate_evidence.py")
-    classifier = load_python_ast(root, "scripts/workflow_pilot/event_classifier.py")
-    worker_job_ids = assign_string_sequence(candidate, "WORKER_JOB_IDS")
-    full_classifier = assign_string_constant(candidate, "FULL_CLASSIFIER")
-    full_attestation = assign_string_constant(candidate, "FULL_ATTESTATION")
-    metadata_classifier = assign_string_constant(candidate, "METADATA_CLASSIFIER")
-    metadata_attestation = assign_string_constant(candidate, "METADATA_ATTESTATION")
-    decision_fields = class_annotation_fields(classifier, "EventDecision")
+    candidate = load_plain_module(root, "scripts/workflow_pilot/candidate_evidence.py")
+    classifier = load_plain_module(root, "scripts/workflow_pilot/event_classifier.py")
+    worker_job_ids = tuple(candidate.WORKER_JOB_IDS)
+    full_classifier = candidate.FULL_CLASSIFIER
+    full_attestation = candidate.FULL_ATTESTATION
+    metadata_classifier = candidate.METADATA_CLASSIFIER
+    metadata_attestation = candidate.METADATA_ATTESTATION
+    decision_fields = tuple(classifier.EventDecision.__annotations__)
     if set(worker_job_ids) != {"host-tests", "build", "extended-host-tests", "legacy"}:
         raise AssertionFailure("candidate-evidence worker outputs are incomplete")
     if (
@@ -402,75 +681,177 @@ def evaluate_generated_outputs(root: Path) -> dict[str, Any]:
 
 
 def evaluate_generated_consumers(root: Path) -> dict[str, Any]:
-    topology = normalized_source(root, "tests/workflows/test_build_ci_topology.py")
-    if "candidate_evidence" not in topology or "event_classifier" not in topology:
-        raise AssertionFailure("workflow topology tests do not consume candidate evidence and classifier outputs")
-    required = (
-        "metadata-only",
-        "CANDIDATE_FULL_JOBS",
-        "WORKFLOW_PILOT_BASELINE_GATE",
-        "event_classifier.classify_event",
-    )
-    if any(fragment not in topology for fragment in required):
-        raise AssertionFailure("workflow topology tests do not consume the generated outputs")
+    topology = load_python_ast(root, "tests/workflows/test_build_ci_topology.py")
+    imports = [
+        statement
+        for statement in topology.body
+        if isinstance(statement, ast.ImportFrom)
+        and statement.module == "scripts.workflow_pilot"
+    ]
+    imported = {
+        alias.asname or alias.name
+        for statement in imports
+        for alias in statement.names
+    }
+    if not {"candidate_evidence", "event_classifier"}.issubset(imported):
+        raise AssertionFailure(
+            "workflow topology tests do not import candidate evidence and classifier outputs"
+        )
+    if "CANDIDATE_FULL_JOBS" not in {
+        target.id
+        for statement in topology.body
+        if isinstance(statement, ast.Assign)
+        for target in statement.targets
+        if isinstance(target, ast.Name)
+    }:
+        raise AssertionFailure("workflow topology tests do not define candidate full jobs")
+    assign_string_constant(topology, "WORKFLOW_PILOT_BASELINE_GATE")
+    if not has_live_call(topology, ("event_classifier", "classify_event")):
+        raise AssertionFailure("workflow topology tests do not execute event classification")
+    attribute_paths = {
+        path_of(node)
+        for node in iter_live_nodes(topology)
+        if isinstance(node, ast.Attribute)
+    }
+    if not {
+        ("candidate_evidence", "FULL_ATTESTATION"),
+        ("candidate_evidence", "METADATA_ATTESTATION"),
+        ("candidate_evidence", "FULL_CLASSIFIER"),
+        ("candidate_evidence", "METADATA_CLASSIFIER"),
+    }.issubset(attribute_paths):
+        raise AssertionFailure("workflow topology tests do not evaluate candidate evidence")
     return {"topology_consumer": True}
 
 
 def evaluate_generated_drift_checks(root: Path) -> dict[str, Any]:
-    docs = normalized_source(root, "scripts/docs_check_tests/test_check_docs.py")
-    skill = normalized_source(root, "scripts/docs_check_tests/test_development_workflow_skill.py")
-    if WORKFLOW_REVIEW_FAMILY_CASE not in docs or WORKFLOW_REVIEW_FAMILY_CASE not in skill:
+    docs = load_python_ast(root, "scripts/docs_check_tests/test_check_docs.py")
+    skill = load_python_ast(
+        root, "scripts/docs_check_tests/test_development_workflow_skill.py"
+    )
+    if not any(
+        isinstance(node, ast.Dict)
+        and dict_entry_value(node, WORKFLOW_REVIEW_FAMILY_CASE) is not None
+        for node in iter_live_nodes(docs)
+    ):
         raise AssertionFailure("docs drift checks do not cover the review-family case")
-    if WORKFLOW_FEATURE_ID not in docs or WORKFLOW_FEATURE_ID not in skill:
+    if not any(
+        isinstance(node, ast.Dict)
+        and dict_entry_value(node, WORKFLOW_FEATURE_ID) is not None
+        for node in iter_live_nodes(docs)
+    ):
+        raise AssertionFailure("docs drift checks do not cover workflow-governance")
+    if not any(
+        isinstance(value, ast.List)
+        and WORKFLOW_REVIEW_FAMILY_CASE in literal_string_set(value)
+        for value in assignment_values(skill, "expected_cases")
+    ):
+        raise AssertionFailure("docs drift checks do not cover the review-family case")
+    if not any(
+        isinstance(node, ast.Call)
+        and path_of(node.func) == ("compare_string_membership",)
+        and len(node.args) >= 3
+        and isinstance(node.args[1], ast.Name)
+        and node.args[1].id == "expected_cases"
+        and isinstance(node.args[2], ast.Constant)
+        and node.args[2].value == "workflow-governance.required_cases"
+        for node in iter_live_nodes(skill)
+    ):
         raise AssertionFailure("docs drift checks do not cover workflow-governance")
     return {"docs_checks": True}
 
 
 def evaluate_lifecycle_entries(root: Path) -> dict[str, Any]:
-    source = normalized_source(root, "scripts/workflow_pilot/review_family.py")
-    required = (
-        "third-consecutive-change-request",
-        "finding_handoffs",
-        '"bounds": {',
-        '"findings": len(finding_sweeps)',
-        '"families": len(',
-        '"siblings": sum(',
-    )
-    if any(fragment not in source for fragment in required):
+    family = load_python_ast(root, "scripts/workflow_pilot/review_family.py")
+    progress = function_def(family, "_progress_rounds")
+    pending_values = assignment_values(progress, "pending")
+    if not any(
+        isinstance(value, ast.Dict)
+        and isinstance(dict_entry_value(value, "reason"), ast.Constant)
+        and dict_entry_value(value, "reason").value
+        == "third-consecutive-change-request"
+        for value in pending_values
+    ):
         raise AssertionFailure("lifecycle hold-entry contract is incomplete")
+    append_calls = [
+        node
+        for node in iter_live_nodes(progress)
+        if isinstance(node, ast.Call) and path_of(node.func) == ("handoffs", "append")
+    ]
+    if not append_calls:
+        raise AssertionFailure("lifecycle handoff append is unavailable")
+    if not any(
+        call.args
+        and isinstance(call.args[0], ast.Dict)
+        and isinstance(dict_entry_value(call.args[0], "finding_handoffs"), ast.Name)
+        and dict_entry_value(call.args[0], "finding_handoffs").id == "finding_sweeps"
+        and isinstance((bounds := dict_entry_value(call.args[0], "bounds")), ast.Dict)
+        and {key.value for key in bounds.keys if isinstance(key, ast.Constant)}
+        == {"findings", "families", "siblings"}
+        for call in append_calls
+    ):
+        raise AssertionFailure("lifecycle handoff bounds are incomplete")
     return {"hold_reason": "third-consecutive-change-request"}
 
 
 def evaluate_lifecycle_preservation(root: Path) -> dict[str, Any]:
-    source = normalized_source(root, "scripts/workflow_pilot/trusted_review_gate.py")
-    required = (
-        "_preserved_receipt_bytes",
-        "preserved original pre-review is unavailable",
-        "pre-review receipt changed during consumption",
-        "original_receipt_sha256",
-    )
-    if any(fragment not in source for fragment in required):
-        raise AssertionFailure("receipt preservation contract is incomplete")
+    trusted = load_python_ast(root, "scripts/workflow_pilot/trusted_review_gate.py")
+    run = function_def(trusted, "_run_trusted_gate")
+    main = function_def(trusted, "main")
+    if not any(
+        isinstance(node, ast.FunctionDef) and node.name == "_preserved_receipt_bytes"
+        for node in trusted.body
+    ):
+        raise AssertionFailure("receipt preservation helper is unavailable")
+    verify_calls = [
+        node
+        for node in iter_live_nodes(run)
+        if isinstance(node, ast.Call)
+        and path_of(node.func) == ("_verify_signed_receipt_bytes",)
+    ]
+    if not any(call_keyword(call, "consume_nonce") is not None for call in verify_calls):
+        raise AssertionFailure("receipt preservation does not bind nonce consumption")
+    if not any(call_keyword(call, "require_preserved") is not None for call in verify_calls):
+        raise AssertionFailure("receipt preservation does not bind preserved replay")
+    if not has_live_call(main, ("_preserved_receipt_bytes",)):
+        raise AssertionFailure("receipt preservation is not reachable from main")
     return {"preserved_receipt": True}
 
 
 def evaluate_lifecycle_resets(root: Path) -> dict[str, Any]:
-    source = normalized_source(root, "scripts/workflow_pilot/review_family.py")
-    if count_fragment(source, "consecutive = 0") < 2 or count_fragment(source, "pending = None") < 2:
+    progress = function_def(
+        load_python_ast(root, "scripts/workflow_pilot/review_family.py"),
+        "_progress_rounds",
+    )
+    consecutive_resets = sum(
+        isinstance(value, ast.Constant) and value.value == 0
+        for value in assignment_values(progress, "consecutive")
+    )
+    pending_resets = sum(
+        isinstance(value, ast.Constant) and value.value is None
+        for value in assignment_values(progress, "pending")
+    )
+    if consecutive_resets < 2 or pending_resets < 2:
         raise AssertionFailure("lifecycle reset paths are incomplete")
     return {"resets": 2}
 
 
 def evaluate_lifecycle_terminals(root: Path) -> dict[str, Any]:
-    family = normalized_source(root, "scripts/workflow_pilot/review_family.py")
-    trusted = normalized_source(root, "scripts/workflow_pilot/trusted_review_gate.py")
-    required = (
-        '"push_allowed": False',
-        '"trusted_push_allowed": False',
-        '"merge_allowed": False',
-        '"structural_eligibility"',
-    )
-    if any(fragment not in trusted and fragment not in family for fragment in required):
+    trusted = load_python_ast(root, "scripts/workflow_pilot/trusted_review_gate.py")
+    bootstrap = function_def(trusted, "_bootstrap_result")
+    returns = return_values(bootstrap)
+    if not returns:
+        raise AssertionFailure("bootstrap result is unavailable")
+    if not any(
+        isinstance(value, ast.Dict)
+        and isinstance((gates := dict_entry_value(value, "gates")), ast.Dict)
+        and isinstance(dict_entry_value(gates, "push_allowed"), ast.Constant)
+        and dict_entry_value(gates, "push_allowed").value is False
+        and isinstance(dict_entry_value(gates, "trusted_push_allowed"), ast.Constant)
+        and dict_entry_value(gates, "trusted_push_allowed").value is False
+        and isinstance(dict_entry_value(gates, "merge_allowed"), ast.Constant)
+        and dict_entry_value(gates, "merge_allowed").value is False
+        for value in returns
+    ):
         raise AssertionFailure("terminal gate contract is incomplete")
     return {"terminal_gates": True}
 
@@ -503,9 +884,27 @@ def evaluate_resource_enabled(root: Path) -> dict[str, Any]:
         "risk_boundaries": sorted(matches[0]["risk_boundaries"]),
         "threshold_triggers": sorted(threshold["triggers"]),
     }
-    trusted = normalized_source(root, "scripts/workflow_pilot/trusted_review_gate.py")
-    family = normalized_source(root, "scripts/workflow_pilot/review_family.py")
-    if "_load_authoritative_trigger" not in trusted or "authoritative_trigger" not in family:
+    trusted = load_python_ast(root, "scripts/workflow_pilot/trusted_review_gate.py")
+    family = load_python_ast(root, "scripts/workflow_pilot/review_family.py")
+    loader = function_def(trusted, "_load_authoritative_trigger")
+    if not has_live_call(loader, ("reporter", "load_decisions_from_commit")):
+        raise AssertionFailure("enabled resource boundary does not load base-owned trigger decisions")
+    if not any(
+        any(
+            isinstance(node, ast.Call)
+            and path_of(node.func) == ("_minimal_git",)
+            and len(node.args) >= 3
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value == "rev-parse"
+            for node in iter_value_nodes(value)
+        )
+        for value in assignment_values(loader, "blob_oid")
+    ):
+        raise AssertionFailure("enabled resource boundary does not bind the base decision blob")
+    if not any(
+        isinstance(node, ast.FunctionDef) and node.name == "_resolve_authoritative_trigger"
+        for node in family.body
+    ):
         raise AssertionFailure("enabled resource boundary does not consume the authoritative trigger")
     if not (
         trigger["risk_boundaries"] == ["lifecycle", "protocol"]
@@ -516,86 +915,151 @@ def evaluate_resource_enabled(root: Path) -> dict[str, Any]:
 
 
 def evaluate_resource_disabled(root: Path) -> dict[str, Any]:
-    source = normalized_source(root, "scripts/workflow_pilot/trusted_review_gate.py")
-    required = (
-        '"mode": "introduction"',
-        '"external_coordinator_review_required": True',
-        '"trusted_push_allowed": False',
-        '"merge_allowed": False',
-    )
-    if any(fragment not in source for fragment in required):
+    trusted = load_python_ast(root, "scripts/workflow_pilot/trusted_review_gate.py")
+    run = function_def(trusted, "_run_trusted_gate")
+    bootstrap = function_def(trusted, "_bootstrap_result")
+    if not any(
+        isinstance(node, ast.If)
+        and any(
+            isinstance(child, ast.Compare)
+            and isinstance(child.left, ast.Name)
+            and child.left.id == "authoritative_trigger"
+            and isinstance(child.ops[0], ast.Is)
+            and isinstance(child.comparators[0], ast.Constant)
+            and child.comparators[0].value is None
+            for child in ast.walk(node.test)
+        )
+        for node in iter_live_nodes(run)
+    ):
+        raise AssertionFailure("introduction-mode disabled boundary is incomplete")
+    if not any(
+        isinstance(value, ast.Dict)
+        and isinstance((bootstrap_info := dict_entry_value(value, "bootstrap")), ast.Dict)
+        and isinstance(dict_entry_value(bootstrap_info, "mode"), ast.Constant)
+        and dict_entry_value(bootstrap_info, "mode").value == "introduction"
+        for value in return_values(bootstrap)
+    ):
         raise AssertionFailure("introduction-mode disabled boundary is incomplete")
     return {"introduction_mode": True}
 
 
 def evaluate_wire_producers(root: Path) -> dict[str, Any]:
-    source = normalized_source(root, "scripts/workflow_pilot/trusted_review_gate.py")
-    required = (
-        "collect_live_evidence_bytes",
-        "run_base_pinned_checker",
-        '"authoritative_trigger": authoritative_trigger',
-        '"execution_receipts": execution_receipts',
-        '"result_manifest": [',
-    )
-    if any(fragment not in source for fragment in required):
+    trusted = load_python_ast(root, "scripts/workflow_pilot/trusted_review_gate.py")
+    run = function_def(trusted, "_run_trusted_gate")
+    collect = function_def(trusted, "collect_live_evidence_bytes")
+    if not has_live_call(run, ("run_base_pinned_checker",)):
+        raise AssertionFailure("wire producers are incomplete")
+    if not any(
+        isinstance(value, ast.Dict)
+        and dict_entry_value(value, "authoritative_trigger") is not None
+        and dict_entry_value(value, "execution_receipts") is not None
+        and dict_entry_value(value, "result_manifest") is not None
+        for value in assignment_values(collect, "raw_evidence")
+    ):
         raise AssertionFailure("wire producers are incomplete")
     return {"producers": True}
 
 
 def evaluate_wire_consumers(root: Path) -> dict[str, Any]:
-    source = normalized_source(root, "scripts/workflow_pilot/review_family.py")
-    required = (
-        "validate_evidence",
-        '"authoritative_trigger"',
-        '"execution_receipts"',
-        '"result_manifest"',
-        "_validate_execution",
-    )
-    if any(fragment not in source for fragment in required):
+    family = load_python_ast(root, "scripts/workflow_pilot/review_family.py")
+    validate = function_def(family, "validate_evidence")
+    build = function_def(family, "build_report")
+    if not any(
+        isinstance(node, ast.Call)
+        and path_of(node.func) == ("reporter", "expect_keys")
+        and len(node.args) >= 3
+        and isinstance(node.args[2], ast.Tuple)
+        and {"authoritative_trigger", "execution_receipts", "result_manifest"}.issubset(
+            literal_string_set(node.args[2])
+        )
+        for node in iter_live_nodes(validate)
+    ):
+        raise AssertionFailure("wire consumers are incomplete")
+    if not has_live_call(build, ("_resolve_authoritative_trigger",)) or not has_live_call(
+        build, ("_validate_execution",)
+    ):
         raise AssertionFailure("wire consumers are incomplete")
     return {"consumers": True}
 
 
 def evaluate_wire_validators(root: Path) -> dict[str, Any]:
-    checker = normalized_source(root, "scripts/workflow_pilot/review_base_checker.py")
-    family = normalized_source(root, "scripts/workflow_pilot/review_family.py")
-    if "validate_input" not in checker or "_validate_program_output_binding" not in checker:
+    checker = load_python_ast(root, "scripts/workflow_pilot/review_base_checker.py")
+    family = load_python_ast(root, "scripts/workflow_pilot/review_family.py")
+    execute_registry = function_def(checker, "execute_registry")
+    validate_input_fn = function_def(checker, "validate_input")
+    resolve_trigger = function_def(family, "_resolve_authoritative_trigger")
+    if not has_live_call(execute_registry, ("_validate_program_output_binding",)):
         raise AssertionFailure("checker validators are incomplete")
-    if "_validate_execution" not in family or "authoritative trigger decision" not in family:
+    if not any(
+        compare_paths(node) == (("review_context", "candidate_sha"), "!=", "candidate_sha")
+        for node in iter_live_nodes(validate_input_fn)
+    ):
+        raise AssertionFailure("checker validators do not bind review candidate identity")
+    if not any(
+        isinstance(node, ast.Compare)
+        and isinstance(node.left, ast.Subscript)
+        and is_subscript(node.left, "trigger", "trigger")
+        for node in iter_live_nodes(resolve_trigger)
+    ) and not has_live_call(resolve_trigger, ("reporter", "run_git")):
         raise AssertionFailure("report validators are incomplete")
     return {"validators": True}
 
 
 def evaluate_wire_replay(root: Path) -> dict[str, Any]:
-    source = normalized_source(root, "scripts/workflow_pilot/trusted_review_gate.py")
-    required = (
+    trusted = load_python_ast(root, "scripts/workflow_pilot/trusted_review_gate.py")
+    run = function_def(trusted, "_run_trusted_gate")
+    names = {
+        node.name
+        for node in trusted.body
+        if isinstance(node, ast.FunctionDef)
+    }
+    if not {
         "_verify_signed_receipt_bytes",
         "_preserved_receipt_bytes",
-        "consume_nonce",
-        "require_preserved",
         "_execution_receipt_seal",
-    )
-    if any(fragment not in source for fragment in required):
+    }.issubset(names):
+        raise AssertionFailure("replay boundary is incomplete")
+    verify_calls = [
+        node
+        for node in iter_live_nodes(run)
+        if isinstance(node, ast.Call)
+        and path_of(node.func) == ("_verify_signed_receipt_bytes",)
+    ]
+    if not any(call_keyword(call, "consume_nonce") is not None for call in verify_calls):
+        raise AssertionFailure("replay boundary is incomplete")
+    if not any(call_keyword(call, "require_preserved") is not None for call in verify_calls):
         raise AssertionFailure("replay boundary is incomplete")
     return {"replay": True}
 
 
 def evaluate_wire_stale_bindings(root: Path) -> dict[str, Any]:
-    trusted = normalized_source(root, "scripts/workflow_pilot/trusted_review_gate.py")
-    checker = normalized_source(root, "scripts/workflow_pilot/review_base_checker.py")
-    required_trusted = (
-        "_live_state_digest",
-        "GitHub head/review/thread state changed during gate evaluation",
-        "authoritative PR head does not equal the expected remote head",
-    )
-    required_checker = (
-        "current assertion round/head",
-        "authoritative round binding",
-    )
-    if any(fragment not in trusted for fragment in required_trusted):
-        raise AssertionFailure("trusted stale-binding checks are incomplete")
-    if any(fragment not in checker for fragment in required_checker):
+    trusted = load_python_ast(root, "scripts/workflow_pilot/trusted_review_gate.py")
+    checker = load_python_ast(root, "scripts/workflow_pilot/review_base_checker.py")
+    collect = function_def(trusted, "collect_live_evidence_bytes")
+    validate_input_fn = function_def(checker, "validate_input")
+    if not any(
+        compare_paths(node) == (("review_context", "candidate_sha"), "!=", "candidate_sha")
+        for node in iter_live_nodes(validate_input_fn)
+    ) or not any(
+        compare_paths(node) == (("review_context", "round"), "!=", "review_round")
+        for node in iter_live_nodes(validate_input_fn)
+    ):
         raise AssertionFailure("checker stale-binding checks are incomplete")
+    if not any(
+        compare_paths(node) == (("pr", "headRefOid"), "!=", "expected_remote_head")
+        or (
+            isinstance(node, ast.Compare)
+            and isinstance(node.left, ast.Name)
+            and node.left.id == "head"
+            and len(node.ops) == 1
+            and isinstance(node.ops[0], ast.NotEq)
+            and len(node.comparators) == 1
+            and isinstance(node.comparators[0], ast.Name)
+            and node.comparators[0].id == "expected_remote_head"
+        )
+        for node in iter_live_nodes(collect)
+    ):
+        raise AssertionFailure("trusted stale-binding checks are incomplete")
     return {"stale_bindings": True}
 
 
@@ -657,6 +1121,8 @@ def evaluate_member_contract(family: str, member: str, root: Path) -> dict[str, 
     expected = {path for path in ASSERTION_INPUT_PATHS}
     discovered = set()
     for path in root.rglob("*"):
+        if "__pycache__" in path.parts or path.suffix == ".pyc":
+            continue
         if path.is_symlink():
             raise AssertionFailure("member artifact tree contains a symlink")
         if path.is_dir():

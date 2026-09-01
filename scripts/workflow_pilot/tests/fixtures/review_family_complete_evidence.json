@@ -21,7 +21,7 @@
   },
   "authoritative_trigger": {
     "path": ".github/workflow-pilot-decisions.json",
-    "blob_oid": "2222222222222222222222222222222222222222",
+    "blob_oid": "7ffce1a5b22ccba7aed390b879c454490538aaa7",
     "pull_request": 901,
     "base_sha": "853cff1eb7bdb3ecce46f780473e81be73e24315",
     "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",

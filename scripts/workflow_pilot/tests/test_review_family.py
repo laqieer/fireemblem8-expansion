@@ -168,6 +168,10 @@ class ReviewFamilyContractTests(unittest.TestCase):
         evidence["authoritative_trigger"]["candidate_sha"] = "f" * 40
         self.assert_rejected(contract, evidence, "exact candidate head")
 
+        contract, evidence = fixture("default")
+        evidence["authoritative_trigger"]["blob_oid"] = "f" * 40
+        self.assert_rejected(contract, evidence, "exact base blob")
+
     def test_exact_base_and_head_are_not_ancestor_substitutions(self):
         contract, evidence = fixture("default")
         evidence["pull_request"]["base_sha"] = "e" * 40

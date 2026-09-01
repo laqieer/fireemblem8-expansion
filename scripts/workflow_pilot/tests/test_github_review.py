@@ -234,6 +234,13 @@ class TrustedGitHubGateTests(unittest.TestCase):
 
     def build_decision_repo(self, *entries):
         repo = self.temporary_repo("decision-record")
+        git(
+            repo,
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/laqieer/fireemblem8-expansion.git",
+        )
         for relative in trusted_review_gate.ASSERTION_INPUT_PATHS:
             target = repo / relative
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -241,12 +248,45 @@ class TrustedGitHubGateTests(unittest.TestCase):
         (repo / ".gitignore").write_text("build/\n", encoding="utf-8")
         (repo / "changed.txt").write_text("base\n", encoding="utf-8")
         self.write_decision_record(repo, *entries)
-        git(repo, "add", ".")
-        git(repo, "commit", "-q", "-m", "base")
+        environment = reporter.git_environment(offline=True)
+        environment.update(
+            {
+                "GIT_AUTHOR_DATE": "2026-08-31T03:00:00Z",
+                "GIT_COMMITTER_DATE": "2026-08-31T03:00:00Z",
+            }
+        )
+        subprocess.run(
+            reporter.git_command(repo, "add", "."),
+            env=environment,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            reporter.git_command(repo, "commit", "-q", "-m", "base"),
+            env=environment,
+            check=True,
+            capture_output=True,
+        )
         base = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
         (repo / "changed.txt").write_text("candidate\n", encoding="utf-8")
-        git(repo, "add", "changed.txt")
-        git(repo, "commit", "-q", "-m", "candidate")
+        environment.update(
+            {
+                "GIT_AUTHOR_DATE": "2026-08-31T03:05:00Z",
+                "GIT_COMMITTER_DATE": "2026-08-31T03:05:00Z",
+            }
+        )
+        subprocess.run(
+            reporter.git_command(repo, "add", "changed.txt"),
+            env=environment,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            reporter.git_command(repo, "commit", "-q", "-m", "candidate"),
+            env=environment,
+            check=True,
+            capture_output=True,
+        )
         candidate = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
         return repo, base, candidate
 
@@ -683,18 +723,72 @@ class TrustedGitHubGateTests(unittest.TestCase):
         finally:
             shutil.rmtree(repo)
 
+        high_repo, high_base, high_candidate = self.build_decision_repo(
+            self.decision_entry(
+                risks=("lifecycle", "protocol"),
+                triggers=("changed-files", "risk-boundary"),
+            )
+        )
+        try:
+            contract = review_family.validate_contract(
+                {
+                    **self.contract(base=high_base, candidate=high_candidate),
+                    "trigger": {
+                        "risk_boundaries": ["lifecycle", "protocol"],
+                        "threshold_triggers": ["changed-files", "risk-boundary"],
+                    },
+                }
+            )
+            trigger = trusted_review_gate._load_authoritative_trigger(
+                contract, high_repo, high_candidate
+            )
+            self.assertEqual(trigger["risk_boundaries"], ["lifecycle", "protocol"])
+            self.assertEqual(
+                trigger["threshold_triggers"], ["changed-files", "risk-boundary"]
+            )
+            self.assertTrue(trigger["pre_review_required"])
+            self.assertEqual(
+                trigger["blob_oid"],
+                git(
+                    high_repo,
+                    "rev-parse",
+                    f"{high_base}:{trusted_review_gate.DECISION_RECORD_PATH}",
+                ).stdout.decode().strip(),
+            )
+
+            self.write_decision_record(high_repo, self.decision_entry())
+            git(high_repo, "add", trusted_review_gate.DECISION_RECORD_PATH)
+            git(high_repo, "commit", "-q", "-m", "downgrade candidate decision")
+            downgraded = git(high_repo, "rev-parse", "HEAD").stdout.decode().strip()
+            drifted_contract = review_family.validate_contract(
+                {
+                    **self.contract(base=high_base, candidate=downgraded),
+                    "trigger": {
+                        "risk_boundaries": ["lifecycle", "protocol"],
+                        "threshold_triggers": ["changed-files", "risk-boundary"],
+                    },
+                }
+            )
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "candidate decision record drifts from the authoritative base decision",
+            ):
+                trusted_review_gate._load_authoritative_trigger(
+                    drifted_contract, high_repo, downgraded
+                )
+        finally:
+            shutil.rmtree(high_repo)
+
         missing_repo, missing_base, missing_candidate = self.build_decision_repo()
         try:
             contract = review_family.validate_contract(
                 self.contract(base=missing_base, candidate=missing_candidate)
             )
-            with self.assertRaisesRegex(
-                reporter.PilotDataError,
-                "has no entry for the exact PR",
-            ):
+            self.assertIsNone(
                 trusted_review_gate._load_authoritative_trigger(
                     contract, missing_repo, missing_candidate
                 )
+            )
         finally:
             shutil.rmtree(missing_repo)
 
@@ -715,6 +809,174 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 )
         finally:
             shutil.rmtree(duplicate_repo)
+
+    def test_base_owned_trigger_decision_controls_end_to_end_and_drift_fails(self):
+        repo, base, candidate = self.build_decision_repo(
+            self.decision_entry(
+                risks=("lifecycle", "protocol"),
+                triggers=("changed-files", "risk-boundary"),
+            )
+        )
+        try:
+            payload = self.adapter()
+            pr = payload["data"]["repository"]["pullRequest"]
+            pr["createdAt"] = "2026-08-31T03:08:00Z"
+            pr["baseRefOid"] = base
+            pr["headRefOid"] = candidate
+            pr["commits"]["nodes"][0]["commit"]["oid"] = candidate
+            pr["commits"]["nodes"][0]["commit"]["committedDate"] = git(
+                repo, "show", "-s", "--format=%cI", candidate
+            ).stdout.decode().strip().replace("+00:00", "Z")
+            pr["reviews"]["nodes"][0]["commit"]["oid"] = candidate
+            pr["reviews"]["nodes"][0]["submittedAt"] = "2026-08-31T03:15:00Z"
+            contract = self.contract(base=base, candidate=candidate)
+            contract["trust_mode"] = "base-pinned"
+            contract["trigger"] = {
+                "risk_boundaries": ["lifecycle", "protocol"],
+                "threshold_triggers": ["changed-files", "risk-boundary"],
+            }
+            receipt = signed_receipt(
+                reporter.normalized_json(
+                    review_report(
+                        base,
+                        candidate,
+                        ["changed.txt"],
+                        review_family.derive_change_records(repo, base, candidate),
+                    )
+                ),
+                base=base,
+                candidate=candidate,
+                nonce="base-owned-trigger-0001",
+            )
+            result = trusted_review_gate._run_trusted_gate(
+                raw_contract=contract,
+                repository_root=repo,
+                expected_candidate=candidate,
+                expected_remote_head=candidate,
+                expected_base=base,
+                review_receipt_bytes=receipt,
+                replay_store=self.replay,
+                trusted_key_id=KEY_ID,
+                trusted_key_epoch=KEY_EPOCH,
+                trusted_key=KEY,
+                current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc),
+                adapter=StaticAdapter(payload),
+                clock=lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc),
+            )
+            self.assertTrue(result["trigger"]["authoritative"])
+            self.assertTrue(result["trigger"]["adversarial_pre_review_required"])
+
+            self.write_decision_record(repo, self.decision_entry())
+            git(repo, "add", trusted_review_gate.DECISION_RECORD_PATH)
+            git(repo, "commit", "-q", "-m", "drift trigger decision")
+            drift_candidate = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
+            drift_payload = self.adapter()
+            drift_pr = drift_payload["data"]["repository"]["pullRequest"]
+            drift_pr["baseRefOid"] = base
+            drift_pr["headRefOid"] = drift_candidate
+            drift_pr["commits"]["nodes"][0]["commit"]["oid"] = drift_candidate
+            drift_pr["commits"]["nodes"][0]["commit"]["committedDate"] = git(
+                repo, "show", "-s", "--format=%cI", drift_candidate
+            ).stdout.decode().strip().replace("+00:00", "Z")
+            drift_pr["reviews"]["nodes"][0]["commit"]["oid"] = drift_candidate
+            drift_contract = copy.deepcopy(contract)
+            drift_contract["candidate_sha"] = drift_candidate
+            drift_contract["original_pre_review_head"] = drift_candidate
+            drift_receipt = signed_receipt(
+                reporter.normalized_json(
+                    review_report(
+                        base,
+                        drift_candidate,
+                        ["changed.txt", trusted_review_gate.DECISION_RECORD_PATH],
+                        review_family.derive_change_records(repo, base, drift_candidate),
+                    )
+                ),
+                base=base,
+                candidate=drift_candidate,
+                nonce="base-owned-trigger-0002",
+            )
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "candidate decision record drifts from the authoritative base decision",
+            ):
+                trusted_review_gate._run_trusted_gate(
+                    raw_contract=drift_contract,
+                    repository_root=repo,
+                    expected_candidate=drift_candidate,
+                    expected_remote_head=drift_candidate,
+                    expected_base=base,
+                    review_receipt_bytes=drift_receipt,
+                    replay_store=self.replay,
+                    trusted_key_id=KEY_ID,
+                    trusted_key_epoch=KEY_EPOCH,
+                    trusted_key=KEY,
+                    current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc),
+                    adapter=StaticAdapter(drift_payload),
+                    clock=lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc),
+                )
+        finally:
+            shutil.rmtree(repo)
+
+    def test_missing_base_trigger_entry_uses_introduction_hold(self):
+        repo, base, candidate = self.build_decision_repo()
+        try:
+            self.write_decision_record(
+                repo,
+                self.decision_entry(
+                    risks=("lifecycle", "protocol"),
+                    triggers=("changed-files", "risk-boundary"),
+                ),
+            )
+            git(repo, "add", trusted_review_gate.DECISION_RECORD_PATH)
+            git(repo, "commit", "-q", "-m", "candidate-only trigger")
+            candidate_only = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
+            payload = self.adapter()
+            pr = payload["data"]["repository"]["pullRequest"]
+            pr["baseRefOid"] = base
+            pr["headRefOid"] = candidate_only
+            pr["commits"]["nodes"][0]["commit"]["oid"] = candidate_only
+            pr["commits"]["nodes"][0]["commit"]["committedDate"] = git(
+                repo, "show", "-s", "--format=%cI", candidate_only
+            ).stdout.decode().strip().replace("+00:00", "Z")
+            pr["reviews"]["nodes"][0]["commit"]["oid"] = candidate_only
+            contract = self.contract(base=base, candidate=candidate_only)
+            contract["trigger"] = {
+                "risk_boundaries": ["lifecycle", "protocol"],
+                "threshold_triggers": ["changed-files", "risk-boundary"],
+            }
+            receipt = signed_receipt(
+                reporter.normalized_json(
+                    review_report(
+                        base,
+                        candidate_only,
+                        ["changed.txt", trusted_review_gate.DECISION_RECORD_PATH],
+                        review_family.derive_change_records(repo, base, candidate_only),
+                    )
+                ),
+                base=base,
+                candidate=candidate_only,
+                nonce="candidate-only-trigger-0001",
+            )
+            result = trusted_review_gate._run_trusted_gate(
+                raw_contract=contract,
+                repository_root=repo,
+                expected_candidate=candidate_only,
+                expected_remote_head=candidate_only,
+                expected_base=base,
+                review_receipt_bytes=receipt,
+                replay_store=self.replay,
+                trusted_key_id=KEY_ID,
+                trusted_key_epoch=KEY_EPOCH,
+                trusted_key=KEY,
+                current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc),
+                adapter=StaticAdapter(payload),
+                clock=lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc),
+            )
+            self.assertEqual(result["bootstrap"]["mode"], "introduction")
+            self.assertFalse(result["gates"]["trusted_push_allowed"])
+            self.assertFalse(result["gates"]["merge_allowed"])
+        finally:
+            shutil.rmtree(repo)
 
     def test_base_checker_executes_closed_registry_and_binds_receipt(self):
         contract = review_family.validate_contract(
