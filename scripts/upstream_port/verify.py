@@ -141,7 +141,43 @@ _PUBLISHER_CONDITION = (
     "needs.event-identity.outputs.fallback_sha == github.event.after && "
     "needs.event-identity.outputs.fallback_sha == github.sha }}"
 )
+_METADATA_WORKER_NAMES = {
+    "host-tests": "metadata-host-tests-skipped",
+    "build": "metadata-build-skipped",
+    "extended-host-tests": "metadata-extended-host-tests-skipped",
+    "legacy": "metadata-legacy-skipped",
+}
+_RAW_METADATA_NAME_CONDITION = (
+    "github.event_name == 'pull_request' && "
+    "github.event.action == 'edited' && "
+    "!github.event.changes.base && "
+    "((github.event.changes.body && !github.event.changes.title && "
+    "toJSON(github.event.changes) == format('{{\"body\":{0}}}', "
+    "toJSON(github.event.changes.body)) && "
+    "github.event.changes.body.from != github.event.pull_request.body) || "
+    "(github.event.changes.title && !github.event.changes.body && "
+    "toJSON(github.event.changes) == format('{{\"title\":{0}}}', "
+    "toJSON(github.event.changes.title)) && "
+    "github.event.changes.title.from != github.event.pull_request.title) || "
+    "(github.event.changes.body && github.event.changes.title && "
+    "(toJSON(github.event.changes) == format('{{\"body\":{0},\"title\":{1}}}', "
+    "toJSON(github.event.changes.body), "
+    "toJSON(github.event.changes.title)) || "
+    "toJSON(github.event.changes) == format('{{\"title\":{0},\"body\":{1}}}', "
+    "toJSON(github.event.changes.title), "
+    "toJSON(github.event.changes.body))) && "
+    "github.event.changes.body.from != github.event.pull_request.body && "
+    "github.event.changes.title.from != github.event.pull_request.title))"
+)
 _DYNAMIC_JOB_NAMES = {
+    **{
+        job_name: (
+            "${{ "
+            + _RAW_METADATA_NAME_CONDITION
+            + f" && '{metadata_name}' || '{job_name}' }}}}"
+        )
+        for job_name, metadata_name in _METADATA_WORKER_NAMES.items()
+    },
     "event-classifier": (
         "${{ needs.event-router.result == 'success' && "
         "needs.event-router.outputs.classification == 'metadata-only' && "
@@ -1212,6 +1248,7 @@ def _parse_job_context(job_name, body):
         ],
         **{
             name: [
+                "name",
                 "needs",
                 "if",
                 "runs-on",

@@ -56,7 +56,7 @@ def _metadata_run(run_id, worker_conclusion="skipped"):
     contexts.extend(
         _context(
             job_id,
-            LITERAL_SKIPPED_NAME,
+            candidate_evidence.METADATA_WORKER_NAMES[job_id],
             worker_conclusion,
         )
         for job_id in candidate_evidence.WORKER_JOB_IDS
@@ -101,49 +101,73 @@ class CandidateEvidenceTests(unittest.TestCase):
         latest = candidate_evidence.latest_contexts([failed_full, metadata])
         self.assertEqual(latest["summary"], (10, "failure"))
         self.assertEqual(latest["metadata-summary"], (11, "success"))
+        for job_id in candidate_evidence.WORKER_JOB_IDS:
+            with self.subTest(job_id=job_id):
+                self.assertEqual(latest[job_id], (10, "success"))
+                self.assertEqual(
+                    latest[candidate_evidence.METADATA_WORKER_NAMES[job_id]],
+                    (11, "skipped"),
+                )
 
     def test_green_metadata_does_not_replace_prior_full_success(self):
+        full = _full_run(20)
+        metadata = _metadata_run(21)
         result = candidate_evidence.evaluate_candidate_runs(
-            [_full_run(20), _metadata_run(21)],
+            [full, metadata],
             head_sha=HEAD,
             base_sha=BASE,
         )
         self.assertTrue(result.eligible)
         self.assertEqual(result.run_id, 20)
+        latest = candidate_evidence.latest_contexts([full, metadata])
+        self.assertEqual(latest["summary"], (20, "success"))
+        self.assertEqual(latest["metadata-summary"], (21, "success"))
+        for job_id in candidate_evidence.WORKER_JOB_IDS:
+            with self.subTest(job_id=job_id):
+                self.assertEqual(latest[job_id], (20, "success"))
+                self.assertEqual(
+                    latest[candidate_evidence.METADATA_WORKER_NAMES[job_id]],
+                    (21, "skipped"),
+                )
 
     def test_runner_1215_literal_skipped_names_are_inadmissible(self):
-        for conclusion in ("skipped", "success"):
-            for rendered_name in ("literal", "normal"):
-                with self.subTest(
-                    conclusion=conclusion,
-                    rendered_name=rendered_name,
-                ):
-                    metadata = _metadata_run(30, worker_conclusion=conclusion)
-                    if rendered_name == "normal":
-                        for context in metadata["contexts"]:
-                            if context["job_id"] in candidate_evidence.WORKER_JOB_IDS:
-                                context["name"] = context["job_id"]
-                    self.assertEqual(
-                        candidate_evidence.run_mode(metadata),
-                        "metadata-only",
-                    )
-                    result = candidate_evidence.evaluate_candidate_runs(
-                        [metadata],
+        cases = []
+
+        literal = _metadata_run(30)
+        for context in literal["contexts"]:
+            if context["job_id"] in candidate_evidence.WORKER_JOB_IDS:
+                context["name"] = LITERAL_SKIPPED_NAME
+        cases.append(("literal", literal))
+
+        canonical = _metadata_run(31)
+        for context in canonical["contexts"]:
+            if context["job_id"] in candidate_evidence.WORKER_JOB_IDS:
+                context["name"] = context["job_id"]
+        cases.append(("canonical", canonical))
+
+        success_shaped = _metadata_run(32, worker_conclusion="success")
+        cases.append(("success-shaped", success_shaped))
+
+        duplicate = _metadata_run(33)
+        next(
+            context
+            for context in duplicate["contexts"]
+            if context["job_id"] == "build"
+        )["name"] = candidate_evidence.METADATA_WORKER_NAMES["host-tests"]
+        cases.append(("duplicate", duplicate))
+
+        for name, mutation in cases:
+            with self.subTest(mutation=name):
+                with self.assertRaises(candidate_evidence.CandidateEvidenceError):
+                    candidate_evidence.run_mode(mutation)
+                with self.assertRaises(candidate_evidence.CandidateEvidenceError):
+                    candidate_evidence.latest_contexts([mutation])
+                with self.assertRaises(candidate_evidence.CandidateEvidenceError):
+                    candidate_evidence.evaluate_candidate_runs(
+                        [mutation],
                         head_sha=HEAD,
                         base_sha=BASE,
                     )
-                    self.assertFalse(result.eligible)
-                    self.assertEqual(result.mode, "metadata-only")
-                    if rendered_name == "literal":
-                        for context in metadata["contexts"]:
-                            if (
-                                context["job_id"]
-                                in candidate_evidence.WORKER_JOB_IDS
-                            ):
-                                self.assertEqual(
-                                    context["name"],
-                                    LITERAL_SKIPPED_NAME,
-                                )
 
     def test_mode_and_context_mutations_fail_closed(self):
         mutations = []
@@ -172,7 +196,31 @@ class CandidateEvidenceTests(unittest.TestCase):
         )["name"] = "literal-or-dynamic-name"
         mutations.append(renamed_full_worker)
 
-        run_id = 44
+        metadata_named_full_worker = _full_run(44)
+        next(
+            context
+            for context in metadata_named_full_worker["contexts"]
+            if context["job_id"] == "build"
+        )["name"] = candidate_evidence.METADATA_WORKER_NAMES["build"]
+        mutations.append(metadata_named_full_worker)
+
+        missing_full_worker = _full_run(45)
+        missing_full_worker["contexts"] = [
+            context
+            for context in missing_full_worker["contexts"]
+            if context["job_id"] != "host-tests"
+        ]
+        mutations.append(missing_full_worker)
+
+        missing_metadata_worker = _metadata_run(46)
+        missing_metadata_worker["contexts"] = [
+            context
+            for context in missing_metadata_worker["contexts"]
+            if context["job_id"] != "host-tests"
+        ]
+        mutations.append(missing_metadata_worker)
+
+        run_id = 47
         for mode, factory in (
             ("full", _full_run),
             ("metadata", _metadata_run),

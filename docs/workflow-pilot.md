@@ -129,15 +129,19 @@ expose `event-classifier`, `host-tests`, `build`,
 `extended-host-tests`, `legacy`, and `summary`. The running `summary` context
 is the sole candidate attestation; it succeeds only after the same full run's
 classifier and all four workers succeed. Metadata-only runs expose the running
-`metadata-classifier` and `metadata-summary` attestations. GitHub does not
-reliably evaluate `name` expressions for skipped jobs
-([actions/runner#1215](https://github.com/actions/runner/issues/1215)), so
-candidate logic never derives mode or eligibility from skipped worker names.
-Those records are normalized only by stable worker job ID and
-`skipped`/success-shaped conclusion, then ignored as candidate evidence. A
-later green metadata run therefore cannot replace `summary` or make a
-failed/missing full run eligible even when GitHub renders skipped workers as
-successful checks or literal expressions.
+`metadata-classifier` and `metadata-summary` attestations plus four distinct
+platform-skipped worker checks:
+`metadata-host-tests-skipped`, `metadata-build-skipped`,
+`metadata-extended-host-tests-skipped`, and `metadata-legacy-skipped`.
+Each worker job derives that metadata-only name solely from immutable raw
+edited-event payload fields, so metadata runs never reuse the canonical full
+`host-tests`, `build`, `extended-host-tests`, or `legacy` check names.
+Full and fallback runs retain the canonical names. Candidate normalization
+requires exact metadata worker names only in metadata mode and canonical
+worker names only in full mode; duplicate, unknown, literal, spoofed,
+missing, or success-shaped metadata worker records reject. A later green
+metadata run therefore cannot replace `summary` or any required canonical full
+context.
 
 [`scripts/workflow_pilot/candidate_evidence.py`](../scripts/workflow_pilot/candidate_evidence.py)
 derives mode only from the running classifier/summary names and evaluates the latest
@@ -308,8 +312,9 @@ Its bounded direct shell helper paginates and excludes all prior IDs, validates
 created/event/branch/head fields before each exact-ID watcher, and installs
 idempotent compare-and-swap cleanup before remote mutation. The evaluator
 scans all raw REST jobs before normalization: metadata workers are admissible
-only when skipped with no assigned runner, including the documented
-platform-only `started_at` timestamp quirk.
+only with their distinct metadata-only names, `skipped` conclusion, and no
+assigned runner, including the documented platform-only `started_at`
+timestamp quirk.
 
 The pull-request body/template remains the stable frozen scope, non-goals,
 classification, dependency, acceptance, tester procedure, and compatibility

@@ -29,8 +29,10 @@ source-changing push/PR.** A PR candidate uses the complete combined Build
 gate and Copilot review concurrently. Parsed body/title-only edits retain the
 identity validator/router plus distinct running `metadata-classifier` and
 `metadata-summary`
-contexts; skipped worker names are non-semantic and inadmissible as candidate
-evidence. Base, mixed, unknown/incomplete,
+contexts plus distinct skipped `metadata-host-tests-skipped`,
+`metadata-build-skipped`, `metadata-extended-host-tests-skipped`, and
+`metadata-legacy-skipped` checks; those metadata-only names cannot supersede
+required canonical full-worker contexts. Base, mixed, unknown/incomplete,
 opened, synchronize, and reopened events with complete identity fail closed to
 the complete graph. Any missing, malformed, or incoherent base ref/SHA with a
 valid exact PR head also runs the four workers at that head and fails normal
@@ -214,8 +216,10 @@ no ROM build or network access is required for either.
 Prefer focused local checks during iteration. A no-checkout `event-identity`
 validator, base-authoritative `event-router`, and mode-specific classifier
 check precede candidate `host-tests`, `build`, `extended-host-tests`, `legacy`,
-and fail-closed `summary` jobs plus Copilot review. Metadata uses a distinct
-running `metadata-summary`; normal `summary`
+and fail-closed `summary` jobs plus Copilot review. Metadata uses distinct
+skipped `metadata-host-tests-skipped`, `metadata-build-skipped`,
+`metadata-extended-host-tests-skipped`, and `metadata-legacy-skipped` worker
+contexts plus a distinct running `metadata-summary`; normal `summary`
 is the sole candidate attestation and requires all four workers from that same
 full run. Only parsed body/title-only
 edits skip the four expensive workers. A

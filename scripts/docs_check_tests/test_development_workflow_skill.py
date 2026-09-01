@@ -628,6 +628,10 @@ def workflow_tester_topology_violations(text):
                 "event-identity",
                 "event-router",
                 "metadata-classifier",
+                "metadata-host-tests-skipped",
+                "metadata-build-skipped",
+                "metadata-extended-host-tests-skipped",
+                "metadata-legacy-skipped",
                 "patch-release",
                 "metadata-summary",
             }
@@ -639,6 +643,10 @@ def workflow_tester_topology_violations(text):
                 "event-identity",
                 "event-router",
                 "metadata-classifier",
+                "metadata-host-tests-skipped",
+                "metadata-build-skipped",
+                "metadata-extended-host-tests-skipped",
+                "metadata-legacy-skipped",
                 "patch-release",
                 "metadata-summary",
             }
@@ -648,6 +656,10 @@ def workflow_tester_topology_violations(text):
                 "event-identity",
                 "event-router",
                 "metadata-classifier",
+                "metadata-host-tests-skipped",
+                "metadata-build-skipped",
+                "metadata-extended-host-tests-skipped",
+                "metadata-legacy-skipped",
                 "patch-release",
                 "metadata-summary",
             }
@@ -685,8 +697,7 @@ def workflow_tester_topology_violations(text):
         if documented[name] != expected[name]
     ]
     skipped_names_contract = normalize_policy(
-        "Skipped worker names and success-shaped records are ignored by "
-        "stable job identity"
+        "their distinct metadata names cannot supersede required full"
     )
     if skipped_names_contract not in normalize_policy(body_case):
         violations.append("skipped-worker-names-are-semantic")
@@ -3848,9 +3859,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         self.assertEqual(workflow_tester_topology_violations(reordered), [])
 
         semantic_names, count = re.subn(
-            r"Skipped worker\s+names and success-shaped\s+records are ignored "
-            r"by stable job identity",
-            "Skipped worker names determine metadata mode",
+            r"their distinct metadata\s+names cannot supersede required full",
+            "metadata worker names can replace required full contexts",
             governance,
             1,
         )
@@ -3934,11 +3944,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "metadata-classifier",
             "metadata-summary",
         )
-        worker_names = (
-            "host-tests",
-            "build",
-            "extended-host-tests",
-            "legacy",
+        metadata_skipped_names = (
+            "metadata-host-tests-skipped",
+            "metadata-build-skipped",
+            "metadata-extended-host-tests-skipped",
+            "metadata-legacy-skipped",
             "patch-release",
         )
         full_jobs = [
@@ -3967,7 +3977,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 # GitHub may stamp this even when no runner executes the job.
                 started_at="2026-08-31T00:00:00Z",
             )
-            for index, name in enumerate(worker_names, start=300)
+            for index, name in enumerate(metadata_skipped_names, start=300)
         )
 
         artifact_root = ROOT / "build" / "test-artifacts"
@@ -4021,10 +4031,10 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             self.assertEqual(accepted.returncode, 0, accepted.stderr)
 
             for worker_name in (
-                "host-tests",
-                "build",
-                "extended-host-tests",
-                "legacy",
+                "metadata-host-tests-skipped",
+                "metadata-build-skipped",
+                "metadata-extended-host-tests-skipped",
+                "metadata-legacy-skipped",
             ):
                 with self.subTest(started_worker=worker_name):
                     adversarial_jobs = copy.deepcopy(metadata_jobs)

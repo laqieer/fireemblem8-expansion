@@ -6,6 +6,12 @@ from dataclasses import dataclass
 
 
 WORKER_JOB_IDS = ("host-tests", "build", "extended-host-tests", "legacy")
+METADATA_WORKER_NAMES = {
+    "host-tests": "metadata-host-tests-skipped",
+    "build": "metadata-build-skipped",
+    "extended-host-tests": "metadata-extended-host-tests-skipped",
+    "legacy": "metadata-legacy-skipped",
+}
 KNOWN_JOB_IDS = frozenset(WORKER_JOB_IDS) | {
     "event-identity",
     "event-router",
@@ -58,6 +64,7 @@ def _contexts(run: dict) -> dict[str, tuple[str, str]]:
         raise CandidateEvidenceError("contexts must be a list")
 
     contexts = {}
+    seen_names = set()
     for index, raw in enumerate(run["contexts"]):
         if (
             not isinstance(raw, dict)
@@ -73,11 +80,14 @@ def _contexts(run: dict) -> dict[str, tuple[str, str]]:
             raise CandidateEvidenceError(f"duplicate Build job identity {job_id!r}")
         if not isinstance(name, str) or not name:
             raise CandidateEvidenceError(f"contexts[{index}].name must be nonempty")
+        if name in seen_names:
+            raise CandidateEvidenceError(f"duplicate Build check name {name!r}")
         if conclusion not in {"failure", "skipped", "success"}:
             raise CandidateEvidenceError(
                 f"invalid Build check conclusion {conclusion!r}"
             )
         contexts[job_id] = (name, conclusion)
+        seen_names.add(name)
     return contexts
 
 
@@ -100,6 +110,12 @@ def _validate_mode_contexts(
     contexts: dict[str, tuple[str, str]],
     mode: str,
 ) -> None:
+    def require_context(job_id: str) -> tuple[str, str]:
+        context = contexts.get(job_id)
+        if context is None:
+            raise CandidateEvidenceError(f"run lacks Build context {job_id!r}")
+        return context
+
     if contexts.get("event-identity") != ("event-identity", "success"):
         raise CandidateEvidenceError(
             "run lacks successful canonical event-identity setup"
@@ -114,18 +130,20 @@ def _validate_mode_contexts(
         )
     if mode == "metadata-only":
         for job_id in WORKER_JOB_IDS:
-            if job_id not in contexts:
-                continue
-            _, conclusion = contexts[job_id]
-            if conclusion not in {"skipped", "success"}:
+            name, conclusion = require_context(job_id)
+            if name != METADATA_WORKER_NAMES[job_id]:
                 raise CandidateEvidenceError(
-                    f"metadata worker {job_id!r} has invalid conclusion"
+                    f"metadata worker {job_id!r} has nonmetadata check name"
+                )
+            if conclusion != "skipped":
+                raise CandidateEvidenceError(
+                    f"metadata worker {job_id!r} must stay skipped"
                 )
         return
 
     for job_id in WORKER_JOB_IDS:
-        context = contexts.get(job_id)
-        if context is not None and context[0] != job_id:
+        context = require_context(job_id)
+        if context[0] != job_id:
             raise CandidateEvidenceError(
                 f"full worker {job_id!r} has noncanonical check name"
             )
@@ -199,6 +217,8 @@ def latest_contexts(runs: list[dict]) -> dict[str, tuple[int, str]]:
     validated = []
     for run in runs:
         contexts = _contexts(run)
+        mode = _mode(contexts)
+        _validate_mode_contexts(contexts, mode)
         validated.append((run["run_id"], contexts))
     latest: dict[str, tuple[int, str]] = {}
     for run_id, contexts in sorted(validated):
