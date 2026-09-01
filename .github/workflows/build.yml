@@ -577,33 +577,40 @@ jobs:
           exit "$cleanup_status"
         }
         trap cleanup_trusted_root EXIT
+        unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CEILING_DIRECTORIES \
+          GIT_COMMON_DIR GIT_DIR GIT_EXEC_PATH GIT_INDEX_FILE GIT_NAMESPACE \
+          GIT_OBJECT_DIRECTORY GIT_REPLACE_REF_BASE GIT_WORK_TREE
         test "$(/usr/bin/git rev-parse HEAD)" = "$EXPECTED_CANDIDATE_SHA"
         /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA^{commit}"
         base_validation_present=0
-        for marker in .github/validation-ownership-graph.json \
-          scripts/validation_ownership
+        base_validation_missing=0
+        for required in \
+          .github/validation-ownership-graph.json \
+          .github/validation-ownership-make-dynamics.json \
+          scripts/validation_ownership/ci_gate.mk \
+          scripts/validation_ownership/ci_verifier.py \
+          scripts/validation_ownership/generated_registry_probe.py \
+          scripts/validation_ownership/graph.schema.json \
+          scripts/validation_ownership/isolated_launcher.py \
+          scripts/validation_ownership/make_probe.py \
+          scripts/validation_ownership/probe-oracle.json \
+          scripts/validation_ownership/reporter.py \
+          scripts/validation_ownership/sandbox_exec.py \
+          scripts/validation_ownership/shell_interceptor.c
         do
-          if /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA:$marker"; then
-            base_validation_present=1
+          if /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA:$required"; then
+            base_validation_present=$((base_validation_present + 1))
+          else
+            base_validation_missing=$((base_validation_missing + 1))
           fi
         done
-        if [ "$base_validation_present" = 1 ]; then
-          for required in \
-            .github/validation-ownership-graph.json \
-            .github/validation-ownership-make-dynamics.json \
-            scripts/validation_ownership/ci_gate.mk \
-            scripts/validation_ownership/ci_verifier.py \
-            scripts/validation_ownership/generated_registry_probe.py \
-            scripts/validation_ownership/graph.schema.json \
-            scripts/validation_ownership/isolated_launcher.py \
-            scripts/validation_ownership/make_probe.py \
-            scripts/validation_ownership/probe-oracle.json \
-            scripts/validation_ownership/reporter.py \
-            scripts/validation_ownership/sandbox_exec.py \
-            scripts/validation_ownership/shell_interceptor.c
-          do
-            /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA:$required"
-          done
+        if [ "$base_validation_present" -eq 0 ]; then
+          printf 'validation-ownership: bootstrap-not-authoritative base=%s candidate=%s\n' \
+            "$EXPECTED_BASE_SHA" "$EXPECTED_CANDIDATE_SHA"
+        elif [ "$base_validation_missing" -ne 0 ]; then
+          printf 'validation-ownership: incomplete exact-base authority\n' >&2
+          exit 1
+        else
           /usr/bin/git archive --format=tar "$EXPECTED_BASE_SHA" |
             /usr/bin/tar -xf - -C "$trusted_root"
           BASH_ENV= ENV= GNUMAKEFLAGS= MAKEFLAGS= MAKEOVERRIDES= MFLAGS= \
@@ -615,9 +622,6 @@ jobs:
             /usr/bin/make -f \
               "$trusted_root/scripts/validation_ownership/ci_gate.mk" \
               validation-ownership-check
-        else
-          printf 'validation-ownership: bootstrap-not-authoritative base=%s candidate=%s\n' \
-            "$EXPECTED_BASE_SHA" "$EXPECTED_CANDIDATE_SHA"
         fi
 
     - name: Run validation ownership regression suite (issue #180)

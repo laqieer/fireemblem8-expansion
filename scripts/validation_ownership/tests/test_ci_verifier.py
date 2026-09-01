@@ -130,6 +130,14 @@ class BasePinnedVerifierTests(unittest.TestCase):
             "incomplete validation authority",
         ):
             ci_verifier._base_authority_mode(partial)
+        make_dynamics_only = self.base_entries(
+            {reporter.MAKE_DYNAMIC_PATH.as_posix()}
+        )
+        with self.assertRaisesRegex(
+            reporter.OwnershipError,
+            "incomplete validation authority",
+        ):
+            ci_verifier._base_authority_mode(make_dynamics_only)
 
     def test_introduction_verify_reports_no_authority_without_runtime(self):
         with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:

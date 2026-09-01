@@ -216,9 +216,14 @@ changes remain stable when GNU Make's observed semantics remain stable. GNU
 Make database `Last modified` diagnostics from fresh copied trees are excluded
 as nonsemantic execution timestamps; rule, prerequisite, recipe, and status
 records remain bound.
-The in-process optimization cache keys live-tree Make authority by exact blob
-content, mode, and type rather than file size or timestamps, so same-size
-mutations with restored metadata cannot reuse state from an earlier test.
+The in-process optimization cache keys Make authority by the complete selected
+tracked-entry set: path, object type, Git mode, and content identity for every
+blob or gitlink copied into the probe. Exact revisions use their Git object
+IDs; live-tree deviations use exact content and current mode rather than file
+size or timestamps. Wildcard-visible ordinary file addition/removal,
+regular-to-symlink or executable-mode changes, and same-size mutations with
+restored metadata therefore cannot reuse an earlier result. The same complete
+state decides whether prior Make authority can be reused for invalidation.
 Each probe uses a new random child and ignores incomplete scratch children left
 by an interrupted process.
 
@@ -319,13 +324,21 @@ gate, Make target/command/probe, workflow step, or fingerprint redirect on an
 oracle-backed edge therefore rejects even when stable IDs and pairs remain.
 Normalized unrelated workflow or Make semantics do not invalidate those
 edges.
+Before its first direct Git command, the hosted step unsets the exact ten
+path-bearing Git redirects while retaining the explicit no-config,
+no-replacement, and no-lazy-fetch settings. Empty or hostile inherited
+`GIT_DIR`, work-tree, common-dir, index, namespace, object, replace-ref,
+ceiling, exec-path, and alternate-object variables therefore cannot redirect
+or break candidate/base identity checks.
 This introducing PR's base lacks that package,
 so both hosted CI and the candidate-staged local verifier emit
 `bootstrap-not-authoritative` with `authority` set to `none`; candidate tests
 and the public gate still run, but direct adversarial review is the
-introduction evidence. The exact-base capability check requires the complete
-runtime/schema/graph/oracle path set. No paths means introduction mode, while
-a partial set rejects rather than downgrading. After merge, every ordinary PR
+introduction evidence. The exact-base capability check iterates the same
+complete runtime/schema/graph/oracle path list mirrored from the verifier.
+Zero present paths means introduction mode; any present path with any missing
+peer—including a lone Make-dynamics registry—rejects rather than downgrading.
+After merge, every ordinary PR
 enters `exact-base-pinned` mode. Git remains the identity authority; no
 source-hash ledger is committed.
 

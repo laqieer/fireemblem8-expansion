@@ -1482,58 +1482,9 @@ def _parse_make_authorities(
         loader,
         required=require_dynamic_contracts,
     )
-    authority_paths = {
-        path
-        for path in loader.entries
-        if path == "Makefile" or path.endswith(".mk")
-    }
-    authority_paths.update(
-        {
-            MAKE_DYNAMIC_PATH.as_posix(),
-            "scripts/validation_ownership/generated_registry_probe.py",
-            "scripts/validation_ownership/make_probe.py",
-            "scripts/validation_ownership/sandbox_exec.py",
-            "scripts/validation_ownership/shell_interceptor.c",
-        }
-        & set(loader.entries)
-    )
-    authority_paths.update(
-        path
-        for contract in dynamic_contracts.values()
-        for path in (
-            contract["tool"],
-            *contract["input_files"],
-        )
-    )
-    authority_paths.update(
-        path
-        for generated in generated_paths.values()
-        for path in (
-            generated["path"],
-            *(
-                item["path"]
-                for item in generated["authority_files"]
-            ),
-        )
-        if path in loader.entries
-    )
-    authority_state = _make_authority_state(loader, authority_paths)
-    cache_key = (
-        "authoritative-gnu-make-v1",
-        str(loader.root),
-        loader.revision,
-        tuple(sorted(requested_targets)),
-        authority_state,
-        tuple(
-            (
-                path,
-                entry.mode,
-                entry.object_type,
-                entry.object_id,
-            )
-            for path, entry in sorted(loader.entries.items())
-            if entry.mode == "160000"
-        ),
+    cache_key = _make_authority_cache_key(
+        loader,
+        requested_targets,
         require_dynamic_contracts,
     )
     cached = _MAKE_AUTHORITY_CACHE.get(cache_key)
@@ -1597,18 +1548,72 @@ def _parse_make_authorities(
 
 def _make_authority_state(
     loader: AuthorityLoader,
-    authority_paths: Iterable[str],
 ) -> tuple[tuple[str, ...], ...]:
-    records = []
-    for path in sorted(authority_paths):
-        entry = loader.entries[path]
-        identity = (
-            entry.object_id
-            if loader.revision is not None
-            else hashlib.sha256(
-                loader.read_blob(path, "Make cache authority")
-            ).hexdigest()
+    if loader.revision is not None:
+        return tuple(
+            (
+                path,
+                entry.mode,
+                entry.object_type,
+                entry.object_id,
+            )
+            for path, entry in sorted(loader.entries.items())
         )
+
+    head_entries = git_tree_entries(loader.root)
+    output = _git(
+        loader.root,
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--name-only",
+        "-z",
+        "HEAD",
+        "--",
+    ).stdout
+    try:
+        changed_paths = {
+            path
+            for path in output.decode("utf-8").split("\0")
+            if path
+        }
+    except UnicodeDecodeError as error:
+        raise OwnershipError("Git returned a non-UTF-8 changed path") from error
+
+    records = []
+    for path, entry in sorted(loader.entries.items()):
+        head_entry = head_entries.get(path)
+        if head_entry == entry and path not in changed_paths:
+            identity = entry.object_id
+        elif entry.mode == GITLINK_MODE:
+            identity = f"gitlink:{entry.object_id}"
+        else:
+            candidate = loader.root / path
+            try:
+                path_stat = os.lstat(candidate)
+            except FileNotFoundError:
+                identity = "worktree:missing"
+            except OSError as error:
+                raise OwnershipError(
+                    f"cannot inspect Make cache path {path!r}: {error}"
+                ) from error
+            else:
+                if stat.S_ISLNK(path_stat.st_mode):
+                    try:
+                        target = os.readlink(candidate)
+                    except OSError as error:
+                        raise OwnershipError(
+                            f"cannot read Make cache symlink {path!r}: {error}"
+                        ) from error
+                    identity = f"worktree:symlink:{target}"
+                elif stat.S_ISREG(path_stat.st_mode):
+                    mode = "100755" if path_stat.st_mode & 0o111 else "100644"
+                    digest = hashlib.sha256(
+                        loader.read_blob(path, "Make cache authority")
+                    ).hexdigest()
+                    identity = f"worktree:{mode}:{digest}"
+                else:
+                    identity = f"worktree:special:{stat.S_IFMT(path_stat.st_mode):o}"
         records.append(
             (
                 path,
@@ -1618,6 +1623,30 @@ def _make_authority_state(
             )
         )
     return tuple(records)
+
+
+def _make_authority_cache_key(
+    loader: AuthorityLoader,
+    requested_targets: Iterable[str],
+    require_dynamic_contracts: bool,
+) -> tuple[Any, ...]:
+    return (
+        "authoritative-gnu-make-v2",
+        str(loader.root),
+        loader.revision,
+        tuple(sorted(requested_targets)),
+        _make_authority_state(loader),
+        require_dynamic_contracts,
+    )
+
+
+def _same_make_authority_tree(
+    current_loader: AuthorityLoader,
+    base_loader: AuthorityLoader,
+) -> bool:
+    return _make_authority_state(current_loader) == _make_authority_state(
+        base_loader
+    )
 
 
 def _authority_identity(authority: dict[str, Any]) -> tuple[str, ...]:
@@ -2459,45 +2488,9 @@ def _authority_changed_edges(
         for node_id, node in current_nodes.items()
         if node["authority"]["kind"] == "make-target"
     }
-    current_contracts = load_make_dynamic_contracts(
+    same_make_authority = _same_make_authority_tree(
         current_loader,
-        required=True,
-    )
-    generated_paths = load_make_generated_prerequisite_paths(
-        current_loader,
-        required=True,
-    )
-    make_paths = {
-        path
-        for path in current_loader.entries
-        if path == "Makefile" or path.endswith(".mk")
-    }
-    make_paths.update(probe_paths)
-    make_paths.add(MAKE_DYNAMIC_PATH.as_posix())
-    make_paths.update(
-        path
-        for contract in current_contracts.values()
-        for path in (contract["tool"], *contract["input_files"])
-    )
-    make_paths.update(
-        item["path"]
-        for generated in generated_paths.values()
-        for item in generated["authority_files"]
-    )
-    same_make_authority = (
-        make_paths <= set(base_loader.entries)
-        and all(
-            current_loader.read_blob(path, "current Make comparison")
-            == base_loader.read_blob(path, "base Make comparison")
-            for path in make_paths
-        )
-        and all(
-            current_loader.entries[path].object_id
-            == base_loader.entries[path].object_id
-            for path in current_loader.entries
-            if current_loader.entries[path].mode == "160000"
-            and path in base_loader.entries
-        )
+        base_loader,
     )
     if same_make_authority:
         prior_authorities = _validate_authorities(

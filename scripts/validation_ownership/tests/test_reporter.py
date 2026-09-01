@@ -490,6 +490,21 @@ class OwnershipGraphTests(unittest.TestCase):
                     {"cache-test-target"},
                     require_dynamic_contracts=True,
                 )
+                cached = reporter._parse_make_authorities(
+                    loader,
+                    {"cache-test-target"},
+                    require_dynamic_contracts=True,
+                )
+                self.assertEqual(run_count, 1)
+                self.assertEqual(before, cached)
+                reporter._MAKE_AUTHORITY_CACHE.clear()
+                fresh = reporter._parse_make_authorities(
+                    loader,
+                    {"cache-test-target"},
+                    require_dynamic_contracts=True,
+                )
+                self.assertEqual(run_count, 2)
+                self.assertEqual(before, fresh)
                 authority.write_bytes(changed)
                 os.utime(
                     authority,
@@ -506,7 +521,7 @@ class OwnershipGraphTests(unittest.TestCase):
                     {"cache-test-target"},
                     require_dynamic_contracts=True,
                 )
-            self.assertEqual(run_count, 2)
+            self.assertEqual(run_count, 3)
             self.assertNotEqual(
                 before["cache-test-target"]["content"],
                 after["cache-test-target"]["content"],
@@ -519,6 +534,129 @@ class OwnershipGraphTests(unittest.TestCase):
             )
             reporter._MAKE_AUTHORITY_CACHE.clear()
             reporter._MAKE_AUTHORITY_CACHE.update(cache_before)
+
+    def test_make_tree_state_covers_paths_modes_content_and_roots(self):
+        base_entries = {
+            "Makefile": reporter.GitTreeEntry(
+                "Makefile",
+                "100644",
+                "blob",
+                "1" * 40,
+            ),
+            "src/a.c": reporter.GitTreeEntry(
+                "src/a.c",
+                "100644",
+                "blob",
+                "2" * 40,
+            ),
+        }
+        base_loader = reporter.AuthorityLoader(
+            Path("/authority-root-a"),
+            base_entries,
+            "HEAD",
+        )
+        same_root_loader = reporter.AuthorityLoader(
+            Path("/authority-root-a"),
+            dict(base_entries),
+            "HEAD",
+        )
+        other_root_loader = reporter.AuthorityLoader(
+            Path("/authority-root-b"),
+            dict(base_entries),
+            "HEAD",
+        )
+        self.assertTrue(
+            reporter._same_make_authority_tree(
+                base_loader,
+                same_root_loader,
+            )
+        )
+        self.assertNotEqual(
+            reporter._make_authority_cache_key(
+                base_loader,
+                {"all"},
+                True,
+            ),
+            reporter._make_authority_cache_key(
+                other_root_loader,
+                {"all"},
+                True,
+            ),
+        )
+
+        added_entries = dict(base_entries)
+        added_entries["src/b.c"] = reporter.GitTreeEntry(
+            "src/b.c",
+            "100644",
+            "blob",
+            "3" * 40,
+        )
+        added_loader = reporter.AuthorityLoader(
+            Path("/authority-root-a"),
+            added_entries,
+            "HEAD",
+        )
+        self.assertFalse(
+            reporter._same_make_authority_tree(base_loader, added_loader)
+        )
+        self.assertEqual(
+            reporter._make_authority_state(
+                reporter.AuthorityLoader(
+                    Path("/authority-root-a"),
+                    {
+                        path: entry
+                        for path, entry in added_entries.items()
+                        if path != "src/b.c"
+                    },
+                    "HEAD",
+                )
+            ),
+            reporter._make_authority_state(base_loader),
+        )
+
+        for label, replacement in (
+            (
+                "content",
+                reporter.GitTreeEntry(
+                    "src/a.c",
+                    "100644",
+                    "blob",
+                    "4" * 40,
+                ),
+            ),
+            (
+                "executable-mode",
+                reporter.GitTreeEntry(
+                    "src/a.c",
+                    "100755",
+                    "blob",
+                    "2" * 40,
+                ),
+            ),
+            (
+                "symlink-mode",
+                reporter.GitTreeEntry(
+                    "src/a.c",
+                    "120000",
+                    "blob",
+                    "2" * 40,
+                ),
+            ),
+        ):
+            with self.subTest(label=label):
+                changed_entries = dict(base_entries)
+                changed_entries["src/a.c"] = replacement
+                changed_loader = reporter.AuthorityLoader(
+                    Path("/authority-root-a"),
+                    changed_entries,
+                    "HEAD",
+                )
+                self.assertFalse(
+                    reporter._same_make_authority_tree(
+                        base_loader,
+                        changed_loader,
+                    )
+                )
 
     def test_overlap_and_duplicate_rule_reject(self):
         graph = copy.deepcopy(self.graph)

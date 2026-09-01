@@ -6,6 +6,7 @@ import fnmatch
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -179,6 +180,18 @@ VALIDATION_OWNERSHIP_BASE_REQUIRED_PATHS = (
     "scripts/validation_ownership/sandbox_exec.py",
     "scripts/validation_ownership/shell_interceptor.c",
 )
+VALIDATION_OWNERSHIP_GIT_PATH_REDIRECTS = (
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_DIR",
+    "GIT_EXEC_PATH",
+    "GIT_INDEX_FILE",
+    "GIT_NAMESPACE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_WORK_TREE",
+)
 VALIDATION_OWNERSHIP_BASE_CONTRACT = (
     "        BUILD_EVENT_NAME: ${{ github.event_name }}",
     VALIDATION_OWNERSHIP_BASE_SHA_ENV,
@@ -194,8 +207,11 @@ VALIDATION_OWNERSHIP_BASE_CONTRACT = (
     "/usr/bin/mktemp --directory",
     'validation-ownership-base.XXXXXXXXXX',
     '/bin/rm -rf --one-file-system -- "$trusted_root"',
+    "unset GIT_ALTERNATE_OBJECT_DIRECTORIES",
     "base_validation_present=0",
-    'if [ "$base_validation_present" = 1 ]; then',
+    "base_validation_missing=0",
+    'if [ "$base_validation_present" -eq 0 ]; then',
+    'elif [ "$base_validation_missing" -ne 0 ]; then',
     *VALIDATION_OWNERSHIP_BASE_REQUIRED_PATHS,
     "validation-ownership: bootstrap-not-authoritative",
 )
@@ -701,6 +717,11 @@ def _validation_step_has_scrubbed_environment(step: str) -> bool:
 def _step_name(step: str) -> str | None:
     match = re.search(r"^    - name: (?P<name>.+)$", step, re.MULTILINE)
     return match.group("name") if match is not None else None
+
+
+def _multiline_step_script(step: str) -> str:
+    run_block = step.split("      run: |\n", 1)[1]
+    return "\n".join(line[8:] for line in run_block.splitlines())
 
 
 def _checkout_step_is_exact(step: str) -> bool:
@@ -3909,6 +3930,28 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "Run validation ownership regression suite (issue #180)"
             ),
         )
+        step = next(
+            item
+            for item in _step_blocks(host_tests)
+            if _step_name(item) == VALIDATION_OWNERSHIP_BASE_STEP
+        )
+        script = _multiline_step_script(step)
+        unset_match = re.search(
+            r'(?ms)^unset (?P<variables>.*?)^test "\$\(/usr/bin/git rev-parse HEAD\)"',
+            script,
+        )
+        self.assertIsNotNone(unset_match)
+        unset_variables = shlex.split(
+            unset_match.group("variables").replace("\\\n", " ")
+        )
+        self.assertCountEqual(
+            unset_variables,
+            VALIDATION_OWNERSHIP_GIT_PATH_REDIRECTS,
+        )
+        self.assertEqual(
+            len(unset_variables),
+            len(VALIDATION_OWNERSHIP_GIT_PATH_REDIRECTS),
+        )
         mutations = (
             (
                 '"$trusted_root/scripts/validation_ownership/ci_gate.mk"',
@@ -3943,6 +3986,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "base_validation_present=1",
             ),
             (
+                "unset GIT_ALTERNATE_OBJECT_DIRECTORIES",
+                "true # GIT redirects retained",
+            ),
+            (
                 "scripts/validation_ownership/graph.schema.json",
                 "scripts/validation_ownership/missing.schema.json",
             ),
@@ -3966,10 +4013,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             for item in _step_blocks(host_tests)
             if _step_name(item) == VALIDATION_OWNERSHIP_BASE_STEP
         )
-        run_block = step.split("      run: |\n", 1)[1]
-        script = "\n".join(
-            line[8:] for line in run_block.splitlines()
-        )
+        script = _multiline_step_script(step)
         prelude = script[
             : script.index('test "$(/usr/bin/git rev-parse HEAD)"')
         ]
@@ -4042,6 +4086,148 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 self.assertEqual(
                     {item.name for item in outside.iterdir()},
                     {"sentinel"},
+                )
+        finally:
+            ownership_reporter.cleanup_validation_scratch(scratch)
+
+    def test_validation_ownership_hosted_introduction_and_partial_modes(self):
+        host_tests = _job_blocks(self.text)["host-tests"]
+        step = next(
+            item
+            for item in _step_blocks(host_tests)
+            if _step_name(item) == VALIDATION_OWNERSHIP_BASE_STEP
+        )
+        script = _multiline_step_script(step)
+        scratch = ownership_reporter.prepare_validation_scratch(ROOT)
+        try:
+            with tempfile.TemporaryDirectory(dir=scratch.path) as directory:
+                base = Path(directory)
+
+                def run_case(name, base_files):
+                    repository = base / name / "repository"
+                    runner_temp = base / name / "runner-temp"
+                    repository.mkdir(parents=True)
+                    runner_temp.mkdir()
+                    subprocess.run(
+                        ["git", "init", "-q", "-b", "master"],
+                        cwd=repository,
+                        check=True,
+                    )
+                    commit_environment = {
+                        "GIT_AUTHOR_NAME": "Hosted Verifier Fixture",
+                        "GIT_AUTHOR_EMAIL": "hosted@example.invalid",
+                        "GIT_COMMITTER_NAME": "Hosted Verifier Fixture",
+                        "GIT_COMMITTER_EMAIL": "hosted@example.invalid",
+                        "HOME": "/nonexistent",
+                        "PATH": "/usr/bin:/bin",
+                    }
+                    files = {
+                        "base.txt": "base\n",
+                        **base_files,
+                    }
+                    for relative, content in files.items():
+                        target = repository / relative
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_text(content, encoding="ascii")
+                    subprocess.run(
+                        ["git", "add", "."],
+                        cwd=repository,
+                        check=True,
+                    )
+                    subprocess.run(
+                        ["git", "commit", "-q", "-m", "base"],
+                        cwd=repository,
+                        env=commit_environment,
+                        check=True,
+                    )
+                    base_sha = subprocess.check_output(
+                        ["git", "rev-parse", "HEAD"],
+                        cwd=repository,
+                        text=True,
+                    ).strip()
+                    (repository / "candidate.txt").write_text(
+                        "candidate\n",
+                        encoding="ascii",
+                    )
+                    subprocess.run(
+                        ["git", "add", "."],
+                        cwd=repository,
+                        check=True,
+                    )
+                    subprocess.run(
+                        ["git", "commit", "-q", "-m", "candidate"],
+                        cwd=repository,
+                        env=commit_environment,
+                        check=True,
+                    )
+                    candidate_sha = subprocess.check_output(
+                        ["git", "rev-parse", "HEAD"],
+                        cwd=repository,
+                        text=True,
+                    ).strip()
+                    environment = {
+                        "BASH_ENV": "",
+                        "BUILD_EVENT_NAME": "pull_request",
+                        "ENV": "",
+                        "EXPECTED_BASE_SHA": base_sha,
+                        "EXPECTED_CANDIDATE_SHA": candidate_sha,
+                        "GIT_CONFIG_COUNT": "0",
+                        "GIT_CONFIG_GLOBAL": "/dev/null",
+                        "GIT_CONFIG_NOSYSTEM": "1",
+                        "GIT_CONFIG_SYSTEM": "/dev/null",
+                        "GIT_NO_LAZY_FETCH": "1",
+                        "GIT_NO_REPLACE_OBJECTS": "1",
+                        "GITHUB_WORKSPACE": str(repository),
+                        "PATH": "/usr/bin:/bin",
+                        "PYTHONPATH": "",
+                        "VALIDATION_OWNERSHIP_TEMP": str(runner_temp),
+                    }
+                    environment.update(
+                        {
+                            variable: "/untrusted/git-redirect"
+                            for variable in VALIDATION_OWNERSHIP_GIT_PATH_REDIRECTS
+                        }
+                    )
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "--noprofile",
+                            "--norc",
+                            "-c",
+                            script,
+                        ],
+                        cwd=repository,
+                        env=environment,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(list(runner_temp.iterdir()), [])
+                    return completed
+
+                introduction = run_case("introduction", {})
+                self.assertEqual(
+                    introduction.returncode,
+                    0,
+                    introduction.stderr,
+                )
+                self.assertIn(
+                    "validation-ownership: bootstrap-not-authoritative",
+                    introduction.stdout,
+                )
+
+                partial = run_case(
+                    "partial",
+                    {
+                        ".github/validation-ownership-make-dynamics.json": (
+                            "{}\n"
+                        )
+                    },
+                )
+                self.assertNotEqual(partial.returncode, 0)
+                self.assertIn(
+                    "validation-ownership: incomplete exact-base authority",
+                    partial.stderr,
                 )
         finally:
             ownership_reporter.cleanup_validation_scratch(scratch)
