@@ -690,7 +690,12 @@ anchor's issue/sequence/authority object to match. On movement, retry from the
 new pair up to the fixed bound, then fail `authority-moved`. Re-query the
 sealed dual-ref observation immediately before eligibility. This independent
 anchor rejects rollback and authority A-to-B-to-A ABA even if a caller
-presents an old valid authority object.
+presents an old valid authority object. Historical reads also recompute the
+stored PR binding digest, require the signed publication attestation's
+`binding_expectation` to match the stored frozen delivery plus stored live
+current-base fields, and re-check that the frozen base remains an ancestor of
+the stored live base OID. Swapped signed observations/publications and
+rewritten bases fail even when each record is individually valid.
 
 There is exactly one delivery coordinator and at most one direct watcher for
 an exact run identity. A watcher timeout or process error is transport

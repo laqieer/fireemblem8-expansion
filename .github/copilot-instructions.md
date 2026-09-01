@@ -128,7 +128,12 @@ both equal the frozen coordinator user ID with exact `always` mode.
 `RepositoryRole` IDs are roles, not users; other types require a separately
 typed frozen authorization and default to rejection. Bounded
 remote-OID-before/fetch/remote-OID-after reads and a final dual-ref
-observation check reject replay, rollback, and ABA.
+observation check reject replay, rollback, and ABA. Historical reads also
+recompute the stored PR binding digest, require the signed publication
+attestation's `binding_expectation` to match the stored frozen delivery plus
+stored live current-base fields, and re-check that the frozen base remains an
+ancestor of the stored live base OID. Swapped signed observations/publications
+and rewritten bases fail even when each record is individually valid.
 
 Allowed Git checks execute the exact checker blob from the assigned parent,
 not the candidate worktree. If that parent predates the checker, an external

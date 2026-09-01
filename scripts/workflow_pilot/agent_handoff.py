@@ -321,6 +321,30 @@ def publication_binding_expectation(
     }
 
 
+def publication_binding_expectation_for_observation(
+    delivery_expectation: dict[str, Any],
+    binding: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if binding is None:
+        return None
+    return publication_binding_expectation(
+        delivery_expectation=delivery_expectation,
+        pull_request=binding["pull_request"],
+        head_branch=binding["head_branch"],
+        head_oid=binding["head_oid"],
+        coordinator_database_id=binding["coordinator_database_id"],
+        current_base_oid=binding["base_oid"],
+    )
+
+
+def publication_observation_digest(
+    binding: dict[str, Any] | None,
+) -> str | None:
+    if binding is None:
+        return None
+    return hashlib.sha256(normalized_json(binding)).hexdigest()
+
+
 def require_atomic_push_capability(
     repository_root: Path,
     updates: list[tuple[str, str]],
@@ -1573,6 +1597,15 @@ def _read_history_authority_commit(
                 f"history authority object {object_id} PR binding "
                 "contradicts frozen delivery identity"
             )
+        if not git_commit_is_ancestor(
+            repository_root,
+            delivery["immediate_base_oid"],
+            binding["base_oid"],
+        ):
+            raise HandoffDataError(
+                f"history authority object {object_id} PR binding base is "
+                "not descended from the frozen delivery base"
+            )
     event = expect_object(
         authority["event"],
         f"history authority object {object_id}.event",
@@ -1606,6 +1639,15 @@ def _read_history_authority_commit(
         "handoff": "advance",
         "pr_binding": "bind",
     }[event_kind]
+    expected_pr_digest = publication_observation_digest(
+        binding if event_kind == "pr_binding" else None
+    )
+    expected_binding_expectation = (
+        publication_binding_expectation_for_observation(
+            delivery,
+            binding if event_kind == "pr_binding" else None,
+        )
+    )
     if (
         publication["operation"] != expected_publication_operation
         or (
@@ -1616,10 +1658,9 @@ def _read_history_authority_commit(
             event_kind != "handoff"
             and publication["new_head_seal"] is not None
         )
-        or (
-            event_kind == "pr_binding"
-            and publication["pull_request_observation_digest"] is None
-        )
+        or publication["pull_request_observation_digest"] != expected_pr_digest
+        or publication["binding_expectation"]
+        != expected_binding_expectation
     ):
         raise HandoffDataError(
             f"history authority object {object_id} publication does not "

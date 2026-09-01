@@ -580,7 +580,12 @@ The complete authority and anchor ancestries must reach matching genesis. One
 move retries from the new pair; repeated movement fails `authority-moved`.
 The dual-ref observation is checked again immediately before eligibility.
 Rollback or authority A-to-B-to-A replay cannot match the independent
-monotonic anchor.
+monotonic anchor. Historical reads also recompute the stored PR binding digest,
+require the signed publication attestation's `binding_expectation` to match
+the stored frozen delivery plus stored live current-base fields, and re-check
+that the frozen base remains an ancestor of the stored live base OID. Swapped
+signed observations/publications and rewritten bases fail even when each
+record is individually valid.
 
 Bootstrap, advance, and PR binding plans are deterministic and read-only:
 
@@ -741,7 +746,10 @@ authority/anchor OIDs remain ancestors of current protected heads. It does not
 require the old worktree HEAD or live-receipt freshness, so sequential root,
 OOM-replacement, and review-successor metrics remain aggregatable, but that
 historical authenticity never restores current trusted-push eligibility for a
-stale receipt. A hand-authored or nonancestor row rejects. The reporter then
+stale receipt. It also fails if the current protected history replays a stored
+PR binding whose digest, publication binding expectation, or frozen-base
+ancestry no longer verifies. A hand-authored or nonancestor row rejects. The
+reporter then
 reports
 accepted/rejected/interrupted/in-progress counts, stale responses, maximum
 owner lifetime/RSS, coordination turns, and recovery minutes exclusively from

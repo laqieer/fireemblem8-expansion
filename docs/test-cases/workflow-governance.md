@@ -527,6 +527,10 @@ game behavior needs a compensating change.
    Model the 2026 ruleset response with `actor_type: User`, equal frozen
    `actor_id`/`database_id`, and `bypass_mode: always`; reject a
    `RepositoryRole` masquerading as the user.
+   Manually publish a forged protected bind commit that stores an old signed PR
+   observation beside a newer signed publication attestation and confirm
+   history reads, reporter verification, and live eligibility all reject the
+   mixed record.
 5. Reconcile a direct watcher timeout with an authoritative successful
    `github-actions-api` run. Then use an authoritative failed run plus a
    watcher process error and confirm delivery remains failed.
@@ -554,6 +558,10 @@ game behavior needs a compensating change.
    receipt-age checking provides no eligibility. Mutating scope, graph, handoffs/successors,
    metrics, PR/ruleset data, runs, watchers, or coverage invalidates the
    external asymmetric attestation.
+   Manually publish a second forged protected bind commit whose stored live
+   base OID was signed after the base branch was rewritten behind the frozen
+   base and confirm history reads, reporter verification, and live eligibility
+   all reject the rewritten-base record.
 8. Parse the typed delivery graph. Confirm a merged parent makes child
    implementation ready while its exact-master Build is in progress and
    remote completion is pending; an unmerged parent blocks the child; a
@@ -613,8 +621,11 @@ base to remain its ancestor. Authority and anchor branches advance in one
 atomic direct-parent push under an exact signed live ruleset response. A
 stable read requires equal authority/anchor OIDs around fetch and at the final
 eligibility check; rollback, replay, ABA, stale state, stale current-base
-observations, non-descendant rewritten base, and unverified protection reject.
-The coordinator receipt's event-source union detects omitted
+observations, mixed signed observations/publications, non-descendant rewritten
+base, and unverified protection reject. The reader recomputes the stored PR
+binding digest and publication binding expectation from the stored binding plus
+frozen delivery/current-base fields before accepting the bind event. The
+coordinator receipt's event-source union detects omitted
 push/comment/review/dispatch events. Incomplete GitHub
 coverage succeeds only with a credentialless network-denied process interval.
 
@@ -674,7 +685,8 @@ incomplete-prefix rejection, and equal/predated/multiple OOM replacement also
 fail their dedicated controls. Mid-read movement retries, repeated movement
 fails `authority-moved`, and movement after the read but before eligibility
 invalidates the sealed dual-ref observation. Parentless checker bootstrap,
-authority rollback/replay/ABA, PR rebinding, and a second issue root also
+authority rollback/replay/ABA, PR rebinding, swapped stored bind digests,
+replayed publication binding expectations, and a second issue root also
 fail. Historical reporter verification still requires the external finalize
 signature and current authority/anchor ancestry, but it never recreates live
 trusted-push eligibility from an old receipt.
