@@ -67,14 +67,20 @@ The root-owned mode-`0700` `/mnt/supervisor` parent denies candidate read,
 write, execute, and traversal; its exact cgroup child remains read-only and is
 rechecked before ROM handoff.
 Before candidate code starts, the trusted wrapper also decodes structured
-`findmnt --json --list --output TARGET,OPTIONS -R /` output, writes checked
-NUL-framed mount target/option records through a root-owned regular temp file,
-and audits every actual writable mount in the isolated namespace. Only
-`/dev/shm`, `/mnt/handoff`, `/mnt/home`, `/mnt/source`, `/mnt/tmp`, and `/tmp`
-may carry an exact `rw` option token; spaces and backslashes in decoded target
-paths are handled losslessly, while control-character targets, malformed
-option-token grammar, duplicate rows, extra keys, raw escaped text, and any
-unexpected writable mount fail closed.
+`findmnt --json --list --uniq --output TARGET,OPTIONS -R /` output, writes
+checked NUL-framed mount target/option records through a root-owned regular
+temp file, and audits every effective writable mount in the isolated
+namespace. util-linux documents `--uniq` as "effectively skipping over-mounted
+mount points", so the audit sees the topmost visible layer for each target
+rather than failing on legitimate duplicate rows from hidden lower mounts.
+Only `/dev/shm`, `/mnt/handoff`, `/mnt/home`, `/mnt/source`, `/mnt/tmp`, and
+`/tmp` may carry an exact `rw` option token; spaces and backslashes in decoded
+target paths are handled losslessly, while control-character targets,
+malformed option-token grammar, duplicate or extra JSON rows, raw escaped
+text, and any unexpected writable effective mount fail closed. Hidden lower
+layers remain irrelevant unless the wrapper or candidate can expose them; this
+publisher denies that by keeping the candidate unprivileged and never granting
+mount or unmount capability.
 
 ### Negative control
 
@@ -189,14 +195,19 @@ recreated. Retained descendants, raw escaped target text, paths outside `/dev`,
 malformed JSON, duplicate targets, NUL-bearing targets, and unsafe transport
 files are rejected.
 After the private device tree is recreated and before candidate code starts,
-the trusted wrapper decodes structured `findmnt --json --list --output
+the trusted wrapper decodes structured `findmnt --json --list --uniq --output
 TARGET,OPTIONS -R /` output into checked NUL-framed mount target/option
-records, then audits every actual writable mount. Only `/dev/shm`,
-`/mnt/handoff`, `/mnt/home`, `/mnt/source`, `/mnt/tmp`, and `/tmp` may expose
-an exact `rw` option token. Decoded targets with spaces or backslashes remain
-lossless; control-character targets, malformed or ambiguous option-token
-grammar, duplicate rows, extra keys, parser failure, unchecked process
-substitution, and any unexpected writable mount fail closed.
+records, then audits every effective writable mount. util-linux documents
+`--uniq` as "effectively skipping over-mounted mount points", so legitimate
+duplicate target rows from hidden lower layers do not fail the audit and do
+not hide the topmost visible mount. Only `/dev/shm`, `/mnt/handoff`,
+`/mnt/home`, `/mnt/source`, `/mnt/tmp`, and `/tmp` may expose an exact `rw`
+option token. Decoded targets with spaces or backslashes remain lossless;
+control-character targets, malformed or ambiguous option-token grammar,
+duplicate or extra JSON rows, parser failure, unchecked process substitution,
+and any unexpected writable effective mount fail closed. Hidden lower layers
+remain irrelevant unless the wrapper or candidate can expose them, and this
+publisher never grants that capability.
 
 ### Negative control
 

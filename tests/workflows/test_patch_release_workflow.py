@@ -416,7 +416,7 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "remove_supervisor_transport_file() {" not in isolated_step
         or "list_writable_mount_records() {" not in isolated_step
         or (
-            '["/usr/bin/findmnt", "--json", "--list", "--output", "TARGET,OPTIONS", "-R", "/"]'
+            '["/usr/bin/findmnt", "--json", "--list", "--uniq", "--output", "TARGET,OPTIONS", "-R", "/"]'
             not in isolated_step
         )
         or "duplicate writable mount JSON key" not in isolated_step
@@ -1388,18 +1388,6 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 "findmnt target is not absolute",
             ),
             (
-                "duplicate-target",
-                json.dumps(
-                    {
-                        "filesystems": [
-                            {"target": "/mnt/home", "options": "rw"},
-                            {"target": "/mnt/home", "options": "ro"},
-                        ]
-                    }
-                ).encode("utf-8"),
-                "findmnt target repeats",
-            ),
-            (
                 "extra-row-keys",
                 json.dumps(
                     {"filesystems": [{"target": "/mnt/home", "options": "rw", "children": []}]}
@@ -1435,8 +1423,16 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 self.assertIn(expected, captured)
 
     def test_local_writable_mount_findmnt_json_shape_is_supported(self):
+        all_completed = subprocess.run(
+            ["/usr/bin/findmnt", "--json", "--list", "--output", "TARGET,OPTIONS,ID,PARENT", "-R", "/"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(all_completed.returncode, 0, all_completed.stderr)
+        all_payload = json.loads(all_completed.stdout)
         completed = subprocess.run(
-            ["/usr/bin/findmnt", "--json", "--list", "--output", "TARGET,OPTIONS", "-R", "/"],
+            ["/usr/bin/findmnt", "--json", "--list", "--uniq", "--output", "TARGET,OPTIONS,ID,PARENT", "-R", "/"],
             check=False,
             capture_output=True,
             text=True,
@@ -1446,12 +1442,101 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertEqual(set(payload), {"filesystems"})
         self.assertIsInstance(payload["filesystems"], list)
         self.assertGreater(len(payload["filesystems"]), 0)
+        duplicate_targets = set()
+        seen_all = set()
+        for row in all_payload["filesystems"]:
+            if row["target"] in seen_all:
+                duplicate_targets.add(row["target"])
+            seen_all.add(row["target"])
+        seen = set()
         for row in payload["filesystems"]:
-            self.assertEqual(set(row), {"options", "target"})
+            self.assertEqual(set(row), {"id", "options", "parent", "target"})
             self.assertIsInstance(row["target"], str)
             self.assertTrue(row["target"].startswith("/"))
             self.assertIsInstance(row["options"], str)
             self.assertTrue(row["options"])
+            self.assertNotIn(row["target"], seen)
+            seen.add(row["target"])
+        for target in duplicate_targets:
+            self.assertIn(target, seen_all)
+            self.assertIn(target, seen)
+
+    def test_findmnt_uniq_selects_effective_topmost_mount_in_namespace(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="findmnt-uniq-effective-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            for name, lower_mode, upper_mode, expected_top in (
+                ("lower-rw-top-ro", "rw", "ro", "ro"),
+                ("lower-ro-top-rw", "ro", "rw", "rw"),
+            ):
+                case_root = sandbox / name
+                case_root.mkdir()
+                command = (
+                    "set -euo pipefail\n"
+                    "root=\"$1\"\n"
+                    "lower_mode=\"$2\"\n"
+                    "upper_mode=\"$3\"\n"
+                    "mkdir -p \"$root/lower\" \"$root/upper\" \"$root/target\"\n"
+                    "mount -t tmpfs tmpfs \"$root/lower\"\n"
+                    "mount -t tmpfs tmpfs \"$root/upper\"\n"
+                    "mount --bind \"$root/lower\" \"$root/target\"\n"
+                    "if [ \"$lower_mode\" = ro ]; then\n"
+                    "  mount -o remount,bind,ro \"$root/target\"\n"
+                    "fi\n"
+                    "mount --bind \"$root/upper\" \"$root/target\"\n"
+                    "if [ \"$upper_mode\" = ro ]; then\n"
+                    "  mount -o remount,bind,ro \"$root/target\"\n"
+                    "fi\n"
+                    "findmnt --json --list --output TARGET,OPTIONS,ID,PARENT -R \"$root/target\" > \"$root/all.json\"\n"
+                    "findmnt --json --list --uniq --output TARGET,OPTIONS,ID,PARENT -R \"$root/target\" > \"$root/uniq.json\"\n"
+                )
+                completed = subprocess.run(
+                    [
+                        "unshare",
+                        "--user",
+                        "--map-root-user",
+                        "--mount",
+                        "--pid",
+                        "--fork",
+                        "/bin/bash",
+                        "-ceu",
+                        command,
+                        "--",
+                        str(case_root),
+                        lower_mode,
+                        upper_mode,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if completed.returncode != 0:
+                    self.skipTest(f"mount namespace unavailable: {completed.stderr.strip()}")
+                all_payload = json.loads((case_root / "all.json").read_text(encoding="utf-8"))
+                uniq_payload = json.loads((case_root / "uniq.json").read_text(encoding="utf-8"))
+                target = str(case_root / "target")
+                all_rows = [row for row in all_payload["filesystems"] if row["target"] == target]
+                uniq_rows = [row for row in uniq_payload["filesystems"] if row["target"] == target]
+                self.assertEqual(len(all_rows), 2)
+                self.assertEqual(len(uniq_rows), 1)
+                uniq_tokens = set(uniq_rows[0]["options"].split(","))
+                if expected_top == "ro":
+                    self.assertIn("ro", uniq_tokens)
+                    self.assertNotIn("rw", uniq_tokens)
+                    self.assertTrue(
+                        any("rw" in set(row["options"].split(",")) for row in all_rows)
+                    )
+                else:
+                    self.assertIn("rw", uniq_tokens)
+                self.assertTrue(
+                    any("ro" in set(row["options"].split(",")) for row in all_rows)
+                )
+                self.assertGreaterEqual(uniq_rows[0]["id"], min(row["id"] for row in all_rows))
 
     def test_writable_mount_audit_rejects_unexpected_rw_targets_and_preserves_allowed_private_mounts(self):
         base_section = writable_mount_transport_section_source(self.text)
@@ -1883,8 +1968,13 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         structured_writable_mount_targets = self.text.replace(
-            '["/usr/bin/findmnt", "--json", "--list", "--output", "TARGET,OPTIONS", "-R", "/"]',
+            '["/usr/bin/findmnt", "--json", "--list", "--uniq", "--output", "TARGET,OPTIONS", "-R", "/"]',
             '["/usr/bin/findmnt", "-Rrno", "TARGET,OPTIONS", "/"]',
+            1,
+        )
+        nonuniq_writable_mount_targets = self.text.replace(
+            '["/usr/bin/findmnt", "--json", "--list", "--uniq", "--output", "TARGET,OPTIONS", "-R", "/"]',
+            '["/usr/bin/findmnt", "--json", "--list", "--output", "TARGET,OPTIONS", "-R", "/"]',
             1,
         )
         retained_dev_descendants = self.text.replace(
@@ -2029,6 +2119,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             ("unmounted-open-dev", unmounted_open_dev),
             ("unprivileged-builder-cleanup", unprivileged_builder_cleanup),
             ("structured-writable-mount-targets", structured_writable_mount_targets),
+            ("nonuniq-writable-mount-targets", nonuniq_writable_mount_targets),
             ("retained-dev-descendants", retained_dev_descendants),
             ("escaped-dev-targets", escaped_dev_targets),
             ("unchecked-dev-process-substitution", unchecked_dev_process_substitution),
@@ -2682,17 +2773,28 @@ exit 37
             text,
         )
         self.assertIn(
-            "structured\n`findmnt --json --list --output TARGET,OPTIONS -R /` output, "
-            "writes checked\nNUL-framed mount target/option records",
+            "structured\n`findmnt --json --list --uniq --output TARGET,OPTIONS -R /` output, "
+            "writes\nchecked NUL-framed mount target/option records",
             text,
         )
         self.assertIn(
-            "Only\n`/dev/shm`, `/mnt/handoff`, `/mnt/home`, `/mnt/source`, "
-            "`/mnt/tmp`, and `/tmp`\nmay carry an exact `rw` option token",
+            "Only `/dev/shm`, `/mnt/handoff`, `/mnt/home`, `/mnt/source`, `/mnt/tmp`, and",
             text,
         )
         self.assertIn(
-            "control-character targets, malformed\noption-token grammar",
+            "`/tmp` may carry an exact `rw` option token",
+            text,
+        )
+        self.assertIn(
+            "util-linux documents `--uniq` as \"effectively skipping over-mounted\nmount points\"",
+            text,
+        )
+        self.assertIn(
+            "control-character targets,",
+            text,
+        )
+        self.assertIn(
+            "malformed option-token grammar",
             text,
         )
 

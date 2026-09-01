@@ -2161,7 +2161,7 @@ jobs:
 
 
           completed = subprocess.run(
-              ["/usr/bin/findmnt", "--json", "--list", "--output", "TARGET,OPTIONS", "-R", "/"],
+              ["/usr/bin/findmnt", "--json", "--list", "--uniq", "--output", "TARGET,OPTIONS", "-R", "/"],
               check=False,
               capture_output=True,
           )
@@ -2198,7 +2198,7 @@ jobs:
               if not target.startswith("/"):
                   fail("findmnt target is not absolute")
               if target in seen:
-                  fail("findmnt target repeats")
+                  fail("findmnt target repeats after --uniq")
               seen.add(target)
               options = validate_options(filesystem.get("options"))
               records.append((target, options))
