@@ -583,9 +583,13 @@ Rollback or authority A-to-B-to-A replay cannot match the independent
 monotonic anchor. Historical reads also recompute the stored PR binding digest,
 require the signed publication attestation's `binding_expectation` to match
 the stored frozen delivery plus stored live current-base fields, and re-check
-that the frozen base remains an ancestor of the stored live base OID. Swapped
-signed observations/publications and rewritten bases fail even when each
-record is individually valid.
+that the frozen base remains an ancestor of the stored live base OID. The
+stored `pr_binding.head_oid`, its digest, and
+`publication_attestation.binding_expectation.head_oid` must all match the
+immediately prior sealed handoff candidate carried by the current
+`handoff_sequence`/`head_seal`. Swapped signed observations/publications,
+out-of-band branch advances, copied seals/sequences, and rewritten bases fail
+even when each record is individually valid.
 
 Bootstrap, advance, and PR binding plans are deterministic and read-only:
 

@@ -345,6 +345,53 @@ def publication_observation_digest(
     return hashlib.sha256(normalized_json(binding)).hexdigest()
 
 
+def validate_historical_pr_binding_target(
+    current_authority: dict[str, Any],
+    prior_authority: dict[str, Any],
+    *,
+    label: str,
+) -> tuple[str, str]:
+    if (
+        current_authority["head_seal"] is None
+        or current_authority["handoff_sequence"] < 1
+    ):
+        raise HandoffDataError(
+            f"{label} PR binding lacks a carried sealed handoff"
+        )
+    prior_event = expect_object(
+        prior_authority["event"],
+        f"{label} prior authority event",
+    )
+    if prior_event["kind"] != "handoff":
+        raise HandoffDataError(
+            f"{label} PR binding parent is not a sealed handoff"
+        )
+    if (
+        prior_authority["sequence"] + 1 != current_authority["sequence"]
+        or prior_authority["handoff_sequence"]
+        != current_authority["handoff_sequence"]
+        or prior_authority["head_seal"] != current_authority["head_seal"]
+        or prior_event["handoff_seal"] != current_authority["head_seal"]
+    ):
+        raise HandoffDataError(
+            f"{label} PR binding does not extend its immediately prior "
+            "sealed handoff"
+        )
+    prior_assignment = expect_object(
+        prior_event["assignment"],
+        f"{label} prior sealed handoff assignment",
+    )
+    expected_branch = expect_string(
+        prior_assignment["expected_branch"],
+        f"{label} prior sealed handoff assignment.expected_branch",
+    )
+    expected_candidate_sha = expect_sha(
+        prior_event["candidate_sha"],
+        f"{label} prior sealed handoff candidate_sha",
+    )
+    return expected_branch, expected_candidate_sha
+
+
 def require_atomic_push_capability(
     repository_root: Path,
     updates: list[tuple[str, str]],
@@ -1634,38 +1681,6 @@ def _read_history_authority_commit(
         {"genesis", "handoff", "pr_binding"},
         f"history authority object {object_id}.event.kind",
     )
-    expected_publication_operation = {
-        "genesis": "bootstrap",
-        "handoff": "advance",
-        "pr_binding": "bind",
-    }[event_kind]
-    expected_pr_digest = publication_observation_digest(
-        binding if event_kind == "pr_binding" else None
-    )
-    expected_binding_expectation = (
-        publication_binding_expectation_for_observation(
-            delivery,
-            binding if event_kind == "pr_binding" else None,
-        )
-    )
-    if (
-        publication["operation"] != expected_publication_operation
-        or (
-            event_kind == "handoff"
-            and publication["new_head_seal"] != authority["head_seal"]
-        )
-        or (
-            event_kind != "handoff"
-            and publication["new_head_seal"] is not None
-        )
-        or publication["pull_request_observation_digest"] != expected_pr_digest
-        or publication["binding_expectation"]
-        != expected_binding_expectation
-    ):
-        raise HandoffDataError(
-            f"history authority object {object_id} publication does not "
-            "bind its event"
-        )
     if event["handoff_seal"] is not None:
         if (
             not isinstance(event["handoff_seal"], str)
@@ -1759,6 +1774,28 @@ def _read_history_authority_commit(
                 raise HandoffDataError(
                     f"history authority object {object_id} has invalid binding event"
                 )
+            prior_authority, _prior_parents = _read_history_authority_commit(
+                repository_root,
+                authority["previous_object_id"],
+                repository,
+                issue,
+            )
+            expected_branch, expected_candidate_sha = (
+                validate_historical_pr_binding_target(
+                    authority,
+                    prior_authority,
+                    label=f"history authority object {object_id}",
+                )
+            )
+            if (
+                binding["head_branch"] != expected_branch
+                or binding["expected_handoff_branch"] != expected_branch
+                or binding["head_oid"] != expected_candidate_sha
+            ):
+                raise HandoffDataError(
+                    f"history authority object {object_id} PR binding does "
+                    "not match its immediately prior sealed handoff"
+                )
         else:
             raise HandoffDataError(
                 f"history authority object {object_id} replays genesis"
@@ -1767,6 +1804,43 @@ def _read_history_authority_commit(
             raise HandoffDataError(
                 f"history authority object {object_id} forks its commit chain"
             )
+    expected_publication_operation = {
+        "genesis": "bootstrap",
+        "handoff": "advance",
+        "pr_binding": "bind",
+    }[event_kind]
+    expected_pr_digest = publication_observation_digest(
+        binding if event_kind == "pr_binding" else None
+    )
+    if event_kind == "pr_binding":
+        expected_binding_expectation = publication_binding_expectation(
+            delivery_expectation=delivery,
+            pull_request=binding["pull_request"],
+            head_branch=binding["head_branch"],
+            head_oid=binding["head_oid"],
+            coordinator_database_id=binding["coordinator_database_id"],
+            current_base_oid=binding["base_oid"],
+        )
+    else:
+        expected_binding_expectation = None
+    if (
+        publication["operation"] != expected_publication_operation
+        or (
+            event_kind == "handoff"
+            and publication["new_head_seal"] != authority["head_seal"]
+        )
+        or (
+            event_kind != "handoff"
+            and publication["new_head_seal"] is not None
+        )
+        or publication["pull_request_observation_digest"] != expected_pr_digest
+        or publication["binding_expectation"]
+        != expected_binding_expectation
+    ):
+        raise HandoffDataError(
+            f"history authority object {object_id} publication does not "
+            "bind its event"
+        )
     return authority, parents
 
 

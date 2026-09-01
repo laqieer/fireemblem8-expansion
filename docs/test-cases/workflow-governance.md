@@ -530,7 +530,11 @@ game behavior needs a compensating change.
    Manually publish a forged protected bind commit that stores an old signed PR
    observation beside a newer signed publication attestation and confirm
    history reads, reporter verification, and live eligibility all reject the
-   mixed record.
+   mixed record. Then advance the delivery branch out-of-band to a new head
+   without sealing a new handoff, publish an otherwise internally valid
+   protected bind for that new head, and confirm the historical reader ties
+   the bind to the immediately prior sealed handoff candidate rather than the
+   live branch tip.
 5. Reconcile a direct watcher timeout with an authoritative successful
    `github-actions-api` run. Then use an authoritative failed run plus a
    watcher process error and confirm delivery remains failed.
@@ -561,7 +565,9 @@ game behavior needs a compensating change.
    Manually publish a second forged protected bind commit whose stored live
    base OID was signed after the base branch was rewritten behind the frozen
    base and confirm history reads, reporter verification, and live eligibility
-   all reject the rewritten-base record.
+   all reject the rewritten-base record. Also publish wrong
+   `handoff_sequence`/`head_seal` bind variants and confirm copied or stale
+   carried handoff identity cannot substitute for the last sealed handoff.
 8. Parse the typed delivery graph. Confirm a merged parent makes child
    implementation ready while its exact-master Build is in progress and
    remote completion is pending; an unmerged parent blocks the child; a
@@ -624,7 +630,10 @@ eligibility check; rollback, replay, ABA, stale state, stale current-base
 observations, mixed signed observations/publications, non-descendant rewritten
 base, and unverified protection reject. The reader recomputes the stored PR
 binding digest and publication binding expectation from the stored binding plus
-frozen delivery/current-base fields before accepting the bind event. The
+frozen delivery/current-base fields before accepting the bind event, and it
+requires the stored bind head plus attested bind head to match the immediately
+prior sealed handoff candidate carried by the current
+`handoff_sequence`/`head_seal`. The
 coordinator receipt's event-source union detects omitted
 push/comment/review/dispatch events. Incomplete GitHub
 coverage succeeds only with a credentialless network-denied process interval.
@@ -686,8 +695,8 @@ fail their dedicated controls. Mid-read movement retries, repeated movement
 fails `authority-moved`, and movement after the read but before eligibility
 invalidates the sealed dual-ref observation. Parentless checker bootstrap,
 authority rollback/replay/ABA, PR rebinding, swapped stored bind digests,
-replayed publication binding expectations, and a second issue root also
-fail. Historical reporter verification still requires the external finalize
+replayed publication binding expectations, out-of-band bind heads, copied
+seals/sequences, and a second issue root also fail. Historical reporter verification still requires the external finalize
 signature and current authority/anchor ancestry, but it never recreates live
 trusted-push eligibility from an old receipt.
 
