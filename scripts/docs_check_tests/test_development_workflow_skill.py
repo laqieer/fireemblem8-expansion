@@ -3940,7 +3940,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "legacy",
             "platform-skipped",
             "canonical `summary`",
-            "prior successful complete full Build CI run",
+            "newest conclusively full Build CI run",
         )
         forbidden_fragments = (
             "distinct metadata-only names",

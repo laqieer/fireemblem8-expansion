@@ -36,8 +36,11 @@ platform-skipped with no runner. That attestation reads the runner-owned
 file-backed `GITHUB_EVENT_PATH` payload directly instead of env-copying the
 PR body/title/changes JSON. Metadata `summary` is also a continuity-only
 attestation: it succeeds only after a trusted no-checkout Actions API proof
-confirms one prior successful complete full Build CI run for the same
-repository, PR number, authoritative base SHA, and immutable head SHA. Live
+classifies exact prior runs newest-first, skips only conclusively metadata
+runs, and confirms the newest conclusively full Build CI run for the same
+repository, PR number, authoritative base SHA, and immutable head SHA
+completed successfully. A newer failed, cancelled, in-progress, or malformed
+full run blocks older successes. Live
 branch protection therefore remains the current canonical `host-tests` +
 `build` + `summary` Build contract while preserving any existing independent
 security/review contexts, and metadata-only runs still remain ineligible
@@ -236,9 +239,12 @@ the runner-owned file-backed `GITHUB_EVENT_PATH`, exact body/title-only
 import. They accept only a same-owner regular event file up to 1 MiB, read at
 most one additional EOF byte, and never copy large body/title/changes JSON
 through env. Metadata `summary` succeeds only after a trusted no-checkout
-Actions API proof confirms one prior successful complete full Build CI run for
-the same repository, PR number, authoritative base SHA, and immutable head
-SHA. Normal `summary` remains the sole candidate attestation, and
+Actions API proof classifies exact prior runs newest-first, skips only
+conclusively metadata runs, and confirms the newest conclusively full Build CI
+run for the same repository, PR number, authoritative base SHA, and immutable
+head SHA completed successfully. A newer failed, cancelled, in-progress, or
+malformed full run blocks older successes. Normal `summary` remains the sole
+candidate attestation, and
 `candidate_evidence` still treats a metadata-only run as ineligible by itself.
 Only parsed body/title-only edits suppress the expensive worker execution; the
 two required adapters and the canonical summary continuity job may still take

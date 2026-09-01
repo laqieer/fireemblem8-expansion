@@ -335,12 +335,14 @@ remains skipped. `extended-host-tests` and `legacy` stay platform-skipped with
 no runner. Live branch protection remains unchanged and therefore still
 requires canonical `host-tests`, `build`, `summary`, and the independent
 GitGuardian context. Metadata `summary` succeeds only after a trusted
-no-checkout Actions API proof confirms one prior successful complete full Build
-CI run for the same repository, PR number, authoritative base SHA, and
-immutable head SHA; without that prior green full run, metadata-only edits
-still block merge. Metadata runs remain ineligible candidate evidence even when
-their continuity adapters and canonical `summary` succeed. Evaluated metadata
-labels, duplicates,
+no-checkout Actions API proof classifies exact prior runs newest-first, skips
+only conclusively metadata runs, and confirms the newest conclusively full
+Build CI run for the same repository, PR number, authoritative base SHA, and
+immutable head SHA completed successfully; a newer failed, cancelled,
+in-progress, or malformed full run blocks older successes. Without that prior
+green full run, metadata-only edits still block merge. Metadata runs remain
+ineligible candidate evidence even when their continuity adapters and canonical
+`summary` succeed. Evaluated metadata labels, duplicates,
 unknown names, or spoofed worker names reject instead of becoming candidate
 evidence.
 The recorded `gh pr checks --required` output after the title edit and restore
@@ -352,9 +354,11 @@ SHA equals the event's validated exact `pull_request.head.sha`, event number
 matches the exact `refs/pull/<number>/merge` ref, suppression is exactly false,
 `host-tests`/`build` succeed through the trusted continuity adapters, and
 `extended-host-tests`/`legacy`/`patch-release` are exactly `skipped`, and the
-trusted Actions API proof confirms one prior successful complete full Build CI
-run with the same repository, PR number, authoritative base SHA, and
-immutable head SHA.
+trusted Actions API proof classifies exact prior runs newest-first so only the
+newest conclusively full run with the same repository, PR number,
+authoritative base SHA, and immutable head SHA can authorize continuity.
+Older full successes never override a newer failed, cancelled, in-progress, or
+malformed full run.
 
 Base-only edits, mixed edits, unknown and incomplete change records, `opened`,
 `synchronize`, and `reopened` select the classifier, all four expensive

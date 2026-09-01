@@ -143,6 +143,31 @@ class CandidateEvidenceTests(unittest.TestCase):
         self.assertEqual(latest["legacy"], (21, "skipped"))
         self.assertNotIn("metadata-summary", latest)
 
+    def test_newer_failed_full_blocks_older_success(self):
+        older_success = _full_run(30)
+        newer_failure = _full_run(31, summary="failure")
+        metadata = _metadata_run(32)
+        result = candidate_evidence.evaluate_candidate_runs(
+            [older_success, newer_failure, metadata],
+            head_sha=HEAD,
+            base_sha=BASE,
+        )
+        self.assertFalse(result.eligible)
+        self.assertEqual(result.mode, "full")
+        self.assertEqual(result.run_id, 31)
+
+    def test_newest_full_success_is_authoritative(self):
+        older_success = _full_run(40)
+        newer_success = _full_run(41)
+        result = candidate_evidence.evaluate_candidate_runs(
+            [older_success, newer_success],
+            head_sha=HEAD,
+            base_sha=BASE,
+        )
+        self.assertTrue(result.eligible)
+        self.assertEqual(result.mode, "full")
+        self.assertEqual(result.run_id, 41)
+
     def test_metadata_contexts_reject_spoofed_names_or_wrong_adapter_results(self):
         cases = []
 

@@ -2964,6 +2964,7 @@ jobs:
           INT_RE = re.compile(r"^[1-9][0-9]{0,18}$")
           REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
           SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+          TIMESTAMP_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
           WORKFLOW_FILENAME = "build.yml"
           WORKFLOW_PATH_PREFIX = ".github/workflows/build.yml"
           FULL_JOB_NAMES = frozenset(
@@ -2971,6 +2972,19 @@ jobs:
                   "event-identity",
                   "event-router",
                   "event-classifier",
+                  "host-tests",
+                  "build",
+                  "extended-host-tests",
+                  "legacy",
+                  "patch-release",
+                  "summary",
+              }
+          )
+          METADATA_JOB_NAMES = frozenset(
+              {
+                  "event-identity",
+                  "event-router",
+                  "metadata-classifier",
                   "host-tests",
                   "build",
                   "extended-host-tests",
@@ -3063,6 +3077,26 @@ jobs:
               if SHA_RE.fullmatch(text) is None:
                   fail(f"{field} is invalid")
               return text
+
+          def parse_nonempty_text(value, *, field):
+              if not isinstance(value, str) or not value:
+                  fail(f"{field} is invalid")
+              return value
+
+          def parse_optional_nonempty_text(value, *, field):
+              if value is None:
+                  return None
+              return parse_nonempty_text(value, field=field)
+
+          def parse_timestamp(text, *, field):
+              if not isinstance(text, str) or TIMESTAMP_RE.fullmatch(text) is None:
+                  fail(f"{field} is invalid")
+              return text
+
+          def parse_optional_timestamp(value, *, field):
+              if value is None:
+                  return None
+              return parse_timestamp(value, field=field)
 
           def parse_repository(text):
               if REPO_RE.fullmatch(text) is None or utf8_len(text) > MAX_REPOSITORY_BYTES:
@@ -3200,36 +3234,50 @@ jobs:
                   urllib.parse.urlsplit(request_url),
               )
 
-          def run_matches(run):
+          def parse_prior_run(run, *, run_id):
               if not isinstance(run, dict):
                   fail("metadata-only summary workflow run is invalid")
-              run_id = parse_positive_int_value(
-                  run.get("id"),
-                  field="metadata-only summary workflow run id",
-              )
-              if run_id == current_run_id:
-                  return None
               run_attempt = parse_positive_int_value(
                   run.get("run_attempt"),
                   field="metadata-only summary workflow run attempt",
               )
-              event = run.get("event")
-              status = run.get("status")
-              conclusion = run.get("conclusion")
-              run_head_sha = run.get("head_sha")
-              path = run.get("path")
-              url = run.get("url")
+              event = parse_nonempty_text(
+                  run.get("event"),
+                  field="metadata-only summary workflow run event",
+              )
+              status = parse_nonempty_text(
+                  run.get("status"),
+                  field="metadata-only summary workflow run status",
+              )
+              conclusion = parse_optional_nonempty_text(
+                  run.get("conclusion"),
+                  field="metadata-only summary workflow run conclusion",
+              )
+              run_head_sha = parse_nonempty_text(
+                  run.get("head_sha"),
+                  field="metadata-only summary workflow run head sha",
+              )
+              path = parse_nonempty_text(
+                  run.get("path"),
+                  field="metadata-only summary workflow run path",
+              )
+              url = parse_nonempty_text(
+                  run.get("url"),
+                  field="metadata-only summary workflow run url",
+              )
+              created_at = parse_timestamp(
+                  run.get("created_at"),
+                  field="metadata-only summary workflow run created_at",
+              )
+              run_started_at = parse_optional_timestamp(
+                  run.get("run_started_at"),
+                  field="metadata-only summary workflow run run_started_at",
+              )
               pull_requests = run.get("pull_requests")
-              if (
-                  not isinstance(event, str)
-                  or not isinstance(status, str)
-                  or (conclusion is not None and not isinstance(conclusion, str))
-                  or not isinstance(run_head_sha, str)
-                  or not isinstance(path, str)
-                  or not isinstance(url, str)
-                  or not isinstance(pull_requests, list)
-              ):
-                  fail("metadata-only summary workflow run fields are invalid")
+              if not isinstance(pull_requests, list):
+                  fail("metadata-only summary workflow run pull_requests is invalid")
+              if run_id == current_run_id:
+                  return None
               if event != "pull_request":
                   return None
               if SHA_RE.fullmatch(run_head_sha) is None:
@@ -3240,8 +3288,6 @@ jobs:
                   return None
               split = urllib.parse.urlsplit(url)
               if split.path != f"{expected_run_url_prefix}/{run_id}":
-                  return None
-              if status != "completed" or conclusion != "success":
                   return None
               matches = 0
               for pull_request in pull_requests:
@@ -3256,9 +3302,42 @@ jobs:
                       matches += 1
               if matches != 1:
                   return None
-              return run_id, run_attempt
+              return {
+                  "conclusion": conclusion,
+                  "created_at": created_at,
+                  "run_attempt": run_attempt,
+                  "run_id": run_id,
+                  "run_started_at": run_started_at,
+                  "status": status,
+              }
 
-          def jobs_prove_full_run(run_id, run_attempt):
+          def parse_prior_job(job, *, run_id):
+              if not isinstance(job, dict):
+                  fail("metadata-only summary prior run job is invalid")
+              name = parse_nonempty_text(
+                  job.get("name"),
+                  field=f"metadata-only summary prior run {run_id} job name",
+              )
+              status = parse_nonempty_text(
+                  job.get("status"),
+                  field=f"metadata-only summary prior run {run_id} job status",
+              )
+              conclusion = parse_optional_nonempty_text(
+                  job.get("conclusion"),
+                  field=f"metadata-only summary prior run {run_id} job conclusion",
+              )
+              runner_name = job.get("runner_name")
+              if runner_name is not None and (
+                  not isinstance(runner_name, str) or not runner_name
+              ):
+                  fail("metadata-only summary prior run job fields are invalid")
+              started_at = parse_optional_timestamp(
+                  job.get("started_at"),
+                  field=f"metadata-only summary prior run {run_id} job started_at",
+              )
+              return name, status, conclusion, runner_name, started_at
+
+          def classify_prior_run(run_id, run_attempt):
               payload, link, _request_url = request_json(
                   f"/repos/{quoted_owner}/{quoted_repo}/actions/runs/{run_id}/attempts/{run_attempt}/jobs",
                   [("per_page", str(MAX_PAGE_SIZE)), ("page", "1")],
@@ -3276,42 +3355,82 @@ jobs:
                   field="metadata-only summary prior run jobs total_count",
               )
               jobs = payload.get("jobs")
-              if not isinstance(jobs, list) or len(jobs) != total_count or total_count > MAX_PAGE_SIZE:
+              if (
+                  not isinstance(jobs, list)
+                  or len(jobs) != total_count
+                  or total_count > MAX_PAGE_SIZE
+              ):
                   fail("metadata-only summary prior run jobs pagination is invalid")
               by_name = {}
               for job in jobs:
-                  if not isinstance(job, dict):
-                      fail("metadata-only summary prior run job is invalid")
-                  name = job.get("name")
-                  status = job.get("status")
-                  conclusion = job.get("conclusion")
-                  runner_name = job.get("runner_name")
-                  if (
-                      not isinstance(name, str)
-                      or not name
-                      or not isinstance(status, str)
-                      or (conclusion is not None and not isinstance(conclusion, str))
-                      or (runner_name is not None and not isinstance(runner_name, str))
-                  ):
-                      fail("metadata-only summary prior run job fields are invalid")
+                  (
+                      name,
+                      status,
+                      conclusion,
+                      runner_name,
+                      started_at,
+                  ) = parse_prior_job(job, run_id=run_id)
                   if name in by_name:
                       fail("metadata-only summary prior run jobs repeat a name")
-                  by_name[name] = (status, conclusion, runner_name)
-              if set(by_name) != FULL_JOB_NAMES:
-                  return False
+                  by_name[name] = (status, conclusion, runner_name, started_at)
+              names = frozenset(by_name)
+              if names == METADATA_JOB_NAMES:
+                  for name in ("extended-host-tests", "legacy", "patch-release"):
+                      status, conclusion, runner_name, _started_at = by_name[name]
+                      if (
+                          status != "completed"
+                          or conclusion != "skipped"
+                          or runner_name not in {None, ""}
+                      ):
+                          fail(
+                              f"metadata-only summary prior run {run_id} metadata job {name} is malformed"
+                          )
+                  return "metadata-only", by_name
+              if names == FULL_JOB_NAMES:
+                  return "full", by_name
+              fail(f"metadata-only summary prior run {run_id} jobs have unexpected mode shape")
+
+          def validate_authoritative_full_run(prior_run, by_name):
+              if (
+                  prior_run["status"] != "completed"
+                  or prior_run["conclusion"] != "success"
+              ):
+                  fail(
+                      "metadata-only summary newest prior full Build CI run did not complete successfully"
+                  )
               for name in FULL_SUCCESS_JOB_NAMES:
-                  status, conclusion, runner_name = by_name[name]
+                  status, conclusion, runner_name, started_at = by_name[name]
                   if (
                       status != "completed"
                       or conclusion != "success"
                       or runner_name in {None, ""}
+                      or started_at is None
                   ):
-                      return False
-              patch_status, patch_conclusion, patch_runner = by_name["patch-release"]
+                      fail(
+                          f"metadata-only summary newest prior full Build CI job {name} is not a successful runner-backed completion"
+                      )
+              patch_status, patch_conclusion, patch_runner, _patch_started_at = by_name[
+                  "patch-release"
+              ]
+              if (
+                  patch_status != "completed"
+                  or patch_conclusion != "skipped"
+                  or patch_runner not in {None, ""}
+              ):
+                  fail(
+                      "metadata-only summary newest prior full Build CI patch-release is invalid"
+                  )
+
+          def prior_run_sort_key(prior_run):
+              started_at = prior_run["run_started_at"]
+              if started_at is None:
+                  started_key = ""
+              else:
+                  started_key = started_at
               return (
-                  patch_status == "completed"
-                  and patch_conclusion == "skipped"
-                  and patch_runner in {None, ""}
+                  prior_run["created_at"],
+                  started_key,
+                  prior_run["run_id"],
               )
 
           pr_number = parse_positive_int(
@@ -3348,6 +3467,7 @@ jobs:
           expected_run_url_prefix = f"/repos/{quoted_owner}/{quoted_repo}/actions/runs"
 
           page = 1
+          prior_runs = []
           seen_run_ids = set()
           prior_full_run_id = None
           while True:
@@ -3384,7 +3504,8 @@ jobs:
                   item_count=len(workflow_runs),
               )
               for run in workflow_runs:
-                  match = run_matches(run)
+                  if not isinstance(run, dict):
+                      fail("metadata-only summary workflow run is invalid")
                   run_id = parse_positive_int_value(
                       run.get("id"),
                       field="metadata-only summary workflow run id",
@@ -3392,19 +3513,26 @@ jobs:
                   if run_id in seen_run_ids:
                       fail("metadata-only summary workflow runs repeated a run")
                   seen_run_ids.add(run_id)
-                  if match is None:
-                      continue
-                  prior_run_id, prior_run_attempt = match
-                  if jobs_prove_full_run(prior_run_id, prior_run_attempt):
-                      prior_full_run_id = prior_run_id
-                      break
-              if prior_full_run_id is not None:
-                  break
+                  prior_run = parse_prior_run(run, run_id=run_id)
+                  if prior_run is not None:
+                      prior_runs.append(prior_run)
               if next_page is None:
                   break
               if next_page > MAX_RUN_PAGES:
                   fail("metadata-only summary workflow runs exceed the reviewed pagination bound")
               page = next_page
+
+          prior_runs.sort(key=prior_run_sort_key, reverse=True)
+          for prior_run in prior_runs:
+              mode, by_name = classify_prior_run(
+                  prior_run["run_id"],
+                  prior_run["run_attempt"],
+              )
+              if mode == "metadata-only":
+                  continue
+              validate_authoritative_full_run(prior_run, by_name)
+              prior_full_run_id = prior_run["run_id"]
+              break
 
           if prior_full_run_id is None:
               fail("metadata-only summary requires a prior successful complete full Build CI run")

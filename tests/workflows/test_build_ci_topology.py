@@ -838,6 +838,24 @@ SUMMARY_TEST_BASE_SHA = "2" * 40
 SUMMARY_TEST_PR_NUMBER = 177
 SUMMARY_TEST_RUN_ID = 9001
 SUMMARY_TEST_RUN_ATTEMPT = 1
+SUMMARY_TEST_CREATED_AT = "2026-09-01T00:00:00Z"
+SUMMARY_TEST_RUN_STARTED_AT = "2026-09-01T00:00:01Z"
+SUMMARY_TEST_JOB_STARTED_AT = "2026-09-01T00:00:02Z"
+
+
+def _summary_timestamp(second: int) -> str:
+    return f"2026-09-01T00:00:{second:02d}Z"
+
+
+def _replace_summary_job(
+    jobs: list[dict],
+    job_name: str,
+    **changes,
+) -> list[dict]:
+    mutated = copy.deepcopy(jobs)
+    target = next(job for job in mutated if job["name"] == job_name)
+    target.update(changes)
+    return mutated
 
 
 def _summary_runs_path(*, repo: str = SUMMARY_TEST_REPOSITORY, head_sha: str = SUMMARY_TEST_HEAD_SHA, page: int = 1) -> str:
@@ -879,6 +897,8 @@ def _summary_workflow_run(
     path: str | None = None,
     pull_requests: list[dict] | None = None,
     url: str | None = None,
+    created_at: str = SUMMARY_TEST_CREATED_AT,
+    run_started_at: str | None = SUMMARY_TEST_RUN_STARTED_AT,
 ) -> dict:
     owner, name = repo.split("/", 1)
     if path is None:
@@ -903,9 +923,11 @@ def _summary_workflow_run(
         "event": event,
         "status": status,
         "conclusion": conclusion,
+        "created_at": created_at,
         "head_sha": head_sha,
         "path": path,
         "pull_requests": pull_requests,
+        "run_started_at": run_started_at,
         "url": url,
     }
 
@@ -916,12 +938,14 @@ def _summary_job(
     *,
     status: str = "completed",
     runner_name: str | None = "GitHub Actions 1",
+    started_at: str | None = SUMMARY_TEST_JOB_STARTED_AT,
 ) -> dict:
     return {
         "name": name,
         "status": status,
         "conclusion": conclusion,
         "runner_name": runner_name,
+        "started_at": started_at,
     }
 
 
@@ -934,7 +958,7 @@ def _summary_full_jobs() -> list[dict]:
         _summary_job("build", "success"),
         _summary_job("extended-host-tests", "success"),
         _summary_job("legacy", "success"),
-        _summary_job("patch-release", "skipped", runner_name=None),
+        _summary_job("patch-release", "skipped", runner_name=None, started_at=None),
         _summary_job("summary", "success"),
     ]
 
@@ -946,9 +970,9 @@ def _summary_metadata_jobs() -> list[dict]:
         _summary_job(candidate_evidence.METADATA_CLASSIFIER, "success"),
         _summary_job("host-tests", "success"),
         _summary_job("build", "success"),
-        _summary_job("extended-host-tests", "skipped", runner_name=None),
-        _summary_job("legacy", "skipped", runner_name=None),
-        _summary_job("patch-release", "skipped", runner_name=None),
+        _summary_job("extended-host-tests", "skipped", runner_name=None, started_at=None),
+        _summary_job("legacy", "skipped", runner_name=None, started_at=None),
+        _summary_job("patch-release", "skipped", runner_name=None, started_at=None),
         _summary_job("summary", "success"),
     ]
 
@@ -6195,7 +6219,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
         page_one_runs = [
             _summary_workflow_run(SUMMARY_TEST_RUN_ID, run_attempt=SUMMARY_TEST_RUN_ATTEMPT),
-            _summary_workflow_run(8100),
+            _summary_workflow_run(
+                8101,
+                created_at=_summary_timestamp(5),
+                run_started_at=_summary_timestamp(6),
+            ),
         ]
         page_one_runs.extend(
             _summary_workflow_run(
@@ -6213,12 +6241,21 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 headers={"Link": link_header},
             ),
             _summary_runs_path(page=2): _summary_response(
-                _summary_api_payload("workflow_runs", [_summary_workflow_run(9100)])
+                _summary_api_payload(
+                    "workflow_runs",
+                    [
+                        _summary_workflow_run(
+                            8100,
+                            created_at=_summary_timestamp(4),
+                            run_started_at=_summary_timestamp(5),
+                        )
+                    ],
+                )
             ),
-            _summary_jobs_path(8100): _summary_response(
+            _summary_jobs_path(8101): _summary_response(
                 _summary_api_payload("jobs", _summary_metadata_jobs())
             ),
-            _summary_jobs_path(9100): _summary_response(
+            _summary_jobs_path(8100): _summary_response(
                 _summary_api_payload("jobs", _summary_full_jobs())
             ),
         }
@@ -6232,9 +6269,9 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             [request["path"] for request in requests],
             [
                 _summary_runs_path(page=1),
-                _summary_jobs_path(8100),
                 _summary_runs_path(page=2),
-                _summary_jobs_path(9100),
+                _summary_jobs_path(8101),
+                _summary_jobs_path(8100),
             ],
         )
         self.assertTrue(requests)
@@ -6244,6 +6281,407 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             self.assertEqual(
                 headers.get("Accept"), "application/vnd.github+json"
             )
+
+    def test_summary_runtime_metadata_only_skips_failed_metadata_retry(self):
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        completed = subprocess.run(
+            ["/bin/bash", "-n"],
+            input=script,
+            text=True,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        failed_metadata_jobs = _replace_summary_job(
+            _summary_metadata_jobs(),
+            "summary",
+            conclusion="failure",
+        )
+        routes = {
+            _summary_runs_path(page=1): _summary_response(
+                _summary_api_payload(
+                    "workflow_runs",
+                    [
+                        _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                        _summary_workflow_run(
+                            8102,
+                            conclusion="failure",
+                            created_at=_summary_timestamp(7),
+                            run_started_at=_summary_timestamp(8),
+                        ),
+                        _summary_workflow_run(
+                            8101,
+                            created_at=_summary_timestamp(6),
+                            run_started_at=_summary_timestamp(7),
+                        ),
+                    ],
+                )
+            ),
+            _summary_jobs_path(8102): _summary_response(
+                _summary_api_payload("jobs", failed_metadata_jobs)
+            ),
+            _summary_jobs_path(8101): _summary_response(
+                _summary_api_payload("jobs", _summary_full_jobs())
+            ),
+        }
+        completed, requests = _run_summary_with_api(
+            script,
+            environment=_summary_metadata_env(),
+            routes=routes,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            [request["path"] for request in requests],
+            [
+                _summary_runs_path(page=1),
+                _summary_jobs_path(8102),
+                _summary_jobs_path(8101),
+            ],
+        )
+
+    def test_summary_runtime_metadata_only_uses_newest_prior_full_authoritatively(self):
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        completed = subprocess.run(
+            ["/bin/bash", "-n"],
+            input=script,
+            text=True,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        full_success = _summary_full_jobs()
+        full_missing_started_at = _replace_summary_job(
+            full_success,
+            "build",
+            started_at=None,
+        )
+        unknown_shape = full_success + [_summary_job("attacker-job", "success")]
+        mixed_shape = _replace_summary_job(
+            full_success,
+            "event-classifier",
+            name="metadata-classifier",
+        )
+        cases = (
+            (
+                "newer-failed-full-blocks-older-success",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8101,
+                        conclusion="failure",
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                    _summary_workflow_run(
+                        8100,
+                        created_at=_summary_timestamp(6),
+                        run_started_at=_summary_timestamp(7),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101),
+                ],
+            ),
+            (
+                "newer-cancelled-full-blocks-older-success",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8101,
+                        conclusion="cancelled",
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                    _summary_workflow_run(
+                        8100,
+                        created_at=_summary_timestamp(6),
+                        run_started_at=_summary_timestamp(7),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101),
+                ],
+            ),
+            (
+                "newer-in-progress-full-blocks-older-success",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8101,
+                        status="in_progress",
+                        conclusion=None,
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                    _summary_workflow_run(
+                        8100,
+                        created_at=_summary_timestamp(6),
+                        run_started_at=_summary_timestamp(7),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101): _summary_response(
+                        _summary_api_payload(
+                            "jobs",
+                            _replace_summary_job(
+                                _replace_summary_job(
+                                    full_success,
+                                    "summary",
+                                    status="in_progress",
+                                    conclusion=None,
+                                ),
+                                "host-tests",
+                                status="in_progress",
+                                conclusion=None,
+                            ),
+                        )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101),
+                ],
+            ),
+            (
+                "newer-unknown-shape-blocks-older-success",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8101,
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                    _summary_workflow_run(
+                        8100,
+                        created_at=_summary_timestamp(6),
+                        run_started_at=_summary_timestamp(7),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101): _summary_response(
+                        _summary_api_payload("jobs", unknown_shape)
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary prior run 8101 jobs have unexpected mode shape",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101),
+                ],
+            ),
+            (
+                "newer-mixed-shape-blocks-older-success",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8101,
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                    _summary_workflow_run(
+                        8100,
+                        created_at=_summary_timestamp(6),
+                        run_started_at=_summary_timestamp(7),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101): _summary_response(
+                        _summary_api_payload("jobs", mixed_shape)
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary prior run 8101 metadata job extended-host-tests is malformed",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101),
+                ],
+            ),
+            (
+                "newer-malformed-full-blocks-older-success",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8101,
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                    _summary_workflow_run(
+                        8100,
+                        created_at=_summary_timestamp(6),
+                        run_started_at=_summary_timestamp(7),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101): _summary_response(
+                        _summary_api_payload("jobs", full_missing_started_at)
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary newest prior full Build CI job build is not a successful runner-backed completion",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101),
+                ],
+            ),
+            (
+                "same-timestamp-full-order-uses-higher-run-id",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8100,
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                    _summary_workflow_run(
+                        8101,
+                        conclusion="failure",
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101),
+                ],
+            ),
+            (
+                "rerun-latest-attempt-failure-blocks-older-attempt-success",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8101,
+                        run_attempt=2,
+                        conclusion="failure",
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101, attempt=2): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                    _summary_jobs_path(8101, attempt=1): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101, attempt=2),
+                ],
+            ),
+        )
+        for name, workflow_runs, job_routes, error_fragment, expected_requests in cases:
+            with self.subTest(name=name):
+                routes = {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload("workflow_runs", workflow_runs)
+                    ),
+                    **job_routes,
+                }
+                completed, requests = _run_summary_with_api(
+                    script,
+                    environment=_summary_metadata_env(),
+                    routes=routes,
+                )
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn(error_fragment, completed.stderr)
+                self.assertEqual(
+                    [request["path"] for request in requests],
+                    expected_requests,
+                )
+
+    def test_summary_runtime_metadata_only_chooses_newest_full_success(self):
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        completed = subprocess.run(
+            ["/bin/bash", "-n"],
+            input=script,
+            text=True,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        routes = {
+            _summary_runs_path(page=1): _summary_response(
+                _summary_api_payload(
+                    "workflow_runs",
+                    [
+                        _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                        _summary_workflow_run(
+                            8100,
+                            created_at=_summary_timestamp(7),
+                            run_started_at=_summary_timestamp(8),
+                        ),
+                        _summary_workflow_run(
+                            8101,
+                            created_at=_summary_timestamp(7),
+                            run_started_at=_summary_timestamp(8),
+                        ),
+                    ],
+                )
+            ),
+            _summary_jobs_path(8101): _summary_response(
+                _summary_api_payload("jobs", _summary_full_jobs())
+            ),
+            _summary_jobs_path(8100): _summary_response(
+                _summary_api_payload("jobs", _summary_full_jobs())
+            ),
+        }
+        completed, requests = _run_summary_with_api(
+            script,
+            environment=_summary_metadata_env(),
+            routes=routes,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            [request["path"] for request in requests],
+            [
+                _summary_runs_path(page=1),
+                _summary_jobs_path(8101),
+            ],
+        )
 
     def test_summary_runtime_metadata_only_rejects_invalid_prior_full_evidence(self):
         script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
@@ -6382,10 +6820,13 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                                 _summary_workflow_run(8100, conclusion="failure"),
                             ],
                         )
-                    )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", _summary_full_jobs())
+                    ),
                 },
                 1,
-                "metadata-only summary requires a prior successful complete full Build CI run",
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
             ),
             (
                 "in-progress-prior-run",
@@ -6403,10 +6844,13 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                                 ),
                             ],
                         )
-                    )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", _summary_full_jobs())
+                    ),
                 },
                 1,
-                "metadata-only summary requires a prior successful complete full Build CI run",
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
             ),
             (
                 "cancelled-prior-run",
@@ -6420,10 +6864,13 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                                 _summary_workflow_run(8100, conclusion="cancelled"),
                             ],
                         )
-                    )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", _summary_full_jobs())
+                    ),
                 },
                 1,
-                "metadata-only summary requires a prior successful complete full Build CI run",
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
             ),
             (
                 "wrong-pr-binding",
@@ -6561,7 +7008,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 _summary_metadata_env(),
                 mixed_jobs_routes,
                 1,
-                "metadata-only summary requires a prior successful complete full Build CI run",
+                "metadata-only summary prior run 8101 jobs have unexpected mode shape",
             ),
             (
                 "missing-runner",
@@ -6594,7 +7041,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     ),
                 },
                 1,
-                "metadata-only summary requires a prior successful complete full Build CI run",
+                "metadata-only summary newest prior full Build CI job build is not a successful runner-backed completion",
             ),
             (
                 "bad-run-attempt",
