@@ -63,8 +63,9 @@ The trusted PID-1 wrapper is loaded into Bash `-c` memory before
 `/home/runner` is masked, so no open script descriptor pins the host mount.
 The private `/dev` is mounted over the host path without trying to unmount the
 trusted wrapper's already-open null descriptors. Before that overmount, the
-wrapper reads the recursive `/dev` mount tree in raw mode, validates every
-target, and unmounts only descendants deepest-first. This removes inherited
+wrapper reads the recursive `/dev` mount tree as structured JSON, decodes and
+validates every target, and unmounts only descendants deepest-first. This
+removes inherited
 `/dev/pts`, `/dev/mqueue`, `/dev/shm`, and runner-specific child mounts without
 touching the descriptor-pinned parent. The candidate's writable-mount audit
 also consumes raw `findmnt` targets so terminal tree decoration can never be
