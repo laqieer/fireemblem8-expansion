@@ -254,12 +254,26 @@ class MetadataAdapterContractTests(unittest.TestCase):
         source = metadata_adapter_contract.metadata_adapter_python_source(script)
         tree = ast.parse(source)
         function = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef))
-        function.type_params = [ast.Name(id="T", ctx=ast.Load())]
-        with self.assertRaisesRegex(
-            ValueError,
-            "unsupported nonempty compatibility field FunctionDef.type_params",
-        ):
-            metadata_adapter_contract._semantic_ast_digest(tree)
+        class_fields = tuple(ast.FunctionDef._fields)
+        original_fields = tuple(getattr(function, "_fields", ()))
+        had_type_params = hasattr(function, "type_params")
+        original_type_params = getattr(function, "type_params", None)
+        try:
+            if "type_params" not in original_fields:
+                function._fields = original_fields + ("type_params",)
+            function.type_params = [ast.Name(id="T", ctx=ast.Load())]
+            with self.assertRaisesRegex(
+                ValueError,
+                "unsupported nonempty compatibility field FunctionDef.type_params",
+            ):
+                metadata_adapter_contract._semantic_ast_digest(tree)
+        finally:
+            function._fields = original_fields
+            if had_type_params:
+                function.type_params = original_type_params
+            elif hasattr(function, "type_params"):
+                delattr(function, "type_params")
+        self.assertEqual(tuple(ast.FunctionDef._fields), class_fields)
 
     def test_python_source_ascii_boundary_rejects_unicode_and_controls(self):
         cases = (

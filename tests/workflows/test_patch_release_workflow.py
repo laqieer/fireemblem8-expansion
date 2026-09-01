@@ -164,6 +164,41 @@ def dev_mount_transport_section_source(workflow: str) -> str:
     return script[start:end]
 
 
+def writable_mount_record_parser_source(workflow: str) -> str:
+    steps = patch_release_step_blocks(workflow)
+    matches = [
+        step
+        for step in steps
+        if "    - name: Build candidate in isolated namespace and stage public inputs\n"
+        in step
+    ]
+    if len(matches) != 1:
+        raise AssertionError("publisher must define exactly one isolated builder step")
+    script = matches[0]
+    match = re.search(
+        r"(?ms)^\s*list_writable_mount_records\(\) \{\n"
+        r"\s*/usr/bin/python3 -I -S - <<'PY'\n"
+        r"(?P<body>.*?)\n"
+        r"\s*PY\n"
+        r"\s*\}",
+        script,
+    )
+    if match is None:
+        raise AssertionError("publisher must embed exactly one writable mount parser")
+    return textwrap.dedent(match.group("body")) + "\n"
+
+
+def writable_mount_transport_section_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Build candidate in isolated namespace and stage public inputs",
+    )
+    start = script.index("list_writable_mount_records() {")
+    end_marker = "exec < /dev/null > /dev/null 2>&1\n"
+    end = script.index(end_marker, start)
+    return script[start:end]
+
+
 def run_dev_mount_target_parser(
     source: str,
     *,
@@ -198,6 +233,47 @@ def run_dev_mount_target_parser(
         try:
             exec(
                 compile(source, "<decoded-dev-mount-parser>", "exec"),
+                {"__name__": "__main__"},
+            )
+        except SystemExit as exc:
+            code = exc.code if isinstance(exc.code, int) else 1
+    return code, stdout_capture.buffer.getvalue(), stderr_capture.getvalue()
+
+
+def run_writable_mount_record_parser(
+    source: str,
+    *,
+    stdout: bytes,
+    returncode: int = 0,
+    stderr: bytes = b"",
+) -> tuple[int, bytes, str]:
+    class StdoutCapture:
+        def __init__(self):
+            self.buffer = io.BytesIO()
+
+        def write(self, text):
+            return len(text)
+
+        def flush(self):
+            return None
+
+    stdout_capture = StdoutCapture()
+    stderr_capture = io.StringIO()
+    completed = subprocess.CompletedProcess(
+        ["/usr/bin/findmnt"],
+        returncode,
+        stdout,
+        stderr,
+    )
+    with (
+        mock.patch("subprocess.run", return_value=completed),
+        mock.patch("sys.stdout", stdout_capture),
+        redirect_stderr(stderr_capture),
+    ):
+        code = 0
+        try:
+            exec(
+                compile(source, "<writable-mount-record-parser>", "exec"),
                 {"__name__": "__main__"},
             )
         except SystemExit as exc:
@@ -332,20 +408,36 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "builder-supervisor /mnt/supervisor" not in isolated_step
         or 'path="$(/usr/bin/mktemp "/mnt/supervisor/$1.XXXXXXXXXX")"'
         not in isolated_step
+        or 'path="$(/usr/bin/mktemp "/dev/shm/$1.XXXXXXXXXX")"'
+        not in isolated_step
         or "create_supervisor_transport_file() {" not in isolated_step
         or "checked_supervisor_transport_signature() {" not in isolated_step
         or "read_checked_supervisor_transport_file() {" not in isolated_step
         or "remove_supervisor_transport_file() {" not in isolated_step
-        or isolated_step.count('test ! -L "$path" || return 125') != 2
+        or "list_writable_mount_records() {" not in isolated_step
+        or (
+            '["/usr/bin/findmnt", "--json", "--list", "--output", "TARGET,OPTIONS", "-R", "/"]'
+            not in isolated_step
+        )
+        or "duplicate writable mount JSON key" not in isolated_step
+        or "findmnt target is not absolute" not in isolated_step
+        or 'options = validate_options(filesystem.get("options"))' not in isolated_step
+        or "findmnt option tokens are invalid" not in isolated_step
+        or "unexpected writable mount audit row keys" not in isolated_step
+        or "create_runtime_transport_file() {" not in isolated_step
+        or "checked_runtime_transport_signature() {" not in isolated_step
+        or "read_checked_runtime_transport_file() {" not in isolated_step
+        or "remove_runtime_transport_file() {" not in isolated_step
+        or isolated_step.count('test ! -L "$path" || return 125') != 4
         or 'test "$(/usr/bin/stat -c %a "$path")" = 600' not in isolated_step
         or isolated_step.count(
             'test "$(/usr/bin/stat -c %h "$path")" = 1 || return 125'
         )
-        != 2
+        != 4
         or 'size="$(/usr/bin/stat -c %s "$path")"' not in isolated_step
         or 'test "$size" -le "$size_limit" || return 125' not in isolated_step
         or "stat -Lc '%d:%i:%f:%u:%g:%s:%h:%a' \"$path\"" not in isolated_step
-        or 'test ! -e "$path" || return 125' not in isolated_step
+        or isolated_step.count('test ! -e "$path" || return 125') != 2
         or 'list_dev_mount_targets > "$dev_mounts_file"' not in isolated_step
         or (
             'read_checked_supervisor_transport_file \\\n'
@@ -373,13 +465,27 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         not in isolated_step
         or 'test "${#remaining_dev_mounts[@]}" -eq 1' not in isolated_step
         or 'test "${remaining_dev_mounts[0]}" = /dev' not in isolated_step
+        or 'list_writable_mount_records > "$writable_mount_records_file"' not in isolated_step
+        or (
+            'read_checked_runtime_transport_file \\\n'
+            '          "$writable_mount_records_file" \\\n'
+            '          "$writable_mount_records_max_bytes" \\\n'
+            '          writable_mount_records'
+        )
+        not in isolated_step
+        or 'remove_runtime_transport_file "$writable_mount_records_file"'
+        not in isolated_step
+        or 'test "$(( ${#writable_mount_records[@]} % 2 ))" -eq 0'
+        not in isolated_step
+        or 'mount_target="${writable_mount_records[index]}"' not in isolated_step
+        or 'mount_options="${writable_mount_records[index + 1]}"' not in isolated_step
         or "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"
         not in isolated_step
         or "/usr/bin/findmnt -Rrno TARGET /dev" in isolated_step
         or "/usr/bin/findmnt --raw" in isolated_step
         or "< <(list_dev_mount_targets)" in isolated_step
-        or "/usr/bin/findmnt -Rrno TARGET,OPTIONS /"
-        not in isolated_step
+        or "< <(list_writable_mount_records)" in isolated_step
+        or "/usr/bin/findmnt -Rrno TARGET,OPTIONS /" in isolated_step
         or "/usr/bin/findmnt -Rno TARGET,OPTIONS /" in isolated_step
         or 'builder_isolation_script="$(/bin/cat \\\n'
         not in isolated_step
@@ -1212,6 +1318,236 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         for target in targets:
             self.assertTrue(target == "/dev" or target.startswith("/dev/"))
 
+    def test_writable_mount_record_parser_supports_decoded_targets_and_rejects_bad_json(self):
+        source = writable_mount_record_parser_source(self.text)
+        payload = {
+            "filesystems": [
+                {"target": "/", "options": "ro,relatime"},
+                {"target": "/mnt/home", "options": "rw,nosuid,nodev"},
+                {"target": "/mnt/name with space", "options": "rw,relatime"},
+                {"target": "/mnt/back\\slash", "options": "errors=remount-ro,data=ordered"},
+                {"target": "/tmp", "options": "rw,nosuid,nodev"},
+            ]
+        }
+        code, output, stderr = run_writable_mount_record_parser(
+            source,
+            stdout=json.dumps(payload).encode("utf-8"),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(
+            output.split(b"\0")[:-1],
+            [
+                b"/",
+                b"ro,relatime",
+                b"/mnt/home",
+                b"rw,nosuid,nodev",
+                b"/mnt/name with space",
+                b"rw,relatime",
+                b"/mnt/back\\slash",
+                b"errors=remount-ro,data=ordered",
+                b"/tmp",
+                b"rw,nosuid,nodev",
+            ],
+        )
+        oversized = {
+            "filesystems": [
+                {"target": f"/mnt/{index}", "options": "ro"}
+                for index in range(513)
+            ]
+        }
+        for name, stdout, expected in (
+            ("malformed", b'{"filesystems":[', "invalid writable mount audit JSON"),
+            (
+                "duplicate-key",
+                b'{"filesystems":[{"target":"/","target":"/dup","options":"ro"}]}',
+                "duplicate writable mount JSON key",
+            ),
+            (
+                "missing-options",
+                json.dumps({"filesystems": [{"target": "/mnt/home"}]}).encode("utf-8"),
+                "findmnt options is invalid",
+            ),
+            (
+                "empty-options-token",
+                json.dumps({"filesystems": [{"target": "/mnt/home", "options": "rw,,nodev"}]}).encode("utf-8"),
+                "findmnt option tokens are invalid",
+            ),
+            (
+                "spaced-options-token",
+                json.dumps({"filesystems": [{"target": "/mnt/home", "options": "rw, relatime"}]}).encode("utf-8"),
+                "findmnt option tokens are invalid",
+            ),
+            (
+                "control-char-target",
+                json.dumps({"filesystems": [{"target": "/mnt/bad\tpath", "options": "rw"}]}).encode("utf-8"),
+                "findmnt target contains control character",
+            ),
+            (
+                "nonabsolute-target",
+                json.dumps({"filesystems": [{"target": "mnt/home", "options": "rw"}]}).encode("utf-8"),
+                "findmnt target is not absolute",
+            ),
+            (
+                "duplicate-target",
+                json.dumps(
+                    {
+                        "filesystems": [
+                            {"target": "/mnt/home", "options": "rw"},
+                            {"target": "/mnt/home", "options": "ro"},
+                        ]
+                    }
+                ).encode("utf-8"),
+                "findmnt target repeats",
+            ),
+            (
+                "extra-row-keys",
+                json.dumps(
+                    {"filesystems": [{"target": "/mnt/home", "options": "rw", "children": []}]}
+                ).encode("utf-8"),
+                "unexpected writable mount audit row keys",
+            ),
+            (
+                "too-many-rows",
+                json.dumps(oversized).encode("utf-8"),
+                "writable mount audit mount count exceeds bounds",
+            ),
+        ):
+            with self.subTest(case=name):
+                code, _output, stderr = run_writable_mount_record_parser(
+                    source,
+                    stdout=stdout,
+                )
+                self.assertEqual(code, 125)
+                self.assertIn(expected, stderr)
+
+        for name, returncode, stderr, expected in (
+            ("findmnt-failed", 1, b"", "findmnt writable mount audit failed"),
+            ("findmnt-stderr", 0, b"warning", "findmnt writable mount audit wrote stderr"),
+        ):
+            with self.subTest(case=name):
+                code, _output, captured = run_writable_mount_record_parser(
+                    source,
+                    stdout=b"",
+                    returncode=returncode,
+                    stderr=stderr,
+                )
+                self.assertEqual(code, 125)
+                self.assertIn(expected, captured)
+
+    def test_local_writable_mount_findmnt_json_shape_is_supported(self):
+        completed = subprocess.run(
+            ["/usr/bin/findmnt", "--json", "--list", "--output", "TARGET,OPTIONS", "-R", "/"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        payload = json.loads(completed.stdout)
+        self.assertEqual(set(payload), {"filesystems"})
+        self.assertIsInstance(payload["filesystems"], list)
+        self.assertGreater(len(payload["filesystems"]), 0)
+        for row in payload["filesystems"]:
+            self.assertEqual(set(row), {"options", "target"})
+            self.assertIsInstance(row["target"], str)
+            self.assertTrue(row["target"].startswith("/"))
+            self.assertIsInstance(row["options"], str)
+            self.assertTrue(row["options"])
+
+    def test_writable_mount_audit_rejects_unexpected_rw_targets_and_preserves_allowed_private_mounts(self):
+        base_section = writable_mount_transport_section_source(self.text)
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="writable-mount-audit-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            transport_root = sandbox / "transport"
+            transport_root.mkdir(mode=0o700)
+            records_path = sandbox / "records"
+
+            section = base_section.replace(
+                'path="$(/usr/bin/mktemp "/dev/shm/$1.XXXXXXXXXX")" || return 125',
+                'path="$(/usr/bin/mktemp "$TRANSPORT_ROOT/$1.XXXXXXXXXX")" || return 125',
+            )
+            section = section.replace(
+                'test "$(/usr/bin/stat -c %u "$path")" = 0',
+                'test "$(/usr/bin/stat -c %u "$path")" = "$TRANSPORT_UID"',
+            )
+            section = re.sub(
+                r"(?ms)^list_writable_mount_records\(\) \{\n.*?\n\}\n",
+                "list_writable_mount_records() {\n"
+                '  /bin/cat -- "$RECORDS_PATH"\n'
+                "}\n",
+                section,
+                count=1,
+            )
+
+            def run_case(records: list[str]) -> subprocess.CompletedProcess[str]:
+                if records_path.exists():
+                    records_path.unlink()
+                records_path.write_bytes(
+                    b"".join(record.encode("utf-8") + b"\0" for record in records)
+                )
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        "set -euo pipefail\n"
+                        "umask 077\n"
+                        'TRANSPORT_ROOT="$1"\n'
+                        'TRANSPORT_UID="$2"\n'
+                        'RECORDS_PATH="$3"\n'
+                        + section,
+                        "--",
+                        str(transport_root),
+                        str(os.getuid()),
+                        str(records_path),
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                return completed
+
+            completed = run_case(
+                [
+                    "/",
+                    "ro,relatime",
+                    "/mnt/home",
+                    "rw,nosuid,nodev",
+                    "/mnt/source",
+                    "rw,nosuid,nodev",
+                    "/mnt/handoff",
+                    "rw,nosuid,nodev",
+                    "/mnt/tmp",
+                    "rw,nosuid,nodev",
+                    "/tmp",
+                    "rw,nosuid,nodev",
+                    "/dev/shm",
+                    "rw,nosuid,nodev",
+                    "/mnt/name with space",
+                    "errors=remount-ro,data=ordered",
+                ]
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout, "")
+
+            completed = run_case(
+                [
+                    "/",
+                    "ro,relatime",
+                    "/mnt/name with space",
+                    "rw,relatime",
+                ]
+            )
+            self.assertEqual(completed.returncode, 1)
+            self.assertIn(
+                "unexpected writable mount: /mnt/name with space",
+                completed.stderr,
+            )
+
     def test_private_base_lifetime_is_fixed_and_candidate_free(self):
         self.assertEqual(publisher_boundary_errors(self.text), [])
         steps = patch_release_step_blocks(self.text)
@@ -1395,9 +1731,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         candidate_output_regular_file = self.text.replace(
-            "        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec,hidepid=2 /proc\n"
             "        exec < /dev/null > /dev/null 2>&1",
-            "        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec,hidepid=2 /proc\n"
             "        exec < /dev/null > /mnt/source/candidate-output.log 2>&1",
             1,
         )
@@ -1548,9 +1882,9 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             '/bin/rm -rf -- "$BUILDER_ROOT"',
             1,
         )
-        decorated_mount_targets = self.text.replace(
-            "/usr/bin/findmnt -Rrno TARGET,OPTIONS /",
-            "/usr/bin/findmnt -Rno TARGET,OPTIONS /",
+        structured_writable_mount_targets = self.text.replace(
+            '["/usr/bin/findmnt", "--json", "--list", "--output", "TARGET,OPTIONS", "-R", "/"]',
+            '["/usr/bin/findmnt", "-Rrno", "TARGET,OPTIONS", "/"]',
             1,
         )
         retained_dev_descendants = self.text.replace(
@@ -1570,6 +1904,17 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             '          "$dev_mounts_file" "$dev_mount_targets_max_bytes" dev_mounts\n'
             '        remove_supervisor_transport_file "$dev_mounts_file"',
             "        mapfile -d '' -t dev_mounts < <(list_dev_mount_targets)",
+            1,
+        )
+        unchecked_writable_mount_process_substitution = self.text.replace(
+            '        writable_mount_records_file="$(create_runtime_transport_file writable-mount-records)"\n'
+            '        list_writable_mount_records > "$writable_mount_records_file"\n'
+            "        read_checked_runtime_transport_file \\\n"
+            '          "$writable_mount_records_file" \\\n'
+            '          "$writable_mount_records_max_bytes" \\\n'
+            '          writable_mount_records\n'
+            '        remove_runtime_transport_file "$writable_mount_records_file"',
+            "        mapfile -d '' -t writable_mount_records < <(list_writable_mount_records)",
             1,
         )
         missing_dev_transport_link_guard = self.text.replace(
@@ -1683,10 +2028,14 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             ("file-backed-wrapper", file_backed_wrapper),
             ("unmounted-open-dev", unmounted_open_dev),
             ("unprivileged-builder-cleanup", unprivileged_builder_cleanup),
-            ("decorated-mount-targets", decorated_mount_targets),
+            ("structured-writable-mount-targets", structured_writable_mount_targets),
             ("retained-dev-descendants", retained_dev_descendants),
             ("escaped-dev-targets", escaped_dev_targets),
             ("unchecked-dev-process-substitution", unchecked_dev_process_substitution),
+            (
+                "unchecked-writable-mount-process-substitution",
+                unchecked_writable_mount_process_substitution,
+            ),
             ("missing-dev-transport-symlink-guard", missing_dev_transport_symlink_guard),
             ("missing-dev-transport-link-guard", missing_dev_transport_link_guard),
             ("missing-dev-transport-cleanup", missing_dev_transport_cleanup),
@@ -2330,6 +2679,20 @@ exit 37
         )
         self.assertIn(
             "unsafe transport\nfiles are rejected",
+            text,
+        )
+        self.assertIn(
+            "structured\n`findmnt --json --list --output TARGET,OPTIONS -R /` output, "
+            "writes checked\nNUL-framed mount target/option records",
+            text,
+        )
+        self.assertIn(
+            "Only\n`/dev/shm`, `/mnt/handoff`, `/mnt/home`, `/mnt/source`, "
+            "`/mnt/tmp`, and `/tmp`\nmay carry an exact `rw` option token",
+            text,
+        )
+        self.assertIn(
+            "control-character targets, malformed\noption-token grammar",
             text,
         )
 

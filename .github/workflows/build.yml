@@ -363,8 +363,9 @@ jobs:
   # a trusted no-checkout continuity attestation in `host-tests`/`build`;
   # every existing checkout/install/test/build step remains full/fallback-only.
   # `extended-host-tests` and `legacy` stay platform-skipped for metadata
-  # edits, and `metadata-summary` remains distinct so prior full `summary`
-  # evidence still governs candidate eligibility.
+  # edits, the required `summary` context advances to the later metadata
+  # continuity run, and candidate eligibility still remains bound to the
+  # newest prior complete full Build CI run.
   host-tests:
     needs: [event-identity, event-classifier]
     if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'false' && github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && needs.event-classifier.outputs.expected_base == github.event.pull_request.base.sha && github.event.pull_request.head.sha != '' && github.event.pull_request.base.sha != '') || (needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && needs.event-identity.result == 'success' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha)))) }}
@@ -2112,6 +2113,176 @@ jobs:
         /usr/bin/ln -s /proc/self/fd/2 /dev/stderr
         /usr/bin/mount -o remount,ro,nosuid /dev
         /usr/bin/mount -o remount,ro,nosuid,nodev,noexec,hidepid=2 /proc
+        list_writable_mount_records() {
+          /usr/bin/python3 -I -S - <<'PY'
+          import json
+          import subprocess
+          import sys
+
+          MAX_BYTES = 1048576
+          MAX_FILESYSTEMS = 512
+
+
+          def fail(message):
+              print(message, file=sys.stderr)
+              raise SystemExit(125)
+
+
+          def reject_duplicates(pairs):
+              result = {}
+              for key, value in pairs:
+                  if key in result:
+                      fail("duplicate writable mount JSON key")
+                  result[key] = value
+              return result
+
+
+          def validate_text(value, *, field):
+              if not isinstance(value, str) or not value:
+                  fail(f"findmnt {field} is invalid")
+              if "\0" in value:
+                  fail(f"findmnt {field} contains NUL")
+              if any(ord(character) < 0x20 or ord(character) == 0x7F for character in value):
+                  fail(f"findmnt {field} contains control character")
+              return value
+
+
+          def validate_options(value):
+              options = validate_text(value, field="options")
+              tokens = options.split(",")
+              if not tokens or any(not token for token in tokens):
+                  fail("findmnt option tokens are invalid")
+              for token in tokens:
+                  if token.strip() != token:
+                      fail("findmnt option tokens are invalid")
+                  if any(ord(character) <= 0x20 or ord(character) == 0x7F for character in token):
+                      fail("findmnt option tokens are invalid")
+              return options
+
+
+          completed = subprocess.run(
+              ["/usr/bin/findmnt", "--json", "--list", "--output", "TARGET,OPTIONS", "-R", "/"],
+              check=False,
+              capture_output=True,
+          )
+          if completed.returncode != 0:
+              fail("findmnt writable mount audit failed")
+          if completed.stderr:
+              fail("findmnt writable mount audit wrote stderr")
+          if len(completed.stdout) > MAX_BYTES:
+              fail("writable mount audit JSON exceeds bounds")
+          try:
+              payload = json.loads(
+                  completed.stdout.decode("utf-8"),
+                  object_pairs_hook=reject_duplicates,
+              )
+          except (UnicodeDecodeError, json.JSONDecodeError) as error:
+              fail(f"invalid writable mount audit JSON: {error}")
+          if set(payload) != {"filesystems"}:
+              fail("unexpected writable mount audit root keys")
+          filesystems = payload["filesystems"]
+          if not isinstance(filesystems, list) or not filesystems:
+              fail("unexpected writable mount audit mount count")
+          if len(filesystems) > MAX_FILESYSTEMS:
+              fail("writable mount audit mount count exceeds bounds")
+
+          seen = set()
+          records = []
+          for filesystem in filesystems:
+              if not isinstance(filesystem, dict):
+                  fail("writable mount audit row is not an object")
+              extra = set(filesystem) - {"options", "target"}
+              if extra:
+                  fail("unexpected writable mount audit row keys")
+              target = validate_text(filesystem.get("target"), field="target")
+              if not target.startswith("/"):
+                  fail("findmnt target is not absolute")
+              if target in seen:
+                  fail("findmnt target repeats")
+              seen.add(target)
+              options = validate_options(filesystem.get("options"))
+              records.append((target, options))
+
+          sys.stdout.buffer.write(
+              b"".join(
+                  item.encode("utf-8") + b"\0"
+                  for target, options in records
+                  for item in (target, options)
+              )
+          )
+        PY
+        }
+        create_runtime_transport_file() {
+          local path
+          local file_type
+          path="$(/usr/bin/mktemp "/dev/shm/$1.XXXXXXXXXX")" || return 125
+          test -f "$path" || return 125
+          test ! -L "$path" || return 125
+          file_type="$(/usr/bin/stat -c %F "$path")" || return 125
+          case "$file_type" in
+            "regular file"|"regular empty file") ;;
+            *) return 125 ;;
+          esac
+          test "$(/usr/bin/stat -c %u "$path")" = 0 || return 125
+          test "$(/usr/bin/stat -c %a "$path")" = 600 || return 125
+          test "$(/usr/bin/stat -c %h "$path")" = 1 || return 125
+          printf '%s\n' "$path"
+        }
+        checked_runtime_transport_signature() {
+          local path="$1"
+          local size_limit="$2"
+          local file_type
+          local size
+          test -f "$path" || return 125
+          test ! -L "$path" || return 125
+          file_type="$(/usr/bin/stat -c %F "$path")" || return 125
+          case "$file_type" in
+            "regular file"|"regular empty file") ;;
+            *) return 125 ;;
+          esac
+          test "$(/usr/bin/stat -c %u "$path")" = 0 || return 125
+          test "$(/usr/bin/stat -c %a "$path")" = 600 || return 125
+          test "$(/usr/bin/stat -c %h "$path")" = 1 || return 125
+          size="$(/usr/bin/stat -c %s "$path")" || return 125
+          test "$size" -le "$size_limit" || return 125
+          /usr/bin/stat -Lc '%d:%i:%f:%u:%g:%s:%h:%a' "$path"
+        }
+        read_checked_runtime_transport_file() {
+          local path="$1"
+          local size_limit="$2"
+          local -n output_ref="$3"
+          local signature
+          signature="$(checked_runtime_transport_signature "$path" "$size_limit")" || return 125
+          mapfile -d '' -t output_ref < "$path" || return 125
+          test "$(checked_runtime_transport_signature "$path" "$size_limit")" = \
+            "$signature" || return 125
+        }
+        remove_runtime_transport_file() {
+          local path="$1"
+          /bin/rm -f -- "$path" || return 125
+          test ! -e "$path" || return 125
+        }
+        writable_mount_records_max_bytes=1048576
+        writable_mount_records_file="$(create_runtime_transport_file writable-mount-records)"
+        list_writable_mount_records > "$writable_mount_records_file"
+        read_checked_runtime_transport_file \
+          "$writable_mount_records_file" \
+          "$writable_mount_records_max_bytes" \
+          writable_mount_records
+        remove_runtime_transport_file "$writable_mount_records_file"
+        test "$(( ${#writable_mount_records[@]} % 2 ))" -eq 0
+        for ((index=0; index < ${#writable_mount_records[@]}; index+=2)); do
+          mount_target="${writable_mount_records[index]}"
+          mount_options="${writable_mount_records[index + 1]}"
+          case ",$mount_options," in
+            *,rw,*)
+              case "$mount_target" in
+                /dev/shm|/mnt/handoff|/mnt/home|/mnt/source|/mnt/tmp|/tmp) ;;
+                *) echo "unexpected writable mount: $mount_target" >&2; exit 1 ;;
+              esac
+              ;;
+          esac
+        done
         exec < /dev/null > /dev/null 2>&1
         ulimit -c 0
         ulimit -f 131072
@@ -2204,16 +2375,6 @@ jobs:
         test ! -e /sys/fs/cgroup/cgroup.procs
         test -z "$(/usr/bin/find / -xdev -type s \
           -print -quit 2>/dev/null)"
-        while read -r mount_target mount_options; do
-          case ",$mount_options," in
-            *,rw,*)
-              case "$mount_target" in
-                /dev/shm|/mnt/handoff|/mnt/home|/mnt/source|/mnt/tmp|/tmp) ;;
-                *) echo "unexpected writable mount: $mount_target" >&2; exit 1 ;;
-              esac
-              ;;
-          esac
-        done < <(/usr/bin/findmnt -Rrno TARGET,OPTIONS /)
         /usr/bin/python3 -m venv "$HOME/venv"
         "$HOME/venv/bin/python3" -m pip install --no-index --find-links="$WHEELHOUSE" --require-hashes --only-binary=:all: --no-deps -r "$GITHUB_WORKSPACE/.github/requirements/build.txt"
         cd "$GITHUB_WORKSPACE"

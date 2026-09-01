@@ -66,6 +66,15 @@ verifies that only `/dev` remains before recreating the private device tree.
 The root-owned mode-`0700` `/mnt/supervisor` parent denies candidate read,
 write, execute, and traversal; its exact cgroup child remains read-only and is
 rechecked before ROM handoff.
+Before candidate code starts, the trusted wrapper also decodes structured
+`findmnt --json --list --output TARGET,OPTIONS -R /` output, writes checked
+NUL-framed mount target/option records through a root-owned regular temp file,
+and audits every actual writable mount in the isolated namespace. Only
+`/dev/shm`, `/mnt/handoff`, `/mnt/home`, `/mnt/source`, `/mnt/tmp`, and `/tmp`
+may carry an exact `rw` option token; spaces and backslashes in decoded target
+paths are handled losslessly, while control-character targets, malformed
+option-token grammar, duplicate rows, extra keys, raw escaped text, and any
+unexpected writable mount fail closed.
 
 ### Negative control
 
@@ -179,6 +188,15 @@ and rechecked so only `/dev` remains before the private device tree is
 recreated. Retained descendants, raw escaped target text, paths outside `/dev`,
 malformed JSON, duplicate targets, NUL-bearing targets, and unsafe transport
 files are rejected.
+After the private device tree is recreated and before candidate code starts,
+the trusted wrapper decodes structured `findmnt --json --list --output
+TARGET,OPTIONS -R /` output into checked NUL-framed mount target/option
+records, then audits every actual writable mount. Only `/dev/shm`,
+`/mnt/handoff`, `/mnt/home`, `/mnt/source`, `/mnt/tmp`, and `/tmp` may expose
+an exact `rw` option token. Decoded targets with spaces or backslashes remain
+lossless; control-character targets, malformed or ambiguous option-token
+grammar, duplicate rows, extra keys, parser failure, unchecked process
+substitution, and any unexpected writable mount fail closed.
 
 ### Negative control
 
