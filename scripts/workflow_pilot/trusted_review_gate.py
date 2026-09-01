@@ -1023,24 +1023,31 @@ def run_base_pinned_checker(
     checker_path = sandbox / "review_base_checker.py"
     assertion_program_path = sandbox / "review_assertions.py"
     input_path = sandbox / "checker-input.json"
+    base_root = sandbox / "base"
     origin_root = sandbox / "origin"
     head_root = sandbox / "head"
     probe_root = sandbox / ".assertion-probes"
+    base_root.mkdir()
     origin_root.mkdir()
     head_root.mkdir()
     probe_root.mkdir(mode=0o700)
     assertion_input_artifacts = []
     for relative in ASSERTION_INPUT_PATHS:
+        base_bytes = reporter.run_git(root, "show", f"{base_sha}:{relative}")
         origin_bytes = reporter.run_git(
             root, "show", f"{finding_origin_sha}:{relative}"
         )
         head_bytes = reporter.run_git(root, "show", f"{candidate_sha}:{relative}")
+        base_target = base_root / relative
         origin_target = origin_root / relative
         head_target = head_root / relative
+        base_target.parent.mkdir(parents=True, exist_ok=True)
         origin_target.parent.mkdir(parents=True, exist_ok=True)
         head_target.parent.mkdir(parents=True, exist_ok=True)
+        base_target.write_bytes(base_bytes)
         origin_target.write_bytes(origin_bytes)
         head_target.write_bytes(head_bytes)
+        base_target.chmod(0o444)
         origin_target.chmod(0o444)
         head_target.chmod(0o444)
         assertion_input_artifacts.append(
@@ -1063,6 +1070,7 @@ def run_base_pinned_checker(
     checker_input["assertion_program_argv"] = list(ASSERTION_PROGRAM_ARGV)
     checker_input["finding_origin_sha"] = finding_origin_sha
     checker_input["finding_origin_tree"] = finding_origin_tree
+    checker_input["base_root"] = str(base_root)
     checker_input["origin_root"] = str(origin_root)
     checker_input["head_root"] = str(head_root)
     checker_input["assertion_input_artifacts"] = assertion_input_artifacts
@@ -1074,7 +1082,7 @@ def run_base_pinned_checker(
     for directory in sorted(
         {
             path
-            for root_path in (origin_root, head_root)
+            for root_path in (base_root, origin_root, head_root)
             for target in root_path.rglob("*")
             for path in ([target] if target.is_dir() else [])
         },
@@ -1082,6 +1090,7 @@ def run_base_pinned_checker(
         reverse=True,
     ):
         directory.chmod(0o555)
+    base_root.chmod(0o555)
     origin_root.chmod(0o555)
     head_root.chmod(0o555)
     sandbox.chmod(0o555)
@@ -1117,13 +1126,13 @@ def run_base_pinned_checker(
             and sandbox.stat().st_mode & 0o222 == 0
             and all(
                 path.stat().st_mode & 0o222 == 0
-                for root_path in (origin_root, head_root)
+                for root_path in (base_root, origin_root, head_root)
                 for path in (root_path, *root_path.rglob("*"))
             )
         )
     finally:
         sandbox.chmod(0o700)
-        for root_path in (origin_root, head_root):
+        for root_path in (base_root, origin_root, head_root):
             for directory in sorted(
                 (path for path in root_path.rglob("*") if path.is_dir()),
                 key=lambda path: len(path.parts),
@@ -1207,7 +1216,20 @@ def run_base_pinned_checker(
         "started_at": _format_time(started),
         "completed_at": _format_time(finished),
         "exit_code": completed.returncode,
-        "result": "pass" if completed.returncode == 0 else "fail",
+        "result": (
+            "hold"
+            if parsed_output
+            and any(
+                reporter.expect_object(
+                    item, "base checker output.results[]"
+                )["status"]
+                == "hold"
+                for item in parsed_output["results"]
+            )
+            else "pass"
+            if completed.returncode == 0
+            else "fail"
+        ),
         "output_sha256": hashlib.sha256(output).hexdigest(),
     }
     raw["seal"] = _execution_receipt_seal(raw, trusted_key)

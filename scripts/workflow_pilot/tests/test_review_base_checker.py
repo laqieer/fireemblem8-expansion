@@ -816,8 +816,10 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         origin_sha = self.base if review_round == 1 else self.head1
         head_sha = (self.head1 if review_round == 1 else self.head2) if candidate_sha is None else candidate_sha
         head_tree = git_text(self.repo, "rev-parse", f"{head_sha}^{{tree}}") if candidate_tree is None else candidate_tree
+        base_root = case_root / "base"
         origin_root = case_root / "origin"
         head_root = case_root / "head"
+        self.materialize_input_root(self.base, base_root)
         self.materialize_input_root(origin_sha, origin_root)
         self.materialize_input_root(head_sha, head_root)
         program_path = case_root / "review_assertions.py"
@@ -881,6 +883,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             "assertion_program_argv": list(review_base_checker.ASSERTION_PROGRAM_ARGV),
             "finding_origin_sha": origin_sha,
             "finding_origin_tree": git_text(self.repo, "rev-parse", f"{origin_sha}^{{tree}}"),
+            "base_root": str(base_root),
             "origin_root": str(origin_root),
             "head_root": str(head_root),
             "assertion_input_artifacts": self.assertion_artifacts(origin_sha, head_sha),
@@ -963,9 +966,84 @@ class ReviewBaseCheckerTests(unittest.TestCase):
     def execute(self, data):
         return review_base_checker.execute_registry(copy.deepcopy(data))
 
+    def execute_via_cli(self, data):
+        case_root = Path(data["assertion_program_path"]).parent
+        checker_path = case_root / "review_base_checker.py"
+        input_path = case_root / "checker-input.json"
+        checker_path.write_bytes(
+            (
+                ROOT / "scripts/workflow_pilot/review_base_checker.py"
+            ).read_bytes()
+        )
+        input_path.write_bytes(reporter.normalized_json(data))
+        completed = subprocess.run(
+            (
+                "/usr/bin/python3",
+                "-I",
+                str(checker_path),
+                "--input",
+                str(input_path),
+            ),
+            cwd=case_root,
+            env={
+                "HOME": str(case_root),
+                "LC_ALL": "C",
+                "PATH": "/usr/bin:/bin",
+                "PYTHONHASHSEED": "0",
+            },
+            check=False,
+            capture_output=True,
+        )
+        if completed.returncode != 0:
+            detail = completed.stderr.decode("utf-8", errors="replace").strip()
+            raise AssertionError(detail or "review_base_checker CLI failed")
+        parsed = json.loads(
+            completed.stdout.decode("utf-8"),
+            object_pairs_hook=review_base_checker.object_no_duplicates,
+        )
+        self.assertEqual(
+            review_base_checker.normalized_json(parsed), completed.stdout
+        )
+        return parsed
+
     def assert_rejected(self, data, message):
         with self.assertRaisesRegex(review_base_checker.CheckError, message):
             self.execute(data)
+
+    def assert_held(
+        self,
+        data,
+        *,
+        assertion_id=None,
+        finding_id=None,
+        dependency_paths=None,
+    ):
+        result = self.execute(data)
+        matches = result["results"]
+        if assertion_id is not None:
+            matches = [
+                item for item in matches if item["assertion_id"] == assertion_id
+            ]
+        if finding_id is not None:
+            matches = [
+                item
+                for item in matches
+                if item["authority_binding"]["finding_id"] == finding_id
+            ]
+        self.assertEqual(len(matches), 1)
+        held = matches[0]
+        self.assertEqual(held["status"], "hold")
+        self.assertEqual(
+            held["output"]["hold_reason"], "authority-dependency-changed"
+        )
+        self.assertTrue(held["output"]["external_review_required"])
+        self.assertTrue(held["output"]["fresh_base_required"])
+        if dependency_paths is not None:
+            self.assertEqual(
+                [item["path"] for item in held["output"]["authority_dependencies"]],
+                dependency_paths,
+            )
+        return held
 
     def evaluate_member_contract(self, family, member, data, commit_sha, binding):
         case_root = self.case_dir()
@@ -974,7 +1052,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         validated = review_base_checker.validate_input(copy.deepcopy(data))
         checker_input = review_base_checker._assertion_program_context(validated)
         return review_assertions.evaluate_member_contract(
-            family, member, root, binding, checker_input
+            family, member, root, Path(checker_input["base_root"]), binding, checker_input
         )
 
     def assert_member_rejected(self, family, member, data, commit_sha, message, binding):
@@ -1134,7 +1212,12 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             candidate_sha=witness_head,
             candidate_tree=witness_tree,
         )
-        self.assert_rejected(data, "member-item authority binding is incomplete")
+        self.assert_held(
+            data,
+            assertion_id="registry:sibling:action:items:affected-fixed:v2",
+            finding_id="FINDING-ACTION-1",
+            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+        )
 
     def test_comment_docstring_dead_branch_and_constant_spoofs_fail(self):
         for kind in ("comment", "docstring", "dead-if", "constant"):
@@ -1145,8 +1228,11 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                     candidate_sha=spoof_head,
                     candidate_tree=spoof_tree,
                 )
-                self.assert_rejected(
-                    data, "member-item authority binding is incomplete"
+                self.assert_held(
+                    data,
+                    assertion_id="registry:sibling:action:items:affected-fixed:v2",
+                    finding_id="FINDING-ACTION-1",
+                    dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
                 )
 
     def test_action_sequence_enforcement_bypass_fails(self):
@@ -1164,7 +1250,12 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 }
             ],
         )
-        self.assert_rejected(data, "read-only action sequence is not enforced")
+        self.assert_held(
+            data,
+            assertion_id="registry:sibling:action:actions:verified-unaffected:v2",
+            finding_id="FINDING-ACTION-1",
+            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+        )
 
     def test_action_import_name_probe_bypass_fails(self):
         bypass_head, bypass_tree = self._make_action_import_name_bypass_head()
@@ -1181,7 +1272,12 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 }
             ],
         )
-        self.assert_rejected(data, "read-only action sequence is not enforced")
+        self.assert_held(
+            data,
+            assertion_id="registry:sibling:action:actions:verified-unaffected:v2",
+            finding_id="FINDING-ACTION-1",
+            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+        )
 
     def test_action_repository_whitelist_bypass_fails(self):
         bypass_head, bypass_tree = self._make_action_repository_whitelist_head()
@@ -1198,7 +1294,12 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 }
             ],
         )
-        self.assert_rejected(data, "read-only action sequence is not enforced")
+        self.assert_held(
+            data,
+            assertion_id="registry:sibling:action:actions:verified-unaffected:v2",
+            finding_id="FINDING-ACTION-1",
+            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+        )
 
     def test_action_argv_probe_bypass_fails(self):
         bypass_head, bypass_tree = self._make_action_argv_bypass_head()
@@ -1215,7 +1316,12 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 }
             ],
         )
-        self.assert_rejected(data, "read-only action sequence is not enforced")
+        self.assert_held(
+            data,
+            assertion_id="registry:sibling:action:actions:verified-unaffected:v2",
+            finding_id="FINDING-ACTION-1",
+            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+        )
 
     def test_action_path_probe_bypass_fails(self):
         bypass_head, bypass_tree = self._make_action_path_bypass_head()
@@ -1232,7 +1338,12 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 }
             ],
         )
-        self.assert_rejected(data, "read-only action sequence is not enforced")
+        self.assert_held(
+            data,
+            assertion_id="registry:sibling:action:actions:verified-unaffected:v2",
+            finding_id="FINDING-ACTION-1",
+            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+        )
 
     def test_action_sequence_verified_unaffected_runs_live_validator(self):
         data = self.build_input(
@@ -1246,7 +1357,78 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 }
             ],
         )
-        result = self.execute(data)
+        self.assert_held(
+            data,
+            assertion_id="registry:sibling:action:actions:verified-unaffected:v2",
+            finding_id="FINDING-ACTION-1",
+            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+        )
+
+    def test_action_member_passes_when_checker_authority_matches_base(self):
+        self._restore_baseline()
+        (self.repo / "changed.txt").write_text(
+            "clean action candidate\n", encoding="utf-8"
+        )
+        action_head = self._commit("action-clean-head")
+        action_tree = git_text(self.repo, "rev-parse", f"{action_head}^{{tree}}")
+        original_changes = review_family.derive_change_records(
+            self.repo, self.base, action_head
+        )
+        data = self.build_input(
+            review_round=1,
+            candidate_sha=action_head,
+            candidate_tree=action_tree,
+            assertion_requests=[
+                {
+                    "assertion_id": (
+                        "registry:sibling:action:actions:verified-unaffected:v2"
+                    ),
+                    "finding_id": "LOCAL-ACTION-1",
+                }
+            ],
+        )
+        data["original_pre_review_head"] = action_head
+        data["original_changes"] = copy.deepcopy(original_changes)
+        data["original_pre_review"] = {
+            **self.review_report(),
+            "candidate_sha": action_head,
+            "reviewed_files": changed_files(original_changes),
+            "reviewed_changes": copy.deepcopy(original_changes),
+            "findings": [
+                {
+                    "id": "LOCAL-ACTION-1",
+                    "family": "action",
+                    "created_at": "2026-09-01T00:00:30Z",
+                }
+            ],
+        }
+        original_receipt = copy.deepcopy(self.original_review_receipt())
+        original_receipt["candidate_sha"] = action_head
+        original_receipt["payload_b64"] = base64.b64encode(
+            reporter.normalized_json(data["original_pre_review"])
+        ).decode("ascii")
+        data["original_review_receipt"] = original_receipt
+        data["original_receipt_sha256"] = hashlib.sha256(
+            reporter.normalized_json(original_receipt)
+        ).hexdigest()
+        data["review_context"]["candidate_sha"] = action_head
+        data["all_remote_reviews"][0]["candidate_sha"] = action_head
+        data["review_context"]["finding_ids"] = []
+        data["all_remote_reviews"][0]["finding_ids"] = []
+        data["remote_findings"] = []
+        data["remote_finding_ids"] = []
+        data["review_contract"] = self.review_contract(action_head)
+        data["review_contract"]["original_pre_review_head"] = action_head
+        data["review_contract"]["family_sweeps"] = self.configured_family_sweeps(
+            data["original_pre_review"]["findings"],
+            [],
+            data["assertion_requests"],
+        )
+        data["captured_github_payload"] = self.captured_github_payload(
+            action_head, data["all_remote_reviews"], []
+        )
+        result = self.execute_via_cli(data)
+        self.assertEqual(result["results"][0]["status"], "pass")
         self.assertEqual(
             result["results"][0]["output"]["program_case"],
             "member/action/actions/verified-unaffected",
@@ -1259,7 +1441,12 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             candidate_sha=spoof_head,
             candidate_tree=spoof_tree,
         )
-        self.assert_rejected(data, "member-item authority binding is incomplete")
+        self.assert_held(
+            data,
+            assertion_id="registry:sibling:action:items:affected-fixed:v2",
+            finding_id="FINDING-ACTION-1",
+            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+        )
 
     def test_member_binding_import_name_whitelist_fails(self):
         spoof_head, spoof_tree = self._make_action_binding_import_name_head()
@@ -1268,7 +1455,12 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             candidate_sha=spoof_head,
             candidate_tree=spoof_tree,
         )
-        self.assert_rejected(data, "member-item authority binding is incomplete")
+        self.assert_held(
+            data,
+            assertion_id="registry:sibling:action:items:affected-fixed:v2",
+            finding_id="FINDING-ACTION-1",
+            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+        )
 
     def test_member_binding_argv_whitelist_fails(self):
         spoof_head, spoof_tree = self._make_action_binding_argv_head()
@@ -1277,7 +1469,12 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             candidate_sha=spoof_head,
             candidate_tree=spoof_tree,
         )
-        self.assert_rejected(data, "member-item authority binding is incomplete")
+        self.assert_held(
+            data,
+            assertion_id="registry:sibling:action:items:affected-fixed:v2",
+            finding_id="FINDING-ACTION-1",
+            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+        )
 
     def test_member_binding_path_whitelist_fails(self):
         spoof_head, spoof_tree = self._make_action_binding_path_head()
@@ -1286,7 +1483,12 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             candidate_sha=spoof_head,
             candidate_tree=spoof_tree,
         )
-        self.assert_rejected(data, "member-item authority binding is incomplete")
+        self.assert_held(
+            data,
+            assertion_id="registry:sibling:action:items:affected-fixed:v2",
+            finding_id="FINDING-ACTION-1",
+            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+        )
 
     def test_whitespace_and_order_refactor_preserves_member_fix(self):
         refactor_head, refactor_tree = self._make_item_refactor_head()
@@ -1295,14 +1497,12 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             candidate_sha=refactor_head,
             candidate_tree=refactor_tree,
         )
-        result = self.execute(data)
-        member = next(
-            item
-            for item in result["results"]
-            if item["authority_binding"]["finding_id"] == "FINDING-ACTION-1"
+        self.assert_held(
+            data,
+            assertion_id="registry:sibling:action:items:affected-fixed:v2",
+            finding_id="FINDING-ACTION-1",
+            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
         )
-        self.assertEqual(member["output"]["origin_status"], "fail")
-        self.assertEqual(member["output"]["head_status"], "pass")
 
     def test_wire_producer_dead_ast_spoofs_fail(self):
         for kind in (
@@ -1321,13 +1521,11 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                     candidate_sha=spoof_head,
                     candidate_tree=spoof_tree,
                 )
-                self.assert_member_rejected(
-                    "wire",
-                    "producers",
+                self.assert_held(
                     data,
-                    spoof_head,
-                    "wire producers are incomplete",
-                    binding,
+                    assertion_id="registry:sibling:wire:producers:verified-unaffected:v2",
+                    finding_id="FINDING-WIRE-1",
+                    dependency_paths=["scripts/workflow_pilot/trusted_review_gate.py"],
                 )
 
     def test_wire_producer_real_contract_still_passes(self):
@@ -1355,13 +1553,11 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             candidate_sha=producer_head,
             candidate_tree=producer_tree,
         )
-        self.assert_member_rejected(
-            "wire",
-            "producers",
+        self.assert_held(
             data,
-            producer_head,
-            "wire producers are incomplete",
-            binding,
+            assertion_id="registry:sibling:wire:producers:verified-unaffected:v2",
+            finding_id="FINDING-WIRE-1",
+            dependency_paths=["scripts/workflow_pilot/trusted_review_gate.py"],
         )
 
         consumer_head, consumer_tree = self._make_wire_source_kind_consumer_head()
@@ -1370,13 +1566,11 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             candidate_tree=consumer_tree,
             assertion_id="registry:sibling:wire:consumers:verified-unaffected:v2",
         )
-        self.assert_member_rejected(
-            "wire",
-            "consumers",
+        self.assert_held(
             data,
-            consumer_head,
-            "wire consumers are incomplete",
-            binding,
+            assertion_id="registry:sibling:wire:consumers:verified-unaffected:v2",
+            finding_id="FINDING-WIRE-1",
+            dependency_paths=["scripts/workflow_pilot/review_family.py"],
         )
 
     def test_round_two_remote_finding_executes_real_remediation_round(self):
@@ -1390,6 +1584,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             for item in result["results"]
             if item["authority_binding"]["finding_id"] == "FINDING-ACTION-1"
         )
+        self.assertEqual(member["status"], "hold")
         self.assertEqual(member["authority_binding"]["finding_family"], "action")
         self.assertEqual(member["authority_binding"]["finding_member"], "items")
         self.assertEqual(
@@ -1406,8 +1601,9 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         )
         self.assertEqual(member["authority_binding"]["head_sha"], self.head2)
         self.assertEqual(member["authority_binding"]["head_tree"], self.head2_tree)
-        self.assertEqual(member["output"]["origin_status"], "fail")
-        self.assertEqual(member["output"]["head_status"], "pass")
+        self.assertEqual(
+            member["output"]["hold_reason"], "authority-dependency-changed"
+        )
 
 
 if __name__ == "__main__":

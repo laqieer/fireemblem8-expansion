@@ -1427,7 +1427,13 @@ game behavior needs a compensating change.
    the child has no credentials or proxy/PYTHONPATH injection and receipts
    bind both tree OIDs, member artifact blobs, exit/status, canonical stdout
    digest, and semantic output over real production workflow-governance
-   artifacts rather than standalone witness JSON.
+   artifacts rather than standalone witness JSON. If any authority dependency
+   blob differs from the exact base (`review_assertions.py` plus the member's
+   exact validator/consumer such as `review_base_checker.py`,
+   `review_family.py`, `trusted_review_gate.py`, `candidate_evidence.py`, or
+   `event_classifier.py`), require the explicit
+   `authority-dependency-changed` hold instead of executing candidate-owned
+   authority code.
 7. Sign canonical pre-review bytes with a test-only external key. Verify exact
    repository/PR/base/head, epoch, purpose, expiry, nonce, and atomic replay.
    Keep `LOCAL-` findings in that immutable receipt, separately collect later
@@ -1444,7 +1450,10 @@ game behavior needs a compensating change.
    For action siblings, execute the reviewed `review_base_checker.py` in
    actual `__main__` script context with the production `--input
    checker-input.json` argv/home/path shape and reject package-only,
-   argv-only, or cwd/HOME-only whitelists. For wire siblings, replay a
+   argv-only, or cwd/HOME-only whitelists. For generated outputs, validate
+   unchanged exact-base `candidate_evidence.py` and `event_classifier.py`
+   behavior with authoritative current PR/base/head inputs and require a hold
+   when either blob changed. For wire siblings, replay a
    captured authoritative `live-gh-api` payload with no network, compare it to
    the offline transform payload, and require the current producer/consumer to
    preserve one shared wire schema across both modes.
@@ -1480,7 +1489,10 @@ game behavior needs a compensating change.
     and remediate each prior round's findings on the next head. Confirm the
     round-3 and round-6 dispositions authorize their next exact heads, G has
     the final clean review, all seven receipt seals are distinct, stale
-    round/head evidence fails, and replaying A's nonce fails.
+    round/head evidence fails, and replaying A's nonce fails. If any earlier
+    round changed a still-authoritative member dependency, require the final
+    report to surface `authority_hold.required: true` and deny merge/push even
+    with the later clean review.
 
 ### Expected result
 
@@ -1489,7 +1501,8 @@ Introducing mode fails closed against the real base. A later base-pinned gate
 can authorize only from the exact clean trusted base with two matching live
 snapshots, one preserved original A receipt, every chronological round/head
 receipt, member-specific base-owned assertion results, clean current-head
-Copilot review, and no unresolved thread or held head.
+Copilot review, and no unresolved thread, held head, or
+authority-dependency hold.
 
 ### Negative control
 

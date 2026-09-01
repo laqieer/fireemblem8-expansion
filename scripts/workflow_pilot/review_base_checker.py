@@ -1021,6 +1021,7 @@ def _assertion_program_context(data: dict[str, Any]) -> dict[str, Any]:
         "assertion_program_argv": data["assertion_program_argv"],
         "finding_origin_sha": data["finding_origin_sha"],
         "finding_origin_tree": data["finding_origin_tree"],
+        "base_root": str(data["base_root"]),
         "origin_root": str(data["origin_root"]),
         "head_root": str(data["head_root"]),
         "assertion_input_artifacts": data["assertion_input_artifacts"],
@@ -1173,6 +1174,7 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
             "assertion_program_argv",
             "finding_origin_sha",
             "finding_origin_tree",
+            "base_root",
             "origin_root",
             "head_root",
             "assertion_input_artifacts",
@@ -1270,6 +1272,7 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
     finding_origin_tree = expect_sha(
         data["finding_origin_tree"], "checker input.finding_origin_tree"
     )
+    base_root = Path(expect_string(data["base_root"], "checker input.base_root"))
     origin_root = Path(
         expect_string(data["origin_root"], "checker input.origin_root")
     )
@@ -1461,6 +1464,19 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
     assertion_input_artifacts = _validate_assertion_input_artifacts(
         data["assertion_input_artifacts"], expected_assertion_input_artifacts
     )
+    base_root_resolved = _validate_materialized_root(
+        base_root,
+        "checker input.base_root",
+        {
+            path: git_blob_oid_at_revision(
+                repository_root,
+                base_sha,
+                path,
+                f"checker input base production input {path!r}",
+            )
+            for path in ASSERTION_INPUT_PATHS
+        },
+    )
     origin_root_resolved = _validate_materialized_root(
         origin_root,
         "checker input.origin_root",
@@ -1505,6 +1521,7 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         "assertion_program_argv": list(ASSERTION_PROGRAM_ARGV),
         "finding_origin_sha": expected_finding_origin_sha,
         "finding_origin_tree": expected_finding_origin_tree,
+        "base_root": base_root_resolved,
         "origin_root": origin_root_resolved,
         "head_root": head_root_resolved,
         "assertion_input_artifacts": assertion_input_artifacts,
@@ -1634,9 +1651,13 @@ def execute_registry(raw_input: Any) -> dict[str, Any]:
         if (
             program_result["schema_version"] != 1
             or program_result["assertion_id"] != assertion_id
-            or program_result["status"] != "pass"
         ):
             raise CheckError("assertion program output contradicts request")
+        result_status = expect_string(
+            program_result["status"], "assertion program output.status"
+        )
+        if result_status not in {"pass", "hold"}:
+            raise CheckError("assertion program output.status is not supported")
         output = expect_object(
             program_result["output"], "assertion program semantic output"
         )
@@ -1676,7 +1697,7 @@ def execute_registry(raw_input: Any) -> dict[str, Any]:
                 "base_sha": data["base_sha"],
                 "candidate_sha": data["candidate_sha"],
                 "review_round": data["review_round"],
-                "status": "pass",
+                "status": result_status,
             }
         )
     if not results:

@@ -621,10 +621,19 @@ roots: the reviewed decision record, workflow-governance docs/registry, docs
 check tests, event-classifier/candidate-evidence contracts, and the trusted
 review-family Python modules themselves. There is no standalone witness JSON:
 candidate-authored sidecar files cannot self-attest a member outcome.
-Candidate registry/program additions or edits are never executed, and the
-child receives a closed environment without GitHub/HMAC credentials,
-proxy/PYTHONPATH injection, network-capable candidate programs, or inherited
-startup hooks.
+Candidate registry/program additions or edits are never executed. Each sibling
+member first compares its exact-base authority dependency blobs:
+`review_assertions.py` globally, plus the member's owning validator or
+consumer such as `review_base_checker.py`, `review_family.py`,
+`trusted_review_gate.py`, `candidate_evidence.py`, or `event_classifier.py`.
+If any authoritative blob differs in either the origin or remediation tree,
+the member returns an explicit `authority-dependency-changed` hold requiring a
+fresh base and external review; it does not probe or execute candidate-owned
+authority code. When the authority blobs are unchanged, the base-owned
+program executes only exact-base validators/consumers over the real
+production artifacts. The child receives a closed environment without
+GitHub/HMAC credentials, proxy/PYTHONPATH injection, network-capable
+candidate programs, or inherited startup hooks.
 
 Each `affected-fixed` assertion executes the fixed member program against the
 origin artifact and requires failing semantics, then executes it against the
@@ -642,6 +651,10 @@ success is inadmissible. Wire producers consume a captured credentialed
 `live-gh-api` payload through `collect_live_evidence_bytes`, compare it with
 the offline packaging path, and require both modes to preserve the same shared
 wire schema before the current `review_family.py` consumer accepts them.
+Generated-output members never execute candidate-edited
+`candidate_evidence.py` or `event_classifier.py`: unchanged base blobs are
+validated with authoritative current PR/base/head inputs, and changed blobs
+produce the same explicit authority hold.
 One finding may legitimately reference several affected member assertions;
 each must independently observe its own origin failure and remediation pass.
 Before any sibling result is created, the checker rebinds the candidate
@@ -704,8 +717,9 @@ decision. The integrated A-finding → B-finding → C progression retains A's
 receipt, binds separate round/head assertions, and continues through
 independent round-3 and round-6 dispositions. Only matching snapshots, one
 replay-consumed original receipt, all chronological execution receipts, no
-unresolved hold/thread, and a clean remote Copilot review on the current exact
-head can authorize merge or trusted push.
+unresolved architectural hold/thread, no authority-dependency hold, and a
+clean remote Copilot review on the current exact head can authorize merge or
+trusted push.
 The importable core and every offline fixture always deny those authorities.
 
 ### Metric and lifecycle integration

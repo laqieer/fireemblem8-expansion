@@ -319,7 +319,10 @@ class TrustedGitHubGateTests(unittest.TestCase):
         assertion_source = (
             ROOT / trusted_review_gate.ASSERTION_PROGRAM_PATH
         ).read_text(encoding="utf-8")
-        self.assertIn("network access denied in assertion subprocess", assertion_source)
+        self.assertNotIn("CHILD_RUNNER", assertion_source)
+        self.assertNotIn("ACTION_PROBE_RUNNER", assertion_source)
+        self.assertNotIn("candidate-fabricated-pass", assertion_source)
+        self.assertIn("def evaluate_member_dispatch(", assertion_source)
         for forbidden_import in (
             "import urllib",
             "import requests",
@@ -2095,7 +2098,12 @@ class TrustedGitHubGateTests(unittest.TestCase):
             self.assertEqual(
                 len(result["provenance"]["execution_receipt_seals"]), 7
             )
-            self.assertTrue(result["gates"]["merge_allowed"])
+            self.assertTrue(result["authority_hold"]["required"])
+            self.assertEqual(
+                result["authority_hold"]["reason"],
+                "authority-dependency-changed",
+            )
+            self.assertFalse(result["gates"]["merge_allowed"])
             preserved_result = trusted_review_gate._run_trusted_gate(
                 raw_contract=contract,
                 repository_root=repository,
@@ -2114,7 +2122,8 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 adapter=StaticAdapter(payload),
                 clock=clock,
             )
-            self.assertTrue(preserved_result["gates"]["merge_allowed"])
+            self.assertTrue(preserved_result["authority_hold"]["required"])
+            self.assertFalse(preserved_result["gates"]["merge_allowed"])
 
             stale_payload = copy.deepcopy(payload)
             stale_payload["data"]["repository"]["pullRequest"]["reviews"][

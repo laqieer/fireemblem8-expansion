@@ -1599,6 +1599,97 @@ def _validate_result_binding(value: Any, label: str) -> dict[str, Any]:
     }
 
 
+def _validate_authority_hold_output(
+    output: dict[str, Any], label: str
+) -> dict[str, Any]:
+    hold_reason = reporter.expect_string(
+        output.get("hold_reason"), f"{label}.hold_reason"
+    )
+    if hold_reason != "authority-dependency-changed":
+        raise reporter.PilotDataError(
+            f"{label}.hold_reason is not supported"
+        )
+    if not reporter.expect_bool(
+        output.get("external_review_required"),
+        f"{label}.external_review_required",
+    ):
+        raise reporter.PilotDataError(
+            f"{label}.external_review_required must be true"
+        )
+    if not reporter.expect_bool(
+        output.get("fresh_base_required"),
+        f"{label}.fresh_base_required",
+    ):
+        raise reporter.PilotDataError(
+            f"{label}.fresh_base_required must be true"
+        )
+    dependencies = reporter.expect_list(
+        output.get("authority_dependencies"),
+        f"{label}.authority_dependencies",
+    )
+    if not dependencies:
+        raise reporter.PilotDataError(
+            f"{label}.authority_dependencies must not be empty"
+        )
+    validated = []
+    for index, raw in enumerate(dependencies):
+        dependency = reporter.expect_object(
+            raw, f"{label}.authority_dependencies[{index}]"
+        )
+        reporter.expect_keys(
+            dependency,
+            f"{label}.authority_dependencies[{index}]",
+            (
+                "path",
+                "base_blob_oid",
+                "origin_blob_oid",
+                "head_blob_oid",
+                "origin_changed",
+                "head_changed",
+            ),
+        )
+        origin_changed = reporter.expect_bool(
+            dependency["origin_changed"],
+            f"{label}.authority_dependencies[{index}].origin_changed",
+        )
+        head_changed = reporter.expect_bool(
+            dependency["head_changed"],
+            f"{label}.authority_dependencies[{index}].head_changed",
+        )
+        if not origin_changed and not head_changed:
+            raise reporter.PilotDataError(
+                f"{label}.authority_dependencies[{index}] does not record a changed authority blob"
+            )
+        validated.append(
+            {
+                "path": _validate_path(
+                    dependency["path"],
+                    f"{label}.authority_dependencies[{index}].path",
+                ),
+                "base_blob_oid": reporter.expect_sha(
+                    dependency["base_blob_oid"],
+                    f"{label}.authority_dependencies[{index}].base_blob_oid",
+                ),
+                "origin_blob_oid": reporter.expect_sha(
+                    dependency["origin_blob_oid"],
+                    f"{label}.authority_dependencies[{index}].origin_blob_oid",
+                ),
+                "head_blob_oid": reporter.expect_sha(
+                    dependency["head_blob_oid"],
+                    f"{label}.authority_dependencies[{index}].head_blob_oid",
+                ),
+                "origin_changed": origin_changed,
+                "head_changed": head_changed,
+            }
+        )
+    return {
+        "hold_reason": hold_reason,
+        "external_review_required": True,
+        "fresh_base_required": True,
+        "authority_dependencies": validated,
+    }
+
+
 def _validate_result_manifest(value: Any) -> dict[str, dict[str, Any]]:
     results = {}
     for index, raw in enumerate(
@@ -1701,7 +1792,7 @@ def _validate_result_manifest(value: Any) -> dict[str, dict[str, Any]]:
                 result["review_round"], f"{label}.review_round", 1
             ),
             "status": reporter.expect_enum(
-                result["status"], {"pass"}, f"{label}.status"
+                result["status"], {"pass", "hold"}, f"{label}.status"
             ),
         }
         if (
@@ -1818,9 +1909,9 @@ def _validate_execution_receipts(value: Any) -> list[dict[str, Any]]:
             receipt["exit_code"], f"{label}.exit_code", 0
         )
         result_value = reporter.expect_enum(
-            receipt["result"], {"fail", "pass"}, f"{label}.result"
+            receipt["result"], {"fail", "pass", "hold"}, f"{label}.result"
         )
-        if (exit_code == 0) != (result_value == "pass"):
+        if (exit_code == 0) != (result_value in {"pass", "hold"}):
             raise reporter.PilotDataError(
                 f"{label} exit code contradicts result"
             )
@@ -2605,13 +2696,17 @@ def _validate_execution(
             }
             for path in ASSERTION_INPUT_PATHS
         ]
+        receipt_hold = any(
+            result["status"] == "hold" for result in receipt["assertion_results"]
+        )
+        expected_receipt_result = "hold" if receipt_hold else "pass"
         if (
             receipt["base_sha"] != contract["base_sha"]
             or receipt["original_pre_review_head"]
             != contract["original_pre_review_head"]
             or receipt["review_round"] != round_number
             or receipt["candidate_sha"] != target_head
-            or receipt["result"] != "pass"
+            or receipt["result"] != expected_receipt_result
             or receipt["exit_code"] != 0
             or not receipt["read_only"]
             or not receipt["pre_clean"]
@@ -2757,12 +2852,15 @@ def _validate_execution(
             or result["authority_binding"]["head_sha"] != expected["candidate_sha"]
             or result["review_round"] != expected["review_round"]
             or result["claimed_disposition"] != expected_disposition
-            or result["status"] != "pass"
             or result["input_sha256"]
             != expected["checker_input_sha256"]
         ):
             raise reporter.PilotDataError(
                 f"result {result_id!r} is fabricated or bound to another assertion"
+            )
+        if result["status"] == "hold":
+            _validate_authority_hold_output(
+                result["output"], f"evidence.result_manifest[{result_id}]"
             )
         if result["authority_binding"]["finding_id"] is not None:
             for field, value in result["authority_binding"].items():
@@ -2969,8 +3067,21 @@ def build_report(
     unresolved = sum(
         not thread["is_resolved"] for thread in evidence["threads"].values()
     )
+    authority_holds = [
+        {
+            "id": result["id"],
+            "assertion_id": result["assertion_id"],
+            "finding_id": result["authority_binding"]["finding_id"],
+            "hold_reason": result["output"].get("hold_reason"),
+            "authority_dependencies": result["output"].get(
+                "authority_dependencies", []
+            ),
+        }
+        for result in evidence["result_manifest"].values()
+        if result["status"] == "hold"
+    ]
     executable_complete = bool(execution_seals)
-    structural_push = hold is None and executable_complete
+    structural_push = hold is None and not authority_holds and executable_complete
     structural_merge = bool(
         structural_push and current_clean and unresolved == 0
     )
@@ -3046,6 +3157,15 @@ def build_report(
                 else None
             ),
             "consumed_disposition_ids": consumed,
+        },
+        "authority_hold": {
+            "required": bool(authority_holds),
+            "reason": (
+                "authority-dependency-changed" if authority_holds else None
+            ),
+            "external_review_required": bool(authority_holds),
+            "fresh_base_required": bool(authority_holds),
+            "results": authority_holds,
         },
         "gates": {
             "push_allowed": False,
