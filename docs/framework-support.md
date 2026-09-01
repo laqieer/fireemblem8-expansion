@@ -100,7 +100,8 @@ ROM enters an Actions artifact, cache, release, or log. The three-file patch
 producer is staged from that exact validated after commit with no whole-file
 source hash pins.
 Before `/sys` is masked, the exact owned cgroup is bound read-only below a
-root-only `0700` `/mnt/supervisor`; the candidate cannot traverse it. The
+root-only `0700` `/mnt/supervisor`; the candidate cannot read, write, execute,
+or traverse that parent. The exact cgroup child there remains read-only. The
 wrapper reads that supervisor view after `/sys` is masked and permits handoff
 only when its own PID is the sole member. Host-side kill/removal still uses the
 actual cgroup path.

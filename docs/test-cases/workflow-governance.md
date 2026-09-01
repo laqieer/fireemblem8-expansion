@@ -418,7 +418,8 @@ no candidate command runs while the base exists. Cleanup traps delete the base
 on success/failure, cleanup is verified, and only the patch artifact reaches
 upload.
 Before `/sys` is masked, the exact owned cgroup is bound read-only below a
-root-only `0700` `/mnt/supervisor`; the candidate cannot traverse it. The
+root-only `0700` `/mnt/supervisor`; the candidate cannot read, write, execute,
+or traverse that parent. The exact cgroup child there remains read-only. The
 wrapper reads that supervisor view after `/sys` is masked and permits handoff
 only when its own PID is the sole member. Host-side kill/removal still uses the
 actual cgroup path.

@@ -149,6 +149,21 @@ def dev_mount_target_parser_source(workflow: str) -> str:
     return textwrap.dedent(match.group("body")) + "\n"
 
 
+def dev_mount_transport_section_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Build candidate in isolated namespace and stage public inputs",
+    )
+    start = script.index("create_supervisor_transport_file() {")
+    end_marker = (
+        "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor\n"
+        "/usr/bin/mount -t tmpfs \\\n"
+        "  -o nosuid,mode=0755,size=4m builder-dev /dev"
+    )
+    end = script.index(end_marker, start) + len(end_marker)
+    return script[start:end]
+
+
 def run_dev_mount_target_parser(
     source: str,
     *,
@@ -314,7 +329,30 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "object_pairs_hook=reject_duplicates" not in isolated_step
         or "findmnt target escapes /dev" not in isolated_step
         or "findmnt target contains NUL" not in isolated_step
-        or "mapfile -d '' -t dev_mounts < <(list_dev_mount_targets)"
+        or "builder-supervisor /mnt/supervisor" not in isolated_step
+        or 'path="$(/usr/bin/mktemp "/mnt/supervisor/$1.XXXXXXXXXX")"'
+        not in isolated_step
+        or "create_supervisor_transport_file() {" not in isolated_step
+        or "checked_supervisor_transport_signature() {" not in isolated_step
+        or "read_checked_supervisor_transport_file() {" not in isolated_step
+        or "remove_supervisor_transport_file() {" not in isolated_step
+        or isolated_step.count('test ! -L "$path" || return 125') != 2
+        or 'test "$(/usr/bin/stat -c %a "$path")" = 600' not in isolated_step
+        or isolated_step.count(
+            'test "$(/usr/bin/stat -c %h "$path")" = 1 || return 125'
+        )
+        != 2
+        or 'size="$(/usr/bin/stat -c %s "$path")"' not in isolated_step
+        or 'test "$size" -le "$size_limit" || return 125' not in isolated_step
+        or "stat -Lc '%d:%i:%f:%u:%g:%s:%h:%a' \"$path\"" not in isolated_step
+        or 'test ! -e "$path" || return 125' not in isolated_step
+        or 'list_dev_mount_targets > "$dev_mounts_file"' not in isolated_step
+        or (
+            'read_checked_supervisor_transport_file \\\n'
+            '          "$dev_mounts_file" "$dev_mount_targets_max_bytes" dev_mounts'
+        )
+        not in isolated_step
+        or 'remove_supervisor_transport_file "$dev_mounts_file"'
         not in isolated_step
         or (
             "for ((index=${#dev_mounts[@]} - 1; index >= 0; index--)); do"
@@ -322,12 +360,24 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         not in isolated_step
         or '/dev/*) /usr/bin/umount -- "$dev_mount" ;;'
         not in isolated_step
-        or "mapfile -d '' -t remaining_dev_mounts < <(list_dev_mount_targets)"
+        or 'list_dev_mount_targets > "$remaining_dev_mounts_file"'
+        not in isolated_step
+        or (
+            'read_checked_supervisor_transport_file \\\n'
+            '          "$remaining_dev_mounts_file" \\\n'
+            '          "$dev_mount_targets_max_bytes" \\\n'
+            "          remaining_dev_mounts"
+        )
+        not in isolated_step
+        or 'remove_supervisor_transport_file "$remaining_dev_mounts_file"'
         not in isolated_step
         or 'test "${#remaining_dev_mounts[@]}" -eq 1' not in isolated_step
         or 'test "${remaining_dev_mounts[0]}" = /dev' not in isolated_step
+        or "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"
+        not in isolated_step
         or "/usr/bin/findmnt -Rrno TARGET /dev" in isolated_step
         or "/usr/bin/findmnt --raw" in isolated_step
+        or "< <(list_dev_mount_targets)" in isolated_step
         or "/usr/bin/findmnt -Rrno TARGET,OPTIONS /"
         not in isolated_step
         or "/usr/bin/findmnt -Rno TARGET,OPTIONS /" in isolated_step
@@ -369,6 +419,12 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "builder-shm /dev/shm" not in isolated_step
         or "hidepid=2 /proc" not in isolated_step
         or "/usr/bin/mkdir -m 0700 /mnt/supervisor\n" not in isolated_step
+        or (
+            "/usr/bin/mount -t tmpfs \\\n"
+            "          -o nosuid,nodev,noexec,mode=0700,size=1m \\\n"
+            "          builder-supervisor /mnt/supervisor"
+        )
+        not in isolated_step
         or "/usr/bin/mkdir -m 0700 /mnt/supervisor/cgroup"
         not in isolated_step
         or 'test "$(/usr/bin/stat -c %u /mnt/supervisor)" = 0'
@@ -695,6 +751,16 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         )
         self.assertIn("supervisor_cgroup=/mnt/supervisor/cgroup", self.patch_job)
         self.assertIn('test ! -r /mnt/supervisor', self.patch_job)
+        self.assertIn('test ! -w /mnt/supervisor', self.patch_job)
+        self.assertIn('test ! -x /mnt/supervisor', self.patch_job)
+        self.assertIn(
+            "builder-supervisor /mnt/supervisor",
+            self.patch_job,
+        )
+        self.assertIn(
+            "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor",
+            self.patch_job,
+        )
         supervisor_bind = self.patch_job.index(
             '/usr/bin/mount --bind "$cgroup_path" /mnt/supervisor/cgroup'
         )
@@ -773,48 +839,287 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertEqual(changed_patch, self.patch_job)
 
     def test_device_mount_teardown_executes_deepest_first(self):
-        section_match = re.search(
-            r"(?ms)^        mapfile -d '' -t dev_mounts < <\(list_dev_mount_targets\)\n"
-            r".*?^        done$",
-            self.patch_job,
-        )
-        self.assertIsNotNone(section_match)
-        loop = section_match.group(0).replace(
-            '/usr/bin/umount -- "$dev_mount"',
-            "printf '%s\\0' \"$dev_mount\"",
-        )
-        completed = subprocess.run(
-            [
-                "/bin/bash",
-                "-c",
-                "list_dev_mount_targets() {\n"
-                "  printf '%s\\0' \\\n"
-                "    /dev \\\n"
-                "    $'/dev/name with space' \\\n"
-                "    $'/dev/back\\\\slash' \\\n"
-                "    $'/dev/back\\\\slash/tab\\tchild' \\\n"
-                "    $'/dev/back\\\\slash/new\\nline' \\\n"
-                "    /dev/pts \\\n"
-                "    /dev/pts/9\n"
-                "}\n"
-                + loop,
-            ],
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertEqual(
-            completed.stdout.split(b"\0")[:-1],
-            [
-                b"/dev/pts/9",
-                b"/dev/pts",
-                b"/dev/back\\slash/new\nline",
-                b"/dev/back\\slash/tab\tchild",
-                b"/dev/back\\slash",
-                b"/dev/name with space",
-            ],
-        )
+        section = dev_mount_transport_section_source(self.text)
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="device-mount-transport-order-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            trace = sandbox / "trace"
+            supervisor_root = sandbox / "supervisor"
+            supervisor_root.mkdir(mode=0o700)
+            section = section.replace(
+                "/mnt/supervisor",
+                "$SUPERVISOR_ROOT",
+            )
+            section = section.replace(
+                'test "$(/usr/bin/stat -c %u "$path")" = 0 || return 125',
+                'test "$(/usr/bin/stat -c %u "$path")" = "$SUPERVISOR_UID" || return 125',
+            )
+            section = section.replace(
+                "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec $SUPERVISOR_ROOT",
+                "printf 'OVERMOUNT\\n' >> \"$TRACE_PATH\"",
+            )
+            section = section.replace(
+                '/usr/bin/umount -- "$dev_mount"',
+                "printf '%s\\0' \"$dev_mount\"",
+            )
+            section = section.replace(
+                "/usr/bin/mount -t tmpfs \\\n"
+                "  -o nosuid,mode=0755,size=4m builder-dev /dev",
+                "true",
+            )
+            completed = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-c",
+                    "set -euo pipefail\n"
+                    "umask 077\n"
+                    "list_dev_mount_targets_calls=0\n"
+                    "list_dev_mount_targets() {\n"
+                    "  list_dev_mount_targets_calls=$((list_dev_mount_targets_calls + 1))\n"
+                    "  if [ \"$list_dev_mount_targets_calls\" -eq 1 ]; then\n"
+                    "    printf '%s\\0' \\\n"
+                    "      /dev \\\n"
+                    "      $'/dev/name with space' \\\n"
+                    "      $'/dev/back\\\\slash' \\\n"
+                    "      $'/dev/back\\\\slash/tab\\tchild' \\\n"
+                    "      $'/dev/back\\\\slash/new\\nline' \\\n"
+                    "      /dev/pts \\\n"
+                    "      /dev/pts/9\n"
+                    "  else\n"
+                    "    printf '%s\\0' /dev\n"
+                    "  fi\n"
+                    "}\n"
+                    'TRACE_PATH="$1"\n'
+                    'SUPERVISOR_ROOT="$2"\n'
+                    'SUPERVISOR_UID="$3"\n'
+                    + section,
+                    "--",
+                    str(trace),
+                    str(supervisor_root),
+                    str(os.getuid()),
+                ],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=ROOT,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                completed.stdout.split(b"\0")[:-1],
+                [
+                    b"/dev/pts/9",
+                    b"/dev/pts",
+                    b"/dev/back\\slash/new\nline",
+                    b"/dev/back\\slash/tab\tchild",
+                    b"/dev/back\\slash",
+                    b"/dev/name with space",
+                ],
+            )
+            self.assertEqual(trace.read_text(encoding="ascii"), "OVERMOUNT\n")
+            self.assertEqual(list(supervisor_root.iterdir()), [])
+
+    def test_device_mount_transport_propagates_producer_failure_before_unmount_or_overmount(self):
+        section = dev_mount_transport_section_source(self.text)
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="device-mount-transport-failure-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            trace = sandbox / "trace"
+            supervisor_root = sandbox / "supervisor"
+            supervisor_root.mkdir(mode=0o700)
+            section = section.replace("/mnt/supervisor", "$SUPERVISOR_ROOT")
+            section = section.replace(
+                'test "$(/usr/bin/stat -c %u "$path")" = 0 || return 125',
+                'test "$(/usr/bin/stat -c %u "$path")" = "$SUPERVISOR_UID" || return 125',
+            )
+            section = section.replace(
+                '/usr/bin/umount -- "$dev_mount"',
+                "printf 'UMOUNT:%s\\n' \"$dev_mount\" >> \"$TRACE_PATH\"",
+            )
+            section = section.replace(
+                "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec $SUPERVISOR_ROOT",
+                "printf 'SUPERVISOR-LOCK\\n' >> \"$TRACE_PATH\"",
+            )
+            section = section.replace(
+                "/usr/bin/mount -t tmpfs \\\n"
+                "  -o nosuid,mode=0755,size=4m builder-dev /dev",
+                "printf 'OVERMOUNT\\n' >> \"$TRACE_PATH\"",
+            )
+            completed = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-c",
+                    "set -euo pipefail\n"
+                    "umask 077\n"
+                    "list_dev_mount_targets() {\n"
+                    "  printf 'parser failed\\n' >&2\n"
+                    "  return 125\n"
+                    "}\n"
+                    'TRACE_PATH="$1"\n'
+                    'SUPERVISOR_ROOT="$2"\n'
+                    'SUPERVISOR_UID="$3"\n'
+                    + section,
+                    "--",
+                    str(trace),
+                    str(supervisor_root),
+                    str(os.getuid()),
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 125, completed.stderr)
+            self.assertIn("parser failed", completed.stderr)
+            self.assertFalse(trace.exists())
+
+    def test_device_mount_transport_rejects_symlink_hardlink_and_stale_files(self):
+        base_section = dev_mount_transport_section_source(self.text)
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="device-mount-transport-controls-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            trace = sandbox / "trace"
+            supervisor_root = sandbox / "supervisor"
+            supervisor_root.mkdir(mode=0o700)
+
+            def clear_supervisor_root():
+                for path in list(supervisor_root.iterdir()):
+                    if path.is_dir():
+                        for child in list(path.iterdir()):
+                            child.unlink()
+                        path.rmdir()
+                    else:
+                        path.unlink()
+
+            section = base_section.replace("/mnt/supervisor", "$SUPERVISOR_ROOT")
+            section = section.replace(
+                'test "$(/usr/bin/stat -c %u "$path")" = 0',
+                'test "$(/usr/bin/stat -c %u "$path")" = "$SUPERVISOR_UID"',
+            )
+            section = section.replace(
+                'path="$(/usr/bin/mktemp "$SUPERVISOR_ROOT/$1.XXXXXXXXXX")" || return 125',
+                'case "$1" in\n'
+                '    dev-mount-targets) path="$SUPERVISOR_ROOT/dev-mount-targets.fixture" ;;\n'
+                '    *) path="$(/usr/bin/mktemp "$SUPERVISOR_ROOT/$1.XXXXXXXXXX")" || return 125 ;;\n'
+                "  esac",
+            )
+            section = section.replace(
+                '/usr/bin/umount -- "$dev_mount"',
+                "printf 'UMOUNT:%s\\n' \"$dev_mount\" >> \"$TRACE_PATH\"",
+            )
+            section = section.replace(
+                "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec $SUPERVISOR_ROOT",
+                "printf 'SUPERVISOR-LOCK\\n' >> \"$TRACE_PATH\"",
+            )
+            section = section.replace(
+                "/usr/bin/mount -t tmpfs \\\n"
+                "  -o nosuid,mode=0755,size=4m builder-dev /dev",
+                "printf 'OVERMOUNT\\n' >> \"$TRACE_PATH\"",
+            )
+
+            def run_case(setup):
+                clear_supervisor_root()
+                if trace.exists():
+                    trace.unlink()
+                setup()
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        "set -euo pipefail\n"
+                        "umask 077\n"
+                        "list_dev_mount_targets() {\n"
+                        "  printf '%s\\0' /dev /dev/pts\n"
+                        "}\n"
+                        'TRACE_PATH="$1"\n'
+                        'SUPERVISOR_ROOT="$2"\n'
+                        'SUPERVISOR_UID="$3"\n'
+                        + section,
+                        "--",
+                        str(trace),
+                        str(supervisor_root),
+                        str(os.getuid()),
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertFalse(trace.exists())
+                return completed
+
+            def make_symlink():
+                target = supervisor_root / "symlink-target"
+                target.write_bytes(b"")
+                (supervisor_root / "dev-mount-targets.fixture").symlink_to(target)
+
+            def make_hardlink():
+                target = supervisor_root / "hardlink-target"
+                target.write_bytes(b"")
+                os.link(target, supervisor_root / "dev-mount-targets.fixture")
+
+            for name, setup, error in (
+                ("symlink", make_symlink, ""),
+                ("hardlink", make_hardlink, ""),
+            ):
+                with self.subTest(case=name):
+                    completed = run_case(setup)
+                    self.assertNotEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(completed.stdout, "")
+
+            clear_supervisor_root()
+            success_section = base_section.replace("/mnt/supervisor", "$SUPERVISOR_ROOT")
+            success_section = success_section.replace(
+                'test "$(/usr/bin/stat -c %u "$path")" = 0 || return 125',
+                'test "$(/usr/bin/stat -c %u "$path")" = "$SUPERVISOR_UID" || return 125',
+            )
+            success_section = success_section.replace(
+                "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec $SUPERVISOR_ROOT",
+                "true",
+            )
+            success_section = success_section.replace(
+                '/usr/bin/umount -- "$dev_mount"',
+                "true",
+            )
+            success_section = success_section.replace(
+                "/usr/bin/mount -t tmpfs \\\n"
+                "  -o nosuid,mode=0755,size=4m builder-dev /dev",
+                "true",
+            )
+            completed = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-c",
+                    "set -euo pipefail\n"
+                    "umask 077\n"
+                    "list_dev_mount_targets() {\n"
+                    "  printf '%s\\0' /dev\n"
+                    "}\n"
+                    'SUPERVISOR_ROOT="$1"\n'
+                    'SUPERVISOR_UID="$2"\n'
+                    + success_section,
+                    "--",
+                    str(supervisor_root),
+                    str(os.getuid()),
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(list(supervisor_root.iterdir()), [])
 
     def test_dev_mount_target_parser_supports_decoded_paths_and_rejects_bad_json(self):
         source = dev_mount_target_parser_source(self.text)
@@ -1258,6 +1563,36 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             '["/usr/bin/findmnt", "-Rrno", "TARGET", "/dev"]',
             1,
         )
+        unchecked_dev_process_substitution = self.text.replace(
+            '        dev_mounts_file="$(create_supervisor_transport_file dev-mount-targets)"\n'
+            '        list_dev_mount_targets > "$dev_mounts_file"\n'
+            "        read_checked_supervisor_transport_file \\\n"
+            '          "$dev_mounts_file" "$dev_mount_targets_max_bytes" dev_mounts\n'
+            '        remove_supervisor_transport_file "$dev_mounts_file"',
+            "        mapfile -d '' -t dev_mounts < <(list_dev_mount_targets)",
+            1,
+        )
+        missing_dev_transport_link_guard = self.text.replace(
+            '          test "$(/usr/bin/stat -c %h "$path")" = 1 || return 125',
+            "          true",
+            1,
+        )
+        missing_dev_transport_symlink_guard = self.text.replace(
+            '          test ! -L "$path" || return 125',
+            "          true",
+            1,
+        )
+        missing_dev_transport_cleanup = self.text.replace(
+            '          test ! -e "$path" || return 125',
+            "          true",
+            1,
+        )
+        writable_supervisor_parent_during_candidate = self.text.replace(
+            "        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor\n"
+            "        /usr/bin/mount -t tmpfs \\",
+            "        /usr/bin/mount -t tmpfs \\",
+            1,
+        )
         forward_dev_teardown = self.text.replace(
             "for ((index=${#dev_mounts[@]} - 1; "
             "index >= 0; index--)); do",
@@ -1351,6 +1686,14 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             ("decorated-mount-targets", decorated_mount_targets),
             ("retained-dev-descendants", retained_dev_descendants),
             ("escaped-dev-targets", escaped_dev_targets),
+            ("unchecked-dev-process-substitution", unchecked_dev_process_substitution),
+            ("missing-dev-transport-symlink-guard", missing_dev_transport_symlink_guard),
+            ("missing-dev-transport-link-guard", missing_dev_transport_link_guard),
+            ("missing-dev-transport-cleanup", missing_dev_transport_cleanup),
+            (
+                "writable-supervisor-parent-during-candidate",
+                writable_supervisor_parent_during_candidate,
+            ),
             ("forward-dev-teardown", forward_dev_teardown),
             ("ambient-dependency-python", ambient_dependency_python),
             ("unverified-builder-state", unverified_builder_state),
@@ -1974,16 +2317,19 @@ exit 37
             text,
         )
         self.assertIn(
-            "unmounts exact descendant\npaths deepest-first",
+            "unmounts exact descendant paths deepest-first, removes the temp files",
             text,
         )
         self.assertIn(
-            "descriptor-pinned root-only `/mnt/supervisor`\nparent",
+            "root-owned mode-`0700` `/mnt/supervisor` parent denies candidate read",
             text,
         )
         self.assertIn(
-            "Retained\ndescendants, raw escaped target text, paths outside `/dev`, malformed JSON,\n"
-            "duplicate targets, and NUL-bearing targets are rejected",
+            "Retained descendants, raw escaped target text, paths outside `/dev`,",
+            text,
+        )
+        self.assertIn(
+            "unsafe transport\nfiles are rejected",
             text,
         )
 

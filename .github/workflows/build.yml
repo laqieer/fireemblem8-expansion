@@ -1713,6 +1713,9 @@ jobs:
         /usr/bin/mkdir -m 0755 /mnt/control /mnt/export /mnt/handoff \
           /mnt/home /mnt/source /mnt/tmp /mnt/wheelhouse
         /usr/bin/mkdir -m 0700 /mnt/supervisor
+        /usr/bin/mount -t tmpfs \
+          -o nosuid,nodev,noexec,mode=0700,size=1m \
+          builder-supervisor /mnt/supervisor
         /usr/bin/mkdir -m 0700 /mnt/supervisor/cgroup
         test "$(/usr/bin/stat -c %u /mnt/supervisor)" = 0
         test "$(/usr/bin/stat -c %a /mnt/supervisor)" = 700
@@ -1860,7 +1863,62 @@ jobs:
           )
         PY
         }
-        mapfile -d '' -t dev_mounts < <(list_dev_mount_targets)
+        create_supervisor_transport_file() {
+          local path
+          local file_type
+          path="$(/usr/bin/mktemp "/mnt/supervisor/$1.XXXXXXXXXX")" || return 125
+          test -f "$path" || return 125
+          test ! -L "$path" || return 125
+          file_type="$(/usr/bin/stat -c %F "$path")" || return 125
+          case "$file_type" in
+            "regular file"|"regular empty file") ;;
+            *) return 125 ;;
+          esac
+          test "$(/usr/bin/stat -c %u "$path")" = 0 || return 125
+          test "$(/usr/bin/stat -c %a "$path")" = 600 || return 125
+          test "$(/usr/bin/stat -c %h "$path")" = 1 || return 125
+          printf '%s\n' "$path"
+        }
+        checked_supervisor_transport_signature() {
+          local path="$1"
+          local size_limit="$2"
+          local file_type
+          local size
+          test -f "$path" || return 125
+          test ! -L "$path" || return 125
+          file_type="$(/usr/bin/stat -c %F "$path")" || return 125
+          case "$file_type" in
+            "regular file"|"regular empty file") ;;
+            *) return 125 ;;
+          esac
+          test "$(/usr/bin/stat -c %u "$path")" = 0 || return 125
+          test "$(/usr/bin/stat -c %a "$path")" = 600 || return 125
+          test "$(/usr/bin/stat -c %h "$path")" = 1 || return 125
+          size="$(/usr/bin/stat -c %s "$path")" || return 125
+          test "$size" -le "$size_limit" || return 125
+          /usr/bin/stat -Lc '%d:%i:%f:%u:%g:%s:%h:%a' "$path"
+        }
+        read_checked_supervisor_transport_file() {
+          local path="$1"
+          local size_limit="$2"
+          local -n output_ref="$3"
+          local signature
+          signature="$(checked_supervisor_transport_signature "$path" "$size_limit")" || return 125
+          mapfile -d '' -t output_ref < "$path" || return 125
+          test "$(checked_supervisor_transport_signature "$path" "$size_limit")" = \
+            "$signature" || return 125
+        }
+        remove_supervisor_transport_file() {
+          local path="$1"
+          /bin/rm -f -- "$path" || return 125
+          test ! -e "$path" || return 125
+        }
+        dev_mount_targets_max_bytes=1048576
+        dev_mounts_file="$(create_supervisor_transport_file dev-mount-targets)"
+        list_dev_mount_targets > "$dev_mounts_file"
+        read_checked_supervisor_transport_file \
+          "$dev_mounts_file" "$dev_mount_targets_max_bytes" dev_mounts
+        remove_supervisor_transport_file "$dev_mounts_file"
         for ((index=${#dev_mounts[@]} - 1; index >= 0; index--)); do
           dev_mount="${dev_mounts[index]}"
           case "$dev_mount" in
@@ -1869,9 +1927,16 @@ jobs:
             *) exit 125 ;;
           esac
         done
-        mapfile -d '' -t remaining_dev_mounts < <(list_dev_mount_targets)
+        remaining_dev_mounts_file="$(create_supervisor_transport_file remaining-dev-mount-targets)"
+        list_dev_mount_targets > "$remaining_dev_mounts_file"
+        read_checked_supervisor_transport_file \
+          "$remaining_dev_mounts_file" \
+          "$dev_mount_targets_max_bytes" \
+          remaining_dev_mounts
+        remove_supervisor_transport_file "$remaining_dev_mounts_file"
         test "${#remaining_dev_mounts[@]}" -eq 1
         test "${remaining_dev_mounts[0]}" = /dev
+        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor
         /usr/bin/mount -t tmpfs \
           -o nosuid,mode=0755,size=4m builder-dev /dev
         /usr/bin/mknod -m 0666 /dev/null c 1 3

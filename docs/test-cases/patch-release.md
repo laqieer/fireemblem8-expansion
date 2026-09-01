@@ -59,11 +59,13 @@ the BPS source/target/patch CRCs match and writes the selected separate output
 path. The source target builds the same named release/AAPCS profile and
 round-trips the local artifact. The trusted publisher that produced that
 artifact decodes recursive `/dev` mount targets from structured `findmnt
---json --submounts --output TARGET /dev` output, unmounts exact descendant
-paths deepest-first, and verifies that only `/dev` remains before recreating
-the private device tree. The descriptor-pinned root-only `/mnt/supervisor`
-parent remains readable only to the wrapper and is rechecked before ROM
-handoff.
+--json --submounts --output TARGET /dev` output, writes those NUL-delimited
+targets into checked root-owned regular temp files under `/mnt/supervisor`,
+unmounts exact descendant paths deepest-first, removes the temp files, and
+verifies that only `/dev` remains before recreating the private device tree.
+The root-owned mode-`0700` `/mnt/supervisor` parent denies candidate read,
+write, execute, and traversal; its exact cgroup child remains read-only and is
+rechecked before ROM handoff.
 
 ### Negative control
 
@@ -167,13 +169,16 @@ output volume cannot fail an otherwise successful build. No output sink exists.
 Fixed trusted text and a numeric exit classification preserve build failure
 without exposing candidate bytes.
 The wrapper binds the exact owned cgroup read-only under root-only mode-`0700`
-`/mnt/supervisor` before masking `/sys`. Candidate access is denied; the
-post-build check remains readable and rejects any member beyond the wrapper PID
-before ROM handoff. Decoded recursive `/dev` mount targets are emitted through
-NUL-delimited trusted JSON parsing, unmounted deepest-first, and rechecked so
-only `/dev` remains before the private device tree is recreated. Retained
-descendants, raw escaped target text, paths outside `/dev`, malformed JSON,
-duplicate targets, and NUL-bearing targets are rejected.
+`/mnt/supervisor` before masking `/sys`. The candidate cannot read, write,
+execute, or traverse that parent, while the exact cgroup child remains
+read-only; the post-build check remains readable and rejects any member beyond
+the wrapper PID before ROM handoff. Decoded recursive `/dev` mount targets are
+emitted through NUL-delimited trusted JSON parsing, staged through checked
+root-owned regular temp files under `/mnt/supervisor`, unmounted deepest-first,
+and rechecked so only `/dev` remains before the private device tree is
+recreated. Retained descendants, raw escaped target text, paths outside `/dev`,
+malformed JSON, duplicate targets, NUL-bearing targets, and unsafe transport
+files are rejected.
 
 ### Negative control
 
