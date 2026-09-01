@@ -1428,12 +1428,13 @@ game behavior needs a compensating change.
    bind both tree OIDs, member artifact blobs, exit/status, canonical stdout
    digest, and semantic output over real production workflow-governance
    artifacts rather than standalone witness JSON. If any authority dependency
-   blob differs from the exact base (`review_assertions.py` plus the member's
-   exact validator/consumer such as `review_base_checker.py`,
-   `review_family.py`, `trusted_review_gate.py`, `candidate_evidence.py`, or
-   `event_classifier.py`), require the explicit
-   `authority-dependency-changed` hold instead of executing candidate-owned
-   authority code.
+   blob in the exact-base transitive local import closure differs from the
+   exact base, require the explicit `authority-dependency-changed` hold
+   instead of executing candidate-owned authority code. Derive that closure
+   from trusted base AST/import resolution over the actual exact-base modules
+   the member executes, including package `__init__.py` files, shared modules
+   such as `reporter.py`, and constant-path local scripts loaded dynamically.
+   Missing or ambiguous local imports fail closed.
 7. Sign canonical pre-review bytes with a test-only external key. Verify exact
    repository/PR/base/head, epoch, purpose, expiry, nonce, and atomic replay.
    Keep `LOCAL-` findings in that immutable receipt, separately collect later

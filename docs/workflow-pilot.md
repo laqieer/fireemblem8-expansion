@@ -622,16 +622,18 @@ check tests, event-classifier/candidate-evidence contracts, and the trusted
 review-family Python modules themselves. There is no standalone witness JSON:
 candidate-authored sidecar files cannot self-attest a member outcome.
 Candidate registry/program additions or edits are never executed. Each sibling
-member first compares its exact-base authority dependency blobs:
-`review_assertions.py` globally, plus the member's owning validator or
-consumer such as `review_base_checker.py`, `review_family.py`,
-`trusted_review_gate.py`, `candidate_evidence.py`, or `event_classifier.py`.
-If any authoritative blob differs in either the origin or remediation tree,
-the member returns an explicit `authority-dependency-changed` hold requiring a
-fresh base and external review; it does not probe or execute candidate-owned
-authority code. When the authority blobs are unchanged, the base-owned
-program executes only exact-base validators/consumers over the real
-production artifacts. The child receives a closed environment without
+member first derives its exact-base authority dependency closure from the
+real local import graph of the exact-base modules it executes. The closure is
+computed from trusted base AST/import resolution, includes package
+`__init__.py` files, shared modules such as `reporter.py`, and constant-path
+local scripts loaded dynamically by exact-base code, and fails closed on
+missing or ambiguous local imports. If any blob in that exact-base closure
+differs in either the origin or remediation tree, the member returns an
+explicit `authority-dependency-changed` hold requiring a fresh base and
+external review; it does not probe or execute candidate-owned authority code.
+When the closure is unchanged, the base-owned program executes only exact-base
+validators/consumers over the real production artifacts. The child receives a
+closed environment without
 GitHub/HMAC credentials, proxy/PYTHONPATH injection, network-capable
 candidate programs, or inherited startup hooks.
 

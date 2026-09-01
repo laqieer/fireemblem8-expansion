@@ -68,6 +68,7 @@ ASSERTION_INPUT_PATHS = (
     "scripts/workflow_pilot/reporter.py",
     "scripts/workflow_pilot/tests/fixtures/event_classification.json",
     "scripts/workflow_pilot/trusted_review_gate.py",
+    "tests/workflows/__init__.py",
     "tests/workflows/test_build_ci_topology.py",
 )
 RECEIPT_DOMAIN = b"workflow-review-authenticated-envelope-v2\0"

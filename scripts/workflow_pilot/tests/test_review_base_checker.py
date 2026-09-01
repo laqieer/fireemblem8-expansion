@@ -348,6 +348,44 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             )
 
     @classmethod
+    def _make_wire_reporter_break_head(cls):
+        cls._restore_baseline()
+        cls._replace_once(
+            "scripts/workflow_pilot/reporter.py",
+            "def run_git(",
+            "def broken_run_git(",
+        )
+        head = cls._commit("wire-reporter-break")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
+
+    @classmethod
+    def _make_wire_package_init_break_head(cls):
+        cls._restore_baseline()
+        (cls.repo / "scripts/workflow_pilot/__init__.py").write_text(
+            'raise RuntimeError("workflow_pilot package broken")\n',
+            encoding="utf-8",
+        )
+        head = cls._commit("wire-package-init-break")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
+
+    @classmethod
+    def _make_generated_dynamic_loader_break_head(cls):
+        cls._restore_baseline()
+        (cls.repo / "scripts/check_docs.py").write_text(
+            'raise RuntimeError("docs checker broken")\n',
+            encoding="utf-8",
+        )
+        head = cls._commit("generated-dynamic-loader-break")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
+
+    @classmethod
+    def _make_unrelated_file_head(cls):
+        cls._restore_baseline()
+        (cls.repo / "unrelated.txt").write_text("unrelated\n", encoding="utf-8")
+        head = cls._commit("unrelated-file")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
+
+    @classmethod
     def _make_wire_source_kind_producer_head(cls):
         cls._restore_baseline()
         cls._replace_once(
@@ -963,6 +1001,17 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         binding = self.member_binding(data, assertion_id, "FINDING-WIRE-1")
         return data, binding
 
+    def authority_dependency_paths(self, family, member, *, base_root=None, allowed_paths=None):
+        if base_root is None:
+            data = self.build_input(review_round=1)
+            base_root = Path(data["base_root"])
+        return review_assertions.authority_dependency_paths(
+            family,
+            member,
+            base_root=base_root,
+            allowed_paths=allowed_paths,
+        )
+
     def execute(self, data):
         return review_base_checker.execute_registry(copy.deepcopy(data))
 
@@ -1166,6 +1215,41 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         data["head_root"] = origin_root
         self.assert_rejected(data, "exact Git blob authority")
 
+    def test_authority_dependency_closure_is_deterministic_and_cycle_safe(self):
+        data = self.build_input(review_round=1)
+        base_root = Path(data["base_root"])
+        first = self.authority_dependency_paths(
+            "wire", "producers", base_root=base_root
+        )
+        second = self.authority_dependency_paths(
+            "wire", "producers", base_root=base_root
+        )
+        self.assertEqual(first, second)
+        self.assertIn("scripts/workflow_pilot/__init__.py", first)
+        self.assertIn("scripts/workflow_pilot/reporter.py", first)
+
+        consumers = self.authority_dependency_paths(
+            "generated", "consumers", base_root=base_root
+        )
+        self.assertIn("tests/workflows/__init__.py", consumers)
+        self.assertIn("scripts/workflow_pilot/hydrate_authority.py", consumers)
+
+        cycle_root = self.case_dir() / "cycle-root"
+        (cycle_root / "pkg").mkdir(parents=True)
+        (cycle_root / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+        (cycle_root / "pkg" / "a.py").write_text(
+            "import pkg.b\n", encoding="utf-8"
+        )
+        (cycle_root / "pkg" / "b.py").write_text(
+            "import pkg.a\n", encoding="utf-8"
+        )
+        closure = review_assertions.resolve_authority_import_closure(
+            cycle_root,
+            (("module", "pkg.a"),),
+            allowed_paths={"pkg/__init__.py", "pkg/a.py", "pkg/b.py"},
+        )
+        self.assertEqual(closure, ("pkg/__init__.py", "pkg/a.py", "pkg/b.py"))
+
     def test_stale_round_head_and_current_finding_collection_fail(self):
         data = self.build_input(review_round=2)
         data["review_context"]["candidate_sha"] = self.head1
@@ -1217,6 +1301,80 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             assertion_id="registry:sibling:action:items:affected-fixed:v2",
             finding_id="FINDING-ACTION-1",
             dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+        )
+
+    def test_gate_import_closure_dependency_changes_hold(self):
+        for factory, dependency in (
+            (
+                self._make_wire_reporter_break_head,
+                "scripts/workflow_pilot/reporter.py",
+            ),
+            (
+                self._make_wire_package_init_break_head,
+                "scripts/workflow_pilot/__init__.py",
+            ),
+        ):
+            with self.subTest(dependency=dependency):
+                candidate_head, candidate_tree = factory()
+                data, _binding = self.wire_member_input(
+                    candidate_sha=candidate_head,
+                    candidate_tree=candidate_tree,
+                )
+                self.assert_held(
+                    data,
+                    assertion_id=(
+                        "registry:sibling:wire:producers:verified-unaffected:v2"
+                    ),
+                    finding_id="FINDING-WIRE-1",
+                    dependency_paths=[dependency],
+                )
+
+    def test_dynamic_loader_dependency_change_holds_generated_drift_checks(self):
+        candidate_head, candidate_tree = self._make_generated_dynamic_loader_break_head()
+        data = self.build_input(
+            review_round=2,
+            candidate_sha=candidate_head,
+            candidate_tree=candidate_tree,
+            assertion_requests=[
+                {
+                    "assertion_id": (
+                        "registry:sibling:generated:drift-checks:"
+                        "verified-unaffected:v2"
+                    ),
+                    "finding_id": "FINDING-GENERATED-1",
+                }
+            ],
+        )
+        data["all_remote_reviews"][0]["finding_ids"] = ["FINDING-GENERATED-1"]
+        data["remote_findings"] = [
+            {
+                "node_id": "FINDING-GENERATED-1",
+                "review_id": "REMOTE_REVIEW_1",
+                "candidate_sha": self.head1,
+                "created_at": "2026-09-01T00:01:30Z",
+                "author_actor_id": "COPILOT",
+                "family": "generated",
+            }
+        ]
+        data["review_context"]["finding_ids"] = []
+        data["remote_finding_ids"] = []
+        data["captured_github_payload"] = self.captured_github_payload(
+            data["candidate_sha"],
+            data["all_remote_reviews"],
+            data["remote_findings"],
+        )
+        data["review_contract"]["family_sweeps"] = self.configured_family_sweeps(
+            data["original_pre_review"]["findings"],
+            data["remote_findings"],
+            data["assertion_requests"],
+        )
+        self.assert_held(
+            data,
+            assertion_id=(
+                "registry:sibling:generated:drift-checks:verified-unaffected:v2"
+            ),
+            finding_id="FINDING-GENERATED-1",
+            dependency_paths=["scripts/check_docs.py"],
         )
 
     def test_comment_docstring_dead_branch_and_constant_spoofs_fail(self):
@@ -1546,6 +1704,20 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         self.assertEqual(result["live_source_kind"], "live-gh-api")
         self.assertEqual(result["offline_source_kind"], "offline-transform-fixture")
         self.assertEqual(result["result_manifest_size"], 0)
+
+    def test_unrelated_file_change_does_not_trigger_authority_hold(self):
+        candidate_head, candidate_tree = self._make_unrelated_file_head()
+        data, _binding = self.wire_member_input(
+            candidate_sha=candidate_head,
+            candidate_tree=candidate_tree,
+        )
+        result = self.execute(data)
+        member = result["results"][0]
+        self.assertEqual(member["status"], "pass")
+        self.assertEqual(
+            member["output"]["program_case"],
+            "member/wire/producers/verified-unaffected",
+        )
 
     def test_wire_source_kind_special_cases_fail(self):
         producer_head, producer_tree = self._make_wire_source_kind_producer_head()

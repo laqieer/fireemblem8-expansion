@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import copy
 import hashlib
 import importlib
@@ -33,70 +34,6 @@ BEHAVIOR_ROWS = {
 }
 EVIDENCE_CLASSES = {"positive", "adversarial", "default", "runtime"}
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
-GLOBAL_AUTHORITY_DEPENDENCIES = ("scripts/workflow_pilot/review_assertions.py",)
-MEMBER_AUTHORITY_DEPENDENCIES = {
-    ("action", "actions"): GLOBAL_AUTHORITY_DEPENDENCIES
-    + ("scripts/workflow_pilot/review_base_checker.py",),
-    ("action", "items"): GLOBAL_AUTHORITY_DEPENDENCIES
-    + ("scripts/workflow_pilot/review_base_checker.py",),
-    ("action", "targets"): GLOBAL_AUTHORITY_DEPENDENCIES
-    + ("scripts/workflow_pilot/review_base_checker.py",),
-    ("generated", "owners"): GLOBAL_AUTHORITY_DEPENDENCIES,
-    ("generated", "outputs"): GLOBAL_AUTHORITY_DEPENDENCIES
-    + (
-        "scripts/workflow_pilot/candidate_evidence.py",
-        "scripts/workflow_pilot/event_classifier.py",
-    ),
-    ("generated", "consumers"): GLOBAL_AUTHORITY_DEPENDENCIES
-    + (
-        "scripts/workflow_pilot/candidate_evidence.py",
-        "scripts/workflow_pilot/event_classifier.py",
-        "tests/workflows/test_build_ci_topology.py",
-    ),
-    ("generated", "drift-checks"): GLOBAL_AUTHORITY_DEPENDENCIES
-    + (
-        "scripts/check_docs.py",
-        "scripts/docs_check_tests/test_check_docs.py",
-        "scripts/docs_check_tests/test_development_workflow_skill.py",
-    ),
-    ("lifecycle", "entries"): GLOBAL_AUTHORITY_DEPENDENCIES
-    + ("scripts/workflow_pilot/review_family.py",),
-    ("lifecycle", "preservation"): GLOBAL_AUTHORITY_DEPENDENCIES
-    + ("scripts/workflow_pilot/trusted_review_gate.py",),
-    ("lifecycle", "resets"): GLOBAL_AUTHORITY_DEPENDENCIES
-    + ("scripts/workflow_pilot/review_family.py",),
-    ("lifecycle", "terminals"): GLOBAL_AUTHORITY_DEPENDENCIES
-    + ("scripts/workflow_pilot/trusted_review_gate.py",),
-    ("resource", "enabled"): GLOBAL_AUTHORITY_DEPENDENCIES
-    + (
-        "scripts/workflow_pilot/review_family.py",
-        "scripts/workflow_pilot/trusted_review_gate.py",
-    ),
-    ("resource", "disabled"): GLOBAL_AUTHORITY_DEPENDENCIES
-    + (
-        "scripts/workflow_pilot/review_family.py",
-        "scripts/workflow_pilot/trusted_review_gate.py",
-    ),
-    ("wire", "producers"): GLOBAL_AUTHORITY_DEPENDENCIES
-    + ("scripts/workflow_pilot/trusted_review_gate.py",),
-    ("wire", "consumers"): GLOBAL_AUTHORITY_DEPENDENCIES
-    + (
-        "scripts/workflow_pilot/review_family.py",
-        "scripts/workflow_pilot/trusted_review_gate.py",
-    ),
-    ("wire", "validators"): GLOBAL_AUTHORITY_DEPENDENCIES
-    + (
-        "scripts/workflow_pilot/review_base_checker.py",
-        "scripts/workflow_pilot/review_family.py",
-    ),
-    ("wire", "replay"): GLOBAL_AUTHORITY_DEPENDENCIES
-    + ("scripts/workflow_pilot/trusted_review_gate.py",),
-    ("wire", "stale-bindings"): GLOBAL_AUTHORITY_DEPENDENCIES
-    + (
-        "scripts/workflow_pilot/review_base_checker.py",
-        "scripts/workflow_pilot/trusted_review_gate.py",
-    ),
-}
 ASSERTION_INPUT_PATHS = (
     ".github/workflow-pilot-decisions.json",
     ".github/workflows/build.yml",
@@ -117,8 +54,72 @@ ASSERTION_INPUT_PATHS = (
     "scripts/workflow_pilot/reporter.py",
     "scripts/workflow_pilot/tests/fixtures/event_classification.json",
     "scripts/workflow_pilot/trusted_review_gate.py",
+    "tests/workflows/__init__.py",
     "tests/workflows/test_build_ci_topology.py",
 )
+AUTHORITY_ROOTS = {
+    ("global", None): (("file", "scripts/workflow_pilot/review_assertions.py"),),
+    ("action", "actions"): (("file", "scripts/workflow_pilot/review_base_checker.py"),),
+    ("action", "items"): (("file", "scripts/workflow_pilot/review_base_checker.py"),),
+    ("action", "targets"): (("file", "scripts/workflow_pilot/review_base_checker.py"),),
+    ("generated", "owners"): (),
+    ("generated", "outputs"): (
+        ("module", "scripts.workflow_pilot.candidate_evidence"),
+        ("module", "scripts.workflow_pilot.event_classifier"),
+    ),
+    ("generated", "consumers"): (("module", "tests.workflows.test_build_ci_topology"),),
+    ("generated", "drift-checks"): (
+        ("module", "scripts.docs_check_tests.test_check_docs"),
+        ("module", "scripts.docs_check_tests.test_development_workflow_skill"),
+    ),
+    ("lifecycle", "entries"): (("module", "scripts.workflow_pilot.review_family"),),
+    ("lifecycle", "preservation"): (
+        ("module", "scripts.workflow_pilot.reporter"),
+        ("module", "scripts.workflow_pilot.review_family"),
+        ("module", "scripts.workflow_pilot.trusted_review_gate"),
+    ),
+    ("lifecycle", "resets"): (("module", "scripts.workflow_pilot.review_family"),),
+    ("lifecycle", "terminals"): (
+        ("module", "scripts.workflow_pilot.reporter"),
+        ("module", "scripts.workflow_pilot.review_family"),
+        ("module", "scripts.workflow_pilot.trusted_review_gate"),
+    ),
+    ("resource", "enabled"): (
+        ("module", "scripts.workflow_pilot.reporter"),
+        ("module", "scripts.workflow_pilot.review_family"),
+        ("module", "scripts.workflow_pilot.trusted_review_gate"),
+    ),
+    ("resource", "disabled"): (
+        ("module", "scripts.workflow_pilot.reporter"),
+        ("module", "scripts.workflow_pilot.review_family"),
+        ("module", "scripts.workflow_pilot.trusted_review_gate"),
+    ),
+    ("wire", "producers"): (
+        ("module", "scripts.workflow_pilot.reporter"),
+        ("module", "scripts.workflow_pilot.review_family"),
+        ("module", "scripts.workflow_pilot.trusted_review_gate"),
+    ),
+    ("wire", "consumers"): (
+        ("module", "scripts.workflow_pilot.reporter"),
+        ("module", "scripts.workflow_pilot.review_family"),
+        ("module", "scripts.workflow_pilot.trusted_review_gate"),
+    ),
+    ("wire", "validators"): (
+        ("file", "scripts/workflow_pilot/review_base_checker.py"),
+        ("module", "scripts.workflow_pilot.review_family"),
+    ),
+    ("wire", "replay"): (
+        ("module", "scripts.workflow_pilot.reporter"),
+        ("module", "scripts.workflow_pilot.review_family"),
+        ("module", "scripts.workflow_pilot.trusted_review_gate"),
+    ),
+    ("wire", "stale-bindings"): (
+        ("file", "scripts/workflow_pilot/review_base_checker.py"),
+        ("module", "scripts.workflow_pilot.reporter"),
+        ("module", "scripts.workflow_pilot.review_family"),
+        ("module", "scripts.workflow_pilot.trusted_review_gate"),
+    ),
+}
 WORKFLOW_FEATURE_ID = "workflow-governance"
 WORKFLOW_REVIEW_FAMILY_CASE = "TC-WORKFLOW-REVIEW-FAMILY-001"
 CURRENT_IMPLEMENTATION_ISSUE = (
@@ -397,6 +398,417 @@ def blob_oid_for_root(root: Path, relative: str) -> str:
         return git_blob_oid(path.read_bytes())
     except OSError as error:
         raise AssertionFailure(f"member artifact {relative!r} is unavailable") from error
+
+
+def _attribute_path(node: ast.AST) -> str | None:
+    parts = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if not isinstance(node, ast.Name):
+        return None
+    parts.append(node.id)
+    return ".".join(reversed(parts))
+
+
+def _top_level_assignments(syntax: ast.Module) -> dict[str, ast.AST]:
+    assignments = {}
+    for statement in syntax.body:
+        if isinstance(statement, ast.Assign) and len(statement.targets) == 1:
+            target = statement.targets[0]
+            if isinstance(target, ast.Name):
+                assignments[target.id] = statement.value
+        elif isinstance(statement, ast.AnnAssign) and isinstance(
+            statement.target, ast.Name
+        ):
+            if statement.value is not None:
+                assignments[statement.target.id] = statement.value
+    return assignments
+
+
+def _evaluate_static_value(
+    node: ast.AST,
+    *,
+    base_root: Path,
+    current_relative: str,
+    assignments: dict[str, ast.AST],
+    stack: set[str] | None = None,
+) -> Any:
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.Name):
+        if node.id == "__file__":
+            return str((base_root / current_relative).resolve())
+        if node.id not in assignments:
+            raise AssertionFailure(
+                f"authority dependency expression references unknown name {node.id!r}"
+            )
+        active = set() if stack is None else set(stack)
+        if node.id in active:
+            raise AssertionFailure(
+                f"authority dependency expression is cyclic at {node.id!r}"
+            )
+        active.add(node.id)
+        return _evaluate_static_value(
+            assignments[node.id],
+            base_root=base_root,
+            current_relative=current_relative,
+            assignments=assignments,
+            stack=active,
+        )
+    if isinstance(node, ast.Call):
+        call_name = _attribute_path(node.func)
+        args = list(node.args)
+        kwargs = {keyword.arg: keyword.value for keyword in node.keywords}
+        if call_name == "os.path.join":
+            values = [
+                _evaluate_static_value(
+                    argument,
+                    base_root=base_root,
+                    current_relative=current_relative,
+                    assignments=assignments,
+                    stack=stack,
+                )
+                for argument in args
+            ]
+            if any(not isinstance(value, str) for value in values):
+                raise AssertionFailure("authority dependency join arguments must be strings")
+            return os.path.join(*values)
+        if call_name == "os.path.dirname":
+            if len(args) != 1:
+                raise AssertionFailure("authority dependency dirname arguments are invalid")
+            value = _evaluate_static_value(
+                args[0],
+                base_root=base_root,
+                current_relative=current_relative,
+                assignments=assignments,
+                stack=stack,
+            )
+            if not isinstance(value, str):
+                raise AssertionFailure("authority dependency dirname argument must be a string")
+            return os.path.dirname(value)
+        if call_name == "os.path.abspath":
+            if len(args) != 1:
+                raise AssertionFailure("authority dependency abspath arguments are invalid")
+            value = _evaluate_static_value(
+                args[0],
+                base_root=base_root,
+                current_relative=current_relative,
+                assignments=assignments,
+                stack=stack,
+            )
+            if not isinstance(value, str):
+                raise AssertionFailure("authority dependency abspath argument must be a string")
+            return os.path.abspath(value)
+        if call_name == "Path":
+            if len(args) != 1:
+                raise AssertionFailure("authority dependency Path arguments are invalid")
+            value = _evaluate_static_value(
+                args[0],
+                base_root=base_root,
+                current_relative=current_relative,
+                assignments=assignments,
+                stack=stack,
+            )
+            if not isinstance(value, str):
+                raise AssertionFailure("authority dependency Path argument must be a string")
+            return Path(value)
+        if call_name == "Path.resolve":
+            owner = _evaluate_static_value(
+                node.func.value,
+                base_root=base_root,
+                current_relative=current_relative,
+                assignments=assignments,
+                stack=stack,
+            )
+            if args or kwargs or not isinstance(owner, Path):
+                raise AssertionFailure("authority dependency Path.resolve call is invalid")
+            return owner.resolve()
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+        left = _evaluate_static_value(
+            node.left,
+            base_root=base_root,
+            current_relative=current_relative,
+            assignments=assignments,
+            stack=stack,
+        )
+        right = _evaluate_static_value(
+            node.right,
+            base_root=base_root,
+            current_relative=current_relative,
+            assignments=assignments,
+            stack=stack,
+        )
+        if not isinstance(left, Path) or not isinstance(right, str):
+            raise AssertionFailure("authority dependency path division is invalid")
+        return left / right
+    raise AssertionFailure("authority dependency expression is not statically resolvable")
+
+
+def _allowed_path(relative: str, allowed_paths: set[str]) -> str:
+    normalized = relative.replace("\\", "/")
+    if normalized not in allowed_paths:
+        raise AssertionFailure(
+            f"authority dependency {normalized!r} is outside the closed allowlist"
+        )
+    return normalized
+
+
+def _resolve_dynamic_file_dependency(
+    value: Any, *, base_root: Path, allowed_paths: set[str]
+) -> str:
+    if isinstance(value, Path):
+        resolved = value.resolve()
+    elif isinstance(value, str):
+        path = Path(value)
+        if not path.is_absolute():
+            raise AssertionFailure(
+                "authority dependency file loader must use an exact absolute path"
+            )
+        resolved = path.resolve()
+    else:
+        raise AssertionFailure("authority dependency file loader path is invalid")
+    root = base_root.resolve()
+    if root != resolved and root not in resolved.parents:
+        raise AssertionFailure("authority dependency file loader escapes the trusted root")
+    relative = resolved.relative_to(root).as_posix()
+    return _allowed_path(relative, allowed_paths)
+
+
+def _resolve_local_module_paths(
+    base_root: Path,
+    module_name: str,
+    allowed_paths: set[str],
+    *,
+    allow_missing: bool = False,
+) -> tuple[str, ...] | None:
+    if not module_name or module_name.startswith("."):
+        raise AssertionFailure(f"authority module name {module_name!r} is invalid")
+    segments = module_name.split(".")
+    if any(not segment for segment in segments):
+        raise AssertionFailure(f"authority module name {module_name!r} is invalid")
+    file_rel = "/".join(segments) + ".py"
+    package_rel = "/".join(segments) + "/__init__.py"
+    directory = base_root.joinpath(*segments)
+    file_path = base_root / file_rel
+    package_path = base_root / package_rel
+    file_exists = file_path.is_file()
+    package_exists = package_path.is_file()
+    directory_exists = directory.is_dir()
+    if not file_exists and not package_exists and not directory_exists:
+        if allow_missing:
+            return None
+        raise AssertionFailure(
+            f"authority module import {module_name!r} is unavailable"
+        )
+    if file_exists and package_exists:
+        raise AssertionFailure(
+            f"authority module import {module_name!r} is ambiguous"
+        )
+    paths = []
+    prefix = []
+    for segment in segments[:-1]:
+        prefix.append(segment)
+        package_prefix = "/".join(prefix) + "/__init__.py"
+        package_dir = base_root.joinpath(*prefix)
+        prefix_init = base_root / package_prefix
+        if prefix_init.is_file():
+            paths.append(_allowed_path(package_prefix, allowed_paths))
+            continue
+        if package_dir.is_dir():
+            continue
+        raise AssertionFailure(f"authority package {'.'.join(prefix)!r} is unavailable")
+    if package_exists:
+        paths.append(_allowed_path(package_rel, allowed_paths))
+        return tuple(paths)
+    if file_exists:
+        paths.append(_allowed_path(file_rel, allowed_paths))
+        return tuple(paths)
+    if allow_missing:
+        return None
+    raise AssertionFailure(
+        f"authority module import {module_name!r} does not resolve to a file"
+    )
+
+
+def _module_name_for_relative(current_relative: str) -> str:
+    if current_relative.endswith("/__init__.py"):
+        return current_relative[: -len("/__init__.py")].replace("/", ".")
+    if current_relative.endswith(".py"):
+        return current_relative[:-3].replace("/", ".")
+    raise AssertionFailure(
+        f"authority source {current_relative!r} does not map to a Python module"
+    )
+
+
+def _resolve_import_from_module(
+    statement: ast.ImportFrom, current_relative: str
+) -> str:
+    if statement.level == 0:
+        if statement.module is None:
+            raise AssertionFailure(
+                f"authority source {current_relative!r} has an unresolved import"
+            )
+        return statement.module
+    package_segments = _module_name_for_relative(current_relative).split(".")
+    if not current_relative.endswith("/__init__.py"):
+        package_segments = package_segments[:-1]
+    trim = statement.level - 1
+    if trim > len(package_segments):
+        raise AssertionFailure(
+            f"authority source {current_relative!r} escapes its package root"
+        )
+    base_segments = package_segments[: len(package_segments) - trim]
+    if statement.module:
+        return ".".join((*base_segments, statement.module))
+    if not base_segments:
+        raise AssertionFailure(
+            f"authority source {current_relative!r} has an unresolved import"
+        )
+    return ".".join(base_segments)
+
+
+def _dependency_specs_from_statement(
+    statement: ast.stmt,
+    *,
+    base_root: Path,
+    current_relative: str,
+    assignments: dict[str, ast.AST],
+    allowed_paths: set[str],
+) -> list[tuple[str, str]]:
+    result = []
+    if isinstance(statement, ast.Import):
+        return [("module-optional", alias.name) for alias in statement.names]
+    if isinstance(statement, ast.ImportFrom):
+        module_name = _resolve_import_from_module(statement, current_relative)
+        result.append(("module-optional", module_name))
+        for alias in statement.names:
+            if alias.name == "*":
+                raise AssertionFailure(
+                    f"authority source {current_relative!r} uses a wildcard import"
+                )
+            submodule = _resolve_local_module_paths(
+                base_root,
+                f"{module_name}.{alias.name}",
+                allowed_paths,
+                allow_missing=True,
+            )
+            if submodule is not None:
+                result.append(("module-optional", f"{module_name}.{alias.name}"))
+        return result
+    value = None
+    if isinstance(statement, ast.Assign):
+        value = statement.value
+    elif isinstance(statement, ast.AnnAssign):
+        value = statement.value
+    elif isinstance(statement, ast.Expr):
+        value = statement.value
+    if value is None:
+        return result
+    for node in ast.walk(value):
+        if not isinstance(node, ast.Call):
+            continue
+        call_name = _attribute_path(node.func)
+        if call_name == "importlib.import_module":
+            if not node.args:
+                raise AssertionFailure("authority dynamic import is missing its module name")
+            module_name = _evaluate_static_value(
+                node.args[0],
+                base_root=base_root,
+                current_relative=current_relative,
+                assignments=assignments,
+            )
+            if not isinstance(module_name, str):
+                raise AssertionFailure("authority dynamic import did not resolve to a module name")
+            result.append(("module-optional", module_name))
+        elif call_name == "importlib.util.spec_from_file_location":
+            if len(node.args) < 2:
+                raise AssertionFailure(
+                    "authority file loader is missing its source path"
+                )
+            path_value = _evaluate_static_value(
+                node.args[1],
+                base_root=base_root,
+                current_relative=current_relative,
+                assignments=assignments,
+            )
+            result.append(
+                (
+                    "file",
+                    _resolve_dynamic_file_dependency(
+                        path_value,
+                        base_root=base_root,
+                        allowed_paths=allowed_paths,
+                    ),
+                )
+            )
+    return result
+
+
+def resolve_authority_import_closure(
+    base_root: Path,
+    roots: tuple[tuple[str, str], ...],
+    *,
+    allowed_paths: set[str] | None = None,
+) -> tuple[str, ...]:
+    allowed = set(ASSERTION_INPUT_PATHS if allowed_paths is None else allowed_paths)
+    pending = list(roots)
+    resolved = set()
+    while pending:
+        kind, value = pending.pop()
+        if kind in {"module", "module-optional"}:
+            paths = _resolve_local_module_paths(
+                base_root,
+                value,
+                allowed,
+                allow_missing=kind == "module-optional",
+            )
+            if paths is None:
+                continue
+            for relative in reversed(paths):
+                if relative not in resolved:
+                    pending.append(("file", relative))
+            continue
+        if kind != "file":
+            raise AssertionFailure(f"authority dependency kind {kind!r} is unsupported")
+        relative = _allowed_path(value, allowed)
+        if relative in resolved:
+            continue
+        source = read_text(base_root, relative)
+        try:
+            syntax = ast.parse(source, filename=relative)
+        except SyntaxError as error:
+            raise AssertionFailure(
+                f"authority dependency {relative!r} is not valid Python"
+            ) from error
+        assignments = _top_level_assignments(syntax)
+        for statement in syntax.body:
+            pending.extend(
+                _dependency_specs_from_statement(
+                    statement,
+                    base_root=base_root,
+                    current_relative=relative,
+                    assignments=assignments,
+                    allowed_paths=allowed,
+                )
+            )
+        resolved.add(relative)
+    return tuple(sorted(resolved))
+
+
+def authority_dependency_paths(
+    family: str,
+    member: str,
+    *,
+    base_root: Path,
+    allowed_paths: set[str] | None = None,
+) -> tuple[str, ...]:
+    roots = (*AUTHORITY_ROOTS[("global", None)], *AUTHORITY_ROOTS[(family, member)])
+    return resolve_authority_import_closure(
+        base_root,
+        roots,
+        allowed_paths=allowed_paths,
+    )
 
 
 def load_standalone_module(path: Path, module_name: str):
@@ -742,7 +1154,7 @@ def authority_dependency_records(
 ) -> list[dict[str, Any]]:
     artifact_index = assertion_artifact_index(checker_input)
     result = []
-    for path in MEMBER_AUTHORITY_DEPENDENCIES[(family, member)]:
+    for path in authority_dependency_paths(family, member, base_root=base_root):
         if path not in artifact_index:
             raise AssertionFailure(f"authority dependency {path!r} is unavailable")
         base_blob_oid = blob_oid_for_root(base_root, path)
