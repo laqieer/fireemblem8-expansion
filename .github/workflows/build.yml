@@ -463,6 +463,43 @@ jobs:
                 fail(f"metadata-only raw event {field} exceeds bounds")
             return value
 
+        def parse_title_text(value, *, field, max_bytes):
+            text = parse_required_text(value, field=field, max_bytes=max_bytes)
+            if not text.strip():
+                fail(f"metadata-only raw event {field} is invalid")
+            return text
+
+        def is_git_branch_ref(value):
+            if not isinstance(value, str) or not value or value == "@":
+                return False
+            try:
+                if utf8_len(value) > MAX_REF_BYTES:
+                    return False
+            except UnicodeEncodeError:
+                return False
+            if (
+                value.startswith("/")
+                or value.endswith("/")
+                or value.endswith(".")
+                or "//" in value
+                or ".." in value
+                or "@{" in value
+            ):
+                return False
+            if any(
+                ord(character) < 0x20
+                or ord(character) == 0x7F
+                or character in " ~^:?*[\\"
+                for character in value
+            ):
+                return False
+            return all(
+                component
+                and not component.startswith(".")
+                and not component.endswith(".lock")
+                for component in value.split("/")
+            )
+
         def parse_sha(value, *, field):
             if not isinstance(value, str) or SHA_RE.fullmatch(value) is None:
                 fail(f"metadata-only raw event {field} is invalid")
@@ -568,11 +605,9 @@ jobs:
         base = pull_request.get("base")
         if not isinstance(base, dict):
             fail("metadata-only raw event base ref is invalid")
-        parse_required_text(
-            base.get("ref"),
-            field="base ref",
-            max_bytes=MAX_REF_BYTES,
-        )
+        base_ref = base.get("ref")
+        if not is_git_branch_ref(base_ref):
+            fail("metadata-only raw event base ref is invalid")
 
         base_sha = parse_sha(base.get("sha"), field="base sha")
 
@@ -595,16 +630,6 @@ jobs:
         ):
             fail("metadata-only raw event does not match classifier identity")
 
-        current_body = parse_nullable_text(
-            pull_request.get("body"),
-            field="pull_request.body",
-            max_bytes=MAX_BODY_BYTES,
-        )
-        current_title = parse_required_text(
-            pull_request.get("title"),
-            field="pull_request.title",
-            max_bytes=MAX_TITLE_BYTES,
-        )
         changes = payload.get("changes")
         if not isinstance(changes, dict):
             fail("metadata-only raw event changes must be an object")
@@ -612,29 +637,47 @@ jobs:
         if change_keys not in ALLOWED_CHANGE_KEYS:
             fail("metadata-only raw event changes must be exactly body/title only")
 
-        def validate_change(name, current, max_bytes):
+        def current_changed_value(name):
+            field = f"pull_request.{name}"
+            if name not in pull_request:
+                fail(f"metadata-only raw event {field} is missing")
+            value = pull_request[name]
+            if name == "title":
+                return parse_title_text(
+                    value,
+                    field=field,
+                    max_bytes=MAX_TITLE_BYTES,
+                )
+            return parse_nullable_text(
+                value,
+                field=field,
+                max_bytes=MAX_BODY_BYTES,
+            )
+
+        def validate_change(name):
             change = changes.get(name)
             if not isinstance(change, dict) or set(change) != {"from"}:
                 fail(f"metadata-only raw event changes.{name} must contain only from")
+            current = current_changed_value(name)
             if name == "title":
-                previous = parse_required_text(
+                previous = parse_title_text(
                     change["from"],
                     field=f"changes.{name}.from",
-                    max_bytes=max_bytes,
+                    max_bytes=MAX_TITLE_BYTES,
                 )
             else:
                 previous = parse_nullable_text(
                     change["from"],
                     field=f"changes.{name}.from",
-                    max_bytes=max_bytes,
+                    max_bytes=MAX_BODY_BYTES,
                 )
             if previous == current:
                 fail(f"metadata-only raw event {name} did not change")
 
         if "body" in changes:
-            validate_change("body", current_body, MAX_BODY_BYTES)
+            validate_change("body")
         if "title" in changes:
-            validate_change("title", current_title, MAX_TITLE_BYTES)
+            validate_change("title")
         PY
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
@@ -923,6 +966,43 @@ jobs:
                 fail(f"metadata-only raw event {field} exceeds bounds")
             return value
 
+        def parse_title_text(value, *, field, max_bytes):
+            text = parse_required_text(value, field=field, max_bytes=max_bytes)
+            if not text.strip():
+                fail(f"metadata-only raw event {field} is invalid")
+            return text
+
+        def is_git_branch_ref(value):
+            if not isinstance(value, str) or not value or value == "@":
+                return False
+            try:
+                if utf8_len(value) > MAX_REF_BYTES:
+                    return False
+            except UnicodeEncodeError:
+                return False
+            if (
+                value.startswith("/")
+                or value.endswith("/")
+                or value.endswith(".")
+                or "//" in value
+                or ".." in value
+                or "@{" in value
+            ):
+                return False
+            if any(
+                ord(character) < 0x20
+                or ord(character) == 0x7F
+                or character in " ~^:?*[\\"
+                for character in value
+            ):
+                return False
+            return all(
+                component
+                and not component.startswith(".")
+                and not component.endswith(".lock")
+                for component in value.split("/")
+            )
+
         def parse_sha(value, *, field):
             if not isinstance(value, str) or SHA_RE.fullmatch(value) is None:
                 fail(f"metadata-only raw event {field} is invalid")
@@ -1028,11 +1108,9 @@ jobs:
         base = pull_request.get("base")
         if not isinstance(base, dict):
             fail("metadata-only raw event base ref is invalid")
-        parse_required_text(
-            base.get("ref"),
-            field="base ref",
-            max_bytes=MAX_REF_BYTES,
-        )
+        base_ref = base.get("ref")
+        if not is_git_branch_ref(base_ref):
+            fail("metadata-only raw event base ref is invalid")
 
         base_sha = parse_sha(base.get("sha"), field="base sha")
 
@@ -1055,16 +1133,6 @@ jobs:
         ):
             fail("metadata-only raw event does not match classifier identity")
 
-        current_body = parse_nullable_text(
-            pull_request.get("body"),
-            field="pull_request.body",
-            max_bytes=MAX_BODY_BYTES,
-        )
-        current_title = parse_required_text(
-            pull_request.get("title"),
-            field="pull_request.title",
-            max_bytes=MAX_TITLE_BYTES,
-        )
         changes = payload.get("changes")
         if not isinstance(changes, dict):
             fail("metadata-only raw event changes must be an object")
@@ -1072,29 +1140,47 @@ jobs:
         if change_keys not in ALLOWED_CHANGE_KEYS:
             fail("metadata-only raw event changes must be exactly body/title only")
 
-        def validate_change(name, current, max_bytes):
+        def current_changed_value(name):
+            field = f"pull_request.{name}"
+            if name not in pull_request:
+                fail(f"metadata-only raw event {field} is missing")
+            value = pull_request[name]
+            if name == "title":
+                return parse_title_text(
+                    value,
+                    field=field,
+                    max_bytes=MAX_TITLE_BYTES,
+                )
+            return parse_nullable_text(
+                value,
+                field=field,
+                max_bytes=MAX_BODY_BYTES,
+            )
+
+        def validate_change(name):
             change = changes.get(name)
             if not isinstance(change, dict) or set(change) != {"from"}:
                 fail(f"metadata-only raw event changes.{name} must contain only from")
+            current = current_changed_value(name)
             if name == "title":
-                previous = parse_required_text(
+                previous = parse_title_text(
                     change["from"],
                     field=f"changes.{name}.from",
-                    max_bytes=max_bytes,
+                    max_bytes=MAX_TITLE_BYTES,
                 )
             else:
                 previous = parse_nullable_text(
                     change["from"],
                     field=f"changes.{name}.from",
-                    max_bytes=max_bytes,
+                    max_bytes=MAX_BODY_BYTES,
                 )
             if previous == current:
                 fail(f"metadata-only raw event {name} did not change")
 
         if "body" in changes:
-            validate_change("body", current_body, MAX_BODY_BYTES)
+            validate_change("body")
         if "title" in changes:
-            validate_change("title", current_title, MAX_TITLE_BYTES)
+            validate_change("title")
         PY
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}

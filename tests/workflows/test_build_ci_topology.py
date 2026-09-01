@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import fnmatch
 import io
 import json
@@ -277,6 +278,18 @@ METADATA_ADAPTER_REQUIRED_FRAGMENTS = (
     "import re",
     "import stat",
     "import sys",
+    "def parse_title_text(value, *, field, max_bytes):",
+    "if not text.strip():",
+    "def is_git_branch_ref(value):",
+    'value == "@"',
+    'value.startswith("/")',
+    'value.endswith("/")',
+    'value.endswith(".")',
+    'or "//" in value',
+    'or ".." in value',
+    'or "@{" in value',
+    'component.endswith(".lock")',
+    'for component in value.split("/")',
     "MAX_EVENT_PATH_BYTES = 4096",
     "MAX_EVENT_BYTES = 1048576",
     "MAX_EVENT_READ_BYTES = MAX_EVENT_BYTES + 1",
@@ -311,14 +324,18 @@ METADATA_ADAPTER_REQUIRED_FRAGMENTS = (
     'event_ref = env("GITHUB_REF", max_bytes=MAX_EVENT_REF_BYTES)',
     'pull_request = payload.get("pull_request")',
     'base = pull_request.get("base")',
-    'base.get("ref")',
+    'base_ref = base.get("ref")',
+    "if not is_git_branch_ref(base_ref):",
     'base.get("sha")',
     'head = pull_request.get("head")',
     'head.get("sha")',
     'or classified_head != env("EXPECTED_BUILD_SHA", max_bytes=64)',
-    'pull_request.get("body")',
-    'pull_request.get("title")',
     'changes = payload.get("changes")',
+    'field = f"pull_request.{name}"',
+    'if name not in pull_request:',
+    'fail(f"metadata-only raw event {field} is missing")',
+    'value = pull_request[name]',
+    "def current_changed_value(name):",
     'if event_action != "edited":',
     'if event_ref != f"refs/pull/{pr_number}/merge":',
     "if change_keys not in ALLOWED_CHANGE_KEYS:",
@@ -879,6 +896,34 @@ def _metadata_adapter_python_env(event_path: Path | str) -> dict[str, str]:
         "GITHUB_EVENT_NAME": "pull_request",
         "GITHUB_EVENT_PATH": str(event_path),
         "GITHUB_REF": "refs/pull/177/merge",
+    }
+
+
+def _metadata_adapter_env_for_case(case: dict, event_path: Path | str) -> dict[str, str]:
+    runner = case["runner"]
+    pr_head_sha = runner.get("pr_head_sha", "")
+    pr_base_sha = runner.get("pr_base_sha", "")
+    return {
+        "CLASSIFICATION": "metadata-only",
+        "CLASSIFIED_BASE_SHA": pr_base_sha,
+        "CLASSIFIED_BUILD_SHA": pr_head_sha,
+        "CLASSIFIER_RESULT": "success",
+        "EXPECTED_BUILD_SHA": pr_head_sha,
+        "FALLBACK_IDENTITY_RESULT": "success",
+        "FALLBACK_KIND": "pull_request",
+        "FALLBACK_SHA": pr_head_sha,
+        "FULL_FALLBACK": "false",
+        "GITHUB_EVENT_NAME": case["event_name"],
+        "GITHUB_EVENT_PATH": str(event_path),
+        "GITHUB_REF": runner["github_ref"],
+        "HEAD_VALID": "true" if event_classifier._is_sha(pr_head_sha) else "false",
+        "IDENTITY_VALID": (
+            "true"
+            if event_classifier._is_sha(pr_head_sha)
+            and event_classifier._is_sha(pr_base_sha)
+            else "false"
+        ),
+        "RUN_EXPENSIVE": "false",
     }
 
 
@@ -3406,6 +3451,21 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "if False:",
             ),
             (
+                "remove-base-ref-grammar-check",
+                "if not is_git_branch_ref(base_ref):",
+                "if False:",
+            ),
+            (
+                "remove-current-field-presence-check",
+                "if name not in pull_request:",
+                "if False:",
+            ),
+            (
+                "weaken-title-whitespace-check",
+                "if not text.strip():",
+                "if False:",
+            ),
+            (
                 "remove-nofollow-open",
                 'getattr(os, "O_NOFOLLOW", 0)',
                 "0",
@@ -3476,6 +3536,13 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         large_payload = _metadata_adapter_payload(body=large_body)
         large_payload_raw = _metadata_adapter_payload_bytes(large_payload)
         self.assertLessEqual(len(large_payload_raw), event_classifier.MAX_EVENT_BYTES)
+        missing_current_body = _metadata_adapter_payload()
+        del missing_current_body["pull_request"]["body"]
+        missing_current_title = _metadata_adapter_payload(
+            body="Stable body",
+            changes={"title": {"from": "Old title"}},
+        )
+        del missing_current_title["pull_request"]["title"]
         cases = (
             {
                 "name": "valid-body",
@@ -3556,10 +3623,34 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "error": "pull_request is invalid",
             },
             {
+                "name": "missing-current-body",
+                "payload": missing_current_body,
+                "expected": 1,
+                "error": "pull_request.body is missing",
+            },
+            {
+                "name": "missing-current-title",
+                "payload": missing_current_title,
+                "expected": 1,
+                "error": "pull_request.title is missing",
+            },
+            {
                 "name": "empty-changes",
                 "payload": _metadata_adapter_payload(changes={}),
                 "expected": 1,
                 "error": "changes must be exactly body/title only",
+            },
+            {
+                "name": "invalid-base-ref",
+                "payload": _metadata_adapter_payload(base_ref="bad ref"),
+                "expected": 1,
+                "error": "base ref is invalid",
+            },
+            {
+                "name": "lone-at-base-ref",
+                "payload": _metadata_adapter_payload(base_ref="@"),
+                "expected": 1,
+                "error": "base ref is invalid",
             },
             {
                 "name": "base-change",
@@ -3691,6 +3782,98 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         )
                         if case.get("error") is not None:
                             self.assertIn(case["error"], completed.stderr)
+
+    def test_metadata_adapters_match_classifier_on_fixture_pull_request_cases(self):
+        scripts = _metadata_adapter_scripts(self.text)
+        self.assertEqual(len(set(scripts.values())), 1)
+        fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
+        templates = {
+            case["id"]: case
+            for case in fixture["cases"]
+            if case["event_name"] == "pull_request"
+        }
+        cases = [copy.deepcopy(case) for case in templates.values()]
+
+        missing_current_body = copy.deepcopy(templates["body-only-merge-sha-ignored"])
+        missing_current_body["id"] = "body-only-missing-current-body"
+        del missing_current_body["payload"]["pull_request"]["body"]
+        cases.append(missing_current_body)
+
+        missing_current_title = copy.deepcopy(templates["title-only"])
+        missing_current_title["id"] = "title-only-missing-current-title"
+        del missing_current_title["payload"]["pull_request"]["title"]
+        cases.append(missing_current_title)
+
+        overlength_ref = {
+            "accepted": False,
+            "id": "overlength",
+            "ref": "a" * (event_classifier.MAX_BRANCH_REF_BYTES + 1),
+        }
+        for template_id in ("body-only-merge-sha-ignored", "title-only"):
+            for ref_case in (*fixture["base_ref_validation_cases"], overlength_ref):
+                mutated = copy.deepcopy(templates[template_id])
+                mutated["id"] = f"{template_id}-base-ref-{ref_case['id']}"
+                mutated["payload"]["pull_request"]["base"]["ref"] = ref_case["ref"]
+                cases.append(mutated)
+
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="workflow-metadata-adapter-fixture-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            for case in cases:
+                payload = copy.deepcopy(case["payload"])
+                match = re.fullmatch(
+                    r"refs/pull/([1-9][0-9]*)/merge",
+                    case["runner"]["github_ref"],
+                )
+                payload.setdefault(
+                    "number",
+                    int(match.group(1)) if match is not None else 177,
+                )
+                decision = event_classifier.classify_event(
+                    case["event_name"],
+                    payload,
+                    github_ref=case["runner"]["github_ref"],
+                    github_sha=case["runner"]["github_sha"],
+                    pr_base_sha=case["runner"]["pr_base_sha"],
+                    pr_head_sha=case["runner"]["pr_head_sha"],
+                    push_sha=case["runner"]["push_sha"],
+                )
+                expected = 0 if decision.classification == "metadata-only" else 1
+                for job_name, script in scripts.items():
+                    with self.subTest(
+                        case=case["id"],
+                        job=job_name,
+                        classification=decision.classification,
+                        reason=decision.reason,
+                    ):
+                        event_path = sandbox / f"{job_name}-{case['id']}.json"
+                        event_path.write_bytes(
+                            _metadata_adapter_payload_bytes(payload)
+                        )
+                        completed = subprocess.run(
+                            ["/bin/bash", "-c", script],
+                            cwd=ROOT,
+                            env={
+                                **os.environ,
+                                **_metadata_adapter_env_for_case(case, event_path),
+                            },
+                            check=False,
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                        )
+                        self.assertEqual(
+                            completed.returncode,
+                            expected,
+                            (
+                                f"{case['id']} => {decision.classification}/{decision.reason}\n"
+                                f"{completed.stderr}"
+                            ),
+                        )
 
     def test_metadata_adapter_event_file_loader_rejects_races(self):
         scripts = _metadata_adapter_scripts(self.text)
