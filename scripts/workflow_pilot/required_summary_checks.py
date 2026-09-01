@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,7 +20,6 @@ RESPONSE_REQUIRED_FIELDS = frozenset(
         "bypass_actors",
         "conditions",
         "created_at",
-        "current_user_can_bypass",
         "enforcement",
         "id",
         "name",
@@ -36,7 +38,6 @@ STABLE_RESPONSE_FIELDS = (
     "bypass_actors",
     "conditions",
     "created_at",
-    "current_user_can_bypass",
     "enforcement",
     "id",
     "name",
@@ -55,6 +56,12 @@ EXPECTED_RULE_ORDER = (
     "code_scanning",
 )
 REVIEW_RULE_TYPES = frozenset({"copilot_code_review", "pull_request"})
+REQUEST_SCOPED_FIELDS = frozenset({"current_user_can_bypass"})
+VOLATILE_RESPONSE_FIELDS = frozenset({"updated_at"})
+GH = "/usr/bin/gh"
+HEADER_STATUS_RE = re.compile(r"^HTTP/\d+(?:\.\d+)?\s+(?P<status>\d{3})\b")
+STRONG_ETAG_RE = re.compile(r'^"(?:[^"\\]|\\.)+"$')
+REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 class RulesetContractError(ValueError):
@@ -67,6 +74,7 @@ class RulesetContract:
     ruleset_identity: dict[str, Any]
     status_check_contract: dict[str, Any]
     negative_proof_run_ids: tuple[int, ...]
+    request_scoped_metadata_fields: tuple[str, ...]
     post_apply_volatile_fields: tuple[str, ...]
     source_ruleset_response: dict[str, Any]
     desired_ruleset_response: dict[str, Any]
@@ -98,6 +106,97 @@ def load_json(path: Path) -> Any:
         return json.loads(text, object_pairs_hook=_json_object_no_duplicates)
     except json.JSONDecodeError as error:
         raise RulesetContractError(f"invalid JSON in {path}: {error}") from error
+
+
+def _gh_environment() -> dict[str, str]:
+    environment = {"LC_ALL": "C", "PATH": "/usr/bin:/bin"}
+    for name in (
+        "GH_CONFIG_DIR",
+        "GH_HOST",
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "HOME",
+        "NO_COLOR",
+        "XDG_CONFIG_HOME",
+        "XDG_DATA_HOME",
+        "XDG_STATE_HOME",
+    ):
+        value = os.environ.get(name)
+        if value is not None:
+            environment[name] = value
+    return environment
+
+
+def _validate_repository(repository: str) -> str:
+    if REPOSITORY_RE.fullmatch(repository) is None:
+        raise RulesetContractError(f"repository {repository!r} is invalid")
+    return repository
+
+
+def _endpoint(contract: RulesetContract) -> str:
+    repository = _validate_repository(contract.repository)
+    ruleset_id = contract.ruleset_identity["id"]
+    return f"repos/{repository}/rulesets/{ruleset_id}"
+
+
+def _run_gh_api(
+    arguments: list[str],
+    *,
+    input_bytes: bytes | None = None,
+) -> subprocess.CompletedProcess[bytes]:
+    try:
+        return subprocess.run(
+            [GH, "api", *arguments],
+            input=input_bytes,
+            check=False,
+            capture_output=True,
+            env=_gh_environment(),
+        )
+    except OSError as error:
+        raise RulesetContractError(f"cannot execute trusted gh CLI: {error}") from error
+
+
+def _parse_http_response(raw: bytes, label: str) -> tuple[int, dict[str, str], Any]:
+    text = raw.decode("utf-8")
+    normalized = text.replace("\r\n", "\n")
+    headers_text, separator, body = normalized.partition("\n\n")
+    if not separator:
+        raise RulesetContractError(f"{label} must include HTTP headers and a JSON body")
+    header_lines = headers_text.splitlines()
+    if not header_lines:
+        raise RulesetContractError(f"{label} is missing an HTTP status line")
+    match = HEADER_STATUS_RE.match(header_lines[0])
+    if match is None:
+        raise RulesetContractError(f"{label} has an invalid HTTP status line")
+    headers: dict[str, str] = {}
+    for index, line in enumerate(header_lines[1:], start=1):
+        if ":" not in line:
+            raise RulesetContractError(f"{label} header {index} is malformed")
+        name, value = line.split(":", 1)
+        key = name.strip().lower()
+        if not key:
+            raise RulesetContractError(f"{label} header {index} has an empty name")
+        if key in headers:
+            raise RulesetContractError(f"{label} repeats header {key!r}")
+        headers[key] = value.strip()
+    try:
+        payload = json.loads(body, object_pairs_hook=_json_object_no_duplicates)
+    except json.JSONDecodeError as error:
+        raise RulesetContractError(f"{label} body is not valid JSON: {error}") from error
+    return int(match.group("status")), headers, payload
+
+
+def _strong_etag(headers: dict[str, str], label: str) -> str:
+    etag = headers.get("etag")
+    if etag is None:
+        raise RulesetContractError(
+            f"{label} did not return a strong ETag; conditional update is unavailable"
+        )
+    if etag.startswith("W/") or STRONG_ETAG_RE.fullmatch(etag) is None:
+        raise RulesetContractError(
+            f"{label} did not return a strong ETag; conditional update is unavailable"
+        )
+    return etag
 
 
 def _expect_object(value: Any, label: str) -> dict[str, Any]:
@@ -407,8 +506,10 @@ def normalize_ruleset_response(
 ) -> dict[str, Any]:
     response = _expect_object(raw, label)
     actual_fields = set(response)
-    expected_fields = set(RESPONSE_REQUIRED_FIELDS)
-    missing = sorted(expected_fields - actual_fields - set(volatile_fields))
+    expected_fields = set(RESPONSE_REQUIRED_FIELDS) | set(REQUEST_SCOPED_FIELDS)
+    missing = sorted(
+        set(RESPONSE_REQUIRED_FIELDS) - actual_fields - set(volatile_fields)
+    )
     extra = sorted(actual_fields - expected_fields)
     if missing or extra:
         detail = []
@@ -429,10 +530,6 @@ def normalize_ruleset_response(
         ],
         "conditions": _normalize_conditions(response["conditions"], f"{label}.conditions"),
         "created_at": _expect_string(response["created_at"], f"{label}.created_at"),
-        "current_user_can_bypass": _expect_string(
-            response["current_user_can_bypass"],
-            f"{label}.current_user_can_bypass",
-        ),
         "enforcement": _expect_string(response["enforcement"], f"{label}.enforcement"),
         "id": _expect_int(response["id"], f"{label}.id", minimum=1),
         "name": _expect_string(response["name"], f"{label}.name"),
@@ -442,6 +539,11 @@ def normalize_ruleset_response(
         "source_type": _expect_string(response["source_type"], f"{label}.source_type"),
         "target": _expect_string(response["target"], f"{label}.target"),
     }
+    if "current_user_can_bypass" in response:
+        _expect_string(
+            response["current_user_can_bypass"],
+            f"{label}.current_user_can_bypass",
+        )
     if "updated_at" in response:
         normalized["updated_at"] = _expect_string(
             response["updated_at"],
@@ -585,6 +687,7 @@ def validate_contract(raw: Any) -> RulesetContract:
             "negative_proof_run_ids",
             "post_apply_volatile_fields",
             "repository",
+            "request_scoped_metadata_fields",
             "ruleset_identity",
             "schema_version",
             "source_ruleset_response",
@@ -592,9 +695,25 @@ def validate_contract(raw: Any) -> RulesetContract:
         },
     )
     schema_version = _expect_int(contract["schema_version"], "contract.schema_version")
-    if schema_version != 2:
-        raise RulesetContractError("contract.schema_version must be 2")
+    if schema_version != 3:
+        raise RulesetContractError("contract.schema_version must be 3")
     repository = _expect_string(contract["repository"], "contract.repository")
+    request_scoped_fields = tuple(
+        _expect_string(
+            value,
+            f"contract.request_scoped_metadata_fields[{index}]",
+        )
+        for index, value in enumerate(
+            _expect_list(
+                contract["request_scoped_metadata_fields"],
+                "contract.request_scoped_metadata_fields",
+            )
+        )
+    )
+    if request_scoped_fields != ("current_user_can_bypass",):
+        raise RulesetContractError(
+            "contract.request_scoped_metadata_fields must be exactly ['current_user_can_bypass']"
+        )
     ruleset_identity = _normalize_ruleset_identity(
         contract["ruleset_identity"],
         "contract.ruleset_identity",
@@ -752,6 +871,7 @@ def validate_contract(raw: Any) -> RulesetContract:
         ruleset_identity=ruleset_identity,
         status_check_contract=status_check_contract,
         negative_proof_run_ids=negative_proof_run_ids,
+        request_scoped_metadata_fields=request_scoped_fields,
         post_apply_volatile_fields=volatile_fields,
         source_ruleset_response=source_ruleset_response,
         desired_ruleset_response=desired_ruleset_response,
@@ -808,6 +928,78 @@ def verify_live_ruleset(contract: RulesetContract, live_ruleset: Any) -> dict[st
     }
 
 
+def apply_live(contract: RulesetContract) -> dict[str, Any]:
+    endpoint = _endpoint(contract)
+
+    get_response = _run_gh_api(["--include", endpoint])
+    if get_response.returncode != 0:
+        detail = get_response.stderr.decode("utf-8", errors="replace").strip()
+        raise RulesetContractError(
+            "trusted gh ruleset GET failed"
+            + (f": {detail}" if detail else "")
+        )
+    status, headers, body = _parse_http_response(
+        get_response.stdout,
+        "trusted gh ruleset GET",
+    )
+    if status != 200:
+        raise RulesetContractError(
+            f"trusted gh ruleset GET returned HTTP {status}, expected 200"
+        )
+    etag = _strong_etag(headers, "trusted gh ruleset GET")
+    patch_body = preview_patch(contract, body)
+
+    put_response = _run_gh_api(
+        [
+            "--include",
+            "--method",
+            "PUT",
+            "-H",
+            f"If-Match: {etag}",
+            endpoint,
+            "--input",
+            "-",
+        ],
+        input_bytes=normalized_json(patch_body),
+    )
+    if put_response.returncode != 0:
+        stdout = put_response.stdout.decode("utf-8", errors="replace")
+        stderr = put_response.stderr.decode("utf-8", errors="replace").strip()
+        if "412" in stdout or "412" in stderr or "Precondition Failed" in stdout or "Precondition Failed" in stderr:
+            raise RulesetContractError(
+                "conditional ruleset update failed with HTTP 412 Precondition Failed; live ruleset changed concurrently"
+            )
+        raise RulesetContractError(
+            "trusted gh ruleset PUT failed"
+            + (f": {stderr}" if stderr else "")
+        )
+    put_status, _, _ = _parse_http_response(
+        put_response.stdout,
+        "trusted gh ruleset PUT",
+    )
+    if put_status != 200:
+        raise RulesetContractError(
+            f"trusted gh ruleset PUT returned HTTP {put_status}, expected 200"
+        )
+
+    refetch = _run_gh_api(["--include", endpoint])
+    if refetch.returncode != 0:
+        detail = refetch.stderr.decode("utf-8", errors="replace").strip()
+        raise RulesetContractError(
+            "trusted gh ruleset refetch failed"
+            + (f": {detail}" if detail else "")
+        )
+    refetch_status, _, refetched_body = _parse_http_response(
+        refetch.stdout,
+        "trusted gh ruleset refetch",
+    )
+    if refetch_status != 200:
+        raise RulesetContractError(
+            f"trusted gh ruleset refetch returned HTTP {refetch_status}, expected 200"
+        )
+    return verify_live_ruleset(contract, refetched_body)
+
+
 def _write_output(path: Path | None, payload: Any) -> None:
     data = normalized_json(payload)
     if path is None:
@@ -819,7 +1011,7 @@ def _write_output(path: Path | None, payload: Any) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Validate the required-summary ruleset contract and preview the owner patch body.",
+        description="Validate the required-summary ruleset contract and preview or apply the owner patch body.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     for command in ("preview", "verify"):
@@ -827,6 +1019,9 @@ def build_parser() -> argparse.ArgumentParser:
         subparser.add_argument("--contract", type=Path, required=True)
         subparser.add_argument("--live", type=Path, required=True)
         subparser.add_argument("--output", type=Path)
+    apply_live_parser = subparsers.add_parser("apply-live")
+    apply_live_parser.add_argument("--contract", type=Path, required=True)
+    apply_live_parser.add_argument("--output", type=Path)
     return parser
 
 
@@ -835,6 +1030,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         contract = validate_contract(load_json(args.contract))
+        if args.command == "apply-live":
+            _write_output(args.output, apply_live(contract))
+            return 0
         live_ruleset = load_json(args.live)
         if args.command == "preview":
             _write_output(args.output, preview_patch(contract, live_ruleset))

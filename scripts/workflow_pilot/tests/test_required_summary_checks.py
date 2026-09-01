@@ -4,6 +4,7 @@ import json
 import subprocess
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts.workflow_pilot import required_summary_checks
 
@@ -34,6 +35,10 @@ class RequiredSummaryChecksTests(unittest.TestCase):
         self.assertEqual(contract.ruleset_identity["id"], 19088702)
         self.assertEqual(contract.repository, "laqieer/fireemblem8-expansion")
         self.assertEqual(contract.negative_proof_run_ids, (33472008301, 33472111689))
+        self.assertEqual(
+            contract.request_scoped_metadata_fields,
+            ("current_user_can_bypass",),
+        )
         self.assertEqual(contract.post_apply_volatile_fields, ("updated_at",))
         self.assertEqual(
             contract.status_check_contract["required"],
@@ -64,6 +69,23 @@ class RequiredSummaryChecksTests(unittest.TestCase):
                 required_summary_checks.load_json(DESIRED),
                 "desired",
                 volatile_fields=("updated_at",),
+            ),
+        )
+
+    def test_current_user_can_bypass_is_request_scoped_metadata(self) -> None:
+        current = load_json(CURRENT)
+        alternate = json.loads(json.dumps(current))
+        alternate["current_user_can_bypass"] = "always"
+        self.assertEqual(
+            required_summary_checks.normalize_ruleset_response(
+                current,
+                "current",
+                volatile_fields=(),
+            ),
+            required_summary_checks.normalize_ruleset_response(
+                alternate,
+                "alternate",
+                volatile_fields=(),
             ),
         )
 
@@ -212,6 +234,200 @@ class RequiredSummaryChecksTests(unittest.TestCase):
             with self.subTest(mutation=name):
                 with self.assertRaises(required_summary_checks.RulesetContractError):
                     required_summary_checks.verify_live_ruleset(contract, payload)
+
+    def test_apply_live_uses_strong_etag_and_refetches(self) -> None:
+        contract = required_summary_checks.validate_contract(
+            required_summary_checks.load_json(CONTRACT)
+        )
+        current = load_json(CURRENT)
+        desired = load_json(DESIRED)
+        desired["updated_at"] = "2026-09-01T06:00:00.000Z"
+
+        def http(status: int, body: dict, *, etag: str | None = '"etag-1"') -> subprocess.CompletedProcess[bytes]:
+            headers = [
+                f"HTTP/2 {status} {'OK' if status == 200 else 'Precondition Failed'}",
+                "content-type: application/json",
+            ]
+            if etag is not None:
+                headers.append(f"etag: {etag}")
+            return subprocess.CompletedProcess(
+                [required_summary_checks.GH, "api"],
+                0,
+                ("\r\n".join(headers) + "\r\n\r\n").encode("utf-8")
+                + required_summary_checks.normalized_json(body),
+                b"",
+            )
+
+        with mock.patch.object(
+            required_summary_checks,
+            "_run_gh_api",
+            side_effect=[
+                http(200, current),
+                http(200, desired),
+                http(200, desired),
+            ],
+        ) as mocked:
+            result = required_summary_checks.apply_live(contract)
+        self.assertEqual(
+            result,
+            {
+                "repository": "laqieer/fireemblem8-expansion",
+                "required_build_contexts": ["summary"],
+                "ruleset_id": 19088702,
+                "status": "ok",
+                "verified_state": "desired",
+            },
+        )
+        calls = mocked.call_args_list
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(calls[0].args[0], ["--include", "repos/laqieer/fireemblem8-expansion/rulesets/19088702"])
+        self.assertEqual(
+            calls[1].args[0],
+            [
+                "--include",
+                "--method",
+                "PUT",
+                "-H",
+                'If-Match: "etag-1"',
+                "repos/laqieer/fireemblem8-expansion/rulesets/19088702",
+                "--input",
+                "-",
+            ],
+        )
+        self.assertEqual(
+            calls[1].kwargs["input_bytes"],
+            required_summary_checks.normalized_json(contract.desired_patch_body),
+        )
+        self.assertEqual(calls[2].args[0], ["--include", "repos/laqieer/fireemblem8-expansion/rulesets/19088702"])
+
+    def test_apply_live_rejects_missing_or_weak_etag(self) -> None:
+        contract = required_summary_checks.validate_contract(
+            required_summary_checks.load_json(CONTRACT)
+        )
+        current = load_json(CURRENT)
+
+        def http(etag: str | None) -> subprocess.CompletedProcess[bytes]:
+            headers = ["HTTP/2 200 OK", "content-type: application/json"]
+            if etag is not None:
+                headers.append(f"etag: {etag}")
+            return subprocess.CompletedProcess(
+                [required_summary_checks.GH, "api"],
+                0,
+                ("\r\n".join(headers) + "\r\n\r\n").encode("utf-8")
+                + required_summary_checks.normalized_json(current),
+                b"",
+            )
+
+        for etag in (None, 'W/"etag-1"'):
+            with self.subTest(etag=etag):
+                with mock.patch.object(
+                    required_summary_checks,
+                    "_run_gh_api",
+                    return_value=http(etag),
+                ):
+                    with self.assertRaisesRegex(
+                        required_summary_checks.RulesetContractError,
+                        "strong ETag",
+                    ):
+                        required_summary_checks.apply_live(contract)
+
+    def test_apply_live_rejects_precondition_failure_and_put_errors(self) -> None:
+        contract = required_summary_checks.validate_contract(
+            required_summary_checks.load_json(CONTRACT)
+        )
+        current = load_json(CURRENT)
+        get_response = subprocess.CompletedProcess(
+            [required_summary_checks.GH, "api"],
+            0,
+            b'HTTP/2 200 OK\r\netag: "etag-1"\r\ncontent-type: application/json\r\n\r\n'
+            + required_summary_checks.normalized_json(current),
+            b"",
+        )
+        precondition = subprocess.CompletedProcess(
+            [required_summary_checks.GH, "api"],
+            1,
+            b"HTTP/2 412 Precondition Failed\r\ncontent-type: application/json\r\n\r\n{}\n",
+            b"",
+        )
+        with mock.patch.object(
+            required_summary_checks,
+            "_run_gh_api",
+            side_effect=[get_response, precondition],
+        ):
+            with self.assertRaisesRegex(
+                required_summary_checks.RulesetContractError,
+                "412 Precondition Failed",
+            ):
+                required_summary_checks.apply_live(contract)
+
+        put_error = subprocess.CompletedProcess(
+            [required_summary_checks.GH, "api"],
+            1,
+            b"",
+            b"server exploded",
+        )
+        with mock.patch.object(
+            required_summary_checks,
+            "_run_gh_api",
+            side_effect=[get_response, put_error],
+        ):
+            with self.assertRaisesRegex(
+                required_summary_checks.RulesetContractError,
+                "PUT failed",
+            ):
+                required_summary_checks.apply_live(contract)
+
+    def test_apply_live_rejects_repo_ruleset_and_post_state_drift(self) -> None:
+        contract = required_summary_checks.validate_contract(
+            required_summary_checks.load_json(CONTRACT)
+        )
+        wrong_repository = load_json(CURRENT)
+        wrong_repository["source"] = "other/repository"
+        wrong_ruleset = load_json(CURRENT)
+        wrong_ruleset["id"] = 19088703
+        desired = load_json(DESIRED)
+        desired["updated_at"] = "2026-09-01T06:00:00.000Z"
+        desired["conditions"]["ref_name"]["include"] = ["refs/heads/release"]
+
+        def response(body: dict) -> subprocess.CompletedProcess[bytes]:
+            return subprocess.CompletedProcess(
+                [required_summary_checks.GH, "api"],
+                0,
+                b'HTTP/2 200 OK\r\netag: "etag-1"\r\ncontent-type: application/json\r\n\r\n'
+                + required_summary_checks.normalized_json(body),
+                b"",
+            )
+
+        for name, body, pattern in (
+            ("wrong-repository", wrong_repository, "source state"),
+            ("wrong-ruleset", wrong_ruleset, "source state"),
+        ):
+            with self.subTest(mutation=name):
+                with mock.patch.object(
+                    required_summary_checks,
+                    "_run_gh_api",
+                    return_value=response(body),
+                ):
+                    with self.assertRaisesRegex(
+                        required_summary_checks.RulesetContractError,
+                        pattern,
+                    ):
+                        required_summary_checks.apply_live(contract)
+
+        with mock.patch.object(
+            required_summary_checks,
+            "_run_gh_api",
+            side_effect=[
+                response(load_json(CURRENT)),
+                response(load_json(DESIRED) | {"updated_at": "2026-09-01T06:00:00.000Z"}),
+                response(desired),
+            ],
+        ):
+            with self.assertRaisesRegex(
+                required_summary_checks.RulesetContractError,
+                "desired post-migration state",
+            ):
+                required_summary_checks.apply_live(contract)
 
     def test_contract_mutations_fail_closed(self) -> None:
         raw = load_json(CONTRACT)

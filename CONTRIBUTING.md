@@ -96,8 +96,11 @@ canonical `summary` context rather than individual worker names, while leaving
 independent security/review contexts unchanged.
 Use the committed source/target ruleset contract in
 `.github/required-summary-checks.json` and the trusted stdlib verifier
-`scripts/workflow_pilot/required_summary_checks.py` to preview and verify that
-owner-only migration without guessing the live default-branch ruleset state.
+`scripts/workflow_pilot/required_summary_checks.py` to preview, verify, or
+owner-apply that migration without guessing the live default-branch ruleset
+state. `apply-live` performs the exact GET/strong-ETag/`If-Match` PUT/refetch
+sequence and ignores request-scoped `current_user_can_bypass` metadata while
+still enforcing the exact `bypass_actors` policy.
 
 If post-merge Build fails, fix forward or revert the affected `master` change.
 That failure blocks the affected issue's closure and

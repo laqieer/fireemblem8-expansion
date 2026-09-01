@@ -306,7 +306,11 @@ protection.
 The committed `.github/required-summary-checks.json` contract and trusted
 stdlib verifier `scripts/workflow_pilot/required_summary_checks.py` encode the
 exact pre-migration live ruleset `19088702`, the desired post-state requiring
-only canonical `summary`, and the owner-only preview/verify migration flow.
+only canonical `summary`, and the owner-only preview/verify/apply-live
+migration flow. `apply-live` fetches the live ruleset through trusted `gh api`,
+requires a strong ETag, PUTs only with `If-Match`, refetches, and verifies the
+exact desired post-state while ignoring request-scoped
+`current_user_can_bypass` metadata.
 The current Build workflow has no explicit final-dispatch trigger; if that
 supported surface is introduced later, `workflow_dispatch` classifies as full
 and the trigger/topology contracts must be updated together.

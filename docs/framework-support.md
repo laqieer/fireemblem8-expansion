@@ -36,6 +36,10 @@ names, while preserving any existing independent security/review contexts.
 The committed `.github/required-summary-checks.json` contract and
 `scripts/workflow_pilot/required_summary_checks.py` verifier freeze that exact
 owner-only ruleset migration for default-branch protection rule `19088702`.
+The verifier's `apply-live` command performs the live GET/strong-ETag/`If-Match`
+PUT/refetch flow directly and ignores request-scoped
+`current_user_can_bypass` metadata while preserving the exact `bypass_actors`
+policy.
 Base, mixed, unknown/incomplete,
 opened, synchronize, and reopened events with complete identity fail closed to
 the complete graph. Any missing, malformed, or incoherent base ref/SHA with a

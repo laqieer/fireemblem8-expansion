@@ -512,8 +512,10 @@ successful full run even though later metadata runs reuse the worker names.
 `python3 -m unittest scripts.workflow_pilot.tests.test_required_summary_checks -v`
 validates the committed ruleset `19088702` source state, desired response,
 exact owner PATCH body, preserved GitGuardian integration, and fail-closed
-preview/verify CLI mutations for same-name wrong app, dropped rules, direct
-workers retained, and conditions/bypass drift.
+preview/verify/apply-live CLI mutations for same-name wrong app, dropped
+rules, direct workers retained, conditions/bypass-actor drift, ignored
+`current_user_can_bypass` request metadata, stale strong-ETag mismatch, and
+post-apply refetch drift.
 
 `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v` parses the
 workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
@@ -988,33 +990,31 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    - **Parsed live title-restore job/check set:** {`event-identity`,
      `event-router`, `metadata-classifier`, `host-tests`, `build`,
      `extended-host-tests`, `legacy`, `patch-release`, `metadata-summary`}.
-12. Preview and verify the owner-only ruleset migration procedure without
-    mutating GitHub from this task:
+12. Optionally preview the owner-only ruleset migration patch body without
+    mutating GitHub from this task, then use the single trusted `apply-live`
+    command when an owner actually executes the migration:
 
    ```bash
    ruleset_live="$source_root/build/test-artifacts/issue-177-ruleset-live.json"
-   ruleset_patch="$source_root/build/test-artifacts/issue-177-ruleset-patch.json"
-   ruleset_post="$source_root/build/test-artifacts/issue-177-ruleset-post.json"
 
    gh api "repos/{owner}/{repo}/rulesets/19088702" > "$ruleset_live"
    /usr/bin/python3 -I scripts/workflow_pilot/required_summary_checks.py preview \
      --contract .github/required-summary-checks.json \
-     --live "$ruleset_live" \
-     --output "$ruleset_patch"
+     --live "$ruleset_live"
 
    # Owner-only later step, not executed in this local task:
-   gh api --method PUT "repos/{owner}/{repo}/rulesets/19088702" \
-     --input "$ruleset_patch"
-
-   gh api "repos/{owner}/{repo}/rulesets/19088702" > "$ruleset_post"
-   /usr/bin/python3 -I scripts/workflow_pilot/required_summary_checks.py verify \
-     --contract .github/required-summary-checks.json \
-     --live "$ruleset_post"
+   /usr/bin/python3 -I scripts/workflow_pilot/required_summary_checks.py apply-live \
+     --contract .github/required-summary-checks.json
    ```
 
-   The verifier must refuse a stale pre-migration live ruleset, a post-state
-   that keeps direct worker checks, a same-name wrong app, or any dropped or
-   altered independent rule.
+   `apply-live` must fetch the live ruleset through trusted `gh api`, require a
+   strong ETag, validate the exact encoded pre-migration source state, PUT only
+   with `If-Match`, reject `412 Precondition Failed` or missing/weak ETag
+   support, refetch, and verify the exact desired post-state. The verifier must
+   also refuse a post-state that keeps direct worker checks, a same-name wrong
+   app, any dropped or altered independent rule, or bypass-actor drift; the
+   request-scoped `current_user_can_bypass` field is ignored for policy
+   equality.
 13. Normalize all three real runs and execute the candidate evaluator's full,
    metadata-only, combined, failed-full, and missing-full assertions:
 
