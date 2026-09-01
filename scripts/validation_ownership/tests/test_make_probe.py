@@ -767,14 +767,22 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 )
 
     def test_absolute_and_untracked_includes_reject(self):
-        for include in ("/dev/stdin", "missing-untracked.mk"):
-            with self.subTest(include=include):
-                directory, root, entries = self.fixture(
-                    f"-include {include}\nall:\n\t@true\n"
-                )
+        cases = (
+            (
+                "-include /dev/stdin\nall:\n\t@true\n",
+                "absolute or dynamic include",
+            ),
+            (
+                "include missing-untracked.mk\nall:\n\t@true\n",
+                "untracked include",
+            ),
+        )
+        for makefile, message in cases:
+            with self.subTest(makefile=makefile):
+                directory, root, entries = self.fixture(makefile)
                 with directory, self.assertRaisesRegex(
                     make_probe.MakeProbeError,
-                    "absolute or dynamic include|untracked include",
+                    message,
                 ):
                     self.probe(root, entries)
 

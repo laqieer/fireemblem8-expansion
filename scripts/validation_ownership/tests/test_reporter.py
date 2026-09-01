@@ -823,7 +823,7 @@ class OwnershipGraphTests(unittest.TestCase):
             graph_path.write_bytes(reporter.normalized_json(redirected))
             with self.assertRaisesRegex(
                 reporter.OwnershipError,
-                "selection mismatch",
+                "does not cover exact owned edges",
             ):
                 reporter.run_lifecycle_check(
                     artifact_root,
