@@ -555,6 +555,9 @@ class TrustedGitHubGateTests(unittest.TestCase):
             receipt["assertion_program_argv"],
             list(trusted_review_gate.ASSERTION_PROGRAM_ARGV),
         )
+        expected_head_tree = git(
+            self.repo, "rev-parse", f"{self.candidate_sha}^{{tree}}"
+        ).stdout.decode().strip()
         self.assertEqual(
             len(receipt["assertion_results"]),
             len(review_family.REQUIRED_BEHAVIOR_ROWS)
@@ -580,6 +583,9 @@ class TrustedGitHubGateTests(unittest.TestCase):
             all(
                 result["program_blob_oid"] == expected_program_blob
                 and result["program_exit_code"] == 0
+                and result["authority_binding"]["finding_id"] is None
+                and result["authority_binding"]["head_sha"] == self.candidate_sha
+                and result["authority_binding"]["head_tree"] == expected_head_tree
                 for result in receipt["assertion_results"]
             )
         )

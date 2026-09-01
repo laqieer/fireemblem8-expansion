@@ -34,6 +34,30 @@ CHECKER_ARGV = (
     "--input",
     "checker-input.json",
 )
+GIT = "/usr/bin/git"
+CHECKER_RELPATH = "scripts/workflow_pilot/review_base_checker.py"
+ASSERTION_PROGRAM_RELPATH = "scripts/workflow_pilot/review_assertions.py"
+ASSERTION_PROGRAM_ARGV = (
+    "/usr/bin/python3",
+    "-I",
+    "review_assertions.py",
+    "--stdin",
+)
+ASSERTION_SUBJECT_PATHS = tuple(
+    f"scripts/workflow_pilot/assertion_subjects/{family}_{member.replace('-', '_')}.json"
+    for family, members in FAMILY_MEMBERS.items()
+    for member in members
+)
+BEHAVIOR_ROWS = {
+    "actor-permission-bounds",
+    "authority-causality",
+    "remote-review-metrics",
+    "round-lifecycle",
+    "sibling-family-expansion",
+}
+EVIDENCE_CLASSES = {"positive", "adversarial", "default", "runtime"}
+REMOTE_REVIEW_STATES = {"APPROVED", "CHANGES_REQUESTED", "COMMENTED"}
+REMOTE_REVIEW_OUTCOMES = {"clean", "changes-requested"}
 
 
 class CheckError(Exception):
@@ -123,6 +147,104 @@ def expect_time(value: Any, label: str) -> datetime:
 def expect_unique(values, label: str) -> None:
     if len(values) != len(set(values)):
         raise CheckError(f"{label} contains duplicates")
+
+
+def git_blob_oid(payload: bytes) -> str:
+    header = f"blob {len(payload)}\0".encode("ascii")
+    return hashlib.sha1(header + payload).hexdigest()
+
+
+def git_environment(home: Path) -> dict[str, str]:
+    return {
+        "HOME": str(home),
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_NO_LAZY_FETCH": "1",
+        "GIT_TERMINAL_PROMPT": "0",
+    }
+
+
+def run_git(repository_root: Path, *arguments: str) -> bytes:
+    completed = subprocess.run(
+        (GIT, "--no-replace-objects", "-C", str(repository_root), *arguments),
+        env=git_environment(repository_root),
+        check=False,
+        capture_output=True,
+        timeout=60,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.decode("utf-8", errors="replace").strip()
+        raise CheckError(detail or "trusted Git command failed")
+    return completed.stdout
+
+
+def resolve_directory(path: Path, label: str) -> Path:
+    if not path.is_dir() or path.is_symlink():
+        raise CheckError(f"{label} is unavailable")
+    try:
+        return path.resolve(strict=True)
+    except OSError as error:
+        raise CheckError(f"{label} is unavailable") from error
+
+
+def read_regular_file(path: Path, label: str) -> bytes:
+    if not path.is_file() or path.is_symlink():
+        raise CheckError(f"{label} is unavailable")
+    try:
+        return path.read_bytes()
+    except OSError as error:
+        raise CheckError(f"{label} is unavailable") from error
+
+
+def git_commit_tree(repository_root: Path, commit_sha: str, label: str) -> str:
+    try:
+        commit = run_git(
+            repository_root, "rev-parse", "--verify", f"{commit_sha}^{{commit}}"
+        ).decode("ascii").strip()
+        tree = run_git(repository_root, "rev-parse", f"{commit_sha}^{{tree}}").decode(
+            "ascii"
+        ).strip()
+    except UnicodeDecodeError as error:
+        raise CheckError(f"{label} returned a non-ASCII Git identity") from error
+    except CheckError as error:
+        raise CheckError(f"{label} is not available from trusted Git authority") from error
+    if commit != commit_sha:
+        raise CheckError(f"{label} does not resolve to the exact commit")
+    return tree
+
+
+def git_blob_oid_at_revision(
+    repository_root: Path, revision: str, relative_path: str, label: str
+) -> str:
+    try:
+        blob_oid = run_git(
+            repository_root, "rev-parse", f"{revision}:{relative_path}"
+        ).decode("ascii").strip()
+    except UnicodeDecodeError as error:
+        raise CheckError(f"{label} returned a non-ASCII Git identity") from error
+    except CheckError as error:
+        raise CheckError(f"{label} is not available from trusted Git authority") from error
+    expect_sha(blob_oid, label)
+    return blob_oid
+
+
+def validate_repository_root(path: Path) -> Path:
+    root = resolve_directory(path, "checker input.repository_root")
+    try:
+        top_level = run_git(root, "rev-parse", "--show-toplevel").decode("utf-8").strip()
+    except UnicodeDecodeError as error:
+        raise CheckError("checker input.repository_root is not UTF-8") from error
+    actual_top = Path(top_level).resolve()
+    if actual_top != root:
+        raise CheckError(
+            "checker input.repository_root must be the exact Git top-level checkout"
+        )
+    if run_git(root, "status", "--porcelain"):
+        raise CheckError("checker input.repository_root must be clean")
+    return root
 
 
 def normalize_actor(login: Any) -> str:
@@ -377,14 +499,324 @@ def _validate_report(
     }
 
 
-def _result_id(
-    data: dict[str, Any], assertion_id: str, finding_id: str | None
-) -> str:
-    identity = {
-        "candidate_sha": data["candidate_sha"],
-        "review_round": data["review_round"],
-        "assertion_id": assertion_id,
+def parse_assertion_id(assertion_id: str) -> dict[str, Any]:
+    parts = assertion_id.split(":")
+    if (
+        len(parts) == 5
+        and parts[:2] == ["registry", "behavior"]
+        and parts[2] in BEHAVIOR_ROWS
+        and parts[3] in EVIDENCE_CLASSES
+        and parts[4] == "v2"
+    ):
+        return {
+            "kind": "behavior",
+            "row": parts[2],
+            "evidence_class": parts[3],
+        }
+    if len(parts) not in {6, 7} or parts[:2] != ["registry", "sibling"]:
+        raise CheckError("assertion ID is absent from exact-base registry")
+    family, member, outcome = parts[2:5]
+    reason = parts[5] if len(parts) == 7 else None
+    version = parts[-1]
+    if (
+        family not in FAMILY_MEMBERS
+        or member not in FAMILY_MEMBERS[family]
+        or version != "v2"
+    ):
+        raise CheckError("assertion member is absent from registry")
+    if outcome not in {"affected-fixed", "verified-unaffected", "not-applicable"}:
+        raise CheckError("assertion outcome is absent from registry")
+    if outcome == "not-applicable":
+        if (
+            family,
+            member,
+            reason,
+        ) != ("resource", "disabled", "feature-disabled-by-contract"):
+            raise CheckError("not-applicable reason is not registered")
+    elif reason is not None:
+        raise CheckError("outcome assertion has an unexpected reason")
+    return {
+        "kind": "member",
+        "family": family,
+        "member": member,
+        "outcome": outcome,
+        "reason": reason,
+    }
+
+
+def _validate_remote_review(raw: Any, label: str) -> dict[str, Any]:
+    review = expect_object(raw, label)
+    expect_keys(
+        review,
+        label,
+        (
+            "id",
+            "node_id",
+            "round",
+            "reviewer_actor_id",
+            "candidate_sha",
+            "submitted_at",
+            "state",
+            "body",
+            "body_classification",
+            "body_has_findings",
+            "outcome",
+            "finding_ids",
+        ),
+    )
+    if not isinstance(review["body_has_findings"], bool):
+        raise CheckError(f"{label}.body_has_findings must be a boolean")
+    finding_ids = [
+        expect_string(item, f"{label}.finding_ids[{index}]")
+        for index, item in enumerate(
+            expect_list(review["finding_ids"], f"{label}.finding_ids")
+        )
+    ]
+    expect_unique(finding_ids, f"{label}.finding_ids")
+    state = expect_string(review["state"], f"{label}.state")
+    if state not in REMOTE_REVIEW_STATES:
+        raise CheckError(f"{label}.state is not supported")
+    outcome = expect_string(review["outcome"], f"{label}.outcome")
+    if outcome not in REMOTE_REVIEW_OUTCOMES:
+        raise CheckError(f"{label}.outcome is not supported")
+    expect_string(review["body"], f"{label}.body", allow_empty=True)
+    expect_string(
+        review["body_classification"],
+        f"{label}.body_classification",
+        allow_empty=True,
+    )
+    expect_time(review["submitted_at"], f"{label}.submitted_at")
+    return {
+        "id": expect_int(review["id"], f"{label}.id"),
+        "node_id": expect_string(review["node_id"], f"{label}.node_id"),
+        "round": expect_int(review["round"], f"{label}.round"),
+        "reviewer_actor_id": expect_string(
+            review["reviewer_actor_id"], f"{label}.reviewer_actor_id"
+        ),
+        "candidate_sha": expect_sha(review["candidate_sha"], f"{label}.candidate_sha"),
+        "submitted_at": review["submitted_at"],
+        "state": state,
+        "body": review["body"],
+        "body_classification": review["body_classification"],
+        "body_has_findings": review["body_has_findings"],
+        "outcome": outcome,
+        "finding_ids": finding_ids,
+    }
+
+
+def _validate_remote_reviews(value: Any) -> list[dict[str, Any]]:
+    reviews = [
+        _validate_remote_review(raw, f"checker input.all_remote_reviews[{index}]")
+        for index, raw in enumerate(
+            expect_list(value, "checker input.all_remote_reviews")
+        )
+    ]
+    if not reviews:
+        raise CheckError("checker input.all_remote_reviews must not be empty")
+    expect_unique([review["id"] for review in reviews], "checker input.all_remote_reviews IDs")
+    expect_unique(
+        [review["node_id"] for review in reviews],
+        "checker input.all_remote_reviews node IDs",
+    )
+    expected_rounds = list(range(1, len(reviews) + 1))
+    if [review["round"] for review in reviews] != expected_rounds:
+        raise CheckError("checker input.all_remote_reviews rounds must be consecutive")
+    return reviews
+
+
+def _validate_remote_findings(
+    value: Any, reviews_by_node: dict[str, dict[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    findings = {}
+    claimed_by_review = {review_id: [] for review_id in reviews_by_node}
+    for index, raw in enumerate(expect_list(value, "checker input.remote_findings")):
+        label = f"checker input.remote_findings[{index}]"
+        finding = expect_object(raw, label)
+        expect_keys(
+            finding,
+            label,
+            (
+                "node_id",
+                "review_id",
+                "candidate_sha",
+                "created_at",
+                "author_actor_id",
+                "family",
+            ),
+        )
+        finding_id = expect_string(finding["node_id"], f"{label}.node_id")
+        if LOCAL_FINDING_RE.fullmatch(finding_id) is not None:
+            raise CheckError(f"{label}.node_id must not use the LOCAL- namespace")
+        if finding_id in findings:
+            raise CheckError(f"duplicate remote finding ID {finding_id!r}")
+        review_id = expect_string(finding["review_id"], f"{label}.review_id")
+        if review_id not in reviews_by_node:
+            raise CheckError(f"{label}.review_id references an unknown remote review")
+        candidate_sha = expect_sha(finding["candidate_sha"], f"{label}.candidate_sha")
+        if candidate_sha != reviews_by_node[review_id]["candidate_sha"]:
+            raise CheckError(f"{label}.candidate_sha does not match its review head")
+        family = expect_string(finding["family"], f"{label}.family")
+        if family not in FAMILY_MEMBERS:
+            raise CheckError(f"{label}.family is not registered")
+        expect_time(finding["created_at"], f"{label}.created_at")
+        author_actor_id = expect_string(
+            finding["author_actor_id"], f"{label}.author_actor_id"
+        )
+        findings[finding_id] = {
+            "id": finding_id,
+            "review_id": review_id,
+            "candidate_sha": candidate_sha,
+            "created_at": finding["created_at"],
+            "author_actor_id": author_actor_id,
+            "family": family,
+        }
+        claimed_by_review[review_id].append(finding_id)
+    for review_id, review in reviews_by_node.items():
+        if sorted(claimed_by_review[review_id]) != sorted(review["finding_ids"]):
+            raise CheckError(
+                "checker input.remote_findings do not exactly match their review findings"
+            )
+    return findings
+
+
+def _expected_assertion_artifacts(
+    repository_root: Path, finding_origin_sha: str, head_sha: str
+) -> list[dict[str, str]]:
+    return sorted(
+        [
+            {
+                "path": path,
+                "origin_blob_oid": git_blob_oid_at_revision(
+                    repository_root,
+                    finding_origin_sha,
+                    path,
+                    f"checker input origin assertion subject {path!r}",
+                ),
+                "head_blob_oid": git_blob_oid_at_revision(
+                    repository_root,
+                    head_sha,
+                    path,
+                    f"checker input head assertion subject {path!r}",
+                ),
+            }
+            for path in ASSERTION_SUBJECT_PATHS
+        ],
+        key=lambda item: item["path"],
+    )
+
+
+def _validate_assertion_input_artifacts(
+    value: Any, expected: list[dict[str, str]]
+) -> list[dict[str, str]]:
+    artifacts = []
+    for index, raw in enumerate(
+        expect_list(value, "checker input.assertion_input_artifacts")
+    ):
+        label = f"checker input.assertion_input_artifacts[{index}]"
+        artifact = expect_object(raw, label)
+        expect_keys(artifact, label, ("path", "origin_blob_oid", "head_blob_oid"))
+        artifacts.append(
+            {
+                "path": normalized_path(artifact["path"], f"{label}.path"),
+                "origin_blob_oid": expect_sha(
+                    artifact["origin_blob_oid"], f"{label}.origin_blob_oid"
+                ),
+                "head_blob_oid": expect_sha(
+                    artifact["head_blob_oid"], f"{label}.head_blob_oid"
+                ),
+            }
+        )
+    artifacts = sorted(artifacts, key=lambda item: item["path"])
+    if artifacts != expected:
+        raise CheckError(
+            "checker input.assertion_input_artifacts do not match exact Git authority"
+        )
+    return artifacts
+
+
+def _validate_materialized_root(
+    root: Path, label: str, expected_blobs: dict[str, str]
+) -> Path:
+    resolved_root = resolve_directory(root, label)
+    discovered = {}
+    for path in root.rglob("*"):
+        if path.is_symlink():
+            raise CheckError(f"{label} contains a symlink or path escape")
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise CheckError(f"{label} contains an unsafe entry")
+        relative = path.relative_to(root).as_posix()
+        discovered[relative] = path
+    if set(discovered) != set(expected_blobs):
+        raise CheckError(f"{label} does not exactly materialize the assertion subjects")
+    for relative, expected_blob_oid in expected_blobs.items():
+        payload = read_regular_file(
+            discovered[relative], f"{label}/{relative}"
+        )
+        if git_blob_oid(payload) != expected_blob_oid:
+            raise CheckError(
+                f"{label}/{relative} does not match exact Git blob authority"
+            )
+    return resolved_root
+
+
+def _behavior_binding(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "finding_id": None,
+        "finding_family": None,
+        "finding_member": None,
+        "finding_review_id": None,
+        "finding_review_round": None,
+        "finding_head_sha": None,
+        "finding_head_tree": None,
+        "finding_origin_sha": None,
+        "finding_origin_tree": None,
+        "head_sha": data["candidate_sha"],
+        "head_tree": data["candidate_tree"],
+    }
+
+
+def _bind_member_request(
+    data: dict[str, Any], parsed: dict[str, Any], finding_id: str
+) -> dict[str, Any]:
+    finding = data["round_findings"].get(finding_id)
+    if finding is None:
+        raise CheckError(
+            "member assertion finding is absent from the authoritative source round"
+        )
+    if finding["family"] != parsed["family"]:
+        raise CheckError("member assertion finding family does not match registry family")
+    return {
         "finding_id": finding_id,
+        "finding_family": finding["family"],
+        "finding_member": parsed["member"],
+        "finding_review_id": finding["review_id"],
+        "finding_review_round": finding["review_round"],
+        "finding_head_sha": finding["finding_head_sha"],
+        "finding_head_tree": finding["finding_head_tree"],
+        "finding_origin_sha": finding["finding_origin_sha"],
+        "finding_origin_tree": finding["finding_origin_tree"],
+        "head_sha": data["candidate_sha"],
+        "head_tree": data["candidate_tree"],
+    }
+
+
+def _validate_program_output_binding(
+    output: dict[str, Any], binding: dict[str, Any]
+) -> None:
+    for field, expected in binding.items():
+        if output.get(field) != expected:
+            raise CheckError(
+                f"assertion program output does not preserve authoritative {field}"
+            )
+
+
+def _result_id(review_round: int, assertion_id: str, binding: dict[str, Any]) -> str:
+    identity = {
+        "review_round": review_round,
+        "assertion_id": assertion_id,
+        "authority_binding": binding,
     }
     return "result-" + hashlib.sha256(normalized_json(identity)).hexdigest()
 
@@ -397,6 +829,7 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         (
             "schema_version",
             "repository",
+            "repository_root",
             "pull_request",
             "base_sha",
             "base_tree",
@@ -431,11 +864,24 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
     if data["schema_version"] != SCHEMA_VERSION:
         raise CheckError(f"checker input.schema_version must be {SCHEMA_VERSION}")
     repository = expect_string(data["repository"], "checker input.repository")
+    repository_root = validate_repository_root(
+        Path(expect_string(data["repository_root"], "checker input.repository_root"))
+    )
     pull_request = expect_int(data["pull_request"], "checker input.pull_request")
     base_sha = expect_sha(data["base_sha"], "checker input.base_sha")
-    expect_sha(data["base_tree"], "checker input.base_tree")
+    base_tree = expect_sha(data["base_tree"], "checker input.base_tree")
+    actual_base_tree = git_commit_tree(
+        repository_root, base_sha, "checker input.base_sha"
+    )
+    if base_tree != actual_base_tree:
+        raise CheckError("checker input.base_tree does not match trusted Git authority")
     original_pre_review_head = expect_sha(
         data["original_pre_review_head"],
+        "checker input.original_pre_review_head",
+    )
+    original_pre_review_head_tree = git_commit_tree(
+        repository_root,
+        original_pre_review_head,
         "checker input.original_pre_review_head",
     )
     original_changes = validate_change_records(
@@ -457,13 +903,9 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
             "checker input.assertion_program_path",
         )
     )
-    if (
-        assertion_program_path.name != "review_assertions.py"
-        or not assertion_program_path.is_file()
-        or assertion_program_path.is_symlink()
-    ):
+    if assertion_program_path.name != "review_assertions.py":
         raise CheckError("checker assertion program path is unavailable")
-    assertion_program_blob_oid = expect_sha(
+    claimed_assertion_program_blob_oid = expect_sha(
         data["assertion_program_blob_oid"],
         "checker input.assertion_program_blob_oid",
     )
@@ -471,13 +913,37 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         data["assertion_program_argv"],
         "checker input.assertion_program_argv",
     )
-    if assertion_program_argv != [
-        "/usr/bin/python3",
-        "-I",
-        "review_assertions.py",
-        "--stdin",
-    ]:
+    if assertion_program_argv != list(ASSERTION_PROGRAM_ARGV):
         raise CheckError("checker assertion program argv is not fixed")
+    checker_blob_oid = git_blob_oid(
+        read_regular_file(Path(__file__), "checker registry program")
+    )
+    expected_checker_blob_oid = git_blob_oid_at_revision(
+        repository_root,
+        base_sha,
+        CHECKER_RELPATH,
+        "checker registry program",
+    )
+    if checker_blob_oid != expected_checker_blob_oid:
+        raise CheckError(
+            "checker registry program does not match the exact base Git object"
+        )
+    assertion_program_blob_oid = git_blob_oid(
+        read_regular_file(assertion_program_path, "checker assertion program path")
+    )
+    expected_assertion_program_blob_oid = git_blob_oid_at_revision(
+        repository_root,
+        base_sha,
+        ASSERTION_PROGRAM_RELPATH,
+        "checker assertion program",
+    )
+    if (
+        claimed_assertion_program_blob_oid != expected_assertion_program_blob_oid
+        or assertion_program_blob_oid != expected_assertion_program_blob_oid
+    ):
+        raise CheckError(
+            "checker assertion program does not match the exact base Git object"
+        )
     finding_origin_sha = expect_sha(
         data["finding_origin_sha"], "checker input.finding_origin_sha"
     )
@@ -490,50 +956,40 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
     head_root = Path(
         expect_string(data["head_root"], "checker input.head_root")
     )
-    if (
-        not origin_root.is_dir()
-        or not head_root.is_dir()
-        or origin_root.is_symlink()
-        or head_root.is_symlink()
-    ):
-        raise CheckError("checker assertion tree roots are unavailable")
-    assertion_input_artifacts = expect_list(
-        data["assertion_input_artifacts"],
-        "checker input.assertion_input_artifacts",
-    )
     candidate_sha = expect_sha(data["candidate_sha"], "checker input.candidate_sha")
-    expect_sha(data["candidate_tree"], "checker input.candidate_tree")
+    if candidate_sha == base_sha:
+        raise CheckError("checker input candidate and base must differ")
+    candidate_tree = expect_sha(data["candidate_tree"], "checker input.candidate_tree")
+    actual_candidate_tree = git_commit_tree(
+        repository_root, candidate_sha, "checker input.candidate_sha"
+    )
+    if candidate_tree != actual_candidate_tree:
+        raise CheckError(
+            "checker input.candidate_tree does not match trusted Git authority"
+        )
     head_sha = expect_sha(data["head_sha"], "checker input.head_sha")
     if head_sha != candidate_sha:
         raise CheckError("checker input head does not equal candidate")
     review_round = expect_int(data["review_round"], "checker input.review_round")
-    review_context = expect_object(
+    review_context = _validate_remote_review(
         data["review_context"], "checker input.review_context"
     )
-    all_remote_reviews = [
-        expect_object(review, f"checker input.all_remote_reviews[{index}]")
-        for index, review in enumerate(
-            expect_list(
-                data["all_remote_reviews"],
-                "checker input.all_remote_reviews",
-            )
-        )
-    ]
+    all_remote_reviews = _validate_remote_reviews(data["all_remote_reviews"])
     if (
-        review_context.get("round") != review_round
-        or review_context.get("candidate_sha") != candidate_sha
+        review_context["round"] != review_round
+        or review_context["candidate_sha"] != candidate_sha
         or review_round > len(all_remote_reviews)
         or all_remote_reviews[review_round - 1] != review_context
     ):
         raise CheckError(
             "checker review context does not match current assertion round/head"
         )
-    remote_findings = [
-        expect_object(finding, f"checker input.remote_findings[{index}]")
-        for index, finding in enumerate(
-            expect_list(data["remote_findings"], "checker input.remote_findings")
-        )
-    ]
+    reviews_by_node = {
+        review["node_id"]: review for review in all_remote_reviews
+    }
+    remote_findings = _validate_remote_findings(
+        data["remote_findings"], reviews_by_node
+    )
     trust_mode = expect_string(data["trust_mode"], "checker input.trust_mode")
     if trust_mode not in {"introduction", "base-pinned"}:
         raise CheckError("checker input.trust_mode is not supported")
@@ -573,6 +1029,10 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         raise CheckError(
             "remote finding IDs overlap the independent namespace"
         )
+    if sorted(remote_finding_ids) != sorted(review_context["finding_ids"]):
+        raise CheckError(
+            "checker input.remote_finding_ids do not match the current review findings"
+        )
     limits = expect_object(data["limits"], "checker input.limits")
     expect_keys(
         limits,
@@ -606,23 +1066,131 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         changed_files=original_files,
         changes=original_changes,
     )
+    try:
+        run_git(repository_root, "merge-base", "--is-ancestor", base_sha, candidate_sha)
+    except CheckError as error:
+        raise CheckError(
+            "checker current head is not a descendant of the authoritative base"
+        ) from error
+    try:
+        run_git(
+            repository_root,
+            "merge-base",
+            "--is-ancestor",
+            original_pre_review_head,
+            candidate_sha,
+        )
+    except CheckError as error:
+        raise CheckError(
+            "checker current head is not descended from the original pre-review head"
+        ) from error
+    if review_round == 1:
+        expected_finding_origin_sha = base_sha
+        expected_finding_origin_tree = actual_base_tree
+        round_findings = {
+            finding["id"]: {
+                "family": finding["family"],
+                "review_id": report["report_id"],
+                "review_round": 0,
+                "finding_head_sha": original_pre_review_head,
+                "finding_head_tree": original_pre_review_head_tree,
+                "finding_origin_sha": base_sha,
+                "finding_origin_tree": actual_base_tree,
+            }
+            for finding in report["findings"]
+        }
+    else:
+        previous_review = all_remote_reviews[review_round - 2]
+        expected_finding_origin_sha = previous_review["candidate_sha"]
+        expected_finding_origin_tree = git_commit_tree(
+            repository_root,
+            expected_finding_origin_sha,
+            f"checker input.all_remote_reviews[{review_round - 2}].candidate_sha",
+        )
+        round_findings = {}
+        for finding_id in previous_review["finding_ids"]:
+            finding = remote_findings.get(finding_id)
+            if finding is None or finding["review_id"] != previous_review["node_id"]:
+                raise CheckError(
+                    "checker previous review findings do not match authoritative collection"
+                )
+            round_findings[finding_id] = {
+                "family": finding["family"],
+                "review_id": previous_review["node_id"],
+                "review_round": previous_review["round"],
+                "finding_head_sha": previous_review["candidate_sha"],
+                "finding_head_tree": expected_finding_origin_tree,
+                "finding_origin_sha": previous_review["candidate_sha"],
+                "finding_origin_tree": expected_finding_origin_tree,
+            }
+    actual_finding_origin_tree = git_commit_tree(
+        repository_root,
+        finding_origin_sha,
+        "checker input.finding_origin_sha",
+    )
+    if (
+        finding_origin_sha != expected_finding_origin_sha
+        or finding_origin_tree != expected_finding_origin_tree
+        or actual_finding_origin_tree != expected_finding_origin_tree
+    ):
+        raise CheckError(
+            "checker finding origin does not match the authoritative round binding"
+        )
+    expected_assertion_input_artifacts = _expected_assertion_artifacts(
+        repository_root,
+        finding_origin_sha,
+        candidate_sha,
+    )
+    assertion_input_artifacts = _validate_assertion_input_artifacts(
+        data["assertion_input_artifacts"], expected_assertion_input_artifacts
+    )
+    origin_root_resolved = _validate_materialized_root(
+        origin_root,
+        "checker input.origin_root",
+        {
+            item["path"]: item["origin_blob_oid"]
+            for item in assertion_input_artifacts
+        },
+    )
+    head_root_resolved = _validate_materialized_root(
+        head_root,
+        "checker input.head_root",
+        {
+            item["path"]: item["head_blob_oid"]
+            for item in assertion_input_artifacts
+        },
+    )
+    if (
+        origin_root_resolved == head_root_resolved
+        and (
+            finding_origin_sha != candidate_sha
+            or expected_finding_origin_tree != actual_candidate_tree
+        )
+    ):
+        raise CheckError(
+            "checker input.origin_root and head_root cannot reuse one checkout"
+        )
     return {
         **data,
         "repository": repository,
+        "repository_root": repository_root,
         "pull_request": pull_request,
         "base_sha": base_sha,
+        "base_tree": actual_base_tree,
         "original_pre_review_head": original_pre_review_head,
+        "original_pre_review_head_tree": original_pre_review_head_tree,
         "original_changes": original_changes,
         "original_receipt_sha256": original_receipt_sha256,
         "assertion_program_path": assertion_program_path,
-        "assertion_program_blob_oid": assertion_program_blob_oid,
-        "assertion_program_argv": assertion_program_argv,
-        "finding_origin_sha": finding_origin_sha,
-        "finding_origin_tree": finding_origin_tree,
-        "origin_root": origin_root,
-        "head_root": head_root,
+        "assertion_program_blob_oid": expected_assertion_program_blob_oid,
+        "assertion_program_argv": list(ASSERTION_PROGRAM_ARGV),
+        "finding_origin_sha": expected_finding_origin_sha,
+        "finding_origin_tree": expected_finding_origin_tree,
+        "origin_root": origin_root_resolved,
+        "head_root": head_root_resolved,
         "assertion_input_artifacts": assertion_input_artifacts,
         "candidate_sha": candidate_sha,
+        "candidate_tree": actual_candidate_tree,
         "head_sha": head_sha,
         "review_round": review_round,
         "review_context": review_context,
@@ -635,6 +1203,7 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         "remote_finding_ids": remote_finding_ids,
         "limits": normalized_limits,
         "original_pre_review": report,
+        "round_findings": round_findings,
     }
 
 
@@ -651,22 +1220,27 @@ def execute_registry(raw_input: Any) -> dict[str, Any]:
         request = expect_object(raw, label)
         expect_keys(request, label, ("assertion_id", "finding_id"))
         assertion_id = expect_string(request["assertion_id"], f"{label}.assertion_id")
-        finding_id = request["finding_id"]
-        if finding_id is not None:
-            finding_id = expect_string(finding_id, f"{label}.finding_id")
-        if assertion_id.startswith("registry:sibling:"):
-            if finding_id is None:
+        parsed_assertion = parse_assertion_id(assertion_id)
+        raw_finding_id = request["finding_id"]
+        if parsed_assertion["kind"] == "member":
+            if raw_finding_id is None:
                 raise CheckError("member assertion requires a finding ID")
+            finding_id = expect_string(raw_finding_id, f"{label}.finding_id")
+            authority_binding = _bind_member_request(
+                data, parsed_assertion, finding_id
+            )
             program_request = {
                 "assertion_id": assertion_id,
-                "finding_id": finding_id,
+                "authority_binding": authority_binding,
                 "origin_root": str(data["origin_root"]),
                 "head_root": str(data["head_root"]),
             }
-            disposition = assertion_id.split(":")[4]
+            disposition = parsed_assertion["outcome"]
         else:
-            if finding_id is not None:
+            if raw_finding_id is not None:
                 raise CheckError("behavior assertion cannot reference a finding")
+            finding_id = None
+            authority_binding = _behavior_binding(data)
             program_request = {
                 "assertion_id": assertion_id,
                 "evidence": {
@@ -745,7 +1319,11 @@ def execute_registry(raw_input: Any) -> dict[str, Any]:
         output = expect_object(
             program_result["output"], "assertion program semantic output"
         )
-        result_id = _result_id(data, assertion_id, finding_id)
+        if parsed_assertion["kind"] == "member":
+            _validate_program_output_binding(output, authority_binding)
+        result_id = _result_id(
+            data["review_round"], assertion_id, authority_binding
+        )
         inputs_sha256 = hashlib.sha256(
             program_input
         ).hexdigest()
@@ -757,6 +1335,7 @@ def execute_registry(raw_input: Any) -> dict[str, Any]:
                 "assertion_id": assertion_id,
                 "check_id": assertion_id,
                 "claimed_disposition": disposition,
+                "authority_binding": authority_binding,
                 "program_path": "scripts/workflow_pilot/review_assertions.py",
                 "program_blob_oid": data["assertion_program_blob_oid"],
                 "program_argv": data["assertion_program_argv"],

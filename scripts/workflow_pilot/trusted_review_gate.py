@@ -674,6 +674,7 @@ def run_base_pinned_checker(
     checker_input = {
         "schema_version": 2,
         "repository": contract["repository"],
+        "repository_root": str(root),
         "pull_request": contract["pull_request"],
         "base_sha": base_sha,
         "base_tree": base_tree,

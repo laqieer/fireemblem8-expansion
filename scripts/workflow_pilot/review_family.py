@@ -585,6 +585,50 @@ def member_assertion_id(family: str, member: str, disposition: str) -> str:
     return f"registry:sibling:{family}:{member}:{disposition}:v2"
 
 
+def parse_assertion_id(assertion_id: str) -> dict[str, Any]:
+    parts = assertion_id.split(":")
+    if (
+        len(parts) == 5
+        and parts[:2] == ["registry", "behavior"]
+        and parts[2] in BEHAVIOR_ROW_SPECS
+        and parts[3] in EVIDENCE_CLASSES
+        and parts[4] == "v2"
+    ):
+        return {
+            "kind": "behavior",
+            "row": parts[2],
+            "evidence_class": parts[3],
+        }
+    if len(parts) not in {6, 7} or parts[:2] != ["registry", "sibling"]:
+        raise reporter.PilotDataError("assertion ID is absent from exact-base registry")
+    family, member, outcome = parts[2:5]
+    reason = parts[5] if len(parts) == 7 else None
+    if (
+        family not in FAMILY_MEMBERS
+        or member not in FAMILY_MEMBERS[family]
+        or parts[-1] != "v2"
+    ):
+        raise reporter.PilotDataError("assertion member is absent from registry")
+    if outcome not in {"affected-fixed", "verified-unaffected", "not-applicable"}:
+        raise reporter.PilotDataError("assertion outcome is absent from registry")
+    if outcome == "not-applicable":
+        if (
+            family,
+            member,
+            reason,
+        ) != ("resource", "disabled", "feature-disabled-by-contract"):
+            raise reporter.PilotDataError("not-applicable reason is not registered")
+    elif reason is not None:
+        raise reporter.PilotDataError("outcome assertion has an unexpected reason")
+    return {
+        "kind": "member",
+        "family": family,
+        "member": member,
+        "outcome": outcome,
+        "reason": reason,
+    }
+
+
 def _validate_behavior_rows(value: Any) -> list[dict[str, Any]]:
     rows = reporter.expect_list(value, "contract.behavior_rows")
     normalized = []
@@ -795,17 +839,107 @@ def finding_family_map(contract: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def assertion_result_id(
-    candidate_sha: str,
+def assertion_authority_binding(
+    contract: dict[str, Any],
+    evidence: dict[str, Any],
+    authority_root: Path,
+    target_head: str,
     review_round: int,
     assertion_id: str,
     finding_id: str | None,
+) -> dict[str, Any]:
+    head_tree = reporter.run_git(
+        authority_root, "rev-parse", f"{target_head}^{{tree}}"
+    ).decode("ascii").strip()
+    parsed = parse_assertion_id(assertion_id)
+    if parsed["kind"] == "behavior":
+        if finding_id is not None:
+            raise reporter.PilotDataError(
+                "behavior assertion cannot reference a finding"
+            )
+        return {
+            "finding_id": None,
+            "finding_family": None,
+            "finding_member": None,
+            "finding_review_id": None,
+            "finding_review_round": None,
+            "finding_head_sha": None,
+            "finding_head_tree": None,
+            "finding_origin_sha": None,
+            "finding_origin_tree": None,
+            "head_sha": target_head,
+            "head_tree": head_tree,
+        }
+
+    if finding_id is None:
+        raise reporter.PilotDataError("member assertion requires a finding ID")
+    if review_round == 1:
+        finding = evidence["pre_review_findings"].get(finding_id)
+        if finding is None:
+            raise reporter.PilotDataError(
+                "member assertion finding is absent from the authoritative source round"
+            )
+        finding_head_sha = contract["original_pre_review_head"]
+        finding_head_tree = reporter.run_git(
+            authority_root,
+            "rev-parse",
+            f"{finding_head_sha}^{{tree}}",
+        ).decode("ascii").strip()
+        finding_origin_sha = contract["base_sha"]
+        finding_origin_tree = reporter.run_git(
+            authority_root,
+            "rev-parse",
+            f"{contract['base_sha']}^{{tree}}",
+        ).decode("ascii").strip()
+        finding_review_round = 0
+    else:
+        prior_review = evidence["remote_reviews"][review_round - 2]
+        finding = evidence["findings"].get(finding_id)
+        if finding is None or finding["review_id"] != prior_review["node_id"]:
+            raise reporter.PilotDataError(
+                "member assertion finding is absent from the authoritative source round"
+            )
+        finding_head_sha = prior_review["candidate_sha"]
+        finding_head_tree = reporter.run_git(
+            authority_root,
+            "rev-parse",
+            f"{finding_head_sha}^{{tree}}",
+        ).decode("ascii").strip()
+        finding_origin_sha = finding_head_sha
+        finding_origin_tree = finding_head_tree
+        finding_review_round = prior_review["round"]
+    if finding["candidate_sha"] != finding_head_sha:
+        raise reporter.PilotDataError(
+            f"finding {finding_id!r} does not bind its authoritative head"
+        )
+    if finding["family"] != parsed["family"]:
+        raise reporter.PilotDataError(
+            f"finding {finding_id!r} family does not match its assertion"
+        )
+    return {
+        "finding_id": finding_id,
+        "finding_family": finding["family"],
+        "finding_member": parsed["member"],
+        "finding_review_id": finding["review_id"],
+        "finding_review_round": finding_review_round,
+        "finding_head_sha": finding_head_sha,
+        "finding_head_tree": finding_head_tree,
+        "finding_origin_sha": finding_origin_sha,
+        "finding_origin_tree": finding_origin_tree,
+        "head_sha": target_head,
+        "head_tree": head_tree,
+    }
+
+
+def assertion_result_id(
+    review_round: int,
+    assertion_id: str,
+    authority_binding: dict[str, Any],
 ) -> str:
     identity = {
-        "candidate_sha": candidate_sha,
         "review_round": review_round,
         "assertion_id": assertion_id,
-        "finding_id": finding_id,
+        "authority_binding": authority_binding,
     }
     return "result-" + hashlib.sha256(
         reporter.normalized_json(identity)
@@ -1286,6 +1420,93 @@ def _validate_force_pushes(value: Any) -> list[dict[str, Any]]:
     return result
 
 
+def _validate_result_binding(value: Any, label: str) -> dict[str, Any]:
+    binding = reporter.expect_object(value, label)
+    reporter.expect_keys(
+        binding,
+        label,
+        (
+            "finding_id",
+            "finding_family",
+            "finding_member",
+            "finding_review_id",
+            "finding_review_round",
+            "finding_head_sha",
+            "finding_head_tree",
+            "finding_origin_sha",
+            "finding_origin_tree",
+            "head_sha",
+            "head_tree",
+        ),
+    )
+    result = {
+        "head_sha": reporter.expect_sha(binding["head_sha"], f"{label}.head_sha"),
+        "head_tree": reporter.expect_sha(
+            binding["head_tree"], f"{label}.head_tree"
+        ),
+    }
+    if binding["finding_id"] is None:
+        for field in (
+            "finding_family",
+            "finding_member",
+            "finding_review_id",
+            "finding_review_round",
+            "finding_head_sha",
+            "finding_head_tree",
+            "finding_origin_sha",
+            "finding_origin_tree",
+        ):
+            if binding[field] is not None:
+                raise reporter.PilotDataError(
+                    f"{label}.{field} must be null for behavior assertions"
+                )
+        return {
+            "finding_id": None,
+            "finding_family": None,
+            "finding_member": None,
+            "finding_review_id": None,
+            "finding_review_round": None,
+            "finding_head_sha": None,
+            "finding_head_tree": None,
+            "finding_origin_sha": None,
+            "finding_origin_tree": None,
+            **result,
+        }
+    family = reporter.expect_enum(
+        binding["finding_family"], set(FAMILY_MEMBERS), f"{label}.finding_family"
+    )
+    return {
+        "finding_id": reporter.expect_string(
+            binding["finding_id"], f"{label}.finding_id"
+        ),
+        "finding_family": family,
+        "finding_member": reporter.expect_enum(
+            binding["finding_member"],
+            set(FAMILY_MEMBERS[family]),
+            f"{label}.finding_member",
+        ),
+        "finding_review_id": reporter.expect_string(
+            binding["finding_review_id"], f"{label}.finding_review_id"
+        ),
+        "finding_review_round": reporter.expect_int(
+            binding["finding_review_round"], f"{label}.finding_review_round", 0
+        ),
+        "finding_head_sha": reporter.expect_sha(
+            binding["finding_head_sha"], f"{label}.finding_head_sha"
+        ),
+        "finding_head_tree": reporter.expect_sha(
+            binding["finding_head_tree"], f"{label}.finding_head_tree"
+        ),
+        "finding_origin_sha": reporter.expect_sha(
+            binding["finding_origin_sha"], f"{label}.finding_origin_sha"
+        ),
+        "finding_origin_tree": reporter.expect_sha(
+            binding["finding_origin_tree"], f"{label}.finding_origin_tree"
+        ),
+        **result,
+    }
+
+
 def _validate_result_manifest(value: Any) -> dict[str, dict[str, Any]]:
     results = {}
     for index, raw in enumerate(
@@ -1301,6 +1522,7 @@ def _validate_result_manifest(value: Any) -> dict[str, dict[str, Any]]:
                 "assertion_id",
                 "check_id",
                 "claimed_disposition",
+                "authority_binding",
                 "program_path",
                 "program_blob_oid",
                 "program_argv",
@@ -1350,6 +1572,9 @@ def _validate_result_manifest(value: Any) -> dict[str, dict[str, Any]]:
                 result["check_id"], f"{label}.check_id"
             ),
             "claimed_disposition": result["claimed_disposition"],
+            "authority_binding": _validate_result_binding(
+                result["authority_binding"], f"{label}.authority_binding"
+            ),
             "program_path": _validate_path(
                 result["program_path"], f"{label}.program_path"
             ),
@@ -2309,14 +2534,23 @@ def _validate_execution(
             contract, evidence["raw"], target_head, round_number
         )
         for request in requests:
-            result_id = assertion_result_id(
+            authority_binding = assertion_authority_binding(
+                contract,
+                evidence,
+                authority["root"],
                 target_head,
                 round_number,
                 request["assertion_id"],
                 request["finding_id"],
             )
+            result_id = assertion_result_id(
+                round_number,
+                request["assertion_id"],
+                authority_binding,
+            )
             expected_results[result_id] = {
                 **request,
+                "authority_binding": authority_binding,
                 "candidate_sha": target_head,
                 "review_round": round_number,
                 "checker_input_sha256": receipt["checker_input_sha256"],
@@ -2357,9 +2591,11 @@ def _validate_execution(
         if (
             result["assertion_id"] != expected["assertion_id"]
             or result["check_id"] != expected["assertion_id"]
+            or result["authority_binding"] != expected["authority_binding"]
             or result["program_blob_oid"] != actual_assertion_program_blob
             or result["base_sha"] != contract["base_sha"]
             or result["candidate_sha"] != expected["candidate_sha"]
+            or result["authority_binding"]["head_sha"] != expected["candidate_sha"]
             or result["review_round"] != expected["review_round"]
             or result["claimed_disposition"] != expected_disposition
             or result["status"] != "pass"
@@ -2369,6 +2605,12 @@ def _validate_execution(
             raise reporter.PilotDataError(
                 f"result {result_id!r} is fabricated or bound to another assertion"
             )
+        if result["authority_binding"]["finding_id"] is not None:
+            for field, value in result["authority_binding"].items():
+                if result["output"].get(field) != value:
+                    raise reporter.PilotDataError(
+                        f"result {result_id!r} semantic output lost authoritative {field}"
+                    )
     return seals
 
 

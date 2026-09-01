@@ -369,6 +369,12 @@ must execute and establish false. Swapping a member, family, disposition,
 assertion ID, or reason fails before result creation.
 One finding may legitimately reference several affected member assertions;
 each must independently observe its own origin failure and remediation pass.
+Before any sibling result is created, the checker rebinds the candidate
+request to the exact authoritative source collection for that round: local
+pre-review findings for round 1 and the immediately preceding remote review's
+finding set for later rounds. The finding ID must exist exactly once in that
+collection, match the asserted family/member registry entry, and carry the
+authoritative origin/head commit-tree identities for that remediation step.
 
 For every remote review round, including each remediation head B/C, the
 trusted gate derives exact base-to-head status/blob coverage, executes the
@@ -378,9 +384,10 @@ checker blob/argv, assertion-program path/base blob/fixed argv, original A
 receipt digest/head, origin/head tree OIDs, every member input blob, GitHub
 finding IDs, program exit/status, canonical stdout and semantic-output
 digests, and chronological execution time. The result ID is derived from head,
-round, assertion, and finding; it cannot replay across rounds. The final clean
-remote review must be on the current exact head, and every earlier round/head
-receipt must still be present and valid.
+round, assertion, and the authoritative finding/family/member/origin/head
+binding; it cannot replay across rounds. The final clean remote review must be
+on the current exact head, and every earlier round/head receipt must still be
+present and valid.
 
 The Git-derived diff is a closed status-aware record set. Added files bind
 head mode/blob and base absence; deleted files bind base mode/blob and head
@@ -390,6 +397,12 @@ retained old head blob and new destination. Unknown statuses, traversal,
 non-blob or surprising modes, malformed similarity, and status/field
 contradictions fail. Review coverage must equal those records, so deletion of
 `isolated_review_gate.py` is reviewable without pretending a head blob exists.
+The checker independently re-derives the authoritative base-owned checker blob,
+assertion-program blob, finding-origin tree, remediation-head tree, and every
+materialized subject blob from trusted Git objects before execution. Reusing
+one checkout for differing origin/head claims, swapping roots, leaving extra
+or dirty files in a materialized root, inventing a blob/tree OID, or using a
+symlink/path escape fails before the child assertion program runs.
 
 The five families remain exact: action (`actions`, `items`, `targets`);
 generated (`owners`, `outputs`, `consumers`, `drift-checks`); lifecycle

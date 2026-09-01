@@ -514,7 +514,8 @@ game behavior needs a compensating change.
    registry result binds its candidate-referenced assertion ID to base-derived
    member/class inputs, implementation, observable output/status, exact
    base/head, full diff, review round, and HMAC receipt. Swap
-   member/family/outcome/assertion/result identities and require failure.
+   member/family/outcome/assertion/result identities, invent a finding ID, or
+   reuse a valid finding ID with the wrong family and require failure.
    Replace the candidate registry/program and confirm the checker still
    extracts exact-base `review_assertions.py` with fixed isolated argv. Verify
    the child has no credentials or proxy/PYTHONPATH injection and receipts
@@ -532,6 +533,8 @@ game behavior needs a compensating change.
    before-probe and passing after-probe; require `verified-unaffected` to
    compare a member-specific invariant rather than one shared file; permit
    `not-applicable` only for its explicit member/reason registry entry.
+   Reuse the current checkout or swap dirty materialized roots and require the
+   authoritative origin/head Git-tree binding to fail before execution.
 9. Parse the captured clean PR #183 body and accept its first-line exact
    `### 🟢 Approval recommended` marker. Reject or classify non-clean exact
    yellow/blue markers, unknown/empty bodies, nested or conflicting green
@@ -576,10 +579,12 @@ The suite rejects candidate credentials/import authority, public signing or
 external-installation helpers, dirty or object-mismatched trusted imports,
 ancestor-base substitution, bootstrap self-attestation, invalid Actor
 selection, base/head mismatch, re-signing A for B/C, stale/missing/replayed
-round receipts, fabricated outcome/class results, shared-file member evidence,
-unsupported dispositions, incorrect status/blob coverage, local/remote
-finding overlap, backdating, exceeded bounds, incomplete pages, spoofed clean
-bodies, global identity collisions, undisposed heads, and actor overlap.
+round receipts, fabricated outcome/class results, invented or wrong-family
+finding IDs, reused or swapped materialized roots, shared-file member
+evidence, fake origin/program blob/tree identities, unsupported dispositions,
+incorrect status/blob coverage, local/remote finding overlap, backdating,
+exceeded bounds, incomplete pages, spoofed clean bodies, global identity
+collisions, undisposed heads, and actor overlap.
 
 ### Interactions and save compatibility
 

@@ -601,6 +601,14 @@ shared arbitrary file; `not-applicable` requires the one explicitly registered
 member/reason predicate. A valid finding expands to every member of exactly
 one closed sibling family:
 
+Before any sibling result is created, the checker rebinds the candidate
+finding request to the exact authoritative source collection for that round:
+local pre-review findings for round 1 and the immediately preceding remote
+review's finding set for later rounds. The finding ID must exist exactly once
+in that collection, match the asserted family/member registry entry, and carry
+the authoritative origin/head commit-tree identities for that remediation
+step.
+
 Execute exact-base `review_assertions.py` with fixed isolated `--stdin` argv
 over registry-fixed, read-only member artifacts materialized from the exact
 finding-origin and remediation Git trees. Give the child a closed environment
@@ -611,6 +619,12 @@ to the receipt. Candidate-added registry/program code, arbitrary shared files,
 nonexistent callable names, and self-authored success output are not evidence.
 Allow multiple affected siblings only when each referenced assertion
 independently fails on the finding-origin tree and passes on remediation.
+The checker independently re-derives the authoritative checker blob,
+assertion-program blob, finding-origin tree, remediation-head tree, and every
+materialized subject blob from trusted Git objects before execution. Reusing
+one checkout for differing origin/head claims, swapping roots, leaving extra
+or dirty files in a materialized root, inventing a blob/tree OID, or using a
+symlink/path escape fails before the child assertion program runs.
 
 - actions, items, and targets;
 - lifecycle entries, preservation, resets, and terminals;

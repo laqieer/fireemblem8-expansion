@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,7 @@ BEHAVIOR_ROWS = {
 }
 EVIDENCE_CLASSES = {"positive", "adversarial", "default", "runtime"}
 SUBJECT_ROOT = "scripts/workflow_pilot/assertion_subjects"
+SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 class AssertionFailure(Exception):
@@ -52,6 +54,26 @@ def object_no_duplicates(pairs):
 def expect_object(value: Any, label: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise AssertionFailure(f"{label} must be an object")
+    return value
+
+
+def expect_string(value: Any, label: str, *, allow_empty: bool = False) -> str:
+    if not isinstance(value, str) or (not allow_empty and not value.strip()):
+        raise AssertionFailure(f"{label} must be a nonempty string")
+    return value
+
+
+def expect_int(value: Any, label: str, minimum: int = 0) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise AssertionFailure(f"{label} must be an integer")
+    if value < minimum:
+        raise AssertionFailure(f"{label} must be at least {minimum}")
+    return value
+
+
+def expect_sha(value: Any, label: str) -> str:
+    if not isinstance(value, str) or SHA_RE.fullmatch(value) is None:
+        raise AssertionFailure(f"{label} must be a full lowercase Git SHA")
     return value
 
 
@@ -268,13 +290,71 @@ def execute_member(
         "member request",
         (
             "assertion_id",
-            "finding_id",
+            "authority_binding",
             "origin_root",
             "head_root",
         ),
     )
     family = assertion["family"]
     member = assertion["member"]
+    binding = expect_object(request["authority_binding"], "member authority binding")
+    expect_keys(
+        binding,
+        "member authority binding",
+        (
+            "finding_id",
+            "finding_family",
+            "finding_member",
+            "finding_review_id",
+            "finding_review_round",
+            "finding_head_sha",
+            "finding_head_tree",
+            "finding_origin_sha",
+            "finding_origin_tree",
+            "head_sha",
+            "head_tree",
+        ),
+    )
+    finding_id = expect_string(binding["finding_id"], "member authority binding.finding_id")
+    if binding["finding_family"] != family:
+        raise AssertionFailure("member authority binding family does not match assertion")
+    if binding["finding_member"] != member:
+        raise AssertionFailure("member authority binding member does not match assertion")
+    finding_review_id = expect_string(
+        binding["finding_review_id"], "member authority binding.finding_review_id"
+    )
+    finding_review_round = expect_int(
+        binding["finding_review_round"],
+        "member authority binding.finding_review_round",
+        0,
+    )
+    finding_head_sha = expect_sha(
+        binding["finding_head_sha"], "member authority binding.finding_head_sha"
+    )
+    finding_head_tree = expect_sha(
+        binding["finding_head_tree"], "member authority binding.finding_head_tree"
+    )
+    finding_origin_sha = expect_sha(
+        binding["finding_origin_sha"], "member authority binding.finding_origin_sha"
+    )
+    finding_origin_tree = expect_sha(
+        binding["finding_origin_tree"], "member authority binding.finding_origin_tree"
+    )
+    head_sha = expect_sha(binding["head_sha"], "member authority binding.head_sha")
+    head_tree = expect_sha(binding["head_tree"], "member authority binding.head_tree")
+    binding_output = {
+        "finding_id": finding_id,
+        "finding_family": family,
+        "finding_member": member,
+        "finding_review_id": finding_review_id,
+        "finding_review_round": finding_review_round,
+        "finding_head_sha": finding_head_sha,
+        "finding_head_tree": finding_head_tree,
+        "finding_origin_sha": finding_origin_sha,
+        "finding_origin_tree": finding_origin_tree,
+        "head_sha": head_sha,
+        "head_tree": head_tree,
+    }
     origin = load_subject(Path(request["origin_root"]), family, member)
     head = load_subject(Path(request["head_root"]), family, member)
     outcome = assertion["outcome"]
@@ -289,12 +369,12 @@ def execute_member(
             )
         head_output = evaluate_subject(family, member, head)
         return {
+            **binding_output,
             "program_case": f"member/{family}/{member}/affected-fixed",
             "origin_status": "fail",
             "origin_error": origin_error,
             "head_status": "pass",
             "head_semantic_output": head_output,
-            "finding_id": request["finding_id"],
         }
     if outcome == "verified-unaffected":
         origin_output = evaluate_subject(family, member, origin)
@@ -307,20 +387,20 @@ def execute_member(
             normalized_json(head_output)
         ).hexdigest()
         return {
+            **binding_output,
             "program_case": f"member/{family}/{member}/verified-unaffected",
             "origin_status": "pass",
             "head_status": "pass",
             "semantic_output_sha256": semantic_output_sha256,
-            "finding_id": request["finding_id"],
         }
     head_output = evaluate_subject(family, member, head)
     if head_output != {"field": "enabled", "value": False}:
         raise AssertionFailure("not-applicable predicate did not establish false")
     return {
+        **binding_output,
         "program_case": "member/resource/disabled/not-applicable",
         "applicable": False,
         "reason": assertion["reason"],
-        "finding_id": request["finding_id"],
     }
 
 
