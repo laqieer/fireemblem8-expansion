@@ -17,6 +17,7 @@ from scripts.check_docs import (
     parse_atx_heading,
     parse_fence_opening,
 )
+from scripts.workflow_pilot import candidate_evidence
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -569,7 +570,7 @@ def documented_job_set(text, label):
     entries = [entry.strip() for entry in matches[0].group("body").split(",")]
     names = []
     for entry in entries:
-        match = re.fullmatch(r"`([A-Za-z][A-Za-z0-9_-]*)`", entry)
+        match = re.fullmatch(r"`([^`]+)`", entry)
         if match is None:
             raise AssertionError(
                 f"documented job set {label!r} has malformed entry {entry!r}"
@@ -629,31 +630,43 @@ def workflow_tester_topology_violations(text):
         "stacked-full-pr": selected_full_pr_jobs,
         "current-metadata": frozenset(
             {
+                "host-tests",
+                "build",
+                "extended-host-tests",
+                "legacy",
                 "event-identity",
                 "event-router",
                 "metadata-classifier",
                 "patch-release",
-                "metadata-summary",
+                "summary",
             }
         ),
         "preserved-pre-fix": workflow_job_ids(PRE_FIX_BUILD_WORKFLOW_PATH),
         "live-opened-full": current_jobs,
         "live-title-metadata": frozenset(
             {
+                "host-tests",
+                "build",
+                "extended-host-tests",
+                "legacy",
                 "event-identity",
                 "event-router",
                 "metadata-classifier",
                 "patch-release",
-                "metadata-summary",
+                "summary",
             }
         ),
         "live-restore-metadata": frozenset(
             {
+                "host-tests",
+                "build",
+                "extended-host-tests",
+                "legacy",
                 "event-identity",
                 "event-router",
                 "metadata-classifier",
                 "patch-release",
-                "metadata-summary",
+                "summary",
             }
         ),
     }
@@ -689,11 +702,20 @@ def workflow_tester_topology_violations(text):
         if documented[name] != expected[name]
     ]
     skipped_names_contract = normalize_policy(
-        "Skipped worker names and success-shaped records are ignored by "
-        "stable job identity"
+        "live branch protection remains unchanged and therefore still requires canonical host-tests build summary and the independent gitguardian context"
     )
     if skipped_names_contract not in normalize_policy(body_case):
         violations.append("skipped-worker-names-are-semantic")
+    forbidden_claims = (
+        "same canonical skipped worker names",
+        "canonical skipped worker contexts",
+        "each skipped with no runner",
+        "all four workers are exactly `skipped`",
+    )
+    normalized_body = normalize_policy(body_case)
+    for claim in forbidden_claims:
+        if normalize_policy(claim) in normalized_body:
+            violations.append("stale-metadata-worker-claim")
     return violations
 
 
@@ -734,6 +756,10 @@ def live_title_probe_violations(text):
             '"repos/$repo/actions/runs/$opened_run_id/jobs"',
             '"repos/$repo/actions/runs/$title_run_id/jobs"',
             '"repos/$repo/actions/runs/$restore_run_id/jobs"',
+        ),
+        "required-checks-continuity": (
+            'gh pr checks "$pr" --required > "$evidence_dir/title-required-checks.txt"',
+            'gh pr checks "$pr" --required > "$evidence_dir/restore-required-checks.txt"',
         ),
         "bounded-exact-run-watcher": (
             "watch_build_run()",
@@ -818,7 +844,14 @@ def live_title_probe_violations(text):
             "contexts.append(",
             "assert required_names <= seen_names",
         ),
+        "metadata-adapter-runs": (
+            'metadata_adapter_ids = {"host-tests", "build"}',
+            'assert job["conclusion"] == "success"',
+            'assert isinstance(job["runner_name"], str) and job["runner_name"]',
+            "assert isinstance(started_at, str)",
+        ),
         "metadata-worker-no-start": (
+            'metadata_skipped_ids = {"extended-host-tests", "legacy"}',
             'started_at = job["started_at"]',
             'assert job["conclusion"] == "skipped"',
             "assert started_at is None or isinstance(started_at, str)",
@@ -857,6 +890,10 @@ def live_title_probe_violations(text):
             "validation-only",
             "never merged",
             "does not implement an independent issue",
+        ),
+        "summary-expected-regression-closed": (
+            "protected async merge attempt",
+            'Required status check "summary" is expected.',
         ),
         "no-empty-or-merge-commit": (
             "Never use git commit --allow-empty",
@@ -909,6 +946,13 @@ def live_title_probe_violations(text):
         violations.append("title-edit-and-restore")
     if commands.count("candidate_evidence.evaluate_candidate_runs") != 7:
         violations.append("actual-evaluator-assertions")
+    if (
+        commands.count(
+            'assert isinstance(job["runner_name"], str) and job["runner_name"]'
+        )
+        != 1
+    ):
+        violations.append("metadata-adapter-runs")
     if commands.count('assert job["runner_name"] is None') != 2:
         violations.append("metadata-worker-no-start")
     evaluator_assertions = (
@@ -928,6 +972,17 @@ def live_title_probe_violations(text):
         violations.append("bounded-unseen-run-discovery")
     if "git push origin --delete" in commands or "git branch -D" in commands:
         violations.append("cleanup-ownership-cas")
+    probe_start = body_case.find("1. From the issue worktree")
+    if probe_start < 0:
+        violations.append("live-procedure-sequence")
+    else:
+        numbers = re.findall(
+            r"^([0-9]+)\. ",
+            body_case[probe_start:],
+            re.MULTILINE,
+        )
+        if numbers[:6] != ["1", "2", "3", "4", "5", "6"]:
+            violations.append("live-procedure-sequence")
     trap_index = commands.find("trap finish_probe EXIT")
     push_index = commands.find('git push -u origin "$probe_branch"')
     if trap_index < 0 or push_index < 0 or trap_index > push_index:
@@ -1075,7 +1130,9 @@ def classifier_bootstrap_contract_violations(text):
             "tmpfs/ulimit bounds",
             "no output sink exists",
             "root-only 0700 /mnt/supervisor",
-            "candidate cannot traverse it",
+            "candidate cannot read, write, execute, or traverse",
+            "exact cgroup child",
+            "read-only",
             "after /sys is masked",
             "sole member",
             "builder user, tree, wheelhouse, and candidate checkout",
@@ -1096,6 +1153,11 @@ def classifier_bootstrap_contract_violations(text):
             "canonical successful event-identity context",
             "canonical successful event-router context",
             "missing, failed, skipped, renamed, duplicate, or unknown",
+        ),
+        "classifier-failure-canonical-workers": (
+            "validated authoritative pr head",
+            "canonical worker names",
+            "summary still fails",
         ),
         "base-ref-git-grammar": (
             "1024 UTF-8 bytes",
@@ -4018,9 +4080,10 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         self.assertEqual(workflow_tester_topology_violations(reordered), [])
 
         semantic_names, count = re.subn(
-            r"Skipped worker\s+names and success-shaped\s+records are ignored "
-            r"by stable job identity",
-            "Skipped worker names determine metadata mode",
+            r"Live branch protection\s+remains unchanged and therefore still\s+"
+            r"requires canonical `host-tests`,\s+`build`,\s+`summary`, and "
+            r"the independent\s+GitGuardian context",
+            "branch protection may skip full summary continuity",
             governance,
             1,
         )
@@ -4030,6 +4093,43 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "skipped-worker-names-are-semantic",
             workflow_tester_topology_violations(semantic_names),
         )
+
+    def test_metadata_adapter_docs_require_two_adapter_two_skipped_contract(self):
+        documents = {
+            "workflow-pilot": WORKFLOW_PILOT_PATH.read_text(encoding="utf-8"),
+            "framework-support": FRAMEWORK_SUPPORT_PATH.read_text(encoding="utf-8"),
+            "workflow-governance": WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8"),
+        }
+        required_fragments = (
+            "host-tests/build",
+            "continuity adapters",
+            "runner-backed",
+            "body/title-only",
+            "GITHUB_EVENT_PATH",
+            "extended-host-tests",
+            "legacy",
+            "platform-skipped",
+            "canonical `summary`",
+            "newest conclusively full Build CI run",
+            "rejects redirects",
+            "run_number",
+            "current-run",
+        )
+        forbidden_fragments = (
+            "distinct metadata-only names",
+            "same canonical skipped worker names",
+            "canonical skipped worker contexts",
+            "each skipped with no runner",
+            "all four workers are exactly `skipped`",
+            "skip the four expensive workers",
+        )
+        for name, text in documents.items():
+            normalized = normalize_policy(text)
+            with self.subTest(document=name):
+                for fragment in required_fragments:
+                    self.assertIn(normalize_policy(fragment), normalized)
+                for fragment in forbidden_fragments:
+                    self.assertNotIn(normalize_policy(fragment), normalized)
 
     def test_live_title_probe_contract_is_complete_and_fail_closed(self):
         governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
@@ -4102,11 +4202,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "event-identity",
             "event-router",
             "metadata-classifier",
-            "metadata-summary",
-        )
-        worker_names = (
             "host-tests",
             "build",
+            "summary",
+        )
+        metadata_skipped_names = (
             "extended-host-tests",
             "legacy",
             "patch-release",
@@ -4137,7 +4237,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 # GitHub may stamp this even when no runner executes the job.
                 started_at="2026-08-31T00:00:00Z",
             )
-            for index, name in enumerate(worker_names, start=300)
+            for index, name in enumerate(metadata_skipped_names, start=300)
         )
 
         artifact_root = ROOT / "build" / "test-artifacts"
@@ -4190,12 +4290,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             )
             self.assertEqual(accepted.returncode, 0, accepted.stderr)
 
-            for worker_name in (
-                "host-tests",
-                "build",
-                "extended-host-tests",
-                "legacy",
-            ):
+            for worker_name in metadata_skipped_names[:-1]:
                 with self.subTest(started_worker=worker_name):
                     adversarial_jobs = copy.deepcopy(metadata_jobs)
                     started_worker = next(
@@ -4251,6 +4346,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 'printf "restore run not inspected\\n"',
             ),
             (
+                "live-procedure-sequence",
+                "5. Normalize all three real runs",
+                "10. Normalize all three real runs",
+            ),
+            (
                 "bounded-exact-run-watcher",
                 'gh run view "$run_id" --json status,conclusion \\\n'
                 "       --jq '[.status, (.conclusion // \"\")] | @tsv'",
@@ -4302,6 +4402,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "raw-job-scan",
                 "for job in raw_jobs:",
                 "for job in []:",
+            ),
+            (
+                "metadata-adapter-runs",
+                'assert isinstance(job["runner_name"], str) and job["runner_name"]',
+                "assert True",
             ),
             (
                 "metadata-worker-no-start",

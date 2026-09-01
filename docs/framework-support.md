@@ -27,17 +27,38 @@ directly.
 **Automatic Build CI is the only host this repository re-verifies on every
 source-changing push/PR.** A PR candidate uses the complete combined Build
 gate and Copilot review concurrently. Parsed body/title-only edits retain the
-identity validator/router plus distinct running `metadata-classifier` and
-`metadata-summary`
-contexts; skipped worker names are non-semantic and inadmissible as candidate
-evidence. Base, mixed, unknown/incomplete,
+identity validator/router plus the running `metadata-classifier` context and
+the canonical worker checks `host-tests`, `build`, `extended-host-tests`,
+`legacy`, `patch-release`, and `summary`. In metadata mode, `host-tests` and
+`build` run only a trusted no-checkout continuity attestation so the existing
+required live contexts stay green; `extended-host-tests` and `legacy` remain
+platform-skipped with no runner. That attestation reads the runner-owned
+file-backed `GITHUB_EVENT_PATH` payload directly instead of env-copying the
+PR body/title/changes JSON. Metadata `summary` is also a continuity-only
+attestation: it succeeds only after a trusted no-checkout Actions API proof
+classifies exact prior runs newest-first, skips only conclusively metadata
+runs, and confirms the newest conclusively full Build CI run for the same
+repository, PR number, authoritative base SHA, and immutable head SHA
+completed successfully. That proof first requires complete paginated results
+with stable `total_count`, single-page `Link` omission, exact non-final
+`next`/`last` relations, no final `next`, exact per-page cardinality, stable
+`workflow_id`, ordered positive `run_number`/`run_attempt` values, one exact
+current-run observation, and rejects redirects before any second
+authenticated request. A newer failed,
+cancelled, in-progress, or malformed full run blocks older successes. Live
+branch protection therefore remains the current canonical `host-tests` +
+`build` + `summary` Build contract while preserving any existing independent
+security/review contexts, and metadata-only runs still remain ineligible
+candidate evidence by themselves.
+Base, mixed, unknown/incomplete,
 opened, synchronize, and reopened events with complete identity fail closed to
 the complete graph. Any missing, malformed, or incoherent base ref/SHA with a
 valid exact PR head also runs the four workers at that head and fails normal
 summary; a valid base SHA may be retained only for diagnostics. Missing,
 malformed, stale, or spoofed head identity runs none. A classifier failure with
-a validated PR event head runs all four workers at that exact head and then
-fails summary. A master-push classifier failure does the same at validated
+a validated authoritative PR head runs all four workers at that exact head
+under canonical worker names, then summary still fails. A master-push
+classifier failure does the same at validated
 `github.sha` and audits the master-only publisher before failing; without a
 validated event-specific fallback SHA, it starts no worker or publisher. The
 classifier bootstrap may use the trusted
@@ -89,7 +110,8 @@ ROM enters an Actions artifact, cache, release, or log. The three-file patch
 producer is staged from that exact validated after commit with no whole-file
 source hash pins.
 Before `/sys` is masked, the exact owned cgroup is bound read-only below a
-root-only `0700` `/mnt/supervisor`; the candidate cannot traverse it. The
+root-only `0700` `/mnt/supervisor`; the candidate cannot read, write, execute,
+or traverse that parent. The exact cgroup child there remains read-only. The
 wrapper reads that supervisor view after `/sys` is masked and permits handoff
 only when its own PID is the sole member. Host-side kill/removal still uses the
 actual cgroup path.
@@ -214,11 +236,31 @@ no ROM build or network access is required for either.
 Prefer focused local checks during iteration. A no-checkout `event-identity`
 validator, base-authoritative `event-router`, and mode-specific classifier
 check precede candidate `host-tests`, `build`, `extended-host-tests`, `legacy`,
-and fail-closed `summary` jobs plus Copilot review. Metadata uses a distinct
-running `metadata-summary`; normal `summary`
-is the sole candidate attestation and requires all four workers from that same
-full run. Only parsed body/title-only
-edits skip the four expensive workers. A
+and fail-closed `summary` jobs plus Copilot review. Metadata uses runner-backed
+`host-tests`/`build` continuity adapters and still emits canonical `summary`;
+those adapters independently revalidate the raw edited pull-request event from
+the runner-owned file-backed `GITHUB_EVENT_PATH`, exact body/title-only
+`changes` keys, and changed prior values without any checkout or candidate
+import. They accept only a same-owner regular event file up to 1 MiB, read at
+most one additional EOF byte, and never copy large body/title/changes JSON
+through env. Metadata `summary` succeeds only after a trusted no-checkout
+Actions API proof classifies exact prior runs newest-first, skips only
+conclusively metadata runs, and confirms the newest conclusively full Build CI
+run for the same repository, PR number, authoritative base SHA, and immutable
+head SHA completed successfully. It first requires complete paginated results
+with stable `total_count`, single-page `Link` omission, exact non-final
+`next`/`last` relations, no final `next`, exact per-page cardinality, stable
+`workflow_id`, ordered positive `run_number`/`run_attempt` values, one exact
+current-run observation, and rejects redirects before any second
+authenticated request. A newer failed,
+cancelled, in-progress, or malformed full run blocks older successes. Normal
+`summary` remains the sole
+candidate attestation, and
+`candidate_evidence` still treats a metadata-only run as ineligible by itself.
+Only parsed body/title-only edits suppress the expensive worker execution; the
+two required adapters and the canonical summary continuity job may still take
+runners briefly while they perform only their fixed trusted attestation/API
+proof. A
 merged `master` push reruns the complete combined gate and adds only
 `patch-release`. Unique CJK/font, codec,
 configuration/budget, and archival evidence stays parallel with Build-owned

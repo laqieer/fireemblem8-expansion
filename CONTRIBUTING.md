@@ -91,6 +91,14 @@ raw-closure, and modern debug/release runtime evidence run only in their
 existing Build owners; no duplicate Matrix path or manual dispatch exists. The
 expected combined-gate wall clock is approximately 35–40 minutes because the
 jobs run in parallel; that operational range is not a duration assertion.
+Repository branch protection or rulesets should require this workflow's
+canonical `host-tests`, `build`, and `summary` contexts, while leaving
+independent security/review contexts unchanged. Metadata-only PR edits keep
+those existing required names green by running only the trusted no-checkout
+continuity attestation in `host-tests`/`build`; `extended-host-tests` and
+`legacy` stay platform-skipped, the required `summary` context advances to the
+later metadata continuity run, and candidate eligibility still remains bound
+to the newest prior complete full Build CI run.
 
 If post-merge Build fails, fix forward or revert the affected `master` change.
 That failure blocks the affected issue's closure and
