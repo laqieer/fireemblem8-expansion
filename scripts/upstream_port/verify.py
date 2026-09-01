@@ -1519,10 +1519,8 @@ def _literal_run_script(lines, start, end, value, step_label):
         raise ValueError(f"{step_label} metadata adapter must use a literal run block")
     script = []
     for line in lines[start:end]:
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        if len(line) - len(line.lstrip(" ")) < 8:
-            raise ValueError(f"{step_label} run block has invalid indentation")
+        if line and not line.startswith("        "):
+            break
         script.append(line[8:])
     return "\n".join(script) + "\n"
 

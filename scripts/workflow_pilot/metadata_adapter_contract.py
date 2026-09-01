@@ -13,6 +13,13 @@ _SHELL_PUNCTUATION = "|;&<>()"
 _PYTHON_SEMANTIC_SHA256 = "230946bc7f4f3f00e1785cd2056083070ae2c8df3c81d32877447d6e4d858ad3"
 _ALLOWED_IMPORTS = ("decimal", "json", "math", "os", "re", "stat", "sys")
 _EXPECTED_HEREDOC_INTRODUCER = "/usr/bin/python3 -I - <<'PY'"
+# Security-boundary static-contract exception: Bash lexical details such as
+# quoting, comments, and other raw-tokenization behavior cannot be reproduced
+# safely without executing shell code. The reviewed raw adapter bytes are
+# therefore hashed exactly before parsed validation as defense in depth, while
+# parsed shell structure and version-stable Python AST semantics remain the
+# primary independent acceptance evidence.
+_RAW_SCRIPT_SHA256 = "1e8865b83119e25f1ffc9e39af27c34532aa3b30b984cee35083c1f40de63b0b"
 MAX_PYTHON_SOURCE_BYTES = 16384
 MAX_AST_DEPTH = 256
 MAX_AST_NODES = 4096
@@ -131,6 +138,12 @@ def _tokenize_shell_command(command: str) -> tuple[str, ...]:
     if not tokens:
         raise ValueError("metadata adapter shell command is empty")
     return tokens
+
+
+def _raw_script_sha256(script: str) -> str:
+    return hashlib.sha256(
+        _require_ascii_boundary(script, label="metadata adapter shell")
+    ).hexdigest()
 
 EXPECTED_METADATA_ADAPTER_SHELL_TOKENS = (
     _tokenize_shell_command(
@@ -344,6 +357,10 @@ def validate_metadata_adapter_python(source: str) -> None:
 
 
 def validate_metadata_adapter_script(script: str) -> None:
+    if _raw_script_sha256(script) != _RAW_SCRIPT_SHA256:
+        raise ValueError(
+            "metadata adapter shell raw identity differs from the reviewed contract"
+        )
     commands = parse_metadata_adapter_shell(script)
     if len(commands) != len(EXPECTED_METADATA_ADAPTER_SHELL_TOKENS):
         raise ValueError("metadata adapter shell differs from the reviewed contract")

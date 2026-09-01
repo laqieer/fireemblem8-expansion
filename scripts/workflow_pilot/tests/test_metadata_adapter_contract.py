@@ -42,7 +42,7 @@ def _step_blocks(job: str) -> list[str]:
 
 
 def _literal_run_script(step: str) -> str:
-    lines = step.splitlines()
+    lines = step.split("\n")
     run_index = lines.index("      run: |")
     return "\n".join(
         line[8:] if line else ""
@@ -105,17 +105,35 @@ class MetadataAdapterContractTests(unittest.TestCase):
                     ValueError,
                     "trailing whitespace after a continuation backslash|unsupported control byte 0x09",
                 ):
-                    metadata_adapter_contract.validate_metadata_adapter_script(mutated)
+                    metadata_adapter_contract.parse_metadata_adapter_shell(mutated)
 
-    def test_non_continuation_trailing_whitespace_is_not_semantic(self):
+    def test_raw_identity_rejects_nonsemantic_whitespace_and_comment_drift(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         script = _literal_run_script(_step_blocks(_job_blocks(text)["host-tests"])[0])
-        mutated = script.replace("fi\n", "fi   \n", 1).replace(
-            "        import sys\n",
-            "        import sys   \n",
+        whitespace_mutated = script.replace("fi\n", "fi   \n", 1)
+        comment_mutated = script.replace(
+            "import sys\n",
+            "import sys\n# lexical drift\n",
             1,
         )
-        metadata_adapter_contract.validate_metadata_adapter_script(mutated)
+        parsed_original = metadata_adapter_contract.parse_metadata_adapter_shell(script)
+        parsed_whitespace = metadata_adapter_contract.parse_metadata_adapter_shell(
+            whitespace_mutated
+        )
+        self.assertEqual(
+            [command.tokens for command in parsed_whitespace],
+            [command.tokens for command in parsed_original],
+        )
+        metadata_adapter_contract.validate_metadata_adapter_python(
+            metadata_adapter_contract.metadata_adapter_python_source(comment_mutated)
+        )
+        for mutated in (whitespace_mutated, comment_mutated):
+            with self.subTest(mutated=repr(mutated[:40])):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "raw identity differs from the reviewed contract",
+                ):
+                    metadata_adapter_contract.validate_metadata_adapter_script(mutated)
 
     def test_shell_parser_rejects_unreviewed_heredoc_introducers(self):
         text = WORKFLOW.read_text(encoding="utf-8")
@@ -135,7 +153,7 @@ class MetadataAdapterContractTests(unittest.TestCase):
                     ValueError,
                     "heredoc introducer differs from the reviewed contract",
                 ):
-                    metadata_adapter_contract.validate_metadata_adapter_script(mutated)
+                    metadata_adapter_contract.parse_metadata_adapter_shell(mutated)
 
     def test_ascii_shell_boundary_rejects_unicode_whitespace_and_controls(self):
         text = WORKFLOW.read_text(encoding="utf-8")
@@ -162,7 +180,7 @@ class MetadataAdapterContractTests(unittest.TestCase):
                     ValueError,
                     "must be ASCII|unsupported control byte",
                 ):
-                    metadata_adapter_contract.validate_metadata_adapter_script(mutated)
+                    metadata_adapter_contract.parse_metadata_adapter_shell(mutated)
 
     def test_python_validator_rejects_uniform_extra_heredoc_indentation(self):
         text = WORKFLOW.read_text(encoding="utf-8")
@@ -177,13 +195,20 @@ class MetadataAdapterContractTests(unittest.TestCase):
             1,
         )
         with self.assertRaisesRegex(ValueError, "metadata adapter Python is invalid"):
-            metadata_adapter_contract.validate_metadata_adapter_script(mutated)
+            metadata_adapter_contract.validate_metadata_adapter_python(
+                metadata_adapter_contract.metadata_adapter_python_source(mutated)
+            )
         with self.assertRaises(IndentationError):
             compile(
                 metadata_adapter_contract.metadata_adapter_python_source(mutated),
                 "<metadata-adapter-raw>",
                 "exec",
             )
+        with self.assertRaisesRegex(
+            ValueError,
+            "raw identity differs from the reviewed contract",
+        ):
+            metadata_adapter_contract.validate_metadata_adapter_script(mutated)
 
     def test_unquoted_heredoc_runtime_is_not_equivalent(self):
         quoted = "/usr/bin/python3 -I - <<'PY'\nprint('$MARKER')\nPY\n"

@@ -3423,6 +3423,32 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     for error in _errors(changed, False)
                 )
             )
+        for name, mutator in (
+            (
+                "raw-trailing-space-drift",
+                lambda step: step.replace("        fi\n", "        fi   \n", 1),
+            ),
+            (
+                "raw-comment-drift",
+                lambda step: step.replace(
+                    "        import sys\n",
+                    "        import sys\n        # lexical drift\n",
+                    1,
+                ),
+            ),
+        ):
+            with self.subTest(mutation=name):
+                host_job = _job_blocks(self.text)["host-tests"]
+                host_step = _step_blocks(host_job)[0]
+                changed = self.text.replace(host_step, mutator(host_step), 1)
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "host-tests protected pre-pilot step sequence differs" in error
+                        or "build metadata continuity adapter differs" in error
+                        for error in _errors(changed, False)
+                    )
+                )
         unicode_control_mutations = (
             ("nbsp", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\u00a0\n"),
             ("em-space", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\u2003\n"),

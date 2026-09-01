@@ -1288,6 +1288,18 @@ class VerifyCliCwdTests(unittest.TestCase):
                     "        if False:\n"
                     "            json.dumps({})\n",
                 ),
+                "raw-trailing-space-drift": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        fi\n",
+                    "        fi   \n",
+                ),
+                "raw-comment-drift": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        import sys\n",
+                    "        import sys\n        # lexical drift\n",
+                ),
                 "unquoted-heredoc-introducer": self.replace_in_job(
                     original,
                     "host-tests",
