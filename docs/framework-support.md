@@ -33,6 +33,9 @@ contexts plus the canonical skipped worker checks `host-tests`, `build`,
 `extended-host-tests`, and `legacy`; repository rulesets must therefore
 require the fail-closed canonical `summary` context rather than direct worker
 names, while preserving any existing independent security/review contexts.
+The committed `.github/required-summary-checks.json` contract and
+`scripts/workflow_pilot/required_summary_checks.py` verifier freeze that exact
+owner-only ruleset migration for default-branch protection rule `19088702`.
 Base, mixed, unknown/incomplete,
 opened, synchronize, and reopened events with complete identity fail closed to
 the complete graph. Any missing, malformed, or incoherent base ref/SHA with a

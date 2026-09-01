@@ -1020,6 +1020,9 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "python3 -m unittest "
                             "scripts.workflow_pilot.tests."
                             "test_candidate_evidence -v",
+                            "python3 -m unittest "
+                            "scripts.workflow_pilot.tests."
+                            "test_required_summary_checks -v",
                             "python3 -m unittest discover -s "
                             "tests/workflows -p 'test_*.py' -v",
                             "python3 -m unittest "

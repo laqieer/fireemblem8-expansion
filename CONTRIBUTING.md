@@ -94,6 +94,10 @@ jobs run in parallel; that operational range is not a duration assertion.
 Repository branch protection or rulesets should require this workflow's
 canonical `summary` context rather than individual worker names, while leaving
 independent security/review contexts unchanged.
+Use the committed source/target ruleset contract in
+`.github/required-summary-checks.json` and the trusted stdlib verifier
+`scripts/workflow_pilot/required_summary_checks.py` to preview and verify that
+owner-only migration without guessing the live default-branch ruleset state.
 
 If post-merge Build fails, fix forward or revert the affected `master` change.
 That failure blocks the affected issue's closure and

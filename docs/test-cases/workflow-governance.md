@@ -268,10 +268,14 @@ availability or grant credentials.
 1. Run
    `python3 -m unittest scripts.workflow_pilot.tests.test_event_classifier -v`.
 2. Run
-   `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`.
+   `python3 -m unittest scripts.workflow_pilot.tests.test_candidate_evidence -v`.
 3. Run
+   `python3 -m unittest scripts.workflow_pilot.tests.test_required_summary_checks -v`.
+4. Run
+   `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`.
+5. Run
    `python3 -m unittest tests.upstream_port.test_verify -v`.
-4. Inspect the parsed body-only, title-only, body-and-title, base-only,
+6. Inspect the parsed body-only, title-only, body-and-title, base-only,
    base-plus-body, unknown-field, incomplete-change, `opened`, `synchronize`,
    `reopened`, missing/empty/malformed/mismatched base components, missing-head,
    missing-both, stacked-base,
@@ -280,11 +284,11 @@ availability or grant credentials.
    classifier result, exact selected job set, exact head/base, and expected
    summary conclusion. Base-only, mixed, and stack-retarget fixtures carry the
    production `changes.base.ref.from` plus `changes.base.sha.from` transition.
-5. Inspect the disposable-event replay. It writes each payload beneath ignored
+7. Inspect the disposable-event replay. It writes each payload beneath ignored
    `build/test-artifacts/`, invokes the real `/usr/bin/python3 -I` launcher and
    output-file protocol, parses the resulting job outputs, and removes the
    sandbox without reading or mutating remote state.
-6. Inspect a pull request's stable body contract and canonical evidence
+8. Inspect a pull request's stable body contract and canonical evidence
    comment protocol in [`../workflow-pilot.md`](../workflow-pilot.md). The
    comment carries this standalone marker:
 
@@ -293,12 +297,24 @@ availability or grant credentials.
    Evolving SHA/run/review/budget/preflight values are updated there in place
    rather than in the body, title, baseline fixture, decision record, or
    another mutable ledger.
-7. Parse `.github/PULL_REQUEST_TEMPLATE.md`. Confirm it contains only frozen
+9. Parse `.github/PULL_REQUEST_TEMPLATE.md`. Confirm it contains only frozen
    scope/non-goals, classification/relationships, acceptance criteria, tester
    procedure, and compatibility decisions. Replay one canonical comment,
    missing/duplicate/non-standalone marker comments, a body marker, and every
    prohibited evolving body field.
-8. Replay the same body-only event through the preserved pre-fix Build graph.
+10. Parse `.github/required-summary-checks.json`, the exact current live ruleset
+    fixture `scripts/workflow_pilot/tests/fixtures/ruleset_19088702_current.json`,
+    the desired post-migration fixture
+    `scripts/workflow_pilot/tests/fixtures/ruleset_19088702_desired.json`, and
+    the captured negative-proof raw metadata job fixtures
+    `live_metadata_jobs_33472008301.json` /
+    `live_metadata_jobs_33472111689.json`. Confirm the ruleset contract keeps
+    repository ruleset `19088702`, preserves `GitGuardian Security Checks`
+    integration `46505`, requires only canonical `summary` from GitHub Actions
+    integration `15368`, removes only direct `build`/`host-tests`, preserves the
+    exact non-status rules/conditions/bypass state, and emits the exact owner
+    PATCH body only after validating the live pre-migration ruleset.
+11. Replay the same body-only event through the preserved pre-fix Build graph.
    Compare these unordered parsed sets:
    - **Parsed preserved pre-fix body-only job set:** {`host-tests`, `build`,
      `extended-host-tests`, `legacy`, `summary`}.
@@ -492,6 +508,12 @@ derives full versus metadata mode from running classifier/summary contexts and
 proves a later green metadata run cannot replace a failed/missing candidate
 full run; the required canonical `summary` context remains on the latest
 successful full run even though later metadata runs reuse the worker names.
+
+`python3 -m unittest scripts.workflow_pilot.tests.test_required_summary_checks -v`
+validates the committed ruleset `19088702` source state, desired response,
+exact owner PATCH body, preserved GitGuardian integration, and fail-closed
+preview/verify CLI mutations for same-name wrong app, dropped rules, direct
+workers retained, and conditions/bypass drift.
 
 `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v` parses the
 workflow and asserts exact trigger, job, head, worker-condition, summary, setup,
@@ -966,7 +988,34 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    - **Parsed live title-restore job/check set:** {`event-identity`,
      `event-router`, `metadata-classifier`, `host-tests`, `build`,
      `extended-host-tests`, `legacy`, `patch-release`, `metadata-summary`}.
-5. Normalize all three real runs and execute the candidate evaluator's full,
+12. Preview and verify the owner-only ruleset migration procedure without
+    mutating GitHub from this task:
+
+   ```bash
+   ruleset_live="$source_root/build/test-artifacts/issue-177-ruleset-live.json"
+   ruleset_patch="$source_root/build/test-artifacts/issue-177-ruleset-patch.json"
+   ruleset_post="$source_root/build/test-artifacts/issue-177-ruleset-post.json"
+
+   gh api "repos/{owner}/{repo}/rulesets/19088702" > "$ruleset_live"
+   /usr/bin/python3 -I scripts/workflow_pilot/required_summary_checks.py preview \
+     --contract .github/required-summary-checks.json \
+     --live "$ruleset_live" \
+     --output "$ruleset_patch"
+
+   # Owner-only later step, not executed in this local task:
+   gh api --method PUT "repos/{owner}/{repo}/rulesets/19088702" \
+     --input "$ruleset_patch"
+
+   gh api "repos/{owner}/{repo}/rulesets/19088702" > "$ruleset_post"
+   /usr/bin/python3 -I scripts/workflow_pilot/required_summary_checks.py verify \
+     --contract .github/required-summary-checks.json \
+     --live "$ruleset_post"
+   ```
+
+   The verifier must refuse a stale pre-migration live ruleset, a post-state
+   that keeps direct worker checks, a same-name wrong app, or any dropped or
+   altered independent rule.
+13. Normalize all three real runs and execute the candidate evaluator's full,
    metadata-only, combined, failed-full, and missing-full assertions:
 
    ```bash
@@ -1149,7 +1198,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    The title-only and restore runs alone prove the missing-full negative; the
    copied failed summary proves the failed-full negative without inventing a
    success-shaped fallback.
-6. Run exact idempotent cleanup explicitly. The EXIT trap performs the same
+14. Run exact idempotent cleanup explicitly. The EXIT trap performs the same
    cleanup automatically on any earlier failure:
 
    ```bash

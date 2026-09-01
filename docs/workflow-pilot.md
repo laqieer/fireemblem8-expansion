@@ -303,6 +303,10 @@ capture PR #190 metadata runs whose skipped workers reported long literal
 raw jobs are negative proof that worker `job.name` expressions are unstable on
 hosted Runner and must not be used for canonical workflow contracts or branch
 protection.
+The committed `.github/required-summary-checks.json` contract and trusted
+stdlib verifier `scripts/workflow_pilot/required_summary_checks.py` encode the
+exact pre-migration live ruleset `19088702`, the desired post-state requiring
+only canonical `summary`, and the owner-only preview/verify migration flow.
 The current Build workflow has no explicit final-dispatch trigger; if that
 supported surface is introduced later, `workflow_dispatch` classifies as full
 and the trigger/topology contracts must be updated together.

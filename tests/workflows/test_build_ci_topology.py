@@ -17,6 +17,7 @@ from scripts.workflow_pilot import (
     candidate_evidence,
     event_classifier,
     hydrate_authority,
+    required_summary_checks,
     reporter,
 )
 
@@ -46,6 +47,22 @@ LIVE_METADATA_RESTORE_FIXTURE = (
     / "tests"
     / "fixtures"
     / "live_metadata_jobs_33472111689.json"
+)
+CURRENT_RULESET_FIXTURE = (
+    ROOT
+    / "scripts"
+    / "workflow_pilot"
+    / "tests"
+    / "fixtures"
+    / "ruleset_19088702_current.json"
+)
+DESIRED_RULESET_FIXTURE = (
+    ROOT
+    / "scripts"
+    / "workflow_pilot"
+    / "tests"
+    / "fixtures"
+    / "ruleset_19088702_desired.json"
 )
 RULESET_PAYLOAD = ROOT / ".github" / "required-summary-checks.json"
 PRE_FIX_WORKFLOW = EVENT_FIXTURE.with_name("pre_fix_build.yml")
@@ -3976,41 +3993,60 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         self.assertTrue(any("summary must depend" in error for error in _errors(changed, False)))
 
     def test_required_summary_ruleset_payload_is_exact(self):
-        payload = json.loads(RULESET_PAYLOAD.read_text(encoding="utf-8"))
-        self.assertEqual(payload["schema_version"], 1)
-        self.assertEqual(payload["issue"], 177)
-        self.assertEqual(payload["workflow"], "Build CI")
+        contract = required_summary_checks.validate_contract(
+            required_summary_checks.load_json(RULESET_PAYLOAD)
+        )
+        self.assertEqual(contract.repository, "laqieer/fireemblem8-expansion")
+        self.assertEqual(contract.ruleset_identity["id"], 19088702)
+        self.assertEqual(contract.negative_proof_run_ids, (33472008301, 33472111689))
+        self.assertEqual(contract.post_apply_volatile_fields, ("updated_at",))
         self.assertEqual(
-            payload["required_build_contexts"],
-            sorted(REQUIRED_SUMMARY_CONTEXTS),
+            contract.status_check_contract["required"],
+            [{"context": "summary", "integration_id": 15368}],
         )
         self.assertEqual(
-            payload["nonrequired_build_contexts"],
+            contract.status_check_contract["preserved_independent"],
+            [{"context": "GitGuardian Security Checks", "integration_id": 46505}],
+        )
+        self.assertEqual(
+            contract.status_check_contract["removed"],
             [
-                "event-identity",
-                "event-router",
-                "event-classifier",
-                "metadata-classifier",
-                "metadata-summary",
-                "host-tests",
-                "build",
-                "extended-host-tests",
-                "legacy",
-                "patch-release",
+                {"context": "build", "integration_id": 15368},
+                {"context": "host-tests", "integration_id": 15368},
             ],
         )
-        self.assertTrue(payload["preserve_existing_independent_contexts"])
-        self.assertEqual(payload["negative_proof_run_ids"], [33472008301, 33472111689])
+        source = required_summary_checks.load_json(CURRENT_RULESET_FIXTURE)
+        desired = required_summary_checks.load_json(DESIRED_RULESET_FIXTURE)
         self.assertEqual(
-            payload["verification"],
+            contract.source_ruleset_response,
+            required_summary_checks.normalize_ruleset_response(
+                source,
+                "fixture.current",
+                volatile_fields=(),
+            ),
+        )
+        self.assertEqual(
+            contract.desired_ruleset_response,
+            required_summary_checks.normalize_ruleset_response(
+                desired,
+                "fixture.desired",
+                volatile_fields=("updated_at",),
+            ),
+        )
+        self.assertEqual(
+            required_summary_checks.preview_patch(contract, source),
+            contract.desired_patch_body,
+        )
+        self.assertEqual(
+            required_summary_checks.verify_live_ruleset(contract, desired),
             {
-                "full_summary_must_require_worker_success": True,
-                "metadata_runs_must_not_publish_summary": True,
-                "later_metadata_must_not_replace_required_summary": True,
+                "repository": "laqieer/fireemblem8-expansion",
+                "required_build_contexts": ["summary"],
+                "ruleset_id": 19088702,
+                "status": "ok",
+                "verified_state": "desired",
             },
         )
-        self.assertNotIn("summary", payload["nonrequired_build_contexts"])
-        self.assertNotIn("metadata-summary", payload["required_build_contexts"])
 
     def test_summary_requires_each_worker_dependency_and_result_check(self):
         for worker, changed_needs in (
