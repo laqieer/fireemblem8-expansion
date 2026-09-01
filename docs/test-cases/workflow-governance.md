@@ -1414,11 +1414,11 @@ game behavior needs a compensating change.
    incomplete, missing-evidence, missing-trailer, out-of-scope, line-budget,
    lifetime, and RSS fixtures. Confirm script-only diffs derive zero ROM, RAM,
    and protocol usage. Confirm a whole one-second lifetime is accepted even
-   when its RFC 3339 endpoints include fractional seconds, while 1.9-second
-   and other non-whole-second telemetry deltas reject before integer
-   truncation. Confirm the same strict UTC `Z` timestamp grammar in both the
-   published schema and the runtime; `+00:00` offsets remain invalid. Then
-   change a resource path and require a closed
+   when its RFC 3339 endpoints include one-to-six fractional digits, while
+   1.9-second and other non-whole-second telemetry deltas reject before
+   integer truncation. Confirm the same strict UTC `Z` timestamp grammar in
+   both the published schema and the runtime; `+00:00` offsets and 7+ digit
+   fractions remain invalid. Then change a resource path and require a closed
    build/map/resource receipt. Prove `ldscript.txt`, Makefiles, assets,
    configuration, fonts, text, generated data, and every unclassified input
    cannot derive zero. Change the parsed schema and require a monotonic
@@ -1580,10 +1580,11 @@ validates the public handoff schema against real authority/history examples,
 rejects unsatisfied closed definitions, and reports
 accepted/bundle-rejected/rejected/interrupted/in-progress counts together
 with rejection codes, stale responses, maximum owner lifetime and RSS,
-coordination turns, and recovery cost only from coordinator telemetry. When a
-bundle-level watcher or authoritative-run defect accompanies a locally rejected
-handoff, the reporter retains both the local and bundle/global rejection codes
-without double-counting the outcome class. Git derives line usage, parsed
+coordination turns, and recovery cost only from coordinator telemetry.
+`verify_reporter_record()` replays canonical handoff rows before trusting the
+finalize signature. When a bundle-level watcher or authoritative-run defect
+accompanies a locally rejected handoff, the reporter retains both the local
+and bundle/global rejection codes without double-counting the outcome class. Git derives line usage, parsed
 schema derives protocol changes, and only exact proven host-only paths derive
 zero ROM/RAM; all other tracked inputs require closed dependency-bound
 build/map/resource evidence. Its

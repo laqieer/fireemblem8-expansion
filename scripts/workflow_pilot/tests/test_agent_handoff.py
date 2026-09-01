@@ -2123,6 +2123,34 @@ class ExactHandoffTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             receipt_validator.validate(wrong_type_receipt)
 
+    def test_time_schema_and_parser_limit_fractional_precision(self):
+        validator = validator_for_schema(
+            schema_ref(load_handoff_schema(), "#/$defs/time")
+        )
+        accepted = {
+            "2026-01-01T00:00:00Z": 0,
+            "2026-01-01T00:00:00.1Z": 100000,
+            "2026-01-01T00:00:00.12Z": 120000,
+            "2026-01-01T00:00:00.123Z": 123000,
+            "2026-01-01T00:00:00.1234Z": 123400,
+            "2026-01-01T00:00:00.12345Z": 123450,
+            "2026-01-01T00:00:00.123456Z": 123456,
+        }
+        for stamp, microseconds in accepted.items():
+            with self.subTest(stamp=stamp):
+                validator.validate(stamp)
+                self.assertEqual(reporter.parse_time(stamp, "stamp").microsecond, microseconds)
+        for stamp in (
+            "2026-01-01T00:00:00.1234567Z",
+            "2026-01-01T00:00:00.123456789Z",
+            "2026-01-01T00:00:00+00:00",
+        ):
+            with self.subTest(invalid=stamp):
+                with self.assertRaises(ValidationError):
+                    validator.validate(stamp)
+                with self.assertRaisesRegex(reporter.PilotDataError, "RFC 3339 UTC timestamp"):
+                    reporter.parse_time(stamp, "stamp")
+
     def test_schema_v2_matches_runtime_structural_mutation_corpus(self):
         schema = load_handoff_schema()
         validator = validator_for_schema(schema)
@@ -2221,6 +2249,13 @@ class ExactHandoffTests(unittest.TestCase):
                     lambda doc: doc["coordinator_receipt"].__setitem__(
                         "issued_at",
                         with_offset(doc["coordinator_receipt"]["issued_at"]),
+                    ),
+                    "coordinator_receipt\\.issued_at must be an RFC 3339 UTC timestamp",
+                ),
+                "issued-at-overprecision": (
+                    lambda doc: doc["coordinator_receipt"].__setitem__(
+                        "issued_at",
+                        "2026-01-01T00:00:00.1234567Z",
                     ),
                     "coordinator_receipt\\.issued_at must be an RFC 3339 UTC timestamp",
                 ),
@@ -5104,6 +5139,11 @@ class ExactHandoffTests(unittest.TestCase):
                 interrupted,
                 root,
             )
+            interrupted_record = reporter_record(
+                root,
+                interrupted,
+                interrupted_report,
+            )
             history = agent_handoff.make_history_receipt(
                 interrupted,
                 interrupted_report,
@@ -5178,7 +5218,7 @@ class ExactHandoffTests(unittest.TestCase):
                 report,
             )
             self.assertEqual(report["summary"]["recovery_count"], 0)
-
+            replacement_record = reporter_record(root, replacement, report)
             lost = copy.deepcopy(replacement)
             lost["handoffs"][0]["recovery_resolution"][0][
                 "original_sha256"
@@ -5188,6 +5228,25 @@ class ExactHandoffTests(unittest.TestCase):
             self.assertIn(
                 "recovery-content-not-resolved",
                 lost_report["summary"]["rejection_codes"],
+            )
+            replacement_history = agent_handoff.make_history_receipt(
+                replacement,
+                report,
+                current["id"],
+            )
+            set_history_authority(
+                root,
+                2,
+                replacement_history["seal"],
+                history_receipt=replacement_history,
+            )
+            agent_handoff.verify_reporter_record(
+                interrupted_record,
+                revalidate_git=False,
+            )
+            agent_handoff.verify_reporter_record(
+                replacement_record,
+                revalidate_git=False,
             )
 
     def test_linker_and_unclassified_inputs_require_resource_receipts(self):
@@ -5902,7 +5961,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                         sorted(result_report["summary"]["rejection_codes"]),
                     )
 
-    def test_verify_reporter_record_rederives_bundle_summary_from_signed_inputs(self):
+    def test_verify_reporter_record_rederives_rows_and_summary_from_signed_inputs(self):
         with handoff_repository() as (root, _base, parent, result):
             honest_document = handoff_document(root, parent, result)
             add_run(honest_document, result)
@@ -5927,41 +5986,68 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             )
 
         with handoff_repository() as (root, _base, parent, result):
-            document = handoff_document(root, parent, result)
-            add_run(document, result)
-            duplicate = copy.deepcopy(document["watchers"][0])
-            duplicate["id"] = "watcher-9001-duplicate"
-            document["watchers"].append(duplicate)
-            refresh_coordinator_receipt(document, root)
-            result_report = agent_handoff.validate_document(document, root)
-            tampered_result = copy.deepcopy(result_report)
-            tampered_result["summary"]["trusted_push_eligible"] = True
-            tampered_result["result_seal"] = agent_handoff.seal_handoff_result(
-                tampered_result
-            )
-            tampered_record = {
-                "source_handoff_ids": sorted(
-                    item["id"] for item in document["handoffs"]
-                ),
-                "document": copy.deepcopy(document),
-                "input_seal": tampered_result["input_seal"],
-                "git_seal": tampered_result["git_seal"],
-                "result_seal": tampered_result["result_seal"],
-                "result": tampered_result,
-                "result_attestation": finalize_result_attestation(
-                    root,
+            def make_tampered_record(mutator):
+                document = handoff_document(root, parent, result)
+                add_run(document, result)
+                duplicate = copy.deepcopy(document["watchers"][0])
+                duplicate["id"] = "watcher-9001-duplicate"
+                document["watchers"].append(duplicate)
+                refresh_coordinator_receipt(document, root)
+                tampered_result = agent_handoff.validate_document(document, root)
+                mutator(tampered_result["handoffs"][0])
+                (
+                    tampered_result["summary"],
+                    _global_codes,
+                    tampered_result["delivery_graph"],
+                    tampered_result["watchers"],
+                ) = agent_handoff.derive_reporter_result_summary(
                     document,
                     tampered_result,
-                ),
-            }
-            with self.assertRaisesRegex(
-                agent_handoff.HandoffDataError,
-                "result summary does not verify",
-            ):
-                agent_handoff.verify_reporter_record(
-                    tampered_record,
-                    revalidate_git=False,
                 )
+                tampered_result["result_seal"] = agent_handoff.seal_handoff_result(
+                    tampered_result
+                )
+                return {
+                    "source_handoff_ids": sorted(
+                        item["id"] for item in document["handoffs"]
+                    ),
+                    "document": copy.deepcopy(document),
+                    "input_seal": tampered_result["input_seal"],
+                    "git_seal": tampered_result["git_seal"],
+                    "result_seal": tampered_result["result_seal"],
+                    "result": tampered_result,
+                    "result_attestation": finalize_result_attestation(
+                        root,
+                        document,
+                        tampered_result,
+                    ),
+                }
+
+            for mutate in (
+                lambda row: row.update(
+                    {
+                        "outcome": "rejected",
+                        "rejection_codes": ["stale-result"],
+                        "stale_response": True,
+                    }
+                ),
+                lambda row: row.update(
+                    {
+                        "lifetime_seconds": 1,
+                        "peak_rss_bytes": 999,
+                        "coordination_turns": 42,
+                    }
+                ),
+            ):
+                with self.subTest(mutate=mutate.__code__.co_firstlineno):
+                    with self.assertRaisesRegex(
+                        agent_handoff.HandoffDataError,
+                        "result handoffs do not verify",
+                    ):
+                        agent_handoff.verify_reporter_record(
+                            make_tampered_record(mutate),
+                            revalidate_git=False,
+                        )
 
     def test_frozen_version_one_schema_remains_closed_and_unchanged(self):
         baseline = reporter.load_json(test_reporter.BASELINE)

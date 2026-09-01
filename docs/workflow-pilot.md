@@ -996,10 +996,11 @@ every live protocol section — `history_authority`, `prior_handoffs`,
 `delivery_graph`, handoff arrays/objects, top-level run/watcher receipts, and
 the full coordinator receipt surface — with standards-compliant field
 definitions that match the runtime parser's nested objects, enums, nullability,
-numeric bounds, and `additionalProperties: false` behavior instead of leaving
-those objects unsatisfiable. Every schema timestamp now follows the same exact
-runtime grammar: RFC 3339 UTC with a terminal `Z`. Offset forms such as
-`+00:00` remain invalid because the runtime does not accept them.
+numeric bounds, and `additionalProperties: false` behavior. Every schema
+timestamp now follows the same exact runtime grammar: RFC 3339 UTC with a
+terminal `Z` and at most six fractional digits. Offset forms such as `+00:00`
+and over-precise fractions remain invalid because the runtime does not accept
+them.
 
 Each normalized record contains the complete source document, source handoff
 identities, and matching input/Git/check/coordinator/result seals. The
@@ -1018,8 +1019,8 @@ verifies. A hand-authored or nonancestor row rejects.
 
 Runtime lifetime telemetry remains owner-supplied evidence, not a rounding
 hint. The validator rejects any non-whole-second owner lifetime delta before
-integer conversion, even when the timestamps are RFC 3339 fractions. Exact
-whole-second deltas remain valid.
+integer conversion, even when the timestamps use one-to-six RFC 3339
+fractional digits. Exact whole-second deltas remain valid.
 
 The reporter preserves handoff-local outcomes from sealed results, but its
 normalized aggregation treats an otherwise accepted handoff inside a
@@ -1032,9 +1033,9 @@ Bundle/global rejection codes derived from sealed runs/watchers remain present
 even when the affected handoff already has its own local rejection outcome, so
 aggregate failure reporting never loses watcher or authoritative-run defects
 and never double-counts the same handoff as both rejected and bundle-rejected.
-`verify_reporter_record()` re-derives the signed summary and bundle-global
-rejection semantics from the sealed document/result payload instead of trusting
-the mutable summary object. Line usage remains Git-derived. Protocol changes
+`verify_reporter_record()` re-derives the signed per-handoff rows, summary,
+and bundle-global rejection semantics from the sealed document/result payload
+instead of trusting mutable row or summary fields. Line usage remains Git-derived. Protocol changes
 come from the parsed, monotonically versioned
 `scripts/workflow_pilot/agent_handoff.schema.json`. ROM/RAM derives zero only
 for exact proven host-only path prefixes. Linker scripts, Makefiles, assets,

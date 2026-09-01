@@ -25,6 +25,9 @@ HANDOFF_FIXTURE_SCHEMA_VERSION = 2
 GIT = "/usr/bin/git"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+RFC3339_UTC_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$"
+)
 EXPECTED_PATH_RE = re.compile(
     r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$"
 )
@@ -443,7 +446,7 @@ def expect_sha(value: Any, label: str, nullable: bool = False) -> str | None:
 def parse_time(value: Any, label: str, nullable: bool = False) -> datetime | None:
     if value is None and nullable:
         return None
-    if not isinstance(value, str) or not value.endswith("Z"):
+    if not isinstance(value, str) or RFC3339_UTC_RE.fullmatch(value) is None:
         raise PilotDataError(f"{label} must be an RFC 3339 UTC timestamp")
     try:
         parsed = datetime.fromisoformat(value[:-1] + "+00:00")

@@ -3475,6 +3475,301 @@ def _parse_reporter_result_handoffs(raw_handoffs: Any) -> list[dict[str, Any]]:
     return parsed
 
 
+def _sealed_handoff_events(authority: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    events = {event["handoff_id"]: event for event in authority["history_events"]}
+    if authority["event"]["kind"] == "handoff":
+        events[authority["event"]["handoff_id"]] = authority["event"]
+    return events
+
+
+def _handoff_assignment_record(handoff: dict[str, Any]) -> dict[str, Any]:
+    return {
+        field: copy.deepcopy(handoff[field])
+        for field in (
+            "id",
+            "issue",
+            "pull_request",
+            "owner_id",
+            "owner_database_id",
+            "handoff_kind",
+            "replaces_handoff_id",
+            "assigned_parent_sha",
+            "expected_branch",
+            "allowed_worktree",
+            "allowed_scope",
+            "finding_ids",
+            "acceptance_criteria",
+            "required_checks",
+            "budgets",
+            "prohibited_remote_actions",
+            "max_lifetime_seconds",
+            "max_peak_rss_bytes",
+        )
+    }
+
+
+def _historical_reporter_handoffs(
+    document: dict[str, Any],
+    source_root: Path,
+    original_authority: dict[str, Any],
+    current_authority: dict[str, Any],
+) -> list[dict[str, Any]]:
+    issued_at = parse_time(
+        document["coordinator_receipt"]["issued_at"],
+        "handoff reporter coordinator receipt issued_at",
+    )
+    coordinator_receipt = _parse_coordinator_receipt(
+        copy.deepcopy(document["coordinator_receipt"]),
+        document=copy.deepcopy(document),
+        canonical_authority=copy.deepcopy(original_authority),
+        expected_repository_database_id=original_authority["delivery_expectation"][
+            "repository_id"
+        ],
+        current_time=issued_at,
+    )
+    events = _sealed_handoff_events(current_authority)
+    rows = []
+    for index, raw in enumerate(
+        expect_list(
+            document["handoffs"],
+            "handoff reporter record.document.handoffs",
+        )
+    ):
+        handoff = _parse_handoff(copy.deepcopy(raw), index)
+        event = events.get(handoff["id"])
+        if event is None:
+            raise HandoffDataError(
+                f"historical handoff {handoff['id']!r} is not sealed in current authority"
+            )
+        row = _empty_handoff_result(handoff)
+        telemetry = coordinator_receipt["telemetry"].get(handoff["id"])
+        if telemetry is None:
+            raise HandoffDataError(
+                f"historical handoff {handoff['id']!r} lacks runtime telemetry"
+            )
+        row["peak_rss_bytes"] = telemetry["peak_rss_bytes"]
+        row["coordination_turns"] = telemetry["coordination_turns"]
+        row["recovery_minutes"] = telemetry["recovery_minutes"]
+        row["interruption_snapshot"] = telemetry["interruption_snapshot"]
+        started_at = parse_time(telemetry["started_at"], f"historical telemetry {handoff['id']}.started_at")
+        ended_at = parse_time(telemetry["ended_at"], f"historical telemetry {handoff['id']}.ended_at")
+        lifetime_seconds = whole_second_duration(started_at, ended_at, label=f"historical telemetry {handoff['id']} lifetime")
+        if (
+            lifetime_seconds is None
+            or telemetry["owner_database_id"] != handoff["_owner"]["database_id"]
+            or started_at != parse_time(handoff["_states"][0]["at"], f"historical handoff {handoff['id']}.assigned_at")
+            or ended_at != parse_time(handoff["_states"][-1]["at"], f"historical handoff {handoff['id']}.closed_at")
+            or row["peak_rss_bytes"] > handoff["max_peak_rss_bytes"]
+        ):
+            raise HandoffDataError(
+                f"historical handoff {handoff['id']!r} telemetry does not verify"
+            )
+        row["lifetime_seconds"] = lifetime_seconds
+        if row["lifetime_seconds"] > handoff["max_lifetime_seconds"]:
+            raise HandoffDataError(
+                f"historical handoff {handoff['id']!r} lifetime does not verify"
+            )
+        if (
+            event["assignment"] != _handoff_assignment_record(handoff)
+            or event["handoff_kind"] != handoff["handoff_kind"]
+            or event["closed_at"] != row["closed_at"]
+            or event["operation_nonce"] != coordinator_receipt["operation_nonce"]
+            or event["consume_store_id"] != coordinator_receipt["consume_store_id"]
+            or event["consume_sequence"] != coordinator_receipt["consume_sequence"]
+            or event["consume_anchor"] != coordinator_receipt["consume_anchor"]
+        ):
+            raise HandoffDataError(
+                f"historical handoff {handoff['id']!r} does not match sealed authority state"
+            )
+        if handoff["result"] is not None:
+            if (
+                handoff["_state_names"] != COMPLETE_STATE_SEQUENCE
+                or event["lifecycle_state"] != "handed_off"
+                or event["candidate_sha"] != handoff["result"]["sha"]
+                or event["interruption_snapshot"] is not None
+            ):
+                raise HandoffDataError(
+                    f"historical accepted handoff {handoff['id']!r} does not replay cleanly"
+                )
+            row["outcome"] = "accepted"
+            row["result_sha"] = handoff["result"]["sha"]
+            commit_line = (
+                run_git(source_root, "rev-list", "--parents", "-n", "1", row["result_sha"])
+                .decode("ascii")
+                .strip()
+                .split()
+            )
+            if len(commit_line) != 2 or commit_line[1] != handoff["assigned_parent_sha"]:
+                raise HandoffDataError(
+                    f"historical accepted handoff {handoff['id']!r} has the wrong parent"
+                )
+            message = _commit_message(source_root, row["result_sha"])
+            lines = message.split("\n")
+            if not lines or lines[-1] != COPILOT_TRAILER or lines.count(COPILOT_TRAILER) != 1:
+                raise HandoffDataError(
+                    f"historical accepted handoff {handoff['id']!r} is missing the Copilot trailer"
+                )
+            row["commit_message_sha256"] = hashlib.sha256(message.encode("utf-8")).hexdigest()
+            changed_paths, changed_lines = _changed_paths_and_lines(
+                source_root,
+                handoff["assigned_parent_sha"],
+                row["result_sha"],
+            )
+            row["changed_paths"] = changed_paths
+            row["changed_lines"] = changed_lines
+            if any(not _path_is_allowed(path, handoff["allowed_scope"]) for path in changed_paths):
+                raise HandoffDataError(
+                    f"historical accepted handoff {handoff['id']!r} changed out-of-scope paths"
+                )
+            if changed_lines > handoff["budgets"]["changed_lines"]:
+                raise HandoffDataError(
+                    f"historical accepted handoff {handoff['id']!r} exceeds its line budget"
+                )
+            row["budget_usage"]["protocol_changes"] = _derive_protocol_changes(
+                source_root,
+                handoff["assigned_parent_sha"],
+                row["result_sha"],
+                changed_paths,
+            )
+            resource = coordinator_receipt["resources"].get(handoff["id"])
+            if _resource_surfaces_changed(changed_paths):
+                dependency_inputs = sorted(
+                    path
+                    for path in changed_paths
+                    if not any(path.startswith(prefix) for prefix in PROVEN_HOST_ONLY_PREFIXES)
+                )
+                if (
+                    resource is None
+                    or not resource["closed"]
+                    or resource["parent_sha"] != handoff["assigned_parent_sha"]
+                    or resource["candidate_sha"] != row["result_sha"]
+                    or resource["dependency_inputs"] != dependency_inputs
+                ):
+                    raise HandoffDataError(
+                        f"historical accepted handoff {handoff['id']!r} lacks a closed resource receipt"
+                    )
+                row["budget_usage"]["rom_bytes"] = resource["rom_bytes"]
+                row["budget_usage"]["ram_bytes"] = resource["ram_bytes"]
+            elif resource is not None:
+                raise HandoffDataError(
+                    f"historical accepted handoff {handoff['id']!r} has an unexpected resource receipt"
+                )
+            for field in ("rom_bytes", "ram_bytes", "protocol_changes"):
+                if row["budget_usage"][field] > handoff["budgets"][field]:
+                    raise HandoffDataError(
+                        f"historical accepted handoff {handoff['id']!r} exceeds its {field} budget"
+                    )
+            missing_evidence = handoff["_required_evidence_ids"] - set(handoff["_evidence"])
+            if missing_evidence or not handoff["_evidence"]:
+                raise HandoffDataError(
+                    f"historical accepted handoff {handoff['id']!r} is missing required evidence"
+                )
+            referenced_receipts = set()
+            for check_id, evidence_id in handoff["_check_evidence_ids"].items():
+                evidence = handoff["_evidence"].get(evidence_id)
+                if (
+                    evidence is None
+                    or evidence["kind"] != "check"
+                    or evidence["status"] != "passed"
+                    or evidence["exit_code"] != 0
+                ):
+                    raise HandoffDataError(
+                        f"historical accepted handoff {handoff['id']!r} has an incomplete check"
+                    )
+                check = handoff["_required_checks"][check_id]
+                receipt_id = check["receipt_id"]
+                receipt = handoff["_check_receipts"].get(receipt_id)
+                if receipt_id is None or receipt is None or receipt["checker_trust"]["mode"] == "external-bootstrap":
+                    raise HandoffDataError(
+                        f"historical accepted handoff {handoff['id']!r} has an invalid check receipt"
+                    )
+                referenced_receipts.add(receipt_id)
+                errors = _verify_check_receipt(
+                    receipt,
+                    check=check,
+                    repository_root=source_root,
+                    parent_sha=handoff["assigned_parent_sha"],
+                    candidate_sha=row["result_sha"],
+                )
+                if errors:
+                    raise HandoffDataError(
+                        f"historical accepted handoff {handoff['id']!r} check receipt does not verify"
+                    )
+            if set(handoff["_check_receipts"]) != referenced_receipts:
+                raise HandoffDataError(
+                    f"historical accepted handoff {handoff['id']!r} has unexpected check receipts"
+                )
+        elif handoff["interruption"] is not None:
+            interruption = handoff["interruption"]
+            if (
+                handoff["_state_names"] != INTERRUPTED_STATE_SEQUENCE
+                or event["lifecycle_state"] != "interrupted"
+                or event["candidate_sha"] is not None
+                or event["interruption_snapshot"] != row["interruption_snapshot"]
+            ):
+                raise HandoffDataError(
+                    f"historical interrupted handoff {handoff['id']!r} does not replay cleanly"
+                )
+            if (
+                row["interruption_snapshot"] is None
+                or sorted(row["interruption_snapshot"]["preserved_paths"]) != sorted(interruption["preserved_paths"])
+                or any(path not in row["interruption_snapshot"]["dirty_paths"] for path in interruption["preserved_paths"])
+                or any(not _path_is_allowed(path, handoff["allowed_scope"]) for path in interruption["preserved_paths"])
+                or interruption["host_process_actions"]
+                or row["recovery_minutes"] <= 0
+                or set(interruption["interrupted_check_ids"]) != set(handoff["_required_checks"])
+                or handoff["_check_receipts"]
+            ):
+                raise HandoffDataError(
+                    f"historical interrupted handoff {handoff['id']!r} does not verify"
+                )
+            for check_id in interruption["interrupted_check_ids"]:
+                evidence = handoff["_evidence"].get(handoff["_check_evidence_ids"].get(check_id))
+                if (
+                    evidence is None
+                    or evidence["kind"] != "check"
+                    or evidence["status"] != "incomplete"
+                    or evidence["exit_code"] is not None
+                ):
+                    raise HandoffDataError(
+                        f"historical interrupted handoff {handoff['id']!r} check evidence does not verify"
+                    )
+            row["outcome"] = "interrupted"
+        else:
+            raise HandoffDataError(
+                f"historical handoff {handoff['id']!r} is not a sealed closed result"
+            )
+        row["rejection_codes"] = []
+        rows.append(row)
+    return rows
+
+
+def _verified_reporter_handoffs(
+    document: dict[str, Any],
+    source_root: Path,
+    original_authority: dict[str, Any],
+    current_authority: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if (
+        current_authority["object_id"] == original_authority["object_id"]
+        and current_authority["anchor_object_id"] == original_authority["anchor_object_id"]
+    ):
+        return validate_document(
+            copy.deepcopy(document),
+            source_root,
+            current_time=parse_time(
+                document["coordinator_receipt"]["issued_at"],
+                "handoff reporter coordinator receipt issued_at",
+            ),
+        )["handoffs"]
+    return _historical_reporter_handoffs(
+        document,
+        source_root,
+        original_authority,
+        current_authority,
+    )
+
+
 def derive_reporter_result_summary(
     document: dict[str, Any],
     result: dict[str, Any],
@@ -3737,6 +4032,7 @@ def verify_reporter_record(
         raise HandoffDataError(
             "handoff reporter record result seal does not verify"
         )
+    reported_handoffs = _parse_reporter_result_handoffs(result["handoffs"])
     expected_summary, _global_rejection_codes, delivery_graph, watcher_results = (
         derive_reporter_result_summary(document, result)
     )
@@ -3892,6 +4188,15 @@ def verify_reporter_record(
                 raise HandoffDataError(
                     "handoff reporter record check receipt does not verify"
                 )
+    if reported_handoffs != _verified_reporter_handoffs(
+        document,
+        source_root,
+        original_authority,
+        current_authority,
+    ):
+        raise HandoffDataError(
+            "handoff reporter record result handoffs do not verify"
+        )
     return record
 
 
