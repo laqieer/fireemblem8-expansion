@@ -985,6 +985,9 @@ jobs:
         SHELLOPTS: ''
       run: |
         set -euo pipefail
+        unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CEILING_DIRECTORIES \
+          GIT_COMMON_DIR GIT_DIR GIT_EXEC_PATH GIT_INDEX_FILE GIT_NAMESPACE \
+          GIT_OBJECT_DIRECTORY GIT_REPLACE_REF_BASE GIT_WORK_TREE
         ACTUAL_SHA="$(/usr/bin/git rev-parse HEAD)"
         printf 'patch.producer.sha=%s\n' "$ACTUAL_SHA"
         [[ "$PATCH_COMMIT" =~ ^[0-9a-f]{40}$ ]]

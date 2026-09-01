@@ -1180,6 +1180,28 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             self.text,
             "Verify exact candidate and stage trusted producer",
         )
+        git_path_redirects = (
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            "GIT_CEILING_DIRECTORIES",
+            "GIT_COMMON_DIR",
+            "GIT_DIR",
+            "GIT_EXEC_PATH",
+            "GIT_INDEX_FILE",
+            "GIT_NAMESPACE",
+            "GIT_OBJECT_DIRECTORY",
+            "GIT_REPLACE_REF_BASE",
+            "GIT_WORK_TREE",
+        )
+        unset_match = re.search(
+            r"(?ms)^unset (?P<variables>.*?)^ACTUAL_SHA=",
+            script,
+        )
+        self.assertIsNotNone(unset_match)
+        unset_variables = shlex.split(
+            unset_match.group("variables").replace("\\\n", " ")
+        )
+        self.assertCountEqual(unset_variables, git_path_redirects)
+        self.assertEqual(len(unset_variables), len(git_path_redirects))
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
@@ -1255,6 +1277,9 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     "PATCH_TOOL_ROOT": str(case_root / "tool"),
                     "RUNNER_TEMP": str(case_root),
                 }
+                environment.update(
+                    {name: "" for name in git_path_redirects}
+                )
                 completed = subprocess.run(
                     ["/bin/bash", "-c", script],
                     cwd=checkout,
