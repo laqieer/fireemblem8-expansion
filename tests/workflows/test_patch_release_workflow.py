@@ -682,6 +682,19 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             self.patch_job,
         )
 
+        attack = (
+            "\n    - name: Candidate persistence attack\n"
+            "      run: |\n"
+            "        echo 'BASH_ENV=attacker' >> \"$GITHUB_ENV\"\n"
+            "        (while true; do test -e \"$RUNNER_TEMP/base\"; done) &\n"
+        )
+        changed = self.text.replace("\n  extended-host-tests:\n", attack + "\n  extended-host-tests:\n", 1)
+        changed_patch = re.search(
+            r"(?ms)^  patch-release:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
+            changed,
+        ).group("body")
+        self.assertEqual(changed_patch, self.patch_job)
+
     def test_device_mount_teardown_executes_deepest_first(self):
         loop_match = re.search(
             r"(?ms)^        for \(\(index=\$\{#dev_mounts\[@\]\} - 1; "
@@ -710,19 +723,6 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             completed.stdout.splitlines(),
             ["/dev/shm", "/dev/pts/9", "/dev/pts"],
         )
-
-        attack = (
-            "\n    - name: Candidate persistence attack\n"
-            "      run: |\n"
-            "        echo 'BASH_ENV=attacker' >> \"$GITHUB_ENV\"\n"
-            "        (while true; do test -e \"$RUNNER_TEMP/base\"; done) &\n"
-        )
-        changed = self.text.replace("\n  extended-host-tests:\n", attack + "\n  extended-host-tests:\n", 1)
-        changed_patch = re.search(
-            r"(?ms)^  patch-release:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
-            changed,
-        ).group("body")
-        self.assertEqual(changed_patch, self.patch_job)
 
     def test_private_base_lifetime_is_fixed_and_candidate_free(self):
         self.assertEqual(publisher_boundary_errors(self.text), [])
