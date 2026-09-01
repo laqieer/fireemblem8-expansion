@@ -282,7 +282,7 @@ def _is_lower_sha(value: object) -> bool:
     return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value) is not None
 
 
-def _triggered_jobs(text: str, event: dict) -> set[str]:
+def triggered_jobs(text: str, event: dict) -> set[str]:
     header = text[: text.index("\njobs:\n")]
     payload = event.get("payload", event)
     try:
@@ -394,6 +394,10 @@ def _triggered_jobs(text: str, event: dict) -> set[str]:
     ):
         jobs.difference_update(COMBINED_WORKERS)
     return jobs
+
+
+def _triggered_jobs(text: str, event: dict) -> set[str]:
+    return triggered_jobs(text, event)
 
 
 def _pre_fix_triggered_jobs(text: str, event: dict) -> set[str]:

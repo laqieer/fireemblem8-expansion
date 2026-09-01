@@ -1,4 +1,6 @@
+import base64
 import copy
+import hashlib
 import json
 import os
 import shutil
@@ -19,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[3]
 ASSERTION_PROGRAM = "scripts/workflow_pilot/review_assertions.py"
 ASSERTION_INPUTS = review_base_checker.ASSERTION_INPUT_PATHS
 ISSUE_179_URL = "https://github.com/laqieer/fireemblem8-expansion/issues/179"
+REPOSITORY = "laqieer/fireemblem8-expansion"
+PULL_REQUEST = 189
 
 
 def git_text(root, *arguments):
@@ -103,6 +107,9 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         cls.program_blob_oid = git_text(
             cls.repo, "rev-parse", f"{cls.base}:{ASSERTION_PROGRAM}"
         )
+        cls.contract_template = reporter.load_json(
+            ROOT / "scripts" / "workflow_pilot" / "tests" / "fixtures" / "review_family_complete.json"
+        )
         cls.original_changes = review_family.derive_change_records(
             cls.repo, cls.base, cls.head1
         )
@@ -185,10 +192,32 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         cls._restore_baseline()
         cls._replace_once(
             "scripts/workflow_pilot/review_base_checker.py",
-            '    if report["actions"] != list(ACTION_SEQUENCE):',
-            '    if False and report["actions"] != list(ACTION_SEQUENCE):',
+            "    if actions != list(ACTION_SEQUENCE):",
+            "    if False and actions != list(ACTION_SEQUENCE):",
         )
         head = cls._commit("action-enforcement-bypass")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
+
+    @classmethod
+    def _make_action_import_name_bypass_head(cls):
+        cls._restore_baseline()
+        cls._replace_once(
+            "scripts/workflow_pilot/review_base_checker.py",
+            "    if actions != list(ACTION_SEQUENCE):",
+            '    if __name__.startswith("review_assertions_") and actions != list(ACTION_SEQUENCE):',
+        )
+        head = cls._commit("action-import-name-bypass")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
+
+    @classmethod
+    def _make_action_repository_whitelist_head(cls):
+        cls._restore_baseline()
+        cls._replace_once(
+            "scripts/workflow_pilot/review_base_checker.py",
+            "    return validate_review_actions(actions)\n",
+            '    return validate_review_actions(actions) if repository == "example/project" else actions\n',
+        )
+        head = cls._commit("action-repository-whitelist")
         return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
 
     @classmethod
@@ -200,6 +229,17 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             '"finding_member": parsed["member"] if finding_id == "FINDING" else parsed["family"],',
         )
         head = cls._commit("action-binding-special-case")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
+
+    @classmethod
+    def _make_action_binding_import_name_head(cls):
+        cls._restore_baseline()
+        cls._replace_once(
+            "scripts/workflow_pilot/review_base_checker.py",
+            '"finding_member": parsed["member"],',
+            '"finding_member": parsed["member"] if __name__.startswith("review_assertions_") else parsed["family"],',
+        )
+        head = cls._commit("action-binding-import-name")
         return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
 
     @classmethod
@@ -233,52 +273,30 @@ class ReviewBaseCheckerTests(unittest.TestCase):
 
     @classmethod
     def _set_resource_enabled_health(cls, healthy):
-        decision_path = cls.repo / ".github/workflow-pilot-decisions.json"
-        decisions = json.loads(decision_path.read_text(encoding="utf-8"))
-        decisions["pull_requests"] = [
-            record
-            for record in decisions["pull_requests"]
-            if healthy or record["pull_request"] != 189
-        ]
-        if healthy and all(
-            record["pull_request"] != 189 for record in decisions["pull_requests"]
-        ):
-            decisions["pull_requests"].append(
-                {
-                    "pull_request": 189,
-                    "risk_boundaries": ["lifecycle", "protocol"],
-                    "threshold": {
-                        "triggers": [
-                            "changed-files",
-                            "changed-lines",
-                            "major-boundaries",
-                            "risk-boundary",
-                        ],
-                        "override_history": [],
-                    },
-                    "gate_mode": "concurrent",
-                    "stack": {
-                        "depth": 0,
-                        "parent_pr": None,
-                        "exception_reason": None,
-                    },
-                    "pilot": {"included": False, "disposition": "baseline-only"},
-                }
+        cls._replace_once(
+            "scripts/workflow_pilot/trusted_review_gate.py",
+            "    if authoritative is None:\n",
+            "    if True:\n",
+        )
+        if healthy:
+            cls._replace_once(
+                "scripts/workflow_pilot/trusted_review_gate.py",
+                "    if True:\n",
+                "    if authoritative is None:\n",
             )
-        decision_path.write_bytes(reporter.normalized_json(decisions))
 
     @classmethod
     def _set_wire_producers_health(cls, healthy):
         cls._replace_once(
             "scripts/workflow_pilot/trusted_review_gate.py",
-            '"result_manifest": [',
-            '"candidate_manifest": [',
+            '"result_manifest": build_result_manifest(execution_receipts),',
+            '"candidate_manifest": build_result_manifest(execution_receipts),',
         )
         if healthy:
             cls._replace_once(
                 "scripts/workflow_pilot/trusted_review_gate.py",
-                '"candidate_manifest": [',
-                '"result_manifest": [',
+                '"candidate_manifest": build_result_manifest(execution_receipts),',
+                '"result_manifest": build_result_manifest(execution_receipts),',
             )
 
     @classmethod
@@ -287,30 +305,20 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         cls._set_wire_producers_health(False)
         path = cls.repo / "scripts/workflow_pilot/trusted_review_gate.py"
         text = path.read_text(encoding="utf-8")
-        marker = "    return reporter.normalized_json(raw_evidence)\n"
+        marker = (
+            "    return {\n"
+            '        "schema_version": review_family.SCHEMA_VERSION,\n'
+        )
         spoof = (
-            "        raw_evidence = {\n"
+            "        fake = {\n"
+            '            "result_manifest": build_result_manifest(execution_receipts),\n'
             '            "authoritative_trigger": authoritative_trigger,\n'
-            '            "execution_receipts": execution_receipts,\n'
-            '            "result_manifest": [\n'
-            "                result\n"
-            '                for receipt in execution_receipts\n'
-            '                for result in receipt["assertion_results"]\n'
-            "            ],\n"
             "        }\n"
         )
-        dead_assignment = (
-            "    raw_evidence = {\n"
-            '        "authoritative_trigger": authoritative_trigger,\n'
-            '        "execution_receipts": execution_receipts,\n'
-            '        "result_manifest": [\n'
-            "            result\n"
-            '            for receipt in execution_receipts\n'
-            '            for result in receipt["assertion_results"]\n'
-            "        ],\n"
-            "    }\n"
-        )
-        if kind == "false":
+        if kind == "authoritative-trigger":
+            injection = "    if authoritative_trigger:\n" + spoof
+            text = text.replace(marker, injection + marker, 1)
+        elif kind == "false":
             injection = "    if False:\n" + spoof
             text = text.replace(marker, injection + marker, 1)
         elif kind == "not-true":
@@ -322,11 +330,69 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         elif kind == "gt-compare":
             injection = "    if 1 > 2:\n" + spoof
             text = text.replace(marker, injection + marker, 1)
-        elif kind == "nested-function":
+        elif kind == "dead-function":
             injection = "    def _dead_result_manifest():\n" + spoof + "\n"
             text = text.replace(marker, injection + marker, 1)
-        elif kind == "after-return":
-            text = text.replace(marker, marker + dead_assignment, 1)
+        elif kind == "nested-return":
+            nested = (
+                "    if True:\n"
+                "        return {\n"
+                '            "schema_version": review_family.SCHEMA_VERSION,\n'
+                '            "repository": contract["repository"],\n'
+                '            "source": {"kind": source_kind, "complete": True},\n'
+                '            "captured_at": captured_at,\n'
+                '            "candidate": {"sha": expected_candidate},\n'
+                '            "original_pre_review_head": contract["original_pre_review_head"],\n'
+                '            "original_receipt_sha256": original_receipt_sha256,\n'
+                '            "pull_request": pull_request,\n'
+                '            "authoritative_trigger": authoritative_trigger,\n'
+                '            "result_source_path": review_family.RESULT_SOURCE_PATH,\n'
+                '            "actors": actors,\n'
+                '            "pre_reviews": pre_reviews,\n'
+                '            "pre_review_findings": pre_review_findings,\n'
+                '            "remote_reviews": remote_reviews,\n'
+                '            "findings": findings,\n'
+                '            "threads": threads,\n'
+                '            "candidate_advances": [],\n'
+                '            "force_push_events": force_push_events,\n'
+                '            "architecture_dispositions": architecture_dispositions,\n'
+                '            "execution_receipts": execution_receipts,\n'
+                '            "candidate_manifest": build_result_manifest(execution_receipts),\n'
+                "        }\n"
+                + spoof
+            )
+            text = text.replace(marker, nested + marker, 1)
+        elif kind == "try-dead":
+            nested = (
+                "    try:\n"
+                "        return {\n"
+                '            "schema_version": review_family.SCHEMA_VERSION,\n'
+                '            "repository": contract["repository"],\n'
+                '            "source": {"kind": source_kind, "complete": True},\n'
+                '            "captured_at": captured_at,\n'
+                '            "candidate": {"sha": expected_candidate},\n'
+                '            "original_pre_review_head": contract["original_pre_review_head"],\n'
+                '            "original_receipt_sha256": original_receipt_sha256,\n'
+                '            "pull_request": pull_request,\n'
+                '            "authoritative_trigger": authoritative_trigger,\n'
+                '            "result_source_path": review_family.RESULT_SOURCE_PATH,\n'
+                '            "actors": actors,\n'
+                '            "pre_reviews": pre_reviews,\n'
+                '            "pre_review_findings": pre_review_findings,\n'
+                '            "remote_reviews": remote_reviews,\n'
+                '            "findings": findings,\n'
+                '            "threads": threads,\n'
+                '            "candidate_advances": [],\n'
+                '            "force_push_events": force_push_events,\n'
+                '            "architecture_dispositions": architecture_dispositions,\n'
+                '            "execution_receipts": execution_receipts,\n'
+                '            "candidate_manifest": build_result_manifest(execution_receipts),\n'
+                "        }\n"
+                "    finally:\n"
+                "        pass\n"
+                + spoof
+            )
+            text = text.replace(marker, nested + marker, 1)
         else:
             raise AssertionError(kind)
         path.write_text(text, encoding="utf-8")
@@ -410,12 +476,45 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             git_bytes(self.repo, "show", f"{self.base}:{ASSERTION_PROGRAM}")
         )
 
+    def review_contract(self, candidate_sha, *, trust_mode="base-pinned"):
+        contract = copy.deepcopy(self.contract_template)
+        contract["repository"] = REPOSITORY
+        contract["pull_request"] = PULL_REQUEST
+        contract["base_sha"] = self.base
+        contract["original_pre_review_head"] = self.head1
+        contract["candidate_sha"] = candidate_sha
+        contract["trust_mode"] = trust_mode
+        contract["implementer_actor_id"] = "IMPLEMENTER_1"
+        contract["trigger"] = {
+            "risk_boundaries": ["lifecycle", "protocol"],
+            "threshold_triggers": ["changed-files", "risk-boundary"],
+        }
+        return contract
+
+    def original_review_receipt(self):
+        report_bytes = reporter.normalized_json(self.review_report())
+        return {
+            "schema_version": 2,
+            "repository": REPOSITORY,
+            "pull_request": PULL_REQUEST,
+            "base_sha": self.base,
+            "candidate_sha": self.head1,
+            "issued_at": "2026-09-01T00:01:01Z",
+            "expires_at": "2026-09-01T00:11:01Z",
+            "nonce": "review-base-checker-receipt-0001",
+            "key_id": "test-review-root",
+            "key_epoch": 7,
+            "purpose": "independent-pre-review-report",
+            "payload_b64": base64.b64encode(report_bytes).decode("ascii"),
+            "hmac_sha256": "a" * 64,
+        }
+
     def review_report(self):
         return {
             "schema_version": 2,
             "report_id": "PRE_REVIEW_001",
-            "repository": "example/project",
-            "pull_request": 7,
+            "repository": REPOSITORY,
+            "pull_request": PULL_REQUEST,
             "base_sha": self.base,
             "candidate_sha": self.head1,
             "reviewer_actor_id": "REVIEWER_1",
@@ -510,16 +609,21 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         all_remote_reviews = [round1] if review_round == 1 else [round1, round2]
         review_context = all_remote_reviews[review_round - 1]
         changes = review_family.derive_change_records(self.repo, self.base, head_sha)
+        original_receipt = self.original_review_receipt()
         data = {
             "schema_version": 2,
-            "repository": "example/project",
+            "repository": REPOSITORY,
             "repository_root": str(self.repo),
-            "pull_request": 7,
+            "pull_request": PULL_REQUEST,
             "base_sha": self.base,
             "base_tree": self.base_tree,
             "original_pre_review_head": self.head1,
             "original_changes": copy.deepcopy(self.original_changes),
-            "original_receipt_sha256": "9" * 64,
+            "original_receipt_sha256": hashlib.sha256(
+                reporter.normalized_json(original_receipt)
+            ).hexdigest(),
+            "review_contract": self.review_contract(head_sha),
+            "original_review_receipt": original_receipt,
             "assertion_program_path": str(program_path),
             "assertion_program_blob_oid": self.program_blob_oid,
             "assertion_program_argv": list(review_base_checker.ASSERTION_PROGRAM_ARGV),
@@ -584,6 +688,43 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         }
         return data
 
+    def member_binding(self, data, assertion_id, finding_id):
+        validated = review_base_checker.validate_input(copy.deepcopy(data))
+        return review_base_checker.bind_member_request(
+            validated,
+            review_base_checker.parse_assertion_id(assertion_id),
+            finding_id,
+        )
+
+    def wire_member_input(
+        self,
+        *,
+        candidate_sha=None,
+        candidate_tree=None,
+        assertion_id="registry:sibling:wire:producers:verified-unaffected:v2",
+    ):
+        data = self.build_input(
+            review_round=2,
+            candidate_sha=candidate_sha,
+            candidate_tree=candidate_tree,
+            assertion_requests=[{"assertion_id": assertion_id, "finding_id": "FINDING-WIRE-1"}],
+        )
+        data["all_remote_reviews"][0]["finding_ids"] = ["FINDING-WIRE-1"]
+        data["remote_findings"] = [
+            {
+                "node_id": "FINDING-WIRE-1",
+                "review_id": "REMOTE_REVIEW_1",
+                "candidate_sha": self.head1,
+                "created_at": "2026-09-01T00:01:30Z",
+                "author_actor_id": "COPILOT",
+                "family": "wire",
+            }
+        ]
+        data["review_context"]["finding_ids"] = []
+        data["remote_finding_ids"] = []
+        binding = self.member_binding(data, assertion_id, "FINDING-WIRE-1")
+        return data, binding
+
     def execute(self, data):
         return review_base_checker.execute_registry(copy.deepcopy(data))
 
@@ -591,15 +732,19 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         with self.assertRaisesRegex(review_base_checker.CheckError, message):
             self.execute(data)
 
-    def evaluate_member_contract(self, family, member, commit_sha, binding=None):
+    def evaluate_member_contract(self, family, member, data, commit_sha, binding):
         case_root = self.case_dir()
         root = case_root / "member-root"
         self.materialize_input_root(commit_sha, root)
-        return review_assertions.evaluate_member_contract(family, member, root, binding)
+        validated = review_base_checker.validate_input(copy.deepcopy(data))
+        checker_input = review_base_checker._assertion_program_context(validated)
+        return review_assertions.evaluate_member_contract(
+            family, member, root, binding, checker_input
+        )
 
-    def assert_member_rejected(self, family, member, commit_sha, message, binding=None):
+    def assert_member_rejected(self, family, member, data, commit_sha, message, binding):
         with self.assertRaisesRegex(review_assertions.AssertionFailure, message):
-            self.evaluate_member_contract(family, member, commit_sha, binding)
+            self.evaluate_member_contract(family, member, data, commit_sha, binding)
 
     def test_round_one_executes_local_finding_with_authoritative_binding(self):
         result = self.execute(self.build_input(review_round=1))
@@ -786,6 +931,40 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         )
         self.assert_rejected(data, "read-only action sequence is not enforced")
 
+    def test_action_import_name_probe_bypass_fails(self):
+        bypass_head, bypass_tree = self._make_action_import_name_bypass_head()
+        data = self.build_input(
+            review_round=2,
+            candidate_sha=bypass_head,
+            candidate_tree=bypass_tree,
+            assertion_requests=[
+                {
+                    "assertion_id": (
+                        "registry:sibling:action:actions:verified-unaffected:v2"
+                    ),
+                    "finding_id": "FINDING-ACTION-1",
+                }
+            ],
+        )
+        self.assert_rejected(data, "read-only action sequence is not enforced")
+
+    def test_action_repository_whitelist_bypass_fails(self):
+        bypass_head, bypass_tree = self._make_action_repository_whitelist_head()
+        data = self.build_input(
+            review_round=2,
+            candidate_sha=bypass_head,
+            candidate_tree=bypass_tree,
+            assertion_requests=[
+                {
+                    "assertion_id": (
+                        "registry:sibling:action:actions:verified-unaffected:v2"
+                    ),
+                    "finding_id": "FINDING-ACTION-1",
+                }
+            ],
+        )
+        self.assert_rejected(data, "read-only action sequence is not enforced")
+
     def test_action_sequence_verified_unaffected_runs_live_validator(self):
         data = self.build_input(
             review_round=2,
@@ -813,6 +992,15 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         )
         self.assert_rejected(data, "member-item authority binding is incomplete")
 
+    def test_member_binding_import_name_whitelist_fails(self):
+        spoof_head, spoof_tree = self._make_action_binding_import_name_head()
+        data = self.build_input(
+            review_round=2,
+            candidate_sha=spoof_head,
+            candidate_tree=spoof_tree,
+        )
+        self.assert_rejected(data, "member-item authority binding is incomplete")
+
     def test_whitespace_and_order_refactor_preserves_member_fix(self):
         refactor_head, refactor_tree = self._make_item_refactor_head()
         data = self.build_input(
@@ -831,27 +1019,41 @@ class ReviewBaseCheckerTests(unittest.TestCase):
 
     def test_wire_producer_dead_ast_spoofs_fail(self):
         for kind in (
+            "authoritative-trigger",
             "false",
             "not-true",
             "eq-compare",
             "gt-compare",
-            "nested-function",
-            "after-return",
+            "dead-function",
+            "nested-return",
+            "try-dead",
         ):
             with self.subTest(kind=kind):
-                spoof_head, _ = self._make_wire_producer_spoof_head(kind)
+                spoof_head, spoof_tree = self._make_wire_producer_spoof_head(kind)
+                data, binding = self.wire_member_input(
+                    candidate_sha=spoof_head,
+                    candidate_tree=spoof_tree,
+                )
                 self.assert_member_rejected(
                     "wire",
                     "producers",
+                    data,
                     spoof_head,
                     "wire producers are incomplete",
+                    binding,
                 )
 
     def test_wire_producer_real_contract_still_passes(self):
-        self.assertEqual(
-            self.evaluate_member_contract("wire", "producers", self.head2),
-            {"producers": True},
+        data, binding = self.wire_member_input()
+        result = self.evaluate_member_contract(
+            "wire",
+            "producers",
+            data,
+            self.head2,
+            binding,
         )
+        self.assertEqual(result["result_manifest_size"], 0)
+        self.assertEqual(result["candidate_head_sha"], self.head2)
 
     def test_round_two_remote_finding_executes_real_remediation_round(self):
         data = self.build_input(review_round=2)

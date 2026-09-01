@@ -49,17 +49,23 @@ ASSERTION_PROGRAM_ARGV = (
 )
 ASSERTION_INPUT_PATHS = (
     DECISION_RECORD_PATH,
+    ".github/workflows/build.yml",
     ".github/skills/development-workflow/SKILL.md",
     "docs/test-cases/registry.json",
     "docs/test-cases/workflow-governance.md",
     "docs/workflow-pilot.md",
+    "scripts/check_docs.py",
     "scripts/docs_check_tests/test_check_docs.py",
     "scripts/docs_check_tests/test_development_workflow_skill.py",
+    "scripts/workflow_pilot/__init__.py",
     "scripts/workflow_pilot/candidate_evidence.py",
     "scripts/workflow_pilot/event_classifier.py",
+    "scripts/workflow_pilot/hydrate_authority.py",
     "scripts/workflow_pilot/review_assertions.py",
     "scripts/workflow_pilot/review_base_checker.py",
     "scripts/workflow_pilot/review_family.py",
+    "scripts/workflow_pilot/reporter.py",
+    "scripts/workflow_pilot/tests/fixtures/event_classification.json",
     "scripts/workflow_pilot/trusted_review_gate.py",
     "tests/workflows/test_build_ci_topology.py",
 )
@@ -211,6 +217,97 @@ def _preserved_receipt_bytes(
         raise reporter.PilotDataError(
             "preserved original pre-review is unavailable"
         ) from error
+
+
+def receipt_scope(
+    repository: str,
+    pull_request: int,
+    base_sha: str,
+    original_pre_review_head: str,
+    key_id: str,
+    key_epoch: int,
+) -> dict[str, Any]:
+    return _receipt_scope(
+        repository,
+        pull_request,
+        base_sha,
+        original_pre_review_head,
+        key_id,
+        key_epoch,
+    )
+
+
+def preserved_receipt_bytes(
+    replay_store: Path,
+    *,
+    repository: str,
+    pull_request: int,
+    base_sha: str,
+    original_pre_review_head: str,
+    key_id: str,
+    key_epoch: int,
+) -> bytes:
+    return _preserved_receipt_bytes(
+        replay_store,
+        repository=repository,
+        pull_request=pull_request,
+        base_sha=base_sha,
+        original_pre_review_head=original_pre_review_head,
+        key_id=key_id,
+        key_epoch=key_epoch,
+    )
+
+
+def persist_original_receipt(
+    receipt_bytes: bytes,
+    replay_store: Path,
+    *,
+    repository: str,
+    pull_request: int,
+    base_sha: str,
+    original_pre_review_head: str,
+    key_id: str,
+    key_epoch: int,
+) -> None:
+    _expect_bound_modules()
+    if not isinstance(receipt_bytes, bytes):
+        raise reporter.PilotDataError("receipt must be immutable bytes")
+    if replay_store.is_symlink():
+        raise reporter.PilotDataError(
+            "authenticated pre-review requires external replay authority"
+        )
+    replay_store = replay_store.resolve()
+    if not replay_store.is_dir():
+        raise reporter.PilotDataError(
+            "authenticated pre-review replay store is unavailable"
+        )
+    scope_id = hashlib.sha256(
+        reporter.normalized_json(
+            receipt_scope(
+                repository,
+                pull_request,
+                base_sha,
+                original_pre_review_head,
+                key_id,
+                key_epoch,
+            )
+        )
+    ).hexdigest()
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    receipt_path = replay_store / f"original-{scope_id}"
+    try:
+        descriptor = os.open(receipt_path, flags, 0o600)
+    except FileExistsError as error:
+        raise reporter.PilotDataError(
+            "authenticated original pre-review was already consumed or re-signed"
+        ) from error
+    try:
+        os.write(descriptor, receipt_bytes)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _minimal_git(root: Path, *arguments: str) -> bytes:
@@ -393,6 +490,14 @@ def _bind_trusted_modules(
         raise RuntimeError("trusted imports changed the exact base checkout")
 
 
+def prepare_trusted_modules(
+    trusted_root: Path,
+    candidate_root: Path,
+    expected_base: str,
+) -> None:
+    _bind_trusted_modules(trusted_root, candidate_root, expected_base)
+
+
 def _expect_bound_modules() -> None:
     if reporter is None or review_family is None:
         raise RuntimeError("trusted modules are not bound")
@@ -531,37 +636,27 @@ def _verify_signed_receipt_bytes(
             raise reporter.PilotDataError(
                 "authenticated pre-review replay store is unavailable"
             )
-        scope_id = hashlib.sha256(
-            reporter.normalized_json(scope)
-        ).hexdigest()
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-        if hasattr(os, "O_NOFOLLOW"):
-            flags |= os.O_NOFOLLOW
-        receipt_path = replay_store / f"original-{scope_id}"
         if consume_nonce:
-            try:
-                descriptor = os.open(receipt_path, flags, 0o600)
-            except FileExistsError as error:
-                raise reporter.PilotDataError(
-                    "authenticated original pre-review was already consumed "
-                    "or re-signed"
-                ) from error
-            try:
-                os.write(descriptor, receipt_bytes)
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
+            persist_original_receipt(
+                receipt_bytes,
+                replay_store,
+                repository=repository,
+                pull_request=pull_request,
+                base_sha=base_sha,
+                original_pre_review_head=candidate_sha,
+                key_id=trusted_key_id,
+                key_epoch=trusted_key_epoch,
+            )
         else:
-            if receipt_path.is_symlink():
-                raise reporter.PilotDataError(
-                    "preserved original pre-review is unavailable"
-                )
-            try:
-                preserved = receipt_path.read_bytes()
-            except OSError as error:
-                raise reporter.PilotDataError(
-                    "preserved original pre-review is unavailable"
-                ) from error
+            preserved = preserved_receipt_bytes(
+                replay_store,
+                repository=repository,
+                pull_request=pull_request,
+                base_sha=base_sha,
+                original_pre_review_head=candidate_sha,
+                key_id=trusted_key_id,
+                key_epoch=trusted_key_epoch,
+            )
             if not hmac.compare_digest(preserved, receipt_bytes):
                 raise reporter.PilotDataError(
                     "preserved original pre-review bytes changed"
@@ -728,6 +823,76 @@ def _load_authoritative_trigger(
     }
 
 
+def load_authoritative_trigger(
+    contract: dict[str, Any],
+    repository_root: Path,
+    candidate_sha: str,
+    *,
+    decision_record_path: Path | None = None,
+) -> dict[str, Any] | None:
+    return _load_authoritative_trigger(
+        contract,
+        repository_root,
+        candidate_sha,
+        decision_record_path=decision_record_path,
+    )
+
+
+def build_result_manifest(
+    execution_receipts: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    return [
+        result
+        for receipt in execution_receipts
+        for result in receipt["assertion_results"]
+    ]
+
+
+def build_live_evidence_payload(
+    *,
+    contract: dict[str, Any],
+    expected_candidate: str,
+    source_kind: str,
+    captured_at: str,
+    original_receipt_sha256: str,
+    pull_request: dict[str, Any],
+    authoritative_trigger: dict[str, Any] | None,
+    actors: list[dict[str, str]],
+    pre_reviews: list[dict[str, Any]],
+    pre_review_findings: list[dict[str, Any]],
+    remote_reviews: list[dict[str, Any]],
+    findings: list[dict[str, Any]],
+    threads: list[dict[str, Any]],
+    force_push_events: list[dict[str, Any]],
+    architecture_dispositions: list[dict[str, Any]],
+    execution_receipts: list[dict[str, Any]],
+) -> dict[str, Any]:
+    _expect_bound_modules()
+    return {
+        "schema_version": review_family.SCHEMA_VERSION,
+        "repository": contract["repository"],
+        "source": {"kind": source_kind, "complete": True},
+        "captured_at": captured_at,
+        "candidate": {"sha": expected_candidate},
+        "original_pre_review_head": contract["original_pre_review_head"],
+        "original_receipt_sha256": original_receipt_sha256,
+        "pull_request": pull_request,
+        "authoritative_trigger": authoritative_trigger,
+        "result_source_path": review_family.RESULT_SOURCE_PATH,
+        "actors": actors,
+        "pre_reviews": pre_reviews,
+        "pre_review_findings": pre_review_findings,
+        "remote_reviews": remote_reviews,
+        "findings": findings,
+        "threads": threads,
+        "candidate_advances": [],
+        "force_push_events": force_push_events,
+        "architecture_dispositions": architecture_dispositions,
+        "execution_receipts": execution_receipts,
+        "result_manifest": build_result_manifest(execution_receipts),
+    }
+
+
 def run_base_pinned_checker(
     repository_root: Path,
     *,
@@ -739,6 +904,7 @@ def run_base_pinned_checker(
     remote_findings: list[dict[str, Any]],
     remote_finding_ids: list[str],
     original_review_report_bytes: bytes,
+    original_review_receipt: dict[str, Any],
     original_receipt_sha256: str,
     assertion_requests: list[dict[str, Any]],
     trusted_key: bytes,
@@ -809,6 +975,9 @@ def run_base_pinned_checker(
         raise reporter.PilotDataError(
             "independent pre-review report is not UTF-8"
         ) from error
+    review_contract = dict(contract["raw"])
+    review_contract["candidate_sha"] = candidate_sha
+    review_contract["trust_mode"] = contract["trust_mode"]
     checker_input = {
         "schema_version": 2,
         "repository": contract["repository"],
@@ -819,6 +988,8 @@ def run_base_pinned_checker(
         "original_pre_review_head": contract["original_pre_review_head"],
         "original_changes": original_changes,
         "original_receipt_sha256": original_receipt_sha256,
+        "review_contract": review_contract,
+        "original_review_receipt": original_review_receipt,
         "candidate_sha": candidate_sha,
         "candidate_tree": candidate_tree,
         "head_sha": candidate_sha,
@@ -1491,17 +1662,15 @@ def collect_live_evidence_bytes(
                 "reviewed_changes": review_report["reviewed_changes"],
             }
         )
-    raw_evidence = {
-        "schema_version": review_family.SCHEMA_VERSION,
-        "repository": contract["repository"],
-        "source": {"kind": "live-gh-api", "complete": True},
-        "captured_at": _format_time(clock()),
-        "candidate": {"sha": expected_candidate},
-        "original_pre_review_head": contract["original_pre_review_head"],
-        "original_receipt_sha256": hashlib.sha256(
+    raw_evidence = build_live_evidence_payload(
+        contract=contract,
+        expected_candidate=expected_candidate,
+        source_kind="live-gh-api",
+        captured_at=_format_time(clock()),
+        original_receipt_sha256=hashlib.sha256(
             reporter.normalized_json(receipt_envelope)
         ).hexdigest(),
-        "pull_request": {
+        pull_request={
             "number": pr["number"],
             "node_id": pr["id"],
             "created_at": pr["createdAt"],
@@ -1509,24 +1678,17 @@ def collect_live_evidence_bytes(
             "head_sha": head,
             "author_actor_id": author["id"],
         },
-        "authoritative_trigger": authoritative_trigger,
-        "result_source_path": review_family.RESULT_SOURCE_PATH,
-        "actors": actors,
-        "pre_reviews": pre_reviews,
-        "pre_review_findings": pre_findings,
-        "remote_reviews": remote_reviews,
-        "findings": remote_findings,
-        "threads": threads,
-        "candidate_advances": [],
-        "force_push_events": force_push_events,
-        "architecture_dispositions": dispositions,
-        "execution_receipts": execution_receipts,
-        "result_manifest": [
-            result
-            for receipt in execution_receipts
-            for result in receipt["assertion_results"]
-        ],
-    }
+        authoritative_trigger=authoritative_trigger,
+        actors=actors,
+        pre_reviews=pre_reviews,
+        pre_review_findings=pre_findings,
+        remote_reviews=remote_reviews,
+        findings=remote_findings,
+        threads=threads,
+        force_push_events=force_push_events,
+        architecture_dispositions=dispositions,
+        execution_receipts=execution_receipts,
+    )
     return reporter.normalized_json(raw_evidence)
 
 
@@ -1585,6 +1747,10 @@ def _bootstrap_result(contract: dict[str, Any], base_sha: str, head_sha: str):
             "merge_allowed": False,
         },
     }
+
+
+def bootstrap_result(contract: dict[str, Any], base_sha: str, head_sha: str):
+    return _bootstrap_result(contract, base_sha, head_sha)
 
 
 def _run_trusted_gate(
@@ -1661,7 +1827,7 @@ def _run_trusted_gate(
     base_supports_gate = _base_contains_gate(repository_root, expected_base)
     authoritative_trigger = None
     if contract["trust_mode"] != "introduction" and base_supports_gate:
-        authoritative_trigger = _load_authoritative_trigger(
+        authoritative_trigger = load_authoritative_trigger(
             contract,
             repository_root,
             expected_candidate,
@@ -1688,7 +1854,7 @@ def _run_trusted_gate(
         or not base_supports_gate
         or authoritative_trigger is None
     ):
-        return _bootstrap_result(contract, expected_base, expected_candidate)
+        return bootstrap_result(contract, expected_base, expected_candidate)
     if contract["trust_mode"] != "base-pinned":
         raise reporter.PilotDataError("steady-state gate requires base-pinned mode")
     completed = reporter.parse_time(
@@ -1749,6 +1915,7 @@ def _run_trusted_gate(
             remote_findings=first_evidence["findings"],
             remote_finding_ids=review["finding_ids"],
             original_review_report_bytes=report_bytes,
+            original_review_receipt=envelope,
             original_receipt_sha256=original_receipt_sha256,
             assertion_requests=assertion_requests,
             trusted_key=trusted_key,
@@ -1829,7 +1996,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if not sys.flags.isolated:
             raise RuntimeError("trusted gate requires /usr/bin/python3 -I")
-        _bind_trusted_modules(
+        prepare_trusted_modules(
             args.trusted_root,
             args.candidate_root,
             args.expected_base,
@@ -1865,7 +2032,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise reporter.PilotDataError(
                     "preserved pre-review state must load trusted stored bytes"
                 )
-            review_receipt_bytes = _preserved_receipt_bytes(
+            review_receipt_bytes = preserved_receipt_bytes(
                 Path(replay_store),
                 repository=reporter.expect_string(
                     raw_contract.get("repository"), "contract.repository"

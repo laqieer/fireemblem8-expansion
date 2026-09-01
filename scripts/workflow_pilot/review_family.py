@@ -79,17 +79,23 @@ ASSERTION_PROGRAM_PATH = "scripts/workflow_pilot/review_assertions.py"
 TRIGGER_DECISION_PATH = reporter.DECISION_RECORD_PATH.as_posix()
 ASSERTION_INPUT_PATHS = (
     TRIGGER_DECISION_PATH,
+    ".github/workflows/build.yml",
     ".github/skills/development-workflow/SKILL.md",
     "docs/test-cases/registry.json",
     "docs/test-cases/workflow-governance.md",
     "docs/workflow-pilot.md",
+    "scripts/check_docs.py",
     "scripts/docs_check_tests/test_check_docs.py",
     "scripts/docs_check_tests/test_development_workflow_skill.py",
+    "scripts/workflow_pilot/__init__.py",
     "scripts/workflow_pilot/candidate_evidence.py",
     "scripts/workflow_pilot/event_classifier.py",
+    "scripts/workflow_pilot/hydrate_authority.py",
     "scripts/workflow_pilot/review_assertions.py",
     "scripts/workflow_pilot/review_base_checker.py",
     "scripts/workflow_pilot/review_family.py",
+    "scripts/workflow_pilot/reporter.py",
+    "scripts/workflow_pilot/tests/fixtures/event_classification.json",
     "scripts/workflow_pilot/trusted_review_gate.py",
     "tests/workflows/test_build_ci_topology.py",
 )
@@ -2886,6 +2892,14 @@ def _progress_rounds(
     return handoffs, pending, consumed
 
 
+def progress_rounds(
+    evidence: dict[str, Any],
+    sweeps: dict[str, dict[str, Any]],
+    forbidden_actor_ids: set[str],
+):
+    return _progress_rounds(evidence, sweeps, forbidden_actor_ids)
+
+
 def build_report(
     raw_contract: Any,
     evidence_input: Any,
@@ -2938,7 +2952,7 @@ def build_report(
             for finding in evidence["findings"].values()
         ),
     }
-    handoffs, hold, consumed = _progress_rounds(
+    handoffs, hold, consumed = progress_rounds(
         evidence, sweeps, forbidden_disposition_actors
     )
     latest = evidence["remote_reviews"][-1] if evidence["remote_reviews"] else None

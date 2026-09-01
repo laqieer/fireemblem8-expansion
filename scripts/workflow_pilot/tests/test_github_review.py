@@ -319,9 +319,8 @@ class TrustedGitHubGateTests(unittest.TestCase):
         assertion_source = (
             ROOT / trusted_review_gate.ASSERTION_PROGRAM_PATH
         ).read_text(encoding="utf-8")
+        self.assertIn("network access denied in assertion subprocess", assertion_source)
         for forbidden_import in (
-            "import socket",
-            "import subprocess",
             "import urllib",
             "import requests",
         ):
@@ -1013,6 +1012,13 @@ class TrustedGitHubGateTests(unittest.TestCase):
         requests = review_family.build_assertion_requests(
             contract, evidence, self.candidate_sha, 1
         )
+        receipt_bytes = signed_receipt(
+            reporter.normalized_json(report),
+            base=self.base_sha,
+            candidate=self.candidate_sha,
+            nonce="checker-receipt-0001",
+        )
+        receipt_envelope = json.loads(receipt_bytes)
         times = iter(
             (
                 datetime.now(timezone.utc),
@@ -1029,7 +1035,8 @@ class TrustedGitHubGateTests(unittest.TestCase):
             remote_findings=[],
             remote_finding_ids=[],
             original_review_report_bytes=reporter.normalized_json(report),
-            original_receipt_sha256="9" * 64,
+            original_review_receipt=receipt_envelope,
+            original_receipt_sha256=hashlib.sha256(receipt_bytes).hexdigest(),
             assertion_requests=requests,
             trusted_key=KEY,
             clock=lambda: next(times),
@@ -1125,6 +1132,13 @@ class TrustedGitHubGateTests(unittest.TestCase):
             contract, evidence, self.candidate_sha, 1
         )
         requests[0]["assertion_id"] = "candidate-fabricated-pass"
+        receipt_bytes = signed_receipt(
+            reporter.normalized_json(report),
+            base=self.base_sha,
+            candidate=self.candidate_sha,
+            nonce="checker-receipt-0002",
+        )
+        receipt_envelope = json.loads(receipt_bytes)
         receipt = trusted_review_gate.run_base_pinned_checker(
             self.repo,
             contract=contract,
@@ -1135,7 +1149,8 @@ class TrustedGitHubGateTests(unittest.TestCase):
             remote_findings=[],
             remote_finding_ids=[],
             original_review_report_bytes=reporter.normalized_json(report),
-            original_receipt_sha256="9" * 64,
+            original_review_receipt=receipt_envelope,
+            original_receipt_sha256=hashlib.sha256(receipt_bytes).hexdigest(),
             assertion_requests=requests,
             trusted_key=KEY,
         )
@@ -1160,7 +1175,8 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     original_review_report_bytes=reporter.normalized_json(
                         report
                     ),
-                    original_receipt_sha256="9" * 64,
+                    original_review_receipt=receipt_envelope,
+                    original_receipt_sha256=hashlib.sha256(receipt_bytes).hexdigest(),
                     assertion_requests=review_family.build_assertion_requests(
                         contract, evidence, self.candidate_sha, 1
                     ),
@@ -1776,20 +1792,17 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     )
                     return
                 if (family, member) == ("resource", "enabled"):
-                    decision_path = repository / ".github/workflow-pilot-decisions.json"
-                    decisions = json.loads(decision_path.read_text(encoding="utf-8"))
-                    decisions["pull_requests"] = [
-                        record
-                        for record in decisions["pull_requests"]
-                        if record["pull_request"] != SYNTHETIC_PULL_REQUEST
-                    ]
-                    decision_path.write_bytes(reporter.normalized_json(decisions))
+                    replace_once(
+                        "scripts/workflow_pilot/trusted_review_gate.py",
+                        "    if authoritative is None:\n",
+                        "    if True:\n",
+                    )
                     return
                 if (family, member) == ("wire", "producers"):
                     replace_once(
                         "scripts/workflow_pilot/trusted_review_gate.py",
-                        '"result_manifest": [',
-                        '"candidate_manifest": [',
+                        '"result_manifest": build_result_manifest(execution_receipts),',
+                        '"candidate_manifest": build_result_manifest(execution_receipts),',
                     )
                     return
                 if (family, member) == ("action", "items"):

@@ -45,17 +45,23 @@ ASSERTION_PROGRAM_ARGV = (
 )
 ASSERTION_INPUT_PATHS = (
     ".github/workflow-pilot-decisions.json",
+    ".github/workflows/build.yml",
     ".github/skills/development-workflow/SKILL.md",
     "docs/test-cases/registry.json",
     "docs/test-cases/workflow-governance.md",
     "docs/workflow-pilot.md",
+    "scripts/check_docs.py",
     "scripts/docs_check_tests/test_check_docs.py",
     "scripts/docs_check_tests/test_development_workflow_skill.py",
+    "scripts/workflow_pilot/__init__.py",
     "scripts/workflow_pilot/candidate_evidence.py",
     "scripts/workflow_pilot/event_classifier.py",
+    "scripts/workflow_pilot/hydrate_authority.py",
     "scripts/workflow_pilot/review_assertions.py",
     "scripts/workflow_pilot/review_base_checker.py",
     "scripts/workflow_pilot/review_family.py",
+    "scripts/workflow_pilot/reporter.py",
+    "scripts/workflow_pilot/tests/fixtures/event_classification.json",
     "scripts/workflow_pilot/trusted_review_gate.py",
     "tests/workflows/test_build_ci_topology.py",
 )
@@ -455,24 +461,16 @@ def _validate_report(
         raise CheckError("review report interval is not positive")
     if report["permissions"] != ["contents:read"]:
         raise CheckError("review report permissions are not exactly read-only")
-    if report["actions"] != list(ACTION_SEQUENCE):
-        raise CheckError("review report actions are not exact read then report")
-    reviewed_files = [
-        normalized_path(path, f"review report.reviewed_files[{index}]")
-        for index, path in enumerate(
-            expect_list(report["reviewed_files"], "review report.reviewed_files")
-        )
-    ]
-    expect_unique(reviewed_files, "review report.reviewed_files")
-    if set(reviewed_files) != set(changed_files):
-        raise CheckError("independent review does not cover every exact changed file")
-    reviewed_changes = validate_change_records(
-        report["reviewed_changes"], "review report.reviewed_changes"
+    actions = validate_review_action_contract(
+        repository=repository,
+        actions=report["actions"],
     )
-    if reviewed_changes != changes:
-        raise CheckError(
-            "independent review status/blob evidence does not match exact changes"
-        )
+    targets = validate_review_targets(
+        report["reviewed_files"],
+        report["reviewed_changes"],
+        changed_files=changed_files,
+        changes=changes,
+    )
 
     findings = []
     finding_ids = []
@@ -504,9 +502,75 @@ def _validate_report(
     expect_unique(finding_ids, "review report local finding IDs")
     return {
         **report,
+        "actions": actions,
+        "reviewed_files": targets["reviewed_files"],
+        "reviewed_changes": targets["reviewed_changes"],
+        "findings": findings,
+    }
+
+
+def validate_review_report(
+    raw_report: Any,
+    *,
+    repository: str,
+    pull_request: int,
+    base_sha: str,
+    candidate_sha: str,
+    changed_files: list[str],
+    changes: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return _validate_report(
+        raw_report,
+        repository=repository,
+        pull_request=pull_request,
+        base_sha=base_sha,
+        candidate_sha=candidate_sha,
+        changed_files=changed_files,
+        changes=changes,
+    )
+
+
+def validate_review_actions(value: Any) -> list[str]:
+    actions = [
+        expect_string(item, f"review report.actions[{index}]")
+        for index, item in enumerate(expect_list(value, "review report.actions"))
+    ]
+    if actions != list(ACTION_SEQUENCE):
+        raise CheckError("review report actions are not exact read then report")
+    return actions
+
+
+def validate_review_action_contract(*, repository: str, actions: Any) -> list[str]:
+    expect_string(repository, "review report.repository")
+    return validate_review_actions(actions)
+
+
+def validate_review_targets(
+    raw_reviewed_files: Any,
+    raw_reviewed_changes: Any,
+    *,
+    changed_files: list[str],
+    changes: list[dict[str, Any]],
+) -> dict[str, Any]:
+    reviewed_files = [
+        normalized_path(path, f"review report.reviewed_files[{index}]")
+        for index, path in enumerate(
+            expect_list(raw_reviewed_files, "review report.reviewed_files")
+        )
+    ]
+    expect_unique(reviewed_files, "review report.reviewed_files")
+    if set(reviewed_files) != set(changed_files):
+        raise CheckError("independent review does not cover every exact changed file")
+    reviewed_changes = validate_change_records(
+        raw_reviewed_changes, "review report.reviewed_changes"
+    )
+    if reviewed_changes != changes:
+        raise CheckError(
+            "independent review status/blob evidence does not match exact changes"
+        )
+    return {
         "reviewed_files": reviewed_files,
         "reviewed_changes": reviewed_changes,
-        "findings": findings,
     }
 
 
@@ -813,6 +877,173 @@ def _bind_member_request(
     }
 
 
+def bind_member_request(
+    data: dict[str, Any], parsed: dict[str, Any], finding_id: str
+) -> dict[str, Any]:
+    return _bind_member_request(data, parsed, finding_id)
+
+
+def _validate_review_contract_context(
+    value: Any,
+    *,
+    repository: str,
+    pull_request: int,
+    base_sha: str,
+    original_pre_review_head: str,
+    candidate_sha: str,
+    trust_mode: str,
+    limits: dict[str, int],
+) -> dict[str, Any]:
+    contract = expect_object(value, "checker input.review_contract")
+    expect_keys(
+        contract,
+        "checker input.review_contract",
+        (
+            "schema_version",
+            "repository",
+            "pull_request",
+            "base_sha",
+            "original_pre_review_head",
+            "candidate_sha",
+            "trust_mode",
+            "implementer_actor_id",
+            "trigger",
+            "limits",
+            "behavior_rows",
+            "family_sweeps",
+        ),
+    )
+    if contract["repository"] != repository:
+        raise CheckError("checker input.review_contract.repository does not match repository")
+    if contract["pull_request"] != pull_request:
+        raise CheckError("checker input.review_contract.pull_request does not match pull_request")
+    if contract["base_sha"] != base_sha:
+        raise CheckError("checker input.review_contract.base_sha does not match base_sha")
+    if contract["original_pre_review_head"] != original_pre_review_head:
+        raise CheckError(
+            "checker input.review_contract.original_pre_review_head does not match original_pre_review_head"
+        )
+    if contract["candidate_sha"] != candidate_sha:
+        raise CheckError("checker input.review_contract.candidate_sha does not match candidate_sha")
+    if contract["trust_mode"] != trust_mode:
+        raise CheckError("checker input.review_contract.trust_mode does not match trust_mode")
+    if contract["limits"] != limits:
+        raise CheckError("checker input.review_contract.limits do not match limits")
+    expect_string(
+        contract["implementer_actor_id"],
+        "checker input.review_contract.implementer_actor_id",
+    )
+    expect_object(contract["trigger"], "checker input.review_contract.trigger")
+    expect_list(contract["behavior_rows"], "checker input.review_contract.behavior_rows")
+    expect_list(contract["family_sweeps"], "checker input.review_contract.family_sweeps")
+    return contract
+
+
+def _validate_original_review_receipt_context(
+    value: Any,
+    *,
+    repository: str,
+    pull_request: int,
+    base_sha: str,
+    original_pre_review_head: str,
+    original_receipt_sha256: str,
+) -> dict[str, Any]:
+    receipt = expect_object(value, "checker input.original_review_receipt")
+    expect_keys(
+        receipt,
+        "checker input.original_review_receipt",
+        (
+            "schema_version",
+            "repository",
+            "pull_request",
+            "base_sha",
+            "candidate_sha",
+            "issued_at",
+            "expires_at",
+            "nonce",
+            "key_id",
+            "key_epoch",
+            "purpose",
+            "payload_b64",
+            "hmac_sha256",
+        ),
+    )
+    if receipt["schema_version"] != 2:
+        raise CheckError("checker input.original_review_receipt.schema_version must be 2")
+    if receipt["repository"] != repository:
+        raise CheckError("checker input.original_review_receipt.repository does not match repository")
+    if receipt["pull_request"] != pull_request:
+        raise CheckError(
+            "checker input.original_review_receipt.pull_request does not match pull_request"
+        )
+    if receipt["base_sha"] != base_sha:
+        raise CheckError("checker input.original_review_receipt.base_sha does not match base_sha")
+    if receipt["candidate_sha"] != original_pre_review_head:
+        raise CheckError(
+            "checker input.original_review_receipt.candidate_sha does not match original_pre_review_head"
+        )
+    expect_time(receipt["issued_at"], "checker input.original_review_receipt.issued_at")
+    expect_time(receipt["expires_at"], "checker input.original_review_receipt.expires_at")
+    expect_string(receipt["nonce"], "checker input.original_review_receipt.nonce")
+    expect_string(receipt["key_id"], "checker input.original_review_receipt.key_id")
+    expect_int(receipt["key_epoch"], "checker input.original_review_receipt.key_epoch")
+    expect_string(receipt["purpose"], "checker input.original_review_receipt.purpose")
+    expect_string(
+        receipt["payload_b64"], "checker input.original_review_receipt.payload_b64"
+    )
+    expect_string(
+        receipt["hmac_sha256"], "checker input.original_review_receipt.hmac_sha256"
+    )
+    if hashlib.sha256(normalized_json(receipt)).hexdigest() != original_receipt_sha256:
+        raise CheckError(
+            "checker input.original_review_receipt does not match original_receipt_sha256"
+        )
+    return receipt
+
+
+def _assertion_program_context(data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "repository": data["repository"],
+        "repository_root": str(data["repository_root"]),
+        "pull_request": data["pull_request"],
+        "base_sha": data["base_sha"],
+        "base_tree": data["base_tree"],
+        "original_pre_review_head": data["original_pre_review_head"],
+        "original_pre_review_head_tree": data["original_pre_review_head_tree"],
+        "original_changes": data["original_changes"],
+        "original_receipt_sha256": data["original_receipt_sha256"],
+        "review_contract": data["review_contract"],
+        "original_review_receipt": data["original_review_receipt"],
+        "assertion_program_path": str(data["assertion_program_path"]),
+        "assertion_program_blob_oid": data["assertion_program_blob_oid"],
+        "assertion_program_argv": data["assertion_program_argv"],
+        "finding_origin_sha": data["finding_origin_sha"],
+        "finding_origin_tree": data["finding_origin_tree"],
+        "origin_root": str(data["origin_root"]),
+        "head_root": str(data["head_root"]),
+        "assertion_input_artifacts": data["assertion_input_artifacts"],
+        "candidate_sha": data["candidate_sha"],
+        "candidate_tree": data["candidate_tree"],
+        "head_sha": data["head_sha"],
+        "review_round": data["review_round"],
+        "review_context": data["review_context"],
+        "all_remote_reviews": data["all_remote_reviews"],
+        "remote_findings": sorted(
+            data["remote_findings"].values(),
+            key=lambda finding: finding["id"],
+        ),
+        "trust_mode": data["trust_mode"],
+        "changed_files": data["changed_files"],
+        "changes": data["changes"],
+        "remote_finding_ids": data["remote_finding_ids"],
+        "limits": data["limits"],
+        "original_pre_review": data["original_pre_review"],
+        "round_findings": data["round_findings"],
+        "assertion_requests": data["assertion_requests"],
+    }
+
+
 def _validate_program_output_binding(
     output: dict[str, Any], binding: dict[str, Any]
 ) -> None:
@@ -821,6 +1052,88 @@ def _validate_program_output_binding(
             raise CheckError(
                 f"assertion program output does not preserve authoritative {field}"
             )
+
+
+def validate_program_output_binding(
+    output: dict[str, Any], binding: dict[str, Any]
+) -> None:
+    _validate_program_output_binding(output, binding)
+
+
+def validate_assertion_program_identity(
+    repository_root: Path,
+    base_sha: str,
+    assertion_program_path: Path,
+    claimed_assertion_program_blob_oid: str,
+    assertion_program_argv: list[Any],
+) -> tuple[Path, str]:
+    if assertion_program_path.name != "review_assertions.py":
+        raise CheckError("checker assertion program path is unavailable")
+    if assertion_program_argv != list(ASSERTION_PROGRAM_ARGV):
+        raise CheckError("checker assertion program argv is not fixed")
+    assertion_program_blob_oid = git_blob_oid(
+        read_regular_file(assertion_program_path, "checker assertion program path")
+    )
+    expected_assertion_program_blob_oid = git_blob_oid_at_revision(
+        repository_root,
+        base_sha,
+        ASSERTION_PROGRAM_RELPATH,
+        "checker assertion program",
+    )
+    if (
+        claimed_assertion_program_blob_oid != expected_assertion_program_blob_oid
+        or assertion_program_blob_oid != expected_assertion_program_blob_oid
+    ):
+        raise CheckError(
+            "checker assertion program does not match the exact base Git object"
+        )
+    return assertion_program_path, expected_assertion_program_blob_oid
+
+
+def validate_review_context_binding(
+    *,
+    review_round: int,
+    review_context: Any,
+    all_remote_reviews: Any,
+    candidate_sha: str,
+    remote_finding_ids: Any,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
+    validated_review_context = _validate_remote_review(
+        review_context, "checker input.review_context"
+    )
+    validated_all_remote_reviews = _validate_remote_reviews(all_remote_reviews)
+    if (
+        validated_review_context["round"] != review_round
+        or validated_review_context["candidate_sha"] != candidate_sha
+        or review_round > len(validated_all_remote_reviews)
+        or validated_all_remote_reviews[review_round - 1] != validated_review_context
+    ):
+        raise CheckError(
+            "checker review context does not match current assertion round/head"
+        )
+    validated_remote_finding_ids = [
+        expect_string(value, f"checker input.remote_finding_ids[{index}]")
+        for index, value in enumerate(
+            expect_list(
+                remote_finding_ids,
+                "checker input.remote_finding_ids",
+            )
+        )
+    ]
+    expect_unique(validated_remote_finding_ids, "checker input.remote_finding_ids")
+    if any(LOCAL_FINDING_RE.fullmatch(value) for value in validated_remote_finding_ids):
+        raise CheckError(
+            "remote finding IDs overlap the independent namespace"
+        )
+    if sorted(validated_remote_finding_ids) != sorted(validated_review_context["finding_ids"]):
+        raise CheckError(
+            "checker input.remote_finding_ids do not match the current review findings"
+        )
+    return (
+        validated_review_context,
+        validated_all_remote_reviews,
+        validated_remote_finding_ids,
+    )
 
 
 def _result_id(review_round: int, assertion_id: str, binding: dict[str, Any]) -> str:
@@ -847,6 +1160,8 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
             "original_pre_review_head",
             "original_changes",
             "original_receipt_sha256",
+            "review_contract",
+            "original_review_receipt",
             "assertion_program_path",
             "assertion_program_blob_oid",
             "assertion_program_argv",
@@ -907,14 +1222,6 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         raise CheckError(
             "checker input.original_receipt_sha256 must be SHA-256"
         )
-    assertion_program_path = Path(
-        expect_string(
-            data["assertion_program_path"],
-            "checker input.assertion_program_path",
-        )
-    )
-    if assertion_program_path.name != "review_assertions.py":
-        raise CheckError("checker assertion program path is unavailable")
     claimed_assertion_program_blob_oid = expect_sha(
         data["assertion_program_blob_oid"],
         "checker input.assertion_program_blob_oid",
@@ -923,8 +1230,20 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         data["assertion_program_argv"],
         "checker input.assertion_program_argv",
     )
-    if assertion_program_argv != list(ASSERTION_PROGRAM_ARGV):
-        raise CheckError("checker assertion program argv is not fixed")
+    assertion_program_path, expected_assertion_program_blob_oid = (
+        validate_assertion_program_identity(
+            repository_root,
+            base_sha,
+            Path(
+                expect_string(
+                    data["assertion_program_path"],
+                    "checker input.assertion_program_path",
+                )
+            ),
+            claimed_assertion_program_blob_oid,
+            assertion_program_argv,
+        )
+    )
     checker_blob_oid = git_blob_oid(
         read_regular_file(Path(__file__), "checker registry program")
     )
@@ -937,22 +1256,6 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
     if checker_blob_oid != expected_checker_blob_oid:
         raise CheckError(
             "checker registry program does not match the exact base Git object"
-        )
-    assertion_program_blob_oid = git_blob_oid(
-        read_regular_file(assertion_program_path, "checker assertion program path")
-    )
-    expected_assertion_program_blob_oid = git_blob_oid_at_revision(
-        repository_root,
-        base_sha,
-        ASSERTION_PROGRAM_RELPATH,
-        "checker assertion program",
-    )
-    if (
-        claimed_assertion_program_blob_oid != expected_assertion_program_blob_oid
-        or assertion_program_blob_oid != expected_assertion_program_blob_oid
-    ):
-        raise CheckError(
-            "checker assertion program does not match the exact base Git object"
         )
     finding_origin_sha = expect_sha(
         data["finding_origin_sha"], "checker input.finding_origin_sha"
@@ -981,19 +1284,15 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
     if head_sha != candidate_sha:
         raise CheckError("checker input head does not equal candidate")
     review_round = expect_int(data["review_round"], "checker input.review_round")
-    review_context = _validate_remote_review(
-        data["review_context"], "checker input.review_context"
-    )
-    all_remote_reviews = _validate_remote_reviews(data["all_remote_reviews"])
-    if (
-        review_context["round"] != review_round
-        or review_context["candidate_sha"] != candidate_sha
-        or review_round > len(all_remote_reviews)
-        or all_remote_reviews[review_round - 1] != review_context
-    ):
-        raise CheckError(
-            "checker review context does not match current assertion round/head"
+    review_context, all_remote_reviews, remote_finding_ids = (
+        validate_review_context_binding(
+            review_round=review_round,
+            review_context=data["review_context"],
+            all_remote_reviews=data["all_remote_reviews"],
+            candidate_sha=candidate_sha,
+            remote_finding_ids=data["remote_finding_ids"],
         )
+    )
     reviews_by_node = {
         review["node_id"]: review for review in all_remote_reviews
     }
@@ -1023,24 +1322,6 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         raise CheckError(
             "checker input changed files do not match status record paths"
         )
-    remote_finding_ids = [
-        expect_string(value, f"checker input.remote_finding_ids[{index}]")
-        for index, value in enumerate(
-            expect_list(
-                data["remote_finding_ids"],
-                "checker input.remote_finding_ids",
-            )
-        )
-    ]
-    expect_unique(remote_finding_ids, "checker input.remote_finding_ids")
-    if any(LOCAL_FINDING_RE.fullmatch(value) for value in remote_finding_ids):
-        raise CheckError(
-            "remote finding IDs overlap the independent namespace"
-        )
-    if sorted(remote_finding_ids) != sorted(review_context["finding_ids"]):
-        raise CheckError(
-            "checker input.remote_finding_ids do not match the current review findings"
-        )
     limits = expect_object(data["limits"], "checker input.limits")
     expect_keys(
         limits,
@@ -1057,6 +1338,24 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         name: expect_int(value, f"checker input.limits.{name}")
         for name, value in limits.items()
     }
+    review_contract = _validate_review_contract_context(
+        data["review_contract"],
+        repository=repository,
+        pull_request=pull_request,
+        base_sha=base_sha,
+        original_pre_review_head=original_pre_review_head,
+        candidate_sha=candidate_sha,
+        trust_mode=trust_mode,
+        limits=normalized_limits,
+    )
+    original_review_receipt = _validate_original_review_receipt_context(
+        data["original_review_receipt"],
+        repository=repository,
+        pull_request=pull_request,
+        base_sha=base_sha,
+        original_pre_review_head=original_pre_review_head,
+        original_receipt_sha256=original_receipt_sha256,
+    )
     original_files = sorted(
         {
             path
@@ -1065,7 +1364,7 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
             if path is not None
         }
     )
-    report = _validate_report(
+    report = validate_review_report(
         data["original_pre_review"],
         repository=repository,
         pull_request=pull_request,
@@ -1189,6 +1488,8 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         "original_pre_review_head_tree": original_pre_review_head_tree,
         "original_changes": original_changes,
         "original_receipt_sha256": original_receipt_sha256,
+        "review_contract": review_contract,
+        "original_review_receipt": original_review_receipt,
         "assertion_program_path": assertion_program_path,
         "assertion_program_blob_oid": expected_assertion_program_blob_oid,
         "assertion_program_argv": list(ASSERTION_PROGRAM_ARGV),
@@ -1218,6 +1519,7 @@ def execute_registry(raw_input: Any) -> dict[str, Any]:
     data = validate_input(raw_input)
     input_sha256 = hashlib.sha256(normalized_json(raw_input)).hexdigest()
     command_id = hashlib.sha256(normalized_json(list(CHECKER_ARGV))).hexdigest()
+    program_context = _assertion_program_context(data)
     results = []
     result_ids = []
     for index, raw in enumerate(
@@ -1233,7 +1535,7 @@ def execute_registry(raw_input: Any) -> dict[str, Any]:
             if raw_finding_id is None:
                 raise CheckError("member assertion requires a finding ID")
             finding_id = expect_string(raw_finding_id, f"{label}.finding_id")
-            authority_binding = _bind_member_request(
+            authority_binding = bind_member_request(
                 data, parsed_assertion, finding_id
             )
             program_request = {
@@ -1241,6 +1543,7 @@ def execute_registry(raw_input: Any) -> dict[str, Any]:
                 "authority_binding": authority_binding,
                 "origin_root": str(data["origin_root"]),
                 "head_root": str(data["head_root"]),
+                "checker_input": program_context,
             }
             disposition = parsed_assertion["outcome"]
         else:
