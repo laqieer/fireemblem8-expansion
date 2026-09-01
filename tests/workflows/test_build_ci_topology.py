@@ -39,6 +39,15 @@ LIVE_METADATA_JOBS_FIXTURE = (
     / "fixtures"
     / "live_metadata_jobs_33472008301.json"
 )
+LIVE_METADATA_RESTORE_FIXTURE = (
+    ROOT
+    / "scripts"
+    / "workflow_pilot"
+    / "tests"
+    / "fixtures"
+    / "live_metadata_jobs_33472111689.json"
+)
+RULESET_PAYLOAD = ROOT / ".github" / "required-summary-checks.json"
 PRE_FIX_WORKFLOW = EVENT_FIXTURE.with_name("pre_fix_build.yml")
 PYTHON_REQUIREMENTS = ROOT / ".github" / "requirements" / "build.txt"
 RETIRED_WORKFLOW_FILENAME = "full" + "-matrix.yml"
@@ -53,15 +62,7 @@ MASTER_PUBLISHER_CONDITION = (
 )
 COMBINED_WORKERS = ("host-tests", "build", "extended-host-tests", "legacy")
 CLASSIFIER_JOB = "event-classifier"
-METADATA_WORKER_NAMES = {
-    job_id: candidate_evidence.METADATA_WORKER_NAMES[job_id]
-    for job_id in COMBINED_WORKERS
-}
-METADATA_WORKER_LITERALS = {
-    job_id: candidate_evidence.METADATA_WORKER_LITERALS[job_id]
-    for job_id in COMBINED_WORKERS
-}
-METADATA_CHECK_CONTEXTS = set(METADATA_WORKER_LITERALS.values()) | {
+METADATA_CHECK_CONTEXTS = set(COMBINED_WORKERS) | {
     "event-identity",
     "event-router",
     candidate_evidence.METADATA_CLASSIFIER,
@@ -75,13 +76,7 @@ METADATA_CLASSIFIER_FAILURE_CHECKS = set(COMBINED_WORKERS) | {
     "patch-release",
     "summary",
 }
-FULL_CLASSIFIER_LITERAL_WORKER_CHECKS = set(METADATA_WORKER_LITERALS.values()) | {
-    "event-identity",
-    "event-router",
-    "event-classifier",
-    "patch-release",
-    "summary",
-}
+REQUIRED_SUMMARY_CONTEXTS = frozenset(candidate_evidence.REQUIRED_BUILD_CONTEXTS)
 SUMMARY_NEEDS = (
     "needs: [event-identity, event-classifier, host-tests, build, "
     "extended-host-tests, legacy, patch-release]"
@@ -461,15 +456,12 @@ def _resolved_check_name(
     decision: event_classifier.EventDecision | None,
     *,
     classifier_result: str,
-    scheduled: set[str],
 ) -> str:
     job = _job_blocks(text)[job_name]
     direct_name = _direct_job_name(job)
     if direct_name is None:
         return job_name
     if job_name in COMBINED_WORKERS:
-        if direct_name == _worker_name_expression(job_name):
-            return direct_name if job_name not in scheduled else job_name
         return direct_name
     if job_name == "event-classifier" and direct_name == EVENT_CLASSIFIER_DYNAMIC_NAME:
         return (
@@ -536,7 +528,6 @@ def _emitted_check_names(text: str, event: dict) -> set[str]:
             event,
             decision,
             classifier_result=classifier_result,
-            scheduled=scheduled,
         )
         for job_name in _job_blocks(text)
     }
@@ -603,10 +594,6 @@ def _direct_job_name(job: str) -> str | None:
     if len(matches) != 1:
         raise ValueError("job must contain exactly one direct name expression")
     return matches[0]
-
-
-def _worker_name_expression(job_id: str) -> str:
-    return METADATA_WORKER_LITERALS[job_id]
 
 
 def _run_block_commands(job: str) -> list[str]:
@@ -941,7 +928,6 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
         direct_lines.append(line)
     expected_timeout = 90 if job_name == "build" else 60
     expected_direct = [
-        f"    name: {_worker_name_expression(job_name)}",
         f"    {WORKER_NEEDS}",
         f"    if: {WORKER_CONDITION}",
         "    runs-on: ubuntu-latest",
@@ -953,7 +939,7 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
     if direct_lines != expected_direct:
         errors.append(
             f"{job_name} direct job mapping differs from the reviewed "
-            "name, runs-on, timeout, env, and steps contract"
+            "runs-on, timeout, env, and steps contract"
         )
 
     lines = job.splitlines()
@@ -2926,7 +2912,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         },
                     },
                 },
-                FULL_CLASSIFIER_LITERAL_WORKER_CHECKS,
+                EMITTED_FULL_CHECKS,
             ),
             (
                 "wrong-pr-ref",
@@ -2988,22 +2974,16 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         jobs = _job_blocks(self.text)
         for job_name in COMBINED_WORKERS:
             with self.subTest(job=job_name):
-                self.assertEqual(
-                    _direct_job_name(jobs[job_name]),
-                    _worker_name_expression(job_name),
-                )
-                self.assertEqual(
-                    _github_expression_balance_errors(
-                        _direct_job_name(jobs[job_name])
-                    ),
-                    [],
-                )
+                self.assertIsNone(_direct_job_name(jobs[job_name]))
         self.assertIn(EVENT_CLASSIFIER_DYNAMIC_NAME, jobs["event-classifier"])
         self.assertIn(SUMMARY_DYNAMIC_NAME, jobs["summary"])
         self.assertEqual(_emitted_check_names(self.text, body_only), METADATA_CHECK_CONTEXTS)
         self.assertEqual(_emitted_check_names(self.text, base_edit), EMITTED_FULL_CHECKS)
         self.assertEqual(_emitted_check_names(self.text, opened), EMITTED_FULL_CHECKS)
-        self.assertTrue(set(COMBINED_WORKERS).isdisjoint(METADATA_CHECK_CONTEXTS))
+        self.assertTrue(REQUIRED_SUMMARY_CONTEXTS <= EMITTED_FULL_CHECKS)
+        self.assertTrue(REQUIRED_SUMMARY_CONTEXTS.isdisjoint(METADATA_CHECK_CONTEXTS))
+        self.assertNotIn(candidate_evidence.METADATA_ATTESTATION, EMITTED_FULL_CHECKS)
+        self.assertNotIn(candidate_evidence.FULL_ATTESTATION, METADATA_CHECK_CONTEXTS)
         self.assertNotEqual(
             candidate_evidence.FULL_ATTESTATION,
             candidate_evidence.METADATA_ATTESTATION,
@@ -3012,10 +2992,6 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             candidate_evidence.FULL_CLASSIFIER,
             candidate_evidence.METADATA_CLASSIFIER,
         )
-        for job_name in COMBINED_WORKERS:
-            with self.subTest(job=job_name):
-                self.assertNotEqual(job_name, METADATA_WORKER_NAMES[job_name])
-                self.assertNotEqual(job_name, METADATA_WORKER_LITERALS[job_name])
 
     def test_classifier_failure_on_metadata_shaped_edit_keeps_canonical_worker_names(self):
         fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
@@ -3032,132 +3008,47 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             METADATA_CLASSIFIER_FAILURE_CHECKS,
         )
 
-    def test_metadata_worker_name_regressions_fail_closed(self):
-        fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
-        body_only = next(
-            case
-            for case in fixture["cases"]
-            if case["id"] == "body-only-merge-sha-ignored"
-        )
-        base_edit = next(
-            case
-            for case in fixture["cases"]
-            if case["id"] == "base-only-stack-retarget"
-        )
-        old_literal_name = next(
-            context["name"]
-            for context in json.loads(
-                LIVE_METADATA_JOBS_FIXTURE.read_text(encoding="utf-8")
-            )["jobs"]
-            if context["id"] == 334720083014
-        )
-
-        def resolved(changed: str, job_name: str, event: dict, *, classifier_result: str = "success") -> str:
-            return _resolved_check_name(
-                changed,
-                job_name,
-                event,
-                None,
-                classifier_result=classifier_result,
-                scheduled=_triggered_jobs(changed, event),
+    def test_worker_name_overrides_fail_closed(self):
+        long_literal_names = []
+        for fixture_path in (LIVE_METADATA_JOBS_FIXTURE, LIVE_METADATA_RESTORE_FIXTURE):
+            long_literal_names.extend(
+                job["name"]
+                for job in json.loads(fixture_path.read_text(encoding="utf-8"))["jobs"]
+                if job["conclusion"] == "skipped" and job["name"] != "patch-release"
             )
-
-        mutations = (
-            (
-                "remove-dynamic-name",
-                self.text.replace(
-                    f"    name: {_worker_name_expression('host-tests')}\n",
-                    "",
-                    1,
-                ),
-                lambda changed: self.assertEqual(
-                    resolved(changed, "host-tests", body_only),
-                    "host-tests",
-                ),
-            ),
-            (
-                "old-raw-event-literal-drift",
-                self.text.replace(
-                    f"    name: {_worker_name_expression('host-tests')}",
-                    f"    name: {old_literal_name}",
-                    1,
-                ),
-                lambda changed: self.assertEqual(
-                    resolved(changed, "host-tests", body_only),
-                    old_literal_name,
-                ),
-            ),
-            (
-                "shared-duplicate-literal-name",
-                self.text.replace(
-                    f"    name: {_worker_name_expression('build')}",
-                    f"    name: {_worker_name_expression('host-tests')}",
-                    1,
-                ),
-                lambda changed: self.assertEqual(
-                    resolved(changed, "host-tests", body_only),
-                    resolved(changed, "build", body_only),
-                ),
-            ),
-            (
-                "metadata-literal-canonical",
-                self.text.replace(
-                    f"    name: {_worker_name_expression('host-tests')}",
-                    "    name: host-tests",
-                    1,
-                ),
-                lambda changed: self.assertEqual(
-                    resolved(changed, "host-tests", body_only),
-                    "host-tests",
-                ),
-            ),
-            (
-                "evaluated-metadata-label",
-                self.text.replace(
-                    f"    name: {_worker_name_expression('host-tests')}",
-                    f"    name: {METADATA_WORKER_NAMES['host-tests']}",
-                    1,
-                ),
-                lambda changed: self.assertEqual(
-                    resolved(changed, "host-tests", body_only),
-                    METADATA_WORKER_NAMES["host-tests"],
-                ),
-            ),
-            (
-                "base-change-misnamed-metadata",
-                self.text.replace(
-                    f"    name: {_worker_name_expression('host-tests')}",
-                    f"    name: {METADATA_WORKER_NAMES['host-tests']}",
-                    1,
-                ),
-                lambda changed: self.assertEqual(
-                    resolved(changed, "host-tests", base_edit),
-                    METADATA_WORKER_NAMES["host-tests"],
-                ),
-            ),
-            (
-                "classifier-failure-metadata-name",
-                self.text.replace(
-                    f"    name: {_worker_name_expression('host-tests')}",
-                    f"    name: {METADATA_WORKER_NAMES['host-tests']}",
-                    1,
-                ),
-                lambda changed: self.assertEqual(
-                    resolved(
-                        changed,
-                        "host-tests",
-                        {**body_only, "classifier_result": "failure"},
-                        classifier_result="failure",
-                    ),
-                    METADATA_WORKER_NAMES["host-tests"],
-                ),
-            ),
+        short_literal_name = (
+            "${{ needs.event-classifier.result == 'success' && "
+            "needs.event-classifier.outputs.classification == 'metadata-only' && "
+            "'metadata-host-tests-skipped' || 'host-tests' }}"
         )
-        for name, changed, assertion in mutations:
+        mutations = [
+            ("canonical-name", "    name: host-tests\n"),
+            ("evaluated-metadata-label", "    name: metadata-host-tests-skipped\n"),
+            ("short-literal-expression", f"    name: {short_literal_name}\n"),
+            (
+                "duplicate-name-keys",
+                "    name: host-tests\n"
+                f"    name: {short_literal_name}\n",
+            ),
+        ] + [
+            (f"live-literal-expression-{index}", f"    name: {name}\n")
+            for index, name in enumerate(long_literal_names)
+        ]
+        for name, injected in mutations:
             with self.subTest(mutation=name):
+                changed = self.text.replace(
+                    "  host-tests:\n",
+                    "  host-tests:\n" + injected,
+                    1,
+                )
                 self.assertNotEqual(changed, self.text)
-                self.assertTrue(_errors(changed, False))
-                assertion(changed)
+                self.assertTrue(
+                    any(
+                        "host-tests direct job mapping differs" in error
+                        or "host-tests uses unsupported" in error
+                        for error in _errors(changed, False)
+                    )
+                )
 
     def test_classifier_failure_fixtures_select_only_exact_event_head_fallbacks(self):
         fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
@@ -3492,16 +3383,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         for job_name in COMBINED_WORKERS:
             job = _job_blocks(self.text)[job_name]
             condition = _direct_job_if(job)
-            name_expression = _direct_job_name(job)
-            self.assertIsNotNone(name_expression)
+            self.assertIsNone(_direct_job_name(job))
             with self.subTest(job=job_name, control="real-if"):
                 self.assertEqual(
                     _github_expression_balance_errors(condition),
-                    [],
-                )
-            with self.subTest(job=job_name, control="real-name"):
-                self.assertEqual(
-                    _github_expression_balance_errors(name_expression),
                     [],
                 )
             for suffix, expected in (
@@ -3509,7 +3394,6 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 ("(", "unmatched opening"),
             ):
                 changed_condition = condition[:-3] + suffix + " }}"
-                changed_name = name_expression[:-3] + suffix + " }}"
                 with self.subTest(job=job_name, suffix=suffix, field="if"):
                     self.assertTrue(
                         any(
@@ -3528,27 +3412,6 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     self.assertTrue(
                         any(
                             f"{job_name} condition is invalid" in error
-                            for error in _errors(changed, False)
-                        )
-                    )
-                with self.subTest(job=job_name, suffix=suffix, field="name"):
-                    self.assertTrue(
-                        any(
-                            expected in error
-                            for error in _github_expression_balance_errors(
-                                changed_name
-                            )
-                        )
-                    )
-                    changed_job = job.replace(
-                        f"    name: {name_expression}",
-                        f"    name: {changed_name}",
-                        1,
-                    )
-                    changed = self.text.replace(job, changed_job, 1)
-                    self.assertTrue(
-                        any(
-                            f"{job_name} direct job mapping differs" in error
                             for error in _errors(changed, False)
                         )
                     )
@@ -3717,7 +3580,6 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
     def test_reviewed_job_key_aliases_fail_closed(self):
         for job_name in COMBINED_WORKERS:
             allowed = {
-                "name": _worker_name_expression(job_name),
                 "needs": "[event-identity, event-classifier]",
                 "if": WORKER_CONDITION,
                 "runs-on": "ubuntu-latest",
@@ -3844,9 +3706,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                             for error in _errors(changed, False)
                         )
                     )
-
             for allowed_line in (
-                f"    name: {_worker_name_expression(job_name)}",
                 "    runs-on: ubuntu-latest",
                 f"    timeout-minutes: {timeout}",
                 "    env:",
@@ -4114,6 +3974,109 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             1,
         )
         self.assertTrue(any("summary must depend" in error for error in _errors(changed, False)))
+
+    def test_required_summary_ruleset_payload_is_exact(self):
+        payload = json.loads(RULESET_PAYLOAD.read_text(encoding="utf-8"))
+        self.assertEqual(payload["schema_version"], 1)
+        self.assertEqual(payload["issue"], 177)
+        self.assertEqual(payload["workflow"], "Build CI")
+        self.assertEqual(
+            payload["required_build_contexts"],
+            sorted(REQUIRED_SUMMARY_CONTEXTS),
+        )
+        self.assertEqual(
+            payload["nonrequired_build_contexts"],
+            [
+                "event-identity",
+                "event-router",
+                "event-classifier",
+                "metadata-classifier",
+                "metadata-summary",
+                "host-tests",
+                "build",
+                "extended-host-tests",
+                "legacy",
+                "patch-release",
+            ],
+        )
+        self.assertTrue(payload["preserve_existing_independent_contexts"])
+        self.assertEqual(payload["negative_proof_run_ids"], [33472008301, 33472111689])
+        self.assertEqual(
+            payload["verification"],
+            {
+                "full_summary_must_require_worker_success": True,
+                "metadata_runs_must_not_publish_summary": True,
+                "later_metadata_must_not_replace_required_summary": True,
+            },
+        )
+        self.assertNotIn("summary", payload["nonrequired_build_contexts"])
+        self.assertNotIn("metadata-summary", payload["required_build_contexts"])
+
+    def test_summary_requires_each_worker_dependency_and_result_check(self):
+        for worker, changed_needs in (
+            (
+                "host-tests",
+                "needs: [event-identity, event-classifier, build, "
+                "extended-host-tests, legacy, patch-release]",
+            ),
+            (
+                "build",
+                "needs: [event-identity, event-classifier, host-tests, "
+                "extended-host-tests, legacy, patch-release]",
+            ),
+            (
+                "extended-host-tests",
+                "needs: [event-identity, event-classifier, host-tests, "
+                "build, legacy, patch-release]",
+            ),
+            (
+                "legacy",
+                "needs: [event-identity, event-classifier, host-tests, "
+                "build, extended-host-tests, patch-release]",
+            ),
+            (
+                "patch-release",
+                "needs: [event-identity, event-classifier, host-tests, "
+                "build, extended-host-tests, legacy]",
+            ),
+        ):
+            with self.subTest(need=worker):
+                changed = self.text.replace(SUMMARY_NEEDS, changed_needs, 1)
+                self.assertTrue(
+                    any("summary must depend" in error for error in _errors(changed, False))
+                )
+        final_loop = (
+            'for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" '
+            '"$EXTENDED_HOST_TESTS_RESULT" \\\n'
+            '          "$LEGACY_RESULT"'
+        )
+        for missing, replacement in (
+            (
+                '"$HOST_TESTS_RESULT"',
+                'for result in "$BUILD_RESULT" "$EXTENDED_HOST_TESTS_RESULT" \\\n'
+                '          "$LEGACY_RESULT"',
+            ),
+            (
+                '"$BUILD_RESULT"',
+                'for result in "$HOST_TESTS_RESULT" "$EXTENDED_HOST_TESTS_RESULT" \\\n'
+                '          "$LEGACY_RESULT"',
+            ),
+            (
+                '"$EXTENDED_HOST_TESTS_RESULT"',
+                'for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \\\n'
+                '          "$LEGACY_RESULT"',
+            ),
+            (
+                '"$LEGACY_RESULT"',
+                'for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" '
+                '"$EXTENDED_HOST_TESTS_RESULT"',
+            ),
+        ):
+            with self.subTest(result_check=missing):
+                changed = self.text.replace(final_loop, replacement, 1)
+                self.assertTrue(
+                    any("summary loop omits" in error for error in _errors(changed, False))
+                )
 
     def test_workflow_pilot_suite_remains_owned_by_required_host_job(self):
         host_tests = _job_blocks(self.text)["host-tests"]

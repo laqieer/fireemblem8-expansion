@@ -6,20 +6,6 @@ from dataclasses import dataclass
 
 
 WORKER_JOB_IDS = ("host-tests", "build", "extended-host-tests", "legacy")
-METADATA_WORKER_NAMES = {
-    "host-tests": "metadata-host-tests-skipped",
-    "build": "metadata-build-skipped",
-    "extended-host-tests": "metadata-extended-host-tests-skipped",
-    "legacy": "metadata-legacy-skipped",
-}
-METADATA_WORKER_LITERALS = {
-    job_id: (
-        "${{ needs.event-classifier.result == 'success' && "
-        "needs.event-classifier.outputs.classification == 'metadata-only' && "
-        f"'{metadata_name}' || '{job_id}' }}}}"
-    )
-    for job_id, metadata_name in METADATA_WORKER_NAMES.items()
-}
 KNOWN_JOB_IDS = frozenset(WORKER_JOB_IDS) | {
     "event-identity",
     "event-router",
@@ -31,6 +17,7 @@ FULL_CLASSIFIER = "event-classifier"
 FULL_ATTESTATION = "summary"
 METADATA_CLASSIFIER = "metadata-classifier"
 METADATA_ATTESTATION = "metadata-summary"
+REQUIRED_BUILD_CONTEXTS = frozenset({FULL_ATTESTATION})
 
 
 class CandidateEvidenceError(ValueError):
@@ -139,9 +126,9 @@ def _validate_mode_contexts(
     if mode == "metadata-only":
         for job_id in WORKER_JOB_IDS:
             name, conclusion = require_context(job_id)
-            if name != METADATA_WORKER_LITERALS[job_id]:
+            if name != job_id:
                 raise CandidateEvidenceError(
-                    f"metadata worker {job_id!r} has nonliteral metadata check name"
+                    f"metadata worker {job_id!r} has noncanonical check name"
                 )
             if conclusion != "skipped":
                 raise CandidateEvidenceError(

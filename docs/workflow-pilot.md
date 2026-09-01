@@ -129,23 +129,17 @@ expose `event-classifier`, `host-tests`, `build`,
 `extended-host-tests`, `legacy`, and `summary`. The running `summary` context
 is the sole candidate attestation; it succeeds only after the same full run's
 classifier and all four workers succeed. Metadata-only runs expose the running
-`metadata-classifier` and `metadata-summary` attestations plus four distinct
-platform-skipped worker checks. Their raw API names are the exact per-worker
-literal `needs.event-classifier...` expressions whose true branches are
-`metadata-host-tests-skipped`, `metadata-build-skipped`,
-`metadata-extended-host-tests-skipped`, and `metadata-legacy-skipped`.
-GitHub Runner returns those literal expression strings for skipped metadata
-workers instead of evaluated display names, so that literal output is the
-reviewed external contract. Successful metadata runs therefore never reuse the
-canonical full `host-tests`, `build`, `extended-host-tests`, or `legacy`
-check names, while successful full runs, successful incomplete-base
-`full_fallback` runs, and classifier-failure fallback runs keep the canonical
-worker names. Candidate normalization requires those exact job-specific
-literal strings only in metadata mode and canonical worker names only in full
-mode; evaluated metadata labels, older raw-event literal strings, duplicate,
-unknown, spoofed, missing, or success-shaped metadata worker records reject. A later green
-metadata run therefore cannot replace `summary` or any required canonical full
-context.
+`metadata-classifier` and `metadata-summary` attestations plus the same
+canonical worker checks `host-tests`, `build`, `extended-host-tests`, and
+`legacy`, each skipped with no runner. Candidate normalization therefore
+requires canonical worker names in both modes, with `skipped` conclusions in
+metadata-only mode and `success` in full mode. Repository branch protection
+must require the fail-closed canonical `summary` context from this workflow,
+not individual worker names, because newer metadata runs intentionally reuse
+the canonical skipped worker contexts. A later green metadata run therefore
+cannot replace `summary`, and `candidate_evidence.evaluate_candidate_runs()`
+continues to derive eligibility only from the latest exact full run with a
+successful canonical `summary`.
 
 [`scripts/workflow_pilot/candidate_evidence.py`](../scripts/workflow_pilot/candidate_evidence.py)
 derives mode only from the running classifier/summary names and evaluates the latest
@@ -302,10 +296,13 @@ candidate-written `GITHUB_ENV`, `BASH_ENV`, background process, checkout, or
 executable state can survive the builder teardown.
 The checked-in live fixture
 `scripts/workflow_pilot/tests/fixtures/live_metadata_jobs_33472008301.json`
-captures PR #190 metadata run `33472008301`, which proved Runner's skipped-job
-API returns the literal earlier raw-event expressions with `runner_name: null`
-and `conclusion: skipped`; after the shorter reviewed needs-based expressions
-land, that saved run is a literal-drift negative control.
+and its paired restore-run fixture
+`scripts/workflow_pilot/tests/fixtures/live_metadata_jobs_33472111689.json`
+capture PR #190 metadata runs whose skipped workers reported long literal
+`name:` expressions with `runner_name: null` and `conclusion: skipped`. Those
+raw jobs are negative proof that worker `job.name` expressions are unstable on
+hosted Runner and must not be used for canonical workflow contracts or branch
+protection.
 The current Build workflow has no explicit final-dispatch trigger; if that
 supported surface is introduced later, `workflow_dispatch` classifies as full
 and the trigger/topology contracts must be updated together.

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "issue": 177,
+  "workflow": "Build CI",
+  "required_build_contexts": [
+    "summary"
+  ],
+  "nonrequired_build_contexts": [
+    "event-identity",
+    "event-router",
+    "event-classifier",
+    "metadata-classifier",
+    "metadata-summary",
+    "host-tests",
+    "build",
+    "extended-host-tests",
+    "legacy",
+    "patch-release"
+  ],
+  "preserve_existing_independent_contexts": true,
+  "negative_proof_run_ids": [
+    33472008301,
+    33472111689
+  ],
+  "migration_notes": [
+    "Do not require host-tests, build, extended-host-tests, legacy, or metadata-summary directly in repository branch protection or rulesets.",
+    "Require the canonical summary context from Build CI for both pull_request and push evidence.",
+    "Preserve any independent security or review contexts already enforced by the repository."
+  ],
+  "verification": {
+    "full_summary_must_require_worker_success": true,
+    "metadata_runs_must_not_publish_summary": true,
+    "later_metadata_must_not_replace_required_summary": true
+  }
+}

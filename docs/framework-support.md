@@ -29,12 +29,11 @@ source-changing push/PR.** A PR candidate uses the complete combined Build
 gate and Copilot review concurrently. Parsed body/title-only edits retain the
 identity validator/router plus distinct running `metadata-classifier` and
 `metadata-summary`
-contexts plus distinct skipped-worker checks whose raw API names are the exact
-per-worker literal `needs.event-classifier...` expressions with
-`metadata-host-tests-skipped`, `metadata-build-skipped`,
-`metadata-extended-host-tests-skipped`, and `metadata-legacy-skipped` true
-branches; those unique literal names can never supersede required canonical
-full-worker contexts. Base, mixed, unknown/incomplete,
+contexts plus the canonical skipped worker checks `host-tests`, `build`,
+`extended-host-tests`, and `legacy`; repository rulesets must therefore
+require the fail-closed canonical `summary` context rather than direct worker
+names, while preserving any existing independent security/review contexts.
+Base, mixed, unknown/incomplete,
 opened, synchronize, and reopened events with complete identity fail closed to
 the complete graph. Any missing, malformed, or incoherent base ref/SHA with a
 valid exact PR head also runs the four workers at that head and fails normal
@@ -219,11 +218,9 @@ no ROM build or network access is required for either.
 Prefer focused local checks during iteration. A no-checkout `event-identity`
 validator, base-authoritative `event-router`, and mode-specific classifier
 check precede candidate `host-tests`, `build`, `extended-host-tests`, `legacy`,
-and fail-closed `summary` jobs plus Copilot review. Metadata uses four exact
-literal skipped-worker `name:` expressions whose true branches are
-`metadata-host-tests-skipped`, `metadata-build-skipped`,
-`metadata-extended-host-tests-skipped`, and `metadata-legacy-skipped`, plus a
-distinct running `metadata-summary`; normal `summary`
+and fail-closed `summary` jobs plus Copilot review. Metadata uses the same
+canonical skipped worker names plus a distinct running `metadata-summary`;
+normal `summary`
 is the sole candidate attestation and requires all four workers from that same
 full run. Only parsed body/title-only
 edits skip the four expensive workers. A

@@ -357,11 +357,11 @@ jobs:
   # budget: a normal run is roughly 34 minutes including setup, but shared
   # runner variance has reached the former 45-minute ceiling.
   # All host test steps are genuine gates (required status), not advisory.
-  # Runner renders skipped metadata-worker names as the literal needs-based
-  # expression string, so keep that external API contract short, unique per
-  # worker, and distinct from canonical required contexts.
+  # Worker jobs intentionally keep their canonical job IDs/names even when
+  # metadata-only PR edits skip them with no runner. Repository rulesets must
+  # require the fail-closed `summary` context rather than individual worker
+  # names, because metadata runs publish a distinct `metadata-summary`.
   host-tests:
-    name: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-host-tests-skipped' || 'host-tests' }}
     needs: [event-identity, event-classifier]
     if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && needs.event-identity.result == 'success' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha)))) }}
     runs-on: ubuntu-latest
@@ -545,7 +545,6 @@ jobs:
   # archival CI evidence. Per repository policy, this job ends after its
   # target-ROM checks.
   build:
-    name: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-build-skipped' || 'build' }}
     needs: [event-identity, event-classifier]
     if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && needs.event-identity.result == 'success' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha)))) }}
     runs-on: ubuntu-latest
@@ -687,7 +686,6 @@ jobs:
   # This lane holds unique broader host evidence for both candidate and
   # post-merge Build runs. It is independent of host-tests and build.
   extended-host-tests:
-    name: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-extended-host-tests-skipped' || 'extended-host-tests' }}
     needs: [event-identity, event-classifier]
     if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && needs.event-identity.result == 'success' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha)))) }}
     runs-on: ubuntu-latest
@@ -726,7 +724,6 @@ jobs:
   # The archival lane is a combined-gate member for both candidate and master
   # runs, parallel with the supported modern jobs.
   legacy:
-    name: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-legacy-skipped' || 'legacy' }}
     needs: [event-identity, event-classifier]
     if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && needs.event-identity.result == 'success' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha)))) }}
     runs-on: ubuntu-latest
@@ -1880,6 +1877,9 @@ jobs:
         if-no-files-found: error
         retention-days: 30
 
+  # Repository rulesets should require this canonical `summary` context rather
+  # than individual worker names; metadata-only runs emit `metadata-summary`
+  # while keeping the workers as skipped canonical checks with no runner.
   summary:
     name: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-summary' || 'summary' }}
     if: always()

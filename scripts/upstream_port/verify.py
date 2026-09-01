@@ -141,22 +141,7 @@ _PUBLISHER_CONDITION = (
     "needs.event-identity.outputs.fallback_sha == github.event.after && "
     "needs.event-identity.outputs.fallback_sha == github.sha }}"
 )
-_METADATA_WORKER_NAMES = {
-    "host-tests": "metadata-host-tests-skipped",
-    "build": "metadata-build-skipped",
-    "extended-host-tests": "metadata-extended-host-tests-skipped",
-    "legacy": "metadata-legacy-skipped",
-}
-_METADATA_WORKER_LITERALS = {
-    job_name: (
-        "${{ needs.event-classifier.result == 'success' && "
-        "needs.event-classifier.outputs.classification == 'metadata-only' && "
-        f"'{metadata_name}' || '{job_name}' }}}}"
-    )
-    for job_name, metadata_name in _METADATA_WORKER_NAMES.items()
-}
 _DYNAMIC_JOB_NAMES = {
-    **_METADATA_WORKER_LITERALS,
     "event-classifier": (
         "${{ needs.event-router.result == 'success' && "
         "needs.event-router.outputs.classification == 'metadata-only' && "
@@ -1227,7 +1212,6 @@ def _parse_job_context(job_name, body):
         ],
         **{
             name: [
-                "name",
                 "needs",
                 "if",
                 "runs-on",

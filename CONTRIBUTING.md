@@ -91,6 +91,9 @@ raw-closure, and modern debug/release runtime evidence run only in their
 existing Build owners; no duplicate Matrix path or manual dispatch exists. The
 expected combined-gate wall clock is approximately 35–40 minutes because the
 jobs run in parallel; that operational range is not a duration assertion.
+Repository branch protection or rulesets should require this workflow's
+canonical `summary` context rather than individual worker names, while leaving
+independent security/review contexts unchanged.
 
 If post-merge Build fails, fix forward or revert the affected `master` change.
 That failure blocks the affected issue's closure and

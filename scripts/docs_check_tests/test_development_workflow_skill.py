@@ -622,12 +622,14 @@ def workflow_tester_topology_violations(text):
     )
     current_jobs = workflow_job_ids(BUILD_WORKFLOW_PATH)
     selected_full_pr_jobs = current_jobs - {"patch-release"}
-    metadata_literals = frozenset(candidate_evidence.METADATA_WORKER_LITERALS.values())
     expected = {
         "stacked-full-pr": selected_full_pr_jobs,
-        "current-metadata": metadata_literals
-        | frozenset(
+        "current-metadata": frozenset(
             {
+                "host-tests",
+                "build",
+                "extended-host-tests",
+                "legacy",
                 "event-identity",
                 "event-router",
                 "metadata-classifier",
@@ -637,9 +639,12 @@ def workflow_tester_topology_violations(text):
         ),
         "preserved-pre-fix": workflow_job_ids(PRE_FIX_BUILD_WORKFLOW_PATH),
         "live-opened-full": current_jobs,
-        "live-title-metadata": metadata_literals
-        | frozenset(
+        "live-title-metadata": frozenset(
             {
+                "host-tests",
+                "build",
+                "extended-host-tests",
+                "legacy",
                 "event-identity",
                 "event-router",
                 "metadata-classifier",
@@ -647,9 +652,12 @@ def workflow_tester_topology_violations(text):
                 "metadata-summary",
             }
         ),
-        "live-restore-metadata": metadata_literals
-        | frozenset(
+        "live-restore-metadata": frozenset(
             {
+                "host-tests",
+                "build",
+                "extended-host-tests",
+                "legacy",
                 "event-identity",
                 "event-router",
                 "metadata-classifier",
@@ -690,7 +698,7 @@ def workflow_tester_topology_violations(text):
         if documented[name] != expected[name]
     ]
     skipped_names_contract = normalize_policy(
-        "those unique literal names can never supersede required full"
+        "repository branch protection must require the fail closed canonical summary context rather than individual worker names"
     )
     if skipped_names_contract not in normalize_policy(body_case):
         violations.append("skipped-worker-names-are-semantic")
@@ -3857,8 +3865,9 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         self.assertEqual(workflow_tester_topology_violations(reordered), [])
 
         semantic_names, count = re.subn(
-            r"[Tt]hose unique literal\s+names can never\s+supersede required full",
-            "literal metadata worker names can replace required full contexts",
+            r"repository branch protection must require\s+the fail-closed "
+            r"canonical `summary` context rather than individual worker\s+names",
+            "branch protection may require host-tests and build directly",
             governance,
             1,
         )
@@ -3942,15 +3951,13 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "metadata-classifier",
             "metadata-summary",
         )
-        metadata_skipped_names = tuple(
-            candidate_evidence.METADATA_WORKER_LITERALS[job_id]
-            for job_id in (
-                "host-tests",
-                "build",
-                "extended-host-tests",
-                "legacy",
-            )
-        ) + ("patch-release",)
+        metadata_skipped_names = (
+            "host-tests",
+            "build",
+            "extended-host-tests",
+            "legacy",
+            "patch-release",
+        )
         full_jobs = [
             job_record(index, name)
             for index, name in enumerate(full_names, start=100)
