@@ -51,6 +51,7 @@ WORKFLOW_REVIEW_FAMILY_CASE = "TC-WORKFLOW-REVIEW-FAMILY-001"
 CURRENT_IMPLEMENTATION_ISSUE = (
     "https://github.com/laqieer/fireemblem8-expansion/issues/179"
 )
+_UNKNOWN = object()
 
 
 class AssertionFailure(Exception):
@@ -249,35 +250,152 @@ def function_def(module: ast.Module, name: str) -> ast.FunctionDef:
     raise AssertionFailure(f"{name} is unavailable")
 
 
-def constant_truth(node: ast.AST) -> bool | None:
+def class_def(module: ast.Module, name: str) -> ast.ClassDef:
+    for statement in module.body:
+        if isinstance(statement, ast.ClassDef) and statement.name == name:
+            return statement
+    raise AssertionFailure(f"{name} is unavailable")
+
+
+def method_def(module: ast.Module, class_name: str, method_name: str) -> ast.FunctionDef:
+    for statement in class_def(module, class_name).body:
+        if isinstance(statement, ast.FunctionDef) and statement.name == method_name:
+            return statement
+    raise AssertionFailure(f"{class_name}.{method_name} is unavailable")
+
+
+def constant_value(node: ast.AST) -> Any:
     if isinstance(node, ast.Constant):
-        if isinstance(node.value, bool):
-            return node.value
-        if node.value in (0, 1, None):
-            return bool(node.value)
-    return None
+        return node.value
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        values = [constant_value(item) for item in node.elts]
+        if any(value is _UNKNOWN for value in values):
+            return _UNKNOWN
+        if isinstance(node, ast.Tuple):
+            return tuple(values)
+        if isinstance(node, ast.List):
+            return list(values)
+        return set(values)
+    if isinstance(node, ast.Dict):
+        pairs = []
+        for key, value in zip(node.keys, node.values):
+            resolved_key = constant_value(key)
+            resolved_value = constant_value(value)
+            if resolved_key is _UNKNOWN or resolved_value is _UNKNOWN:
+                return _UNKNOWN
+            pairs.append((resolved_key, resolved_value))
+        return dict(pairs)
+    if isinstance(node, ast.UnaryOp):
+        operand = constant_value(node.operand)
+        if operand is _UNKNOWN:
+            return _UNKNOWN
+        try:
+            if isinstance(node.op, ast.Not):
+                return not operand
+            if isinstance(node.op, ast.UAdd):
+                return +operand
+            if isinstance(node.op, ast.USub):
+                return -operand
+            if isinstance(node.op, ast.Invert):
+                return ~operand
+        except TypeError:
+            return _UNKNOWN
+        return _UNKNOWN
+    if isinstance(node, ast.BoolOp):
+        if isinstance(node.op, ast.And):
+            result = True
+            for value in node.values:
+                result = constant_value(value)
+                if result is _UNKNOWN:
+                    return _UNKNOWN
+                if not result:
+                    return result
+            return result
+        if isinstance(node.op, ast.Or):
+            last = False
+            for value in node.values:
+                last = constant_value(value)
+                if last is _UNKNOWN:
+                    return _UNKNOWN
+                if last:
+                    return last
+            return last
+        return _UNKNOWN
+    if isinstance(node, ast.BinOp):
+        left = constant_value(node.left)
+        right = constant_value(node.right)
+        if left is _UNKNOWN or right is _UNKNOWN:
+            return _UNKNOWN
+        try:
+            if isinstance(node.op, ast.Add):
+                return left + right
+            if isinstance(node.op, ast.Sub):
+                return left - right
+            if isinstance(node.op, ast.Mult):
+                return left * right
+            if isinstance(node.op, ast.FloorDiv):
+                return left // right
+            if isinstance(node.op, ast.Mod):
+                return left % right
+            if isinstance(node.op, ast.BitOr):
+                return left | right
+            if isinstance(node.op, ast.BitAnd):
+                return left & right
+            if isinstance(node.op, ast.BitXor):
+                return left ^ right
+            if isinstance(node.op, ast.LShift):
+                return left << right
+            if isinstance(node.op, ast.RShift):
+                return left >> right
+        except (TypeError, ZeroDivisionError):
+            return _UNKNOWN
+        return _UNKNOWN
+    if isinstance(node, ast.Compare):
+        left = constant_value(node.left)
+        if left is _UNKNOWN:
+            return _UNKNOWN
+        current = left
+        for operator, comparator in zip(node.ops, node.comparators):
+            right = constant_value(comparator)
+            if right is _UNKNOWN:
+                return _UNKNOWN
+            try:
+                if isinstance(operator, ast.Eq):
+                    matched = current == right
+                elif isinstance(operator, ast.NotEq):
+                    matched = current != right
+                elif isinstance(operator, ast.Is):
+                    matched = current is right
+                elif isinstance(operator, ast.IsNot):
+                    matched = current is not right
+                elif isinstance(operator, ast.Lt):
+                    matched = current < right
+                elif isinstance(operator, ast.LtE):
+                    matched = current <= right
+                elif isinstance(operator, ast.Gt):
+                    matched = current > right
+                elif isinstance(operator, ast.GtE):
+                    matched = current >= right
+                elif isinstance(operator, ast.In):
+                    matched = current in right
+                elif isinstance(operator, ast.NotIn):
+                    matched = current not in right
+                else:
+                    return _UNKNOWN
+            except TypeError:
+                return _UNKNOWN
+            if not matched:
+                return False
+            current = right
+        return True
+    return _UNKNOWN
 
 
-def statement_blocks(node: ast.AST) -> list[list[ast.stmt]]:
-    result: list[list[ast.stmt]] = []
-    for name in ("body", "orelse", "finalbody"):
-        value = getattr(node, name, None)
-        if isinstance(value, list) and value and all(
-            isinstance(item, ast.stmt) for item in value
-        ):
-            result.append(value)
-    handlers = getattr(node, "handlers", None)
-    if isinstance(handlers, list):
-        for handler in handlers:
-            if isinstance(handler, ast.ExceptHandler):
-                result.append(handler.body)
-    cases = getattr(node, "cases", None)
-    if isinstance(cases, list):
-        for case in cases:
-            body = getattr(case, "body", None)
-            if isinstance(body, list):
-                result.append(body)
-    return result
+def constant_truth(node: ast.AST) -> bool | None:
+    value = constant_value(node)
+    if value is _UNKNOWN:
+        return None
+    return bool(value)
 
 
 def iter_value_nodes(value: Any):
@@ -293,41 +411,93 @@ def iter_value_nodes(value: Any):
             yield from iter_value_nodes(item)
 
 
+def _is_docstring_statement(statement: ast.stmt) -> bool:
+    return (
+        isinstance(statement, ast.Expr)
+        and isinstance(statement.value, ast.Constant)
+        and isinstance(statement.value.value, str)
+    )
+
+
+def _iter_nested_blocks(
+    statement: ast.stmt, *, descend_definitions: bool
+):
+    if isinstance(statement, ast.If):
+        truth = constant_truth(statement.test)
+        if truth is True:
+            yield from _iter_live_block(
+                statement.body, descend_definitions=descend_definitions
+            )
+            return
+        if truth is False:
+            yield from _iter_live_block(
+                statement.orelse, descend_definitions=descend_definitions
+            )
+            return
+        yield from _iter_live_block(
+            statement.body, descend_definitions=descend_definitions
+        )
+        yield from _iter_live_block(
+            statement.orelse, descend_definitions=descend_definitions
+        )
+        return
+    if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if descend_definitions:
+            yield from _iter_live_block(statement.body, descend_definitions=False)
+        return
+    if isinstance(statement, ast.ClassDef):
+        if descend_definitions:
+            yield from _iter_live_block(statement.body, descend_definitions=True)
+        return
+    for name in ("body", "orelse", "finalbody"):
+        value = getattr(statement, name, None)
+        if isinstance(value, list):
+            yield from _iter_live_block(value, descend_definitions=descend_definitions)
+    if isinstance(statement, ast.Match):
+        for case in statement.cases:
+            yield from _iter_live_block(
+                case.body, descend_definitions=descend_definitions
+            )
+
+
+def _iter_live_statement(
+    statement: ast.stmt, *, descend_definitions: bool
+):
+    yield statement
+    for field, value in ast.iter_fields(statement):
+        if field in {"body", "orelse", "finalbody", "handlers", "cases"}:
+            continue
+        yield from iter_value_nodes(value)
+    yield from _iter_nested_blocks(
+        statement, descend_definitions=descend_definitions
+    )
+
+
+def _iter_live_block(
+    statements: list[ast.stmt], *, descend_definitions: bool
+):
+    for statement in statements:
+        if _is_docstring_statement(statement):
+            continue
+        yield from _iter_live_statement(
+            statement, descend_definitions=descend_definitions
+        )
+        if isinstance(statement, (ast.Return, ast.Raise, ast.Continue, ast.Break)):
+            break
+
+
 def iter_live_nodes(node: ast.AST):
-    bodies = []
     if isinstance(node, ast.Module):
-        bodies.append(node.body)
-    elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-        bodies.append(node.body)
+        yield from _iter_live_block(node.body, descend_definitions=True)
+    elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        yield from _iter_live_block(node.body, descend_definitions=False)
+    elif isinstance(node, ast.ClassDef):
+        yield from _iter_live_block(node.body, descend_definitions=True)
     elif isinstance(node, ast.stmt):
-        bodies.append([node])
+        yield from _iter_live_statement(node, descend_definitions=False)
     else:
         yield from iter_value_nodes(node)
-        return
-    while bodies:
-        statements = bodies.pop()
-        for statement in statements:
-            if (
-                isinstance(statement, ast.Expr)
-                and isinstance(statement.value, ast.Constant)
-                and isinstance(statement.value.value, str)
-            ):
-                continue
-            if isinstance(statement, ast.If):
-                truth = constant_truth(statement.test)
-                if truth is True:
-                    bodies.append(statement.body)
-                    continue
-                if truth is False:
-                    bodies.append(statement.orelse)
-                    continue
-            yield statement
-            for field, value in ast.iter_fields(statement):
-                if field in {"body", "orelse", "finalbody", "handlers", "cases"}:
-                    continue
-                yield from iter_value_nodes(value)
-            for block in reversed(statement_blocks(statement)):
-                bodies.append(block)
+    return
 
 
 def dict_entry_value(node: ast.AST, key: str) -> ast.AST | None:
@@ -505,7 +675,142 @@ def workflow_registry(root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     return feature, case
 
 
-def evaluate_action_actions(root: Path) -> dict[str, Any]:
+def sample_change_records() -> list[dict[str, Any]]:
+    return [
+        {
+            "status": "A",
+            "similarity": None,
+            "old_path": None,
+            "new_path": "docs/new.md",
+            "base_mode": None,
+            "base_blob_oid": None,
+            "head_mode": "100644",
+            "head_blob_oid": "1" * 40,
+        },
+        {
+            "status": "D",
+            "similarity": None,
+            "old_path": "docs/deleted.md",
+            "new_path": None,
+            "base_mode": "100644",
+            "base_blob_oid": "2" * 40,
+            "head_mode": None,
+            "head_blob_oid": None,
+        },
+        {
+            "status": "M",
+            "similarity": None,
+            "old_path": "docs/a.md",
+            "new_path": "docs/a.md",
+            "base_mode": "100644",
+            "base_blob_oid": "3" * 40,
+            "head_mode": "100644",
+            "head_blob_oid": "4" * 40,
+        },
+        {
+            "status": "R",
+            "similarity": 90,
+            "old_path": "docs/old.md",
+            "new_path": "docs/renamed.md",
+            "base_mode": "100644",
+            "base_blob_oid": "5" * 40,
+            "head_mode": "100644",
+            "head_blob_oid": "6" * 40,
+        },
+        {
+            "status": "C",
+            "similarity": 100,
+            "old_path": "docs/source.md",
+            "new_path": "docs/copied.md",
+            "base_mode": "100644",
+            "base_blob_oid": "7" * 40,
+            "head_mode": "100644",
+            "head_blob_oid": "8" * 40,
+        },
+    ]
+
+
+def changed_paths(changes: list[dict[str, Any]]) -> list[str]:
+    return sorted(
+        {
+            path
+            for change in changes
+            for path in (change["old_path"], change["new_path"])
+            if path is not None
+        }
+    )
+
+
+def sample_review_report(
+    changes: list[dict[str, Any]],
+    *,
+    actions: tuple[str, ...] | list[str],
+    reviewed_files: list[str] | None = None,
+    reviewed_changes: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    return {
+        "schema_version": 2,
+        "report_id": "PRE_REVIEW_001",
+        "repository": "example/project",
+        "pull_request": 7,
+        "base_sha": "a" * 40,
+        "candidate_sha": "b" * 40,
+        "reviewer_actor_id": "REVIEWER_1",
+        "reviewer_login": "fresh-reviewer",
+        "implementer_actor_id": "IMPLEMENTER_1",
+        "implementer_login": "implementer",
+        "started_at": "2026-09-01T00:00:00Z",
+        "completed_at": "2026-09-01T00:01:00Z",
+        "permissions": ["contents:read"],
+        "actions": list(actions),
+        "reviewed_files": changed_paths(changes) if reviewed_files is None else reviewed_files,
+        "reviewed_changes": changes if reviewed_changes is None else reviewed_changes,
+        "findings": [
+            {
+                "id": "LOCAL-ACTION-1",
+                "family": "action",
+                "created_at": "2026-09-01T00:00:30Z",
+            }
+        ],
+    }
+
+
+def validate_sample_report(
+    checker,
+    *,
+    actions: tuple[str, ...] | list[str],
+    reviewed_files: list[str] | None = None,
+    reviewed_changes: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    changes = checker.validate_change_records(sample_change_records(), "changes")
+    report = sample_review_report(
+        changes,
+        actions=actions,
+        reviewed_files=reviewed_files,
+        reviewed_changes=reviewed_changes,
+    )
+    return checker._validate_report(
+        report,
+        repository="example/project",
+        pull_request=7,
+        base_sha="a" * 40,
+        candidate_sha="b" * 40,
+        changed_files=changed_paths(changes),
+        changes=changes,
+    )
+
+
+def expect_checker_rejection(checker, callback, message: str) -> str:
+    try:
+        callback()
+    except checker.CheckError as error:
+        return str(error)
+    raise AssertionFailure(message)
+
+
+def evaluate_action_actions(
+    root: Path, _binding: dict[str, Any] | None = None
+) -> dict[str, Any]:
     checker = load_plain_module(root, "scripts/workflow_pilot/review_base_checker.py")
     family = load_python_ast(root, "scripts/workflow_pilot/review_family.py")
     producer = tuple(checker.ACTION_SEQUENCE)
@@ -513,128 +818,118 @@ def evaluate_action_actions(root: Path) -> dict[str, Any]:
     expected = ("read-candidate", "emit-local-report")
     if producer != expected or consumer != expected:
         raise AssertionFailure("read-only action sequence is not exact")
-    return {"sequence": list(producer)}
-
-
-def evaluate_action_items(root: Path) -> dict[str, Any]:
-    checker = load_plain_module(root, "scripts/workflow_pilot/review_base_checker.py")
-    binding = checker._bind_member_request(
-        {
-            "round_findings": {
-                "FINDING": {
-                    "family": "action",
-                    "review_id": "REMOTE",
-                    "review_round": 1,
-                    "finding_head_sha": "a" * 40,
-                    "finding_head_tree": "b" * 40,
-                    "finding_origin_sha": "c" * 40,
-                    "finding_origin_tree": "d" * 40,
-                }
-            },
-            "candidate_sha": "e" * 40,
-            "candidate_tree": "f" * 40,
-        },
-        {
-            "family": "action",
-            "member": "items",
-            "outcome": "affected-fixed",
-            "reason": None,
-        },
-        "FINDING",
+    positive = validate_sample_report(checker, actions=producer)
+    expect_checker_rejection(
+        checker,
+        lambda: validate_sample_report(
+            checker, actions=("emit-local-report", "read-candidate")
+        ),
+        "read-only action sequence is not enforced",
     )
-    if binding["finding_member"] != "items":
+    return {"sequence": positive["actions"]}
+
+
+def evaluate_action_items(
+    root: Path, binding: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    if binding is None:
+        raise AssertionFailure("member authority binding is unavailable")
+    checker = load_plain_module(root, "scripts/workflow_pilot/review_base_checker.py")
+    primary_finding_id = binding["finding_id"]
+    alternate_finding_id = f"{primary_finding_id}-ALT"
+    alternate_review_id = f"{binding['finding_review_id']}-ALT"
+    data = {
+        "round_findings": {
+            primary_finding_id: {
+                "family": "action",
+                "review_id": binding["finding_review_id"],
+                "review_round": binding["finding_review_round"],
+                "finding_head_sha": binding["finding_head_sha"],
+                "finding_head_tree": binding["finding_head_tree"],
+                "finding_origin_sha": binding["finding_origin_sha"],
+                "finding_origin_tree": binding["finding_origin_tree"],
+            },
+            alternate_finding_id: {
+                "family": "action",
+                "review_id": alternate_review_id,
+                "review_round": binding["finding_review_round"] + 1,
+                "finding_head_sha": "1" * 40,
+                "finding_head_tree": "2" * 40,
+                "finding_origin_sha": "3" * 40,
+                "finding_origin_tree": "4" * 40,
+            },
+        },
+        "candidate_sha": binding["head_sha"],
+        "candidate_tree": binding["head_tree"],
+    }
+    parsed = {
+        "family": "action",
+        "member": "items",
+        "outcome": "affected-fixed",
+        "reason": None,
+    }
+    request_binding = checker._bind_member_request(
+        data,
+        parsed,
+        primary_finding_id,
+    )
+    if request_binding != {
+        "finding_id": primary_finding_id,
+        "finding_family": "action",
+        "finding_member": "items",
+        "finding_review_id": binding["finding_review_id"],
+        "finding_review_round": binding["finding_review_round"],
+        "finding_head_sha": binding["finding_head_sha"],
+        "finding_head_tree": binding["finding_head_tree"],
+        "finding_origin_sha": binding["finding_origin_sha"],
+        "finding_origin_tree": binding["finding_origin_tree"],
+        "head_sha": binding["head_sha"],
+        "head_tree": binding["head_tree"],
+    }:
         raise AssertionFailure("member-item authority binding is incomplete")
-    if binding["finding_family"] != "action":
-        raise AssertionFailure("member-item finding family is incorrect")
-    if binding["head_sha"] != "e" * 40 or binding["head_tree"] != "f" * 40:
-        raise AssertionFailure("member-item head binding is incorrect")
-    if binding["finding_origin_sha"] != "c" * 40:
-        raise AssertionFailure("member-item origin binding is incorrect")
+    alternate_binding = checker._bind_member_request(
+        data,
+        parsed,
+        alternate_finding_id,
+    )
+    if alternate_binding != {
+        "finding_id": alternate_finding_id,
+        "finding_family": "action",
+        "finding_member": "items",
+        "finding_review_id": alternate_review_id,
+        "finding_review_round": binding["finding_review_round"] + 1,
+        "finding_head_sha": "1" * 40,
+        "finding_head_tree": "2" * 40,
+        "finding_origin_sha": "3" * 40,
+        "finding_origin_tree": "4" * 40,
+        "head_sha": binding["head_sha"],
+        "head_tree": binding["head_tree"],
+    }:
+        raise AssertionFailure("member-item authority binding is incomplete")
     return {"checker_binding": True, "assertion_binding": True}
 
 
-def evaluate_action_targets(root: Path) -> dict[str, Any]:
+def evaluate_action_targets(
+    root: Path, _binding: dict[str, Any] | None = None
+) -> dict[str, Any]:
     checker = load_plain_module(root, "scripts/workflow_pilot/review_base_checker.py")
-    checker_ast = load_python_ast(root, "scripts/workflow_pilot/review_base_checker.py")
-    changes = checker.validate_change_records(
-        [
-            {
-                "status": "A",
-                "similarity": None,
-                "old_path": None,
-                "new_path": "docs/new.md",
-                "base_mode": None,
-                "base_blob_oid": None,
-                "head_mode": "100644",
-                "head_blob_oid": "1" * 40,
-            },
-            {
-                "status": "D",
-                "similarity": None,
-                "old_path": "docs/deleted.md",
-                "new_path": None,
-                "base_mode": "100644",
-                "base_blob_oid": "2" * 40,
-                "head_mode": None,
-                "head_blob_oid": None,
-            },
-            {
-                "status": "M",
-                "similarity": None,
-                "old_path": "docs/a.md",
-                "new_path": "docs/a.md",
-                "base_mode": "100644",
-                "base_blob_oid": "3" * 40,
-                "head_mode": "100644",
-                "head_blob_oid": "4" * 40,
-            },
-            {
-                "status": "R",
-                "similarity": 90,
-                "old_path": "docs/old.md",
-                "new_path": "docs/renamed.md",
-                "base_mode": "100644",
-                "base_blob_oid": "5" * 40,
-                "head_mode": "100644",
-                "head_blob_oid": "6" * 40,
-            },
-            {
-                "status": "C",
-                "similarity": 100,
-                "old_path": "docs/source.md",
-                "new_path": "docs/copied.md",
-                "base_mode": "100644",
-                "base_blob_oid": "7" * 40,
-                "head_mode": "100644",
-                "head_blob_oid": "8" * 40,
-            },
-        ],
-        "changes",
+    changes = checker.validate_change_records(sample_change_records(), "changes")
+    validate_sample_report(checker, actions=checker.ACTION_SEQUENCE)
+    expect_checker_rejection(
+        checker,
+        lambda: validate_sample_report(
+            checker,
+            actions=checker.ACTION_SEQUENCE,
+            reviewed_files=["docs/new.md"],
+        ),
+        "exact changed-file coverage is not enforced",
     )
-    report = function_def(checker_ast, "_validate_report")
-    if not any(
-        isinstance(node, ast.Compare)
-        and len(node.ops) == 1
-        and isinstance(node.ops[0], ast.NotEq)
-        and len(node.comparators) == 1
-        and isinstance(node.left, ast.Call)
-        and isinstance(node.comparators[0], ast.Call)
-        and path_of(node.left.func) == ("set",)
-        and path_of(node.comparators[0].func) == ("set",)
-        and {
-            path_of(node.left.args[0])[0] if node.left.args and path_of(node.left.args[0]) else None,
-            path_of(node.comparators[0].args[0])[0]
-            if node.comparators[0].args and path_of(node.comparators[0].args[0])
-            else None,
-        }
-        == {"reviewed_files", "changed_files"}
-        for node in iter_live_nodes(report)
-    ):
-        raise AssertionFailure("exact changed-file coverage is not enforced")
     return {"statuses": sorted({change["status"] for change in changes})}
 
 
-def evaluate_generated_owners(root: Path) -> dict[str, Any]:
+def evaluate_generated_owners(
+    root: Path, _binding: dict[str, Any] | None = None
+) -> dict[str, Any]:
     feature, _ = workflow_registry(root)
     issue_urls = sorted(feature["issue_urls"])
     required_cases = sorted(feature["required_cases"])
@@ -645,7 +940,9 @@ def evaluate_generated_owners(root: Path) -> dict[str, Any]:
     return {"issue_urls": issue_urls, "required_cases": required_cases}
 
 
-def evaluate_generated_outputs(root: Path) -> dict[str, Any]:
+def evaluate_generated_outputs(
+    root: Path, _binding: dict[str, Any] | None = None
+) -> dict[str, Any]:
     candidate = load_plain_module(root, "scripts/workflow_pilot/candidate_evidence.py")
     classifier = load_plain_module(root, "scripts/workflow_pilot/event_classifier.py")
     worker_job_ids = tuple(candidate.WORKER_JOB_IDS)
@@ -680,8 +977,16 @@ def evaluate_generated_outputs(root: Path) -> dict[str, Any]:
     }
 
 
-def evaluate_generated_consumers(root: Path) -> dict[str, Any]:
+def evaluate_generated_consumers(
+    root: Path, _binding: dict[str, Any] | None = None
+) -> dict[str, Any]:
     topology = load_python_ast(root, "tests/workflows/test_build_ci_topology.py")
+    triggered_jobs = function_def(topology, "_triggered_jobs")
+    metadata_contexts = method_def(
+        topology,
+        "ConsolidatedBuildTopologyTests",
+        "test_metadata_check_contexts_cannot_replace_candidate_contexts",
+    )
     imports = [
         statement
         for statement in topology.body
@@ -706,11 +1011,11 @@ def evaluate_generated_consumers(root: Path) -> dict[str, Any]:
     }:
         raise AssertionFailure("workflow topology tests do not define candidate full jobs")
     assign_string_constant(topology, "WORKFLOW_PILOT_BASELINE_GATE")
-    if not has_live_call(topology, ("event_classifier", "classify_event")):
+    if not has_live_call(triggered_jobs, ("event_classifier", "classify_event")):
         raise AssertionFailure("workflow topology tests do not execute event classification")
     attribute_paths = {
         path_of(node)
-        for node in iter_live_nodes(topology)
+        for node in iter_live_nodes(metadata_contexts)
         if isinstance(node, ast.Attribute)
     }
     if not {
@@ -723,27 +1028,39 @@ def evaluate_generated_consumers(root: Path) -> dict[str, Any]:
     return {"topology_consumer": True}
 
 
-def evaluate_generated_drift_checks(root: Path) -> dict[str, Any]:
+def evaluate_generated_drift_checks(
+    root: Path, _binding: dict[str, Any] | None = None
+) -> dict[str, Any]:
     docs = load_python_ast(root, "scripts/docs_check_tests/test_check_docs.py")
     skill = load_python_ast(
         root, "scripts/docs_check_tests/test_development_workflow_skill.py"
     )
+    registry_checks = method_def(
+        docs,
+        "TesterCaseRegistryTests",
+        "test_late_shipped_contracts_are_complete_and_fail_closed",
+    )
+    manual_handoff = method_def(
+        skill,
+        "DevelopmentWorkflowSkillTests",
+        "test_manual_handoff_json_contract_and_human_links",
+    )
     if not any(
         isinstance(node, ast.Dict)
         and dict_entry_value(node, WORKFLOW_REVIEW_FAMILY_CASE) is not None
-        for node in iter_live_nodes(docs)
+        for node in iter_live_nodes(registry_checks)
     ):
         raise AssertionFailure("docs drift checks do not cover the review-family case")
     if not any(
         isinstance(node, ast.Dict)
         and dict_entry_value(node, WORKFLOW_FEATURE_ID) is not None
-        for node in iter_live_nodes(docs)
+        for node in iter_live_nodes(registry_checks)
     ):
         raise AssertionFailure("docs drift checks do not cover workflow-governance")
     if not any(
         isinstance(value, ast.List)
         and WORKFLOW_REVIEW_FAMILY_CASE in literal_string_set(value)
-        for value in assignment_values(skill, "expected_cases")
+        for value in assignment_values(manual_handoff, "expected_cases")
     ):
         raise AssertionFailure("docs drift checks do not cover the review-family case")
     if not any(
@@ -754,13 +1071,15 @@ def evaluate_generated_drift_checks(root: Path) -> dict[str, Any]:
         and node.args[1].id == "expected_cases"
         and isinstance(node.args[2], ast.Constant)
         and node.args[2].value == "workflow-governance.required_cases"
-        for node in iter_live_nodes(skill)
+        for node in iter_live_nodes(manual_handoff)
     ):
         raise AssertionFailure("docs drift checks do not cover workflow-governance")
     return {"docs_checks": True}
 
 
-def evaluate_lifecycle_entries(root: Path) -> dict[str, Any]:
+def evaluate_lifecycle_entries(
+    root: Path, _binding: dict[str, Any] | None = None
+) -> dict[str, Any]:
     family = load_python_ast(root, "scripts/workflow_pilot/review_family.py")
     progress = function_def(family, "_progress_rounds")
     pending_values = assignment_values(progress, "pending")
@@ -793,7 +1112,9 @@ def evaluate_lifecycle_entries(root: Path) -> dict[str, Any]:
     return {"hold_reason": "third-consecutive-change-request"}
 
 
-def evaluate_lifecycle_preservation(root: Path) -> dict[str, Any]:
+def evaluate_lifecycle_preservation(
+    root: Path, _binding: dict[str, Any] | None = None
+) -> dict[str, Any]:
     trusted = load_python_ast(root, "scripts/workflow_pilot/trusted_review_gate.py")
     run = function_def(trusted, "_run_trusted_gate")
     main = function_def(trusted, "main")
@@ -817,7 +1138,9 @@ def evaluate_lifecycle_preservation(root: Path) -> dict[str, Any]:
     return {"preserved_receipt": True}
 
 
-def evaluate_lifecycle_resets(root: Path) -> dict[str, Any]:
+def evaluate_lifecycle_resets(
+    root: Path, _binding: dict[str, Any] | None = None
+) -> dict[str, Any]:
     progress = function_def(
         load_python_ast(root, "scripts/workflow_pilot/review_family.py"),
         "_progress_rounds",
@@ -835,7 +1158,9 @@ def evaluate_lifecycle_resets(root: Path) -> dict[str, Any]:
     return {"resets": 2}
 
 
-def evaluate_lifecycle_terminals(root: Path) -> dict[str, Any]:
+def evaluate_lifecycle_terminals(
+    root: Path, _binding: dict[str, Any] | None = None
+) -> dict[str, Any]:
     trusted = load_python_ast(root, "scripts/workflow_pilot/trusted_review_gate.py")
     bootstrap = function_def(trusted, "_bootstrap_result")
     returns = return_values(bootstrap)
@@ -856,7 +1181,9 @@ def evaluate_lifecycle_terminals(root: Path) -> dict[str, Any]:
     return {"terminal_gates": True}
 
 
-def evaluate_resource_enabled(root: Path) -> dict[str, Any]:
+def evaluate_resource_enabled(
+    root: Path, _binding: dict[str, Any] | None = None
+) -> dict[str, Any]:
     decisions = expect_object(load_json_file(root, ".github/workflow-pilot-decisions.json"), "decision record")
     pull_requests = decisions.get("pull_requests")
     if not isinstance(pull_requests, list):
@@ -914,7 +1241,9 @@ def evaluate_resource_enabled(root: Path) -> dict[str, Any]:
     return trigger
 
 
-def evaluate_resource_disabled(root: Path) -> dict[str, Any]:
+def evaluate_resource_disabled(
+    root: Path, _binding: dict[str, Any] | None = None
+) -> dict[str, Any]:
     trusted = load_python_ast(root, "scripts/workflow_pilot/trusted_review_gate.py")
     run = function_def(trusted, "_run_trusted_gate")
     bootstrap = function_def(trusted, "_bootstrap_result")
@@ -943,7 +1272,9 @@ def evaluate_resource_disabled(root: Path) -> dict[str, Any]:
     return {"introduction_mode": True}
 
 
-def evaluate_wire_producers(root: Path) -> dict[str, Any]:
+def evaluate_wire_producers(
+    root: Path, _binding: dict[str, Any] | None = None
+) -> dict[str, Any]:
     trusted = load_python_ast(root, "scripts/workflow_pilot/trusted_review_gate.py")
     run = function_def(trusted, "_run_trusted_gate")
     collect = function_def(trusted, "collect_live_evidence_bytes")
@@ -960,7 +1291,9 @@ def evaluate_wire_producers(root: Path) -> dict[str, Any]:
     return {"producers": True}
 
 
-def evaluate_wire_consumers(root: Path) -> dict[str, Any]:
+def evaluate_wire_consumers(
+    root: Path, _binding: dict[str, Any] | None = None
+) -> dict[str, Any]:
     family = load_python_ast(root, "scripts/workflow_pilot/review_family.py")
     validate = function_def(family, "validate_evidence")
     build = function_def(family, "build_report")
@@ -982,7 +1315,9 @@ def evaluate_wire_consumers(root: Path) -> dict[str, Any]:
     return {"consumers": True}
 
 
-def evaluate_wire_validators(root: Path) -> dict[str, Any]:
+def evaluate_wire_validators(
+    root: Path, _binding: dict[str, Any] | None = None
+) -> dict[str, Any]:
     checker = load_python_ast(root, "scripts/workflow_pilot/review_base_checker.py")
     family = load_python_ast(root, "scripts/workflow_pilot/review_family.py")
     execute_registry = function_def(checker, "execute_registry")
@@ -1005,7 +1340,9 @@ def evaluate_wire_validators(root: Path) -> dict[str, Any]:
     return {"validators": True}
 
 
-def evaluate_wire_replay(root: Path) -> dict[str, Any]:
+def evaluate_wire_replay(
+    root: Path, _binding: dict[str, Any] | None = None
+) -> dict[str, Any]:
     trusted = load_python_ast(root, "scripts/workflow_pilot/trusted_review_gate.py")
     run = function_def(trusted, "_run_trusted_gate")
     names = {
@@ -1032,7 +1369,9 @@ def evaluate_wire_replay(root: Path) -> dict[str, Any]:
     return {"replay": True}
 
 
-def evaluate_wire_stale_bindings(root: Path) -> dict[str, Any]:
+def evaluate_wire_stale_bindings(
+    root: Path, _binding: dict[str, Any] | None = None
+) -> dict[str, Any]:
     trusted = load_python_ast(root, "scripts/workflow_pilot/trusted_review_gate.py")
     checker = load_python_ast(root, "scripts/workflow_pilot/review_base_checker.py")
     collect = function_def(trusted, "collect_live_evidence_bytes")
@@ -1117,7 +1456,12 @@ def execute_behavior(
     return output
 
 
-def evaluate_member_contract(family: str, member: str, root: Path) -> dict[str, Any]:
+def evaluate_member_contract(
+    family: str,
+    member: str,
+    root: Path,
+    binding: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     expected = {path for path in ASSERTION_INPUT_PATHS}
     discovered = set()
     for path in root.rglob("*"):
@@ -1135,7 +1479,7 @@ def evaluate_member_contract(family: str, member: str, root: Path) -> dict[str, 
     evaluator = MEMBER_EVALUATORS.get((family, member))
     if evaluator is None:
         raise AssertionFailure("member evaluator is not registered")
-    return evaluator(root)
+    return evaluator(root, binding)
 
 
 def execute_member(
@@ -1216,14 +1560,14 @@ def execute_member(
     outcome = assertion["outcome"]
     if outcome == "affected-fixed":
         try:
-            evaluate_member_contract(family, member, origin_root)
+            evaluate_member_contract(family, member, origin_root, binding_output)
         except AssertionFailure as error:
             origin_error = str(error)
         else:
             raise AssertionFailure(
                 "affected-fixed origin assertion unexpectedly passed"
             )
-        head_output = evaluate_member_contract(family, member, head_root)
+        head_output = evaluate_member_contract(family, member, head_root, binding_output)
         return {
             **binding_output,
             "program_case": f"member/{family}/{member}/affected-fixed",
@@ -1233,8 +1577,10 @@ def execute_member(
             "head_semantic_output": head_output,
         }
     if outcome == "verified-unaffected":
-        origin_output = evaluate_member_contract(family, member, origin_root)
-        head_output = evaluate_member_contract(family, member, head_root)
+        origin_output = evaluate_member_contract(
+            family, member, origin_root, binding_output
+        )
+        head_output = evaluate_member_contract(family, member, head_root, binding_output)
         if origin_output != head_output:
             raise AssertionFailure(
                 "verified-unaffected semantic outputs are not equivalent"
@@ -1249,7 +1595,7 @@ def execute_member(
             "head_status": "pass",
             "semantic_output_sha256": semantic_output_sha256,
         }
-    head_output = evaluate_member_contract(family, member, head_root)
+    head_output = evaluate_member_contract(family, member, head_root, binding_output)
     if head_output != {"introduction_mode": True}:
         raise AssertionFailure("not-applicable predicate did not establish false")
     return {

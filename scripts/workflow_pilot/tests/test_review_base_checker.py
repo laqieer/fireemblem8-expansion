@@ -7,7 +7,12 @@ import unittest
 from itertools import count
 from pathlib import Path
 
-from scripts.workflow_pilot import reporter, review_base_checker, review_family
+from scripts.workflow_pilot import (
+    reporter,
+    review_assertions,
+    review_base_checker,
+    review_family,
+)
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -176,6 +181,28 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             )
 
     @classmethod
+    def _make_action_enforcement_bypass_head(cls):
+        cls._restore_baseline()
+        cls._replace_once(
+            "scripts/workflow_pilot/review_base_checker.py",
+            '    if report["actions"] != list(ACTION_SEQUENCE):',
+            '    if False and report["actions"] != list(ACTION_SEQUENCE):',
+        )
+        head = cls._commit("action-enforcement-bypass")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
+
+    @classmethod
+    def _make_action_binding_special_case_head(cls):
+        cls._restore_baseline()
+        cls._replace_once(
+            "scripts/workflow_pilot/review_base_checker.py",
+            '"finding_member": parsed["member"],',
+            '"finding_member": parsed["member"] if finding_id == "FINDING" else parsed["family"],',
+        )
+        head = cls._commit("action-binding-special-case")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
+
+    @classmethod
     def _set_generated_owners_health(cls, healthy):
         registry_path = cls.repo / "docs/test-cases/registry.json"
         registry = json.loads(registry_path.read_text(encoding="utf-8"))
@@ -253,6 +280,58 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 '"candidate_manifest": [',
                 '"result_manifest": [',
             )
+
+    @classmethod
+    def _make_wire_producer_spoof_head(cls, kind):
+        cls._restore_baseline()
+        cls._set_wire_producers_health(False)
+        path = cls.repo / "scripts/workflow_pilot/trusted_review_gate.py"
+        text = path.read_text(encoding="utf-8")
+        marker = "    return reporter.normalized_json(raw_evidence)\n"
+        spoof = (
+            "        raw_evidence = {\n"
+            '            "authoritative_trigger": authoritative_trigger,\n'
+            '            "execution_receipts": execution_receipts,\n'
+            '            "result_manifest": [\n'
+            "                result\n"
+            '                for receipt in execution_receipts\n'
+            '                for result in receipt["assertion_results"]\n'
+            "            ],\n"
+            "        }\n"
+        )
+        dead_assignment = (
+            "    raw_evidence = {\n"
+            '        "authoritative_trigger": authoritative_trigger,\n'
+            '        "execution_receipts": execution_receipts,\n'
+            '        "result_manifest": [\n'
+            "            result\n"
+            '            for receipt in execution_receipts\n'
+            '            for result in receipt["assertion_results"]\n'
+            "        ],\n"
+            "    }\n"
+        )
+        if kind == "false":
+            injection = "    if False:\n" + spoof
+            text = text.replace(marker, injection + marker, 1)
+        elif kind == "not-true":
+            injection = "    if not True:\n" + spoof
+            text = text.replace(marker, injection + marker, 1)
+        elif kind == "eq-compare":
+            injection = "    if 0 == 1:\n" + spoof
+            text = text.replace(marker, injection + marker, 1)
+        elif kind == "gt-compare":
+            injection = "    if 1 > 2:\n" + spoof
+            text = text.replace(marker, injection + marker, 1)
+        elif kind == "nested-function":
+            injection = "    def _dead_result_manifest():\n" + spoof + "\n"
+            text = text.replace(marker, injection + marker, 1)
+        elif kind == "after-return":
+            text = text.replace(marker, marker + dead_assignment, 1)
+        else:
+            raise AssertionError(kind)
+        path.write_text(text, encoding="utf-8")
+        head = cls._commit(f"wire-producer-spoof-{kind}")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
 
     @classmethod
     def _make_witness_only_head(cls):
@@ -512,6 +591,16 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         with self.assertRaisesRegex(review_base_checker.CheckError, message):
             self.execute(data)
 
+    def evaluate_member_contract(self, family, member, commit_sha, binding=None):
+        case_root = self.case_dir()
+        root = case_root / "member-root"
+        self.materialize_input_root(commit_sha, root)
+        return review_assertions.evaluate_member_contract(family, member, root, binding)
+
+    def assert_member_rejected(self, family, member, commit_sha, message, binding=None):
+        with self.assertRaisesRegex(review_assertions.AssertionFailure, message):
+            self.evaluate_member_contract(family, member, commit_sha, binding)
+
     def test_round_one_executes_local_finding_with_authoritative_binding(self):
         result = self.execute(self.build_input(review_round=1))
         self.assertEqual(result["registry_version"], 1)
@@ -680,6 +769,50 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                     data, "member-item authority binding is incomplete"
                 )
 
+    def test_action_sequence_enforcement_bypass_fails(self):
+        bypass_head, bypass_tree = self._make_action_enforcement_bypass_head()
+        data = self.build_input(
+            review_round=2,
+            candidate_sha=bypass_head,
+            candidate_tree=bypass_tree,
+            assertion_requests=[
+                {
+                    "assertion_id": (
+                        "registry:sibling:action:actions:verified-unaffected:v2"
+                    ),
+                    "finding_id": "FINDING-ACTION-1",
+                }
+            ],
+        )
+        self.assert_rejected(data, "read-only action sequence is not enforced")
+
+    def test_action_sequence_verified_unaffected_runs_live_validator(self):
+        data = self.build_input(
+            review_round=2,
+            assertion_requests=[
+                {
+                    "assertion_id": (
+                        "registry:sibling:action:actions:verified-unaffected:v2"
+                    ),
+                    "finding_id": "FINDING-ACTION-1",
+                }
+            ],
+        )
+        result = self.execute(data)
+        self.assertEqual(
+            result["results"][0]["output"]["program_case"],
+            "member/action/actions/verified-unaffected",
+        )
+
+    def test_member_binding_special_case_does_not_spoof_real_finding_id(self):
+        spoof_head, spoof_tree = self._make_action_binding_special_case_head()
+        data = self.build_input(
+            review_round=2,
+            candidate_sha=spoof_head,
+            candidate_tree=spoof_tree,
+        )
+        self.assert_rejected(data, "member-item authority binding is incomplete")
+
     def test_whitespace_and_order_refactor_preserves_member_fix(self):
         refactor_head, refactor_tree = self._make_item_refactor_head()
         data = self.build_input(
@@ -695,6 +828,30 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         )
         self.assertEqual(member["output"]["origin_status"], "fail")
         self.assertEqual(member["output"]["head_status"], "pass")
+
+    def test_wire_producer_dead_ast_spoofs_fail(self):
+        for kind in (
+            "false",
+            "not-true",
+            "eq-compare",
+            "gt-compare",
+            "nested-function",
+            "after-return",
+        ):
+            with self.subTest(kind=kind):
+                spoof_head, _ = self._make_wire_producer_spoof_head(kind)
+                self.assert_member_rejected(
+                    "wire",
+                    "producers",
+                    spoof_head,
+                    "wire producers are incomplete",
+                )
+
+    def test_wire_producer_real_contract_still_passes(self):
+        self.assertEqual(
+            self.evaluate_member_contract("wire", "producers", self.head2),
+            {"producers": True},
+        )
 
     def test_round_two_remote_finding_executes_real_remediation_round(self):
         data = self.build_input(review_round=2)
