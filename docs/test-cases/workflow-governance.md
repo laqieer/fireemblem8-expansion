@@ -324,6 +324,12 @@ and their distinct metadata names cannot supersede required full
 `host-tests`, `build`, `extended-host-tests`, or `legacy` contexts.
 Success-shaped, canonical, duplicate, literal, unknown, or spoofed metadata
 worker names reject normalization instead of becoming candidate evidence.
+Those metadata-prefixed names require every scheduling-time raw identity fact
+the workflow can know before jobs start: pull-request event/action, exact
+`refs/pull/<number>/merge` ref, nonempty head/base SHA and base ref, no
+base change, and a real title/body metadata transition. Missing base/head,
+empty base ref/SHA, wrong PR ref, no-op metadata edits, and mixed base edits
+therefore keep canonical full worker names.
 The summary succeeds only when classifier status is `success`, the classified
 SHA equals the event's validated exact `pull_request.head.sha`, event number
 matches the exact `refs/pull/<number>/merge` ref, suppression is exactly false,
@@ -335,7 +341,11 @@ workers, and summary at the exact PR head. A `master` push additionally selects
 the existing patch publisher and runs the complete graph from its separate
 push SHA. Malformed/duplicate/non-finite JSON or another classifier failure with a
 validated authoritative PR head runs all four workers at that exact head, then
-summary still fails to expose the classifier defect. A classifier failure on a
+summary still fails to expose the classifier defect. When that classifier
+failure follows an otherwise metadata-shaped raw PR edit, the fallback workers
+may still surface metadata-prefixed names because skipped-job names cannot
+safely depend on `needs.*`; `summary` stays canonical and candidate evidence
+rejects the run. A classifier failure on a
 master push with validated `github.sha` runs all four workers and the publisher
 at that exact push SHA, then summary still fails. Any
 missing, empty, malformed, or event-mismatched base ref/SHA with a valid exact

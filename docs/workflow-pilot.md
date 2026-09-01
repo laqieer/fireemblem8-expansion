@@ -134,9 +134,16 @@ platform-skipped worker checks:
 `metadata-host-tests-skipped`, `metadata-build-skipped`,
 `metadata-extended-host-tests-skipped`, and `metadata-legacy-skipped`.
 Each worker job derives that metadata-only name solely from immutable raw
-edited-event payload fields, so metadata runs never reuse the canonical full
-`host-tests`, `build`, `extended-host-tests`, or `legacy` check names.
-Full and fallback runs retain the canonical names. Candidate normalization
+edited-event payload fields that are available before job scheduling: PR
+event/action/ref, nonempty PR head/base identities, no base change, and a
+real title/body metadata change. Successful metadata runs therefore never
+reuse the canonical full `host-tests`, `build`, `extended-host-tests`, or
+`legacy` check names, while successful full runs and successful
+incomplete-base `full_fallback` runs keep the canonical names. If classifier
+failure follows an otherwise metadata-shaped raw PR edit, fallback workers may
+still surface metadata-prefixed names because skipped-job names cannot safely
+depend on `needs.*`; summary stays canonical and candidate evidence rejects
+the run. Candidate normalization
 requires exact metadata worker names only in metadata mode and canonical
 worker names only in full mode; duplicate, unknown, literal, spoofed,
 missing, or success-shaped metadata worker records reject. A later green
@@ -243,7 +250,11 @@ metadata classifications, normal workers, and summary must all bind their
 classified head to that same kind and SHA.
 Metadata-only classification is accepted only for a coherently bound
 `pull_request`; metadata-shaped router output on push or another event fails
-the classifier and takes the validated full fallback path. Missing, uppercase,
+the classifier and takes the validated full fallback path. On a genuine
+classifier failure after an otherwise metadata-shaped raw PR edit, the worker
+jobs may still carry their metadata-prefixed names while summary stays
+canonical; candidate evidence rejects the run, and that mismatch is
+intentional fail-closed evidence. Missing, uppercase,
 short, nonhex,
 ref-name, ref-number-mismatched, malformed, or cross-event identities select
 no worker and cannot produce a successful summary. Classifier-failure workers

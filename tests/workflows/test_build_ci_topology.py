@@ -56,6 +56,20 @@ METADATA_CHECK_CONTEXTS = set(METADATA_WORKER_NAMES.values()) | {
     "patch-release",
     candidate_evidence.METADATA_ATTESTATION,
 }
+METADATA_FAILURE_CHECK_CONTEXTS = set(METADATA_WORKER_NAMES.values()) | {
+    "event-identity",
+    "event-router",
+    candidate_evidence.METADATA_CLASSIFIER,
+    "patch-release",
+    "summary",
+}
+CANONICAL_WORKER_METADATA_CLASSIFIER_FAILURE_CHECKS = set(COMBINED_WORKERS) | {
+    "event-identity",
+    "event-router",
+    candidate_evidence.METADATA_CLASSIFIER,
+    "patch-release",
+    "summary",
+}
 SUMMARY_NEEDS = (
     "needs: [event-identity, event-classifier, host-tests, build, "
     "extended-host-tests, legacy, patch-release]"
@@ -106,6 +120,11 @@ EMITTED_FULL_CHECKS = CANDIDATE_FULL_JOBS | {"patch-release"}
 RAW_METADATA_NAME_CONDITION = (
     "github.event_name == 'pull_request' && "
     "github.event.action == 'edited' && "
+    "github.event.number && "
+    "github.ref == format('refs/pull/{0}/merge', github.event.number) && "
+    "github.event.pull_request.head.sha && "
+    "github.event.pull_request.base.sha && "
+    "github.event.pull_request.base.ref && "
     "!github.event.changes.base && "
     "((github.event.changes.body && !github.event.changes.title && "
     "toJSON(github.event.changes) == format('{{\"body\":{0}}}', "
@@ -460,6 +479,41 @@ def _is_metadata_name_event(event: dict) -> bool:
     pull_request = payload.get("pull_request")
     if not isinstance(changes, dict) or not changes or not isinstance(
         pull_request, dict
+    ):
+        return False
+    runner = event.get("runner", {})
+    pr_number = runner.get(
+        "pr_number",
+        event.get("number", payload.get("number", 177)),
+    )
+    github_ref = runner.get(
+        "github_ref",
+        event.get(
+            "github_ref",
+            f"refs/pull/{pr_number}/merge"
+            if isinstance(pr_number, int)
+            and not isinstance(pr_number, bool)
+            and pr_number > 0
+            else "",
+        ),
+    )
+    head = pull_request.get("head")
+    base = pull_request.get("base")
+    head_sha = head.get("sha") if isinstance(head, dict) else None
+    base_sha = base.get("sha") if isinstance(base, dict) else None
+    base_ref = base.get("ref") if isinstance(base, dict) else None
+    if (
+        not isinstance(pr_number, int)
+        or isinstance(pr_number, bool)
+        or pr_number < 1
+        or not isinstance(github_ref, str)
+        or github_ref != f"refs/pull/{pr_number}/merge"
+        or not isinstance(head_sha, str)
+        or not head_sha
+        or not isinstance(base_sha, str)
+        or not base_sha
+        or not isinstance(base_ref, str)
+        or not base_ref
     ):
         return False
     changed_fields = frozenset(changes)
@@ -2879,6 +2933,123 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         self.assertTrue(decision.full_fallback)
                         self.assertFalse(decision.identity_valid)
 
+    def test_metadata_worker_names_require_complete_raw_pr_identity(self):
+        fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
+        body_only = next(
+            case
+            for case in fixture["cases"]
+            if case["id"] == "body-only-merge-sha-ignored"
+        )
+        cases = (
+            (
+                "metadata-body-edit",
+                body_only,
+                METADATA_CHECK_CONTEXTS,
+            ),
+            (
+                "missing-base-ref",
+                {
+                    **body_only,
+                    "payload": {
+                        **body_only["payload"],
+                        "pull_request": {
+                            **body_only["payload"]["pull_request"],
+                            "base": {
+                                "sha": body_only["payload"]["pull_request"]["base"]["sha"],
+                            },
+                        },
+                    },
+                },
+                EMITTED_FULL_CHECKS,
+            ),
+            (
+                "empty-base-ref",
+                {
+                    **body_only,
+                    "payload": {
+                        **body_only["payload"],
+                        "pull_request": {
+                            **body_only["payload"]["pull_request"],
+                            "base": {
+                                **body_only["payload"]["pull_request"]["base"],
+                                "ref": "",
+                            },
+                        },
+                    },
+                },
+                EMITTED_FULL_CHECKS,
+            ),
+            (
+                "missing-base-sha",
+                {
+                    **body_only,
+                    "payload": {
+                        **body_only["payload"],
+                        "pull_request": {
+                            **body_only["payload"]["pull_request"],
+                            "base": {
+                                "ref": body_only["payload"]["pull_request"]["base"]["ref"],
+                            },
+                        },
+                    },
+                },
+                EMITTED_FULL_CHECKS,
+            ),
+            (
+                "missing-head-sha",
+                {
+                    **body_only,
+                    "payload": {
+                        **body_only["payload"],
+                        "pull_request": {
+                            **body_only["payload"]["pull_request"],
+                            "head": {},
+                        },
+                    },
+                },
+                EMITTED_FULL_CHECKS,
+            ),
+            (
+                "wrong-pr-ref",
+                {
+                    **body_only,
+                    "classifier_result": "failure",
+                    "runner": {
+                        **body_only["runner"],
+                        "github_ref": "refs/pull/999/merge",
+                    },
+                },
+                CANONICAL_WORKER_METADATA_CLASSIFIER_FAILURE_CHECKS,
+            ),
+            (
+                "no-body-change",
+                {
+                    **body_only,
+                    "payload": {
+                        **body_only["payload"],
+                        "changes": {
+                            "body": {
+                                "from": body_only["payload"]["pull_request"]["body"],
+                            },
+                        },
+                    },
+                },
+                EMITTED_FULL_CHECKS,
+            ),
+            (
+                "mixed-base-and-body",
+                next(
+                    case
+                    for case in fixture["cases"]
+                    if case["id"] == "mixed-base-and-body"
+                ),
+                EMITTED_FULL_CHECKS,
+            ),
+        )
+        for name, case, expected in cases:
+            with self.subTest(case=name):
+                self.assertEqual(_emitted_check_names(self.text, case), expected)
+
     def test_metadata_check_contexts_cannot_replace_candidate_contexts(self):
         fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
         body_only = next(
@@ -2926,6 +3097,21 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         for job_name in COMBINED_WORKERS:
             with self.subTest(job=job_name):
                 self.assertNotEqual(job_name, METADATA_WORKER_NAMES[job_name])
+
+    def test_classifier_failure_on_metadata_shaped_edit_keeps_metadata_names(self):
+        fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
+        body_only = next(
+            case
+            for case in fixture["cases"]
+            if case["id"] == "body-only-merge-sha-ignored"
+        )
+        case = json.loads(json.dumps(body_only))
+        case["classifier_result"] = "failure"
+        self.assertEqual(_triggered_jobs(self.text, case), CANDIDATE_FULL_JOBS)
+        self.assertEqual(
+            _emitted_check_names(self.text, case),
+            METADATA_FAILURE_CHECK_CONTEXTS,
+        )
 
     def test_metadata_worker_name_regressions_fail_closed(self):
         fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))

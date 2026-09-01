@@ -150,6 +150,11 @@ _METADATA_WORKER_NAMES = {
 _RAW_METADATA_NAME_CONDITION = (
     "github.event_name == 'pull_request' && "
     "github.event.action == 'edited' && "
+    "github.event.number && "
+    "github.ref == format('refs/pull/{0}/merge', github.event.number) && "
+    "github.event.pull_request.head.sha && "
+    "github.event.pull_request.base.sha && "
+    "github.event.pull_request.base.ref && "
     "!github.event.changes.base && "
     "((github.event.changes.body && !github.event.changes.title && "
     "toJSON(github.event.changes) == format('{{\"body\":{0}}}', "

@@ -1104,6 +1104,12 @@ def classifier_bootstrap_contract_violations(text):
             "canonical successful event-router context",
             "missing, failed, skipped, renamed, duplicate, or unknown",
         ),
+        "classifier-failure-metadata-names": (
+            "classifier failure follows an otherwise metadata-shaped raw PR edit",
+            "metadata-prefixed names",
+            "summary stays canonical",
+            "candidate evidence rejects the run",
+        ),
         "base-ref-git-grammar": (
             "1024 UTF-8 bytes",
             "git check-ref-format refs/heads/<base.ref>",

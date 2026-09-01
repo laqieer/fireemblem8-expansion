@@ -32,14 +32,20 @@ identity validator/router plus distinct running `metadata-classifier` and
 contexts plus distinct skipped `metadata-host-tests-skipped`,
 `metadata-build-skipped`, `metadata-extended-host-tests-skipped`, and
 `metadata-legacy-skipped` checks; those metadata-only names cannot supersede
-required canonical full-worker contexts. Base, mixed, unknown/incomplete,
+required canonical full-worker contexts. Those metadata-prefixed worker names
+require the pull-request event/action/ref plus nonempty raw head/base/base-ref
+identities, no base change, and a real title/body metadata transition that are
+available before scheduling. Base, mixed, unknown/incomplete,
 opened, synchronize, and reopened events with complete identity fail closed to
 the complete graph. Any missing, malformed, or incoherent base ref/SHA with a
 valid exact PR head also runs the four workers at that head and fails normal
 summary; a valid base SHA may be retained only for diagnostics. Missing,
 malformed, stale, or spoofed head identity runs none. A classifier failure with
 a validated PR event head runs all four workers at that exact head and then
-fails summary. A master-push classifier failure does the same at validated
+fails summary. If classifier failure follows an otherwise metadata-shaped raw
+PR edit, the worker checks may still carry metadata-prefixed names while
+summary stays canonical and candidate evidence rejects the run. A master-push
+classifier failure does the same at validated
 `github.sha` and audits the master-only publisher before failing; without a
 validated event-specific fallback SHA, it starts no worker or publisher. The
 classifier bootstrap may use the trusted

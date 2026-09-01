@@ -67,6 +67,23 @@ def _metadata_run(run_id, worker_conclusion="skipped"):
     return _run(run_id, contexts)
 
 
+def _classifier_failure_metadata_run(run_id):
+    run = _metadata_run(run_id)
+    next(
+        context
+        for context in run["contexts"]
+        if context["job_id"] == "event-classifier"
+    )["conclusion"] = "failure"
+    summary = next(
+        context
+        for context in run["contexts"]
+        if context["job_id"] == "summary"
+    )
+    summary["name"] = candidate_evidence.FULL_ATTESTATION
+    summary["conclusion"] = "failure"
+    return run
+
+
 class CandidateEvidenceTests(unittest.TestCase):
     def test_full_success_is_eligible_and_metadata_only_is_not(self):
         full = _full_run(1)
@@ -168,6 +185,22 @@ class CandidateEvidenceTests(unittest.TestCase):
                         head_sha=HEAD,
                         base_sha=BASE,
                     )
+
+    def test_classifier_failure_metadata_shape_is_rejected(self):
+        failed = _classifier_failure_metadata_run(34)
+        with self.assertRaisesRegex(
+            candidate_evidence.CandidateEvidenceError,
+            "attest different modes",
+        ):
+            candidate_evidence.run_mode(failed)
+        with self.assertRaises(candidate_evidence.CandidateEvidenceError):
+            candidate_evidence.latest_contexts([failed])
+        with self.assertRaises(candidate_evidence.CandidateEvidenceError):
+            candidate_evidence.evaluate_candidate_runs(
+                [failed],
+                head_sha=HEAD,
+                base_sha=BASE,
+            )
 
     def test_mode_and_context_mutations_fail_closed(self):
         mutations = []
