@@ -237,6 +237,19 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "candidate-output.log" in isolated_step
         or "candidate_sink" in isolated_step
         or "sink_size" in isolated_step
+        or (
+            "mapfile -t dev_mounts < <(\n"
+            "          /usr/bin/findmnt -Rrno TARGET /dev\n"
+            "        )"
+        )
+        not in isolated_step
+        or '/dev/*) /usr/bin/umount -- "$dev_mount" ;;'
+        not in isolated_step
+        or 'test "$(/usr/bin/findmnt -Rrno TARGET /dev)" = /dev'
+        not in isolated_step
+        or "/usr/bin/findmnt -Rrno TARGET,OPTIONS /"
+        not in isolated_step
+        or "/usr/bin/findmnt -Rno TARGET,OPTIONS /" in isolated_step
         or 'builder_isolation_script="$(/bin/cat \\\n'
         not in isolated_step
         or '/bin/bash -c "$builder_isolation_script" builder-isolation'
@@ -1014,6 +1027,16 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             '/bin/rm -rf -- "$BUILDER_ROOT"',
             1,
         )
+        decorated_mount_targets = self.text.replace(
+            "/usr/bin/findmnt -Rrno TARGET,OPTIONS /",
+            "/usr/bin/findmnt -Rno TARGET,OPTIONS /",
+            1,
+        )
+        retained_dev_descendants = self.text.replace(
+            '/dev/*) /usr/bin/umount -- "$dev_mount" ;;',
+            "/dev/*) true ;;",
+            1,
+        )
         ambient_dependency_python = self.text.replace(
             "/usr/bin/env -i HOME=\"$PATCH_RUNTIME_ROOT\" LC_ALL=C",
             "HOME=\"$PATCH_RUNTIME_ROOT\"",
@@ -1098,6 +1121,8 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             ("file-backed-wrapper", file_backed_wrapper),
             ("unmounted-open-dev", unmounted_open_dev),
             ("unprivileged-builder-cleanup", unprivileged_builder_cleanup),
+            ("decorated-mount-targets", decorated_mount_targets),
+            ("retained-dev-descendants", retained_dev_descendants),
             ("ambient-dependency-python", ambient_dependency_python),
             ("unverified-builder-state", unverified_builder_state),
             ("allowed-unexpected-handoff", allowed_unexpected_handoff),
