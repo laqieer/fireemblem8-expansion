@@ -25,6 +25,8 @@ import subprocess
 from dataclasses import dataclass
 from typing import List
 
+from scripts.workflow_pilot import metadata_adapter_contract
+
 # A leading NAME=VALUE token in a gate command is an inline environment
 # assignment (POSIX shell semantics), mirrored verbatim from build.yml so
 # the gate list stays an argv-identical copy of the workflow. It is applied
@@ -830,131 +832,6 @@ _METADATA_ADAPTER_ENV = tuple(
         )
     )
 )
-_METADATA_ADAPTER_REQUIRED_FRAGMENTS = (
-    "$CLASSIFIER_RESULT",
-    "$FALLBACK_IDENTITY_RESULT",
-    "$GITHUB_EVENT_NAME",
-    "$CLASSIFICATION",
-    "$FALLBACK_KIND",
-    "$FALLBACK_SHA",
-    "$FULL_FALLBACK",
-    "$HEAD_VALID",
-    "$IDENTITY_VALID",
-    "$RUN_EXPENSIVE",
-    "$EXPECTED_BUILD_SHA",
-    "$CLASSIFIED_BUILD_SHA",
-    "CLASSIFIED_BASE_SHA",
-    "GITHUB_EVENT_PATH",
-    "GITHUB_REF",
-    "/usr/bin/python3",
-    "import json",
-    "import os",
-    "import re",
-    "import stat",
-    "import sys",
-    "def parse_title_text(value, *, field, max_bytes):",
-    "if not text.strip():",
-    "def is_git_branch_ref(value):",
-    "value == @",
-    "value.startswith(/)",
-    "value.endswith(/)",
-    "value.endswith(.)",
-    "// in value",
-    ".. in value",
-    "@{ in value",
-    "component.endswith(.lock)",
-    "value.split(/)",
-    "MAX_EVENT_PATH_BYTES = 4096",
-    "MAX_EVENT_BYTES = 1048576",
-    "MAX_EVENT_READ_BYTES = MAX_EVENT_BYTES + 1",
-    "EVENT_FILE_FLAGS = (",
-    "getattr(os, O_CLOEXEC, 0)",
-    "getattr(os, O_NOFOLLOW, 0)",
-    "getattr(os, O_NONBLOCK, 0)",
-    "event_path = env(GITHUB_EVENT_PATH, max_bytes=MAX_EVENT_PATH_BYTES)",
-    "metadata = os.lstat(event_path)",
-    "if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):",
-    "metadata-only raw event payload must be a regular file",
-    "if metadata.st_uid != os.getuid():",
-    "metadata-only raw event payload owner is invalid",
-    "if metadata.st_size > MAX_EVENT_BYTES:",
-    "metadata-only raw event payload exceeds 1 MiB",
-    "fd = os.open(event_path, EVENT_FILE_FLAGS)",
-    "opened = os.fstat(fd)",
-    "if file_signature(opened) != file_signature(metadata):",
-    "metadata-only raw event payload changed before read",
-    "chunk = os.read(fd, min(65536, MAX_EVENT_READ_BYTES - len(raw)))",
-    "final = os.fstat(fd)",
-    "if file_signature(final) != file_signature(opened) or len(raw) != opened.st_size:",
-    "metadata-only raw event payload changed while being read",
-    "payload = json.loads(",
-    "object_pairs_hook=reject_duplicates",
-    "metadata-only raw event payload is not valid JSON",
-    "metadata-only raw event payload must be an object",
-    "event_name = env(GITHUB_EVENT_NAME, max_bytes=32)",
-    "event_action = payload.get(action)",
-    "pr_number = payload.get(number)",
-    "event_ref = env(GITHUB_REF, max_bytes=MAX_EVENT_REF_BYTES)",
-    "pull_request = payload.get(pull_request)",
-    "base = pull_request.get(base)",
-    "base_ref = base.get(ref)",
-    "if not is_git_branch_ref(base_ref):",
-    "base.get(sha)",
-    "head = pull_request.get(head)",
-    "head.get(sha)",
-    "classified_head != env(EXPECTED_BUILD_SHA, max_bytes=64)",
-    "changes = payload.get(changes)",
-    "def current_changed_value(name):",
-    "field = fpull_request.{name}",
-    "if name not in pull_request:",
-    "metadata-only raw event {field} is missing",
-    "value = pull_request[name]",
-    "if event_action != edited:",
-    "if event_ref != frefs/pull/{pr_number}/merge:",
-    "if change_keys not in ALLOWED_CHANGE_KEYS:",
-    "if previous == current:",
-    "metadata-only raw event is not an edited pull_request",
-    "metadata-only raw event PR number is invalid",
-    "metadata-only raw event ref is invalid",
-    "metadata-only raw event pull_request is invalid",
-    "metadata-only raw event base ref is invalid",
-    "parse_sha(base.get(sha), field=base sha)",
-    "metadata-only raw event head sha is invalid",
-    "metadata-only raw event does not match classifier identity",
-    "metadata-only raw event changes must be an object",
-    "metadata-only raw event changes must be exactly body/title only",
-    "changes.{name}.from",
-    "metadata-only raw event {name} did not change",
-    "ALLOWED_CHANGE_KEYS",
-    "metadata-only branch-protection continuity is not authoritative",
-)
-_METADATA_ADAPTER_FORBIDDEN_FRAGMENTS = (
-    "actions/checkout",
-    "scripts/workflow_pilot/",
-    "python3 -m",
-    "/usr/bin/git",
-    "sudo ",
-    "apt-get",
-    "./build_tools.sh",
-    "make ",
-    "import scripts",
-    "from scripts",
-    "subprocess",
-    "CHANGES_JSON",
-    "PR_BODY_JSON",
-    "PR_TITLE_JSON",
-    "PR_BASE_REF_JSON",
-    "PR_BASE_SHA_JSON",
-    "PR_HEAD_SHA_JSON",
-    "PR_NUMBER_JSON",
-    "EVENT_ACTION",
-    "$EVENT_NAME",
-    "$EVENT_REF",
-    "$PR_NUMBER",
-    "$PR_BASE_REF",
-    "$PR_BASE_SHA",
-    "$PR_HEAD_SHA",
-)
 _NON_GATE_STEP_NAMES = {
     _METADATA_ADAPTER_STEP_NAME,
     "Verify checked-out revision",
@@ -1637,6 +1514,19 @@ def _parse_run_value(lines, start, end, value, step_label):
     return commands
 
 
+def _literal_run_script(lines, start, end, value, step_label):
+    if value != "|":
+        raise ValueError(f"{step_label} metadata adapter must use a literal run block")
+    script = []
+    for line in lines[start:end]:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if len(line) - len(line.lstrip(" ")) < 8:
+            raise ValueError(f"{step_label} run block has invalid indentation")
+        script.append(line[8:])
+    return "\n".join(script) + "\n"
+
+
 def _parse_step(block, job_name, index):
     lines = block.splitlines()
     first_index = next(
@@ -1689,6 +1579,7 @@ def _parse_step(block, job_name, index):
         )
 
     values = {}
+    literal_run_script = None
     for field_index, (name, raw_value, line_index) in enumerate(direct):
         end = (
             direct[field_index + 1][2]
@@ -1716,6 +1607,14 @@ def _parse_step(block, job_name, index):
                 value,
                 step_label,
             )
+            if value == "|":
+                literal_run_script = _literal_run_script(
+                    lines,
+                    line_index + 1,
+                    end,
+                    value,
+                    step_label,
+                )
         else:
             scalar = value.strip()
             if name == "uses":
@@ -2133,21 +2032,14 @@ def _parse_step(block, job_name, index):
                 raise ValueError(f"{step_label} metadata adapter if differs")
             if values["env"] != _METADATA_ADAPTER_ENV:
                 raise ValueError(f"{step_label} metadata adapter env differs")
-            adapter_text = " ".join(
-                token for command in values["run"] for token in command
-            )
-            if not all(
-                fragment in adapter_text
-                for fragment in _METADATA_ADAPTER_REQUIRED_FRAGMENTS
-            ):
+            if literal_run_script is None:
                 raise ValueError(f"{step_label} metadata adapter script differs")
-            if any(
-                fragment in adapter_text
-                for fragment in _METADATA_ADAPTER_FORBIDDEN_FRAGMENTS
-            ):
-                raise ValueError(
-                    f"{step_label} metadata adapter must not run candidate or build commands"
+            try:
+                metadata_adapter_contract.validate_metadata_adapter_script(
+                    literal_run_script
                 )
+            except ValueError as error:
+                raise ValueError(f"{step_label} metadata adapter script differs") from error
         else:
             expected_fields = (
                 {"name", "env", "run"}

@@ -1243,6 +1243,62 @@ class VerifyCliCwdTests(unittest.TestCase):
                     ):
                         verify_mod.run_gates(target_root, dry_run=True)
 
+    def test_metadata_adapter_parsed_contract_rejects_extra_shell_and_python_behavior(self):
+        artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
+        os.makedirs(artifact_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="verify-metadata-adapter-",
+            dir=artifact_root,
+        ) as temporary:
+            target_root = self.clone_target(temporary)
+            workflow_path = os.path.join(
+                target_root,
+                ".github",
+                "workflows",
+                "build.yml",
+            )
+            with open(workflow_path, "r", encoding="utf-8") as handle:
+                original = handle.read()
+            mutations = {
+                "extra-python-command": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    '        PY\n',
+                    '        PY\n        /usr/bin/python3 -c "pass"\n',
+                ),
+                "extra-touch-command": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    '        fi\n        /usr/bin/python3 -I - <<\'PY\'\n',
+                    '        fi\n        /usr/bin/touch "$GITHUB_EVENT_PATH"\n'
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                ),
+                "extra-python-import": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        import sys\n",
+                    "        import sys\n        import socket\n",
+                ),
+                "extra-python-dead-branch": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        payload = load_event_payload()\n",
+                    "        payload = load_event_payload()\n"
+                    "        if False:\n"
+                    "            json.dumps({})\n",
+                ),
+            }
+            for name, changed in mutations.items():
+                with self.subTest(mutation=name):
+                    self.assert_only_job_changed(original, changed, "host-tests")
+                    with open(workflow_path, "w", encoding="utf-8") as handle:
+                        handle.write(changed)
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "metadata adapter script differs",
+                    ):
+                        verify_mod.run_gates(target_root, dry_run=True)
+
     def test_target_execution_context_is_closed_before_dry_run(self):
         artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
         os.makedirs(artifact_root, exist_ok=True)

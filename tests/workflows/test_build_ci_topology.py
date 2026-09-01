@@ -21,6 +21,7 @@ from scripts.workflow_pilot import (
     candidate_evidence,
     event_classifier,
     hydrate_authority,
+    metadata_adapter_contract,
     reporter,
 )
 
@@ -259,127 +260,6 @@ METADATA_ADAPTER_ENV = (
     "        IDENTITY_VALID: ${{ needs.event-classifier.outputs.identity_valid }}",
     "        PATH: /usr/bin:/bin",
     "        RUN_EXPENSIVE: ${{ needs.event-classifier.outputs.run_expensive }}",
-)
-METADATA_ADAPTER_REQUIRED_FRAGMENTS = (
-    'if [ "$CLASSIFIER_RESULT" != "success" ] || \\',
-    '[ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \\',
-    '[ "$GITHUB_EVENT_NAME" != "pull_request" ] || \\',
-    '[ "$CLASSIFICATION" != "metadata-only" ] || \\',
-    '[ "$FALLBACK_KIND" != "pull_request" ] || \\',
-    '[ -z "$FALLBACK_SHA" ] || \\',
-    '[ "$FULL_FALLBACK" != "false" ] || [ "$HEAD_VALID" != "true" ] || \\',
-    '[ "$IDENTITY_VALID" != "true" ] || [ "$RUN_EXPENSIVE" != "false" ] || \\',
-    '[ "$EXPECTED_BUILD_SHA" != "$CLASSIFIED_BUILD_SHA" ] || \\',
-    '[ "$FALLBACK_SHA" != "$CLASSIFIED_BUILD_SHA" ]; then',
-    'echo "metadata-only branch-protection continuity is not authoritative" >&2',
-    "/usr/bin/python3 -I - <<'PY'",
-    "import json",
-    "import os",
-    "import re",
-    "import stat",
-    "import sys",
-    "def parse_title_text(value, *, field, max_bytes):",
-    "if not text.strip():",
-    "def is_git_branch_ref(value):",
-    'value == "@"',
-    'value.startswith("/")',
-    'value.endswith("/")',
-    'value.endswith(".")',
-    'or "//" in value',
-    'or ".." in value',
-    'or "@{" in value',
-    'component.endswith(".lock")',
-    'for component in value.split("/")',
-    "MAX_EVENT_PATH_BYTES = 4096",
-    "MAX_EVENT_BYTES = 1048576",
-    "MAX_EVENT_READ_BYTES = MAX_EVENT_BYTES + 1",
-    "EVENT_FILE_FLAGS = (",
-    'getattr(os, "O_CLOEXEC", 0)',
-    'getattr(os, "O_NOFOLLOW", 0)',
-    'getattr(os, "O_NONBLOCK", 0)',
-    'event_path = env("GITHUB_EVENT_PATH", max_bytes=MAX_EVENT_PATH_BYTES)',
-    "metadata = os.lstat(event_path)",
-    'fail(f"metadata-only raw event cannot inspect payload: {error}")',
-    'if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):',
-    'fail("metadata-only raw event payload must be a regular file")',
-    'if metadata.st_uid != os.getuid():',
-    'fail("metadata-only raw event payload owner is invalid")',
-    'if metadata.st_size > MAX_EVENT_BYTES:',
-    'fail("metadata-only raw event payload exceeds 1 MiB")',
-    "fd = os.open(event_path, EVENT_FILE_FLAGS)",
-    "opened = os.fstat(fd)",
-    'if file_signature(opened) != file_signature(metadata):',
-    'fail("metadata-only raw event payload changed before read")',
-    "chunk = os.read(fd, min(65536, MAX_EVENT_READ_BYTES - len(raw)))",
-    "final = os.fstat(fd)",
-    'if file_signature(final) != file_signature(opened) or len(raw) != opened.st_size:',
-    'fail("metadata-only raw event payload changed while being read")',
-    "payload = json.loads(",
-    "object_pairs_hook=reject_duplicates",
-    'fail(f"metadata-only raw event payload is not valid JSON: {error}")',
-    'fail("metadata-only raw event payload must be an object")',
-    'event_name = env("GITHUB_EVENT_NAME", max_bytes=32)',
-    'event_action = payload.get("action")',
-    'pr_number = payload.get("number")',
-    'event_ref = env("GITHUB_REF", max_bytes=MAX_EVENT_REF_BYTES)',
-    'pull_request = payload.get("pull_request")',
-    'base = pull_request.get("base")',
-    'base_ref = base.get("ref")',
-    "if not is_git_branch_ref(base_ref):",
-    'base.get("sha")',
-    'head = pull_request.get("head")',
-    'head.get("sha")',
-    'or classified_head != env("EXPECTED_BUILD_SHA", max_bytes=64)',
-    'changes = payload.get("changes")',
-    'field = f"pull_request.{name}"',
-    'if name not in pull_request:',
-    'fail(f"metadata-only raw event {field} is missing")',
-    'value = pull_request[name]',
-    "def current_changed_value(name):",
-    'if event_action != "edited":',
-    'if event_ref != f"refs/pull/{pr_number}/merge":',
-    "if change_keys not in ALLOWED_CHANGE_KEYS:",
-    "if previous == current:",
-    "metadata-only raw event is not an edited pull_request",
-    "metadata-only raw event PR number is invalid",
-    "metadata-only raw event ref is invalid",
-    "metadata-only raw event pull_request is invalid",
-    "metadata-only raw event base ref is invalid",
-    'parse_sha(base.get("sha"), field="base sha")',
-    "metadata-only raw event head sha is invalid",
-    "metadata-only raw event does not match classifier identity",
-    "metadata-only raw event changes must be an object",
-    "metadata-only raw event changes must be exactly body/title only",
-    'changes.{name}.from',
-    'metadata-only raw event {name} did not change',
-    "ALLOWED_CHANGE_KEYS",
-)
-METADATA_ADAPTER_FORBIDDEN_FRAGMENTS = (
-    "actions/checkout",
-    "scripts/workflow_pilot/",
-    "python3 -m",
-    "/usr/bin/git",
-    "sudo ",
-    "apt-get",
-    "./build_tools.sh",
-    "make ",
-    "import scripts",
-    "from scripts",
-    "subprocess",
-    "parse_json_env",
-    "CHANGES_JSON",
-    "PR_BODY_JSON",
-    "PR_TITLE_JSON",
-    "PR_BASE_REF_JSON",
-    "PR_BASE_SHA_JSON",
-    "PR_HEAD_SHA_JSON",
-    "PR_NUMBER_JSON",
-    'env("EVENT_ACTION"',
-    'env("EVENT_REF"',
-    'env("PR_NUMBER"',
-    'env("PR_BASE_REF"',
-    'env("PR_BASE_SHA"',
-    'env("PR_HEAD_SHA"',
 )
 COMBINED_JOB_ENV = {
     "host-tests": (HOST_ENV_LINE,),
@@ -843,15 +723,7 @@ def _metadata_adapter_scripts(text: str) -> dict[str, str]:
 
 
 def _metadata_adapter_python_source(script: str) -> str:
-    lines = script.splitlines()
-    try:
-        start = lines.index("/usr/bin/python3 -I - <<'PY'")
-        end = lines.index("PY", start + 1)
-    except ValueError as error:
-        raise AssertionError(
-            "metadata adapter script must contain exactly one Python heredoc"
-        ) from error
-    return "\n".join(lines[start + 1 : end]) + "\n"
+    return metadata_adapter_contract.metadata_adapter_python_source(script)
 
 
 def _metadata_adapter_payload(
@@ -1125,10 +997,13 @@ def _metadata_adapter_step_is_reviewed(step: str) -> bool:
         return False
     if _step_env_entries(step) != METADATA_ADAPTER_ENV:
         return False
-    script = _literal_run_script(step)
-    if not all(fragment in script for fragment in METADATA_ADAPTER_REQUIRED_FRAGMENTS):
+    try:
+        metadata_adapter_contract.validate_metadata_adapter_script(
+            _literal_run_script(step)
+        )
+    except ValueError:
         return False
-    return not any(fragment in script for fragment in METADATA_ADAPTER_FORBIDDEN_FRAGMENTS)
+    return True
 
 
 def _protected_host_prefix_errors(host: str) -> list[str]:
@@ -3494,6 +3369,70 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "weaken-change-difference-check",
                 "if previous == current:",
                 "if False:",
+            ),
+        )
+        for name, old, new in mutations:
+            with self.subTest(mutation=name):
+                changed = self.text.replace(old, new, 1)
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "host-tests protected pre-pilot step sequence differs" in error
+                        or "build metadata continuity adapter differs" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_metadata_adapter_parsed_contract_rejects_extra_shell_and_python_behavior(self):
+        mutations = (
+            (
+                "extra-python-command",
+                '        PY\n',
+                '        PY\n        /usr/bin/python3 -c "pass"\n',
+            ),
+            (
+                "extra-curl-command",
+                '        fi\n        /usr/bin/python3 -I - <<\'PY\'\n',
+                '        fi\n        /usr/bin/curl https://example.invalid\n'
+                "        /usr/bin/python3 -I - <<'PY'\n",
+            ),
+            (
+                "extra-touch-command",
+                '        fi\n        /usr/bin/python3 -I - <<\'PY\'\n',
+                '        fi\n        /usr/bin/touch "$GITHUB_EVENT_PATH"\n'
+                "        /usr/bin/python3 -I - <<'PY'\n",
+            ),
+            (
+                "extra-shell-dead-branch",
+                '        fi\n        /usr/bin/python3 -I - <<\'PY\'\n',
+                "        fi\n"
+                "        if false; then\n"
+                "          /usr/bin/curl https://example.invalid\n"
+                "        fi\n"
+                "        /usr/bin/python3 -I - <<'PY'\n",
+            ),
+            (
+                "extra-python-import",
+                "        import sys\n",
+                "        import sys\n        import socket\n",
+            ),
+            (
+                "extra-python-call",
+                "        payload = load_event_payload()\n",
+                "        payload = load_event_payload()\n        json.dumps({})\n",
+            ),
+            (
+                "extra-python-dead-branch",
+                "        payload = load_event_payload()\n",
+                "        payload = load_event_payload()\n"
+                "        if False:\n"
+                "            json.dumps({})\n",
+            ),
+            (
+                "extra-python-unreachable-expression",
+                '        if "title" in changes:\n            validate_change("title")\n',
+                '        if "title" in changes:\n            validate_change("title")\n'
+                "        0\n",
             ),
         )
         for name, old, new in mutations:
