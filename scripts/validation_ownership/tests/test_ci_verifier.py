@@ -133,52 +133,69 @@ class BasePinnedVerifierTests(unittest.TestCase):
 
     def test_introduction_verify_reports_no_authority_without_runtime(self):
         with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
-            trusted = Path(directory)
-            head = subprocess.CompletedProcess(
-                ["/usr/bin/git", "rev-parse", "HEAD"],
-                0,
-                b"2" * 40 + b"\n",
-                b"",
+            repository = Path(directory) / "repository"
+            subprocess.run(
+                ["git", "init", "-q", "-b", "master", str(repository)],
+                check=True,
             )
-            with mock.patch.object(
-                ci_verifier.sys,
-                "path",
-                [str(trusted)],
-            ), mock.patch.object(
-                ci_verifier,
-                "_exact_commit",
-                side_effect=lambda root, value, label: value,
-            ), mock.patch.object(
-                ci_verifier,
-                "_git",
-                return_value=head,
-            ), mock.patch.object(
-                reporter,
-                "git_tree_entries",
-                return_value={},
-            ), mock.patch.object(
-                ci_verifier,
-                "_prepare_trusted_runtime_root",
-            ) as prepare_runtime:
-                result = ci_verifier.verify(
-                    trusted,
-                    ROOT,
-                    "1" * 40,
-                    "2" * 40,
-                )
+            environment = {
+                "GIT_AUTHOR_NAME": "Introduction Fixture",
+                "GIT_AUTHOR_EMAIL": "introduction@example.invalid",
+                "GIT_COMMITTER_NAME": "Introduction Fixture",
+                "GIT_COMMITTER_EMAIL": "introduction@example.invalid",
+                "HOME": "/nonexistent",
+                "PATH": "/usr/bin:/bin",
+            }
+            (repository / "base.txt").write_text("base\n", encoding="ascii")
+            subprocess.run(["git", "add", "."], cwd=repository, check=True)
+            subprocess.run(
+                ["git", "commit", "-q", "-m", "base without verifier"],
+                cwd=repository,
+                env=environment,
+                check=True,
+            )
+            base_sha = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repository,
+                text=True,
+            ).strip()
+            (repository / "candidate.txt").write_text(
+                "candidate\n",
+                encoding="ascii",
+            )
+            subprocess.run(["git", "add", "."], cwd=repository, check=True)
+            subprocess.run(
+                ["git", "commit", "-q", "-m", "candidate"],
+                cwd=repository,
+                env=environment,
+                check=True,
+            )
+            candidate_sha = subprocess.check_output(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repository,
+                text=True,
+            ).strip()
+            result = ci_verifier.verify(
+                ROOT,
+                repository,
+                base_sha,
+                candidate_sha,
+            )
             self.assertEqual(
                 result,
                 {
                     "authority": "none",
-                    "base_sha": "1" * 40,
-                    "candidate_sha": "2" * 40,
+                    "base_sha": base_sha,
+                    "candidate_sha": candidate_sha,
                     "mode": "bootstrap-not-authoritative",
                     "reason": (
                         "exact base predates validation ownership authority"
                     ),
                 },
             )
-            prepare_runtime.assert_not_called()
+            self.assertFalse(
+                (ROOT / ".validation-ownership-runtime").exists()
+            )
 
     def test_candidate_owner_redirect_rejects_exact_base_oracle(self):
         oracle = {
