@@ -133,9 +133,11 @@ classifier and all four workers succeed. Metadata-only runs expose the running
 canonical worker checks `host-tests`, `build`, `extended-host-tests`, and
 `legacy`. Metadata-only mode requires runner-backed `success` for
 `host-tests`/`build` because those jobs run only the trusted continuity
-adapters, and exact `skipped` for `extended-host-tests`/`legacy`. Repository
-branch protection therefore keeps the live canonical `host-tests`, `build`,
-and `summary` contexts unchanged. A later green metadata run still cannot
+adapters, which independently revalidate the raw edited pull-request event and
+exact body/title-only `changes` payload before succeeding, and exact `skipped`
+for `extended-host-tests`/`legacy`. Repository branch protection therefore
+keeps the live canonical `host-tests`, `build`, and `summary` contexts
+unchanged. A later green metadata run still cannot
 replace `summary`, and `candidate_evidence.evaluate_candidate_runs()`
 continues to derive eligibility only from the latest exact full run with a
 successful canonical `summary`; a metadata-only run remains ineligible by
@@ -298,8 +300,10 @@ Build workflow preserves the live branch-protection contract directly: metadata
 body/title edits run distinct `metadata-classifier`/`metadata-summary`
 attestations plus canonical `host-tests`/`build` continuity adapters that do
 not checkout or execute candidate code, while `extended-host-tests` and
-`legacy` remain platform-skipped. The live required Build contexts therefore
-stay the canonical `host-tests`, `build`, and `summary` names, and
+`legacy` remain platform-skipped. The adapters independently reject missing,
+base-retarget, unknown, empty, duplicate, or unchanged raw `changes` payloads.
+The live required Build contexts therefore stay the canonical `host-tests`,
+`build`, and `summary` names, and
 `metadata-summary` remains distinct so a prior full `summary` stays
 authoritative on the unchanged head/base.
 The current Build workflow has no explicit final-dispatch trigger; if that

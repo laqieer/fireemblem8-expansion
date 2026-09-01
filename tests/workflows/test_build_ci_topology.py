@@ -242,11 +242,15 @@ EXPECTED_BUILD_SHA_EXPRESSION = (
 HOST_ENV_LINE = f"      EXPECTED_BUILD_SHA: {EXPECTED_BUILD_SHA_EXPRESSION}"
 METADATA_ADAPTER_ENV = (
     "        BASH_ENV: ''",
+    "        CHANGES_JSON: ${{ toJSON(github.event.changes) }}",
     "        CLASSIFICATION: ${{ needs.event-classifier.outputs.classification }}",
     "        CLASSIFIED_BASE_SHA: ${{ needs.event-classifier.outputs.expected_base }}",
     "        CLASSIFIED_BUILD_SHA: ${{ needs.event-classifier.outputs.expected_head }}",
     "        CLASSIFIER_RESULT: ${{ needs.event-classifier.result }}",
     "        ENV: ''",
+    "        EVENT_ACTION: ${{ github.event.action }}",
+    "        EVENT_NAME: ${{ github.event_name }}",
+    "        EVENT_REF: ${{ github.ref }}",
     "        FALLBACK_IDENTITY_RESULT: ${{ needs.event-identity.result }}",
     "        FALLBACK_KIND: ${{ needs.event-identity.outputs.fallback_kind }}",
     "        FALLBACK_SHA: ${{ needs.event-identity.outputs.fallback_sha }}",
@@ -254,14 +258,22 @@ METADATA_ADAPTER_ENV = (
     "        HEAD_VALID: ${{ needs.event-classifier.outputs.head_valid }}",
     "        IDENTITY_VALID: ${{ needs.event-classifier.outputs.identity_valid }}",
     "        PATH: /usr/bin:/bin",
+    "        PR_BASE_REF: ${{ github.event.pull_request.base.ref }}",
+    "        PR_BASE_REF_JSON: ${{ toJSON(github.event.pull_request.base.ref) }}",
     "        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}",
+    "        PR_BASE_SHA_JSON: ${{ toJSON(github.event.pull_request.base.sha) }}",
+    "        PR_BODY_JSON: ${{ toJSON(github.event.pull_request.body) }}",
     "        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}",
+    "        PR_HEAD_SHA_JSON: ${{ toJSON(github.event.pull_request.head.sha) }}",
+    "        PR_NUMBER: ${{ github.event.number }}",
+    "        PR_NUMBER_JSON: ${{ toJSON(github.event.number) }}",
+    "        PR_TITLE_JSON: ${{ toJSON(github.event.pull_request.title) }}",
     "        RUN_EXPENSIVE: ${{ needs.event-classifier.outputs.run_expensive }}",
 )
-METADATA_ADAPTER_COMMANDS = (
+METADATA_ADAPTER_REQUIRED_FRAGMENTS = (
     'if [ "$CLASSIFIER_RESULT" != "success" ] || \\',
     '[ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \\',
-    '[ "$GITHUB_EVENT_NAME" != "pull_request" ] || \\',
+    '[ "$EVENT_NAME" != "pull_request" ] || \\',
     '[ "$CLASSIFICATION" != "metadata-only" ] || \\',
     '[ "$FALLBACK_KIND" != "pull_request" ] || \\',
     '[ -z "$FALLBACK_SHA" ] || [ -z "$PR_HEAD_SHA" ] || \\',
@@ -273,8 +285,64 @@ METADATA_ADAPTER_COMMANDS = (
     '[ "$FALLBACK_SHA" != "$CLASSIFIED_BUILD_SHA" ] || \\',
     '[ "$CLASSIFIED_BASE_SHA" != "$PR_BASE_SHA" ]; then',
     'echo "metadata-only branch-protection continuity is not authoritative" >&2',
-    "exit 1",
-    "fi",
+    "/usr/bin/python3 -I - <<'PY'",
+    "import json",
+    "import os",
+    "import re",
+    "import sys",
+    'event_name = env("EVENT_NAME", max_bytes=32)',
+    'event_action = env("EVENT_ACTION", max_bytes=32)',
+    'pr_number_text = env("PR_NUMBER", max_bytes=MAX_NUMBER_BYTES)',
+    'pr_number = parse_json_env("PR_NUMBER_JSON", max_bytes=32)',
+    'event_ref = env("EVENT_REF", max_bytes=MAX_EVENT_REF_BYTES)',
+    'base_ref = env("PR_BASE_REF", max_bytes=MAX_REF_BYTES)',
+    'parse_json_env("PR_BASE_REF_JSON", max_bytes=MAX_JSON_BYTES)',
+    'parse_json_env("PR_BASE_SHA_JSON", max_bytes=128)',
+    'parse_json_env("PR_HEAD_SHA_JSON", max_bytes=128)',
+    'parse_json_env("PR_BODY_JSON", max_bytes=MAX_JSON_BYTES)',
+    'parse_json_env("PR_TITLE_JSON", max_bytes=MAX_JSON_BYTES)',
+    'changes = parse_json_env("CHANGES_JSON", max_bytes=MAX_JSON_BYTES)',
+    '"EVENT_ACTION"',
+    '"EVENT_REF"',
+    '"PR_NUMBER"',
+    '"PR_BASE_REF"',
+    '"PR_BASE_REF_JSON"',
+    '"PR_BASE_SHA_JSON"',
+    '"PR_BODY_JSON"',
+    '"PR_HEAD_SHA_JSON"',
+    '"PR_NUMBER_JSON"',
+    '"PR_TITLE_JSON"',
+    '"CHANGES_JSON"',
+    'if event_action != "edited":',
+    'if event_ref != f"refs/pull/{pr_number}/merge":',
+    "if change_keys not in ALLOWED_CHANGE_KEYS:",
+    "if previous == current:",
+    "object_pairs_hook=reject_duplicates",
+    "metadata-only raw event is not an edited pull_request",
+    "metadata-only raw event PR number is invalid",
+    "metadata-only raw event ref is invalid",
+    "metadata-only raw event base ref is invalid",
+    "metadata-only raw event base sha is invalid",
+    "metadata-only raw event head sha is invalid",
+    "metadata-only raw event does not match classifier identity",
+    "metadata-only raw event changes must be an object",
+    "metadata-only raw event changes must be exactly body/title only",
+    'changes.{name}.from',
+    'metadata-only raw event {name} did not change',
+    "ALLOWED_CHANGE_KEYS",
+)
+METADATA_ADAPTER_FORBIDDEN_FRAGMENTS = (
+    "actions/checkout",
+    "scripts/workflow_pilot/",
+    "python3 -m",
+    "/usr/bin/git",
+    "sudo ",
+    "apt-get",
+    "./build_tools.sh",
+    "make ",
+    "import scripts",
+    "from scripts",
+    "subprocess",
 )
 COMBINED_JOB_ENV = {
     "host-tests": (HOST_ENV_LINE,),
@@ -902,18 +970,27 @@ def _run_step_is_exact(
     return _step_env_entries(step) == env_lines
 
 
+def _metadata_adapter_step_is_reviewed(step: str) -> bool:
+    if _step_name(step) != "Attest metadata-only branch-protection continuity":
+        return False
+    if _direct_step_mapping_fields(step) != ["name", "if", "env", "run"]:
+        return False
+    if f"      if: {METADATA_ADAPTER_STEP_CONDITION}" not in step:
+        return False
+    if _step_env_entries(step) != METADATA_ADAPTER_ENV:
+        return False
+    script = _literal_run_script(step)
+    if not all(fragment in script for fragment in METADATA_ADAPTER_REQUIRED_FRAGMENTS):
+        return False
+    return not any(fragment in script for fragment in METADATA_ADAPTER_FORBIDDEN_FRAGMENTS)
+
+
 def _protected_host_prefix_errors(host: str) -> list[str]:
     steps = _step_blocks(host)
     if len(steps) < 10:
         return ["host-tests lacks the complete protected pre-pilot sequence"]
     expected = (
-        _run_step_is_exact(
-            steps[0],
-            "Attest metadata-only branch-protection continuity",
-            METADATA_ADAPTER_COMMANDS,
-            if_expression=METADATA_ADAPTER_STEP_CONDITION,
-            env_lines=METADATA_ADAPTER_ENV,
-        ),
+        _metadata_adapter_step_is_reviewed(steps[0]),
         _checkout_step_is_exact(
             steps[1],
             if_expression=FULL_WORKER_STEP_CONDITION,
@@ -1098,13 +1175,7 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
         if len(steps) < 2:
             errors.append("build lacks the trusted metadata continuity adapter")
         else:
-            if not _run_step_is_exact(
-                steps[0],
-                "Attest metadata-only branch-protection continuity",
-                METADATA_ADAPTER_COMMANDS,
-                if_expression=METADATA_ADAPTER_STEP_CONDITION,
-                env_lines=METADATA_ADAPTER_ENV,
-            ):
+            if not _metadata_adapter_step_is_reviewed(steps[0]):
                 errors.append("build metadata continuity adapter differs")
             if not _checkout_step_is_exact(
                 steps[1],
@@ -3204,6 +3275,225 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         for error in _errors(changed, False)
                     )
                 )
+
+    def test_metadata_adapter_raw_event_checks_are_required(self):
+        mutations = (
+            (
+                "missing-changes-env",
+                "        CHANGES_JSON: ${{ toJSON(github.event.changes) }}\n",
+                "",
+            ),
+            (
+                "missing-action-env",
+                "        EVENT_ACTION: ${{ github.event.action }}\n",
+                "",
+            ),
+            (
+                "missing-number-env",
+                "        PR_NUMBER_JSON: ${{ toJSON(github.event.number) }}\n",
+                "",
+            ),
+            (
+                "weaken-action-check",
+                'if event_action != "edited":',
+                'if event_action != "opened":',
+            ),
+            (
+                "weaken-ref-check",
+                'if event_ref != f"refs/pull/{pr_number}/merge":',
+                "if False:",
+            ),
+            (
+                "weaken-duplicate-json-check",
+                "object_pairs_hook=reject_duplicates",
+                "object_pairs_hook=None",
+            ),
+            (
+                "weaken-change-key-check",
+                "if change_keys not in ALLOWED_CHANGE_KEYS:",
+                "if False:",
+            ),
+            (
+                "weaken-change-difference-check",
+                "if previous == current:",
+                "if False:",
+            ),
+        )
+        for name, old, new in mutations:
+            with self.subTest(mutation=name):
+                changed = self.text.replace(old, new, 1)
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "host-tests protected pre-pilot step sequence differs" in error
+                        or "build metadata continuity adapter differs" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_metadata_adapter_runtime_requires_exact_raw_edited_event(self):
+        scripts = {
+            job_name: _literal_run_script(_step_blocks(_job_blocks(self.text)[job_name])[0])
+            for job_name in METADATA_ADAPTER_JOBS
+        }
+        self.assertEqual(len(set(scripts.values())), 1)
+        base_env = {
+            "CHANGES_JSON": json.dumps({"body": {"from": "Old body"}}),
+            "CLASSIFICATION": "metadata-only",
+            "CLASSIFIED_BASE_SHA": "2" * 40,
+            "CLASSIFIED_BUILD_SHA": "1" * 40,
+            "CLASSIFIER_RESULT": "success",
+            "EVENT_ACTION": "edited",
+            "EVENT_NAME": "pull_request",
+            "EVENT_REF": "refs/pull/177/merge",
+            "EXPECTED_BUILD_SHA": "1" * 40,
+            "FALLBACK_IDENTITY_RESULT": "success",
+            "FALLBACK_KIND": "pull_request",
+            "FALLBACK_SHA": "1" * 40,
+            "FULL_FALLBACK": "false",
+            "HEAD_VALID": "true",
+            "IDENTITY_VALID": "true",
+            "PR_BASE_REF": "master",
+            "PR_BASE_REF_JSON": json.dumps("master"),
+            "PR_BASE_SHA": "2" * 40,
+            "PR_BASE_SHA_JSON": json.dumps("2" * 40),
+            "PR_BODY_JSON": json.dumps("New body"),
+            "PR_HEAD_SHA": "1" * 40,
+            "PR_HEAD_SHA_JSON": json.dumps("1" * 40),
+            "PR_NUMBER": "177",
+            "PR_NUMBER_JSON": "177",
+            "PR_TITLE_JSON": json.dumps("New title"),
+            "RUN_EXPENSIVE": "false",
+        }
+        cases = (
+            ("valid-body", {}, 0, None),
+            (
+                "valid-title",
+                {
+                    "CHANGES_JSON": json.dumps({"title": {"from": "Old title"}}),
+                    "PR_BODY_JSON": json.dumps("Stable body"),
+                },
+                0,
+                None,
+            ),
+            (
+                "valid-both",
+                {
+                    "CHANGES_JSON": json.dumps(
+                        {
+                            "body": {"from": "Old body"},
+                            "title": {"from": "Old title"},
+                        }
+                    ),
+                },
+                0,
+                None,
+            ),
+            (
+                "valid-null-body",
+                {
+                    "CHANGES_JSON": json.dumps({"body": {"from": "Old body"}}),
+                    "PR_BODY_JSON": "null",
+                },
+                0,
+                None,
+            ),
+            ("missing-action-env", {"EVENT_ACTION": None}, 1, "missing EVENT_ACTION"),
+            ("missing-changes-env", {"CHANGES_JSON": None}, 1, "missing CHANGES_JSON"),
+            (
+                "wrong-action",
+                {"EVENT_ACTION": "opened"},
+                1,
+                "not an edited pull_request",
+            ),
+            (
+                "wrong-ref",
+                {"EVENT_REF": "refs/pull/178/merge"},
+                1,
+                "ref is invalid",
+            ),
+            (
+                "wrong-number",
+                {
+                    "PR_NUMBER": "0",
+                    "PR_NUMBER_JSON": "0",
+                    "EVENT_REF": "refs/pull/0/merge",
+                },
+                1,
+                "PR number is invalid",
+            ),
+            (
+                "empty-changes",
+                {"CHANGES_JSON": "{}"},
+                1,
+                "changes must be exactly body/title only",
+            ),
+            (
+                "base-change",
+                {
+                    "CHANGES_JSON": json.dumps(
+                        {"base": {"from": {"ref": "topic", "sha": "3" * 40}}}
+                    )
+                },
+                1,
+                "changes must be exactly body/title only",
+            ),
+            (
+                "unknown-change",
+                {"CHANGES_JSON": json.dumps({"draft": {"from": False}})},
+                1,
+                "changes must be exactly body/title only",
+            ),
+            (
+                "same-old-current",
+                {
+                    "PR_BODY_JSON": json.dumps("Same body"),
+                    "CHANGES_JSON": json.dumps({"body": {"from": "Same body"}}),
+                },
+                1,
+                "body did not change",
+            ),
+            (
+                "duplicate-change-keys",
+                {
+                    "CHANGES_JSON": (
+                        '{"body":{"from":"Old body"},"body":{"from":"Older body"}}'
+                    )
+                },
+                1,
+                "JSON repeats a key",
+            ),
+        )
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="workflow-metadata-adapter-",
+            dir=artifact_root,
+        ) as temporary:
+            for job_name, script in scripts.items():
+                for case_name, overrides, expected, error_fragment in cases:
+                    with self.subTest(job=job_name, case=case_name):
+                        env = {**os.environ, **base_env}
+                        for key, value in overrides.items():
+                            if value is None:
+                                env.pop(key, None)
+                            else:
+                                env[key] = value
+                        completed = subprocess.run(
+                            ["/bin/bash", "-c", script],
+                            cwd=ROOT,
+                            env=env,
+                            check=False,
+                            capture_output=True,
+                            text=True,
+                        )
+                        self.assertEqual(
+                            completed.returncode,
+                            expected,
+                            completed.stderr,
+                        )
+                        if error_fragment is not None:
+                            self.assertIn(error_fragment, completed.stderr)
 
     def test_classifier_failure_fixtures_select_only_exact_event_head_fallbacks(self):
         fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))

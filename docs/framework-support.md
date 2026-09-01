@@ -225,11 +225,13 @@ validator, base-authoritative `event-router`, and mode-specific classifier
 check precede candidate `host-tests`, `build`, `extended-host-tests`, `legacy`,
 and fail-closed `summary` jobs plus Copilot review. Metadata uses runner-backed
 `host-tests`/`build` continuity adapters plus a distinct running
-`metadata-summary`; normal `summary` is the sole candidate attestation and
-requires all four workers from that same full run. Only parsed body/title-only
-edits suppress the four expensive worker steps; the two required adapters may
-still take runners briefly while they perform only their fixed no-checkout
-attestation. A
+`metadata-summary`; those adapters independently revalidate the raw edited
+pull-request event, exact body/title-only `changes` keys, and changed prior
+values without any checkout or candidate import. Normal `summary` is the sole
+candidate attestation and requires all four workers from that same full run.
+Only parsed body/title-only edits suppress the four expensive worker steps; the
+two required adapters may still take runners briefly while they perform only
+their fixed no-checkout attestation. A
 merged `master` push reruns the complete combined gate and adds only
 `patch-release`. Unique CJK/font, codec,
 configuration/budget, and archival evidence stays parallel with Build-owned

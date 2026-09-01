@@ -377,11 +377,15 @@ jobs:
       if: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' }}
       env:
         BASH_ENV: ''
+        CHANGES_JSON: ${{ toJSON(github.event.changes) }}
         CLASSIFICATION: ${{ needs.event-classifier.outputs.classification }}
         CLASSIFIED_BASE_SHA: ${{ needs.event-classifier.outputs.expected_base }}
         CLASSIFIED_BUILD_SHA: ${{ needs.event-classifier.outputs.expected_head }}
         CLASSIFIER_RESULT: ${{ needs.event-classifier.result }}
         ENV: ''
+        EVENT_ACTION: ${{ github.event.action }}
+        EVENT_NAME: ${{ github.event_name }}
+        EVENT_REF: ${{ github.ref }}
         FALLBACK_IDENTITY_RESULT: ${{ needs.event-identity.result }}
         FALLBACK_KIND: ${{ needs.event-identity.outputs.fallback_kind }}
         FALLBACK_SHA: ${{ needs.event-identity.outputs.fallback_sha }}
@@ -389,13 +393,21 @@ jobs:
         HEAD_VALID: ${{ needs.event-classifier.outputs.head_valid }}
         IDENTITY_VALID: ${{ needs.event-classifier.outputs.identity_valid }}
         PATH: /usr/bin:/bin
+        PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+        PR_BASE_REF_JSON: ${{ toJSON(github.event.pull_request.base.ref) }}
         PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_BASE_SHA_JSON: ${{ toJSON(github.event.pull_request.base.sha) }}
+        PR_BODY_JSON: ${{ toJSON(github.event.pull_request.body) }}
         PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        PR_HEAD_SHA_JSON: ${{ toJSON(github.event.pull_request.head.sha) }}
+        PR_NUMBER: ${{ github.event.number }}
+        PR_NUMBER_JSON: ${{ toJSON(github.event.number) }}
+        PR_TITLE_JSON: ${{ toJSON(github.event.pull_request.title) }}
         RUN_EXPENSIVE: ${{ needs.event-classifier.outputs.run_expensive }}
       run: |
         if [ "$CLASSIFIER_RESULT" != "success" ] || \
            [ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \
-           [ "$GITHUB_EVENT_NAME" != "pull_request" ] || \
+           [ "$EVENT_NAME" != "pull_request" ] || \
            [ "$CLASSIFICATION" != "metadata-only" ] || \
            [ "$FALLBACK_KIND" != "pull_request" ] || \
            [ -z "$FALLBACK_SHA" ] || [ -z "$PR_HEAD_SHA" ] || \
@@ -409,6 +421,150 @@ jobs:
           echo "metadata-only branch-protection continuity is not authoritative" >&2
           exit 1
         fi
+        /usr/bin/python3 -I - <<'PY'
+        import json
+        import os
+        import re
+        import sys
+
+        MAX_EVENT_REF_BYTES = 128
+        MAX_NUMBER_BYTES = 20
+        MAX_REF_BYTES = 1024
+        MAX_JSON_BYTES = 1048576
+        MAX_TITLE_BYTES = 65536
+        MAX_BODY_BYTES = 1048576
+        SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+        NUMBER_RE = re.compile(r"^[1-9][0-9]{0,18}$")
+        ALLOWED_CHANGE_KEYS = (
+            frozenset({"body"}),
+            frozenset({"title"}),
+            frozenset({"body", "title"}),
+        )
+
+        def fail(message):
+            print(message, file=sys.stderr)
+            raise SystemExit(1)
+
+        def utf8_len(value):
+            return len(value.encode("utf-8"))
+
+        def env(name, *, max_bytes):
+            value = os.environ.get(name)
+            if value is None or value == "":
+                fail(f"metadata-only raw event missing {name}")
+            if utf8_len(value) > max_bytes:
+                fail(f"metadata-only raw event {name} exceeds bounds")
+            return value
+
+        def reject_duplicates(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    fail("metadata-only raw event JSON repeats a key")
+                result[key] = value
+            return result
+
+        def parse_json_env(name, *, max_bytes):
+            raw = env(name, max_bytes=max_bytes)
+            try:
+                return json.loads(raw, object_pairs_hook=reject_duplicates)
+            except json.JSONDecodeError as error:
+                fail(f"metadata-only raw event {name} is not valid JSON: {error}")
+
+        def parse_nullable_text(value, *, field, max_bytes):
+            if value is None:
+                return None
+            if not isinstance(value, str):
+                fail(f"metadata-only raw event {field} must be a string or null")
+            if utf8_len(value) > max_bytes:
+                fail(f"metadata-only raw event {field} exceeds bounds")
+            return value
+
+        event_name = env("EVENT_NAME", max_bytes=32)
+        if event_name != "pull_request":
+            fail("metadata-only raw event is not an edited pull_request")
+        event_action = env("EVENT_ACTION", max_bytes=32)
+        if event_action != "edited":
+            fail("metadata-only raw event is not an edited pull_request")
+
+        pr_number_text = env("PR_NUMBER", max_bytes=MAX_NUMBER_BYTES)
+        if NUMBER_RE.fullmatch(pr_number_text) is None:
+            fail("metadata-only raw event PR number is invalid")
+        pr_number = parse_json_env("PR_NUMBER_JSON", max_bytes=32)
+        if (
+            isinstance(pr_number, bool)
+            or not isinstance(pr_number, int)
+            or pr_number < 1
+            or str(pr_number) != pr_number_text
+        ):
+            fail("metadata-only raw event PR number is invalid")
+
+        event_ref = env("EVENT_REF", max_bytes=MAX_EVENT_REF_BYTES)
+        if event_ref != f"refs/pull/{pr_number}/merge":
+            fail("metadata-only raw event ref is invalid")
+
+        base_ref = env("PR_BASE_REF", max_bytes=MAX_REF_BYTES)
+        if parse_json_env("PR_BASE_REF_JSON", max_bytes=MAX_JSON_BYTES) != base_ref:
+            fail("metadata-only raw event base ref is invalid")
+
+        base_sha = env("PR_BASE_SHA", max_bytes=64)
+        if (
+            SHA_RE.fullmatch(base_sha) is None
+            or parse_json_env("PR_BASE_SHA_JSON", max_bytes=128) != base_sha
+        ):
+            fail("metadata-only raw event base sha is invalid")
+
+        head_sha = env("PR_HEAD_SHA", max_bytes=64)
+        if (
+            SHA_RE.fullmatch(head_sha) is None
+            or parse_json_env("PR_HEAD_SHA_JSON", max_bytes=128) != head_sha
+        ):
+            fail("metadata-only raw event head sha is invalid")
+
+        classified_base = env("CLASSIFIED_BASE_SHA", max_bytes=64)
+        classified_head = env("CLASSIFIED_BUILD_SHA", max_bytes=64)
+        fallback_sha = env("FALLBACK_SHA", max_bytes=64)
+        if (
+            classified_base != base_sha
+            or classified_head != head_sha
+            or fallback_sha != head_sha
+        ):
+            fail("metadata-only raw event does not match classifier identity")
+
+        current_body = parse_nullable_text(
+            parse_json_env("PR_BODY_JSON", max_bytes=MAX_JSON_BYTES),
+            field="pull_request.body",
+            max_bytes=MAX_BODY_BYTES,
+        )
+        current_title = parse_nullable_text(
+            parse_json_env("PR_TITLE_JSON", max_bytes=MAX_JSON_BYTES),
+            field="pull_request.title",
+            max_bytes=MAX_TITLE_BYTES,
+        )
+        changes = parse_json_env("CHANGES_JSON", max_bytes=MAX_JSON_BYTES)
+        if not isinstance(changes, dict):
+            fail("metadata-only raw event changes must be an object")
+        change_keys = frozenset(changes)
+        if change_keys not in ALLOWED_CHANGE_KEYS:
+            fail("metadata-only raw event changes must be exactly body/title only")
+
+        def validate_change(name, current, max_bytes):
+            change = changes.get(name)
+            if not isinstance(change, dict) or set(change) != {"from"}:
+                fail(f"metadata-only raw event changes.{name} must contain only from")
+            previous = parse_nullable_text(
+                change["from"],
+                field=f"changes.{name}.from",
+                max_bytes=max_bytes,
+            )
+            if previous == current:
+                fail(f"metadata-only raw event {name} did not change")
+
+        if "body" in changes:
+            validate_change("body", current_body, MAX_BODY_BYTES)
+        if "title" in changes:
+            validate_change("title", current_title, MAX_TITLE_BYTES)
+        PY
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       with:
@@ -610,11 +766,15 @@ jobs:
       if: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' }}
       env:
         BASH_ENV: ''
+        CHANGES_JSON: ${{ toJSON(github.event.changes) }}
         CLASSIFICATION: ${{ needs.event-classifier.outputs.classification }}
         CLASSIFIED_BASE_SHA: ${{ needs.event-classifier.outputs.expected_base }}
         CLASSIFIED_BUILD_SHA: ${{ needs.event-classifier.outputs.expected_head }}
         CLASSIFIER_RESULT: ${{ needs.event-classifier.result }}
         ENV: ''
+        EVENT_ACTION: ${{ github.event.action }}
+        EVENT_NAME: ${{ github.event_name }}
+        EVENT_REF: ${{ github.ref }}
         FALLBACK_IDENTITY_RESULT: ${{ needs.event-identity.result }}
         FALLBACK_KIND: ${{ needs.event-identity.outputs.fallback_kind }}
         FALLBACK_SHA: ${{ needs.event-identity.outputs.fallback_sha }}
@@ -622,13 +782,21 @@ jobs:
         HEAD_VALID: ${{ needs.event-classifier.outputs.head_valid }}
         IDENTITY_VALID: ${{ needs.event-classifier.outputs.identity_valid }}
         PATH: /usr/bin:/bin
+        PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+        PR_BASE_REF_JSON: ${{ toJSON(github.event.pull_request.base.ref) }}
         PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_BASE_SHA_JSON: ${{ toJSON(github.event.pull_request.base.sha) }}
+        PR_BODY_JSON: ${{ toJSON(github.event.pull_request.body) }}
         PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        PR_HEAD_SHA_JSON: ${{ toJSON(github.event.pull_request.head.sha) }}
+        PR_NUMBER: ${{ github.event.number }}
+        PR_NUMBER_JSON: ${{ toJSON(github.event.number) }}
+        PR_TITLE_JSON: ${{ toJSON(github.event.pull_request.title) }}
         RUN_EXPENSIVE: ${{ needs.event-classifier.outputs.run_expensive }}
       run: |
         if [ "$CLASSIFIER_RESULT" != "success" ] || \
            [ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \
-           [ "$GITHUB_EVENT_NAME" != "pull_request" ] || \
+           [ "$EVENT_NAME" != "pull_request" ] || \
            [ "$CLASSIFICATION" != "metadata-only" ] || \
            [ "$FALLBACK_KIND" != "pull_request" ] || \
            [ -z "$FALLBACK_SHA" ] || [ -z "$PR_HEAD_SHA" ] || \
@@ -642,6 +810,150 @@ jobs:
           echo "metadata-only branch-protection continuity is not authoritative" >&2
           exit 1
         fi
+        /usr/bin/python3 -I - <<'PY'
+        import json
+        import os
+        import re
+        import sys
+
+        MAX_EVENT_REF_BYTES = 128
+        MAX_NUMBER_BYTES = 20
+        MAX_REF_BYTES = 1024
+        MAX_JSON_BYTES = 1048576
+        MAX_TITLE_BYTES = 65536
+        MAX_BODY_BYTES = 1048576
+        SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+        NUMBER_RE = re.compile(r"^[1-9][0-9]{0,18}$")
+        ALLOWED_CHANGE_KEYS = (
+            frozenset({"body"}),
+            frozenset({"title"}),
+            frozenset({"body", "title"}),
+        )
+
+        def fail(message):
+            print(message, file=sys.stderr)
+            raise SystemExit(1)
+
+        def utf8_len(value):
+            return len(value.encode("utf-8"))
+
+        def env(name, *, max_bytes):
+            value = os.environ.get(name)
+            if value is None or value == "":
+                fail(f"metadata-only raw event missing {name}")
+            if utf8_len(value) > max_bytes:
+                fail(f"metadata-only raw event {name} exceeds bounds")
+            return value
+
+        def reject_duplicates(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    fail("metadata-only raw event JSON repeats a key")
+                result[key] = value
+            return result
+
+        def parse_json_env(name, *, max_bytes):
+            raw = env(name, max_bytes=max_bytes)
+            try:
+                return json.loads(raw, object_pairs_hook=reject_duplicates)
+            except json.JSONDecodeError as error:
+                fail(f"metadata-only raw event {name} is not valid JSON: {error}")
+
+        def parse_nullable_text(value, *, field, max_bytes):
+            if value is None:
+                return None
+            if not isinstance(value, str):
+                fail(f"metadata-only raw event {field} must be a string or null")
+            if utf8_len(value) > max_bytes:
+                fail(f"metadata-only raw event {field} exceeds bounds")
+            return value
+
+        event_name = env("EVENT_NAME", max_bytes=32)
+        if event_name != "pull_request":
+            fail("metadata-only raw event is not an edited pull_request")
+        event_action = env("EVENT_ACTION", max_bytes=32)
+        if event_action != "edited":
+            fail("metadata-only raw event is not an edited pull_request")
+
+        pr_number_text = env("PR_NUMBER", max_bytes=MAX_NUMBER_BYTES)
+        if NUMBER_RE.fullmatch(pr_number_text) is None:
+            fail("metadata-only raw event PR number is invalid")
+        pr_number = parse_json_env("PR_NUMBER_JSON", max_bytes=32)
+        if (
+            isinstance(pr_number, bool)
+            or not isinstance(pr_number, int)
+            or pr_number < 1
+            or str(pr_number) != pr_number_text
+        ):
+            fail("metadata-only raw event PR number is invalid")
+
+        event_ref = env("EVENT_REF", max_bytes=MAX_EVENT_REF_BYTES)
+        if event_ref != f"refs/pull/{pr_number}/merge":
+            fail("metadata-only raw event ref is invalid")
+
+        base_ref = env("PR_BASE_REF", max_bytes=MAX_REF_BYTES)
+        if parse_json_env("PR_BASE_REF_JSON", max_bytes=MAX_JSON_BYTES) != base_ref:
+            fail("metadata-only raw event base ref is invalid")
+
+        base_sha = env("PR_BASE_SHA", max_bytes=64)
+        if (
+            SHA_RE.fullmatch(base_sha) is None
+            or parse_json_env("PR_BASE_SHA_JSON", max_bytes=128) != base_sha
+        ):
+            fail("metadata-only raw event base sha is invalid")
+
+        head_sha = env("PR_HEAD_SHA", max_bytes=64)
+        if (
+            SHA_RE.fullmatch(head_sha) is None
+            or parse_json_env("PR_HEAD_SHA_JSON", max_bytes=128) != head_sha
+        ):
+            fail("metadata-only raw event head sha is invalid")
+
+        classified_base = env("CLASSIFIED_BASE_SHA", max_bytes=64)
+        classified_head = env("CLASSIFIED_BUILD_SHA", max_bytes=64)
+        fallback_sha = env("FALLBACK_SHA", max_bytes=64)
+        if (
+            classified_base != base_sha
+            or classified_head != head_sha
+            or fallback_sha != head_sha
+        ):
+            fail("metadata-only raw event does not match classifier identity")
+
+        current_body = parse_nullable_text(
+            parse_json_env("PR_BODY_JSON", max_bytes=MAX_JSON_BYTES),
+            field="pull_request.body",
+            max_bytes=MAX_BODY_BYTES,
+        )
+        current_title = parse_nullable_text(
+            parse_json_env("PR_TITLE_JSON", max_bytes=MAX_JSON_BYTES),
+            field="pull_request.title",
+            max_bytes=MAX_TITLE_BYTES,
+        )
+        changes = parse_json_env("CHANGES_JSON", max_bytes=MAX_JSON_BYTES)
+        if not isinstance(changes, dict):
+            fail("metadata-only raw event changes must be an object")
+        change_keys = frozenset(changes)
+        if change_keys not in ALLOWED_CHANGE_KEYS:
+            fail("metadata-only raw event changes must be exactly body/title only")
+
+        def validate_change(name, current, max_bytes):
+            change = changes.get(name)
+            if not isinstance(change, dict) or set(change) != {"from"}:
+                fail(f"metadata-only raw event changes.{name} must contain only from")
+            previous = parse_nullable_text(
+                change["from"],
+                field=f"changes.{name}.from",
+                max_bytes=max_bytes,
+            )
+            if previous == current:
+                fail(f"metadata-only raw event {name} did not change")
+
+        if "body" in changes:
+            validate_change("body", current_body, MAX_BODY_BYTES)
+        if "title" in changes:
+            validate_change("title", current_title, MAX_TITLE_BYTES)
+        PY
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       with:

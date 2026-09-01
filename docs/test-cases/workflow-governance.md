@@ -323,11 +323,15 @@ worker checks `host-tests`, `build`, `extended-host-tests`, and `legacy`,
 plus `patch-release` and `metadata-summary`. The trusted metadata-only path
 starts runners for `host-tests` and `build`, but those two jobs execute only a
 fixed no-checkout continuity attestation that validates exact event identity,
-classifier, head, and base; every existing checkout/install/test/build step in
-those jobs is full/fallback-only and remains skipped. `extended-host-tests`
-and `legacy` stay platform-skipped with no runner. Live branch protection
-remains unchanged and therefore still requires canonical `host-tests`,
-`build`, `summary`, and the independent GitGuardian context. `metadata-summary`
+classifier, head, base, and the raw edited pull-request body/title-only
+`changes` payload itself; missing, malformed, duplicate, base-retarget,
+unknown, empty, or unchanged body/title changes reject both adapters. Every
+existing
+checkout/install/test/build step in those jobs is full/fallback-only and
+remains skipped. `extended-host-tests` and `legacy` stay platform-skipped with
+no runner. Live branch protection remains unchanged and therefore still
+requires canonical `host-tests`, `build`, `summary`, and the independent
+GitGuardian context. `metadata-summary`
 stays distinct, so newer metadata runs cannot supersede the required full
 `summary` context; without a prior green full `summary`, metadata-only edits
 still block merge. Metadata runs remain ineligible candidate evidence even when

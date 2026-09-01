@@ -814,11 +814,15 @@ _METADATA_ADAPTER_ENV = tuple(
     sorted(
         (
             ("BASH_ENV", "''"),
+            ("CHANGES_JSON", "${{ toJSON(github.event.changes) }}"),
             ("CLASSIFICATION", "${{ needs.event-classifier.outputs.classification }}"),
             ("CLASSIFIED_BASE_SHA", "${{ needs.event-classifier.outputs.expected_base }}"),
             ("CLASSIFIED_BUILD_SHA", "${{ needs.event-classifier.outputs.expected_head }}"),
             ("CLASSIFIER_RESULT", "${{ needs.event-classifier.result }}"),
             ("ENV", "''"),
+            ("EVENT_ACTION", "${{ github.event.action }}"),
+            ("EVENT_NAME", "${{ github.event_name }}"),
+            ("EVENT_REF", "${{ github.ref }}"),
             ("FALLBACK_IDENTITY_RESULT", "${{ needs.event-identity.result }}"),
             ("FALLBACK_KIND", "${{ needs.event-identity.outputs.fallback_kind }}"),
             ("FALLBACK_SHA", "${{ needs.event-identity.outputs.fallback_sha }}"),
@@ -826,11 +830,83 @@ _METADATA_ADAPTER_ENV = tuple(
             ("HEAD_VALID", "${{ needs.event-classifier.outputs.head_valid }}"),
             ("IDENTITY_VALID", "${{ needs.event-classifier.outputs.identity_valid }}"),
             ("PATH", "/usr/bin:/bin"),
+            ("PR_BASE_REF", "${{ github.event.pull_request.base.ref }}"),
+            ("PR_BASE_REF_JSON", "${{ toJSON(github.event.pull_request.base.ref) }}"),
             ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
+            ("PR_BASE_SHA_JSON", "${{ toJSON(github.event.pull_request.base.sha) }}"),
+            ("PR_BODY_JSON", "${{ toJSON(github.event.pull_request.body) }}"),
             ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
+            ("PR_HEAD_SHA_JSON", "${{ toJSON(github.event.pull_request.head.sha) }}"),
+            ("PR_NUMBER", "${{ github.event.number }}"),
+            ("PR_NUMBER_JSON", "${{ toJSON(github.event.number) }}"),
+            ("PR_TITLE_JSON", "${{ toJSON(github.event.pull_request.title) }}"),
             ("RUN_EXPENSIVE", "${{ needs.event-classifier.outputs.run_expensive }}"),
         )
     )
+)
+_METADATA_ADAPTER_REQUIRED_FRAGMENTS = (
+    "$CLASSIFIER_RESULT",
+    "$FALLBACK_IDENTITY_RESULT",
+    "$EVENT_NAME",
+    "$CLASSIFICATION",
+    "$FALLBACK_KIND",
+    "$FALLBACK_SHA",
+    "$PR_HEAD_SHA",
+    "$PR_BASE_SHA",
+    "$FULL_FALLBACK",
+    "$HEAD_VALID",
+    "$IDENTITY_VALID",
+    "$RUN_EXPENSIVE",
+    "$EXPECTED_BUILD_SHA",
+    "$CLASSIFIED_BUILD_SHA",
+    "$CLASSIFIED_BASE_SHA",
+    "EVENT_ACTION",
+    "EVENT_REF",
+    "PR_NUMBER",
+    "PR_BASE_REF",
+    "PR_BASE_REF_JSON",
+    "PR_BASE_SHA_JSON",
+    "PR_BODY_JSON",
+    "PR_HEAD_SHA_JSON",
+    "PR_NUMBER_JSON",
+    "PR_TITLE_JSON",
+    "CHANGES_JSON",
+    "/usr/bin/python3",
+    "import json",
+    "import os",
+    "import re",
+    "import sys",
+    "if event_action != edited:",
+    "if event_ref != frefs/pull/{pr_number}/merge:",
+    "if change_keys not in ALLOWED_CHANGE_KEYS:",
+    "if previous == current:",
+    "object_pairs_hook=reject_duplicates",
+    "metadata-only raw event is not an edited pull_request",
+    "metadata-only raw event PR number is invalid",
+    "metadata-only raw event ref is invalid",
+    "metadata-only raw event base ref is invalid",
+    "metadata-only raw event base sha is invalid",
+    "metadata-only raw event head sha is invalid",
+    "metadata-only raw event does not match classifier identity",
+    "metadata-only raw event changes must be an object",
+    "metadata-only raw event changes must be exactly body/title only",
+    "changes.{name}.from",
+    "metadata-only raw event {name} did not change",
+    "ALLOWED_CHANGE_KEYS",
+    "metadata-only branch-protection continuity is not authoritative",
+)
+_METADATA_ADAPTER_FORBIDDEN_FRAGMENTS = (
+    "actions/checkout",
+    "scripts/workflow_pilot/",
+    "python3 -m",
+    "/usr/bin/git",
+    "sudo ",
+    "apt-get",
+    "./build_tools.sh",
+    "make ",
+    "import scripts",
+    "from scripts",
+    "subprocess",
 )
 _NON_GATE_STEP_NAMES = {
     _METADATA_ADAPTER_STEP_NAME,
@@ -2013,39 +2089,14 @@ def _parse_step(block, job_name, index):
             adapter_text = " ".join(
                 token for command in values["run"] for token in command
             )
-            required_fragments = (
-                "$CLASSIFIER_RESULT",
-                "$FALLBACK_IDENTITY_RESULT",
-                "$GITHUB_EVENT_NAME",
-                "$CLASSIFICATION",
-                "$FALLBACK_KIND",
-                "$FALLBACK_SHA",
-                "$PR_HEAD_SHA",
-                "$PR_BASE_SHA",
-                "$FULL_FALLBACK",
-                "$HEAD_VALID",
-                "$IDENTITY_VALID",
-                "$RUN_EXPENSIVE",
-                "$EXPECTED_BUILD_SHA",
-                "$CLASSIFIED_BUILD_SHA",
-                "$CLASSIFIED_BASE_SHA",
-                "metadata-only branch-protection continuity is not authoritative",
-            )
-            if not all(fragment in adapter_text for fragment in required_fragments):
+            if not all(
+                fragment in adapter_text
+                for fragment in _METADATA_ADAPTER_REQUIRED_FRAGMENTS
+            ):
                 raise ValueError(f"{step_label} metadata adapter script differs")
             if any(
-                token in adapter_text
-                for token in (
-                    "actions/checkout",
-                    "/usr/bin/python3",
-                    "python3",
-                    "/usr/bin/git",
-                    "git ",
-                    "sudo ",
-                    "apt-get",
-                    "./build_tools.sh",
-                    "make ",
-                )
+                fragment in adapter_text
+                for fragment in _METADATA_ADAPTER_FORBIDDEN_FRAGMENTS
             ):
                 raise ValueError(
                     f"{step_label} metadata adapter must not run candidate or build commands"

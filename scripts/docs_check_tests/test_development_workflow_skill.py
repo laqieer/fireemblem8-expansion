@@ -3889,9 +3889,9 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         self.assertEqual(workflow_tester_topology_violations(reordered), [])
 
         semantic_names, count = re.subn(
-            r"Live branch protection\s+remains unchanged and therefore still "
+            r"Live branch protection\s+remains unchanged and therefore still\s+"
             r"requires canonical `host-tests`,\s+`build`,\s+`summary`, and "
-            r"the independent GitGuardian context",
+            r"the independent\s+GitGuardian context",
             "branch protection may skip full summary continuity",
             governance,
             1,
@@ -3912,6 +3912,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         required_fragments = (
             "host-tests/build",
             "continuity adapters",
+            "runner-backed",
+            "body/title-only",
             "extended-host-tests",
             "legacy",
             "platform-skipped",
