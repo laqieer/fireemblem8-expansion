@@ -515,9 +515,13 @@ game behavior needs a compensating change.
    non-fast-forward updates. Bootstrap before a PR, append a handoff, then
    append only an externally signed GitHub PR API response with exact
    repository, PR number, `OPEN`/unmerged state, base/head/OIDs/times/user.
-   Compare it to protected frozen delivery/root/publication inputs. Reject
-   invented, closed, merged, self-consistent-but-wrong fields, rebinding,
-   same-owner reuse, stale state, rollback, replay, and ABA. Confirm one
+   Compare stable repository/base-branch/head invariants to protected frozen
+   delivery/root/publication inputs, bind the live current base OID
+   separately, and require the frozen base to remain an ancestor of both the
+   live current base and the candidate head. Reject invented, closed, merged,
+   self-consistent-but-wrong fields, stale current-base observations,
+   rebinding, same-owner reuse, non-descendant/rewritten base, rollback,
+   replay, and ABA. Confirm one
    preflighted `git push --atomic` publishes both refs; split/two-coordinator
    plans and servers without atomic capability reject without partial state.
    Model the 2026 ruleset response with `actor_type: User`, equal frozen
@@ -538,7 +542,11 @@ game behavior needs a compensating change.
 7. Exercise coordinator-sealed availability. Reject future, stale, or
    post-assignment observations, expired coverage, and either enabled stop
    trigger. Accept only a fresh observation made before assignment and valid
-   through the validation/lifecycle cutoff and unattended interval.
+   through the validation/lifecycle cutoff and unattended interval. Validate a
+   once-valid signed coordinator receipt after the freshness window and confirm
+   it remains historically authentic but loses live eligibility. Re-sign the
+   receipt with wrong self-consistent repository IDs and confirm the
+   installation/frozen-authority identity check rejects it.
    Confirm no HMAC/private key exists in the implementation namespace and
    permission modes grant no trust. The external consume store must advance
    its sequence/anchor, spend the nonce before authority push, and reject the
@@ -575,7 +583,8 @@ game behavior needs a compensating change.
 
 Only the exact clean one-commit descendant with a parent-trusted checker,
 terminal external asymmetric attestation, complete through-eligibility
-coverage, exact live ruleset/PR responses, and atomically protected monotonic
+coverage, exact live ruleset/PR responses, fresh current-time receipt
+validation, matching repository identity, and atomically protected monotonic
 authority reaches `trusted_push_eligible`.
 Assignment sent, received, progressing, committed, and handed-off remain
 distinct timestamped states. A committed result closes its implementation
@@ -597,12 +606,16 @@ one causal successor chain are allowed.
 All actor identities are numeric and authoritative.
 
 The issue-scoped authority exists before PR creation. Its immutable binding
-retains no-PR history and rejects owner reuse after binding. Authority and
-anchor branches advance in one atomic direct-parent push under an exact signed
-live ruleset response. A stable read requires equal authority/anchor OIDs around
-fetch and at the final eligibility check; rollback, replay, ABA, stale state,
-and unverified protection reject. The coordinator receipt's event-source
-union detects omitted push/comment/review/dispatch events. Incomplete GitHub
+retains no-PR history and rejects owner reuse after binding. Frozen base
+provenance stays in `delivery_expectation.immediate_base_oid`, while the
+binding separately records the live current base OID and requires the frozen
+base to remain its ancestor. Authority and anchor branches advance in one
+atomic direct-parent push under an exact signed live ruleset response. A
+stable read requires equal authority/anchor OIDs around fetch and at the final
+eligibility check; rollback, replay, ABA, stale state, stale current-base
+observations, non-descendant rewritten base, and unverified protection reject.
+The coordinator receipt's event-source union detects omitted
+push/comment/review/dispatch events. Incomplete GitHub
 coverage succeeds only with a credentialless network-denied process interval.
 
 The typed dependency graph reports `child-implement` ready as soon as
@@ -648,7 +661,8 @@ terminal failure without active fix-forward/revert also rejects. Issue/task/
 status relabeling, arbitrary commands, forged or stale check receipts,
 hand-authored reporter rows, owner-history chain mutation, missing/mixed actor
 IDs, omitted remote events, incomplete source coverage, claim tampering,
-future/stale availability, local HMAC/self-attestation, post-coverage events,
+future/stale availability, stale live receipt timestamps, mismatched receipt
+repository IDs, local HMAC/self-attestation, post-coverage events,
 allowed-scope/run/watcher mutation, unrelated ruleset IDs, wrong patterns,
 unexpected or role-typed user bypasses, invented/closed/merged PR observations,
 replayed consume nonce, after-sign pushes, rehashed result metrics, split/non-atomic
@@ -660,7 +674,10 @@ incomplete-prefix rejection, and equal/predated/multiple OOM replacement also
 fail their dedicated controls. Mid-read movement retries, repeated movement
 fails `authority-moved`, and movement after the read but before eligibility
 invalidates the sealed dual-ref observation. Parentless checker bootstrap,
-authority rollback/replay/ABA, PR rebinding, and a second issue root also fail.
+authority rollback/replay/ABA, PR rebinding, and a second issue root also
+fail. Historical reporter verification still requires the external finalize
+signature and current authority/anchor ancestry, but it never recreates live
+trusted-push eligibility from an old receipt.
 
 ### Interactions and save compatibility
 

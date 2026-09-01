@@ -141,6 +141,7 @@ RSA_SHA256_DIGEST_INFO_PREFIX = bytes.fromhex(
     "3031300d060960864801650304020105000420"
 )
 AUTHORITY_READ_ATTEMPTS = 3
+LIVE_ATTESTATION_MAX_AGE_SECONDS = 2
 
 
 class HandoffDataError(Exception):
@@ -227,6 +228,97 @@ def run_git_online(repository_root: Path, *arguments: str) -> bytes:
         f"Git {' '.join(arguments)} failed"
         + (f": {detail}" if detail else "")
     )
+
+
+def authoritative_current_time(
+    value: datetime | None,
+    *,
+    label: str,
+) -> datetime:
+    if value is None:
+        return datetime.now(timezone.utc).replace(microsecond=0)
+    if not isinstance(value, datetime) or value.tzinfo is None:
+        raise HandoffDataError(f"{label} must be an aware UTC datetime")
+    return value.astimezone(timezone.utc).replace(microsecond=0)
+
+
+def require_fresh_live_timestamp(
+    observed_at: datetime,
+    *,
+    label: str,
+    current_time: datetime,
+) -> None:
+    if (
+        observed_at > current_time
+        or (current_time - observed_at).total_seconds()
+        > LIVE_ATTESTATION_MAX_AGE_SECONDS
+    ):
+        raise HandoffDataError(f"{label} is future-dated or stale")
+
+
+def git_commit_is_ancestor(
+    repository_root: Path,
+    ancestor: str,
+    descendant: str,
+) -> bool:
+    for object_id, label in (
+        (ancestor, "ancestor commit"),
+        (descendant, "descendant commit"),
+    ):
+        expect_sha(object_id, label)
+        run_git(
+            repository_root,
+            "cat-file",
+            "-e",
+            f"{object_id}^{{commit}}",
+        )
+    completed = subprocess.run(
+        reporter.git_command(
+            repository_root,
+            "merge-base",
+            "--is-ancestor",
+            ancestor,
+            descendant,
+        ),
+        cwd=repository_root,
+        env=reporter.git_environment(offline=True),
+        check=False,
+        capture_output=True,
+    )
+    if completed.returncode in {0, 1}:
+        return completed.returncode == 0
+    detail = completed.stderr.decode("utf-8", errors="replace").strip()
+    raise HandoffDataError(
+        "Git merge-base --is-ancestor failed"
+        + (f": {detail}" if detail else "")
+    )
+
+
+def publication_binding_expectation(
+    *,
+    delivery_expectation: dict[str, Any],
+    pull_request: int,
+    head_branch: str,
+    head_oid: str,
+    coordinator_database_id: int,
+    current_base_oid: str,
+) -> dict[str, Any]:
+    return {
+        "repository_id": delivery_expectation["repository_id"],
+        "repository_full_name": delivery_expectation["repository_full_name"],
+        "pull_request": pull_request,
+        "state": "OPEN",
+        "merged": False,
+        "base_branch": delivery_expectation["immediate_base_branch"],
+        "frozen_base_oid": delivery_expectation["immediate_base_oid"],
+        "current_base_oid": current_base_oid,
+        "head_branch": head_branch,
+        "head_repository_full_name": delivery_expectation[
+            "head_repository_full_name"
+        ],
+        "head_oid": head_oid,
+        "coordinator_database_id": coordinator_database_id,
+    }
 
 
 def require_atomic_push_capability(
@@ -1343,6 +1435,12 @@ def _read_history_authority_commit(
         f"history authority object {object_id}."
         "delivery_expectation.immediate_base_oid",
     )
+    delivery_repository_id = expect_int(
+        delivery["repository_id"],
+        f"history authority object {object_id}."
+        "delivery_expectation.repository_id",
+        1,
+    )
     publication = expect_object(
         authority["publication_attestation"],
         f"history authority object {object_id}.publication_attestation",
@@ -1357,7 +1455,7 @@ def _read_history_authority_commit(
         publication,
         signer=signer,
         repository=repository,
-        repository_database_id=None,
+        repository_database_id=delivery_repository_id,
         issue=issue,
         authority_ref=history_authority_ref(issue, None),
         anchor_ref=history_anchor_ref(issue),
@@ -1400,12 +1498,7 @@ def _read_history_authority_commit(
             binding,
             signer=signer,
             repository=repository,
-            repository_database_id=expect_int(
-                binding["repository_id"],
-                f"history authority object {object_id}."
-                "pr_binding.repository_id",
-                1,
-            ),
+            repository_database_id=delivery_repository_id,
             authority_object_id=expect_sha(
                 binding["authority_object_id"],
                 f"history authority object {object_id}."
@@ -1464,6 +1557,22 @@ def _read_history_authority_commit(
             "pr_binding.coordinator_database_id",
             1,
         )
+        if (
+            binding["repository_id"] != delivery_repository_id
+            or binding["repository_full_name"]
+            != delivery["repository_full_name"]
+            or binding["base_branch"] != delivery["immediate_base_branch"]
+            or binding["delivery_branch"] != delivery["delivery_branch"]
+            or binding["expected_handoff_branch"]
+            != delivery["delivery_branch"]
+            or binding["head_branch"] != delivery["delivery_branch"]
+            or binding["head_repository_full_name"]
+            != delivery["head_repository_full_name"]
+        ):
+            raise HandoffDataError(
+                f"history authority object {object_id} PR binding "
+                "contradicts frozen delivery identity"
+            )
     event = expect_object(
         authority["event"],
         f"history authority object {object_id}.event",
@@ -1904,6 +2013,30 @@ def read_history_authority(
         issue,
     )
     if (
+        authority["delivery_expectation"]["repository_id"]
+        != installation["repository_database_id"]
+        or authority["delivery_expectation"]["repository_full_name"]
+        != installation["repository"]
+        or authority["delivery_expectation"]["immediate_base_branch"]
+        != installation["delivery"]["immediate_base_branch"]
+        or authority["delivery_expectation"]["delivery_branch"]
+        != installation["delivery"]["delivery_branch"]
+        or authority["delivery_expectation"]["head_repository_full_name"]
+        != installation["delivery"]["head_repository_full_name"]
+    ):
+        raise HandoffDataError(
+            "history authority delivery expectation does not match "
+            "coordinator installation"
+        )
+    if (
+        authority["pr_binding"] is not None
+        and authority["pr_binding"]["repository_id"]
+        != authority["delivery_expectation"]["repository_id"]
+    ):
+        raise HandoffDataError(
+            "history authority PR binding repository identity mismatch"
+        )
+    if (
         anchor["sequence"] != authority["sequence"]
         or anchor["authority_object_id"] != object_id
         or authority["publication_attestation"]["anchor_object_id"]
@@ -2038,8 +2171,13 @@ def plan_history_authority(
     pull_request_observation: dict[str, Any] | None = None,
     publication_attestation: dict[str, Any] | None = None,
     coordinator_installation: Path | None = None,
+    current_time: datetime | None = None,
 ) -> dict[str, Any]:
     repository_root = validate_repository_root(repository_root)
+    live_current_time = authoritative_current_time(
+        current_time,
+        label="history authority plan current_time",
+    )
     installation = load_coordinator_installation(
         repository_root,
         coordinator_installation,
@@ -2281,21 +2419,6 @@ def plan_history_authority(
                 raise HandoffDataError(
                     "PR binding requires one frozen coordinator user"
                 )
-            expected_binding = {
-                "repository_id": delivery["repository_id"],
-                "repository_full_name": delivery["repository_full_name"],
-                "pull_request": pull_request,
-                "state": "OPEN",
-                "merged": False,
-                "base_branch": delivery["immediate_base_branch"],
-                "base_oid": delivery["immediate_base_oid"],
-                "head_branch": root_assignment["expected_branch"],
-                "head_repository_full_name": delivery[
-                    "head_repository_full_name"
-                ],
-                "head_oid": latest_handoff["candidate_sha"],
-                "coordinator_database_id": frozen_user_ids[0],
-            }
             if latest_handoff["candidate_sha"] is None:
                 raise HandoffDataError(
                     "PR binding requires a committed handoff head"
@@ -2310,6 +2433,7 @@ def plan_history_authority(
                 authority_object_id=current["object_id"],
                 anchor_object_id=current["anchor_object_id"],
                 live=True,
+                current_time=live_current_time,
             )
             if observation["pull_request"] != pull_request:
                 raise HandoffDataError(
@@ -2344,17 +2468,55 @@ def plan_history_authority(
                 .strip()
             )
             if (
-                observation["base_oid"] != actual_base_oid
-                or observation["head_oid"] != actual_head_oid
-                or any(
-                    observation[field] != expected
-                    for field, expected in expected_binding.items()
-                )
+                observation["repository_id"] != delivery["repository_id"]
+                or observation["repository_full_name"]
+                != delivery["repository_full_name"]
+                or observation["base_branch"]
+                != delivery["immediate_base_branch"]
+                or observation["head_branch"]
+                != root_assignment["expected_branch"]
+                or observation["head_repository_full_name"]
+                != delivery["head_repository_full_name"]
+                or observation["head_oid"] != latest_handoff["candidate_sha"]
+                or observation["coordinator_database_id"] != frozen_user_ids[0]
             ):
                 raise HandoffDataError(
                     "GitHub PR observation does not match frozen delivery "
                     "inputs"
                 )
+            if (
+                observation["base_oid"] != actual_base_oid
+                or observation["head_oid"] != actual_head_oid
+            ):
+                raise HandoffDataError(
+                    "GitHub PR observation does not match live repository state"
+                )
+            if not git_commit_is_ancestor(
+                repository_root,
+                delivery["immediate_base_oid"],
+                observation["base_oid"],
+            ):
+                raise HandoffDataError(
+                    "GitHub PR observation base is not descended from the "
+                    "frozen delivery base"
+                )
+            if not git_commit_is_ancestor(
+                repository_root,
+                delivery["immediate_base_oid"],
+                latest_handoff["candidate_sha"],
+            ):
+                raise HandoffDataError(
+                    "PR binding candidate is not descended from the frozen "
+                    "delivery base"
+                )
+            expected_binding = publication_binding_expectation(
+                delivery_expectation=delivery,
+                pull_request=pull_request,
+                head_branch=root_assignment["expected_branch"],
+                head_oid=latest_handoff["candidate_sha"],
+                coordinator_database_id=frozen_user_ids[0],
+                current_base_oid=observation["base_oid"],
+            )
             binding = copy.deepcopy(observation)
             if not any(
                 actor["database_id"] == binding["coordinator_database_id"]
@@ -2418,6 +2580,7 @@ def plan_history_authority(
         ruleset_id=record["ruleset_id"],
         authorized_bypass_actors=record["authorized_bypass_actors"],
         live=True,
+        current_time=live_current_time,
     )
     expected_history_digest = (
         hashlib.sha256(normalized_json(history_receipt)).hexdigest()
@@ -3832,6 +3995,7 @@ def parse_pull_request_observation(
     authority_object_id: str,
     anchor_object_id: str,
     live: bool = False,
+    current_time: datetime | None = None,
 ) -> dict[str, Any]:
     label = "GitHub pull request observation"
     observation = copy.deepcopy(expect_object(raw, label))
@@ -3909,11 +4073,14 @@ def parse_pull_request_observation(
         f"{label}.observed_at",
     )
     if live:
-        now = datetime.now(timezone.utc).replace(microsecond=0)
-        if observed_at > now or (now - observed_at).total_seconds() > 2:
-            raise HandoffDataError(
-                "GitHub PR observation is future-dated or stale"
-            )
+        require_fresh_live_timestamp(
+            observed_at,
+            label="GitHub PR observation",
+            current_time=authoritative_current_time(
+                current_time,
+                label="GitHub PR observation current_time",
+            ),
+        )
     expect_int(
         observation["coordinator_database_id"],
         f"{label}.coordinator_database_id",
@@ -3957,6 +4124,7 @@ def parse_publication_attestation(
     ruleset_id: int,
     authorized_bypass_actors: list[dict[str, Any]],
     live: bool = False,
+    current_time: datetime | None = None,
 ) -> dict[str, Any]:
     label = "authority publication attestation"
     attestation = copy.deepcopy(expect_object(raw, label))
@@ -4048,11 +4216,14 @@ def parse_publication_attestation(
         f"{label}.observed_at",
     )
     if live:
-        now = datetime.now(timezone.utc).replace(microsecond=0)
-        if observed_at > now or (now - observed_at).total_seconds() > 2:
-            raise HandoffDataError(
-                "authority publication attestation is future-dated or stale"
-            )
+        require_fresh_live_timestamp(
+            observed_at,
+            label="authority publication attestation",
+            current_time=authoritative_current_time(
+                current_time,
+                label="authority publication attestation current_time",
+            ),
+        )
     coordinator_id = expect_int(
         attestation["coordinator_database_id"],
         f"{label}.coordinator_database_id",
@@ -4188,6 +4359,8 @@ def _parse_coordinator_receipt(
     *,
     document: dict[str, Any],
     canonical_authority: dict[str, Any],
+    expected_repository_database_id: int,
+    current_time: datetime,
 ) -> dict[str, Any]:
     receipt = copy.deepcopy(
         expect_object(raw_receipt, "coordinator_receipt")
@@ -4220,22 +4393,21 @@ def _parse_coordinator_receipt(
         raise HandoffDataError(
             "coordinator_receipt.schema_version must be 2"
         )
-    if (
-        expect_string(
-            receipt["repository"],
-            "coordinator_receipt.repository",
-        )
-        != canonical_authority["repository"]
-        or expect_int(
-            receipt["repository_database_id"],
-            "coordinator_receipt.repository_database_id",
-            1,
-        )
-        < 1
-    ):
-        raise HandoffDataError(
-            "coordinator receipt repository identity mismatch"
-        )
+    receipt_repository = expect_string(
+        receipt["repository"],
+        "coordinator_receipt.repository",
+    )
+    receipt_repository_id = expect_int(
+        receipt["repository_database_id"],
+        "coordinator_receipt.repository_database_id",
+        1,
+    )
+    repository_identity_valid = (
+        receipt_repository == canonical_authority["repository"]
+        and receipt_repository_id == expected_repository_database_id
+        and receipt_repository_id
+        == canonical_authority["delivery_expectation"]["repository_id"]
+    )
     collector = _parse_actor(
         receipt["collector_login"],
         receipt["collector_database_id"],
@@ -4352,6 +4524,19 @@ def _parse_coordinator_receipt(
         raise HandoffDataError(
             "coordinator operation is not terminal, single-use, and atomic"
         )
+    freshness_valid = True
+    for field, timestamp in (
+        ("coordinator receipt issued_at", issued_at),
+        ("coordinator receipt eligibility instant", eligibility_instant),
+    ):
+        try:
+            require_fresh_live_timestamp(
+                timestamp,
+                label=field,
+                current_time=current_time,
+            )
+        except HandoffDataError:
+            freshness_valid = False
 
     protection = expect_object(
         receipt["authority_protection"],
@@ -4386,12 +4571,12 @@ def _parse_coordinator_receipt(
         "coordinator_receipt.authority_protection.repository_full_name",
     )
     if (
-        repository_id != receipt["repository_database_id"]
-        or repository_full_name != receipt["repository"]
+        repository_id != receipt_repository_id
+        or repository_id != expected_repository_database_id
+        or repository_full_name != receipt_repository
+        or repository_full_name != canonical_authority["repository"]
     ):
-        raise HandoffDataError(
-            "authority ruleset repository identity mismatch"
-        )
+        repository_identity_valid = False
     expect_string(
         protection["authority_ref"],
         "coordinator_receipt.authority_protection.authority_ref",
@@ -5055,6 +5240,8 @@ def _parse_coordinator_receipt(
         "implementation_terminated_at": implementation_terminated_at,
         "eligibility_instant": eligibility_instant,
         "issued_at": issued_at,
+        "freshness_valid": freshness_valid,
+        "repository_identity_valid": repository_identity_valid,
         "protection": protection,
         "ruleset": ruleset,
         "bypass_actors": bypass_actors,
@@ -5853,6 +6040,7 @@ def validate_document(
     *,
     authority_hook=None,
     coordinator_installation: Path | None = None,
+    current_time: datetime | None = None,
 ) -> dict[str, Any]:
     document = copy.deepcopy(expect_object(raw, "handoff document"))
     expect_keys(
@@ -5885,6 +6073,10 @@ def validate_document(
         "handoff document.repository",
     )
     repository_root = validate_repository_root(repository_root)
+    live_current_time = authoritative_current_time(
+        current_time,
+        label="handoff validation current_time",
+    )
     installation = load_coordinator_installation(
         repository_root,
         coordinator_installation,
@@ -5970,6 +6162,10 @@ def validate_document(
         document["coordinator_receipt"],
         document=document,
         canonical_authority=canonical_authority,
+        expected_repository_database_id=installation[
+            "repository_database_id"
+        ],
+        current_time=live_current_time,
     )
     if supplied_authority != canonical_authority:
         raise HandoffDataError(
@@ -6087,7 +6283,11 @@ def validate_document(
     if expected_user_bypass != frozen_user_bypass:
         for handoff in handoffs:
             reject("authority-ruleset-bypass-mismatch", handoff["id"])
-    if not coordinator_receipt["attestation_valid"]:
+    if (
+        not coordinator_receipt["attestation_valid"]
+        or not coordinator_receipt["freshness_valid"]
+        or not coordinator_receipt["repository_identity_valid"]
+    ):
         for handoff in handoffs:
             reject("invalid-coordinator-attestation", handoff["id"])
     lifecycle_end = max(

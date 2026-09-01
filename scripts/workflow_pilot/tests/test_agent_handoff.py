@@ -384,25 +384,25 @@ def pull_request_observation(
     return record
 
 
-def frozen_binding_expectation(authority, pull_request=200):
+def frozen_binding_expectation(
+    authority,
+    pull_request=200,
+    *,
+    current_base_oid=None,
+):
     delivery = authority["delivery_expectation"]
-    return {
-        "repository_id": delivery["repository_id"],
-        "repository_full_name": delivery["repository_full_name"],
-        "pull_request": pull_request,
-        "state": "OPEN",
-        "merged": False,
-        "base_branch": delivery["immediate_base_branch"],
-        "base_oid": delivery["immediate_base_oid"],
-        "head_branch": authority["history_events"][0]["assignment"][
+    if current_base_oid is None:
+        current_base_oid = delivery["immediate_base_oid"]
+    return agent_handoff.publication_binding_expectation(
+        delivery_expectation=delivery,
+        pull_request=pull_request,
+        head_branch=authority["history_events"][0]["assignment"][
             "expected_branch"
         ],
-        "head_repository_full_name": delivery[
-            "head_repository_full_name"
-        ],
-        "head_oid": authority["history_events"][-1]["candidate_sha"],
-        "coordinator_database_id": 9001,
-    }
+        head_oid=authority["history_events"][-1]["candidate_sha"],
+        coordinator_database_id=9001,
+        current_base_oid=current_base_oid,
+    )
 
 
 def sign_coordinator_document(document, repository_root):
@@ -637,6 +637,7 @@ def bind_history_authority(
         binding_expectation=frozen_binding_expectation(
             current,
             pull_request,
+            current_base_oid=pr_observation["base_oid"],
         ),
     )
     plan = agent_handoff.plan_history_authority(
@@ -1858,7 +1859,7 @@ class ExactHandoffTests(unittest.TestCase):
                 ROOT / agent_handoff.HANDOFF_SCHEMA_REPOSITORY_PATH
             ).read_text(encoding="utf-8")
         )
-        self.assertEqual(schema["protocol_version"], 5)
+        self.assertEqual(schema["protocol_version"], 6)
         self.assertEqual(schema["properties"]["schema_version"]["const"], 2)
         self.assertIn(
             "coordinator_receipt",
@@ -3112,8 +3113,10 @@ class ExactHandoffTests(unittest.TestCase):
             )
             for field, value, message in (
                 ("repository_id", 999, "repository mismatch"),
+                ("repository_full_name", "fork/repo", "repository mismatch"),
                 ("head_repository_full_name", "fork/repo", "repository mismatch"),
-                ("base_oid", "e" * 40, "frozen delivery inputs"),
+                ("base_branch", "agent/issue-178", "frozen delivery inputs"),
+                ("base_oid", "e" * 40, "live repository state"),
                 ("head_oid", "f" * 40, "frozen delivery inputs"),
                 ("delivery_branch", "other", "handoff/delivery branch"),
                 ("state", "CLOSED", "OPEN and unmerged"),
@@ -3137,6 +3140,7 @@ class ExactHandoffTests(unittest.TestCase):
                         pr_observation=observation,
                         binding_expectation=frozen_binding_expectation(
                             current,
+                            current_base_oid=observation["base_oid"],
                         ),
                     )
                     with self.assertRaisesRegex(
@@ -3166,6 +3170,7 @@ class ExactHandoffTests(unittest.TestCase):
                 binding_expectation=frozen_binding_expectation(
                     current,
                     201,
+                    current_base_oid=invented["base_oid"],
                 ),
             )
             with self.assertRaisesRegex(
@@ -3182,6 +3187,219 @@ class ExactHandoffTests(unittest.TestCase):
                     expected_sequence=current["sequence"],
                     pull_request_observation=invented,
                     publication_attestation=publication,
+                )
+
+    def test_coordinator_receipt_requires_current_validation_time(self):
+        with handoff_repository() as (root, _base, parent, result):
+            document = handoff_document(root, parent, result)
+            issued_at = datetime.fromisoformat(
+                document["coordinator_receipt"]["issued_at"].replace(
+                    "Z",
+                    "+00:00",
+                )
+            )
+
+            accepted = agent_handoff.validate_document(
+                document,
+                root,
+                current_time=issued_at + timedelta(seconds=2),
+            )
+            stale = agent_handoff.validate_document(
+                document,
+                root,
+                current_time=issued_at + timedelta(seconds=3),
+            )
+
+        self.assertTrue(accepted["summary"]["trusted_push_eligible"])
+        self.assertNotIn(
+            "invalid-coordinator-attestation",
+            accepted["summary"]["rejection_codes"],
+        )
+        self.assertFalse(stale["summary"]["trusted_push_eligible"])
+        self.assertIn(
+            "invalid-coordinator-attestation",
+            stale["summary"]["rejection_codes"],
+        )
+
+    def test_coordinator_receipt_repository_ids_must_match_authority(self):
+        with handoff_repository() as (root, _base, parent, result):
+            document = handoff_document(root, parent, result)
+            document["coordinator_receipt"]["repository_database_id"] = 7999
+            document["coordinator_receipt"]["authority_protection"][
+                "repository_id"
+            ] = 7999
+            sign_coordinator_document(document, root)
+
+            report = agent_handoff.validate_document(document, root)
+
+        self.assertFalse(report["summary"]["trusted_push_eligible"])
+        self.assertIn(
+            "invalid-coordinator-attestation",
+            report["summary"]["rejection_codes"],
+        )
+
+    def test_pr_binding_accepts_fast_forwarded_base_with_live_observation(self):
+        with handoff_repository() as (root, _base, parent, result):
+            document = handoff_document(root, parent, result)
+            report = agent_handoff.validate_document(document, root)
+            history = agent_handoff.make_history_receipt(
+                document,
+                report,
+                "issue-178-round-1",
+            )
+            set_history_authority(
+                root,
+                1,
+                history["seal"],
+                history_receipt=history,
+            )
+
+            git(root, "switch", "-q", "master")
+            readme = root / "README.md"
+            readme.write_text("base\nparent\nfast-forward\n", encoding="utf-8")
+            git(root, "add", "README.md")
+            git(root, "commit", "-q", "-m", "test: fast-forward base")
+            current_base_oid = git(root, "rev-parse", "HEAD")
+            git(root, "switch", "-q", "agent/issue-178")
+
+            current = agent_handoff.read_history_authority(
+                root,
+                "example/workflow",
+                178,
+                None,
+            )
+            observation = pull_request_observation(root, current)
+            publication = publication_attestation(
+                root,
+                current["object_id"],
+                current["anchor_object_id"],
+                operation="bind",
+                pr_observation=observation,
+                binding_expectation=frozen_binding_expectation(
+                    current,
+                    current_base_oid=observation["base_oid"],
+                ),
+            )
+            observed_at = datetime.fromisoformat(
+                observation["observed_at"].replace("Z", "+00:00")
+            )
+
+            plan = agent_handoff.plan_history_authority(
+                root,
+                "example/workflow",
+                178,
+                200,
+                operation="bind",
+                expected_object_id=current["object_id"],
+                expected_sequence=current["sequence"],
+                pull_request_observation=observation,
+                publication_attestation=publication,
+                current_time=observed_at + timedelta(seconds=2),
+            )
+
+        self.assertNotEqual(current_base_oid, parent)
+        self.assertEqual(
+            plan["record"]["delivery_expectation"]["immediate_base_oid"],
+            parent,
+        )
+        self.assertEqual(
+            plan["record"]["pr_binding"]["base_oid"],
+            current_base_oid,
+        )
+        self.assertEqual(
+            plan["record"]["publication_attestation"]["binding_expectation"],
+            frozen_binding_expectation(
+                current,
+                current_base_oid=current_base_oid,
+            ),
+        )
+
+    def test_pr_binding_rejects_stale_or_rewritten_current_base(self):
+        with handoff_repository() as (root, base, parent, result):
+            document = handoff_document(root, parent, result)
+            report = agent_handoff.validate_document(document, root)
+            history = agent_handoff.make_history_receipt(
+                document,
+                report,
+                "issue-178-round-1",
+            )
+            set_history_authority(
+                root,
+                1,
+                history["seal"],
+                history_receipt=history,
+            )
+            current = agent_handoff.read_history_authority(
+                root,
+                "example/workflow",
+                178,
+                None,
+            )
+
+            stale_observation = pull_request_observation(root, current)
+            stale_publication = publication_attestation(
+                root,
+                current["object_id"],
+                current["anchor_object_id"],
+                operation="bind",
+                pr_observation=stale_observation,
+                binding_expectation=frozen_binding_expectation(
+                    current,
+                    current_base_oid=stale_observation["base_oid"],
+                ),
+            )
+            git(root, "switch", "-q", "master")
+            readme = root / "README.md"
+            readme.write_text(
+                "base\nparent\nstale-current-base\n",
+                encoding="utf-8",
+            )
+            git(root, "add", "README.md")
+            git(root, "commit", "-q", "-m", "test: stale current base")
+            git(root, "switch", "-q", "agent/issue-178")
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "live repository state",
+            ):
+                agent_handoff.plan_history_authority(
+                    root,
+                    "example/workflow",
+                    178,
+                    200,
+                    operation="bind",
+                    expected_object_id=current["object_id"],
+                    expected_sequence=current["sequence"],
+                    pull_request_observation=stale_observation,
+                    publication_attestation=stale_publication,
+                )
+
+            git(root, "update-ref", "refs/heads/master", base)
+            rewritten_observation = pull_request_observation(root, current)
+            rewritten_publication = publication_attestation(
+                root,
+                current["object_id"],
+                current["anchor_object_id"],
+                operation="bind",
+                pr_observation=rewritten_observation,
+                binding_expectation=frozen_binding_expectation(
+                    current,
+                    current_base_oid=rewritten_observation["base_oid"],
+                ),
+            )
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "not descended from the frozen delivery base",
+            ):
+                agent_handoff.plan_history_authority(
+                    root,
+                    "example/workflow",
+                    178,
+                    200,
+                    operation="bind",
+                    expected_object_id=current["object_id"],
+                    expected_sequence=current["sequence"],
+                    pull_request_observation=rewritten_observation,
+                    publication_attestation=rewritten_publication,
                 )
 
     def test_review_successor_is_linear_causal_and_nonoverlapping(self):

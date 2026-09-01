@@ -661,7 +661,10 @@ name, actual PR number, `OPEN`/unmerged state, base/head branches and OIDs,
 head repository, creation/observation times, and authorized numeric actor.
 Compare every field to delivery inputs independently frozen in protected
 genesis/root assignment and in the publication request before the observation
-is signed. Never validate an observation against copies of its own fields.
+is signed. Keep `delivery_expectation.immediate_base_oid` as frozen
+provenance, bind the live current base OID separately, and require the frozen
+base to be an ancestor of both the live current base and the candidate head.
+Never validate an observation against copies of its own fields.
 It never creates a new namespace or genesis. A second protected branch under
 `refs/heads/workflow-pilot/authority-anchor/` binds every authority head and
 sequence. One preflighted normal `git push --atomic` publishes both
@@ -704,9 +707,12 @@ spent-nonce store. One atomic consume terminates and attests the implementation
 process, collects GitHub timeline/Actions/ref/audit state through that exact
 instant, decides, marks the nonce spent, and returns a signed decision. A
 second call with that nonce rejects before any authority push. Local
-validation never treats a preissued receipt as freshly eligible; an after-sign
-remote mutation or document change invalidates the decision. Incomplete
-coverage requires a credentialless, network-denied process.
+validation never treats a preissued receipt as freshly eligible; the live
+receipt must satisfy the same narrow freshness window as live PR/publication
+observations, and receipt repository IDs/full names must match the
+installation manifest and frozen delivery expectation. An after-sign remote
+mutation or document change invalidates the decision. Incomplete coverage
+requires a credentialless, network-denied process.
 
 After evidenced SIGKILL/OOM, protected authority history stores content-bearing
 bytes, path/mode/hash identities, exact status, and the full original

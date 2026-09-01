@@ -548,9 +548,13 @@ observation: repository ID/full name, PR number, `OPEN`/unmerged state,
 base/head branches and OIDs, head repository, creation/observation times,
 coordinator user ID, and authority/anchor state. Compare it to independent
 delivery/base values frozen in protected genesis, the root assignment
-branch/result, and the pre-observation publication request. Never validate it
-against copied observation fields. Invented, closed, merged, stale, wrong-repo,
-wrong-branch, or wrong-OID binding rejects.
+branch/result, and the pre-observation publication request. Keep
+`delivery_expectation.immediate_base_oid` as frozen provenance, bind the live
+current base OID separately, and require the frozen base to be an ancestor of
+both the live current base and the candidate head. Never validate it against
+copied observation fields. Invented, closed, merged, stale, wrong-repo,
+wrong-branch, stale-current-base, non-descendant/rewritten-base, or wrong-OID
+binding rejects.
 
 Every authority commit directly parents the remotely observed head and
 advances its sequence. The independently protected branch
@@ -692,7 +696,10 @@ spent-nonce store. One atomic operation terminates that process, collects every
 source through the consume instant, decides, marks the nonce spent, and returns
 the signed decision. The same nonce's second call rejects before authority
 publication. Local validation cannot make a preissued receipt freshly
-eligible; any after-sign event or document/run/watcher mutation invalidates it.
+eligible; the live receipt must satisfy the same narrow freshness window as
+live PR/publication observations, and receipt repository IDs/full names must
+match the installation manifest and frozen delivery expectation. Any after-sign
+event or document/run/watcher mutation invalidates it.
 
 An interrupted owner has the exact `assignment_sent` ->
 `assignment_received` -> `progressing` -> `interrupted` sequence. SIGKILL/OOM
@@ -732,8 +739,10 @@ verified metrics. The unkeyed result hash is integrity-only. Historical
 verification requires the finalize signature and proves the original
 authority/anchor OIDs remain ancestors of current protected heads. It does not
 require the old worktree HEAD or live-receipt freshness, so sequential root,
-OOM-replacement, and review-successor metrics remain aggregatable. A
-hand-authored or nonancestor row rejects. The reporter then reports
+OOM-replacement, and review-successor metrics remain aggregatable, but that
+historical authenticity never restores current trusted-push eligibility for a
+stale receipt. A hand-authored or nonancestor row rejects. The reporter then
+reports
 accepted/rejected/interrupted/in-progress counts, stale responses, maximum
 owner lifetime/RSS, coordination turns, and recovery minutes exclusively from
 verified results. Line usage remains Git-derived. Protocol changes come from

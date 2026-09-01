@@ -115,7 +115,10 @@ unmerged status, repository, number, base/head branches and OIDs, head
 repository, creation/observation times, and coordinator numeric ID. Compare it
 to independent delivery values frozen in protected genesis/root assignment
 and the pre-observation publication request, never to fields copied from the
-response itself. Every authority and independent anchor
+response itself. Keep `delivery_expectation.immediate_base_oid` as frozen
+provenance, bind the live current base OID separately, and require the frozen
+base to be an ancestor of both the live current base and the candidate head.
+Every authority and independent anchor
 update is one normal `git push --atomic` transaction after atomic-capability
 preflight; both commits directly parent the observed pair. Split or stale
 plans reject. A terminal signed GitHub ruleset API response must prove active
@@ -143,9 +146,12 @@ monotonic consume sequence/anchor and spent-nonce store. One atomic operation te
 the implementation process, performs final timeline/run/ref/audit collection
 through the consume instant, decides, spends the nonce, and returns the signed
 decision; a second call fails before authority publication. Local receipt-age
-checks cannot turn a preissued receipt into eligibility, and any after-sign
-remote mutation invalidates the decision. Incomplete coverage requires a
-credentialless, network-denied process.
+checks cannot turn a preissued receipt into eligibility; the live receipt must
+satisfy the same narrow freshness window as live PR/publication observations,
+and receipt repository IDs/full names must match the installation manifest and
+frozen delivery expectation. Any after-sign remote mutation invalidates the
+decision. Incomplete coverage requires a credentialless, network-denied
+process.
 
 OOM history stores content-bearing file bytes, modes, hashes, original
 assignment/scope/criteria/checks/budgets, and status in the protected
