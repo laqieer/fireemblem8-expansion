@@ -440,6 +440,86 @@ class OwnershipGraphTests(unittest.TestCase):
                         reporter.prepare_validation_scratch(root)
                     self.assertEqual(list(outside.iterdir()), [])
 
+    def test_make_authority_cache_is_content_bound_not_metadata_bound(self):
+        entries, loader, _, _ = self.fixture_authority()
+        authority = self.fixture_root / "generated_data.mk"
+        original = authority.read_bytes()
+        original_stat = authority.stat()
+        changed = original.replace(
+            b"unittest discover -s scripts/generated_data/tests -v",
+            b"unittest discover -s scripts/generated_data/tests -q",
+            1,
+        )
+        self.assertNotEqual(changed, original)
+        self.assertEqual(len(changed), len(original))
+        cache_before = dict(reporter._MAKE_AUTHORITY_CACHE)
+        run_count = 0
+
+        def fake_probe(selected_loader, targets, *args, **kwargs):
+            nonlocal run_count
+            run_count += 1
+            content = selected_loader.read_blob(
+                "generated_data.mk",
+                "cache test authority",
+            )
+            return {
+                target: {
+                    "content": content,
+                    "dynamic_dependencies": [],
+                    "prerequisite_domain_census": {
+                        "generated_paths": [],
+                    },
+                    "variable_census": {
+                        "ambient_undefined": [],
+                        "trusted_builtins": [],
+                        "scoped_variables": [],
+                        "escaped_literals": [],
+                    },
+                }
+                for target in targets
+            }
+
+        try:
+            reporter._MAKE_AUTHORITY_CACHE.clear()
+            with mock.patch(
+                "scripts.validation_ownership.make_probe.run_probe",
+                side_effect=fake_probe,
+            ):
+                before = reporter._parse_make_authorities(
+                    loader,
+                    {"cache-test-target"},
+                    require_dynamic_contracts=True,
+                )
+                authority.write_bytes(changed)
+                os.utime(
+                    authority,
+                    ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
+                )
+                changed_stat = authority.stat()
+                self.assertEqual(changed_stat.st_size, original_stat.st_size)
+                self.assertEqual(
+                    changed_stat.st_mtime_ns,
+                    original_stat.st_mtime_ns,
+                )
+                after = reporter._parse_make_authorities(
+                    loader,
+                    {"cache-test-target"},
+                    require_dynamic_contracts=True,
+                )
+            self.assertEqual(run_count, 2)
+            self.assertNotEqual(
+                before["cache-test-target"]["content"],
+                after["cache-test-target"]["content"],
+            )
+        finally:
+            authority.write_bytes(original)
+            os.utime(
+                authority,
+                ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns),
+            )
+            reporter._MAKE_AUTHORITY_CACHE.clear()
+            reporter._MAKE_AUTHORITY_CACHE.update(cache_before)
+
     def test_overlap_and_duplicate_rule_reject(self):
         graph = copy.deepcopy(self.graph)
         graph["path_rules"].append(

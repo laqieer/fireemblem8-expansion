@@ -1462,6 +1462,10 @@ evaluator; exact concrete closures, pattern stems, expanded recipes, terminal
 inputs, includes, dynamic outputs, errors, argv, environment, and tool
 identities participate in authority. Comments and unrelated targets stay
 stable only when their observed target semantics stay stable.
+Live-tree cache identity comes from exact content rather than size/mtime.
+A same-size Make mutation with its original timestamp restored must miss the
+cache, while repeated probes remain byte-identical with an unrelated stale
+scratch child present.
 Every local scratch path component is opened relative to the trusted
 repository descriptor with no symlink following before any temporary
 directory is created. Tracked `build` and intermediate `test-artifacts` or

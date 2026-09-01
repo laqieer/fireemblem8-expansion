@@ -213,6 +213,11 @@ stems, terminal tracked/gitlink/generated inputs, expanded recipes, includes,
 errors, and normalized trace records form the authority fingerprint. Scratch
 prefixes and source line numbers are normalized; comments and unrelated target
 changes remain stable when GNU Make's observed semantics remain stable.
+The in-process optimization cache keys live-tree Make authority by exact blob
+content, mode, and type rather than file size or timestamps, so same-size
+mutations with restored metadata cannot reuse state from an earlier test.
+Each probe uses a new random child and ignores incomplete scratch children left
+by an interrupted process.
 
 Schema version 5 seals each external selector as either a finite exact domain,
 an exact tracked fallback, or symbolic recipe/environment-only authority.

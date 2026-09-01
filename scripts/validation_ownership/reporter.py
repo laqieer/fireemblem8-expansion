@@ -1517,25 +1517,7 @@ def _parse_make_authorities(
         )
         if path in loader.entries
     )
-    if loader.revision is not None:
-        authority_state = tuple(
-            (
-                path,
-                loader.entries[path].mode,
-                loader.entries[path].object_id,
-            )
-            for path in sorted(authority_paths)
-        )
-    else:
-        authority_state = tuple(
-            (
-                path,
-                loader.entries[path].mode,
-                (loader.root / path).stat().st_mtime_ns,
-                (loader.root / path).stat().st_size,
-            )
-            for path in sorted(authority_paths)
-        )
+    authority_state = _make_authority_state(loader, authority_paths)
     cache_key = (
         "authoritative-gnu-make-v1",
         str(loader.root),
@@ -1611,6 +1593,31 @@ def _parse_make_authorities(
         _MAKE_AUTHORITY_CACHE.pop(next(iter(_MAKE_AUTHORITY_CACHE)))
     _MAKE_AUTHORITY_CACHE[cache_key] = result
     return result
+
+
+def _make_authority_state(
+    loader: AuthorityLoader,
+    authority_paths: Iterable[str],
+) -> tuple[tuple[str, ...], ...]:
+    records = []
+    for path in sorted(authority_paths):
+        entry = loader.entries[path]
+        identity = (
+            entry.object_id
+            if loader.revision is not None
+            else hashlib.sha256(
+                loader.read_blob(path, "Make cache authority")
+            ).hexdigest()
+        )
+        records.append(
+            (
+                path,
+                entry.mode,
+                entry.object_type,
+                identity,
+            )
+        )
+    return tuple(records)
 
 
 def _authority_identity(authority: dict[str, Any]) -> tuple[str, ...]:

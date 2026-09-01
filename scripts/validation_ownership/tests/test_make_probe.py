@@ -471,6 +471,23 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             self.assertNotIn("VO_EVENT_PATH", environment)
             self.assertNotIn("VO_MAP_DIR", environment)
 
+    def test_stale_scratch_is_ignored_and_repeated_probe_is_identical(self):
+        directory, root, entries = self.fixture(
+            "all:\n\t@printf stable\n"
+        )
+        with directory:
+            stale = root / "artifacts" / "gnu-make-probe-stale"
+            stale.mkdir(parents=True)
+            sentinel = stale / "sentinel"
+            sentinel.write_text("untrusted stale state\n", encoding="ascii")
+            first = self.probe(root, entries)
+            second = self.probe(root, entries)
+            self.assertEqual(first, second)
+            self.assertEqual(
+                sentinel.read_text(encoding="ascii"),
+                "untrusted stale state\n",
+            )
+
     def test_candidate_make_cannot_forge_supervisor_control_files(self):
         directory, root, entries = self.fixture(
             "$(file >/work/events.bin,candidate-forgery)\n"
