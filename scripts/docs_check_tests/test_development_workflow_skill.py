@@ -27,6 +27,7 @@ CONTRIBUTING_PATH = ROOT / "CONTRIBUTING.md"
 PR_TEMPLATE_PATH = ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
 ISSUE_RESOLUTION_POLICY_PATH = ROOT / "docs" / "issue-resolution-policy.md"
 WORKFLOW_PILOT_PATH = ROOT / "docs" / "workflow-pilot.md"
+DOCUMENTATION_INVENTORY_PATH = ROOT / "docs" / "documentation-inventory.md"
 FRAMEWORK_SUPPORT_PATH = ROOT / "docs" / "framework-support.md"
 COPILOT_INSTRUCTIONS_PATH = ROOT / ".github" / "copilot-instructions.md"
 WORKFLOW_GOVERNANCE_PATH = ROOT / "docs" / "test-cases" / "workflow-governance.md"
@@ -2657,6 +2658,22 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     requirement.casefold(),
                     " ".join(skill.split()).casefold(),
                 )
+
+    def test_review_family_is_registered_in_documentation_inventory(self):
+        entries = [
+            line[2:].split(" | ")
+            for line in DOCUMENTATION_INVENTORY_PATH.read_text(
+                encoding="utf-8"
+            ).splitlines()
+            if line.startswith("- docs/test-cases/workflow-governance.md | ")
+        ]
+        self.assertEqual(len(entries), 1)
+        path, owner, status, scope = entries[0]
+        self.assertEqual(path, "docs/test-cases/workflow-governance.md")
+        self.assertEqual(owner, "laqieer")
+        self.assertEqual(status, "current")
+        self.assertIn("sibling-family review", scope)
+        self.assertIn("#179", scope)
 
     def test_ci_waiting_does_not_hold_reasoning_subagents(self):
         _, text = read_skill()
