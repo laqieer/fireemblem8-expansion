@@ -587,8 +587,12 @@ that the frozen base remains an ancestor of the stored live base OID. The
 stored `pr_binding.head_oid`, its digest, and
 `publication_attestation.binding_expectation.head_oid` must all match the
 immediately prior sealed handoff candidate carried by the current
-`handoff_sequence`/`head_seal`. Swapped signed observations/publications,
-out-of-band branch advances, copied seals/sequences, and rewritten bases fail
+`handoff_sequence`/`head_seal`. Derive the stored observation's
+`authority_object_id` from the bind commit's canonical `previous_object_id`.
+Derive the stored observation's `anchor_object_id` from the exact prior
+canonical anchor record, never from copied observation fields. Swapped signed
+observations/publications, stale signed observation replays, out-of-band
+branch advances, copied anchors/seals/sequences, and rewritten bases fail
 even when each record is individually valid.
 
 Bootstrap, advance, and PR binding plans are deterministic and read-only:

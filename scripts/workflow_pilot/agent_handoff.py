@@ -392,6 +392,89 @@ def validate_historical_pr_binding_target(
     return expected_branch, expected_candidate_sha
 
 
+def load_history_authority_transition_summary(
+    repository_root: Path,
+    object_id: str,
+    repository: str,
+    issue: int,
+    *,
+    label: str,
+) -> dict[str, Any]:
+    if (
+        run_git(repository_root, "cat-file", "-t", object_id)
+        .decode("ascii")
+        .strip()
+        != "commit"
+    ):
+        raise HandoffDataError(f"{label} must be a commit")
+    authority = _parse_authority_json(
+        run_git(
+            repository_root,
+            "show",
+            f"{object_id}:authority.json",
+        ),
+        label,
+    )
+    expect_keys(
+        authority,
+        label,
+        (
+            "schema_version",
+            "repository",
+            "issue",
+            "sequence",
+            "handoff_sequence",
+            "head_seal",
+            "pr_binding",
+            "signer",
+            "ruleset_id",
+            "authorized_bypass_actors",
+            "delivery_expectation",
+            "publication_attestation",
+            "event",
+            "previous_object_id",
+        ),
+    )
+    if expect_int(authority["schema_version"], f"{label}.schema_version", 1) != 2:
+        raise HandoffDataError(f"{label} schema_version must be 2")
+    if (
+        expect_string(authority["repository"], f"{label}.repository")
+        != repository
+        or expect_int(authority["issue"], f"{label}.issue", 1) != issue
+    ):
+        raise HandoffDataError(f"{label} identity mismatch")
+    expect_int(authority["sequence"], f"{label}.sequence", 0)
+    expect_int(authority["handoff_sequence"], f"{label}.handoff_sequence", 0)
+    head_seal = authority["head_seal"]
+    if head_seal is not None and (
+        not isinstance(head_seal, str)
+        or reporter.SHA256_RE.fullmatch(head_seal) is None
+    ):
+        raise HandoffDataError(f"{label} has invalid head_seal")
+    event = expect_object(authority["event"], f"{label}.event")
+    expect_keys(
+        event,
+        f"{label}.event",
+        (
+            "kind",
+            "handoff_seal",
+            "handoff_id",
+            "handoff_kind",
+            "lifecycle_state",
+            "candidate_sha",
+            "closed_at",
+            "operation_nonce",
+            "consume_store_id",
+            "consume_sequence",
+            "consume_anchor",
+            "assignment",
+            "interruption_snapshot",
+        ),
+    )
+    expect_enum(event["kind"], {"genesis", "handoff", "pr_binding"}, f"{label}.event.kind")
+    return authority
+
+
 def require_atomic_push_capability(
     repository_root: Path,
     updates: list[tuple[str, str]],
@@ -1380,6 +1463,8 @@ def _read_history_authority_commit(
     object_id: str,
     repository: str,
     issue: int,
+    *,
+    expected_previous_anchor_object_id: str | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     if (
         run_git(repository_root, "cat-file", "-t", object_id)
@@ -1512,6 +1597,11 @@ def _read_history_authority_commit(
         "delivery_expectation.repository_id",
         1,
     )
+    canonical_previous_anchor_object_id = expect_sha(
+        expected_previous_anchor_object_id,
+        f"history authority object {object_id}.expected_previous_anchor_object_id",
+        nullable=True,
+    )
     publication = expect_object(
         authority["publication_attestation"],
         f"history authority object {object_id}.publication_attestation",
@@ -1531,7 +1621,7 @@ def _read_history_authority_commit(
         authority_ref=history_authority_ref(issue, None),
         anchor_ref=history_anchor_ref(issue),
         authority_object_id=authority["previous_object_id"],
-        anchor_object_id=publication.get("anchor_object_id"),
+        anchor_object_id=canonical_previous_anchor_object_id,
         ruleset_id=authority["ruleset_id"],
         authorized_bypass_actors=authority["authorized_bypass_actors"],
     )
@@ -1570,16 +1660,8 @@ def _read_history_authority_commit(
             signer=signer,
             repository=repository,
             repository_database_id=delivery_repository_id,
-            authority_object_id=expect_sha(
-                binding["authority_object_id"],
-                f"history authority object {object_id}."
-                "pr_binding.authority_object_id",
-            ),
-            anchor_object_id=expect_sha(
-                binding["anchor_object_id"],
-                f"history authority object {object_id}."
-                "pr_binding.anchor_object_id",
-            ),
+            authority_object_id=authority["previous_object_id"],
+            anchor_object_id=canonical_previous_anchor_object_id,
         )
         expect_int(
             binding["repository_id"],
@@ -1725,6 +1807,10 @@ def _read_history_authority_commit(
                 raise HandoffDataError(
                     f"history authority object {object_id} has invalid {field}"
                 )
+        if len(parents) != 1 or parents[0] != authority["previous_object_id"]:
+            raise HandoffDataError(
+                f"history authority object {object_id} forks its commit chain"
+            )
         if authority["head_seal"] is not None and (
             not isinstance(authority["head_seal"], str)
             or reporter.SHA256_RE.fullmatch(authority["head_seal"]) is None
@@ -1774,11 +1860,19 @@ def _read_history_authority_commit(
                 raise HandoffDataError(
                     f"history authority object {object_id} has invalid binding event"
                 )
-            prior_authority, _prior_parents = _read_history_authority_commit(
+            if canonical_previous_anchor_object_id is None:
+                raise HandoffDataError(
+                    f"history authority object {object_id} PR binding lacks "
+                    "a canonical prior anchor"
+                )
+            prior_authority = load_history_authority_transition_summary(
                 repository_root,
                 authority["previous_object_id"],
                 repository,
                 issue,
+                label=(
+                    f"history authority object {object_id} prior sealed handoff"
+                ),
             )
             expected_branch, expected_candidate_sha = (
                 validate_historical_pr_binding_target(
@@ -1799,10 +1893,6 @@ def _read_history_authority_commit(
         else:
             raise HandoffDataError(
                 f"history authority object {object_id} replays genesis"
-            )
-        if len(parents) != 1 or parents[0] != authority["previous_object_id"]:
-            raise HandoffDataError(
-                f"history authority object {object_id} forks its commit chain"
             )
     expected_publication_operation = {
         "genesis": "bootstrap",
@@ -2115,17 +2205,62 @@ def read_history_authority(
         or observation is None
     ):
         raise HandoffDataError("authority-moved")
-    authority, parents = _read_history_authority_commit(
-        repository_root,
-        object_id,
-        repository,
-        issue,
-    )
     anchor, anchor_parents = _read_history_anchor_commit(
         repository_root,
         anchor_object_id,
         repository,
         issue,
+    )
+    anchor_ids_by_sequence = {anchor["sequence"]: anchor_object_id}
+    anchor_records_by_sequence = {anchor["sequence"]: anchor}
+    anchor_previous_by_sequence = {
+        anchor["sequence"]: anchor["previous_object_id"]
+    }
+    expected_anchor_sequence = anchor["sequence"]
+    current_anchor = anchor
+    current_anchor_parents = anchor_parents
+    while expected_anchor_sequence > 0:
+        if len(current_anchor_parents) != 1:
+            raise HandoffDataError(
+                f"history anchor {anchor_reference!r} truncates its ancestry"
+            )
+        anchor_parent_id = current_anchor_parents[0]
+        prior_anchor, current_anchor_parents = _read_history_anchor_commit(
+            repository_root,
+            anchor_parent_id,
+            repository,
+            issue,
+        )
+        expected_anchor_sequence -= 1
+        if prior_anchor["sequence"] != expected_anchor_sequence:
+            raise HandoffDataError(
+                f"history anchor {anchor_reference!r} replays or gaps sequence"
+            )
+        anchor_ids_by_sequence[prior_anchor["sequence"]] = anchor_parent_id
+        anchor_records_by_sequence[prior_anchor["sequence"]] = prior_anchor
+        anchor_previous_by_sequence[prior_anchor["sequence"]] = prior_anchor[
+            "previous_object_id"
+        ]
+        current_anchor = prior_anchor
+    authority_summary = load_history_authority_transition_summary(
+        repository_root,
+        object_id,
+        repository,
+        issue,
+        label=f"history authority object {object_id}",
+    )
+    if authority_summary["sequence"] not in anchor_previous_by_sequence:
+        raise HandoffDataError(
+            "independent authority anchor does not match authority head"
+        )
+    authority, parents = _read_history_authority_commit(
+        repository_root,
+        object_id,
+        repository,
+        issue,
+        expected_previous_anchor_object_id=anchor_previous_by_sequence[
+            authority_summary["sequence"]
+        ],
     )
     if (
         authority["delivery_expectation"]["repository_id"]
@@ -2173,13 +2308,16 @@ def read_history_authority(
                 f"history authority {reference!r} truncates its ancestry"
             )
         current_object = current_parents[0]
+        expected_sequence -= 1
         prior, current_parents = _read_history_authority_commit(
             repository_root,
             current_object,
             repository,
             issue,
+            expected_previous_anchor_object_id=anchor_previous_by_sequence[
+                expected_sequence
+            ],
         )
-        expected_sequence -= 1
         if prior["sequence"] != expected_sequence:
             raise HandoffDataError(
                 f"history authority {reference!r} replays or gaps sequence"
@@ -2221,31 +2359,13 @@ def read_history_authority(
                 )
         authority_by_sequence[prior["sequence"]] = current_object
         current = prior
-    expected_anchor_sequence = anchor["sequence"]
-    current_anchor = anchor
-    current_anchor_parents = anchor_parents
-    while expected_anchor_sequence > 0:
-        if len(current_anchor_parents) != 1:
-            raise HandoffDataError(
-                f"history anchor {anchor_reference!r} truncates its ancestry"
-            )
-        anchor_parent_id = current_anchor_parents[0]
-        prior_anchor, current_anchor_parents = _read_history_anchor_commit(
-            repository_root,
-            anchor_parent_id,
-            repository,
-            issue,
-        )
-        expected_anchor_sequence -= 1
-        if (
-            prior_anchor["sequence"] != expected_anchor_sequence
-            or prior_anchor["authority_object_id"]
-            != authority_by_sequence[expected_anchor_sequence]
-        ):
+    for sequence_number, anchor_record in anchor_records_by_sequence.items():
+        if anchor_record["authority_object_id"] != authority_by_sequence[
+            sequence_number
+        ]:
             raise HandoffDataError(
                 f"history anchor {anchor_reference!r} replays or gaps sequence"
             )
-        current_anchor = prior_anchor
     binding = authority["pr_binding"]
     if (
         pull_request is not None
@@ -3349,19 +3469,6 @@ def verify_reporter_record(
         ),
         None,
     )
-    original_record, _parents = _read_history_authority_commit(
-        source_root,
-        original_authority["object_id"],
-        document["repository"],
-        original_authority["issue"],
-    )
-    if any(
-        original_authority[key] != value
-        for key, value in original_record.items()
-    ):
-        raise HandoffDataError(
-            "historical handoff authority object does not match its record"
-        )
     original_anchor, _anchor_parents = _read_history_anchor_commit(
         source_root,
         original_authority["anchor_object_id"],
@@ -3375,6 +3482,20 @@ def verify_reporter_record(
     ):
         raise HandoffDataError(
             "historical handoff anchor does not bind original authority"
+        )
+    original_record, _parents = _read_history_authority_commit(
+        source_root,
+        original_authority["object_id"],
+        document["repository"],
+        original_authority["issue"],
+        expected_previous_anchor_object_id=original_anchor["previous_object_id"],
+    )
+    if any(
+        original_authority[key] != value
+        for key, value in original_record.items()
+    ):
+        raise HandoffDataError(
+            "historical handoff authority object does not match its record"
         )
     for original_id, current_id, label in (
         (

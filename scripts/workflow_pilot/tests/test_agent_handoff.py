@@ -1950,7 +1950,7 @@ class ExactHandoffTests(unittest.TestCase):
                 ROOT / agent_handoff.HANDOFF_SCHEMA_REPOSITORY_PATH
             ).read_text(encoding="utf-8")
         )
-        self.assertEqual(schema["protocol_version"], 7)
+        self.assertEqual(schema["protocol_version"], 8)
         self.assertEqual(schema["properties"]["schema_version"]["const"], 2)
         self.assertIn(
             "coordinator_receipt",
@@ -3565,6 +3565,95 @@ class ExactHandoffTests(unittest.TestCase):
                 bound["pr_binding"],
             ),
         )
+
+    def test_historical_bind_rejects_stale_signed_authority_observation_and_blocks_successor(self):
+        with handoff_repository() as (root, _base, parent, result):
+            stale_observation = pull_request_observation(
+                root,
+                agent_handoff.read_history_authority(
+                    root,
+                    "example/workflow",
+                    178,
+                    None,
+                ),
+            )
+            document = handoff_document(root, parent, result)
+            report = agent_handoff.validate_document(document, root)
+            bundle = reporter_record(root, document, report)
+            history = agent_handoff.make_history_receipt(
+                document,
+                report,
+                "issue-178-round-1",
+            )
+            set_history_authority(
+                root,
+                1,
+                history["seal"],
+                history_receipt=history,
+            )
+            current = agent_handoff.read_history_authority(
+                root,
+                "example/workflow",
+                178,
+                None,
+            )
+            publication = publication_attestation(
+                root,
+                current["object_id"],
+                current["anchor_object_id"],
+                operation="bind",
+                pr_observation=stale_observation,
+                binding_expectation=frozen_binding_expectation(
+                    current,
+                    current_base_oid=stale_observation["base_oid"],
+                ),
+            )
+            publish_bound_history_authority(
+                root,
+                current,
+                stale_observation,
+                publication,
+            )
+            fixture = reporter_fixture_with_handoffs(bundle)
+            successor = copy.deepcopy(document)
+            successor["prior_handoffs"] = [history]
+            handoff = successor["handoffs"][0]
+            handoff["id"] = "issue-178-review-successor-stale-authority"
+            handoff["owner_id"] = "owner-2"
+            handoff["owner_database_id"] = 102
+            handoff["pull_request"] = 200
+            handoff["handoff_kind"] = "review_successor"
+            handoff["replaces_handoff_id"] = "issue-178-round-1"
+            relationship = successor["delivery_graph"]["relationships"][0]
+            relationship["handoff_id"] = handoff["id"]
+            task = next(
+                item
+                for item in successor["delivery_graph"]["tasks"]
+                if item["phase"] == "implementation"
+            )
+            task["handoff_id"] = handoff["id"]
+            task["pull_request"] = 200
+
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "stale for authority state",
+            ):
+                agent_handoff.read_history_authority(
+                    root,
+                    "example/workflow",
+                    178,
+                    200,
+                )
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "stale for authority state",
+            ):
+                reporter.validate_fixture(fixture)
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "stale for authority state",
+            ):
+                agent_handoff.validate_document(successor, root)
 
     def test_historical_bind_rejects_out_of_band_head_advance_without_new_handoff(self):
         with handoff_repository() as (root, _base, parent, result):

@@ -534,7 +534,10 @@ game behavior needs a compensating change.
    without sealing a new handoff, publish an otherwise internally valid
    protected bind for that new head, and confirm the historical reader ties
    the bind to the immediately prior sealed handoff candidate rather than the
-   live branch tip.
+   live branch tip. Replay an older legitimately signed observation whose
+   `authority_object_id`/`anchor_object_id` point at the pre-handoff state and
+   confirm the bind derives those identities from the canonical prior
+   authority/anchor chain instead of the stored observation fields.
 5. Reconcile a direct watcher timeout with an authoritative successful
    `github-actions-api` run. Then use an authoritative failed run plus a
    watcher process error and confirm delivery remains failed.
@@ -633,7 +636,10 @@ binding digest and publication binding expectation from the stored binding plus
 frozen delivery/current-base fields before accepting the bind event, and it
 requires the stored bind head plus attested bind head to match the immediately
 prior sealed handoff candidate carried by the current
-`handoff_sequence`/`head_seal`. The
+`handoff_sequence`/`head_seal`. It also derives
+`pr_binding.authority_object_id` from the canonical `previous_object_id` and
+`pr_binding.anchor_object_id` from the exact prior canonical anchor record
+instead of trusting copied observation fields. The
 coordinator receipt's event-source union detects omitted
 push/comment/review/dispatch events. Incomplete GitHub
 coverage succeeds only with a credentialless network-denied process interval.
@@ -696,7 +702,8 @@ fails `authority-moved`, and movement after the read but before eligibility
 invalidates the sealed dual-ref observation. Parentless checker bootstrap,
 authority rollback/replay/ABA, PR rebinding, swapped stored bind digests,
 replayed publication binding expectations, out-of-band bind heads, copied
-seals/sequences, and a second issue root also fail. Historical reporter verification still requires the external finalize
+anchors/seals/sequences, stale signed authority observations, and a second
+issue root also fail. Historical reporter verification still requires the external finalize
 signature and current authority/anchor ancestry, but it never recreates live
 trusted-push eligibility from an old receipt.
 
