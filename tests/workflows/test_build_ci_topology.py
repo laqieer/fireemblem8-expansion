@@ -726,6 +726,31 @@ def _metadata_adapter_python_source(script: str) -> str:
     return metadata_adapter_contract.metadata_adapter_python_source(script)
 
 
+def _indent_metadata_adapter_heredoc(script: str) -> str:
+    source = metadata_adapter_contract.metadata_adapter_python_source(script)
+    indented = "".join(
+        f" {line}\n" if line else "\n"
+        for line in source.splitlines()
+    )
+    return script.replace(source, indented, 1)
+
+
+def _indent_metadata_adapter_heredoc_in_step(step: str) -> str:
+    lines = step.splitlines(keepends=True)
+    start = next(
+        index
+        for index, line in enumerate(lines)
+        if line.strip() == "/usr/bin/python3 -I - <<'PY'"
+    )
+    end = next(
+        index for index in range(start + 1, len(lines)) if lines[index].strip() == "PY"
+    )
+    for index in range(start + 1, end):
+        if lines[index].strip():
+            lines[index] = " " + lines[index]
+    return "".join(lines)
+
+
 def _metadata_adapter_payload(
     *,
     action: str = "edited",
@@ -3382,6 +3407,22 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         for error in _errors(changed, False)
                     )
                 )
+        with self.subTest(mutation="uniform-python-heredoc-indent"):
+            host_job = _job_blocks(self.text)["host-tests"]
+            host_step = _step_blocks(host_job)[0]
+            changed = self.text.replace(
+                host_step,
+                _indent_metadata_adapter_heredoc_in_step(host_step),
+                1,
+            )
+            self.assertNotEqual(changed, self.text)
+            self.assertTrue(
+                any(
+                    "host-tests protected pre-pilot step sequence differs" in error
+                    or "build metadata continuity adapter differs" in error
+                    for error in _errors(changed, False)
+                )
+            )
 
     def test_metadata_adapter_parsed_contract_rejects_extra_shell_and_python_behavior(self):
         mutations = (

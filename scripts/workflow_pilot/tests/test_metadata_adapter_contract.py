@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ast
+import copy
 import re
 import unittest
 from pathlib import Path
@@ -45,6 +47,21 @@ def _literal_run_script(step: str) -> str:
         for line in lines[run_index + 1 :]
         if not line or line.startswith("        ")
     ) + "\n"
+
+
+def _legacy_ast_clone(node: object) -> object:
+    if isinstance(node, ast.AST):
+        fields = list(getattr(node, "_fields", ()))
+        if type(node).__name__ == "FunctionDef" and "type_params" in fields:
+            fields.remove("type_params")
+        clone_type = type(type(node).__name__, (ast.AST,), {"_fields": tuple(fields)})
+        clone = clone_type()
+        for field in fields:
+            setattr(clone, field, _legacy_ast_clone(getattr(node, field)))
+        return clone
+    if isinstance(node, list):
+        return [_legacy_ast_clone(item) for item in node]
+    return copy.deepcopy(node)
 
 
 class MetadataAdapterContractTests(unittest.TestCase):
@@ -97,6 +114,55 @@ class MetadataAdapterContractTests(unittest.TestCase):
             1,
         )
         metadata_adapter_contract.validate_metadata_adapter_script(mutated)
+
+    def test_python_validator_rejects_uniform_extra_heredoc_indentation(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        script = _literal_run_script(_step_blocks(_job_blocks(text)["host-tests"])[0])
+        source = metadata_adapter_contract.metadata_adapter_python_source(script)
+        mutated = script.replace(
+            source,
+            "".join(
+                f" {line}\n" if line else "\n"
+                for line in source.splitlines()
+            ),
+            1,
+        )
+        with self.assertRaisesRegex(ValueError, "metadata adapter Python is invalid"):
+            metadata_adapter_contract.validate_metadata_adapter_script(mutated)
+        with self.assertRaises(IndentationError):
+            compile(
+                metadata_adapter_contract.metadata_adapter_python_source(mutated),
+                "<metadata-adapter-raw>",
+                "exec",
+            )
+
+    def test_semantic_ast_digest_is_stable_across_empty_type_params_compatibility(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        script = _literal_run_script(_step_blocks(_job_blocks(text)["host-tests"])[0])
+        source = metadata_adapter_contract.metadata_adapter_python_source(script)
+        tree = ast.parse(source)
+        legacy = _legacy_ast_clone(tree)
+        self.assertEqual(
+            metadata_adapter_contract._normalize_semantic_ast(tree),
+            metadata_adapter_contract._normalize_semantic_ast(legacy),
+        )
+        self.assertEqual(
+            metadata_adapter_contract._semantic_ast_digest(tree),
+            metadata_adapter_contract._semantic_ast_digest(legacy),
+        )
+
+    def test_semantic_ast_rejects_nonempty_compatibility_fields(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        script = _literal_run_script(_step_blocks(_job_blocks(text)["host-tests"])[0])
+        source = metadata_adapter_contract.metadata_adapter_python_source(script)
+        tree = ast.parse(source)
+        function = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef))
+        function.type_params = [ast.Name(id="T", ctx=ast.Load())]
+        with self.assertRaisesRegex(
+            ValueError,
+            "unsupported nonempty compatibility field FunctionDef.type_params",
+        ):
+            metadata_adapter_contract._semantic_ast_digest(tree)
 
 
 if __name__ == "__main__":

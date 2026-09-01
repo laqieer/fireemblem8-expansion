@@ -4,14 +4,74 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import json
 import shlex
-import textwrap
 from dataclasses import dataclass
 
 
 _SHELL_PUNCTUATION = "|;&<>()"
-_PYTHON_AST_SHA256 = "43dcc50ebe0f13bce0b1935004dadb13821e2f39b975754e5e1b51f106710e76"
+_PYTHON_SEMANTIC_SHA256 = "230946bc7f4f3f00e1785cd2056083070ae2c8df3c81d32877447d6e4d858ad3"
 _ALLOWED_IMPORTS = ("decimal", "json", "math", "os", "re", "stat", "sys")
+_ALLOWED_AST_FIELDS = {
+    "Add": (),
+    "And": (),
+    "Assign": ("targets", "value", "type_comment"),
+    "Attribute": ("value", "attr", "ctx"),
+    "BinOp": ("left", "op", "right"),
+    "BitOr": (),
+    "BoolOp": ("op", "values"),
+    "Break": (),
+    "Call": ("func", "args", "keywords"),
+    "Compare": ("left", "ops", "comparators"),
+    "Constant": ("value", "kind"),
+    "Dict": ("keys", "values"),
+    "Eq": (),
+    "ExceptHandler": ("type", "name", "body"),
+    "Expr": ("value",),
+    "For": ("target", "iter", "body", "orelse", "type_comment"),
+    "FormattedValue": ("value", "conversion", "format_spec"),
+    "FunctionDef": (
+        "name",
+        "args",
+        "body",
+        "decorator_list",
+        "returns",
+        "type_comment",
+    ),
+    "GeneratorExp": ("elt", "generators"),
+    "Gt": (),
+    "If": ("test", "body", "orelse"),
+    "Import": ("names",),
+    "In": (),
+    "Is": (),
+    "JoinedStr": ("values",),
+    "Load": (),
+    "Lt": (),
+    "Module": ("body", "type_ignores"),
+    "Name": ("id", "ctx"),
+    "Not": (),
+    "NotEq": (),
+    "NotIn": (),
+    "Or": (),
+    "Raise": ("exc", "cause"),
+    "Return": ("value",),
+    "Set": ("elts",),
+    "Store": (),
+    "Sub": (),
+    "Subscript": ("value", "slice", "ctx"),
+    "Try": ("body", "handlers", "orelse", "finalbody"),
+    "Tuple": ("elts", "ctx"),
+    "UnaryOp": ("op", "operand"),
+    "While": ("test", "body", "orelse"),
+    "alias": ("name", "asname"),
+    "arg": ("arg", "annotation", "type_comment"),
+    "arguments": ("posonlyargs", "args", "vararg", "kwonlyargs", "kw_defaults", "kwarg", "defaults"),
+    "comprehension": ("target", "iter", "ifs", "is_async"),
+    "keyword": ("arg", "value"),
+}
+_EMPTY_COMPATIBILITY_FIELDS = {
+    "FunctionDef": ("type_params",),
+}
 
 
 @dataclass(frozen=True)
@@ -128,10 +188,75 @@ def metadata_adapter_python_source(script: str) -> str:
     return commands[-1].heredoc
 
 
+def _normalize_semantic_ast(node: object) -> object:
+    if isinstance(node, ast.AST):
+        node_type = type(node).__name__
+        if node_type not in _ALLOWED_AST_FIELDS:
+            raise ValueError(
+                f"metadata adapter Python uses unsupported AST node {node_type}"
+            )
+        required_fields = _ALLOWED_AST_FIELDS[node_type]
+        compatibility_fields = _EMPTY_COMPATIBILITY_FIELDS.get(node_type, ())
+        available_fields = tuple(getattr(node, "_fields", ()))
+        unknown_fields = [
+            field
+            for field in available_fields
+            if field not in required_fields and field not in compatibility_fields
+        ]
+        if unknown_fields:
+            raise ValueError(
+                "metadata adapter Python uses unsupported AST fields "
+                + ", ".join(f"{node_type}.{field}" for field in unknown_fields)
+            )
+        missing_fields = [
+            field for field in required_fields if field not in available_fields
+        ]
+        if missing_fields:
+            raise ValueError(
+                "metadata adapter Python is missing AST fields "
+                + ", ".join(f"{node_type}.{field}" for field in missing_fields)
+            )
+        for field in compatibility_fields:
+            if field not in available_fields:
+                continue
+            value = getattr(node, field)
+            if not isinstance(value, (list, tuple)) or value:
+                raise ValueError(
+                    "metadata adapter Python uses unsupported nonempty compatibility field "
+                    f"{node_type}.{field}"
+                )
+        return {
+            "node": node_type,
+            "fields": [
+                [field, _normalize_semantic_ast(getattr(node, field))]
+                for field in required_fields
+            ],
+        }
+    if isinstance(node, list):
+        return [_normalize_semantic_ast(item) for item in node]
+    if isinstance(node, tuple):
+        return [_normalize_semantic_ast(item) for item in node]
+    if node is None or isinstance(node, (bool, int, float, str)):
+        return node
+    raise ValueError(
+        f"metadata adapter Python uses unsupported literal {type(node).__name__}"
+    )
+
+
+def _semantic_ast_digest(tree: ast.AST) -> str:
+    normalized = _normalize_semantic_ast(tree)
+    return hashlib.sha256(
+        json.dumps(
+            normalized,
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
 def validate_metadata_adapter_python(source: str) -> None:
-    parsed_source = textwrap.dedent(source)
     try:
-        tree = ast.parse(parsed_source)
+        tree = ast.parse(source)
     except SyntaxError as error:
         raise ValueError(f"metadata adapter Python is invalid: {error}") from error
 
@@ -145,13 +270,11 @@ def validate_metadata_adapter_python(source: str) -> None:
     if tuple(imports) != _ALLOWED_IMPORTS:
         raise ValueError("metadata adapter Python imports differ from the reviewed contract")
 
-    # Exact parsed-tree binding is intentional here because this is a named
+    # Exact semantic-tree binding is intentional here because this is a named
     # security boundary: even unreachable or no-op nodes would widen the
     # adapter's side-effect surface beyond the reviewed no-checkout contract.
-    digest = hashlib.sha256(
-        ast.dump(tree, annotate_fields=True, include_attributes=False).encode("utf-8")
-    ).hexdigest()
-    if digest != _PYTHON_AST_SHA256:
+    digest = _semantic_ast_digest(tree)
+    if digest != _PYTHON_SEMANTIC_SHA256:
         raise ValueError("metadata adapter Python AST differs from the reviewed contract")
 
 

@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 from scripts.upstream_port import cli, verify as verify_mod
+from tests.workflows import test_build_ci_topology as topology_tests
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 BUILD_WORKFLOW_PATH = os.path.join(REPO_ROOT, ".github", "workflows", "build.yml")
@@ -1304,6 +1305,18 @@ class VerifyCliCwdTests(unittest.TestCase):
                     "host-tests",
                     '           [ "$GITHUB_EVENT_NAME" != "pull_request" ] || \\\n',
                     '           [ "$GITHUB_EVENT_NAME" != "pull_request" ] || \\  \n',
+                ),
+                "uniform-python-heredoc-indent": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    topology_tests._step_blocks(
+                        topology_tests._job_blocks(original)["host-tests"]
+                    )[0],
+                    topology_tests._indent_metadata_adapter_heredoc_in_step(
+                        topology_tests._step_blocks(
+                            topology_tests._job_blocks(original)["host-tests"]
+                        )[0]
+                    ),
                 ),
             }
             for name, changed in mutations.items():
