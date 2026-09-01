@@ -5986,7 +5986,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             )
 
         with handoff_repository() as (root, _base, parent, result):
-            def make_tampered_record(mutator):
+            def make_tampered_record(*, row_mutator=None, result_mutator=None):
                 document = handoff_document(root, parent, result)
                 add_run(document, result)
                 duplicate = copy.deepcopy(document["watchers"][0])
@@ -5994,7 +5994,13 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 document["watchers"].append(duplicate)
                 refresh_coordinator_receipt(document, root)
                 tampered_result = agent_handoff.validate_document(document, root)
-                mutator(tampered_result["handoffs"][0])
+                if row_mutator is not None:
+                    row_mutator(tampered_result["handoffs"][0])
+                if result_mutator is not None:
+                    result_mutator(tampered_result)
+                    tampered_result["git_seal"] = agent_handoff.seal_git_authority(
+                        tampered_result["git_authority"]
+                    )
                 (
                     tampered_result["summary"],
                     _global_codes,
@@ -6023,7 +6029,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                     ),
                 }
 
-            for mutate in (
+            for row_mutator in (
                 lambda row: row.update(
                     {
                         "outcome": "rejected",
@@ -6039,14 +6045,51 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                     }
                 ),
             ):
-                with self.subTest(mutate=mutate.__code__.co_firstlineno):
+                with self.subTest(row_mutator=row_mutator.__code__.co_firstlineno):
                     with self.assertRaisesRegex(
                         agent_handoff.HandoffDataError,
                         "result handoffs do not verify",
                     ):
                         agent_handoff.verify_reporter_record(
-                            make_tampered_record(mutate),
+                            make_tampered_record(row_mutator=row_mutator),
                             revalidate_git=False,
+                        )
+
+            for label, result_mutator in (
+                ("head", lambda result: result["git_authority"].__setitem__("head_sha", "0" * 40)),
+                ("branch", lambda result: result["git_authority"].__setitem__("branch", "agent/other")),
+                (
+                    "dirty",
+                    lambda result: result["git_authority"].update(
+                        clean=False,
+                        dirty_paths=["scripts/workflow_pilot/change.py"],
+                    ),
+                ),
+                (
+                    "parent",
+                    lambda result: result["git_authority"]["handoffs"][0].__setitem__(
+                        "assigned_parent_sha",
+                        "0" * 40,
+                    ),
+                ),
+            ):
+                with self.subTest(result_mutator=label):
+                    record = make_tampered_record(result_mutator=result_mutator)
+                    for revalidate_git in (False, True):
+                        with self.assertRaisesRegex(
+                            agent_handoff.HandoffDataError,
+                            "Git authority does not verify",
+                        ):
+                            agent_handoff.verify_reporter_record(
+                                copy.deepcopy(record),
+                                revalidate_git=revalidate_git,
+                            )
+                    with self.assertRaisesRegex(
+                        reporter.PilotDataError,
+                        "Git authority does not verify",
+                    ):
+                        reporter.validate_fixture(
+                            reporter_fixture_with_handoffs(record)
                         )
 
     def test_frozen_version_one_schema_remains_closed_and_unchanged(self):

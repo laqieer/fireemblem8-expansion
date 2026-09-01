@@ -3770,6 +3770,83 @@ def _verified_reporter_handoffs(
     )
 
 
+def _verified_reporter_git_authority(
+    document: dict[str, Any],
+    source_root: Path,
+    original_authority: dict[str, Any],
+    current_authority: dict[str, Any],
+    handoffs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if (
+        current_authority["object_id"] == original_authority["object_id"]
+        and current_authority["anchor_object_id"] == original_authority["anchor_object_id"]
+    ):
+        return validate_document(
+            copy.deepcopy(document),
+            source_root,
+            current_time=parse_time(
+                document["coordinator_receipt"]["issued_at"],
+                "handoff reporter coordinator receipt issued_at",
+            ),
+        )["git_authority"]
+
+    raw_handoffs = expect_list(
+        document["handoffs"],
+        "handoff reporter record.document.handoffs",
+    )
+    branches = {
+        expect_string(raw["expected_branch"], f"handoff reporter document.handoffs[{index}].expected_branch")
+        for index, raw in enumerate(raw_handoffs)
+    }
+    if len(branches) != 1:
+        raise HandoffDataError("handoff reporter record Git authority has inconsistent branches")
+    head_sha = next(
+        (handoff["result_sha"] for handoff in reversed(handoffs) if handoff["result_sha"] is not None),
+        None,
+    )
+    if head_sha is None:
+        head_sha = next(
+            (
+                expect_sha(raw["assigned_parent_sha"], f"handoff reporter document.handoffs[{index}].assigned_parent_sha")
+                for index, (raw, handoff) in enumerate(zip(raw_handoffs, handoffs))
+                if handoff["outcome"] == "interrupted"
+            ),
+            None,
+        )
+    if head_sha is None:
+        raise HandoffDataError("handoff reporter record Git authority cannot derive a head SHA")
+    dirty_paths = sorted(
+        {
+            path
+            for handoff in handoffs
+            if handoff["interruption_snapshot"] is not None
+            for path in handoff["interruption_snapshot"]["dirty_paths"]
+        }
+    )
+    return {
+        "worktree_identity": worktree_identity(source_root),
+        "branch": next(iter(branches)),
+        "head_sha": head_sha,
+        "clean": not dirty_paths,
+        "conflicts": [],
+        "dirty_paths": dirty_paths,
+        "handoffs": [
+            {
+                "id": handoff["id"],
+                "assigned_parent_sha": expect_sha(
+                    raw["assigned_parent_sha"],
+                    f"handoff reporter document.handoffs[{index}].assigned_parent_sha",
+                ),
+                "result_sha": handoff["result_sha"],
+                "changed_paths": handoff["changed_paths"],
+                "changed_lines": handoff["changed_lines"],
+                "commit_message_sha256": handoff["commit_message_sha256"],
+            }
+            for index, (raw, handoff) in enumerate(zip(raw_handoffs, handoffs))
+        ],
+    }
+
+
 def derive_reporter_result_summary(
     document: dict[str, Any],
     result: dict[str, Any],
@@ -4188,14 +4265,29 @@ def verify_reporter_record(
                 raise HandoffDataError(
                     "handoff reporter record check receipt does not verify"
                 )
-    if reported_handoffs != _verified_reporter_handoffs(
+    verified_handoffs = _verified_reporter_handoffs(
         document,
         source_root,
         original_authority,
         current_authority,
-    ):
+    )
+    if reported_handoffs != verified_handoffs:
         raise HandoffDataError(
             "handoff reporter record result handoffs do not verify"
+        )
+    expected_git_authority = _verified_reporter_git_authority(
+        document,
+        source_root,
+        original_authority,
+        current_authority,
+        verified_handoffs,
+    )
+    if (
+        result["git_authority"] != expected_git_authority
+        or result["git_seal"] != seal_git_authority(expected_git_authority)
+    ):
+        raise HandoffDataError(
+            "handoff reporter record Git authority does not verify"
         )
     return record
 
