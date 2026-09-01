@@ -1034,6 +1034,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
             all_remote_reviews=[remote_review],
             remote_findings=[],
             remote_finding_ids=[],
+            captured_github_payload=self.adapter(),
             original_review_report_bytes=reporter.normalized_json(report),
             original_review_receipt=receipt_envelope,
             original_receipt_sha256=hashlib.sha256(receipt_bytes).hexdigest(),
@@ -1148,6 +1149,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
             all_remote_reviews=[remote_review],
             remote_findings=[],
             remote_finding_ids=[],
+            captured_github_payload=self.adapter(),
             original_review_report_bytes=reporter.normalized_json(report),
             original_review_receipt=receipt_envelope,
             original_receipt_sha256=hashlib.sha256(receipt_bytes).hexdigest(),
@@ -1172,6 +1174,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     all_remote_reviews=[remote_review],
                     remote_findings=[],
                     remote_finding_ids=[],
+                    captured_github_payload=self.adapter(),
                     original_review_report_bytes=reporter.normalized_json(
                         report
                     ),

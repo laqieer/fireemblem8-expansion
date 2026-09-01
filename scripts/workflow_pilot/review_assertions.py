@@ -84,6 +84,7 @@ CHECKER_INPUT_FIELDS = (
     "review_context",
     "all_remote_reviews",
     "remote_findings",
+    "captured_github_payload",
     "trust_mode",
     "changed_files",
     "changes",
@@ -92,6 +93,10 @@ CHECKER_INPUT_FIELDS = (
     "original_pre_review",
     "round_findings",
     "assertion_requests",
+    "invoking_checker_module_name",
+    "invoking_checker_argv",
+    "invoking_checker_cwd",
+    "invoking_checker_home",
 )
 RAW_CHECKER_INPUT_FIELDS = (
     "schema_version",
@@ -120,6 +125,7 @@ RAW_CHECKER_INPUT_FIELDS = (
     "review_context",
     "all_remote_reviews",
     "remote_findings",
+    "captured_github_payload",
     "trust_mode",
     "changed_files",
     "changes",
@@ -138,6 +144,7 @@ import json
 import os
 import shutil
 import socket
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -182,6 +189,7 @@ RAW_CHECKER_INPUT_FIELDS = (
     "review_context",
     "all_remote_reviews",
     "remote_findings",
+    "captured_github_payload",
     "trust_mode",
     "changed_files",
     "changes",
@@ -258,6 +266,31 @@ def import_gate():
     return gate, reporter, review_family
 
 
+def import_repository_head_modules(context):
+    saved_path = list(sys.path)
+    saved_modules = {
+        name: module
+        for name, module in list(sys.modules.items())
+        if name == "scripts" or name.startswith("scripts.workflow_pilot")
+    }
+    for name in list(saved_modules):
+        sys.modules.pop(name, None)
+    sys.path.insert(0, context["repository_root"])
+    try:
+        gate = importlib.import_module("scripts.workflow_pilot.trusted_review_gate")
+        reporter = importlib.import_module("scripts.workflow_pilot.reporter")
+        review_family = importlib.import_module("scripts.workflow_pilot.review_family")
+        gate.reporter = reporter
+        gate.review_family = review_family
+        return gate, reporter, review_family
+    finally:
+        sys.path[:] = saved_path
+        for name in list(sys.modules):
+            if name == "scripts" or name.startswith("scripts.workflow_pilot"):
+                sys.modules.pop(name, None)
+        sys.modules.update(saved_modules)
+
+
 def import_checker():
     sys.argv = ["review_base_checker.py"]
     return importlib.import_module("scripts.workflow_pilot.review_base_checker")
@@ -269,6 +302,14 @@ def import_outputs():
     return candidate, classifier
 
 
+class StaticAdapter:
+    def __init__(self, payload):
+        self._payload = copy.deepcopy(payload)
+
+    def fetch(self, repository, pull_request):
+        return copy.deepcopy(self._payload)
+
+
 def authoritative_trigger(gate, context):
     contract = context["review_contract"]
     if contract["trust_mode"] == "introduction":
@@ -278,6 +319,409 @@ def authoritative_trigger(gate, context):
         Path(context["repository_root"]),
         context["candidate_sha"],
     )
+
+
+def current_checker_is_cli_context(context):
+    if context.get("invoking_checker_module_name") != "__main__":
+        return False
+    argv = context.get("invoking_checker_argv")
+    if not isinstance(argv, list) or len(argv) != 3:
+        return False
+    if any(not isinstance(item, str) or not item for item in argv):
+        return False
+    checker_path = Path(argv[0])
+    input_path = Path(argv[2])
+    if (
+        argv[1] != "--input"
+        or checker_path.name != "review_base_checker.py"
+        or input_path.name != "checker-input.json"
+    ):
+        return False
+    cwd = context.get("invoking_checker_cwd")
+    home = context.get("invoking_checker_home")
+    if not isinstance(cwd, str) or not cwd or not isinstance(home, str) or not home:
+        return False
+    try:
+        cwd_path = Path(cwd).resolve()
+        home_path = Path(home).resolve()
+        return (
+            checker_path.resolve().parent == cwd_path
+            and input_path.resolve().parent == cwd_path
+            and home_path == cwd_path
+        )
+    except OSError:
+        return False
+
+
+def action_probe_request(member, binding):
+    return {
+        "assertion_id": f"registry:sibling:action:{member}:verified-unaffected:v2",
+        "finding_id": binding["finding_id"],
+    }
+
+
+def checker_probe_root(context):
+    probe_root = Path(context["assertion_program_path"]).resolve().parent / ".assertion-probes"
+    if probe_root.exists():
+        if probe_root.is_symlink() or not probe_root.is_dir():
+            raise RuntimeError("assertion probe root is unavailable")
+        return probe_root
+    probe_root.mkdir(mode=0o700)
+    return probe_root
+
+
+def checker_failure_text(completed):
+    return completed.stderr.decode("utf-8", errors="replace").strip()
+
+
+def build_checker_probe_input(context, request):
+    raw_input = raw_checker_input(context)
+    raw_input["assertion_requests"] = [copy.deepcopy(request)]
+    return raw_input
+
+
+def run_checker_cli(context, request, mutate=None):
+    raw_input = build_checker_probe_input(context, request)
+    if mutate is not None:
+        mutate(raw_input)
+    probe_root = checker_probe_root(context)
+    sandbox = probe_root / f"review-base-check-{os.getpid()}-{len(list(probe_root.iterdir()))}"
+    sandbox.mkdir(mode=0o700)
+    nested_probe_root = sandbox / ".assertion-probes"
+    nested_probe_root.mkdir(mode=0o700)
+    checker_path = sandbox / "review_base_checker.py"
+    assertion_program_path = sandbox / "review_assertions.py"
+    input_path = sandbox / "checker-input.json"
+    checker_path.write_bytes(
+        Path("scripts/workflow_pilot/review_base_checker.py").read_bytes()
+    )
+    assertion_program_path.write_bytes(
+        Path(context["assertion_program_path"]).resolve().read_bytes()
+    )
+    raw_input["assertion_program_path"] = str(assertion_program_path)
+    raw_input["assertion_program_blob_oid"] = context["assertion_program_blob_oid"]
+    raw_input["assertion_program_argv"] = copy.deepcopy(context["assertion_program_argv"])
+    input_bytes = normalized_json(raw_input)
+    input_path.write_bytes(input_bytes)
+    checker_path.chmod(0o444)
+    assertion_program_path.chmod(0o444)
+    input_path.chmod(0o444)
+    sandbox.chmod(0o555)
+    try:
+        completed = subprocess.run(
+            (
+                "/usr/bin/python3",
+                "-I",
+                str(checker_path),
+                "--input",
+                str(input_path),
+            ),
+            cwd=sandbox,
+            env={
+                "HOME": str(sandbox),
+                "LC_ALL": "C",
+                "PATH": "/usr/bin:/bin",
+                "PYTHONHASHSEED": "0",
+            },
+            check=False,
+            capture_output=True,
+            timeout=120,
+        )
+    finally:
+        sandbox.chmod(0o700)
+        shutil.rmtree(sandbox)
+    return raw_input, completed
+
+
+def parse_checker_result(raw_input, completed, request):
+    if completed.returncode != 0:
+        raise RuntimeError(
+            checker_failure_text(completed) or "checker subprocess failed"
+        )
+    parsed = json.loads(completed.stdout.decode("utf-8"))
+    if normalized_json(parsed) != completed.stdout:
+        raise RuntimeError("checker subprocess output is not canonical")
+    if set(parsed) != {
+        "schema_version",
+        "registry_version",
+        "input_sha256",
+        "command_id",
+        "results",
+    }:
+        raise RuntimeError("checker subprocess output is invalid")
+    if (
+        parsed["schema_version"] != 2
+        or parsed["registry_version"] != 1
+        or parsed["input_sha256"]
+        != hashlib.sha256(normalized_json(raw_input)).hexdigest()
+    ):
+        raise RuntimeError("checker subprocess output lost exact input identity")
+    if not isinstance(parsed["results"], list) or len(parsed["results"]) != 1:
+        raise RuntimeError("checker subprocess did not isolate one member request")
+    result = parsed["results"][0]
+    if (
+        not isinstance(result, dict)
+        or result.get("assertion_id") != request["assertion_id"]
+        or result.get("check_id") != request["assertion_id"]
+        or result.get("status") != "pass"
+        or not isinstance(result.get("authority_binding"), dict)
+        or not isinstance(result.get("output"), dict)
+    ):
+        raise RuntimeError("checker subprocess result is invalid")
+    return result
+
+
+def require_checker_failure(context, request, mutate, message):
+    _, completed = run_checker_cli(context, request, mutate=mutate)
+    if completed.returncode == 0:
+        raise RuntimeError(message)
+    return checker_failure_text(completed)
+
+
+def mutate_current_finding_family(raw_input, finding_id, family):
+    findings = (
+        raw_input["original_pre_review"]["findings"]
+        if raw_input["review_round"] == 1
+        else raw_input["remote_findings"]
+    )
+    key = "id" if raw_input["review_round"] == 1 else "node_id"
+    for finding in findings:
+        if finding[key] == finding_id:
+            finding["family"] = family
+            return
+    raise RuntimeError("member finding is unavailable for family mutation")
+
+
+def action_binding_expectation(context, binding, member):
+    if context["review_round"] == 1:
+        expected_review_id = context["original_pre_review"]["report_id"]
+        expected_review_round = 0
+        expected_finding_head_sha = context["original_pre_review_head"]
+        expected_finding_head_tree = context["original_pre_review_head_tree"]
+    else:
+        prior = context["all_remote_reviews"][context["review_round"] - 2]
+        expected_review_id = prior["node_id"]
+        expected_review_round = prior["round"]
+        expected_finding_head_sha = prior["candidate_sha"]
+        expected_finding_head_tree = context["finding_origin_tree"]
+    expected = {
+        "finding_id": binding["finding_id"],
+        "finding_family": "action",
+        "finding_member": member,
+        "finding_review_id": expected_review_id,
+        "finding_review_round": expected_review_round,
+        "finding_head_sha": expected_finding_head_sha,
+        "finding_head_tree": expected_finding_head_tree,
+        "finding_origin_sha": context["finding_origin_sha"],
+        "finding_origin_tree": context["finding_origin_tree"],
+        "head_sha": context["candidate_sha"],
+        "head_tree": context["candidate_tree"],
+    }
+    if binding != expected:
+        raise RuntimeError("member-item authority binding is incomplete")
+
+
+def bind_member_request_data(context, *, family_override=None):
+    if context["review_round"] == 1:
+        findings = context["original_pre_review"]["findings"]
+        round_findings = {
+            finding["id"]: {
+                "family": family_override or finding["family"],
+                "review_id": context["original_pre_review"]["report_id"],
+                "review_round": 0,
+                "finding_head_sha": context["original_pre_review_head"],
+                "finding_head_tree": context["original_pre_review_head_tree"],
+                "finding_origin_sha": context["base_sha"],
+                "finding_origin_tree": context["base_tree"],
+            }
+            for finding in findings
+        }
+    else:
+        prior = context["all_remote_reviews"][context["review_round"] - 2]
+        review_findings = {
+            finding["id"]: finding
+            for finding in context["remote_findings"]
+            if finding["review_id"] == prior["node_id"]
+        }
+        round_findings = {
+            finding_id: {
+                "family": family_override or review_findings[finding_id]["family"],
+                "review_id": prior["node_id"],
+                "review_round": prior["round"],
+                "finding_head_sha": prior["candidate_sha"],
+                "finding_head_tree": context["finding_origin_tree"],
+                "finding_origin_sha": context["finding_origin_sha"],
+                "finding_origin_tree": context["finding_origin_tree"],
+            }
+            for finding_id in prior["finding_ids"]
+            if finding_id in review_findings
+        }
+    return {
+        "round_findings": round_findings,
+        "candidate_sha": context["candidate_sha"],
+        "candidate_tree": context["candidate_tree"],
+    }
+
+
+ACTION_PROBE_RUNNER = r'''
+from __future__ import annotations
+
+import importlib.util
+import io
+import json
+import sys
+from pathlib import Path
+
+
+def normalized_json(value):
+    return (
+        json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+        + "\n"
+    ).encode("ascii")
+
+
+probe = json.loads(sys.stdin.buffer.read().decode("utf-8"))
+checker_path = Path("review_base_checker.py").resolve()
+input_path = Path("checker-input.json").resolve()
+sys.argv = [str(checker_path), "--input", str(input_path)]
+module = None
+load_error = None
+saved_stdout = sys.stdout
+saved_stderr = sys.stderr
+saved_main = sys.modules.get("__main__")
+stdout_buffer = io.BytesIO()
+stderr_buffer = io.StringIO()
+sys.stdout = io.TextIOWrapper(stdout_buffer, encoding="utf-8")
+sys.stderr = stderr_buffer
+try:
+    spec = importlib.util.spec_from_file_location("__main__", checker_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("checker probe could not load review_base_checker.py")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["__main__"] = module
+    try:
+        spec.loader.exec_module(module)
+    except SystemExit:
+        pass
+except Exception as error:
+    load_error = error
+finally:
+    sys.stdout.flush()
+    sys.stdout = saved_stdout
+    sys.stderr = saved_stderr
+    if saved_main is None:
+        sys.modules.pop("__main__", None)
+    else:
+        sys.modules["__main__"] = saved_main
+
+if load_error is not None:
+    print(f"review base checker probe load error: {load_error}", file=sys.stderr)
+    raise SystemExit(2)
+if module is None:
+    print("review base checker probe did not load a module", file=sys.stderr)
+    raise SystemExit(2)
+
+mode = probe["mode"]
+try:
+    if mode == "actions":
+        result = module.validate_review_action_contract(
+            repository=probe["repository"],
+            actions=probe["actions"],
+        )
+    elif mode == "targets":
+        result = module.validate_review_targets(
+            probe["reviewed_files"],
+            probe["reviewed_changes"],
+            changed_files=probe["changed_files"],
+            changes=probe["changes"],
+        )
+    elif mode == "items":
+        result = module.bind_member_request(
+            probe["data"],
+            probe["parsed"],
+            probe["finding_id"],
+        )
+    else:
+        raise RuntimeError(f"unsupported action probe mode {mode!r}")
+except Exception as error:
+    check_error = getattr(module, "CheckError", Exception)
+    if isinstance(error, check_error):
+        print(str(error), file=sys.stderr)
+        raise SystemExit(2)
+    print(f"review base checker probe error: {error}", file=sys.stderr)
+    raise SystemExit(2)
+
+sys.stdout.buffer.write(normalized_json({"status": "pass", "result": result}))
+'''
+
+
+def probe_module_payload(context):
+    raw_input = raw_checker_input(context)
+    raw_input["assertion_requests"] = [
+        {"assertion_id": "candidate-fabricated-pass", "finding_id": None}
+    ]
+    return raw_input
+
+
+def run_action_probe(context, probe):
+    probe_root = checker_probe_root(context)
+    sandbox = probe_root / f"action-probe-{os.getpid()}-{len(list(probe_root.iterdir()))}"
+    sandbox.mkdir(mode=0o700)
+    checker_path = sandbox / "review_base_checker.py"
+    assertion_program_path = sandbox / "review_assertions.py"
+    input_path = sandbox / "checker-input.json"
+    checker_path.write_bytes(
+        Path("scripts/workflow_pilot/review_base_checker.py").read_bytes()
+    )
+    assertion_program_path.write_bytes(
+        Path(context["assertion_program_path"]).resolve().read_bytes()
+    )
+    raw_input = probe_module_payload(context)
+    input_path.write_bytes(normalized_json(raw_input))
+    checker_path.chmod(0o444)
+    assertion_program_path.chmod(0o444)
+    input_path.chmod(0o444)
+    sandbox.chmod(0o555)
+    try:
+        completed = subprocess.run(
+            ("/usr/bin/python3", "-I", "-c", ACTION_PROBE_RUNNER),
+            cwd=sandbox,
+            env={
+                "HOME": str(sandbox),
+                "LC_ALL": "C",
+                "PATH": "/usr/bin:/bin",
+                "PYTHONHASHSEED": "0",
+            },
+            input=normalized_json(probe),
+            check=False,
+            capture_output=True,
+            timeout=120,
+        )
+    finally:
+        sandbox.chmod(0o700)
+        shutil.rmtree(sandbox)
+    return completed
+
+
+def parse_action_probe_result(completed):
+    if completed.returncode != 0:
+        raise RuntimeError(
+            completed.stderr.decode("utf-8", errors="replace").strip()
+            or "action probe subprocess failed"
+        )
+    parsed = json.loads(completed.stdout.decode("utf-8"))
+    if normalized_json(parsed) != completed.stdout:
+        raise RuntimeError("action probe subprocess output is not canonical")
+    if set(parsed) != {"status", "result"} or parsed["status"] != "pass":
+        raise RuntimeError("action probe subprocess output is invalid")
+    return parsed["result"]
+
+
+def require_action_probe_failure(context, probe, message):
+    completed = run_action_probe(context, probe)
+    if completed.returncode == 0:
+        raise RuntimeError(message)
+    return completed.stderr.decode("utf-8", errors="replace").strip()
 
 
 def remote_findings(context):
@@ -411,50 +855,111 @@ def build_threads(context):
     ]
 
 
-def wire_payload_parts(context):
-    gate, _, _ = import_gate()
-    trigger = authoritative_trigger(gate, context)
-    return {
-        "gate": gate,
-        "trigger": trigger,
-        "captured_at": format_time(
-            max(
-                parse_time(context["original_review_receipt"]["issued_at"]),
-                *(parse_time(review["submitted_at"]) for review in context["all_remote_reviews"]),
-            )
-            + timedelta(seconds=1)
-        ),
-        "pull_request": pull_request_state(context),
-        "actors": actor_records(context),
-        "pre_reviews": build_pre_reviews(context, trigger),
-        "pre_review_findings": pre_review_findings(context),
-        "remote_reviews": copy.deepcopy(context["all_remote_reviews"]),
-        "findings": remote_findings(context),
-        "threads": build_threads(context),
-    }
-
-
-def build_wire_payload(context):
-    parts = wire_payload_parts(context)
-    payload = parts["gate"].build_live_evidence_payload(
-        contract=context["review_contract"],
-        expected_candidate=context["candidate_sha"],
-        source_kind="offline-transform-fixture",
-        captured_at=parts["captured_at"],
-        original_receipt_sha256=context["original_receipt_sha256"],
-        pull_request=parts["pull_request"],
-        authoritative_trigger=parts["trigger"],
-        actors=parts["actors"],
-        pre_reviews=parts["pre_reviews"],
-        pre_review_findings=parts["pre_review_findings"],
-        remote_reviews=parts["remote_reviews"],
-        findings=parts["findings"],
-        threads=parts["threads"],
-        force_push_events=[],
-        architecture_dispositions=[],
-        execution_receipts=[],
+def live_wire_payload(context):
+    gate, reporter, _ = import_gate()
+    repository_root = Path(context["repository_root"])
+    live_head = reporter.run_git(
+        repository_root, "rev-parse", "--verify", "HEAD^{commit}"
+    ).decode("ascii").strip()
+    live_contract = copy.deepcopy(context["review_contract"])
+    live_contract["candidate_sha"] = live_head
+    live_trigger = (
+        None
+        if live_contract["trust_mode"] == "introduction"
+        else gate.load_authoritative_trigger(
+            live_contract,
+            repository_root,
+            live_head,
+        )
     )
-    return parts["gate"], payload
+    evidence_bytes = gate.collect_live_evidence_bytes(
+        live_contract,
+        repository_root,
+        live_head,
+        live_head,
+        copy.deepcopy(context["original_pre_review"]),
+        copy.deepcopy(context["original_review_receipt"]),
+        [],
+        authoritative_trigger=live_trigger,
+        adapter=StaticAdapter(context["captured_github_payload"]),
+        clock=lambda: max(
+            parse_time(context["original_review_receipt"]["issued_at"]),
+            *(parse_time(review["submitted_at"]) for review in context["all_remote_reviews"]),
+        )
+        + timedelta(seconds=1),
+    )
+    payload = json.loads(evidence_bytes.decode("utf-8"))
+    if normalized_json(payload) != evidence_bytes:
+        raise RuntimeError("wire live payload is not canonical")
+    return gate, payload
+
+
+def canonical_live_wire_payload(context):
+    gate, reporter, _ = import_repository_head_modules(context)
+    repository_root = Path(context["repository_root"])
+    live_head = reporter.run_git(
+        repository_root, "rev-parse", "--verify", "HEAD^{commit}"
+    ).decode("ascii").strip()
+    live_contract = copy.deepcopy(context["review_contract"])
+    live_contract["candidate_sha"] = live_head
+    live_trigger = (
+        None
+        if live_contract["trust_mode"] == "introduction"
+        else gate.load_authoritative_trigger(
+            live_contract,
+            repository_root,
+            live_head,
+        )
+    )
+    evidence_bytes = gate.collect_live_evidence_bytes(
+        live_contract,
+        repository_root,
+        live_head,
+        live_head,
+        copy.deepcopy(context["original_pre_review"]),
+        copy.deepcopy(context["original_review_receipt"]),
+        [],
+        authoritative_trigger=live_trigger,
+        adapter=StaticAdapter(context["captured_github_payload"]),
+        clock=lambda: max(
+            parse_time(context["original_review_receipt"]["issued_at"]),
+            *(parse_time(review["submitted_at"]) for review in context["all_remote_reviews"]),
+        )
+        + timedelta(seconds=1),
+    )
+    payload = json.loads(evidence_bytes.decode("utf-8"))
+    if normalized_json(payload) != evidence_bytes:
+        raise RuntimeError("wire live payload is not canonical")
+    return gate, payload
+
+
+def offline_wire_payload(context, live_payload):
+    gate, _, _ = import_gate()
+    payload = gate.build_live_evidence_payload(
+        contract=context["review_contract"],
+        expected_candidate=live_payload["candidate"]["sha"],
+        source_kind="offline-transform-fixture",
+        captured_at=live_payload["captured_at"],
+        original_receipt_sha256=live_payload["original_receipt_sha256"],
+        pull_request=copy.deepcopy(live_payload["pull_request"]),
+        authoritative_trigger=copy.deepcopy(live_payload["authoritative_trigger"]),
+        actors=copy.deepcopy(live_payload["actors"]),
+        pre_reviews=copy.deepcopy(live_payload["pre_reviews"]),
+        pre_review_findings=copy.deepcopy(live_payload["pre_review_findings"]),
+        remote_reviews=copy.deepcopy(live_payload["remote_reviews"]),
+        findings=copy.deepcopy(live_payload["findings"]),
+        threads=copy.deepcopy(live_payload["threads"]),
+        force_push_events=copy.deepcopy(live_payload["force_push_events"]),
+        architecture_dispositions=copy.deepcopy(live_payload["architecture_dispositions"]),
+        execution_receipts=copy.deepcopy(live_payload["execution_receipts"]),
+    )
+    return payload
+
+
+def comparable_wire_payload(payload):
+    normalized = copy.deepcopy(payload)
+    normalized["source"]["kind"] = "shared"
+    return normalized
 
 
 def progress_review(round_number, candidate_sha, submitted_at, outcome, finding_ids):
@@ -496,55 +1001,71 @@ def progress_sweeps(binding):
 
 
 def probe_action_actions(context, binding):
-    checker = import_checker()
-    positive = checker.validate_review_action_contract(
-        repository=context["repository"],
-        actions=copy.deepcopy(context["original_pre_review"])["actions"],
-    )
-    negative = copy.deepcopy(context["original_pre_review"])
-    negative["actions"] = list(reversed(positive))
-    try:
-        checker.validate_review_action_contract(
-            repository=context["repository"],
-            actions=negative["actions"],
+    positive = parse_action_probe_result(
+        run_action_probe(
+            context,
+            {
+                "mode": "actions",
+                "repository": context["repository"],
+                "actions": copy.deepcopy(context["original_pre_review"]["actions"]),
+            },
         )
-    except checker.CheckError as error:
-        rejection = str(error)
-    else:
-        raise RuntimeError("read-only action sequence is not enforced")
-    return {"sequence": positive, "rejection": rejection}
+    )
+    rejection = require_action_probe_failure(
+        context,
+        {
+            "mode": "actions",
+            "repository": context["repository"],
+            "actions": list(reversed(copy.deepcopy(context["original_pre_review"]["actions"]))),
+        },
+        "read-only action sequence is not enforced",
+    )
+    return {
+        "sequence": positive,
+        "rejection": rejection,
+    }
 
 
 def probe_action_items(context, binding):
-    checker = import_checker()
-    data = {
-        "round_findings": context["round_findings"],
-        "candidate_sha": context["candidate_sha"],
-        "candidate_tree": context["candidate_tree"],
-    }
     parsed = {
         "family": "action",
         "member": "items",
         "outcome": "affected-fixed",
         "reason": None,
     }
-    result = checker.bind_member_request(data, parsed, binding["finding_id"])
-    if result != binding:
+    positive = parse_action_probe_result(
+        run_action_probe(
+            context,
+            {
+                "mode": "items",
+                "data": bind_member_request_data(context),
+                "parsed": parsed,
+                "finding_id": binding["finding_id"],
+            },
+        )
+    )
+    if positive != binding:
         raise RuntimeError("member-item authority binding is incomplete")
-    wrong_family = dict(parsed)
-    wrong_family["family"] = "wire"
-    try:
-        checker.bind_member_request(data, wrong_family, binding["finding_id"])
-    except checker.CheckError as error:
-        family_rejection = str(error)
-    else:
-        raise RuntimeError("member-item family mismatches are not rejected")
-    try:
-        checker.bind_member_request(data, parsed, "FINDING")
-    except checker.CheckError as error:
-        sentinel_rejection = str(error)
-    else:
-        raise RuntimeError("sentinel finding IDs are not rejected")
+    sentinel_rejection = require_action_probe_failure(
+        context,
+        {
+            "mode": "items",
+            "data": bind_member_request_data(context),
+            "parsed": parsed,
+            "finding_id": "FINDING",
+        },
+        "sentinel finding IDs are not rejected",
+    )
+    family_rejection = require_action_probe_failure(
+        context,
+        {
+            "mode": "items",
+            "data": bind_member_request_data(context, family_override="wire"),
+            "parsed": parsed,
+            "finding_id": binding["finding_id"],
+        },
+        "member-item family mismatches are not rejected",
+    )
     return {
         "checker_binding": True,
         "family_rejection": family_rejection,
@@ -553,30 +1074,31 @@ def probe_action_items(context, binding):
 
 
 def probe_action_targets(context, binding):
-    checker = import_checker()
-    report = checker.validate_review_targets(
-        copy.deepcopy(context["original_pre_review"])["reviewed_files"],
-        copy.deepcopy(context["original_pre_review"])["reviewed_changes"],
-        changed_files=changed_files(context["original_changes"]),
-        changes=context["original_changes"],
-    )
-    negative = copy.deepcopy(context["original_pre_review"])
-    negative["reviewed_files"] = report["reviewed_files"][:-1]
-    if not negative["reviewed_files"]:
-        negative["reviewed_files"] = []
-    try:
-        checker.validate_review_targets(
-            negative["reviewed_files"],
-            negative["reviewed_changes"],
-            changed_files=changed_files(context["original_changes"]),
-            changes=context["original_changes"],
+    positive = parse_action_probe_result(
+        run_action_probe(
+            context,
+            {
+                "mode": "targets",
+                "reviewed_files": copy.deepcopy(context["original_pre_review"]["reviewed_files"]),
+                "reviewed_changes": copy.deepcopy(context["original_pre_review"]["reviewed_changes"]),
+                "changed_files": changed_files(context["original_changes"]),
+                "changes": copy.deepcopy(context["original_changes"]),
+            },
         )
-    except checker.CheckError as error:
-        rejection = str(error)
-    else:
-        raise RuntimeError("exact changed-file coverage is not enforced")
+    )
+    rejection = require_action_probe_failure(
+        context,
+        {
+            "mode": "targets",
+            "reviewed_files": [],
+            "reviewed_changes": copy.deepcopy(context["original_pre_review"]["reviewed_changes"]),
+            "changed_files": changed_files(context["original_changes"]),
+            "changes": copy.deepcopy(context["original_changes"]),
+        },
+        "exact changed-file coverage is not enforced",
+    )
     return {
-        "statuses": sorted({change["status"] for change in report["reviewed_changes"]}),
+        "statuses": sorted({change["status"] for change in positive["reviewed_changes"]}),
         "rejection": rejection,
     }
 
@@ -883,47 +1405,84 @@ def probe_resource_disabled(context, binding):
 
 
 def probe_wire_producers(context, binding):
-    _, payload = build_wire_payload(context)
-    if "result_manifest" not in payload or "execution_receipts" not in payload:
+    gate, live_payload = live_wire_payload(context)
+    if not {"result_manifest", "execution_receipts", "authoritative_trigger"}.issubset(
+        live_payload
+    ):
         raise RuntimeError("wire producers are incomplete")
-    if payload["candidate"]["sha"] != context["candidate_sha"]:
+    offline_payload = offline_wire_payload(context, live_payload)
+    if not {"result_manifest", "execution_receipts", "authoritative_trigger"}.issubset(
+        offline_payload
+    ):
+        raise RuntimeError("wire producers are incomplete")
+    if comparable_wire_payload(live_payload) != comparable_wire_payload(offline_payload):
+        raise RuntimeError("wire producers are incomplete")
+    if live_payload["source"]["kind"] != "live-gh-api":
+        raise RuntimeError("wire producers are incomplete")
+    if offline_payload["source"]["kind"] != "offline-transform-fixture":
+        raise RuntimeError("wire producers are incomplete")
+    actual_head = gate.reporter.run_git(
+        Path(context["repository_root"]), "rev-parse", "--verify", "HEAD^{commit}"
+    ).decode("ascii").strip()
+    if live_payload["candidate"]["sha"] != actual_head:
         raise RuntimeError("wire producers are incomplete")
     return {
-        "result_manifest_size": len(payload["result_manifest"]),
-        "candidate_head_sha": payload["pull_request"]["head_sha"],
+        "live_source_kind": live_payload["source"]["kind"],
+        "offline_source_kind": offline_payload["source"]["kind"],
+        "result_manifest_size": len(live_payload["result_manifest"]),
     }
 
 
 def probe_wire_consumers(context, binding):
-    parts = wire_payload_parts(context)
-    payload = {
-        "schema_version": 5,
-        "repository": context["review_contract"]["repository"],
-        "source": {"kind": "offline-transform-fixture", "complete": True},
-        "captured_at": parts["captured_at"],
-        "candidate": {"sha": context["candidate_sha"]},
-        "original_pre_review_head": context["review_contract"]["original_pre_review_head"],
-        "original_receipt_sha256": context["original_receipt_sha256"],
-        "pull_request": parts["pull_request"],
-        "authoritative_trigger": parts["trigger"],
-        "result_source_path": "scripts/workflow_pilot/tests/test_review_family.py",
-        "actors": parts["actors"],
-        "pre_reviews": parts["pre_reviews"],
-        "pre_review_findings": parts["pre_review_findings"],
-        "remote_reviews": parts["remote_reviews"],
-        "findings": parts["findings"],
-        "threads": parts["threads"],
-        "candidate_advances": [],
-        "force_push_events": [],
-        "architecture_dispositions": [],
-        "execution_receipts": [],
-        "result_manifest": [],
-    }
+    gate, live_payload = canonical_live_wire_payload(context)
+    if not {"result_manifest", "execution_receipts", "authoritative_trigger"}.issubset(
+        live_payload
+    ):
+        raise RuntimeError("wire consumers are incomplete")
+    offline_payload = gate.build_live_evidence_payload(
+        contract=context["review_contract"],
+        expected_candidate=live_payload["candidate"]["sha"],
+        source_kind="offline-transform-fixture",
+        captured_at=live_payload["captured_at"],
+        original_receipt_sha256=live_payload["original_receipt_sha256"],
+        pull_request=copy.deepcopy(live_payload["pull_request"]),
+        authoritative_trigger=copy.deepcopy(live_payload["authoritative_trigger"]),
+        actors=copy.deepcopy(live_payload["actors"]),
+        pre_reviews=copy.deepcopy(live_payload["pre_reviews"]),
+        pre_review_findings=copy.deepcopy(live_payload["pre_review_findings"]),
+        remote_reviews=copy.deepcopy(live_payload["remote_reviews"]),
+        findings=copy.deepcopy(live_payload["findings"]),
+        threads=copy.deepcopy(live_payload["threads"]),
+        force_push_events=copy.deepcopy(live_payload["force_push_events"]),
+        architecture_dispositions=copy.deepcopy(live_payload["architecture_dispositions"]),
+        execution_receipts=copy.deepcopy(live_payload["execution_receipts"]),
+    )
+    if not {"result_manifest", "execution_receipts", "authoritative_trigger"}.issubset(
+        offline_payload
+    ):
+        raise RuntimeError("wire consumers are incomplete")
     review_family = importlib.import_module("scripts.workflow_pilot.review_family")
-    validated = review_family.validate_evidence(payload)
+    try:
+        validated_live = review_family.validate_evidence(live_payload)
+        validated_offline = review_family.validate_evidence(offline_payload)
+    except Exception as error:
+        raise RuntimeError("wire consumers are incomplete") from error
+    comparable_live = copy.deepcopy(validated_live)
+    comparable_offline = copy.deepcopy(validated_offline)
+    comparable_live["source"]["kind"] = "shared"
+    comparable_live["raw"]["source"]["kind"] = "shared"
+    comparable_offline["source"]["kind"] = "shared"
+    comparable_offline["raw"]["source"]["kind"] = "shared"
+    if comparable_live != comparable_offline:
+        raise RuntimeError("wire consumers are incomplete")
     return {
-        "source_kind": validated["source"]["kind"],
-        "result_manifest_size": len(validated["result_manifest"]),
+        "source_kinds": sorted(
+            {
+                validated_live["source"]["kind"],
+                validated_offline["source"]["kind"],
+            }
+        ),
+        "result_manifest_size": len(validated_live["result_manifest"]),
     }
 
 

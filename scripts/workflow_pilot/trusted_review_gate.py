@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import ast
 import base64
+import copy
 import hashlib
 import hmac
 import importlib
@@ -903,6 +904,7 @@ def run_base_pinned_checker(
     all_remote_reviews: list[dict[str, Any]],
     remote_findings: list[dict[str, Any]],
     remote_finding_ids: list[str],
+    captured_github_payload: dict[str, Any],
     original_review_report_bytes: bytes,
     original_review_receipt: dict[str, Any],
     original_receipt_sha256: str,
@@ -997,6 +999,7 @@ def run_base_pinned_checker(
         "review_context": review_context,
         "all_remote_reviews": all_remote_reviews,
         "remote_findings": remote_findings,
+        "captured_github_payload": captured_github_payload,
         "trust_mode": contract["trust_mode"],
         "changed_files": changed_files,
         "changes": changes,
@@ -1022,8 +1025,10 @@ def run_base_pinned_checker(
     input_path = sandbox / "checker-input.json"
     origin_root = sandbox / "origin"
     head_root = sandbox / "head"
+    probe_root = sandbox / ".assertion-probes"
     origin_root.mkdir()
     head_root.mkdir()
+    probe_root.mkdir(mode=0o700)
     assertion_input_artifacts = []
     for relative in ASSERTION_INPUT_PATHS:
         origin_bytes = reporter.run_git(
@@ -1250,6 +1255,17 @@ class GhApiAdapter:
         return reporter.parse_json(
             completed.stdout.decode("utf-8"), "gh api graphql review evidence"
         )
+
+
+class _RecordingAdapter:
+    def __init__(self, delegate):
+        self._delegate = delegate
+        self.last_payload = None
+
+    def fetch(self, repository: str, pull_request: int) -> dict[str, Any]:
+        payload = self._delegate.fetch(repository, pull_request)
+        self.last_payload = copy.deepcopy(payload)
+        return copy.deepcopy(payload)
 
 
 def _expect_page_complete(connection: Any, label: str) -> list[Any]:
@@ -1772,6 +1788,7 @@ def _run_trusted_gate(
     clock: Callable[[], datetime] = _utc_now,
 ) -> dict[str, Any]:
     contract = review_family.validate_contract(raw_contract)
+    adapter = _RecordingAdapter(adapter or GhApiAdapter())
     expected_remote_head = (
         expected_candidate
         if expected_remote_head is None
@@ -1845,6 +1862,10 @@ def _run_trusted_gate(
         adapter=adapter,
         clock=clock,
     )
+    if adapter.last_payload is None:
+        raise reporter.PilotDataError(
+            "trusted GitHub collector did not preserve the authoritative payload"
+        )
     first_evidence = reporter.expect_object(
         reporter.parse_json(first_evidence_bytes.decode("utf-8"), "first evidence"),
         "first evidence",
@@ -1914,6 +1935,7 @@ def _run_trusted_gate(
             all_remote_reviews=first_evidence["remote_reviews"],
             remote_findings=first_evidence["findings"],
             remote_finding_ids=review["finding_ids"],
+            captured_github_payload=adapter.last_payload,
             original_review_report_bytes=report_bytes,
             original_review_receipt=envelope,
             original_receipt_sha256=original_receipt_sha256,

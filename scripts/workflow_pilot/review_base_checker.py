@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -1033,6 +1034,7 @@ def _assertion_program_context(data: dict[str, Any]) -> dict[str, Any]:
             data["remote_findings"].values(),
             key=lambda finding: finding["id"],
         ),
+        "captured_github_payload": data["captured_github_payload"],
         "trust_mode": data["trust_mode"],
         "changed_files": data["changed_files"],
         "changes": data["changes"],
@@ -1041,6 +1043,10 @@ def _assertion_program_context(data: dict[str, Any]) -> dict[str, Any]:
         "original_pre_review": data["original_pre_review"],
         "round_findings": data["round_findings"],
         "assertion_requests": data["assertion_requests"],
+        "invoking_checker_module_name": __name__,
+        "invoking_checker_argv": list(sys.argv),
+        "invoking_checker_cwd": str(Path.cwd()),
+        "invoking_checker_home": os.environ.get("HOME", ""),
     }
 
 
@@ -1177,6 +1183,7 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
             "review_context",
             "all_remote_reviews",
             "remote_findings",
+            "captured_github_payload",
             "trust_mode",
             "changed_files",
             "changes",
@@ -1298,6 +1305,9 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
     }
     remote_findings = _validate_remote_findings(
         data["remote_findings"], reviews_by_node
+    )
+    captured_github_payload = expect_object(
+        data["captured_github_payload"], "checker input.captured_github_payload"
     )
     trust_mode = expect_string(data["trust_mode"], "checker input.trust_mode")
     if trust_mode not in {"introduction", "base-pinned"}:
@@ -1505,6 +1515,7 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         "review_context": review_context,
         "all_remote_reviews": all_remote_reviews,
         "remote_findings": remote_findings,
+        "captured_github_payload": captured_github_payload,
         "trust_mode": trust_mode,
         "changed_files": changed_files,
         "changes": changes,

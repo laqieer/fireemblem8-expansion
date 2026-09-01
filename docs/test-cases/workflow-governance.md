@@ -1441,6 +1441,13 @@ game behavior needs a compensating change.
    compare a member-specific invariant over parsed production docs/tests/code
    rather than one shared file or a witness sidecar; permit `not-applicable`
    only for its explicit member/reason registry entry.
+   For action siblings, execute the reviewed `review_base_checker.py` in
+   actual `__main__` script context with the production `--input
+   checker-input.json` argv/home/path shape and reject package-only,
+   argv-only, or cwd/HOME-only whitelists. For wire siblings, replay a
+   captured authoritative `live-gh-api` payload with no network, compare it to
+   the offline transform payload, and require the current producer/consumer to
+   preserve one shared wire schema across both modes.
    Reuse the current checkout or swap dirty materialized roots and require the
    authoritative origin/head Git-tree binding to fail before execution.
 9. Parse the captured clean PR #183 body and accept its first-line exact

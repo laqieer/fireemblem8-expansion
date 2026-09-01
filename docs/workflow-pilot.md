@@ -635,6 +635,13 @@ file cannot certify unrelated members. `not-applicable` is accepted only for
 the explicit `resource/disabled/feature-disabled-by-contract` predicate, which
 must execute and establish false. Swapping a member, family, disposition,
 assertion ID, or reason fails before result creation.
+Action members execute the reviewed `review_base_checker.py` public script
+context with the same isolated `review_base_checker.py --input
+checker-input.json` argv/home/path shape production uses; package-import-only
+success is inadmissible. Wire producers consume a captured credentialed
+`live-gh-api` payload through `collect_live_evidence_bytes`, compare it with
+the offline packaging path, and require both modes to preserve the same shared
+wire schema before the current `review_family.py` consumer accepts them.
 One finding may legitimately reference several affected member assertions;
 each must independently observe its own origin failure and remediation pass.
 Before any sibling result is created, the checker rebinds the candidate

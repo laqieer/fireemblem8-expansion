@@ -55,6 +55,10 @@ def changed_files(changes):
     )
 
 
+def utc_text(value):
+    return value.replace("+00:00", "Z")
+
+
 class ReviewBaseCheckerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -221,6 +225,28 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
 
     @classmethod
+    def _make_action_argv_bypass_head(cls):
+        cls._restore_baseline()
+        cls._replace_once(
+            "scripts/workflow_pilot/review_base_checker.py",
+            "    return validate_review_actions(actions)\n",
+            '    return validate_review_actions(actions) if sys.argv == ["review_base_checker.py"] else actions\n',
+        )
+        head = cls._commit("action-argv-bypass")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
+
+    @classmethod
+    def _make_action_path_bypass_head(cls):
+        cls._restore_baseline()
+        cls._replace_once(
+            "scripts/workflow_pilot/review_base_checker.py",
+            "    return validate_review_actions(actions)\n",
+            '    return validate_review_actions(actions) if Path.cwd().name in {"origin", "head"} else actions\n',
+        )
+        head = cls._commit("action-path-bypass")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
+
+    @classmethod
     def _make_action_binding_special_case_head(cls):
         cls._restore_baseline()
         cls._replace_once(
@@ -240,6 +266,28 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             '"finding_member": parsed["member"] if __name__.startswith("review_assertions_") else parsed["family"],',
         )
         head = cls._commit("action-binding-import-name")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
+
+    @classmethod
+    def _make_action_binding_argv_head(cls):
+        cls._restore_baseline()
+        cls._replace_once(
+            "scripts/workflow_pilot/review_base_checker.py",
+            '"finding_member": parsed["member"],',
+            '"finding_member": parsed["member"] if sys.argv == ["review_base_checker.py"] else parsed["family"],',
+        )
+        head = cls._commit("action-binding-argv")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
+
+    @classmethod
+    def _make_action_binding_path_head(cls):
+        cls._restore_baseline()
+        cls._replace_once(
+            "scripts/workflow_pilot/review_base_checker.py",
+            '"finding_member": parsed["member"],',
+            '"finding_member": parsed["member"] if Path.cwd().name in {"origin", "head"} else parsed["family"],',
+        )
+        head = cls._commit("action-binding-path")
         return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
 
     @classmethod
@@ -298,6 +346,28 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 '"candidate_manifest": build_result_manifest(execution_receipts),',
                 '"result_manifest": build_result_manifest(execution_receipts),',
             )
+
+    @classmethod
+    def _make_wire_source_kind_producer_head(cls):
+        cls._restore_baseline()
+        cls._replace_once(
+            "scripts/workflow_pilot/trusted_review_gate.py",
+            'source_kind="live-gh-api",',
+            'source_kind="offline-transform-fixture",',
+        )
+        head = cls._commit("wire-source-kind-producer")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
+
+    @classmethod
+    def _make_wire_source_kind_consumer_head(cls):
+        cls._restore_baseline()
+        cls._replace_once(
+            "scripts/workflow_pilot/review_family.py",
+            '{"live-gh-api", "offline-transform-fixture"},',
+            '{"offline-transform-fixture"},',
+        )
+        head = cls._commit("wire-source-kind-consumer")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
 
     @classmethod
     def _make_wire_producer_spoof_head(cls, kind):
@@ -476,6 +546,153 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             git_bytes(self.repo, "show", f"{self.base}:{ASSERTION_PROGRAM}")
         )
 
+    def configured_family_sweeps(self, local_findings, remote_findings, assertion_requests):
+        templates = {}
+        for sweep in self.contract_template["family_sweeps"]:
+            members = {item["member"] for item in sweep["siblings"]}
+            family = next(
+                family
+                for family, registered in review_family.FAMILY_MEMBERS.items()
+                if members == set(registered)
+            )
+            templates[family] = sweep
+        requested = {}
+        for request in assertion_requests:
+            if request["finding_id"] is None:
+                continue
+            parts = request["assertion_id"].split(":")
+            if len(parts) < 6 or parts[:2] != ["registry", "sibling"]:
+                continue
+            requested[(request["finding_id"], parts[2], parts[3])] = parts[4]
+        sweeps = []
+        for finding in [*local_findings, *remote_findings]:
+            finding_id = finding["id"] if "id" in finding else finding["node_id"]
+            family = finding["family"]
+            sweep = copy.deepcopy(templates[family])
+            sweep["finding_id"] = finding_id
+            for sibling in sweep["siblings"]:
+                outcome = requested.get(
+                    (finding_id, family, sibling["member"]),
+                    "verified-unaffected",
+                )
+                sibling["result"] = outcome
+                sibling["assertion_id"] = review_family.member_assertion_id(
+                    family, sibling["member"], outcome
+                )
+            sweeps.append(sweep)
+        return sweeps
+
+    def captured_github_payload(self, head_sha, all_remote_reviews, remote_findings):
+        commit_shas = []
+        for sha in [self.base, self.head1, head_sha, *[review["candidate_sha"] for review in all_remote_reviews]]:
+            if sha not in commit_shas:
+                commit_shas.append(sha)
+        review_nodes = []
+        thread_nodes = []
+        for review in all_remote_reviews:
+            comments = [
+                {
+                    "id": finding["node_id"],
+                    "createdAt": finding["created_at"],
+                    "body": "member-specific finding",
+                    "author": {
+                        "id": finding["author_actor_id"],
+                        "login": "copilot-pull-request-reviewer[bot]",
+                    },
+                }
+                for finding in remote_findings
+                if finding["review_id"] == review["node_id"]
+            ]
+            review_nodes.append(
+                {
+                    "id": review["node_id"],
+                    "databaseId": review["id"],
+                    "state": review["state"],
+                    "submittedAt": review["submitted_at"],
+                    "body": review["body"],
+                    "commit": {"oid": review["candidate_sha"]},
+                    "author": {
+                        "id": review["reviewer_actor_id"],
+                        "login": "copilot-pull-request-reviewer[bot]",
+                    },
+                    "comments": {
+                        "pageInfo": {"hasNextPage": False},
+                        "nodes": comments,
+                    },
+                }
+            )
+            for comment in comments:
+                thread_nodes.append(
+                    {
+                        "id": f"THREAD-{comment['id']}",
+                        "isResolved": False,
+                        "comments": {
+                            "pageInfo": {"hasNextPage": False},
+                            "nodes": [
+                                {
+                                    "id": comment["id"],
+                                    "createdAt": comment["createdAt"],
+                                    "author": comment["author"],
+                                    "pullRequestReview": {"id": review["node_id"]},
+                                }
+                            ],
+                        },
+                    }
+                )
+        return {
+            "data": {
+                "viewer": {"id": "VIEWER", "login": "viewer"},
+                "repository": {
+                    "viewerPermission": "READ",
+                    "owner": {"id": "OWNER", "login": "owner"},
+                    "pullRequest": {
+                        "id": f"PR_{PULL_REQUEST}",
+                        "number": PULL_REQUEST,
+                        "createdAt": "2026-09-01T00:00:00Z",
+                        "baseRefOid": self.base,
+                        "headRefOid": head_sha,
+                        "author": {"id": "IMPLEMENTER_1", "login": "implementer"},
+                        "commits": {
+                            "pageInfo": {"hasNextPage": False},
+                            "nodes": [
+                                {
+                                    "commit": {
+                                        "id": f"COMMIT_{index}",
+                                        "oid": sha,
+                                        "pushedDate": None,
+                                        "committedDate": git_text(
+                                            self.repo,
+                                            "show",
+                                            "-s",
+                                            "--format=%cI",
+                                            sha,
+                                        ).replace("+00:00", "Z"),
+                                    }
+                                }
+                                for index, sha in enumerate(commit_shas, 1)
+                            ],
+                        },
+                        "timelineItems": {
+                            "pageInfo": {"hasNextPage": False},
+                            "nodes": [],
+                        },
+                        "reviews": {
+                            "pageInfo": {"hasNextPage": False},
+                            "nodes": review_nodes,
+                        },
+                        "reviewThreads": {
+                            "pageInfo": {"hasNextPage": False},
+                            "nodes": thread_nodes,
+                        },
+                        "comments": {
+                            "pageInfo": {"hasNextPage": False},
+                            "nodes": [],
+                        },
+                    },
+                },
+            }
+        }
+
     def review_contract(self, candidate_sha, *, trust_mode="base-pinned"):
         contract = copy.deepcopy(self.contract_template)
         contract["repository"] = REPOSITORY
@@ -610,6 +827,41 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         review_context = all_remote_reviews[review_round - 1]
         changes = review_family.derive_change_records(self.repo, self.base, head_sha)
         original_receipt = self.original_review_receipt()
+        remote_findings = copy.deepcopy(self.remote_findings())
+        assertion_requests = copy.deepcopy(
+            assertion_requests
+            or (
+                [
+                    {
+                        "assertion_id": (
+                            "registry:behavior:actor-permission-bounds:positive:v2"
+                        ),
+                        "finding_id": None,
+                    },
+                    {
+                        "assertion_id": (
+                            "registry:sibling:generated:owners:affected-fixed:v2"
+                        ),
+                        "finding_id": "LOCAL-GENERATED-1",
+                    },
+                ]
+                if review_round == 1
+                else [
+                    {
+                        "assertion_id": (
+                            "registry:behavior:round-lifecycle:runtime:v2"
+                        ),
+                        "finding_id": None,
+                    },
+                    {
+                        "assertion_id": (
+                            "registry:sibling:action:items:affected-fixed:v2"
+                        ),
+                        "finding_id": "FINDING-ACTION-1",
+                    },
+                ]
+            )
+        )
         data = {
             "schema_version": 2,
             "repository": REPOSITORY,
@@ -638,7 +890,10 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             "review_round": review_round,
             "review_context": copy.deepcopy(review_context),
             "all_remote_reviews": copy.deepcopy(all_remote_reviews),
-            "remote_findings": copy.deepcopy(self.remote_findings()),
+            "remote_findings": remote_findings,
+            "captured_github_payload": self.captured_github_payload(
+                head_sha, all_remote_reviews, remote_findings
+            ),
             "trust_mode": "base-pinned",
             "changed_files": changed_files(changes),
             "changes": changes,
@@ -651,41 +906,13 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 "max_siblings_per_handoff": 50,
             },
             "original_pre_review": self.review_report(),
-            "assertion_requests": copy.deepcopy(
-                assertion_requests
-                or (
-                    [
-                        {
-                            "assertion_id": (
-                                "registry:behavior:actor-permission-bounds:positive:v2"
-                            ),
-                            "finding_id": None,
-                        },
-                        {
-                            "assertion_id": (
-                                "registry:sibling:generated:owners:affected-fixed:v2"
-                            ),
-                            "finding_id": "LOCAL-GENERATED-1",
-                        },
-                    ]
-                    if review_round == 1
-                    else [
-                        {
-                            "assertion_id": (
-                                "registry:behavior:round-lifecycle:runtime:v2"
-                            ),
-                            "finding_id": None,
-                        },
-                        {
-                            "assertion_id": (
-                                "registry:sibling:action:items:affected-fixed:v2"
-                            ),
-                            "finding_id": "FINDING-ACTION-1",
-                        },
-                    ]
-                )
-            ),
+            "assertion_requests": assertion_requests,
         }
+        data["review_contract"]["family_sweeps"] = self.configured_family_sweeps(
+            data["original_pre_review"]["findings"],
+            data["remote_findings"],
+            data["assertion_requests"],
+        )
         return data
 
     def member_binding(self, data, assertion_id, finding_id):
@@ -722,6 +949,14 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         ]
         data["review_context"]["finding_ids"] = []
         data["remote_finding_ids"] = []
+        data["captured_github_payload"] = self.captured_github_payload(
+            data["candidate_sha"], data["all_remote_reviews"], data["remote_findings"]
+        )
+        data["review_contract"]["family_sweeps"] = self.configured_family_sweeps(
+            data["original_pre_review"]["findings"],
+            data["remote_findings"],
+            data["assertion_requests"],
+        )
         binding = self.member_binding(data, assertion_id, "FINDING-WIRE-1")
         return data, binding
 
@@ -965,6 +1200,40 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         )
         self.assert_rejected(data, "read-only action sequence is not enforced")
 
+    def test_action_argv_probe_bypass_fails(self):
+        bypass_head, bypass_tree = self._make_action_argv_bypass_head()
+        data = self.build_input(
+            review_round=2,
+            candidate_sha=bypass_head,
+            candidate_tree=bypass_tree,
+            assertion_requests=[
+                {
+                    "assertion_id": (
+                        "registry:sibling:action:actions:verified-unaffected:v2"
+                    ),
+                    "finding_id": "FINDING-ACTION-1",
+                }
+            ],
+        )
+        self.assert_rejected(data, "read-only action sequence is not enforced")
+
+    def test_action_path_probe_bypass_fails(self):
+        bypass_head, bypass_tree = self._make_action_path_bypass_head()
+        data = self.build_input(
+            review_round=2,
+            candidate_sha=bypass_head,
+            candidate_tree=bypass_tree,
+            assertion_requests=[
+                {
+                    "assertion_id": (
+                        "registry:sibling:action:actions:verified-unaffected:v2"
+                    ),
+                    "finding_id": "FINDING-ACTION-1",
+                }
+            ],
+        )
+        self.assert_rejected(data, "read-only action sequence is not enforced")
+
     def test_action_sequence_verified_unaffected_runs_live_validator(self):
         data = self.build_input(
             review_round=2,
@@ -994,6 +1263,24 @@ class ReviewBaseCheckerTests(unittest.TestCase):
 
     def test_member_binding_import_name_whitelist_fails(self):
         spoof_head, spoof_tree = self._make_action_binding_import_name_head()
+        data = self.build_input(
+            review_round=2,
+            candidate_sha=spoof_head,
+            candidate_tree=spoof_tree,
+        )
+        self.assert_rejected(data, "member-item authority binding is incomplete")
+
+    def test_member_binding_argv_whitelist_fails(self):
+        spoof_head, spoof_tree = self._make_action_binding_argv_head()
+        data = self.build_input(
+            review_round=2,
+            candidate_sha=spoof_head,
+            candidate_tree=spoof_tree,
+        )
+        self.assert_rejected(data, "member-item authority binding is incomplete")
+
+    def test_member_binding_path_whitelist_fails(self):
+        spoof_head, spoof_tree = self._make_action_binding_path_head()
         data = self.build_input(
             review_round=2,
             candidate_sha=spoof_head,
@@ -1044,16 +1331,53 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 )
 
     def test_wire_producer_real_contract_still_passes(self):
-        data, binding = self.wire_member_input()
+        self._restore_baseline()
+        healthy_head = self._commit("wire-producer-healthy")
+        healthy_tree = git_text(self.repo, "rev-parse", f"{healthy_head}^{{tree}}")
+        data, binding = self.wire_member_input(
+            candidate_sha=healthy_head,
+            candidate_tree=healthy_tree,
+        )
         result = self.evaluate_member_contract(
             "wire",
             "producers",
             data,
-            self.head2,
+            healthy_head,
             binding,
         )
+        self.assertEqual(result["live_source_kind"], "live-gh-api")
+        self.assertEqual(result["offline_source_kind"], "offline-transform-fixture")
         self.assertEqual(result["result_manifest_size"], 0)
-        self.assertEqual(result["candidate_head_sha"], self.head2)
+
+    def test_wire_source_kind_special_cases_fail(self):
+        producer_head, producer_tree = self._make_wire_source_kind_producer_head()
+        data, binding = self.wire_member_input(
+            candidate_sha=producer_head,
+            candidate_tree=producer_tree,
+        )
+        self.assert_member_rejected(
+            "wire",
+            "producers",
+            data,
+            producer_head,
+            "wire producers are incomplete",
+            binding,
+        )
+
+        consumer_head, consumer_tree = self._make_wire_source_kind_consumer_head()
+        data, binding = self.wire_member_input(
+            candidate_sha=consumer_head,
+            candidate_tree=consumer_tree,
+            assertion_id="registry:sibling:wire:consumers:verified-unaffected:v2",
+        )
+        self.assert_member_rejected(
+            "wire",
+            "consumers",
+            data,
+            consumer_head,
+            "wire consumers are incomplete",
+            binding,
+        )
 
     def test_round_two_remote_finding_executes_real_remediation_round(self):
         data = self.build_input(review_round=2)
