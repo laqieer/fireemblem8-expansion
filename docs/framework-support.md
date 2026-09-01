@@ -223,12 +223,13 @@ no ROM build or network access is required for either.
 Prefer focused local checks during iteration. A no-checkout `event-identity`
 validator, base-authoritative `event-router`, and mode-specific classifier
 check precede candidate `host-tests`, `build`, `extended-host-tests`, `legacy`,
-and fail-closed `summary` jobs plus Copilot review. Metadata uses the same
-canonical skipped worker names plus a distinct running `metadata-summary`;
-normal `summary`
-is the sole candidate attestation and requires all four workers from that same
-full run. Only parsed body/title-only
-edits skip the four expensive workers. A
+and fail-closed `summary` jobs plus Copilot review. Metadata uses runner-backed
+`host-tests`/`build` continuity adapters plus a distinct running
+`metadata-summary`; normal `summary` is the sole candidate attestation and
+requires all four workers from that same full run. Only parsed body/title-only
+edits suppress the four expensive worker steps; the two required adapters may
+still take runners briefly while they perform only their fixed no-checkout
+attestation. A
 merged `master` push reruns the complete combined gate and adds only
 `patch-release`. Unique CJK/font, codec,
 configuration/budget, and archival evidence stays parallel with Build-owned

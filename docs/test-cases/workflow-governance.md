@@ -331,9 +331,9 @@ remains unchanged and therefore still requires canonical `host-tests`,
 stays distinct, so newer metadata runs cannot supersede the required full
 `summary` context; without a prior green full `summary`, metadata-only edits
 still block merge. Metadata runs remain ineligible candidate evidence even when
-their continuity adapters succeed. Evaluated metadata labels, historical
-literal-expression names, duplicates, unknown names, or spoofed worker names
-reject instead of becoming candidate evidence.
+their continuity adapters succeed. Evaluated metadata labels, duplicates,
+unknown names, or spoofed worker names reject instead of becoming candidate
+evidence.
 The summary succeeds only when classifier status is `success`, the classified
 SHA equals the event's validated exact `pull_request.head.sha`, event number
 matches the exact `refs/pull/<number>/merge` ref, suppression is exactly false,
@@ -359,13 +359,6 @@ Missing/stale successful output cannot select a fallback ref.
 An accepted base retarget requires valid, differing previous/current ref and
 SHA pairs; ref-only, SHA-only, same, missing, extra, or spoofed transition
 records remain full fail-closed edits and never metadata suppression.
-The checked-in live fixtures
-`scripts/workflow_pilot/tests/fixtures/live_metadata_jobs_33472008301.json`
-and `scripts/workflow_pilot/tests/fixtures/live_metadata_jobs_33472111689.json`
-freeze the disproved worker-name-expression experiment from PR #190: each
-skipped worker had `runner_name: null`, `conclusion: skipped`, and a long
-literal `name:` string. Those captured raw jobs are negative proof that the
-current workflow must not define worker `name:` expressions at all.
 Base refs are bounded to 1024 UTF-8 bytes and must satisfy full
 `git check-ref-format refs/heads/<base.ref>` semantics; `--branch` shorthand
 is not used, and lone `@` is rejected. Python applies the equivalent grammar
@@ -462,7 +455,7 @@ duplicate JSON keys, `NaN`/positive or negative `Infinity`, positive/negative
 exponent overflow, nonzero-to-zero underflow, huge exponents, an unused
 overflow field on metadata-only input, oversized event
 files, base or mixed edits, worker job-name overrides, historical
-literal-expression names, merge-SHA fallback, malformed fallback identities,
+noncanonical worker names, merge-SHA fallback, malformed fallback identities,
 successful classification with a cross-event/malformed/number-mismatched ref,
 missing/failed/skipped/renamed/duplicate event-identity or event-router
 evidence, push-shaped metadata router output,

@@ -131,15 +131,15 @@ is the sole candidate attestation; it succeeds only after the same full run's
 classifier and all four workers succeed. Metadata-only runs expose the running
 `metadata-classifier` and `metadata-summary` attestations plus the same
 canonical worker checks `host-tests`, `build`, `extended-host-tests`, and
-`legacy`, each skipped with no runner. Candidate normalization therefore
-requires canonical worker names in both modes, with `skipped` conclusions in
-metadata-only mode and `success` in full mode. Repository branch protection
-must require the fail-closed canonical `summary` context from this workflow,
-not individual worker names, because newer metadata runs intentionally reuse
-the canonical skipped worker contexts. A later green metadata run therefore
-cannot replace `summary`, and `candidate_evidence.evaluate_candidate_runs()`
+`legacy`. Metadata-only mode requires runner-backed `success` for
+`host-tests`/`build` because those jobs run only the trusted continuity
+adapters, and exact `skipped` for `extended-host-tests`/`legacy`. Repository
+branch protection therefore keeps the live canonical `host-tests`, `build`,
+and `summary` contexts unchanged. A later green metadata run still cannot
+replace `summary`, and `candidate_evidence.evaluate_candidate_runs()`
 continues to derive eligibility only from the latest exact full run with a
-successful canonical `summary`.
+successful canonical `summary`; a metadata-only run remains ineligible by
+itself even when the adapters succeed.
 
 [`scripts/workflow_pilot/candidate_evidence.py`](../scripts/workflow_pilot/candidate_evidence.py)
 derives mode only from the running classifier/summary names and evaluates the latest
@@ -294,15 +294,6 @@ No whole-file source hash pins are used.
 Before the base exists, the fresh hosted publisher proves that no
 candidate-written `GITHUB_ENV`, `BASH_ENV`, background process, checkout, or
 executable state can survive the builder teardown.
-The checked-in live fixture
-`scripts/workflow_pilot/tests/fixtures/live_metadata_jobs_33472008301.json`
-and its paired restore-run fixture
-`scripts/workflow_pilot/tests/fixtures/live_metadata_jobs_33472111689.json`
-capture PR #190 metadata runs whose skipped workers reported long literal
-`name:` expressions with `runner_name: null` and `conclusion: skipped`. Those
-raw jobs are negative proof that worker `job.name` expressions are unstable on
-hosted Runner and must not be used for canonical workflow contracts or branch
-protection.
 Build workflow preserves the live branch-protection contract directly: metadata
 body/title edits run distinct `metadata-classifier`/`metadata-summary`
 attestations plus canonical `host-tests`/`build` continuity adapters that do

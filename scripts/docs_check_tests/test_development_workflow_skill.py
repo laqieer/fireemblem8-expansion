@@ -702,6 +702,16 @@ def workflow_tester_topology_violations(text):
     )
     if skipped_names_contract not in normalize_policy(body_case):
         violations.append("skipped-worker-names-are-semantic")
+    forbidden_claims = (
+        "same canonical skipped worker names",
+        "canonical skipped worker contexts",
+        "each skipped with no runner",
+        "all four workers are exactly `skipped`",
+    )
+    normalized_body = normalize_policy(body_case)
+    for claim in forbidden_claims:
+        if normalize_policy(claim) in normalized_body:
+            violations.append("stale-metadata-worker-claim")
     return violations
 
 
@@ -3892,6 +3902,35 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "skipped-worker-names-are-semantic",
             workflow_tester_topology_violations(semantic_names),
         )
+
+    def test_metadata_adapter_docs_require_two_adapter_two_skipped_contract(self):
+        documents = {
+            "workflow-pilot": WORKFLOW_PILOT_PATH.read_text(encoding="utf-8"),
+            "framework-support": FRAMEWORK_SUPPORT_PATH.read_text(encoding="utf-8"),
+            "workflow-governance": WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8"),
+        }
+        required_fragments = (
+            "host-tests/build",
+            "continuity adapters",
+            "extended-host-tests",
+            "legacy",
+            "platform-skipped",
+            "metadata-summary",
+        )
+        forbidden_fragments = (
+            "same canonical skipped worker names",
+            "canonical skipped worker contexts",
+            "each skipped with no runner",
+            "all four workers are exactly `skipped`",
+            "skip the four expensive workers",
+        )
+        for name, text in documents.items():
+            normalized = normalize_policy(text)
+            with self.subTest(document=name):
+                for fragment in required_fragments:
+                    self.assertIn(normalize_policy(fragment), normalized)
+                for fragment in forbidden_fragments:
+                    self.assertNotIn(normalize_policy(fragment), normalized)
 
     def test_live_title_probe_contract_is_complete_and_fail_closed(self):
         governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")

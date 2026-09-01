@@ -31,22 +31,6 @@ EVENT_FIXTURE = (
     / "fixtures"
     / "event_classification.json"
 )
-LIVE_METADATA_JOBS_FIXTURE = (
-    ROOT
-    / "scripts"
-    / "workflow_pilot"
-    / "tests"
-    / "fixtures"
-    / "live_metadata_jobs_33472008301.json"
-)
-LIVE_METADATA_RESTORE_FIXTURE = (
-    ROOT
-    / "scripts"
-    / "workflow_pilot"
-    / "tests"
-    / "fixtures"
-    / "live_metadata_jobs_33472111689.json"
-)
 PRE_FIX_WORKFLOW = EVENT_FIXTURE.with_name("pre_fix_build.yml")
 PYTHON_REQUIREMENTS = ROOT / ".github" / "requirements" / "build.txt"
 RETIRED_WORKFLOW_FILENAME = "full" + "-matrix.yml"
@@ -3191,30 +3175,19 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         )
 
     def test_worker_name_overrides_fail_closed(self):
-        long_literal_names = []
-        for fixture_path in (LIVE_METADATA_JOBS_FIXTURE, LIVE_METADATA_RESTORE_FIXTURE):
-            long_literal_names.extend(
-                job["name"]
-                for job in json.loads(fixture_path.read_text(encoding="utf-8"))["jobs"]
-                if job["conclusion"] == "skipped" and job["name"] != "patch-release"
-            )
-        short_literal_name = (
-            "${{ needs.event-classifier.result == 'success' && "
-            "needs.event-classifier.outputs.classification == 'metadata-only' && "
-            "'metadata-host-tests-skipped' || 'host-tests' }}"
+        stale_dynamic_name = (
+            "${{ needs.event-classifier.outputs.classification == 'metadata-only' "
+            "&& 'attacker-host-tests' || 'host-tests' }}"
         )
         mutations = [
             ("canonical-name", "    name: host-tests\n"),
-            ("evaluated-metadata-label", "    name: metadata-host-tests-skipped\n"),
-            ("short-literal-expression", f"    name: {short_literal_name}\n"),
+            ("stale-adapter-label", "    name: attacker-host-tests\n"),
+            ("dynamic-expression", f"    name: {stale_dynamic_name}\n"),
             (
                 "duplicate-name-keys",
                 "    name: host-tests\n"
-                f"    name: {short_literal_name}\n",
+                f"    name: {stale_dynamic_name}\n",
             ),
-        ] + [
-            (f"live-literal-expression-{index}", f"    name: {name}\n")
-            for index, name in enumerate(long_literal_names)
         ]
         for name, injected in mutations:
             with self.subTest(mutation=name):
