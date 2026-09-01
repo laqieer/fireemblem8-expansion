@@ -41,7 +41,33 @@ CONSIDER_RE = re.compile(
     r"^(?P<indent> *)Considering target file '(?P<target>[^']+)'\.$"
 )
 READING_RE = re.compile(
-    r"^Reading makefile '(?P<path>[^']+)'"
+    r"^Reading makefile '(?P<path>[^']+)'(?P<details>.*)$"
+)
+EXTERNAL_DEFAULT_RE = re.compile(
+    r"(?<![A-Za-z0-9_])"
+    r"(?P<modifiers>(?:(?:export|private|override)\s+)*)"
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\?="
+)
+UNDEFINED_VARIABLE_RE = re.compile(
+    r"(?:^|\n)(?:[^\n:]+:[0-9]+:\s+)?"
+    r"warning: undefined variable '(?P<name>[^']+)'"
+)
+DIRECT_VARIABLE_RE = re.compile(
+    r"(?<!\$)\$(?:\((?P<paren>[A-Za-z_][A-Za-z0-9_]*)(?=[:)])"
+    r"|\{(?P<brace>[A-Za-z_][A-Za-z0-9_]*)(?=[:}])"
+    r"|(?P<short>[A-Za-z]))"
+)
+INTROSPECTION_VARIABLE_RE = re.compile(
+    r"\$\((?:flavor|origin|value)\s+"
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\)"
+)
+CONDITIONAL_VARIABLE_RE = re.compile(
+    r"^\s*(?:ifdef|ifndef)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)"
+)
+VARIABLE_ASSIGNMENT_RE = re.compile(
+    r"^\s*(?:(?:export|override|private)\s+)*"
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*"
+    r"(?:\?=|:=|::=|\+=|!=|=)(?P<value>.*)$"
 )
 
 
@@ -701,6 +727,187 @@ def _make_environment(
     }
 
 
+def _strip_make_comment(line: str) -> str:
+    escaped = False
+    result = []
+    for character in line:
+        if character == "#" and not escaped:
+            break
+        result.append(character)
+        if character == "\\":
+            escaped = not escaped
+        else:
+            escaped = False
+    return "".join(result)
+
+
+def _external_default_names(loader: Any) -> set[str]:
+    names = set()
+    for path, entry in sorted(loader.entries.items()):
+        if (
+            path != "Makefile"
+            and not path.endswith(".mk")
+        ) or entry.object_type != "blob" or entry.mode not in {
+            "100644",
+            "100755",
+        }:
+            continue
+        try:
+            text = loader.read_blob(
+                path,
+                "Make external-default census",
+            ).decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise MakeProbeError(
+                f"Make input {path!r} is not UTF-8"
+            ) from error
+        in_define = False
+        for line_number, raw_line in enumerate(text.splitlines(), 1):
+            stripped = raw_line.lstrip()
+            if stripped.startswith("define "):
+                in_define = True
+                continue
+            if stripped == "endef":
+                in_define = False
+                continue
+            if raw_line.startswith("\t") and not in_define and "$(" not in raw_line:
+                continue
+            line = _strip_make_comment(raw_line)
+            matches = list(EXTERNAL_DEFAULT_RE.finditer(line))
+            for match in matches:
+                if "override" not in match.group("modifiers").split():
+                    names.add(match.group("name"))
+            if "?=" in line and not matches:
+                raise MakeProbeError(
+                    "Make external-default declaration has a dynamic name "
+                    f"at {path}:{line_number}"
+                )
+    return names
+
+
+def _make_reference_census(
+    loader: Any,
+) -> tuple[
+    dict[str, set[str]],
+    dict[str, set[str]],
+    dict[str, set[str]],
+]:
+    references_by_path: dict[str, set[str]] = {}
+    dependencies: dict[str, set[str]] = {}
+    defaults_by_path: dict[str, set[str]] = {}
+    for path, entry in sorted(loader.entries.items()):
+        if (
+            path != "Makefile"
+            and not path.endswith(".mk")
+        ) or entry.object_type != "blob" or entry.mode not in {
+            "100644",
+            "100755",
+        }:
+            continue
+        try:
+            text = loader.read_blob(
+                path,
+                "Make reference census",
+            ).decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise MakeProbeError(
+                f"Make input {path!r} is not UTF-8"
+            ) from error
+        references = set()
+        defaults = set()
+        computed = False
+        for raw_line in text.splitlines():
+            line = _strip_make_comment(raw_line)
+            references.update(
+                next(
+                    value
+                    for value in match.group(
+                        "paren",
+                        "brace",
+                        "short",
+                    )
+                    if value is not None
+                )
+                for match in DIRECT_VARIABLE_RE.finditer(line)
+            )
+            references.update(
+                match.group("name")
+                for match in INTROSPECTION_VARIABLE_RE.finditer(line)
+            )
+            conditional = CONDITIONAL_VARIABLE_RE.match(line)
+            if conditional is not None:
+                references.add(conditional.group("name"))
+            assignment = VARIABLE_ASSIGNMENT_RE.match(line)
+            if assignment is not None:
+                dependencies.setdefault(
+                    assignment.group("name"),
+                    set(),
+                ).update(
+                    next(
+                        value
+                        for value in match.group(
+                            "paren",
+                            "brace",
+                            "short",
+                        )
+                        if value is not None
+                    )
+                    for match in DIRECT_VARIABLE_RE.finditer(
+                        assignment.group("value")
+                    )
+                )
+            default_matches = list(EXTERNAL_DEFAULT_RE.finditer(line))
+            defaults.update(
+                match.group("name")
+                for match in default_matches
+                if "override" not in match.group("modifiers").split()
+            )
+            computed |= "$($" in line or "${$" in line
+        references_by_path[path] = references
+        defaults_by_path[path] = defaults if computed else set()
+    return references_by_path, dependencies, defaults_by_path
+
+
+def _target_domain_names(
+    baseline: dict[str, Any],
+    prerequisite_domains: dict[str, dict[str, Any]],
+    reference_census: tuple[
+        dict[str, set[str]],
+        dict[str, set[str]],
+        dict[str, set[str]],
+    ],
+) -> set[str]:
+    references_by_path, dependencies, computed_defaults = reference_census
+    sources = {"Makefile"}
+    for trace in baseline["traces"].values():
+        sources.update(trace["sources"])
+    pending = {
+        name
+        for source in sources
+        for name in references_by_path.get(source, ())
+    }
+    pending.update(
+        name
+        for source in sources
+        for name in computed_defaults.get(source, ())
+    )
+    reached = set()
+    while pending:
+        name = pending.pop()
+        if name in reached:
+            continue
+        reached.add(name)
+        pending.update(dependencies.get(name, ()))
+    return reached & set(prerequisite_domains)
+
+
+def _undefined_variable_names(output: str) -> set[str]:
+    return {
+        match.group("name")
+        for match in UNDEFINED_VARIABLE_RE.finditer(output)
+    }
+
+
 def _prepare_make_root(
     base: Path,
     interceptor: Path,
@@ -1059,19 +1266,26 @@ def _trace_records(output: str) -> dict[str, dict[str, Any]]:
     }
 
 
-def _target_graph(output: str) -> tuple[dict[str, list[str]], list[str]]:
+def _target_graph(
+    output: str,
+) -> tuple[dict[str, list[str]], list[dict[str, Any]]]:
     graph: dict[str, set[str]] = {}
     stack: list[tuple[int, str]] = []
-    includes = []
+    includes: dict[str, bool] = {}
     goals_started = False
-    for line in _normalize(output).splitlines():
+    for raw_line in output.splitlines():
+        reading = READING_RE.match(raw_line.rstrip())
+        if reading:
+            path = reading.group("path")
+            includes[path] = (
+                includes.get(path, False)
+                or "(don't care)" in reading.group("details")
+            )
+        line = _normalize(raw_line)
         if line.startswith("Updating goal targets"):
             goals_started = True
             stack = []
             continue
-        reading = READING_RE.match(line)
-        if reading:
-            includes.append(reading.group("path"))
         if not goals_started:
             continue
         match = CONSIDER_RE.match(line)
@@ -1090,7 +1304,10 @@ def _target_graph(output: str) -> tuple[dict[str, list[str]], list[str]]:
             target: sorted(children)
             for target, children in sorted(graph.items())
         },
-        sorted(set(includes)),
+        [
+            {"optional": optional, "path": path}
+            for path, optional in sorted(includes.items())
+        ],
     )
 
 
@@ -1133,18 +1350,43 @@ def _closures(
 
 
 def _validate_includes(
-    includes: Iterable[str],
+    includes: Iterable[dict[str, Any]],
     loader: Any,
+    build_output: Path,
 ) -> None:
-    for raw_path in includes:
-        path = raw_path
-        if path == "<WORK>/probe.mk":
+    for include in includes:
+        if set(include) != {"optional", "path"}:
+            raise MakeProbeError("GNU Make include record is malformed")
+        raw_path = include["path"]
+        optional = include["optional"]
+        if not isinstance(raw_path, str) or not isinstance(optional, bool):
+            raise MakeProbeError("GNU Make include record is malformed")
+        if raw_path in {"/work/probe.mk", "<WORK>/probe.mk"}:
             continue
-        if path.startswith("./"):
-            path = path[2:]
-        if path.startswith("/") or path.startswith("<WORK>"):
+        if (
+            "\\" in raw_path
+            or "//" in raw_path
+            or re.search(r"%(?:2e|2f|5c)", raw_path, re.IGNORECASE)
+        ):
+            raise MakeProbeError(
+                f"GNU Make read a noncanonical include {raw_path!r}"
+            )
+        if raw_path.startswith("/repo/"):
+            path = raw_path.removeprefix("/repo/")
+        elif raw_path.startswith("/"):
             raise MakeProbeError(
                 f"GNU Make read an absolute or dynamic include {raw_path!r}"
+            )
+        else:
+            path = raw_path.removeprefix("./")
+        parts = path.split("/")
+        if (
+            not path
+            or any(part in {"", ".", ".."} for part in parts)
+            or path.startswith("<WORK>")
+        ):
+            raise MakeProbeError(
+                f"GNU Make read a noncanonical include {raw_path!r}"
             )
         if path in loader.entries:
             entry = loader.entries[path]
@@ -1157,12 +1399,41 @@ def _validate_includes(
                 )
             continue
         if path.startswith("build/"):
+            build_root = build_output.resolve(strict=True)
+            candidate = build_output.joinpath(*parts[1:])
+            current = build_output
+            try:
+                for part in parts[1:]:
+                    current /= part
+                    entry_stat = os.lstat(current)
+                    if stat.S_ISLNK(entry_stat.st_mode):
+                        raise MakeProbeError(
+                            f"GNU Make build include traverses a symlink {raw_path!r}"
+                        )
+                resolved = candidate.resolve(strict=True)
+            except FileNotFoundError:
+                # GNU Make itself distinguishes optional from required missing
+                # includes in the invocation status checked immediately below.
+                continue
+            except OSError as error:
+                raise MakeProbeError(
+                    f"cannot inspect GNU Make build include {raw_path!r}: {error}"
+                ) from error
+            if (
+                build_root not in resolved.parents
+                or not resolved.is_file()
+            ):
+                raise MakeProbeError(
+                    f"GNU Make build include escapes its canonical root {raw_path!r}"
+                )
             continue
         if any(
             entry.mode == "160000"
             and path.startswith(gitlink.rstrip("/") + "/")
             for gitlink, entry in loader.entries.items()
         ):
+            continue
+        if optional:
             continue
         raise MakeProbeError(
             f"GNU Make read an untracked include {path!r}"
@@ -1187,6 +1458,7 @@ def run_probe(
     environment_names: set[str] | None = None,
     scratch_root: Path,
     symbolic_recipe_names: set[str] | None = None,
+    trusted_reference_names: set[str] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Run actual GNU Make for every sealed domain value/origin pair."""
     if not targets:
@@ -1202,6 +1474,22 @@ def run_probe(
         if symbolic_recipe_names is None
         else symbolic_recipe_names
     )
+    trusted_reference_names = (
+        set()
+        if trusted_reference_names is None
+        else trusted_reference_names
+    )
+    sealed_external_names = (
+        declared_external_names | set(prerequisite_domains)
+    )
+    external_default_names = _external_default_names(loader)
+    reference_census = _make_reference_census(loader)
+    undeclared_defaults = external_default_names - sealed_external_names
+    if undeclared_defaults:
+        raise MakeProbeError(
+            "Make external defaults lack sealed ambient authority: "
+            f"{sorted(undeclared_defaults)}"
+        )
     unclassified = (
         declared_external_names
         - set(prerequisite_domains)
@@ -1304,9 +1592,7 @@ def run_probe(
         normal_targets = sorted(
             target for target in targets if target != "validation-ownership-check"
         )
-        target_groups = []
-        if normal_targets:
-            target_groups.append(normal_targets)
+        target_groups = [[target] for target in normal_targets]
         if "validation-ownership-check" in targets:
             target_groups.append(["validation-ownership-check"])
         variant_results = []
@@ -1339,6 +1625,7 @@ def run_probe(
                     "/usr/bin/make",
                     "--no-print-directory",
                     "--debug=v",
+                    "--warn-undefined-variables",
                     "--eval",
                     "export VO_COMMAND_COUNT VO_EVENT_PATH VO_MAP_DIR",
                     *(
@@ -1355,11 +1642,7 @@ def run_probe(
             if cli is not None:
                 argv.append(f"{cli[0]}={cli[1]}")
             if not public_gate:
-                argv.extend(
-                    [selected_targets[0]]
-                    if database_only
-                    else selected_targets
-                )
+                argv.extend(selected_targets)
             for _ in range(MAX_DYNAMIC_PASSES):
                 _write_mapping(mapping_path, mappings)
                 event_path.write_bytes(b"")
@@ -1475,9 +1758,18 @@ def run_probe(
                     "GNU Make dynamic command expansion exceeds pass bound"
                 )
             combined = completed.stdout + "\n" + completed.stderr
+            undefined_names = _undefined_variable_names(combined)
+            unknown_undefined = undefined_names - (
+                sealed_external_names | trusted_reference_names
+            )
+            if unknown_undefined:
+                raise MakeProbeError(
+                    "GNU Make evaluated undefined variables without sealed "
+                    f"authority: {sorted(unknown_undefined)}"
+                )
             if public_gate:
                 graph = {"validation-ownership-check": []}
-                includes = ["Makefile"]
+                includes = [{"optional": False, "path": "Makefile"}]
                 traces = {
                     "validation-ownership-check": {
                         "commands": [
@@ -1493,7 +1785,7 @@ def run_probe(
             else:
                 graph, includes = _target_graph(combined)
                 traces = _trace_records(combined)
-                _validate_includes(includes, loader)
+                _validate_includes(includes, loader, build_output)
             if completed.returncode != 0 and not (
                 database_only and completed.returncode == 1
             ):
@@ -1513,6 +1805,7 @@ def run_probe(
                     else None
                 ),
                 "includes": includes,
+                "undefined_names": sorted(undefined_names),
                 "origin": (
                     "command-line"
                     if cli is not None
@@ -1520,6 +1813,7 @@ def run_probe(
                     if environment_value is not None
                     else "fallback"
                 ),
+                "requested_targets": list(selected_targets),
                 "traces": traces,
                 "variable": None if cli is None else cli[0],
                 "value": (
@@ -1540,6 +1834,118 @@ def run_probe(
                 if group == ["validation-ownership-check"]
                 else invoke(group, database_only=True)["database_sha256"]
             )
+        target_domain_names = {
+            group[0]: _target_domain_names(
+                baseline,
+                prerequisite_domains,
+                reference_census,
+            )
+            for group, baseline in zip(target_groups, baseline_by_group)
+            if group != ["validation-ownership-check"]
+        }
+
+        def target_semantics(
+            variant: dict[str, Any],
+            target: str,
+        ) -> dict[str, Any] | None:
+            closure = variant["closures"].get(target)
+            if closure is None:
+                return None
+            return {
+                "closure": closure,
+                "includes": variant["includes"],
+                "recipes": {
+                    item: variant["traces"][item]
+                    for item in closure
+                    if item in variant["traces"]
+                },
+            }
+
+        def target_goal_semantics(
+            variant: dict[str, Any],
+            target: str,
+        ) -> dict[str, Any] | None:
+            semantics = target_semantics(variant, target)
+            if semantics is None:
+                return None
+            return {
+                "closure": semantics["closure"],
+                "recipes": semantics["recipes"],
+            }
+
+        combined_orders = [normal_targets]
+        combined_baselines = [
+            (
+                invoke(order),
+                invoke(order, database_only=True)["database_sha256"],
+            )
+            for order in combined_orders
+        ] if normal_targets else []
+        target_goal_sensitive = {
+            target: any(
+                target_goal_semantics(combined, target)
+                != target_goal_semantics(
+                    baseline_by_group[target_groups.index([target])],
+                    target,
+                )
+                for combined, _ in combined_baselines
+            )
+            for target in normal_targets
+        }
+        combined_comparisons: dict[tuple[str, str, str], bool] = {}
+
+        def combined_variant_is_stable(
+            origin: str,
+            name: str,
+            value: str,
+        ) -> bool:
+            key = origin, name, value
+            cached = combined_comparisons.get(key)
+            if cached is not None:
+                return cached
+            stable = True
+            for order, (_, baseline_hash) in zip(
+                combined_orders,
+                combined_baselines,
+            ):
+                candidate = invoke(
+                    order,
+                    cli=(name, value) if origin == "command-line" else None,
+                    environment_value=(
+                        (name, value)
+                        if origin == "environment"
+                        else None
+                    ),
+                    database_only=True,
+                )
+                stable &= candidate["database_sha256"] == baseline_hash
+            combined_comparisons[key] = stable
+            return stable
+
+        def reuse_baseline(
+            baseline: dict[str, Any],
+            database_baseline: str,
+            origin: str,
+            name: str,
+            value: str,
+        ) -> dict[str, Any]:
+            candidate = dict(baseline)
+            candidate.update(
+                {
+                    "database_sha256": database_baseline,
+                    "environment_assignment": (
+                        [name, value]
+                        if origin == "environment"
+                        else None
+                    ),
+                    "origin": origin,
+                    "same_as_fallback": True,
+                    "variable": name,
+                    "value": value,
+                }
+            )
+            return candidate
+
         fallback_values = (
             {
                 name: (make_work / f"domain-{index}")
@@ -1558,7 +1964,7 @@ def run_probe(
             variant_results.append(baseline)
             if group == ["validation-ownership-check"]:
                 continue
-            for name in sorted(prerequisite_domains):
+            for name in sorted(target_domain_names[group[0]]):
                 domain = prerequisite_domains[name]
                 values = (
                     domain["values"]
@@ -1566,44 +1972,92 @@ def run_probe(
                     else [fallback_values[name]]
                 )
                 for value in values:
-                    candidate = invoke(
-                        group,
-                        cli=(name, value),
-                        database_only=True,
-                    )
-                    if candidate["database_sha256"] == database_baseline:
-                        candidate["closures"] = baseline["closures"]
-                        candidate["graph"] = baseline["graph"]
-                        candidate["includes"] = baseline["includes"]
-                        candidate["same_as_fallback"] = True
+                    if (
+                        combined_variant_is_stable(
+                            "command-line",
+                            name,
+                            value,
+                        )
+                    ):
+                        candidate = reuse_baseline(
+                            baseline,
+                            database_baseline,
+                            "command-line",
+                            name,
+                            value,
+                        )
                     else:
-                        candidate = invoke(group, cli=(name, value))
-                    variant_results.append(candidate)
-                    if name in environment_names:
                         candidate = invoke(
                             group,
-                            environment_value=(name, value),
+                            cli=(name, value),
                             database_only=True,
                         )
                         if candidate["database_sha256"] == database_baseline:
-                            candidate["closures"] = baseline["closures"]
-                            candidate["graph"] = baseline["graph"]
-                            candidate["includes"] = baseline["includes"]
-                            candidate["same_as_fallback"] = True
+                            candidate = reuse_baseline(
+                                baseline,
+                                database_baseline,
+                                "command-line",
+                                name,
+                                value,
+                            )
+                        else:
+                            candidate = invoke(group, cli=(name, value))
+                    variant_results.append(candidate)
+                    if name in environment_names:
+                        if (
+                            combined_variant_is_stable(
+                                "environment",
+                                name,
+                                value,
+                            )
+                        ):
+                            candidate = reuse_baseline(
+                                baseline,
+                                database_baseline,
+                                "environment",
+                                name,
+                                value,
+                            )
                         else:
                             candidate = invoke(
                                 group,
                                 environment_value=(name, value),
+                                database_only=True,
                             )
+                            if (
+                                candidate["database_sha256"]
+                                == database_baseline
+                            ):
+                                candidate = reuse_baseline(
+                                    baseline,
+                                    database_baseline,
+                                    "environment",
+                                    name,
+                                    value,
+                                )
+                            else:
+                                candidate = invoke(
+                                    group,
+                                    environment_value=(name, value),
+                                )
                         variant_results.append(candidate)
 
         make_inputs = _makefile_modes(loader)
         result = {}
+        observed_undefined_names = sorted(
+            {
+                name
+                for variant in variant_results
+                for name in variant["undefined_names"]
+            }
+        )
         for target in sorted(targets):
             target_variants = []
             baseline_semantics = None
             all_closure_items = set()
             for variant in variant_results:
+                if variant["requested_targets"] != [target]:
+                    continue
                 if target not in variant["closures"]:
                     continue
                 closure = variant["closures"][target]
@@ -1679,6 +2133,10 @@ def run_probe(
                         len(mappings),
                         {},
                     ),
+                    "standalone_goal_sensitive": target_goal_sensitive.get(
+                        target,
+                        False,
+                    ),
                     "symbolic_recipe_names": sorted(symbolic_recipe_names),
                     "variants": target_variants,
                 },
@@ -1690,7 +2148,9 @@ def run_probe(
                 "variable_census": {
                     "ambient_undefined": [],
                     "escaped_literals": [],
+                    "external_defaults": sorted(external_default_names),
                     "handled_names": [],
+                    "observed_undefined": observed_undefined_names,
                     "scoped_variables": [],
                     "trusted_builtins": [],
                     "unbound": [],

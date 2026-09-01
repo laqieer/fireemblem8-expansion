@@ -190,6 +190,9 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             {"all"},
             {} if domains is None else domains,
             {} if dynamic is None else dynamic,
+            declared_external_names=set(
+                {} if domains is None else domains
+            ),
             environment_names=environment_names,
             scratch_root=root / "artifacts",
         )["all"]
@@ -266,6 +269,171 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 authority["record"]["probe_tools"]["namespace_launcher"]["mode"],
                 "user-namespace",
             )
+
+    def test_external_defaults_and_undefined_names_require_sealed_domains(self):
+        directory, root, entries = self.fixture(
+            "MODE ?= one\n"
+            "NAME ?= MODE\n"
+            "ITEMS ?= child\n"
+            "pick = $(1)\n"
+            "define RULE\n"
+            "all: $(call pick,$($(NAME))) "
+            "$(foreach t,$(ITEMS),$(t))\n"
+            "endef\n"
+            "$(eval $(RULE))\n"
+            "one two child other:\n\t@printf '$@\\n'\n"
+        )
+        with directory:
+            with self.assertRaisesRegex(
+                make_probe.MakeProbeError,
+                "external defaults lack sealed ambient authority.*MODE",
+            ):
+                make_probe.run_probe(
+                    reporter.AuthorityLoader(root, entries),
+                    {"all"},
+                    {
+                        "ITEMS": {
+                            "kind": "explicit",
+                            "values": ["child", "other"],
+                        },
+                        "NAME": {
+                            "kind": "explicit",
+                            "values": ["MODE"],
+                        },
+                    },
+                    {},
+                    declared_external_names={"ITEMS", "NAME"},
+                    scratch_root=root / "artifacts",
+                )
+            authority = self.probe(
+                root,
+                entries,
+                domains={
+                    "ITEMS": {
+                        "kind": "explicit",
+                        "values": ["child", "other"],
+                    },
+                    "MODE": {
+                        "kind": "explicit",
+                        "values": ["one", "two"],
+                    },
+                    "NAME": {
+                        "kind": "explicit",
+                        "values": ["MODE"],
+                    },
+                },
+                environment_names={"ITEMS", "MODE", "NAME"},
+            )
+            self.assertEqual(
+                set(authority["transitive"]),
+                {"child", "one", "other", "two"},
+            )
+            self.assertEqual(
+                authority["variable_census"]["external_defaults"],
+                ["ITEMS", "MODE", "NAME"],
+            )
+
+        directory, root, entries = self.fixture(
+            "all: $(if $(UNDECLARED),$(UNDECLARED),empty).out\n"
+            "empty.out fallback.out sealed.out:\n\t@printf '$@\\n'\n"
+        )
+        with directory:
+            with self.assertRaisesRegex(
+                make_probe.MakeProbeError,
+                "evaluated undefined variables without sealed authority.*UNDECLARED",
+            ):
+                make_probe.run_probe(
+                    reporter.AuthorityLoader(root, entries),
+                    {"all"},
+                    {},
+                    {},
+                    scratch_root=root / "artifacts",
+                )
+            authority = self.probe(
+                root,
+                entries,
+                domains={
+                    "UNDECLARED": {
+                        "kind": "explicit",
+                        "values": ["fallback", "sealed"],
+                    }
+                },
+            )
+            self.assertEqual(
+                set(authority["transitive"]),
+                {"empty.out", "fallback.out", "sealed.out"},
+            )
+
+    def test_dynamic_external_default_name_rejects(self):
+        directory, root, entries = self.fixture(
+            "NAME := MODE\n"
+            "$($(NAME)) ?= one\n"
+            "all:\n\t@true\n"
+        )
+        with directory, self.assertRaisesRegex(
+            make_probe.MakeProbeError,
+            "external-default declaration has a dynamic name",
+        ):
+            make_probe.run_probe(
+                reporter.AuthorityLoader(root, entries),
+                {"all"},
+                {},
+                {},
+                scratch_root=root / "artifacts",
+            )
+
+    def test_each_target_uses_its_standalone_makecmdgoals(self):
+        directory, root, entries = self.fixture(
+            "GOALS := $(MAKECMDGOALS)\n"
+            "a: $(if $(filter b,$(GOALS)),two,one)\n"
+            "b: two\n"
+            "one:\n\t@printf 'one\\n'\n"
+            "two:\n\t@printf 'two\\n'\n"
+        )
+        with directory:
+            environment = {
+                "HOME": "/nonexistent",
+                "LANG": "C",
+                "LC_ALL": "C",
+                "PATH": "/usr/bin:/bin",
+                "TZ": "UTC",
+            }
+            combined = subprocess.run(
+                ["/usr/bin/make", "-n", "-B", "--trace", "a", "b"],
+                cwd=root,
+                env=environment,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            solo = subprocess.run(
+                ["/usr/bin/make", "-n", "-B", "--trace", "a"],
+                cwd=root,
+                env=environment,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertIn("printf 'two", combined.stdout)
+            self.assertNotIn("printf 'one", combined.stdout)
+            self.assertIn("printf 'one", solo.stdout)
+            authority = make_probe.run_probe(
+                reporter.AuthorityLoader(root, entries),
+                {"b", "a"},
+                {},
+                {},
+                scratch_root=root / "artifacts",
+            )
+            self.assertEqual(set(authority["a"]["transitive"]), {"one"})
+            self.assertEqual(set(authority["b"]["transitive"]), {"two"})
+            reversed_authority = make_probe.run_probe(
+                reporter.AuthorityLoader(root, entries),
+                {"a", "b"},
+                {},
+                {},
+                scratch_root=root / "artifacts",
+            )
+            self.assertEqual(authority, reversed_authority)
 
     def test_namespace_launcher_falls_back_to_exact_passwordless_sudo(self):
         calls = []
@@ -609,6 +777,81 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                     "absolute or dynamic include|untracked include",
                 ):
                     self.probe(root, entries)
+
+    def test_build_include_traversal_aliases_and_symlinks_reject(self):
+        directory, root, entries = self.fixture(
+            "$(file >/work/evil.mk,evil: ;)\n"
+            "include build/../../work/evil.mk\n"
+            "all: evil\n"
+        )
+        with directory, self.assertRaisesRegex(
+            make_probe.MakeProbeError,
+            "noncanonical include",
+        ):
+            self.probe(root, entries)
+
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            base = Path(directory)
+            source = base / "source"
+            build = base / "build"
+            outside = base / "outside"
+            source.mkdir()
+            build.mkdir()
+            outside.mkdir()
+            (source / "Makefile").write_text("all:\n", encoding="ascii")
+            entries = {
+                "Makefile": reporter.GitTreeEntry(
+                    "Makefile",
+                    "100644",
+                    "blob",
+                    "0" * 40,
+                )
+            }
+            loader = reporter.AuthorityLoader(source, entries)
+            (build / "good.mk").write_text("good:\n", encoding="ascii")
+            make_probe._validate_includes(
+                [
+                    {"optional": False, "path": "build/good.mk"},
+                    {"optional": False, "path": "/repo/build/good.mk"},
+                    {"optional": True, "path": "build/optional-missing.mk"},
+                ],
+                loader,
+                build,
+            )
+            for include in (
+                "build/../good.mk",
+                "build/../../work/evil.mk",
+                "build//good.mk",
+                "build/%2e%2e/good.mk",
+                "/work/evil.mk",
+            ):
+                with self.subTest(include=include), self.assertRaises(
+                    make_probe.MakeProbeError,
+                ):
+                    make_probe._validate_includes(
+                        [{"optional": False, "path": include}],
+                        loader,
+                        build,
+                    )
+            (build / "linked.mk").symlink_to(outside / "evil.mk")
+            for include in ("build/linked.mk",):
+                with self.subTest(include=include), self.assertRaises(
+                    make_probe.MakeProbeError,
+                ):
+                    make_probe._validate_includes(
+                        [{"optional": False, "path": include}],
+                        loader,
+                        build,
+                    )
+        directory, root, entries = self.fixture(
+            "include build/missing.mk\n"
+            "all:\n\t@true\n"
+        )
+        with directory, self.assertRaisesRegex(
+            make_probe.MakeProbeError,
+            "GNU Make authority probe failed",
+        ):
+            self.probe(root, entries)
 
     def test_every_live_sized_domain_runs_a_cli_variant(self):
         names = [f"V{index:02d}" for index in range(80)]

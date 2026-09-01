@@ -229,13 +229,27 @@ by an interrupted process.
 
 Schema version 5 seals each external selector as either a finite exact domain,
 an exact tracked fallback, or symbolic recipe/environment-only authority.
-Every one of the 80 prerequisite domains is run through a real command-line
+Every one of the 83 prerequisite domains is run through a real command-line
 GNU Make invocation; environment-sensitive domains are also run through a
 clean process-environment origin. The baseline plus all variant traces are
 unioned per evidence target. An unclassified external input, stale symbolic
 classification, oversized domain, missing target, alternate active error, or
 failed variant rejects. Symbolic recipe inputs are retained in the fingerprint
 but cannot contribute an enumerated target.
+
+The named external-default census is the one irreplaceable lexical Make
+boundary: a closed comment/recipe/`define`-aware parser extracts static `?=`
+names from every authoritative Make input and rejects dynamic left-hand sides.
+It decides no Make behavior. GNU Make remains the behavioral authority, runs
+with undefined-variable diagnostics, and rejects every evaluated undefined
+name not covered by a finite/symbolic registry entry or a typed
+builtin/automatic/scoped contract. This covers defaults and references reached
+through `define`, `eval`, `call`, `foreach`, and computed names without relying
+on identifier spelling as behavior evidence. For bounded performance, the
+reference graph conservatively narrows each solo target's candidate domains;
+an actual GNU Make database comparison over the combined roots must prove a
+variant unchanged before baseline semantics can be reused. Any changed
+database is re-evaluated with the standalone target.
 
 This means GNU Make itself owns conditionals, `eval`, pattern/static-pattern
 resolution, `define`/`call`, target-specific and inherited values, `${NAME}`,
@@ -245,6 +259,10 @@ direct GNU Make and freeze alternate `MODE=two`, `$(eval $(RULE))`, concrete
 `%.out: %.in` stems, target-local prerequisites, and expanded `$@`/`$<`
 recipes. A literal missing prerequisite and active `$(error)` surface the real
 Make failure rather than becoming metadata.
+Each evidence target is invoked as the sole requested goal for fallback and
+every domain/origin variant. No combined `MAKECMDGOALS` result is attributed
+to another target; target order and set iteration therefore cannot change a
+record.
 
 GNU Make can execute parse-time `$(shell)`, `!=`, and makefile-remake recipes
 even in otherwise nonexecuting modes. The sandbox therefore exposes no general
@@ -285,10 +303,12 @@ trusted gate process.
 
 Every Make include observed by GNU Make must be the primary `Makefile`, a
 tracked regular `.mk`, an exact gitlink-contained file, the trusted probe
-control file, or a confined generated `build/` include. Absolute, dynamic,
-untracked, symlink, and escaping includes reject. Generated asset discovery
-and manifest includes begin from an empty overlay and are rebuilt only through
-registered confined commands; no live source file is written.
+control file, or a canonical regular descendant of the generated `build/`
+overlay. Include spelling is normalized against conceptual `/repo` before
+classification; dot/dot-dot, repeated or encoded separators, absolute/dynamic
+aliases, missing paths, and any symlink component reject. Generated asset
+discovery and manifest includes begin from an empty overlay and are rebuilt
+only through registered confined commands; no live source file is written.
 
 The public gate has a smaller independent bootstrap at the first byte of the
 root Makefile. Command-line ownership of `MAKECMDGOALS` rejects before goal
@@ -319,7 +339,10 @@ cannot authorize themselves. After trusted validation of both exact-base and
 candidate graphs, the verifier resolves every independent-oracle probe,
 requires byte-identical `(edge_type, evidence_id)` selections, compares the
 resolved base/candidate authority fingerprints, and intersects trusted
-graph-edge invalidation with the oracle-backed edge set. Any authority target,
+graph-edge invalidation with the oracle-backed edge set. Every graph surface
+and every non-dependency owned edge must be represented by a real tracked-path
+probe; changed dependency or other unrepresented edge authority fails rather
+than bypassing comparison. Any authority target,
 gate, Make target/command/probe, workflow step, or fingerprint redirect on an
 oracle-backed edge therefore rejects even when stable IDs and pairs remain.
 Normalized unrelated workflow or Make semantics do not invalidate those

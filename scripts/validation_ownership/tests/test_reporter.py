@@ -1206,6 +1206,49 @@ class OwnershipGraphTests(unittest.TestCase):
             self.graph,
             self.entries,
         )
+        for surface in ("surface.docs", "surface.generated-schema"):
+            with self.subTest(unprobed_surface=surface):
+                oracle = copy.deepcopy(self.oracle)
+                oracle["probes"] = [
+                    probe
+                    for probe in oracle["probes"]
+                    if probe.get("expected_surface") != surface
+                ]
+                reseal(oracle)
+                with self.assertRaisesRegex(
+                    reporter.OwnershipError,
+                    "leaves graph surfaces unprobed",
+                ):
+                    reporter.validate_probe_oracle(
+                        oracle,
+                        self.graph,
+                        self.entries,
+                    )
+
+        oracle = copy.deepcopy(self.oracle)
+        generated_schema = next(
+            probe
+            for probe in oracle["probes"]
+            if probe.get("expected_surface") == "surface.generated-schema"
+        )
+        generated_schema["expected_owners"] = [
+            owner
+            for owner in generated_schema["expected_owners"]
+            if not (
+                owner["edge_type"] == "owns-test"
+                and owner["evidence_id"] == "owner.host-generated"
+            )
+        ]
+        reseal(oracle)
+        with self.assertRaisesRegex(
+            reporter.OwnershipError,
+            "does not cover exact owned edges.*generated-schema",
+        ):
+            reporter.validate_probe_oracle(
+                oracle,
+                self.graph,
+                self.entries,
+            )
 
         oracle = copy.deepcopy(self.oracle)
         oracle["seal"] = "0" * 64
@@ -1227,7 +1270,10 @@ class OwnershipGraphTests(unittest.TestCase):
         oracle = copy.deepcopy(self.oracle)
         oracle["probes"][0]["expected_owners"].pop()
         reseal(oracle)
-        with self.assertRaisesRegex(reporter.OwnershipError, "selection mismatch"):
+        with self.assertRaisesRegex(
+            reporter.OwnershipError,
+            "selection mismatch",
+        ):
             reporter.build_report(
                 self.graph,
                 self.schema,
@@ -1258,7 +1304,7 @@ class OwnershipGraphTests(unittest.TestCase):
         edge["target"] = "owner.host-build"
         with self.assertRaisesRegex(
             reporter.OwnershipError,
-            r"false_positive=1, false_negative=1",
+            "does not cover exact owned edges",
         ):
             reporter.build_report(
                 graph,
@@ -1283,7 +1329,7 @@ class OwnershipGraphTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             reporter.OwnershipError,
-            r"false_positive=2, false_negative=2",
+            "does not cover exact owned edges",
         ):
             reporter.build_report(
                 graph,

@@ -420,18 +420,35 @@ def _verify_oracle_pairs(
         for record in records
         for owner in record["owners"]
     }
+    owned_edge_ids = {
+        edge["id"]
+        for selected_graph in (base_graph, graph)
+        for edge in selected_graph["edges"]
+        if edge["type"] != "depends-on"
+    }
+    unprobed_owned_edges = sorted(owned_edge_ids - oracle_edge_ids)
+    if unprobed_owned_edges:
+        raise reporter.OwnershipError(
+            "exact-base oracle leaves owned edges unprobed: "
+            f"{unprobed_owned_edges}"
+        )
     invalidated_oracle_edges = sorted(
         oracle_edge_ids & set(invalidation["changed_edge_ids"])
+    )
+    invalidated_without_authority = sorted(
+        set(invalidation["changed_edge_ids"]) - oracle_edge_ids
     )
     base_authority_bytes = reporter.normalized_json(base_records)
     candidate_authority_bytes = reporter.normalized_json(candidate_records)
     if (
         candidate_authority_bytes != base_authority_bytes
         or invalidated_oracle_edges
+        or invalidated_without_authority
     ):
         raise reporter.OwnershipError(
             "candidate retargets exact-base oracle authority "
-            f"(invalidated_edges={invalidated_oracle_edges})"
+            f"(invalidated_edges={invalidated_oracle_edges}, "
+            f"without_authority={invalidated_without_authority})"
         )
     return (
         hashlib.sha256(candidate_bytes).hexdigest(),

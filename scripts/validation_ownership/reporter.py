@@ -990,9 +990,57 @@ def load_make_dynamic_contracts(
                         "requested-goals",
                         "<trusted-builtin:MAKECMDGOALS>",
                     ),
+                    "MAKE_RESTARTS": (
+                        "restart-count",
+                        "<trusted-builtin:MAKE_RESTARTS>",
+                    ),
                 },
                 "scoped_variables": {
+                    "%": ("automatic-variable", "<automatic-variable:%>"),
+                    "%D": ("automatic-variable", "<automatic-variable:%D>"),
+                    "%F": ("automatic-variable", "<automatic-variable:%F>"),
+                    "*": ("automatic-variable", "<automatic-variable:*>"),
+                    "*D": ("automatic-variable", "<automatic-variable:*D>"),
+                    "*F": ("automatic-variable", "<automatic-variable:*F>"),
+                    "+": ("automatic-variable", "<automatic-variable:+>"),
+                    "+D": ("automatic-variable", "<automatic-variable:+D>"),
+                    "+F": ("automatic-variable", "<automatic-variable:+F>"),
+                    "0": ("call-argument", "<call-argument:0>"),
+                    "1": ("call-argument", "<call-argument:1>"),
+                    "2": ("call-argument", "<call-argument:2>"),
+                    "3": ("call-argument", "<call-argument:3>"),
+                    "4": ("call-argument", "<call-argument:4>"),
+                    "5": ("call-argument", "<call-argument:5>"),
+                    "6": ("call-argument", "<call-argument:6>"),
+                    "7": ("call-argument", "<call-argument:7>"),
+                    "8": ("call-argument", "<call-argument:8>"),
+                    "9": ("call-argument", "<call-argument:9>"),
+                    "GENERATED_DATA_LINKED_SYMBOL_PREFIX_characters": (
+                        "computed-empty",
+                        "<computed-empty:GENERATED_DATA_LINKED_SYMBOL_PREFIX_characters>",
+                    ),
+                    "GENERATED_DATA_LINKED_SYMBOL_PREFIX_classes": (
+                        "computed-empty",
+                        "<computed-empty:GENERATED_DATA_LINKED_SYMBOL_PREFIX_classes>",
+                    ),
+                    "GENERATED_DATA_LINKED_SYMBOL_PREFIX_items": (
+                        "computed-empty",
+                        "<computed-empty:GENERATED_DATA_LINKED_SYMBOL_PREFIX_items>",
+                    ),
+                    "<": ("automatic-variable", "<automatic-variable:<>"),
+                    "<D": ("automatic-variable", "<automatic-variable:<D>"),
+                    "<F": ("automatic-variable", "<automatic-variable:<F>"),
+                    "?": ("automatic-variable", "<automatic-variable:?>"),
+                    "?D": ("automatic-variable", "<automatic-variable:?D>"),
+                    "?F": ("automatic-variable", "<automatic-variable:?F>"),
+                    "@": ("automatic-variable", "<automatic-variable:@>"),
+                    "@D": ("automatic-variable", "<automatic-variable:@D>"),
+                    "@F": ("automatic-variable", "<automatic-variable:@F>"),
+                    "^": ("automatic-variable", "<automatic-variable:^>"),
+                    "^D": ("automatic-variable", "<automatic-variable:^D>"),
+                    "^F": ("automatic-variable", "<automatic-variable:^F>"),
                     "t": ("foreach-iteration", "<scoped-variable:t>"),
+                    "|": ("automatic-variable", "<automatic-variable:|>"),
                 },
                 "escaped_literals": {
                     "sort": (
@@ -1501,6 +1549,11 @@ def _parse_make_authorities(
             declared_external_names=set(ambient_contracts),
             environment_names=set(ambient_contracts),
             symbolic_recipe_names=symbolic_recipe_names,
+            trusted_reference_names={
+                *trusted_builtins,
+                *scoped_variables,
+                *escaped_literals,
+            },
             scratch_root=(
                 loader.scratch_root
                 if loader.scratch_root is not None
@@ -2702,6 +2755,7 @@ def validate_probe_oracle(
     }
     exclusion_ids = {item["id"] for item in graph["exclusions"]}
     paths = set()
+    covered_pairs: dict[str, set[tuple[str, str]]] = defaultdict(set)
     for index, probe in enumerate(oracle["probes"]):
         label = f"probe oracle entry {index}"
         if not isinstance(probe, dict):
@@ -2766,6 +2820,33 @@ def validate_probe_oracle(
             pairs.append((owner["edge_type"], owner["evidence_id"]))
         if len(pairs) != len(set(pairs)):
             raise OwnershipError(f"{label} duplicates an exact owner pair")
+        covered_pairs[probe["expected_surface"]].update(pairs)
+    missing_surfaces = sorted(surfaces - set(covered_pairs))
+    if missing_surfaces:
+        raise OwnershipError(
+            f"probe oracle leaves graph surfaces unprobed: {missing_surfaces}"
+        )
+    graph_pairs: dict[str, set[tuple[str, str]]] = {
+        surface: set()
+        for surface in surfaces
+    }
+    for edge in graph["edges"]:
+        if edge["type"] != "depends-on":
+            graph_pairs[edge["source"]].add(
+                (edge["type"], edge["target"])
+            )
+    incomplete_edges = {
+        surface: {
+            "missing": sorted(graph_pairs[surface] - covered_pairs[surface]),
+            "unexpected": sorted(covered_pairs[surface] - graph_pairs[surface]),
+        }
+        for surface in sorted(surfaces)
+        if covered_pairs[surface] != graph_pairs[surface]
+    }
+    if incomplete_edges:
+        raise OwnershipError(
+            f"probe oracle does not cover exact owned edges: {incomplete_edges}"
+        )
     seal = oracle["seal"]
     if not isinstance(seal, str) or not re.fullmatch(r"[0-9a-f]{64}", seal):
         raise OwnershipError("probe oracle seal must be a lowercase SHA-256")

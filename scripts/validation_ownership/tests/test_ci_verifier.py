@@ -36,13 +36,6 @@ class BasePinnedVerifierTests(unittest.TestCase):
                     "dependencies": [],
                 },
                 {
-                    "id": "surface.host-runtime",
-                    "kind": "surface",
-                    "surface_type": "host",
-                    "requirements": [],
-                    "dependencies": [],
-                },
-                {
                     "id": "owner.validation-check",
                     "kind": "evidence",
                     "evidence_type": "host",
@@ -70,13 +63,6 @@ class BasePinnedVerifierTests(unittest.TestCase):
                     "source": "surface.validation",
                     "target": "owner.validation-check",
                     "reason": "exact ownership fixture",
-                },
-                {
-                    "id": "host-runtime.owns-test",
-                    "type": "owns-test",
-                    "source": "surface.host-runtime",
-                    "target": "owner.host-runtime",
-                    "reason": "host runtime fixture",
                 },
             ],
             "path_rules": [],
@@ -368,6 +354,139 @@ class BasePinnedVerifierTests(unittest.TestCase):
                 base_model,
             )
 
+    def test_generated_schema_owner_retarget_is_oracle_backed(self):
+        base_graph, base_model = self.authority_fixture()
+        surface = next(
+            node
+            for node in base_graph["nodes"]
+            if node["id"] == "surface.validation"
+        )
+        surface["id"] = "surface.generated-schema"
+        edge = base_graph["edges"][0]
+        edge["id"] = "generated-schema.owns-test"
+        edge["source"] = "surface.generated-schema"
+        oracle = {
+            "probes": [
+                {
+                    "path": "scripts/generated_data/registry.py",
+                    "expected_surface": "surface.generated-schema",
+                    "expected_owners": [
+                        {
+                            "edge_type": "owns-test",
+                            "evidence_id": "owner.validation-check",
+                        }
+                    ],
+                }
+            ]
+        }
+        measurement = {
+            "probes": [
+                {
+                    "path": "scripts/generated_data/registry.py",
+                    "surface": "surface.generated-schema",
+                    "owners": [
+                        {
+                            "edge_type": "owns-test",
+                            "evidence_id": "owner.validation-check",
+                        }
+                    ],
+                }
+            ]
+        }
+        candidate_graph = copy.deepcopy(base_graph)
+        candidate_model = copy.deepcopy(base_model)
+        validation_node = next(
+            node
+            for node in candidate_graph["nodes"]
+            if node["id"] == "owner.validation-check"
+        )
+        runtime_node = next(
+            node
+            for node in candidate_graph["nodes"]
+            if node["id"] == "owner.host-runtime"
+        )
+        validation_node["authority"], runtime_node["authority"] = (
+            runtime_node["authority"],
+            validation_node["authority"],
+        )
+        (
+            candidate_model["authorities"]["owner.validation-check"],
+            candidate_model["authorities"]["owner.host-runtime"],
+        ) = (
+            candidate_model["authorities"]["owner.host-runtime"],
+            candidate_model["authorities"]["owner.validation-check"],
+        )
+        with mock.patch.object(
+            reporter,
+            "_measure",
+            return_value=measurement,
+        ), self.assertRaisesRegex(
+            reporter.OwnershipError,
+            "generated-schema.owns-test",
+        ):
+            ci_verifier._verify_oracle_pairs(
+                oracle,
+                candidate_graph,
+                candidate_model,
+                base_graph,
+                base_model,
+            )
+
+    def test_unprobed_owned_edge_rejects_exact_base(self):
+        graph, model = self.authority_fixture()
+        graph["edges"].append(
+            {
+                "id": "generated-schema.owns-test",
+                "type": "owns-test",
+                "source": "surface.validation",
+                "target": "owner.host-runtime",
+                "reason": "unprobed owner fixture",
+            }
+        )
+        oracle = {
+            "probes": [
+                {
+                    "path": "scripts/validation_ownership/reporter.py",
+                    "expected_surface": "surface.validation",
+                    "expected_owners": [
+                        {
+                            "edge_type": "owns-test",
+                            "evidence_id": "owner.validation-check",
+                        }
+                    ],
+                }
+            ]
+        }
+        measurement = {
+            "probes": [
+                {
+                    "path": "scripts/validation_ownership/reporter.py",
+                    "surface": "surface.validation",
+                    "owners": [
+                        {
+                            "edge_type": "owns-test",
+                            "evidence_id": "owner.validation-check",
+                        }
+                    ],
+                }
+            ]
+        }
+        with mock.patch.object(
+            reporter,
+            "_measure",
+            return_value=measurement,
+        ), self.assertRaisesRegex(
+            reporter.OwnershipError,
+            "leaves owned edges unprobed.*generated-schema.owns-test",
+        ):
+            ci_verifier._verify_oracle_pairs(
+                oracle,
+                graph,
+                model,
+                graph,
+                model,
+            )
+
     def test_exact_base_oracle_allows_unrelated_semantic_stability(self):
         oracle = {
             "probes": [
@@ -399,41 +518,12 @@ class BasePinnedVerifierTests(unittest.TestCase):
         }
         base_graph, base_model = self.authority_fixture()
         candidate_graph = copy.deepcopy(base_graph)
-        candidate_graph["nodes"].extend(
-            [
-                {
-                    "id": "surface.unrelated",
-                    "kind": "surface",
-                    "surface_type": "host",
-                    "requirements": [],
-                    "dependencies": [],
-                },
-                {
-                    "id": "owner.unrelated",
-                    "kind": "evidence",
-                    "evidence_type": "host",
-                    "authority": {
-                        "kind": "workflow-step",
-                        "job": "host-tests",
-                        "step": "Unrelated step",
-                    },
-                },
-            ]
-        )
-        candidate_graph["edges"].append(
-            {
-                "id": "unrelated.owns-test",
-                "type": "owns-test",
-                "source": "surface.unrelated",
-                "target": "owner.unrelated",
-                "reason": "unrelated semantic fixture",
-            }
-        )
+        next(
+            node
+            for node in candidate_graph["nodes"]
+            if node["id"] == "owner.host-runtime"
+        )["label"] = "Unrelated presentation-only change"
         candidate_model = copy.deepcopy(base_model)
-        candidate_model["authorities"]["owner.unrelated"] = {
-            "display": ".github/workflows/build.yml:host-tests:Unrelated step",
-            "fingerprint": "unrelated-fingerprint",
-        }
         with mock.patch.object(
             reporter,
             "_measure",

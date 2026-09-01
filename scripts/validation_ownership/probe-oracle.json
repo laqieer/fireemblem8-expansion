@@ -22,6 +22,28 @@
       ]
     },
     {
+      "path": "docs/validation-ownership.md",
+      "expected_surface": "surface.docs",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.host-build"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-docs"}
+      ]
+    },
+    {
+      "path": "scripts/generated_data/registry.py",
+      "expected_surface": "surface.generated-schema",
+      "expected_owners": [
+        {"edge_type": "adversarial-control", "evidence_id": "owner.registry-generated"},
+        {"edge_type": "compile-owner", "evidence_id": "owner.compile-modern"},
+        {"edge_type": "drift-check", "evidence_id": "owner.drift-generated"},
+        {"edge_type": "generated-by", "evidence_id": "owner.generator-generated"},
+        {"edge_type": "generated-consumer", "evidence_id": "owner.consumer-generated"},
+        {"edge_type": "link-owner", "evidence_id": "owner.link-modern"},
+        {"edge_type": "owns-test", "evidence_id": "owner.host-generated"},
+        {"edge_type": "target-scenario", "evidence_id": "owner.runtime-modern"}
+      ]
+    },
+    {
       "path": "src/data/items.json",
       "expected_surface": "surface.generated",
       "expected_owners": [
@@ -144,5 +166,5 @@
       ]
     }
   ],
-  "seal": "ab72f7e4edc19bfaba872b33916071ebae02aeaf6f749a9f5e358fe97945311a"
+  "seal": "df5026c67c6e24f9e42526ab82ca6cd939b08c1a7a2e23f0e2339badc060e139"
 }

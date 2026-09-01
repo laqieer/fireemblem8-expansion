@@ -1407,7 +1407,7 @@ game behavior needs a compensating change.
    symlink, retarget an oracle owner to another live workflow step, and
    disconnect each lifecycle trigger. Confirm outside sentinels survive and no
    external directory is created. Confirm direct
-   GNU Make comparisons cover all 80 CLI domains, environment/fallback origins,
+   GNU Make comparisons cover all 83 live CLI domains, environment/fallback origins,
    `MODE=two`, `$(eval $(RULE))`, a concrete `%.out: %.in` recipe mutation,
    target-local/automatic/braced/one-character variables, literal missing
    prerequisites, active `$(error)`, unknown direct shell, and unused `!=`.
@@ -1456,12 +1456,21 @@ redirected edge family fail with the missing contract named.
 Make authority is observed from confined `/usr/bin/make`, never from a
 handwritten parser. A fresh exact-tree + exact-gitlink scratch root, empty
 generated-output overlay, fixed locale/time/environment, and trusted absolute
-GNU Make/interceptor binaries are mandatory. Every 80-domain command-line
+GNU Make/interceptor binaries are mandatory. Every 83-domain command-line
 variant and each environment-sensitive origin executes the actual parser and
 evaluator; exact concrete closures, pattern stems, expanded recipes, terminal
 inputs, includes, dynamic outputs, errors, argv, environment, and tool
 identities participate in authority. Comments and unrelated targets stay
 stable only when their observed target semantics stay stable.
+The closed external-default syntax boundary enumerates static `?=` names from
+all Make inputs, while GNU Make undefined-variable warnings cover evaluated
+undefined and computed references. Undeclared `MODE`, dynamic default names,
+and references reached through `define`/`eval`/`call`/`foreach` reject; a
+finite sealed MODE domain passes and changes concrete closure.
+The conservative reference graph may reduce irrelevant solo variants only
+after a real combined-root GNU Make database comparison proves no parsed
+change; a changed database always triggers the corresponding standalone
+variant.
 Make cache and prior-invalidation identity includes every selected tracked
 entry's path, object type, Git mode, and content identity, not only named Make
 inputs. Adding/removing wildcard-visible `src/b.c`, changing a regular entry
@@ -1482,6 +1491,9 @@ selection, multiple words, nested functions and variables, `$(eval $(RULE))`,
 secondary prerequisites, `${NAME}`, one-character `$C`, and automatic
 variables. Mutating a `%.out: %.in` child recipe changes its concrete parent
 authority. Literal missing prerequisites and active `$(error)` reject.
+Each target is probed with its standalone `MAKECMDGOALS`; an `a b` invocation
+whose `a` branch differs from solo `a` must record the solo branch for `a` in
+both input orders.
 Unbounded/unregistered domains, malformed or oversized values, cyclic/dynamic/
 escaping/unknown targets, and stale symbolic recipe classifications reject.
 
@@ -1496,8 +1508,10 @@ command sandbox and bind their concrete output hash plus tool/input authority.
 Normal `-n` recipes emit no event; forced-recursive/include-remake commands
 must match one sealed contract and are intercepted rather than executed by
 Make.
-Absolute `/dev/stdin`, dynamic, escaping, symlink, and untracked includes
-reject; confined generated `build/` includes are rebuilt from an empty overlay.
+Absolute `/dev/stdin`, dynamic, escaping, symlink, missing, and untracked
+includes reject. `build/../../work/evil.mk`, dot/repeated/encoded separator
+aliases, and intermediate symlinks cannot acquire `build/` authority;
+canonical regular build descendants are rebuilt from an empty overlay.
 Supervisor mappings and events are absent from candidate-visible paths. The
 trusted launcher opens a read-only mapping-directory descriptor and an
 append-only event descriptor before chroot; no `/proc` or `/dev/fd` alias is
@@ -1535,6 +1549,10 @@ oracle byte-for-byte, oracle-backed authority fingerprints must equal the
 exact base, and trusted edge invalidation must be empty for those edges. A
 shape-valid retarget from `owner.validation-check` to the live gba-playtest
 workflow step therefore rejects; an unrelated semantics-stable change passes.
+Real docs and generated-schema paths ensure every graph surface and every
+non-dependency owner edge is oracle-backed. Removing either probe, omitting
+`generated-schema.owns-test`, or changing an unrepresented dependency edge
+fails before exact-base authority can succeed.
 This introducing PR emits the explicit
 `bootstrap-not-authoritative` state with no claimed authority because its base
 lacks every package/graph/oracle marker, while candidate tests/public checks

@@ -612,6 +612,29 @@
       ]
     },
     {
+      "id": "legacy-dependency-dry-run-recipes",
+      "expression": "$(shell <legacy-dependency-dry-run-recipes>)",
+      "tool": "Makefile",
+      "input_files": [],
+      "input_variables": [
+        "CPP",
+        "CPPFLAGS",
+        "DEPS_DIR"
+      ],
+      "automatic_inputs": [
+        "$*",
+        "$<"
+      ],
+      "resolved_value": "",
+      "command_regex": "^mkdir -p \\.dep/[A-Za-z0-9_./-]+/ && [A-Za-z0-9_./+-]+ -E [^\\n]+ -MM -MG -MT [A-Za-z0-9_./-]+\\.o > \\.dep/[A-Za-z0-9_./-]+\\.d$",
+      "owning_evidence_ids": [
+        "owner.compile-modern",
+        "owner.link-modern",
+        "owner.negative-localization",
+        "owner.runtime-modern"
+      ]
+    },
+    {
       "id": "modern-header-scan-dry-run-recipes",
       "expression": "$(shell <modern-header-scan-dry-run-recipes>)",
       "tool": "modern.mk",
@@ -991,6 +1014,7 @@
       "AUTOTOOLS_BUILD_DIR",
       "AUTOTOOLS_CONFIG_MK",
       "CFILES",
+      "CJK_BUILD_DIR",
       "CODEQL_REQUIRE_FANALYZER",
       "CPP",
       "DEVKITARM",
@@ -1021,6 +1045,12 @@
       "EXPANSION_VERSION_MAJOR",
       "EXPANSION_VERSION_MINOR",
       "EXPANSION_VERSION_PATCH",
+      "FEBUILDER_CLI",
+      "FEBUILDER_COMMIT",
+      "FEBUILDER_DOTNET_SDK",
+      "FEBUILDER_EVIDENCE_COMMAND",
+      "FEBUILDER_REPOSITORY",
+      "FEHRR_ROOT",
       "GAME_LOCALIZATION_ENABLED_LOCALES",
       "GAME_LOCALIZATION_OUT_DIR",
       "GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE",
@@ -1041,6 +1071,7 @@
       "MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY",
       "MODERN_BINUTILS_DIR",
       "MODERN_BUDGET_REPORT",
+      "MODERN_BUILD_ROOT",
       "MODERN_CC",
       "MODERN_COHORT_ASM_SOURCES",
       "MODERN_COHORT_SOURCES",
@@ -1080,6 +1111,7 @@
       "LZ_FLAGS",
       "MODERN_BUILD_COMMIT",
       "MODERN_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT",
+      "NODEP",
       "OS"
     ],
     "trusted_builtins": [
@@ -1102,13 +1134,193 @@
         "name": "MAKECMDGOALS",
         "authority": "requested-goals",
         "value": "<trusted-builtin:MAKECMDGOALS>"
+      },
+      {
+        "name": "MAKE_RESTARTS",
+        "authority": "restart-count",
+        "value": "<trusted-builtin:MAKE_RESTARTS>"
       }
     ],
     "scoped_variables": [
       {
+        "name": "%",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:%>"
+      },
+      {
+        "name": "%D",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:%D>"
+      },
+      {
+        "name": "%F",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:%F>"
+      },
+      {
+        "name": "*",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:*>"
+      },
+      {
+        "name": "*D",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:*D>"
+      },
+      {
+        "name": "*F",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:*F>"
+      },
+      {
+        "name": "+",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:+>"
+      },
+      {
+        "name": "+D",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:+D>"
+      },
+      {
+        "name": "+F",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:+F>"
+      },
+      {
+        "name": "0",
+        "authority": "call-argument",
+        "value": "<call-argument:0>"
+      },
+      {
+        "name": "1",
+        "authority": "call-argument",
+        "value": "<call-argument:1>"
+      },
+      {
+        "name": "2",
+        "authority": "call-argument",
+        "value": "<call-argument:2>"
+      },
+      {
+        "name": "3",
+        "authority": "call-argument",
+        "value": "<call-argument:3>"
+      },
+      {
+        "name": "4",
+        "authority": "call-argument",
+        "value": "<call-argument:4>"
+      },
+      {
+        "name": "5",
+        "authority": "call-argument",
+        "value": "<call-argument:5>"
+      },
+      {
+        "name": "6",
+        "authority": "call-argument",
+        "value": "<call-argument:6>"
+      },
+      {
+        "name": "7",
+        "authority": "call-argument",
+        "value": "<call-argument:7>"
+      },
+      {
+        "name": "8",
+        "authority": "call-argument",
+        "value": "<call-argument:8>"
+      },
+      {
+        "name": "9",
+        "authority": "call-argument",
+        "value": "<call-argument:9>"
+      },
+      {
+        "name": "<",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:<>"
+      },
+      {
+        "name": "<D",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:<D>"
+      },
+      {
+        "name": "<F",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:<F>"
+      },
+      {
+        "name": "?",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:?>"
+      },
+      {
+        "name": "?D",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:?D>"
+      },
+      {
+        "name": "?F",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:?F>"
+      },
+      {
+        "name": "@",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:@>"
+      },
+      {
+        "name": "@D",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:@D>"
+      },
+      {
+        "name": "@F",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:@F>"
+      },
+      {
+        "name": "GENERATED_DATA_LINKED_SYMBOL_PREFIX_characters",
+        "authority": "computed-empty",
+        "value": "<computed-empty:GENERATED_DATA_LINKED_SYMBOL_PREFIX_characters>"
+      },
+      {
+        "name": "GENERATED_DATA_LINKED_SYMBOL_PREFIX_classes",
+        "authority": "computed-empty",
+        "value": "<computed-empty:GENERATED_DATA_LINKED_SYMBOL_PREFIX_classes>"
+      },
+      {
+        "name": "GENERATED_DATA_LINKED_SYMBOL_PREFIX_items",
+        "authority": "computed-empty",
+        "value": "<computed-empty:GENERATED_DATA_LINKED_SYMBOL_PREFIX_items>"
+      },
+      {
+        "name": "^",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:^>"
+      },
+      {
+        "name": "^D",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:^D>"
+      },
+      {
+        "name": "^F",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:^F>"
+      },
+      {
         "name": "t",
         "authority": "foreach-iteration",
         "value": "<scoped-variable:t>"
+      },
+      {
+        "name": "|",
+        "authority": "automatic-variable",
+        "value": "<automatic-variable:|>"
       }
     ],
     "escaped_literals": [
@@ -1158,6 +1370,7 @@
       "ASSET_PROFILE_KEY",
       "ASSET_PROFILE_ROOT",
       "BANIM_OBJECT",
+      "CJK_BUILD_DIR",
       "EXPANSION_CUSTOM_SPELL_EFFECTS",
       "EXPANSION_ENABLED_LOCALES",
       "EXPANSION_HQ_MIXER",
@@ -1203,6 +1416,7 @@
       "MODERN_BGM_REGISTRY_JSON",
       "MODERN_BGM_REGISTRY_SCRIPT",
       "MODERN_BUILD_METADATA_JSON",
+      "MODERN_BUILD_ROOT",
       "MODERN_CLEAN_IWRAM",
       "MODERN_CLEAN_LDSCRIPT",
       "MODERN_COMPILE_SETTINGS",
@@ -1272,6 +1486,12 @@
       "FE8_EXPANSION_CUSTOM_SPELL_TEST",
       "FE8_EXPANSION_ITEMTEST",
       "FE8_ITEM_ID_CAP",
+      "FEBUILDER_CLI",
+      "FEBUILDER_COMMIT",
+      "FEBUILDER_DOTNET_SDK",
+      "FEBUILDER_EVIDENCE_COMMAND",
+      "FEBUILDER_REPOSITORY",
+      "FEHRR_ROOT",
       "GAME_LOCALIZATION_ENABLED_LOCALES",
       "GAME_LOCALIZATION_OUT_DIR",
       "GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTEROBJECTIVES_SOURCE",
@@ -1316,7 +1536,16 @@
       "TOOLCHAIN",
       "data_dep"
     ],
-    "explicit": [],
+    "explicit": [
+      {
+        "name": "NODEP",
+        "values": [
+          "",
+          "0",
+          "1"
+        ]
+      }
+    ],
     "generated_paths": [
       {
         "path": "tools/gbagfx/gbagfx",
@@ -1346,5 +1575,5 @@
     "value_policy": "finite-exact-or-tracked-fallback",
     "target_policy": "defined-pattern-or-tracked-tree"
   },
-  "seal": "1295baf5fd6c7a5115ad7166fdea3cfb194074d03d70ee07af9e1d545c3da392"
+  "seal": "55226891bfc781f0749c19d0bc668599d8314b7218aee81c6b3ed620b483bfd1"
 }
