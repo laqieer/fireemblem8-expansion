@@ -943,22 +943,45 @@ class OwnershipGraphTests(unittest.TestCase):
         )
         prior_graph = reporter._prior_graph(base_loader)
         self.assertIsNotNone(prior_graph)
+        base_model = reporter.validate_graph(
+            graph,
+            schema,
+            base_loader,
+            entries,
+        )
 
         def changed_edges():
             loader = reporter.AuthorityLoader(self.fixture_root, entries)
-            model = reporter.validate_graph(
-                graph,
-                schema,
-                loader,
-                entries,
+            non_make_nodes = {
+                node["id"]: node
+                for node in graph["nodes"]
+                if node["kind"] == "evidence"
+                and node["authority"]["kind"] != "make-target"
+            }
+            current_model = dict(base_model)
+            current_model["authorities"] = dict(base_model["authorities"])
+            current_model["authorities"].update(
+                reporter._validate_authorities(
+                    loader,
+                    non_make_nodes,
+                    base_model["generated_records"],
+                    strict_workflow=True,
+                )
             )
-            return reporter._authority_changed_edges(
-                graph,
-                prior_graph,
-                model,
-                loader,
-                base_loader,
-            )
+            # Complete-tree Make invalidation has dedicated cache/fresh-probe
+            # controls; this test isolates normalized workflow-step authority.
+            with mock.patch.object(
+                reporter,
+                "_same_make_authority_tree",
+                return_value=True,
+            ):
+                return reporter._authority_changed_edges(
+                    graph,
+                    prior_graph,
+                    current_model,
+                    loader,
+                    base_loader,
+                )
 
         try:
             workflow.write_bytes(original + b"\n# comment-only fixture\n")
