@@ -323,9 +323,10 @@ Its bounded direct shell helper paginates and excludes all prior IDs, validates
 created/event/branch/head fields before each exact-ID watcher, and installs
 idempotent compare-and-swap cleanup before remote mutation. The evaluator
 scans all raw REST jobs before normalization: metadata workers are admissible
-only with their distinct metadata-only names, `skipped` conclusion, and no
-assigned runner, including the documented platform-only `started_at`
-timestamp quirk.
+only when `host-tests`/`build` report runner-backed `success` from the trusted
+continuity adapters and `extended-host-tests`/`legacy` report `skipped` with
+no assigned runner, including the documented platform-only `started_at`
+timestamp quirk for the skipped jobs.
 
 The pull-request body/template remains the stable frozen scope, non-goals,
 classification, dependency, acceptance, tester procedure, and compatibility

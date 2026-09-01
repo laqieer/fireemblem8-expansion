@@ -960,6 +960,17 @@ def live_title_probe_violations(text):
         violations.append("bounded-unseen-run-discovery")
     if "git push origin --delete" in commands or "git branch -D" in commands:
         violations.append("cleanup-ownership-cas")
+    probe_start = body_case.find("1. From the issue worktree")
+    if probe_start < 0:
+        violations.append("live-procedure-sequence")
+    else:
+        numbers = re.findall(
+            r"^([0-9]+)\. ",
+            body_case[probe_start:],
+            re.MULTILINE,
+        )
+        if numbers[:6] != ["1", "2", "3", "4", "5", "6"]:
+            violations.append("live-procedure-sequence")
     trap_index = commands.find("trap finish_probe EXIT")
     push_index = commands.find('git push -u origin "$probe_branch"')
     if trap_index < 0 or push_index < 0 or trap_index > push_index:
@@ -3920,6 +3931,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "metadata-summary",
         )
         forbidden_fragments = (
+            "distinct metadata-only names",
             "same canonical skipped worker names",
             "canonical skipped worker contexts",
             "each skipped with no runner",
@@ -4147,6 +4159,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 '     '
                 "--json event,headSha,conclusion,url",
                 'printf "restore run not inspected\\n"',
+            ),
+            (
+                "live-procedure-sequence",
+                "5. Normalize all three real runs",
+                "10. Normalize all three real runs",
             ),
             (
                 "bounded-exact-run-watcher",

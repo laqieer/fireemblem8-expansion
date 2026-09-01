@@ -57,7 +57,13 @@ BPS checksums, reconstructed 32 MiB target digest, and embedded all-locales/
 all-features metadata; it writes no ROM. `bps_patch apply` succeeds only when
 the BPS source/target/patch CRCs match and writes the selected separate output
 path. The source target builds the same named release/AAPCS profile and
-round-trips the local artifact.
+round-trips the local artifact. The trusted publisher that produced that
+artifact decodes recursive `/dev` mount targets from structured `findmnt
+--json --submounts --output TARGET /dev` output, unmounts exact descendant
+paths deepest-first, and verifies that only `/dev` remains before recreating
+the private device tree. The descriptor-pinned root-only `/mnt/supervisor`
+parent remains readable only to the wrapper and is rechecked before ROM
+handoff.
 
 ### Negative control
 
@@ -163,7 +169,11 @@ without exposing candidate bytes.
 The wrapper binds the exact owned cgroup read-only under root-only mode-`0700`
 `/mnt/supervisor` before masking `/sys`. Candidate access is denied; the
 post-build check remains readable and rejects any member beyond the wrapper PID
-before ROM handoff.
+before ROM handoff. Decoded recursive `/dev` mount targets are emitted through
+NUL-delimited trusted JSON parsing, unmounted deepest-first, and rechecked so
+only `/dev` remains before the private device tree is recreated. Retained
+descendants, raw escaped target text, paths outside `/dev`, malformed JSON,
+duplicate targets, and NUL-bearing targets are rejected.
 
 ### Negative control
 
@@ -191,7 +201,8 @@ archival-lane behavior changes.
   secret scope, no-PR publication, candidate-before-download ordering,
   exact-after isolated tool, no-ROM-transfer boundary, dedicated builder UID
   and namespaces, read-only host/private-filesystem probes, exact cgroup-v2 and
-  process teardown, socket/daemon/cgroup-escape adversaries, two-file handoff
+  process teardown, decoded recursive `/dev` target parsing and deepest-first
+  unmount order, socket/daemon/cgroup-escape adversaries, two-file handoff
   rejection controls, unpredictable private path, cleanup-before-upload, late
   artifact revalidation, null/no-replay candidate output adversaries, the old
   Bash-FD-255/memfd exit-125 reproducer, inherited pipe/memfd/socket closure in

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import http.server
+import io
 import json
 import os
 import re
@@ -12,9 +13,12 @@ import shlex
 import socket
 import subprocess
 import tempfile
+import textwrap
 import threading
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
+from unittest import mock
 
 from scripts.modernize import patch_release
 
@@ -119,6 +123,71 @@ def named_step_run_script(workflow: str, name: str) -> str:
     return "\n".join(
         line[8:] for line in lines[run_index + 1:] if line.startswith("        ")
     )
+
+
+def dev_mount_target_parser_source(workflow: str) -> str:
+    steps = patch_release_step_blocks(workflow)
+    matches = [
+        step
+        for step in steps
+        if "    - name: Build candidate in isolated namespace and stage public inputs\n"
+        in step
+    ]
+    if len(matches) != 1:
+        raise AssertionError("publisher must define exactly one isolated builder step")
+    script = matches[0]
+    match = re.search(
+        r"(?ms)^\s*list_dev_mount_targets\(\) \{\n"
+        r"\s*/usr/bin/python3 -I -S - <<'PY'\n"
+        r"(?P<body>.*?)\n"
+        r"\s*PY\n"
+        r"\s*\}",
+        script,
+    )
+    if match is None:
+        raise AssertionError("publisher must embed exactly one decoded /dev mount parser")
+    return textwrap.dedent(match.group("body")) + "\n"
+
+
+def run_dev_mount_target_parser(
+    source: str,
+    *,
+    stdout: bytes,
+    returncode: int = 0,
+    stderr: bytes = b"",
+) -> tuple[int, bytes, str]:
+    class StdoutCapture:
+        def __init__(self):
+            self.buffer = io.BytesIO()
+
+        def write(self, text):
+            return len(text)
+
+        def flush(self):
+            return None
+
+    stdout_capture = StdoutCapture()
+    stderr_capture = io.StringIO()
+    completed = subprocess.CompletedProcess(
+        ["/usr/bin/findmnt"],
+        returncode,
+        stdout,
+        stderr,
+    )
+    with (
+        mock.patch("subprocess.run", return_value=completed),
+        mock.patch("sys.stdout", stdout_capture),
+        redirect_stderr(stderr_capture),
+    ):
+        code = 0
+        try:
+            exec(
+                compile(source, "<decoded-dev-mount-parser>", "exec"),
+                {"__name__": "__main__"},
+            )
+        except SystemExit as exc:
+            code = exc.code if isinstance(exc.code, int) else 1
+    return code, stdout_capture.buffer.getvalue(), stderr_capture.getvalue()
 
 
 def patch_release_download_command(workflow: str) -> list[str]:
@@ -237,11 +306,15 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "candidate-output.log" in isolated_step
         or "candidate_sink" in isolated_step
         or "sink_size" in isolated_step
+        or "list_dev_mount_targets() {" not in isolated_step
         or (
-            "mapfile -t dev_mounts < <(\n"
-            "          /usr/bin/findmnt -Rrno TARGET /dev\n"
-            "        )"
+            '["/usr/bin/findmnt", "--json", "--submounts", "--output", "TARGET", "/dev"]'
+            not in isolated_step
         )
+        or "object_pairs_hook=reject_duplicates" not in isolated_step
+        or "findmnt target escapes /dev" not in isolated_step
+        or "findmnt target contains NUL" not in isolated_step
+        or "mapfile -d '' -t dev_mounts < <(list_dev_mount_targets)"
         not in isolated_step
         or (
             "for ((index=${#dev_mounts[@]} - 1; index >= 0; index--)); do"
@@ -249,8 +322,12 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         not in isolated_step
         or '/dev/*) /usr/bin/umount -- "$dev_mount" ;;'
         not in isolated_step
-        or 'test "$(/usr/bin/findmnt -Rrno TARGET /dev)" = /dev'
+        or "mapfile -d '' -t remaining_dev_mounts < <(list_dev_mount_targets)"
         not in isolated_step
+        or 'test "${#remaining_dev_mounts[@]}" -eq 1' not in isolated_step
+        or 'test "${remaining_dev_mounts[0]}" = /dev' not in isolated_step
+        or "/usr/bin/findmnt -Rrno TARGET /dev" in isolated_step
+        or "/usr/bin/findmnt --raw" in isolated_step
         or "/usr/bin/findmnt -Rrno TARGET,OPTIONS /"
         not in isolated_step
         or "/usr/bin/findmnt -Rno TARGET,OPTIONS /" in isolated_step
@@ -696,33 +773,139 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertEqual(changed_patch, self.patch_job)
 
     def test_device_mount_teardown_executes_deepest_first(self):
-        loop_match = re.search(
-            r"(?ms)^        for \(\(index=\$\{#dev_mounts\[@\]\} - 1; "
-            r"index >= 0; index--\)\); do\n"
+        section_match = re.search(
+            r"(?ms)^        mapfile -d '' -t dev_mounts < <\(list_dev_mount_targets\)\n"
             r".*?^        done$",
             self.patch_job,
         )
-        self.assertIsNotNone(loop_match)
-        loop = loop_match.group(0).replace(
+        self.assertIsNotNone(section_match)
+        loop = section_match.group(0).replace(
             '/usr/bin/umount -- "$dev_mount"',
-            "printf '%s\\n' \"$dev_mount\"",
+            "printf '%s\\0' \"$dev_mount\"",
         )
         completed = subprocess.run(
             [
                 "/bin/bash",
                 "-c",
-                "dev_mounts=(/dev /dev/pts /dev/pts/9 /dev/shm)\n" + loop,
+                "list_dev_mount_targets() {\n"
+                "  printf '%s\\0' \\\n"
+                "    /dev \\\n"
+                "    $'/dev/name with space' \\\n"
+                "    $'/dev/back\\\\slash' \\\n"
+                "    $'/dev/back\\\\slash/tab\\tchild' \\\n"
+                "    $'/dev/back\\\\slash/new\\nline' \\\n"
+                "    /dev/pts \\\n"
+                "    /dev/pts/9\n"
+                "}\n"
+                + loop,
             ],
             check=False,
-            text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(
-            completed.stdout.splitlines(),
-            ["/dev/shm", "/dev/pts/9", "/dev/pts"],
+            completed.stdout.split(b"\0")[:-1],
+            [
+                b"/dev/pts/9",
+                b"/dev/pts",
+                b"/dev/back\\slash/new\nline",
+                b"/dev/back\\slash/tab\tchild",
+                b"/dev/back\\slash",
+                b"/dev/name with space",
+            ],
         )
+
+    def test_dev_mount_target_parser_supports_decoded_paths_and_rejects_bad_json(self):
+        source = dev_mount_target_parser_source(self.text)
+        payload = {
+            "filesystems": [
+                {
+                    "target": "/dev",
+                    "children": [
+                        {"target": "/dev/name with space"},
+                        {
+                            "target": "/dev/back\\slash",
+                            "children": [
+                                {"target": "/dev/back\\slash/tab\tchild"},
+                                {"target": "/dev/back\\slash/new\nline"},
+                            ],
+                        },
+                        {
+                            "target": "/dev/pts",
+                            "children": [{"target": "/dev/pts/9"}],
+                        },
+                    ],
+                }
+            ]
+        }
+        code, output, stderr = run_dev_mount_target_parser(
+            source,
+            stdout=json.dumps(payload).encode("utf-8"),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(
+            output.split(b"\0")[:-1],
+            [
+                b"/dev",
+                b"/dev/name with space",
+                b"/dev/back\\slash",
+                b"/dev/back\\slash/tab\tchild",
+                b"/dev/back\\slash/new\nline",
+                b"/dev/pts",
+                b"/dev/pts/9",
+            ],
+        )
+        for name, stdout, expected in (
+            ("malformed", b'{"filesystems":[', "invalid findmnt JSON"),
+            (
+                "duplicate-key",
+                b'{"filesystems":[{"target":"/dev","target":"/dev/dup"}]}',
+                "duplicate findmnt JSON key",
+            ),
+            (
+                "outside-dev",
+                json.dumps({"filesystems": [{"target": "/etc"}]}).encode("utf-8"),
+                "findmnt target escapes /dev",
+            ),
+            (
+                "nul-target",
+                json.dumps({"filesystems": [{"target": "/dev/\u0000bad"}]}).encode("utf-8"),
+                "findmnt target contains NUL",
+            ),
+        ):
+            with self.subTest(case=name):
+                code, _output, stderr = run_dev_mount_target_parser(
+                    source,
+                    stdout=stdout,
+                )
+                self.assertEqual(code, 125)
+                self.assertIn(expected, stderr)
+
+    def test_local_findmnt_json_shape_is_supported(self):
+        completed = subprocess.run(
+            ["/usr/bin/findmnt", "--json", "--submounts", "--output", "TARGET", "/dev"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        payload = json.loads(completed.stdout)
+        self.assertEqual(set(payload), {"filesystems"})
+        self.assertIsInstance(payload["filesystems"], list)
+        self.assertEqual(len(payload["filesystems"]), 1)
+
+        targets = []
+
+        def visit(node):
+            targets.append(node["target"])
+            for child in node.get("children", []):
+                visit(child)
+
+        visit(payload["filesystems"][0])
+        self.assertEqual(targets[0], "/dev")
+        for target in targets:
+            self.assertTrue(target == "/dev" or target.startswith("/dev/"))
 
     def test_private_base_lifetime_is_fixed_and_candidate_free(self):
         self.assertEqual(publisher_boundary_errors(self.text), [])
@@ -1070,6 +1253,11 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "/dev/*) true ;;",
             1,
         )
+        escaped_dev_targets = self.text.replace(
+            '["/usr/bin/findmnt", "--json", "--submounts", "--output", "TARGET", "/dev"]',
+            '["/usr/bin/findmnt", "-Rrno", "TARGET", "/dev"]',
+            1,
+        )
         forward_dev_teardown = self.text.replace(
             "for ((index=${#dev_mounts[@]} - 1; "
             "index >= 0; index--)); do",
@@ -1162,6 +1350,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             ("unprivileged-builder-cleanup", unprivileged_builder_cleanup),
             ("decorated-mount-targets", decorated_mount_targets),
             ("retained-dev-descendants", retained_dev_descendants),
+            ("escaped-dev-targets", escaped_dev_targets),
             ("forward-dev-teardown", forward_dev_teardown),
             ("ambient-dependency-python", ambient_dependency_python),
             ("unverified-builder-state", unverified_builder_state),
@@ -1779,6 +1968,24 @@ exit 37
         )
         self.assertIn("there\nis no internal or final ROM artifact", text)
         self.assertNotIn("one-day internal Actions artifact", text)
+        self.assertIn(
+            "decodes recursive `/dev` mount targets from structured `findmnt\n"
+            "--json --submounts --output TARGET /dev` output",
+            text,
+        )
+        self.assertIn(
+            "unmounts exact descendant\npaths deepest-first",
+            text,
+        )
+        self.assertIn(
+            "descriptor-pinned root-only `/mnt/supervisor`\nparent",
+            text,
+        )
+        self.assertIn(
+            "Retained\ndescendants, raw escaped target text, paths outside `/dev`, malformed JSON,\n"
+            "duplicate targets, and NUL-bearing targets are rejected",
+            text,
+        )
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)

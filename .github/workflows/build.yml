@@ -1634,9 +1634,91 @@ jobs:
         /usr/bin/mount -t tmpfs \
           -o nosuid,nodev,noexec,mode=1777,size=256m \
           builder-tmp /tmp
-        mapfile -t dev_mounts < <(
-          /usr/bin/findmnt -Rrno TARGET /dev
-        )
+        list_dev_mount_targets() {
+          /usr/bin/python3 -I -S - <<'PY'
+          import json
+          import subprocess
+          import sys
+
+          MAX_BYTES = 1048576
+
+
+          def fail(message):
+              print(message, file=sys.stderr)
+              raise SystemExit(125)
+
+
+          def reject_duplicates(pairs):
+              result = {}
+              for key, value in pairs:
+                  if key in result:
+                      fail("duplicate findmnt JSON key")
+                  result[key] = value
+              return result
+
+
+          completed = subprocess.run(
+              ["/usr/bin/findmnt", "--json", "--submounts", "--output", "TARGET", "/dev"],
+              check=False,
+              capture_output=True,
+          )
+          if completed.returncode != 0:
+              fail("findmnt failed")
+          if completed.stderr:
+              fail("findmnt wrote stderr")
+          if len(completed.stdout) > MAX_BYTES:
+              fail("findmnt JSON exceeds bounds")
+          try:
+              payload = json.loads(
+                  completed.stdout.decode("utf-8"),
+                  object_pairs_hook=reject_duplicates,
+              )
+          except (UnicodeDecodeError, json.JSONDecodeError) as error:
+              fail(f"invalid findmnt JSON: {error}")
+          if set(payload) != {"filesystems"}:
+              fail("unexpected findmnt root keys")
+          filesystems = payload["filesystems"]
+          if not isinstance(filesystems, list) or len(filesystems) != 1:
+              fail("unexpected findmnt filesystem count")
+
+
+          seen = set()
+          targets = []
+
+
+          def visit(node):
+              if not isinstance(node, dict):
+                  fail("findmnt node is not an object")
+              extra = set(node) - {"children", "target"}
+              if extra:
+                  fail("unexpected findmnt node keys")
+              target = node.get("target")
+              if not isinstance(target, str) or not target:
+                  fail("findmnt target is invalid")
+              if "\0" in target:
+                  fail("findmnt target contains NUL")
+              if target != "/dev" and not target.startswith("/dev/"):
+                  fail("findmnt target escapes /dev")
+              if target in seen:
+                  fail("findmnt target repeats")
+              seen.add(target)
+              targets.append(target)
+              children = node.get("children", [])
+              if not isinstance(children, list):
+                  fail("findmnt children must be a list")
+              for child in children:
+                  visit(child)
+
+
+          visit(filesystems[0])
+          if not targets or targets[0] != "/dev":
+              fail("findmnt root target is not /dev")
+          sys.stdout.buffer.write(
+              b"".join(target.encode("utf-8") + b"\0" for target in targets)
+          )
+        PY
+        }
+        mapfile -d '' -t dev_mounts < <(list_dev_mount_targets)
         for ((index=${#dev_mounts[@]} - 1; index >= 0; index--)); do
           dev_mount="${dev_mounts[index]}"
           case "$dev_mount" in
@@ -1645,7 +1727,9 @@ jobs:
             *) exit 125 ;;
           esac
         done
-        test "$(/usr/bin/findmnt -Rrno TARGET /dev)" = /dev
+        mapfile -d '' -t remaining_dev_mounts < <(list_dev_mount_targets)
+        test "${#remaining_dev_mounts[@]}" -eq 1
+        test "${remaining_dev_mounts[0]}" = /dev
         /usr/bin/mount -t tmpfs \
           -o nosuid,mode=0755,size=4m builder-dev /dev
         /usr/bin/mknod -m 0666 /dev/null c 1 3

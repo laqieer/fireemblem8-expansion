@@ -1658,15 +1658,16 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             ):
                 errors.append(f"{job_name} must use the reviewed hash-locked Python requirements")
         elif job_name == "patch-release":
+            run_commands = [_normalise(command) for command in _run_block_commands(job)]
             downloads = [
-                _normalise(invocation)
-                for invocation in pip_invocations
-                if "pip download" in invocation
+                invocation
+                for invocation in run_commands
+                if "-m pip download" in invocation
             ]
             installs = [
-                _normalise(invocation)
-                for invocation in pip_invocations
-                if "pip install" in invocation
+                _normalise(line.strip())
+                for line in job.splitlines()
+                if "-m pip install" in line
             ]
             if len(downloads) != 1 or len(installs) != 1:
                 errors.append(

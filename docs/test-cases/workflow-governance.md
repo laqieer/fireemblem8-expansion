@@ -970,7 +970,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    - **Parsed live title-restore job/check set:** {`event-identity`,
      `event-router`, `metadata-classifier`, `host-tests`, `build`,
      `extended-host-tests`, `legacy`, `patch-release`, `metadata-summary`}.
-10. Normalize all three real runs and execute the candidate evaluator's full,
+5. Normalize all three real runs and execute the candidate evaluator's full,
    metadata-only, combined, failed-full, and missing-full assertions:
 
    ```bash
@@ -1160,7 +1160,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    The title-only and restore runs alone prove the missing-full negative; the
    copied failed summary proves the failed-full negative without inventing a
    success-shaped fallback.
-11. Run exact idempotent cleanup explicitly. The EXIT trap performs the same
+6. Run exact idempotent cleanup explicitly. The EXIT trap performs the same
    cleanup automatically on any earlier failure:
 
    ```bash
