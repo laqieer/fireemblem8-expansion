@@ -237,6 +237,15 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "candidate-output.log" in isolated_step
         or "candidate_sink" in isolated_step
         or "sink_size" in isolated_step
+        or 'builder_isolation_script="$(/bin/cat \\\n'
+        not in isolated_step
+        or '/bin/bash -c "$builder_isolation_script" builder-isolation'
+        not in isolated_step
+        or '/bin/bash "$BUILDER_ROOT/control/builder-isolation.sh"'
+        in isolated_step
+        or "unmount_if_mounted /dev" in isolated_step
+        or '/usr/bin/sudo /bin/rm -rf -- "$BUILDER_ROOT"'
+        not in isolated_step
         or "ulimit -c 0" not in isolated_step
         or "ulimit -f 131072" not in isolated_step
         or "ulimit -n 128" not in isolated_step
@@ -987,6 +996,24 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             ),
             1,
         )
+        file_backed_wrapper = self.text.replace(
+            '/bin/bash -c "$builder_isolation_script" builder-isolation',
+            '/bin/bash "$BUILDER_ROOT/control/builder-isolation.sh"',
+            1,
+        )
+        unmounted_open_dev = self.text.replace(
+            "        /usr/bin/mount -t tmpfs \\\n"
+            "          -o nosuid,mode=0755,size=4m builder-dev /dev",
+            "        unmount_if_mounted /dev\n"
+            "        /usr/bin/mount -t tmpfs \\\n"
+            "          -o nosuid,mode=0755,size=4m builder-dev /dev",
+            1,
+        )
+        unprivileged_builder_cleanup = self.text.replace(
+            '/usr/bin/sudo /bin/rm -rf -- "$BUILDER_ROOT"',
+            '/bin/rm -rf -- "$BUILDER_ROOT"',
+            1,
+        )
         ambient_dependency_python = self.text.replace(
             "/usr/bin/env -i HOME=\"$PATCH_RUNTIME_ROOT\" LC_ALL=C",
             "HOME=\"$PATCH_RUNTIME_ROOT\"",
@@ -1068,6 +1095,9 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             ("retained-candidate-workspace", retained_candidate_workspace),
             ("untracked-builder-user", untracked_builder_user),
             ("untracked-builder-root", untracked_builder_root),
+            ("file-backed-wrapper", file_backed_wrapper),
+            ("unmounted-open-dev", unmounted_open_dev),
+            ("unprivileged-builder-cleanup", unprivileged_builder_cleanup),
             ("ambient-dependency-python", ambient_dependency_python),
             ("unverified-builder-state", unverified_builder_state),
             ("allowed-unexpected-handoff", allowed_unexpected_handoff),

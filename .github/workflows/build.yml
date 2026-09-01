@@ -1052,7 +1052,7 @@ jobs:
             fi
           fi
           if [ "$builder_root_owned" = 1 ]; then
-            if /bin/rm -rf -- "$BUILDER_ROOT"; then
+            if /usr/bin/sudo /bin/rm -rf -- "$BUILDER_ROOT"; then
               builder_root_owned=0
             else
               cleanup_failed=1
@@ -1220,7 +1220,6 @@ jobs:
         /usr/bin/mount -t tmpfs \
           -o nosuid,nodev,noexec,mode=1777,size=256m \
           builder-tmp /tmp
-        unmount_if_mounted /dev
         /usr/bin/mount -t tmpfs \
           -o nosuid,mode=0755,size=4m builder-dev /dev
         /usr/bin/mknod -m 0666 /dev/null c 1 3
@@ -1467,10 +1466,13 @@ jobs:
         test -z "$(builder_cgroup_pids)"
         host_uid="$(/usr/bin/id -u)"
         host_gid="$(/usr/bin/id -g)"
+        builder_isolation_script="$(/bin/cat \
+          "$BUILDER_ROOT/control/builder-isolation.sh")"
+        test -n "$builder_isolation_script"
         /usr/bin/setsid --wait /usr/bin/timeout --signal=TERM \
           --kill-after=30s 55m /usr/bin/sudo /usr/bin/unshare --fork \
           --kill-child=KILL --mount --pid --mount-proc --net --ipc --uts \
-          /bin/bash "$BUILDER_ROOT/control/builder-isolation.sh" \
+          /bin/bash -c "$builder_isolation_script" builder-isolation \
           "$builder_cgroup" "$builder_uid" "$builder_gid" \
           "$BUILDER_ROOT" "$RUNNER_TEMP" \
           "$BUILDER_ROOT/control/candidate-build.sh" \
