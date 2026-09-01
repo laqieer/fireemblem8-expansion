@@ -346,10 +346,17 @@ wherever generic review or closure guidance conflicts with it. In short:
   the project skill permits autonomous merge and closure when that evidence
   is complete and requires no human review or approval.
 - Use [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md)'s
-  checklist shape.
+  frozen contract shape. Keep evolving commands/results, tester observations,
+  review-size measurements, candidate SHA, workflow/review identities, and
+  completion state in exactly one canonical comment updated in place, as
+  defined by
+  [`docs/workflow-pilot.md`](docs/workflow-pilot.md#build-event-classification-and-candidate-evidence).
+  Never copy that comment's marker into the PR body or template.
 - `reports/baseline/`, `tools/gba-playtest/fingerprints/`, and
-  `scripts/shiftcheck/tas/fingerprint.lua` are reviewed oracles — explain
-  *why* in your PR description if you touch them.
+  `scripts/shiftcheck/tas/fingerprint.lua` are reviewed oracles. Keep only the
+  frozen baseline/fingerprint plan in the PR body. If the candidate actually
+  changes an oracle, put the exact change, rationale, and independent
+  verification in the one canonical marked comment above.
 - `python3 scripts/artifact_guard.py --revision HEAD` rejects tracked
   ROM/ELF/save/savestate/patch/generated-compressed-asset files; it is a
   structural check, **not** a legal/copyright clearance — see

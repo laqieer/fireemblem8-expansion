@@ -541,12 +541,21 @@ Push directly to `master` only when the user explicitly requests it and
 repository permissions allow it; direct delivery still requires the same local
 validation, pushed-commit consolidated Build CI, and remote completion gate.
 
-The PR must record:
+Keep the PR body stable. It records:
 
 - frozen scope and non-goals;
 - feature classification or bug-triage result and root cause;
 - dependencies, dependents, conflicts, and supported combinations;
 - immediate base, stack position, parent dependency, and known dependents;
+- tester-facing case definitions and procedures;
+- save, generated-data, debug, release, archival, baseline, and fingerprint
+  compatibility decisions.
+
+Put evolving evidence in exactly one canonical PR comment, update that comment
+in place, and never copy its marker into the PR body or template. Follow
+[`docs/workflow-pilot.md`](../../../docs/workflow-pilot.md#build-event-classification-and-candidate-evidence).
+That comment records:
+
 - review-size changed files and additions/deletions, or the narrow
   indivisible-single-issue exception and alternative evidence;
 - tester-facing case IDs exercised, definition/catalog links, exact profile or
@@ -554,8 +563,8 @@ The PR must record:
   and save expectations, and automation mapping or precise manual-only reason;
 - every command actually run and its result;
 - runtime scenario, environment, command, and result when behavior changes;
-- save, generated-data, debug, release, and archival compatibility impact;
-- any baseline or fingerprint change and why the oracle itself changed.
+- exact candidate SHA, workflow/review identities, and completion state;
+- any actual baseline or fingerprint change and why the oracle itself changed.
 
 Triage every AI review finding. Fix valid findings, answer questions, and close
 false positives with a reasoned explanation. Do not implement review comments

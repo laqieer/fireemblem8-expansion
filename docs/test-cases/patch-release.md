@@ -2,8 +2,10 @@
 
 These procedures cover issue [#49](https://github.com/laqieer/fireemblem8-expansion/issues/49)'s
 transient BPS-only Actions artifact and the equivalent source profile. They
-never distribute, commit, upload, cache, or request publication of a base or
-patched ROM.
+never distribute, commit, cache, or request publication of a private base. The
+target ROM remains only in the publisher-local isolated handoff and private
+staging. Actions uploads only BPS/manifest/README with 30-day retention; there
+is no internal or final ROM artifact.
 
 ## TC-CI-PATCH-049-001: Validate and write a trusted BPS artifact locally
 
@@ -134,6 +136,34 @@ corrupted-BPS, noncanonical-manifest, extra-file, directory, and symlink
 inputs fail closed. A wrong source never writes the requested BPS output, the
 workflow is trusted `push` to `master` only, pull requests receive no base
 secret or artifact upload, and diagnostics expose no protected base content.
+The publisher finishes every repository-controlled command before download,
+builds the exact validated after tree as a dedicated unprivileged UID in
+mount/PID/network isolation with private propagation, recursively read-only
+host root/system/tool mounts, private `/tmp`/`run`/`proc`/`dev`, and masked host
+D-Bus/container/service sockets. Every builder descendant remains in one exact
+cgroup v2. It transfers no complete target ROM through an Actions artifact,
+cache, release, or log; rejects a device, symlink, hardlink, escaped path, or
+unexpected isolated handoff output; stops the exact process group and cgroup;
+proves `cgroup.procs` and the builder UID are empty; removes only owned state;
+and uses no broad UID signal. It stages its producer from the same exact after
+commit without source hash pins, uses an unpredictable mode-restricted base
+path, invokes only that staged tool through absolute isolated Python while the
+base exists, removes it on success/failure, verifies cleanup, revalidates the
+BPS/manifest/README allowlist immediately before upload, and uploads only that
+patch artifact.
+Before candidate code, a trusted child launcher closes inherited descriptors
+above 2, while stdin becomes private `/dev/null` and stdout/stderr permanently
+target that same null device.
+The candidate receives no GitHub workflow command-file paths and cannot recover
+the Actions log through proc FDs, `/dev/stdout`, console/kmsg, `tee`, xtrace,
+helpers, or forks. ROM-sized output is discarded and never replayed; arbitrary
+output volume cannot fail an otherwise successful build. No output sink exists.
+Fixed trusted text and a numeric exit classification preserve build failure
+without exposing candidate bytes.
+The wrapper binds the exact owned cgroup read-only under root-only mode-`0700`
+`/mnt/supervisor` before masking `/sys`. Candidate access is denied; the
+post-build check remains readable and rejects any member beyond the wrapper PID
+before ROM handoff.
 
 ### Negative control
 
@@ -158,8 +188,14 @@ archival-lane behavior changes.
   controls.
 - `python3 -m unittest tests.workflows.test_patch_release_workflow -v` —
   `tests/workflows/test_patch_release_workflow.py` maps the trusted event,
-  secret scope, no-PR publication, artifact allowlist, and profile/verifier
-  requirements.
+  secret scope, no-PR publication, candidate-before-download ordering,
+  exact-after isolated tool, no-ROM-transfer boundary, dedicated builder UID
+  and namespaces, read-only host/private-filesystem probes, exact cgroup-v2 and
+  process teardown, socket/daemon/cgroup-escape adversaries, two-file handoff
+  rejection controls, unpredictable private path, cleanup-before-upload, late
+  artifact revalidation, null/no-replay candidate output adversaries, the old
+  Bash-FD-255/memfd exit-125 reproducer, inherited pipe/memfd/socket closure in
+  the child launcher, and profile/verifier requirements.
 
 ### Cleanup and limitations
 

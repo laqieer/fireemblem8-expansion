@@ -11,7 +11,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MODES = frozenset(
-    {"anchor-refs", "hydrate", "reporter-tests", "baseline", "lifecycle-check"}
+    {
+        "anchor-refs",
+        "baseline",
+        "classify-event",
+        "hydrate",
+        "lifecycle-check",
+        "reporter-tests",
+    }
 )
 LIFECYCLE_CHECKS = frozenset({"workflow-pilot-reporter", "workflow-pilot-tests"})
 
@@ -101,6 +108,10 @@ def dispatch(mode: str, arguments: list[str]) -> int:
         return run_reporter_tests(arguments)
     if mode == "lifecycle-check":
         return run_lifecycle_check(arguments)
+    if mode == "classify-event":
+        from scripts.workflow_pilot import event_classifier
+
+        return event_classifier.main(arguments)
 
     controlled_repository_root(arguments)
     if mode == "anchor-refs":

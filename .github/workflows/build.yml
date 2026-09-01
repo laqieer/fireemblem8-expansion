@@ -10,6 +10,333 @@ permissions:
   contents: read
 
 jobs:
+  # Validate raw event identities before any checkout. This job executes only
+  # the trusted workflow shell: it never reads or runs candidate-controlled
+  # repository content.
+  event-identity:
+    name: event-identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      classifier_available: ${{ steps.identity.outputs.classifier_available }}
+      classifier_expected_sha: ${{ steps.identity.outputs.classifier_expected_sha }}
+      classifier_ref: ${{ steps.identity.outputs.classifier_ref }}
+      fallback_kind: ${{ steps.identity.outputs.fallback_kind }}
+      fallback_sha: ${{ steps.identity.outputs.fallback_sha }}
+    env:
+      BASH_ENV: ''
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      ENV: ''
+      EVENT_NAME: ${{ github.event_name }}
+      EVENT_REF: ${{ github.ref }}
+      PATH: /usr/bin:/bin
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_BASE_SHA_JSON: ${{ toJSON(github.event.pull_request.base.sha) }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PR_HEAD_SHA_JSON: ${{ toJSON(github.event.pull_request.head.sha) }}
+      PR_NUMBER: ${{ github.event.number }}
+      PR_NUMBER_JSON: ${{ toJSON(github.event.number) }}
+      PUSH_SHA: ${{ github.event.after }}
+      PUSH_SHA_JSON: ${{ toJSON(github.event.after) }}
+      RAW_SHA: ${{ github.sha }}
+      RAW_SHA_JSON: ${{ toJSON(github.sha) }}
+
+    steps:
+    - name: Validate trusted event identities
+      id: identity
+      run: |
+        is_lower_sha() {
+          [[ "$1" =~ ^[0-9a-f]{40}$ && "$2" = "\"$1\"" ]]
+        }
+        is_pr_number() {
+          [[ "$1" =~ ^[1-9][0-9]*$ && "$2" = "$1" ]]
+        }
+
+        classifier_available=false
+        classifier_expected_sha=""
+        classifier_ref=""
+        fallback_kind="none"
+        fallback_sha=""
+
+        if [[ "$EVENT_NAME" = "pull_request" ]]; then
+          if is_pr_number "$PR_NUMBER" "$PR_NUMBER_JSON" && \
+             [[ "$EVENT_REF" = "refs/pull/$PR_NUMBER/merge" ]] && \
+             is_lower_sha "$PR_HEAD_SHA" "$PR_HEAD_SHA_JSON"; then
+            fallback_kind="pull_request"
+            fallback_sha="$PR_HEAD_SHA"
+          fi
+          if is_lower_sha "$PR_BASE_SHA" "$PR_BASE_SHA_JSON"; then
+            classifier_expected_sha="$PR_BASE_SHA"
+            classifier_ref="$PR_BASE_SHA"
+          elif [[ -n "$DEFAULT_BRANCH" ]]; then
+            bootstrap_ref="refs/heads/$DEFAULT_BRANCH"
+            if /usr/bin/git check-ref-format "$bootstrap_ref" \
+                 > /dev/null 2>&1; then
+              classifier_ref="$bootstrap_ref"
+            fi
+          fi
+        elif [[ "$EVENT_NAME" = "push" && "$EVENT_REF" = "refs/heads/master" ]] && \
+             is_lower_sha "$PUSH_SHA" "$PUSH_SHA_JSON" && \
+             is_lower_sha "$RAW_SHA" "$RAW_SHA_JSON" && \
+             [[ "$RAW_SHA" = "$PUSH_SHA" ]]; then
+          classifier_expected_sha="$PUSH_SHA"
+          classifier_ref="$PUSH_SHA"
+          fallback_kind="push"
+          fallback_sha="$PUSH_SHA"
+        fi
+        if [[ -n "$classifier_ref" ]]; then
+          classifier_available=true
+        fi
+
+        {
+          echo "classifier_available=$classifier_available"
+          echo "classifier_expected_sha=$classifier_expected_sha"
+          echo "classifier_ref=$classifier_ref"
+          echo "fallback_kind=$fallback_kind"
+          echo "fallback_sha=$fallback_sha"
+        } >> "$GITHUB_OUTPUT"
+
+  # Event payloads are classified from the current integration base, never
+  # from mutable PR-head code. A branch whose base predates the classifier
+  # takes the bootstrap full-build path. Classifier failure with a separately
+  # validated event-specific PR head or guarded master-push SHA runs every
+  # worker at that exact SHA, then fails summary; without one it runs none.
+  # Missing/stale successful output never selects a fallback ref. Unknown,
+  # mixed, and incomplete change records with complete identity select the
+  # expensive graph.
+  event-router:
+    name: event-router
+    if: ${{ always() && needs.event-identity.result == 'success' }}
+    needs: [event-identity]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      classification: ${{ steps.classify.outputs.classification }}
+      expected_base: ${{ steps.classify.outputs.expected_base }}
+      expected_head: ${{ steps.classify.outputs.expected_head }}
+      full_fallback: ${{ steps.classify.outputs.full_fallback }}
+      head_valid: ${{ steps.classify.outputs.head_valid }}
+      identity_valid: ${{ steps.classify.outputs.identity_valid }}
+      reason: ${{ steps.classify.outputs.reason }}
+      run_expensive: ${{ steps.classify.outputs.run_expensive }}
+    env:
+      CLASSIFIER_AVAILABLE: ${{ needs.event-identity.outputs.classifier_available }}
+      CLASSIFIER_EXPECTED_SHA: ${{ needs.event-identity.outputs.classifier_expected_sha }}
+      CLASSIFIER_REF: ${{ needs.event-identity.outputs.classifier_ref }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+      PR_BASE_REF_JSON: ${{ toJSON(github.event.pull_request.base.ref) }}
+      PR_BASE_SHA_JSON: ${{ toJSON(github.event.pull_request.base.sha) }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PUSH_SHA: ${{ github.event.after }}
+      VALIDATED_FALLBACK_KIND: ${{ needs.event-identity.outputs.fallback_kind }}
+      VALIDATED_FALLBACK_SHA: ${{ needs.event-identity.outputs.fallback_sha }}
+
+    steps:
+    - name: Require classifier authority
+      if: ${{ needs.event-identity.outputs.classifier_available != 'true' }}
+      run: |
+        echo "Build classifier authority is unavailable" >&2
+        exit 1
+
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      if: ${{ needs.event-identity.outputs.classifier_available == 'true' }}
+      with:
+        ref: ${{ needs.event-identity.outputs.classifier_ref }}
+        fetch-depth: 1
+        persist-credentials: false
+
+    - name: Verify classifier authority revision
+      if: ${{ needs.event-identity.outputs.classifier_available == 'true' }}
+      run: |
+        ACTUAL_SHA="$(git rev-parse HEAD)"
+        printf 'classifier.sha=%s\n' "$ACTUAL_SHA"
+        if [ -n "$CLASSIFIER_EXPECTED_SHA" ]; then
+          test "$ACTUAL_SHA" = "$CLASSIFIER_EXPECTED_SHA"
+        else
+          test "$CLASSIFIER_REF" = "refs/heads/$DEFAULT_BRANCH"
+        fi
+
+    - name: Classify Build event
+      id: classify
+      if: ${{ needs.event-identity.outputs.classifier_available == 'true' }}
+      env:
+        BASH_ENV: ''
+        ENV: ''
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        PATH: /usr/bin:/bin
+        PYTHONPATH: ''
+      run: |
+        if test -f scripts/workflow_pilot/event_classifier.py; then
+          /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py classify-event \
+            --event-name "$GITHUB_EVENT_NAME" --event-path "$GITHUB_EVENT_PATH" \
+            --github-ref "$GITHUB_REF" --github-sha "$GITHUB_SHA" \
+            --pr-base-sha "$PR_BASE_SHA" --pr-head-sha "$PR_HEAD_SHA" \
+            --push-sha "$PUSH_SHA" --output "$GITHUB_OUTPUT"
+        else
+          base_ref_valid=false
+          expected_base=""
+          expected_head=""
+          full_fallback=false
+          head_valid=false
+          identity_valid=false
+          if [[ "$GITHUB_EVENT_NAME" = "pull_request" ]]; then
+            LC_ALL=C
+            export LC_ALL
+            if [[ "$PR_BASE_REF" != "@" && "$PR_BASE_REF_JSON" = \"*\" && \
+                  ${#PR_BASE_REF} -le 1024 ]] && \
+               /usr/bin/git check-ref-format "refs/heads/$PR_BASE_REF" \
+                 > /dev/null 2>&1; then
+              base_ref_valid=true
+            fi
+            if [[ "$PR_BASE_SHA" =~ ^[0-9a-f]{40}$ && \
+                  "$PR_BASE_SHA_JSON" = "\"$PR_BASE_SHA\"" ]]; then
+              expected_base="$PR_BASE_SHA"
+            fi
+            if [[ "$VALIDATED_FALLBACK_KIND" = "pull_request" && \
+                  "$VALIDATED_FALLBACK_SHA" = "$PR_HEAD_SHA" ]]; then
+              expected_head="$VALIDATED_FALLBACK_SHA"
+              head_valid=true
+            fi
+            if [[ -n "$expected_base" && -n "$expected_head" && \
+                  "$base_ref_valid" = true ]]; then
+              identity_valid=true
+            elif [[ "$head_valid" = true ]]; then
+              full_fallback=true
+            fi
+          elif [[ "$VALIDATED_FALLBACK_KIND" = "push" && \
+                  "$VALIDATED_FALLBACK_SHA" = "$PUSH_SHA" ]]; then
+            expected_head="$VALIDATED_FALLBACK_SHA"
+            head_valid=true
+            identity_valid=true
+          fi
+          {
+            echo "classification=full"
+            echo "reason=classifier-bootstrap"
+            echo "expected_base=$expected_base"
+            echo "expected_head=$expected_head"
+            echo "full_fallback=$full_fallback"
+            echo "head_valid=$head_valid"
+            echo "identity_valid=$identity_valid"
+            echo "run_expensive=true"
+          } >> "$GITHUB_OUTPUT"
+        fi
+
+  event-classifier:
+    name: ${{ needs.event-router.result == 'success' && needs.event-router.outputs.classification == 'metadata-only' && 'metadata-classifier' || 'event-classifier' }}
+    if: always()
+    needs: [event-identity, event-router]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      classification: ${{ needs.event-router.outputs.classification }}
+      expected_base: ${{ needs.event-router.outputs.expected_base }}
+      expected_head: ${{ needs.event-router.outputs.expected_head }}
+      full_fallback: ${{ needs.event-router.outputs.full_fallback }}
+      head_valid: ${{ needs.event-router.outputs.head_valid }}
+      identity_valid: ${{ needs.event-router.outputs.identity_valid }}
+      reason: ${{ needs.event-router.outputs.reason }}
+      run_expensive: ${{ needs.event-router.outputs.run_expensive }}
+    env:
+      CLASSIFICATION: ${{ needs.event-router.outputs.classification }}
+      CLASSIFIED_HEAD: ${{ needs.event-router.outputs.expected_head }}
+      EVENT_IDENTITY_RESULT: ${{ needs.event-identity.result }}
+      EVENT_NAME: ${{ github.event_name }}
+      EVENT_SHA: ${{ github.sha }}
+      FULL_FALLBACK: ${{ needs.event-router.outputs.full_fallback }}
+      HEAD_VALID: ${{ needs.event-router.outputs.head_valid }}
+      IDENTITY_VALID: ${{ needs.event-router.outputs.identity_valid }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      ROUTER_RESULT: ${{ needs.event-router.result }}
+      RUN_EXPENSIVE: ${{ needs.event-router.outputs.run_expensive }}
+      TRUSTED_EVENT_KIND: ${{ needs.event-identity.outputs.fallback_kind }}
+      TRUSTED_EVENT_SHA: ${{ needs.event-identity.outputs.fallback_sha }}
+      PUSH_SHA: ${{ github.event.after }}
+
+    steps:
+    - name: Verify authoritative Build event mode
+      run: |
+        if [ "$ROUTER_RESULT" != "success" ]; then
+          echo "Build event router did not succeed: $ROUTER_RESULT" >&2
+          exit 1
+        fi
+        if [ "$EVENT_IDENTITY_RESULT" != "success" ]; then
+          echo "trusted Build event identity did not succeed: $EVENT_IDENTITY_RESULT" >&2
+          exit 1
+        fi
+        if [ "$EVENT_NAME" = "pull_request" ]; then
+          if [ "$TRUSTED_EVENT_KIND" != "pull_request" ] || \
+             [ -z "$TRUSTED_EVENT_SHA" ] || \
+             [ "$TRUSTED_EVENT_SHA" != "$PR_HEAD_SHA" ] || \
+             [ "$TRUSTED_EVENT_SHA" != "$CLASSIFIED_HEAD" ]; then
+            echo "classified PR head lacks coherent trusted event identity" >&2
+            exit 1
+          fi
+        elif [ "$EVENT_NAME" = "push" ]; then
+          if [ "$TRUSTED_EVENT_KIND" != "push" ] || \
+             [ -z "$TRUSTED_EVENT_SHA" ] || \
+             [ "$TRUSTED_EVENT_SHA" != "$PUSH_SHA" ] || \
+             [ "$TRUSTED_EVENT_SHA" != "$EVENT_SHA" ] || \
+             [ "$TRUSTED_EVENT_SHA" != "$CLASSIFIED_HEAD" ]; then
+            echo "classified push head lacks coherent trusted event identity" >&2
+            exit 1
+          fi
+        else
+          echo "classified event has no trusted identity mode" >&2
+          exit 1
+        fi
+        case "$HEAD_VALID" in
+          true|false) ;;
+          *) echo "Build event router returned invalid head validity" >&2; exit 1 ;;
+        esac
+        case "$FULL_FALLBACK" in
+          true|false) ;;
+          *) echo "Build event router returned invalid full fallback" >&2; exit 1 ;;
+        esac
+        case "$IDENTITY_VALID" in
+          true|false) ;;
+          *) echo "Build event router returned invalid identity validity" >&2; exit 1 ;;
+        esac
+        if [ "$CLASSIFICATION" = "metadata-only" ]; then
+          if [ "$EVENT_NAME" != "pull_request" ] || \
+             [ "$TRUSTED_EVENT_KIND" != "pull_request" ] || \
+             [ "$FULL_FALLBACK" != "false" ] || [ "$HEAD_VALID" != "true" ] || \
+             [ "$IDENTITY_VALID" != "true" ] || \
+             [ "$RUN_EXPENSIVE" != "false" ]; then
+            echo "metadata event mode is not authoritative" >&2
+            exit 1
+          fi
+          exit 0
+        fi
+        if [ "$CLASSIFICATION" != "full" ] || [ "$RUN_EXPENSIVE" != "true" ]; then
+          echo "full Build event mode is not authoritative" >&2
+          exit 1
+        fi
+        if [ "$FULL_FALLBACK" = "true" ] && \
+           { [ "$HEAD_VALID" != "true" ] || [ "$IDENTITY_VALID" != "false" ]; }; then
+          echo "full fallback mode is not authoritative" >&2
+          exit 1
+        fi
+
   # Fast, host-only lane (issues #13 + #12/#15): exercises every
   # tools/gba-playtest host test -- scenario/schema parsing, generators,
   # config, save/migration fixtures, timeouts, retry policy, deterministic
@@ -31,15 +358,17 @@ jobs:
   # runner variance has reached the former 45-minute ceiling.
   # All host test steps are genuine gates (required status), not advisory.
   host-tests:
+    needs: [event-identity, event-classifier]
+    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && needs.event-identity.result == 'success' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha)))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      EXPECTED_BUILD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        ref: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
         fetch-depth: 0
         submodules: recursive
         persist-credentials: false
@@ -212,17 +541,20 @@ jobs:
   # archival CI evidence. Per repository policy, this job ends after its
   # target-ROM checks.
   build:
+    needs: [event-identity, event-classifier]
+    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && needs.event-identity.result == 'success' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha)))) }}
     runs-on: ubuntu-latest
-    # A normal debug+release linker/runtime run is roughly 25 minutes, but
-    # shared-runner variance has reached the former 30-minute ceiling.
-    timeout-minutes: 60
+    # Exact-head runs 33425252664 and 33420585863 reached the former
+    # 60-minute ceiling while still compiling. Keep enough shared-runner
+    # variance for the unchanged comprehensive ROM/runtime gate.
+    timeout-minutes: 90
     env:
-      EXPECTED_BUILD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        ref: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
         fetch-depth: 0
         submodules: recursive
         persist-credentials: false
@@ -350,15 +682,17 @@ jobs:
   # This lane holds unique broader host evidence for both candidate and
   # post-merge Build runs. It is independent of host-tests and build.
   extended-host-tests:
+    needs: [event-identity, event-classifier]
+    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && needs.event-identity.result == 'success' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha)))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      EXPECTED_BUILD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        ref: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
         fetch-depth: 0
         submodules: recursive
         persist-credentials: false
@@ -386,17 +720,19 @@ jobs:
   # The archival lane is a combined-gate member for both candidate and master
   # runs, parallel with the supported modern jobs.
   legacy:
+    needs: [event-identity, event-classifier]
+    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && needs.event-identity.result == 'success' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha)))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      EXPECTED_BUILD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
       AGBCC_COMMIT: da598c1d918402c42c0c0d7128ba14567f3175e9
       MGFEMBP_AGBCC_COMMIT: 63b22f3eb8a8051af30bd80c4795b355e439e7ef
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        ref: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
         fetch-depth: 0
         submodules: recursive
         persist-credentials: false
@@ -460,65 +796,1096 @@ jobs:
 
   # This separate job is the sole publisher. Its event guard excludes pull
   # requests before secrets are materialized; it consumes BASEROM_URL only
-  # through curl's environment expansion and never prints or persists it. It
-  # is independent of other master jobs so summary is the only graph join.
+  # through curl's environment expansion and never prints or persists it. A
+  # fresh hosted runner builds the exact pushed tree before materializing the
+  # secret, then destroys every candidate process and state boundary before
+  # the private base can exist.
   patch-release:
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+    needs: [event-identity]
+    if: ${{ always() && needs.event-identity.result == 'success' && github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      PATCH_COMMIT: ${{ github.sha }}
+      PATCH_COMMIT: ${{ needs.event-identity.outputs.fallback_sha }}
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        ref: ${{ github.sha }}
+        ref: ${{ needs.event-identity.outputs.fallback_sha }}
+        fetch-depth: 0
         submodules: recursive
         persist-credentials: false
 
-    - run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev pkg-config gcc-arm-none-eabi libnewlib-arm-none-eabi libmgba-dev
-        python3 -m pip install --require-hashes --only-binary=:all: --no-deps -r .github/requirements/build.txt
-
-    - run: ./build_tools.sh
-
-    - run: make expansion-modern-all-locales-all-features-check -j1
-
-    - run: |
+    - name: Verify exact candidate and stage trusted producer
+      env:
+        BASH_ENV: ''
+        CDPATH: ''
+        ENV: ''
+        GLOBIGNORE: ''
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        HOME: ${{ runner.temp }}/patch-runtime
+        LD_LIBRARY_PATH: ''
+        LD_PRELOAD: ''
+        PATH: /usr/bin:/bin
+        PATCH_RUNTIME_ROOT: ${{ runner.temp }}/patch-runtime
+        PATCH_TOOL_ROOT: ${{ runner.temp }}/patch-tool
+        PYTHONPATH: ''
+        SHELLOPTS: ''
+      run: |
         set -euo pipefail
+        unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CEILING_DIRECTORIES \
+          GIT_COMMON_DIR GIT_DIR GIT_EXEC_PATH GIT_INDEX_FILE GIT_NAMESPACE \
+          GIT_OBJECT_DIRECTORY GIT_REPLACE_REF_BASE GIT_WORK_TREE
+        ACTUAL_SHA="$(/usr/bin/git rev-parse HEAD)"
+        printf 'patch.producer.sha=%s\n' "$ACTUAL_SHA"
+        [[ "$PATCH_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+        test "$PATCH_COMMIT" != 0000000000000000000000000000000000000000
+        test "$ACTUAL_SHA" = "$PATCH_COMMIT"
+        test "$(/usr/bin/git rev-parse --verify "$PATCH_COMMIT^{commit}")" = \
+          "$PATCH_COMMIT"
+        test "$(/usr/bin/git cat-file -t "$PATCH_COMMIT")" = commit
+        /bin/rm -rf -- "$PATCH_RUNTIME_ROOT" "$PATCH_TOOL_ROOT"
+        /usr/bin/install -d -m 0700 "$PATCH_RUNTIME_ROOT" \
+          "$PATCH_TOOL_ROOT" "$PATCH_TOOL_ROOT/scripts" \
+          "$PATCH_TOOL_ROOT/scripts/modernize"
+        for source in scripts/modernize/patch_release.py \
+          scripts/modernize/bps_patch.py \
+          scripts/modernize/verify_rom_header.py
+        do
+          test -f "$source"
+          test ! -L "$source"
+          test "$(/usr/bin/stat -c %F "$source")" = "regular file"
+          test "$(/usr/bin/stat -c %h "$source")" = 1
+          /usr/bin/install -m 0444 "$source" \
+            "$PATCH_TOOL_ROOT/$source"
+        done
+        /bin/chmod 0555 "$PATCH_TOOL_ROOT" "$PATCH_TOOL_ROOT/scripts" \
+          "$PATCH_TOOL_ROOT/scripts/modernize"
+
+    - name: Install trusted isolated-build dependencies
+      shell: /bin/bash --noprofile --norc -euo pipefail {0}
+      env:
+        BASH_ENV: ''
+        CDPATH: ''
+        ENV: ''
+        GLOBIGNORE: ''
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        HOME: ${{ runner.temp }}/patch-runtime
+        LD_LIBRARY_PATH: ''
+        LD_PRELOAD: ''
+        PATH: /usr/bin:/bin
+        PATCH_RUNTIME_ROOT: ${{ runner.temp }}/patch-runtime
+        PATCH_WHEELHOUSE: ${{ runner.temp }}/patch-wheelhouse
+        PYTHONPATH: ''
+        SHELLOPTS: ''
+      run: |
+        /usr/bin/sudo /usr/bin/apt-get update
+        /usr/bin/sudo /usr/bin/apt-get install -y build-essential binutils-arm-none-eabi gcc-arm-none-eabi libmgba-dev libnewlib-arm-none-eabi libpng-dev pkg-config python3-venv
+        /bin/rm -rf -- "$PATCH_WHEELHOUSE"
+        /usr/bin/install -d -m 0700 "$PATCH_WHEELHOUSE"
+        /usr/bin/env -i HOME="$PATCH_RUNTIME_ROOT" LC_ALL=C PATH=/usr/bin:/bin PIP_CONFIG_FILE=/dev/null /usr/bin/python3 -I -m pip download --require-hashes --only-binary=:all: --no-deps -r .github/requirements/build.txt --dest "$PATCH_WHEELHOUSE"
+
+    - name: Build candidate in isolated namespace and stage public inputs
+      shell: /bin/bash --noprofile --norc -euo pipefail {0}
+      env:
+        BASH_ENV: ''
+        CDPATH: ''
+        ENV: ''
+        GLOBIGNORE: ''
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        HOME: ${{ runner.temp }}/patch-runtime
+        LD_LIBRARY_PATH: ''
+        LD_PRELOAD: ''
+        PATH: /usr/bin:/bin
+        BUILDER_ROOT: ${{ runner.temp }}/patch-builder
+        GITHUB_WORKSPACE_PATH: ${{ github.workspace }}
+        PATCH_INPUT_ROOT: ${{ runner.temp }}/patch-input
+        PATCH_RUNTIME_ROOT: ${{ runner.temp }}/patch-runtime
+        PATCH_WHEELHOUSE: ${{ runner.temp }}/patch-wheelhouse
+        PYTHONPATH: ''
+        SHELLOPTS: ''
+      run: |
+        builder_user=ci-patch-builder
+        builder_uid=""
+        builder_gid=""
+        builder_cgroup=""
+        builder_cgroup_owned=0
+        builder_pgid=""
+        builder_supervisor_pid=""
+        builder_root_owned=0
+        builder_user_created=0
+        wheelhouse_owned=0
+        shell_pgid="$(/usr/bin/ps -o pgid= -p "$$" | /usr/bin/tr -d ' ')"
+        builder_group_pids() {
+          /usr/bin/ps -eo pgid=,pid= \
+            | /usr/bin/awk -v pgid="$1" '$1 == pgid {print $2}'
+        }
+        builder_uid_pids() {
+          /usr/bin/ps -eo uid=,pid= \
+            | /usr/bin/awk -v uid="$1" '$1 == uid {print $2}'
+        }
+        builder_cgroup_pids() {
+          if [ "$builder_cgroup_owned" = 1 ] && \
+             [ -r "$builder_cgroup/cgroup.procs" ]; then
+            /bin/cat "$builder_cgroup/cgroup.procs"
+          fi
+        }
+        terminate_builder_processes() {
+          cleanup_failed=0
+          if [ -n "$builder_pgid" ]; then
+            if [ "$builder_pgid" = "$shell_pgid" ]; then
+              cleanup_failed=1
+            else
+              remaining_group="$(builder_group_pids "$builder_pgid")"
+              if [ -n "$remaining_group" ]; then
+                /usr/bin/sudo /bin/kill -TERM -- "-$builder_pgid" \
+                  2>/dev/null || true
+                /bin/sleep 1
+                remaining_group="$(builder_group_pids "$builder_pgid")"
+              fi
+              if [ -n "$remaining_group" ]; then
+                /usr/bin/sudo /bin/kill -KILL -- "-$builder_pgid" \
+                  2>/dev/null || true
+                /bin/sleep 1
+              fi
+              test -z "$(builder_group_pids "$builder_pgid")" \
+                || cleanup_failed=1
+            fi
+          fi
+          if [ "$builder_cgroup_owned" = 1 ]; then
+            if [ -n "$(builder_cgroup_pids)" ]; then
+              printf '1\n' \
+                | /usr/bin/sudo /usr/bin/tee \
+                  "$builder_cgroup/cgroup.kill" > /dev/null
+              for attempt in $(/usr/bin/seq 1 50); do
+                if [ -z "$(builder_cgroup_pids)" ]; then
+                  break
+                fi
+                /bin/sleep 0.1
+              done
+            fi
+            test -z "$(builder_cgroup_pids)" || cleanup_failed=1
+          fi
+          test -z "$(builder_uid_pids "$builder_uid")" \
+            || cleanup_failed=1
+          return "$cleanup_failed"
+        }
+        remove_builder_cgroup() {
+          cleanup_failed=0
+          if [ "$builder_cgroup_owned" = 1 ]; then
+            test -z "$(builder_cgroup_pids)" || cleanup_failed=1
+            if [ "$cleanup_failed" = 0 ] && \
+               /usr/bin/sudo /usr/bin/rmdir -- "$builder_cgroup"; then
+              builder_cgroup_owned=0
+            else
+              cleanup_failed=1
+            fi
+          fi
+          test ! -e "$builder_cgroup" || cleanup_failed=1
+          return "$cleanup_failed"
+        }
+        remove_builder_state() {
+          cleanup_failed=0
+          if [ "$builder_user_created" = 1 ]; then
+            if /usr/bin/getent passwd "$builder_user" > /dev/null; then
+              if /usr/bin/sudo /usr/sbin/userdel "$builder_user"; then
+                builder_user_created=0
+              else
+                cleanup_failed=1
+              fi
+            else
+              builder_user_created=0
+            fi
+          fi
+          if [ "$builder_root_owned" = 1 ]; then
+            if /bin/rm -rf -- "$BUILDER_ROOT"; then
+              builder_root_owned=0
+            else
+              cleanup_failed=1
+            fi
+          fi
+          if [ "$wheelhouse_owned" = 1 ]; then
+            if /bin/rm -rf -- "$PATCH_WHEELHOUSE"; then
+              wheelhouse_owned=0
+            else
+              cleanup_failed=1
+            fi
+          fi
+          test -z "$(/usr/bin/getent passwd "$builder_user" || true)" \
+            || cleanup_failed=1
+          test ! -e "$BUILDER_ROOT" || cleanup_failed=1
+          test ! -e "$PATCH_WHEELHOUSE" || cleanup_failed=1
+          return "$cleanup_failed"
+        }
+        cleanup_builder() {
+          status="$?"
+          trap - EXIT INT TERM
+          set +e
+          terminate_builder_processes
+          process_cleanup="$?"
+          if [ -n "$builder_supervisor_pid" ]; then
+            wait "$builder_supervisor_pid" 2>/dev/null
+          fi
+          remove_builder_cgroup
+          cgroup_cleanup="$?"
+          remove_builder_state
+          state_cleanup="$?"
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          if [ "$process_cleanup" -ne 0 ] || \
+             [ "$cgroup_cleanup" -ne 0 ] || \
+             [ "$state_cleanup" -ne 0 ]; then
+            exit 1
+          fi
+          exit 0
+        }
+        trap cleanup_builder EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+        test ! -e "$BUILDER_ROOT"
+        test -d "$PATCH_WHEELHOUSE"
+        test ! -L "$PATCH_WHEELHOUSE"
+        wheelhouse_owned=1
+        test -z "$(/usr/bin/getent passwd "$builder_user" || true)"
+        /usr/bin/install -d -m 0700 "$BUILDER_ROOT"
+        builder_root_owned=1
+        /usr/bin/install -d -m 0700 \
+          "$BUILDER_ROOT/control" "$BUILDER_ROOT/handoff" \
+          "$BUILDER_ROOT/source" "$BUILDER_ROOT/wheelhouse"
+        /bin/cp -a -- "$GITHUB_WORKSPACE_PATH/." "$BUILDER_ROOT/source/"
+        /bin/cp -a -- "$PATCH_WHEELHOUSE/." "$BUILDER_ROOT/wheelhouse/"
+        builder_uid=60000
+        while [ "$builder_uid" -ge 50000 ]; do
+          if ! /usr/bin/getent passwd "$builder_uid" > /dev/null && \
+             [ -z "$(builder_uid_pids "$builder_uid")" ]; then
+            break
+          fi
+          builder_uid="$((builder_uid - 1))"
+        done
+        test "$builder_uid" -ge 50000
+        /usr/bin/sudo /usr/sbin/useradd --no-create-home --no-user-group \
+          --gid nogroup --uid "$builder_uid" \
+          --home-dir "$BUILDER_ROOT/home" --shell /usr/sbin/nologin \
+          "$builder_user"
+        builder_user_created=1
+        test "$(/usr/bin/id -u "$builder_user")" = "$builder_uid"
+        builder_gid="$(/usr/bin/id -g "$builder_user")"
+        test -z "$(builder_uid_pids "$builder_uid")"
+        /usr/bin/tee "$BUILDER_ROOT/control/builder-isolation.sh" \
+          > /dev/null <<'BUILDER_ISOLATION'
+        #!/bin/bash
+        builder_main() {
+        set -euo pipefail
+        cgroup_path="$1"
+        builder_uid="$2"
+        builder_gid="$3"
+        builder_root="$4"
+        host_runner_temp="$5"
+        candidate_script="$6"
+        candidate_launcher="$7"
+        host_uid="$8"
+        host_gid="$9"
+        exec < /dev/null > /dev/null 2>&1
+        printf '%s\n' "$$" > "$cgroup_path/cgroup.procs"
+        /usr/bin/grep -Fqx "$$" "$cgroup_path/cgroup.procs"
+        cd /
+        /usr/bin/mount --make-rprivate /
+        /usr/bin/mount --bind / /
+        /usr/bin/mount -o remount,bind,ro /
+        case "$host_runner_temp" in
+          /home/runner/*) ;;
+          *) echo "runner temp is outside the masked host tree" >&2; exit 1 ;;
+        esac
+        /usr/bin/mount -t tmpfs \
+          -o nosuid,nodev,noexec,mode=0755,size=16m \
+          builder-work /mnt
+        /usr/bin/mkdir -m 0755 /mnt/control /mnt/export /mnt/handoff \
+          /mnt/home /mnt/source /mnt/tmp /mnt/wheelhouse
+        /usr/bin/mkdir -m 0700 /mnt/supervisor
+        /usr/bin/mkdir -m 0700 /mnt/supervisor/cgroup
+        test "$(/usr/bin/stat -c %u /mnt/supervisor)" = 0
+        test "$(/usr/bin/stat -c %a /mnt/supervisor)" = 700
+        test "$(/usr/bin/stat -c %u "$cgroup_path")" = 0
+        /usr/bin/mount --bind "$cgroup_path" /mnt/supervisor/cgroup
+        /usr/bin/mount -o remount,bind,ro,nosuid,nodev,noexec \
+          /mnt/supervisor/cgroup
+        supervisor_cgroup=/mnt/supervisor/cgroup
+        test "$(/usr/bin/stat -Lc %d:%i "$cgroup_path/cgroup.procs")" = \
+          "$(/usr/bin/stat -Lc %d:%i "$supervisor_cgroup/cgroup.procs")"
+        supervisor_options="$(/usr/bin/findmnt -n -o OPTIONS \
+          --target "$supervisor_cgroup")"
+        for option in ro nosuid nodev noexec; do
+          case ",$supervisor_options," in
+            *,"$option",*) ;;
+            *) exit 125 ;;
+          esac
+        done
+        /usr/bin/mount -t tmpfs \
+          -o nosuid,nodev,mode=0755,size=6g builder-source /mnt/source
+        /bin/cp -a -- "$builder_root/source/." /mnt/source/
+        /usr/bin/mount -t tmpfs \
+          -o nosuid,nodev,mode=0700,size=1g builder-home /mnt/home
+        /usr/bin/mount -t tmpfs \
+          -o nosuid,nodev,mode=0700,size=1g builder-temp /mnt/tmp
+        /usr/bin/mount -t tmpfs \
+          -o nosuid,nodev,noexec,mode=0700,size=40m \
+          builder-handoff /mnt/handoff
+        /usr/bin/mount --bind "$builder_root/handoff" /mnt/export
+        /usr/bin/mount -o remount,bind,ro,nosuid,nodev,noexec /mnt/export
+        /usr/bin/mount --bind "$builder_root/wheelhouse" /mnt/wheelhouse
+        /usr/bin/mount -o remount,bind,ro,nosuid,nodev,noexec \
+          /mnt/wheelhouse
+        /usr/bin/install -m 0555 "$candidate_script" \
+          /mnt/control/candidate-build.sh
+        /usr/bin/install -m 0444 "$candidate_launcher" \
+          /mnt/control/candidate-launcher.py
+        /usr/bin/chown -R "$builder_uid:$builder_gid" \
+          /mnt/handoff /mnt/home /mnt/source /mnt/tmp
+        /usr/bin/mount --bind /mnt/control /mnt/control
+        /usr/bin/mount -o remount,bind,ro,nosuid,nodev,noexec /mnt/control
+        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt
+        unmount_if_mounted() {
+          if /usr/bin/mountpoint -q "$1"; then
+            /usr/bin/umount --recursive "$1"
+          fi
+        }
+        unmount_if_mounted /home/runner
+        unmount_if_mounted /root
+        unmount_if_mounted /var
+        unmount_if_mounted /run
+        unmount_if_mounted /sys
+        for hidden in /home/runner /root /var /run /sys; do
+          test -d "$hidden"
+          /usr/bin/mount -t tmpfs \
+            -o nosuid,nodev,noexec,mode=0755,size=1m \
+            builder-mask "$hidden"
+          /usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$hidden"
+        done
+        unmount_if_mounted /tmp
+        /usr/bin/mount -t tmpfs \
+          -o nosuid,nodev,noexec,mode=1777,size=256m \
+          builder-tmp /tmp
+        unmount_if_mounted /dev
+        /usr/bin/mount -t tmpfs \
+          -o nosuid,mode=0755,size=4m builder-dev /dev
+        /usr/bin/mknod -m 0666 /dev/null c 1 3
+        /usr/bin/mknod -m 0666 /dev/zero c 1 5
+        /usr/bin/mknod -m 0666 /dev/random c 1 8
+        /usr/bin/mknod -m 0666 /dev/urandom c 1 9
+        /usr/bin/mkdir -m 1777 /dev/shm
+        /usr/bin/mount -t tmpfs \
+          -o nosuid,nodev,noexec,mode=1777,size=64m \
+          builder-shm /dev/shm
+        /usr/bin/ln -s /proc/self/fd /dev/fd
+        /usr/bin/ln -s /proc/self/fd/0 /dev/stdin
+        /usr/bin/ln -s /proc/self/fd/1 /dev/stdout
+        /usr/bin/ln -s /proc/self/fd/2 /dev/stderr
+        /usr/bin/mount -o remount,ro,nosuid /dev
+        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec,hidepid=2 /proc
+        exec < /dev/null > /dev/null 2>&1
+        ulimit -c 0
+        ulimit -f 131072
+        ulimit -n 128
+        ulimit -u 512
+        ulimit -v 8388608
+        set +e
+        /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py \
+          "$builder_uid" "$builder_gid" \
+          /mnt/control/candidate-build.sh "$host_runner_temp"
+        candidate_status="$?"
+        set -e
+        if [ "$candidate_status" -ne 0 ]; then
+          exit "$candidate_status"
+        fi
+        cgroup_members="$(LC_ALL=C /usr/bin/sort -n \
+          "$supervisor_cgroup/cgroup.procs")"
+        test "$cgroup_members" = "$$"
+        handoff_names="$(/usr/bin/find /mnt/handoff -mindepth 1 \
+          -maxdepth 1 -printf '%f\n' | LC_ALL=C /usr/bin/sort)"
+        test "$handoff_names" = "$(printf 'metadata.json\ntarget.gba')"
+        for output in /mnt/handoff/target.gba /mnt/handoff/metadata.json; do
+          test -f "$output"
+          test ! -L "$output"
+          test "$(/usr/bin/stat -c %F "$output")" = "regular file"
+          test "$(/usr/bin/stat -c %h "$output")" = 1
+          test "$(/usr/bin/stat -c %u "$output")" = "$builder_uid"
+        done
+        test "$(/usr/bin/stat -c %s /mnt/handoff/target.gba)" = 33554432
+        metadata_size="$(/usr/bin/stat -c %s /mnt/handoff/metadata.json)"
+        test "$metadata_size" -gt 0
+        test "$metadata_size" -le 1048576
+        /usr/bin/mount -o remount,bind,rw,nosuid,nodev,noexec /mnt/export
+        /usr/bin/install -m 0400 /mnt/handoff/target.gba \
+          /mnt/export/target.gba
+        /usr/bin/install -m 0400 /mnt/handoff/metadata.json \
+          /mnt/export/metadata.json
+        /usr/bin/chown "$host_uid:$host_gid" /mnt/export/target.gba \
+          /mnt/export/metadata.json
+        /usr/bin/mount -o remount,bind,ro,nosuid,nodev,noexec /mnt/export
+        exit 0
+        }
+        builder_main "$@"
+        BUILDER_ISOLATION
+        /usr/bin/tee "$BUILDER_ROOT/control/candidate-build.sh" \
+          > /dev/null <<'CANDIDATE_BUILD'
+        #!/bin/bash
+        set -euo pipefail
+        umask 077
+        /usr/bin/python3 -I -S -c 'import errno,fcntl; bad=[]; exec("for fd in range(3, 1024):\n try: fcntl.fcntl(fd, fcntl.F_GETFD)\n except OSError as error:\n  if error.errno != errno.EBADF: raise\n else: bad.append(fd)"); raise SystemExit(125 if bad else 0)'
+        test -z "${BASH_ENV-}"
+        test -z "${BASH_XTRACEFD-}"
+        test -z "${ENV-}"
+        test -z "${GITHUB_ENV-}"
+        test -z "${GITHUB_OUTPUT-}"
+        test -z "${GITHUB_PATH-}"
+        test -z "${GITHUB_STEP_SUMMARY-}"
+        test -z "${LD_LIBRARY_PATH-}"
+        test -z "${LD_PRELOAD-}"
+        test -z "${PYTHONPATH-}"
+        for readonly_path in / /etc /opt /usr /usr/share \
+          /usr/share/dbus-1/system-services
+        do
+          test -e "$readonly_path"
+          test ! -w "$readonly_path"
+        done
+        test ! -w "$WHEELHOUSE"
+        test ! -w "$HOST_RUNNER_TEMP"
+        test ! -w /mnt/export
+        test ! -r /mnt/supervisor
+        test ! -w /mnt/supervisor
+        test ! -x /mnt/supervisor
+        test ! -r /mnt/supervisor/cgroup/cgroup.procs
+        for writable_path in "$GITHUB_WORKSPACE" "$HOME" "$RUNNER_TEMP" \
+          "$HANDOFF"
+        do
+          test -d "$writable_path"
+          test -w "$writable_path"
+        done
+        test ! -e /dev/console
+        test ! -e /dev/kmsg
+        for socket_path in /run/dbus/system_bus_socket \
+          /run/docker.sock /run/containerd/containerd.sock \
+          /run/systemd/private /run/snapd.socket \
+          /run/podman/podman.sock /var/run/docker.sock \
+          /var/run/dbus/system_bus_socket
+        do
+          test ! -e "$socket_path"
+        done
+        test ! -e /sys/fs/cgroup/cgroup.procs
+        test -z "$(/usr/bin/find / -xdev -type s \
+          -print -quit 2>/dev/null)"
+        while read -r mount_target mount_options; do
+          case ",$mount_options," in
+            *,rw,*)
+              case "$mount_target" in
+                /dev/shm|/mnt/handoff|/mnt/home|/mnt/source|/mnt/tmp|/tmp) ;;
+                *) echo "unexpected writable mount: $mount_target" >&2; exit 1 ;;
+              esac
+              ;;
+          esac
+        done < <(/usr/bin/findmnt -Rno TARGET,OPTIONS /)
+        /usr/bin/python3 -m venv "$HOME/venv"
+        "$HOME/venv/bin/python3" -m pip install --no-index --find-links="$WHEELHOUSE" --require-hashes --only-binary=:all: --no-deps -r "$GITHUB_WORKSPACE/.github/requirements/build.txt"
+        cd "$GITHUB_WORKSPACE"
+        ./build_tools.sh
+        make expansion-modern-map-menu-presentation-check -j1
+        /usr/bin/install -m 0400 \
+          build/expansion-modern-all-locales-all-features/release/aapcs/fireemblem8.gba \
+          "$HANDOFF/target.gba"
+        /usr/bin/install -m 0400 \
+          build/expansion-modern-all-locales-all-features/release/aapcs/generated/expansion_build_metadata.json \
+          "$HANDOFF/metadata.json"
+        CANDIDATE_BUILD
+        /usr/bin/tee "$BUILDER_ROOT/control/candidate-launcher.py" \
+          > /dev/null <<'CANDIDATE_LAUNCHER'
+        import os
+        import stat
+        import sys
+
+        MAX_FD = 1_048_576
+
+        if len(sys.argv) != 5:
+            raise SystemExit(125)
+        uid, gid, script_path, host_runner_temp = sys.argv[1:]
+        if not uid.isascii() or not uid.isdecimal():
+            raise SystemExit(125)
+        if not gid.isascii() or not gid.isdecimal():
+            raise SystemExit(125)
+        if not host_runner_temp.startswith("/home/runner/"):
+            raise SystemExit(125)
+
+        script_stat = os.lstat(script_path)
+        if not stat.S_ISREG(script_stat.st_mode):
+            raise SystemExit(125)
+        if script_stat.st_uid != 0 or script_stat.st_nlink != 1:
+            raise SystemExit(125)
+        if stat.S_IMODE(script_stat.st_mode) != 0o555:
+            raise SystemExit(125)
+        with open(script_path, "rb") as script_file:
+            script_bytes = script_file.read(65537)
+        if not script_bytes or len(script_bytes) > 65536:
+            raise SystemExit(125)
+        try:
+            script = script_bytes.decode("ascii")
+        except UnicodeDecodeError:
+            raise SystemExit(125)
+
+        candidate_argv = [
+            "/usr/bin/setpriv",
+            f"--reuid={uid}",
+            f"--regid={gid}",
+            "--clear-groups",
+            "--no-new-privs",
+            "--bounding-set=-all",
+            "--inh-caps=-all",
+            "--ambient-caps=-all",
+            "/bin/bash",
+            "--noprofile",
+            "--norc",
+            "-euo",
+            "pipefail",
+            "-c",
+            script,
+            "candidate-build",
+        ]
+        candidate_env = {
+            "GITHUB_WORKSPACE": "/mnt/source",
+            "HANDOFF": "/mnt/handoff",
+            "HOME": "/mnt/home",
+            "HOST_RUNNER_TEMP": host_runner_temp,
+            "LC_ALL": "C",
+            "PATH": "/usr/bin:/bin",
+            "PIP_CONFIG_FILE": "/dev/null",
+            "RUNNER_TEMP": "/mnt/tmp",
+            "TMPDIR": "/mnt/tmp",
+            "WHEELHOUSE": "/mnt/wheelhouse",
+        }
+
+        close_range = getattr(os, "close_range", None)
+        try:
+            if close_range is not None:
+                close_range(3, MAX_FD - 1)
+            elif hasattr(os, "closerange"):
+                os.closerange(3, MAX_FD)
+            else:
+                raise OSError("no safe descriptor closer")
+        except OSError:
+            raise SystemExit(125)
+
+        try:
+            os.execve(candidate_argv[0], candidate_argv, candidate_env)
+        except OSError:
+            raise SystemExit(126)
+        CANDIDATE_LAUNCHER
+        /bin/chmod 0500 "$BUILDER_ROOT/control/builder-isolation.sh"
+        /bin/chmod 0400 "$BUILDER_ROOT/control/candidate-build.sh"
+        /bin/chmod 0400 "$BUILDER_ROOT/control/candidate-launcher.py"
+        /usr/bin/sudo /bin/chown -R "$builder_uid:$builder_gid" \
+          "$BUILDER_ROOT/wheelhouse"
+        /usr/bin/sudo /usr/bin/unshare --fork --kill-child=KILL \
+          --mount --pid --mount-proc --net --ipc --uts \
+          /bin/true
+        test -r /sys/fs/cgroup/cgroup.controllers
+        cgroup_relative="$(/usr/bin/awk -F: \
+          '$1 == "0" && $2 == "" {print $3}' /proc/self/cgroup)"
+        case "$cgroup_relative" in
+          /*) ;;
+          *) echo "invalid cgroup v2 membership" >&2; exit 1 ;;
+        esac
+        case "/$cgroup_relative/" in
+          */../*) echo "unsafe cgroup v2 membership" >&2; exit 1 ;;
+        esac
+        cgroup_parent="$(/usr/bin/realpath -m \
+          "/sys/fs/cgroup$cgroup_relative")"
+        case "$cgroup_parent" in
+          /sys/fs/cgroup|/sys/fs/cgroup/*) ;;
+          *) echo "cgroup v2 membership escaped mount" >&2; exit 1 ;;
+        esac
+        test -d "$cgroup_parent"
+        builder_cgroup="$cgroup_parent/ci-patch-builder"
+        test ! -e "$builder_cgroup"
+        /usr/bin/sudo /usr/bin/mkdir -- "$builder_cgroup"
+        builder_cgroup_owned=1
+        test -f "$builder_cgroup/cgroup.kill"
+        test -f "$builder_cgroup/cgroup.procs"
+        test -r "$builder_cgroup/cgroup.procs"
+        test -z "$(builder_cgroup_pids)"
+        host_uid="$(/usr/bin/id -u)"
+        host_gid="$(/usr/bin/id -g)"
+        /usr/bin/setsid --wait /usr/bin/timeout --signal=TERM \
+          --kill-after=30s 55m /usr/bin/sudo /usr/bin/unshare --fork \
+          --kill-child=KILL --mount --pid --mount-proc --net --ipc --uts \
+          /bin/bash "$BUILDER_ROOT/control/builder-isolation.sh" \
+          "$builder_cgroup" "$builder_uid" "$builder_gid" \
+          "$BUILDER_ROOT" "$RUNNER_TEMP" \
+          "$BUILDER_ROOT/control/candidate-build.sh" \
+          "$BUILDER_ROOT/control/candidate-launcher.py" \
+          "$host_uid" "$host_gid" \
+          < /dev/null > /dev/null 2>&1 &
+        builder_supervisor_pid="$!"
+        builder_pgid="$(/usr/bin/ps -o pgid= -p "$builder_supervisor_pid" \
+          | /usr/bin/tr -d ' ')"
+        [[ "$builder_pgid" =~ ^[1-9][0-9]*$ ]]
+        test "$builder_pgid" = "$builder_supervisor_pid"
+        test "$builder_pgid" != "$shell_pgid"
+        set +e
+        wait "$builder_supervisor_pid"
+        builder_status="$?"
+        set -e
+        builder_supervisor_pid=""
+        if [ "$builder_status" -ne 0 ]; then
+          printf 'candidate build failed: exit=%d\n' \
+            "$builder_status" >&2
+          exit "$builder_status"
+        fi
+        printf 'candidate build status: success\n'
+        test -z "$(builder_group_pids "$builder_pgid")"
+        test -z "$(builder_cgroup_pids)"
+        test -z "$(builder_uid_pids "$builder_uid")"
+        remove_builder_cgroup
+        test ! -e "$builder_cgroup"
+        handoff_root="$BUILDER_ROOT/handoff"
+        test -d "$handoff_root"
+        test ! -L "$handoff_root"
+        test "$(/usr/bin/realpath "$handoff_root")" = "$handoff_root"
+        test "$(/usr/bin/stat -c %u "$handoff_root")" = "$host_uid"
+        handoff_names="$(/usr/bin/find "$handoff_root" -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C /usr/bin/sort)"
+        test "$handoff_names" = "$(printf 'metadata.json\ntarget.gba')"
+        target_source="$handoff_root/target.gba"
+        metadata_source="$handoff_root/metadata.json"
+        for source in "$target_source" "$metadata_source"; do
+          test -f "$source"
+          test ! -L "$source"
+          test "$(/usr/bin/stat -c %F "$source")" = "regular file"
+          test "$(/usr/bin/stat -c %h "$source")" = 1
+          test "$(/usr/bin/stat -c %u "$source")" = "$host_uid"
+          case "$(/usr/bin/realpath "$source")" in
+            "$handoff_root"/*) ;;
+            *) echo "builder output escaped isolated handoff" >&2; exit 1 ;;
+          esac
+        done
+        test "$(/usr/bin/stat -c %s "$target_source")" = 33554432
+        metadata_size="$(/usr/bin/stat -c %s "$metadata_source")"
+        test "$metadata_size" -gt 0
+        test "$metadata_size" -le 1048576
+        /bin/rm -rf -- "$PATCH_INPUT_ROOT"
+        /usr/bin/install -d -m 0700 "$PATCH_INPUT_ROOT"
+        /usr/bin/install -m 0400 "$target_source" \
+          "$PATCH_INPUT_ROOT/target.gba"
+        /usr/bin/install -m 0400 "$metadata_source" \
+          "$PATCH_INPUT_ROOT/metadata.json"
+        /usr/bin/find "$GITHUB_WORKSPACE_PATH" -mindepth 1 -delete
+        test -z "$(/usr/bin/find "$GITHUB_WORKSPACE_PATH" -mindepth 1 -print -quit)"
+        terminate_builder_processes
+        remove_builder_cgroup
+        remove_builder_state
+        trap - EXIT INT TERM
+        test -z "$(builder_group_pids "$builder_pgid")"
+        test ! -e "$builder_cgroup"
+        test -z "$(builder_uid_pids "$builder_uid")"
+        test -z "$(/usr/bin/getent passwd "$builder_user" || true)"
+        test ! -e "$BUILDER_ROOT"
+        test ! -e "$PATCH_WHEELHOUSE"
+        input_names="$(/usr/bin/find "$PATCH_INPUT_ROOT" -mindepth 1 \
+          -maxdepth 1 -printf '%f\n' | LC_ALL=C /usr/bin/sort)"
+        test "$input_names" = "$(printf 'metadata.json\ntarget.gba')"
+        for input in "$PATCH_INPUT_ROOT/target.gba" \
+          "$PATCH_INPUT_ROOT/metadata.json"
+        do
+          test -f "$input"
+          test ! -L "$input"
+          test "$(/usr/bin/stat -c %F "$input")" = "regular file"
+          test "$(/usr/bin/stat -c %h "$input")" = 1
+          test "$(/usr/bin/stat -c %a "$input")" = 400
+        done
+        /usr/bin/env -i HOME="$PATCH_RUNTIME_ROOT" PATH=/usr/bin:/bin LC_ALL=C \
+          /usr/bin/python3 -I -S -c \
+          'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")); assert isinstance(value, dict); assert value.get("build_commit") == sys.argv[2]' \
+          "$PATCH_INPUT_ROOT/metadata.json" "$PATCH_COMMIT"
+
+    - name: Download private base image
+      id: private-base
+      shell: /bin/bash --noprofile --norc -euo pipefail {0}
+      env:
+        BASH_ENV: ''
+        BASEROM_URL: ${{ secrets.BASEROM_URL }}
+        CDPATH: ''
+        ENV: ''
+        GLOBIGNORE: ''
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        HOME: ${{ runner.temp }}/patch-runtime
+        LD_LIBRARY_PATH: ''
+        LD_PRELOAD: ''
+        PATH: /usr/bin:/bin
+        PYTHONPATH: ''
+        SHELLOPTS: ''
+      run: |
+        private_dir=""
+        base_image=""
+        cleanup_download() {
+          status="$?"
+          trap - EXIT INT TERM
+          set +e
+          if [ "$status" -ne 0 ] && [ -n "$private_dir" ]; then
+            /bin/chmod -R u+w -- "$private_dir" 2>/dev/null || true
+            if [ -n "$base_image" ]; then
+              /bin/rm -f -- "$base_image"
+            fi
+            /usr/bin/rmdir -- "$private_dir" 2>/dev/null || true
+          fi
+          exit "$status"
+        }
+        trap cleanup_download EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
         test -n "$BASEROM_URL"
-        base_image="$RUNNER_TEMP/base-image"
-        target_image="$RUNNER_TEMP/target-image"
-        cp build/expansion-modern-all-locales-all-features/release/aapcs/fireemblem8.gba "$target_image"
-        trap 'rm -f "$base_image" "$target_image"' EXIT
-        curl --fail --silent --location --proto '=https' --proto-redir '=https' --tlsv1.2 --output "$base_image" "$BASEROM_URL"
-        python3 -m scripts.modernize.patch_release create --base "$base_image" --target "$target_image" --metadata build/expansion-modern-all-locales-all-features/release/aapcs/generated/expansion_build_metadata.json --output-dir "$PATCH_ARTIFACT_DIR" --commit "$PATCH_COMMIT"
-        python3 -m scripts.modernize.patch_release verify --base "$base_image" --artifact-dir "$PATCH_ARTIFACT_DIR"
+        umask 077
+        private_dir="$(/usr/bin/mktemp -d "$RUNNER_TEMP/patch-private.XXXXXXXXXX")"
+        /bin/chmod 0700 "$private_dir"
+        base_image="$private_dir/base.gba"
+        /usr/bin/curl --fail --silent --location --proto '=https' --proto-redir '=https' --tlsv1.2 --output "$base_image" "$BASEROM_URL"
+        /bin/chmod 0400 "$base_image"
+        test -f "$base_image"
+        test ! -L "$base_image"
+        test "$(/usr/bin/stat -c %F "$base_image")" = "regular file"
+        test "$(/usr/bin/stat -c %h "$base_image")" = 1
+        test "$(/usr/bin/stat -c %a "$private_dir")" = 700
+        test "$(/usr/bin/stat -c %a "$base_image")" = 400
+        test "$(/usr/bin/stat -c %s "$base_image")" = 16777216
+        printf 'base_path=%s\n' "$base_image" >> "$GITHUB_OUTPUT"
+        trap - EXIT INT TERM
+
+    - name: Create and verify patch artifact
+      shell: /bin/bash --noprofile --norc -euo pipefail {0}
+      env:
+        BASE_IMAGE: ${{ steps.private-base.outputs.base_path }}
+        BASH_ENV: ''
+        CDPATH: ''
+        ENV: ''
+        GLOBIGNORE: ''
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        HOME: ${{ runner.temp }}/patch-runtime
+        LD_LIBRARY_PATH: ''
+        LD_PRELOAD: ''
+        PATH: /usr/bin:/bin
+        PATCH_INPUT_ROOT: ${{ runner.temp }}/patch-input
+        PATCH_RUNTIME_ROOT: ${{ runner.temp }}/patch-runtime
+        PATCH_TOOL_ROOT: ${{ runner.temp }}/patch-tool
+        PATCH_ARTIFACT_DIR: ${{ runner.temp }}/patch-artifact
+        PYTHONPATH: ''
+        SHELLOPTS: ''
+      run: |
+        cleanup_private_base() {
+          status="$?"
+          cleanup_failed=0
+          trap - EXIT INT TERM
+          set +e
+          case "$BASE_IMAGE" in
+            "$RUNNER_TEMP"/patch-private.??????????/base.gba)
+              private_dir="${BASE_IMAGE%/base.gba}"
+              /bin/chmod u+w -- "$BASE_IMAGE" 2>/dev/null || cleanup_failed=1
+              /bin/rm -f -- "$BASE_IMAGE" || cleanup_failed=1
+              /usr/bin/rmdir -- "$private_dir" || cleanup_failed=1
+              ;;
+            *)
+              echo "refusing cleanup outside the trusted private path" >&2
+              cleanup_failed=1
+              ;;
+          esac
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          exit "$cleanup_failed"
+        }
+        trap cleanup_private_base EXIT
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+        case "$BASE_IMAGE" in
+          "$RUNNER_TEMP"/patch-private.??????????/base.gba) ;;
+          *) echo "private base path is outside the trusted boundary" >&2; exit 1 ;;
+        esac
+        test -f "$BASE_IMAGE"
+        test ! -L "$BASE_IMAGE"
+        test "$(/usr/bin/stat -c %F "$BASE_IMAGE")" = "regular file"
+        test "$(/usr/bin/stat -c %h "$BASE_IMAGE")" = 1
+        test "$(/usr/bin/stat -c %a "$BASE_IMAGE")" = 400
+        test "$(/usr/bin/stat -c %s "$BASE_IMAGE")" = 16777216
+        input_names="$(/usr/bin/find "$PATCH_INPUT_ROOT" -mindepth 1 \
+          -maxdepth 1 -printf '%f\n' | LC_ALL=C /usr/bin/sort)"
+        test "$input_names" = "$(printf 'metadata.json\ntarget.gba')"
+        for input in "$PATCH_INPUT_ROOT/target.gba" \
+          "$PATCH_INPUT_ROOT/metadata.json"
+        do
+          test -f "$input"
+          test ! -L "$input"
+          test "$(/usr/bin/stat -c %F "$input")" = "regular file"
+          test "$(/usr/bin/stat -c %h "$input")" = 1
+          test "$(/usr/bin/stat -c %a "$input")" = 400
+        done
+        cd "$PATCH_RUNTIME_ROOT"
+        /usr/bin/env -i HOME="$PATCH_RUNTIME_ROOT" PATH=/usr/bin:/bin LC_ALL=C \
+          /usr/bin/python3 -I -S -c \
+          'import sys; sys.path.insert(0, sys.argv.pop(1)); from scripts.modernize.patch_release import main; raise SystemExit(main(sys.argv[1:]))' \
+          "$PATCH_TOOL_ROOT" create \
+          --base "$BASE_IMAGE" \
+          --target "$PATCH_INPUT_ROOT/target.gba" \
+          --metadata "$PATCH_INPUT_ROOT/metadata.json" \
+          --output-dir "$PATCH_ARTIFACT_DIR" \
+          --commit "$PATCH_COMMIT"
+        /usr/bin/env -i HOME="$PATCH_RUNTIME_ROOT" PATH=/usr/bin:/bin LC_ALL=C \
+          /usr/bin/python3 -I -S -c \
+          'import sys; sys.path.insert(0, sys.argv.pop(1)); from scripts.modernize.patch_release import main; raise SystemExit(main(sys.argv[1:]))' \
+          "$PATCH_TOOL_ROOT" verify \
+          --base "$BASE_IMAGE" \
+          --artifact-dir "$PATCH_ARTIFACT_DIR"
         LC_ALL=C
         export LC_ALL
-        find "$PATCH_ARTIFACT_DIR" -maxdepth 1 -type f -printf '%f\n' | sort | diff -u <(printf '%s\n' README.txt fireemblem8-expansion-all-locales-all-features-aapcs.bps manifest.json | sort) -
+        artifact_names="$(/usr/bin/find "$PATCH_ARTIFACT_DIR" -mindepth 1 \
+          -maxdepth 1 -printf '%f\n' | /usr/bin/sort)"
+        test "$artifact_names" = \
+          "$(printf '%s\n' README.txt \
+            fireemblem8-expansion-all-locales-all-features-aapcs.bps \
+            manifest.json | /usr/bin/sort)"
+        for artifact in "$PATCH_ARTIFACT_DIR/README.txt" \
+          "$PATCH_ARTIFACT_DIR/fireemblem8-expansion-all-locales-all-features-aapcs.bps" \
+          "$PATCH_ARTIFACT_DIR/manifest.json"
+        do
+          test -f "$artifact"
+          test ! -L "$artifact"
+          test "$(/usr/bin/stat -c %F "$artifact")" = "regular file"
+          test "$(/usr/bin/stat -c %h "$artifact")" = 1
+        done
+
+    - name: Cleanup and verify private base
+      if: always()
+      shell: /bin/bash --noprofile --norc -euo pipefail {0}
       env:
-        BASEROM_URL: ${{ secrets.BASEROM_URL }}
+        BASE_IMAGE: ${{ steps.private-base.outputs.base_path }}
+        BASH_ENV: ''
+        CDPATH: ''
+        ENV: ''
+        GLOBIGNORE: ''
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        HOME: ${{ runner.temp }}/patch-runtime
+        LD_LIBRARY_PATH: ''
+        LD_PRELOAD: ''
+        PATH: /usr/bin:/bin
+        PYTHONPATH: ''
+        SHELLOPTS: ''
+      run: |
+        if [ -z "$BASE_IMAGE" ]; then
+          exit 0
+        fi
+        case "$BASE_IMAGE" in
+          "$RUNNER_TEMP"/patch-private.??????????/base.gba) ;;
+          *) echo "private cleanup path is outside the trusted boundary" >&2; exit 1 ;;
+        esac
+        private_dir="${BASE_IMAGE%/base.gba}"
+        if [ -e "$BASE_IMAGE" ]; then
+          /bin/chmod u+w -- "$BASE_IMAGE"
+          /bin/rm -f -- "$BASE_IMAGE"
+        fi
+        if [ -d "$private_dir" ]; then
+          /usr/bin/rmdir -- "$private_dir"
+        fi
+        test ! -e "$BASE_IMAGE"
+        test ! -e "$private_dir"
+
+    - name: Revalidate patch-only upload
+      shell: /bin/bash --noprofile --norc -euo pipefail {0}
+      env:
+        BASH_ENV: ''
+        CDPATH: ''
+        ENV: ''
+        GLOBIGNORE: ''
+        GIT_ALTERNATE_OBJECT_DIRECTORIES: ''
+        GIT_CEILING_DIRECTORIES: ''
+        GIT_COMMON_DIR: ''
+        GIT_CONFIG_COUNT: '0'
+        GIT_CONFIG_GLOBAL: /dev/null
+        GIT_CONFIG_KEY_0: ''
+        GIT_CONFIG_NOSYSTEM: '1'
+        GIT_CONFIG_PARAMETERS: ''
+        GIT_CONFIG_SYSTEM: /dev/null
+        GIT_CONFIG_VALUE_0: ''
+        GIT_DIR: ''
+        GIT_EXEC_PATH: ''
+        GIT_INDEX_FILE: ''
+        GIT_NAMESPACE: ''
+        GIT_NO_LAZY_FETCH: '1'
+        GIT_NO_REPLACE_OBJECTS: '1'
+        GIT_OBJECT_DIRECTORY: ''
+        GIT_REPLACE_REF_BASE: ''
+        GIT_WORK_TREE: ''
+        HOME: ${{ runner.temp }}/patch-runtime
+        LD_LIBRARY_PATH: ''
+        LD_PRELOAD: ''
+        PATH: /usr/bin:/bin
         PATCH_ARTIFACT_DIR: ${{ runner.temp }}/patch-artifact
+        PYTHONPATH: ''
+        SHELLOPTS: ''
+      run: |
+        LC_ALL=C
+        export LC_ALL
+        artifact_names="$(/usr/bin/find "$PATCH_ARTIFACT_DIR" -mindepth 1 \
+          -maxdepth 1 -printf '%f\n' | /usr/bin/sort)"
+        test "$artifact_names" = \
+          "$(printf '%s\n' README.txt \
+            fireemblem8-expansion-all-locales-all-features-aapcs.bps \
+            manifest.json | /usr/bin/sort)"
+        for artifact in "$PATCH_ARTIFACT_DIR/README.txt" \
+          "$PATCH_ARTIFACT_DIR/fireemblem8-expansion-all-locales-all-features-aapcs.bps" \
+          "$PATCH_ARTIFACT_DIR/manifest.json"
+        do
+          test -f "$artifact"
+          test ! -L "$artifact"
+          test "$(/usr/bin/stat -c %F "$artifact")" = "regular file"
+          test "$(/usr/bin/stat -c %h "$artifact")" = 1
+        done
 
     - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
       with:
-        name: modern-release-all-locales-all-features-aapcs-bps-${{ github.sha }}
+        name: modern-release-all-locales-all-features-aapcs-bps-${{ needs.event-identity.outputs.fallback_sha }}
         path: ${{ runner.temp }}/patch-artifact
         if-no-files-found: error
         retention-days: 30
 
   summary:
+    name: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-summary' || 'summary' }}
     if: always()
-    needs: [host-tests, build, extended-host-tests, legacy]
+    needs: [event-identity, event-classifier, host-tests, build, extended-host-tests, legacy, patch-release]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
+      CLASSIFIER_RESULT: ${{ needs.event-classifier.result }}
+      CLASSIFICATION: ${{ needs.event-classifier.outputs.classification }}
+      CLASSIFIED_BASE_SHA: ${{ needs.event-classifier.outputs.expected_base }}
+      CLASSIFIED_BUILD_SHA: ${{ needs.event-classifier.outputs.expected_head }}
+      FALLBACK_IDENTITY_RESULT: ${{ needs.event-identity.result }}
+      FALLBACK_KIND: ${{ needs.event-identity.outputs.fallback_kind }}
+      FALLBACK_SHA: ${{ needs.event-identity.outputs.fallback_sha }}
+      FULL_FALLBACK: ${{ needs.event-classifier.outputs.full_fallback }}
+      HEAD_VALID: ${{ needs.event-classifier.outputs.head_valid }}
+      IDENTITY_VALID: ${{ needs.event-classifier.outputs.identity_valid }}
+      RUN_EXPENSIVE: ${{ needs.event-classifier.outputs.run_expensive }}
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PUSH_SHA: ${{ github.event.after }}
+      RAW_PUSH_SHA: ${{ github.sha }}
       HOST_TESTS_RESULT: ${{ needs.host-tests.result }}
       BUILD_RESULT: ${{ needs.build.result }}
       EXTENDED_HOST_TESTS_RESULT: ${{ needs.extended-host-tests.result }}
       LEGACY_RESULT: ${{ needs.legacy.result }}
+      PATCH_RELEASE_RESULT: ${{ needs.patch-release.result }}
 
     steps:
     - name: Render fail-closed combined Build summary
@@ -528,12 +1895,158 @@ jobs:
           echo
           echo "| Job | Conclusion |"
           echo "| --- | --- |"
+          echo "| event-identity | $FALLBACK_IDENTITY_RESULT ($FALLBACK_KIND) |"
+          echo "| event-classifier | $CLASSIFIER_RESULT ($CLASSIFICATION) |"
           echo "| host-tests | $HOST_TESTS_RESULT |"
           echo "| build | $BUILD_RESULT |"
           echo "| extended-host-tests | $EXTENDED_HOST_TESTS_RESULT |"
           echo "| legacy | $LEGACY_RESULT |"
         } >> "$GITHUB_STEP_SUMMARY"
 
+        if [ "$CLASSIFIER_RESULT" = "failure" ]; then
+          if [ "$FALLBACK_IDENTITY_RESULT" = "success" ] && \
+             [ "$GITHUB_EVENT_NAME" = "pull_request" ] && \
+             [ "$FALLBACK_KIND" = "pull_request" ] && \
+             [ "$FALLBACK_SHA" = "$PR_HEAD_SHA" ]; then
+            for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \
+              "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
+            do
+              if [ "$result" != "success" ]; then
+                echo "classifier-fallback Build worker did not succeed: $result" >&2
+                exit 1
+              fi
+            done
+            if [ "$PATCH_RELEASE_RESULT" != "skipped" ]; then
+              echo "classifier-fallback PR unexpectedly ran publisher: $PATCH_RELEASE_RESULT" >&2
+              exit 1
+            fi
+            echo "Build event classifier failed after exact-head fallback workers completed" >&2
+            exit 1
+          fi
+          if [ "$FALLBACK_IDENTITY_RESULT" = "success" ] && \
+             [ "$GITHUB_EVENT_NAME" = "push" ] && \
+             [ "$FALLBACK_KIND" = "push" ] && \
+             [ "$FALLBACK_SHA" = "$PUSH_SHA" ] && \
+             [ "$FALLBACK_SHA" = "$RAW_PUSH_SHA" ]; then
+            for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \
+              "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
+            do
+              if [ "$result" != "success" ]; then
+                echo "classifier-fallback Build worker did not succeed: $result" >&2
+                exit 1
+              fi
+            done
+            if [ "$PATCH_RELEASE_RESULT" != "success" ]; then
+              echo "classifier-fallback publisher did not succeed: $PATCH_RELEASE_RESULT" >&2
+              exit 1
+            fi
+            echo "Build event classifier failed after exact-push fallback jobs completed" >&2
+            exit 1
+          fi
+          for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \
+            "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
+          do
+            if [ "$result" != "skipped" ]; then
+              echo "classifier failure without an exact fallback SHA started a worker: $result" >&2
+              exit 1
+            fi
+          done
+          if [ "$PATCH_RELEASE_RESULT" != "skipped" ]; then
+            echo "classifier failure without a validated fallback SHA ran publisher: $PATCH_RELEASE_RESULT" >&2
+            exit 1
+          fi
+          echo "Build event classifier failed without an exact fallback SHA" >&2
+          exit 1
+        fi
+        if [ "$CLASSIFIER_RESULT" != "success" ]; then
+          echo "Build event classifier did not complete: $CLASSIFIER_RESULT" >&2
+          exit 1
+        fi
+        if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+          if [ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \
+             [ "$FALLBACK_KIND" != "pull_request" ] || \
+             [ -z "$FALLBACK_SHA" ] || [ "$FALLBACK_SHA" != "$PR_HEAD_SHA" ] || \
+             [ "$FALLBACK_SHA" != "$CLASSIFIED_BUILD_SHA" ]; then
+            echo "successful PR classification lacks coherent trusted event identity" >&2
+            exit 1
+          fi
+        elif [ "$GITHUB_EVENT_NAME" = "push" ]; then
+          if [ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \
+             [ "$FALLBACK_KIND" != "push" ] || [ -z "$FALLBACK_SHA" ] || \
+             [ "$FALLBACK_SHA" != "$PUSH_SHA" ] || \
+             [ "$FALLBACK_SHA" != "$RAW_PUSH_SHA" ] || \
+             [ "$FALLBACK_SHA" != "$CLASSIFIED_BUILD_SHA" ]; then
+            echo "successful push classification lacks coherent trusted event identity" >&2
+            exit 1
+          fi
+        else
+          echo "successful classification has no trusted event identity mode" >&2
+          exit 1
+        fi
+        if [ "$GITHUB_EVENT_NAME" = "pull_request" ] && \
+           [ "$FULL_FALLBACK" = "true" ] && [ "$HEAD_VALID" = "true" ] && \
+           [ "$IDENTITY_VALID" = "false" ] && [ -n "$PR_HEAD_SHA" ] && \
+           [ "$CLASSIFIED_BUILD_SHA" = "$PR_HEAD_SHA" ]; then
+          for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \
+            "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
+          do
+            if [ "$result" != "success" ]; then
+              echo "incomplete-base Build worker did not succeed: $result" >&2
+              exit 1
+            fi
+          done
+          if [ "$PATCH_RELEASE_RESULT" != "skipped" ]; then
+            echo "incomplete-base PR unexpectedly ran publisher: $PATCH_RELEASE_RESULT" >&2
+            exit 1
+          fi
+          echo "Build event classifier lacks authoritative PR base identity" >&2
+          exit 1
+        fi
+        if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+          if [ "$IDENTITY_VALID" != "true" ] || [ -z "$PR_HEAD_SHA" ] || \
+             [ -z "$PR_BASE_SHA" ] || [ "$CLASSIFIED_BUILD_SHA" != "$PR_HEAD_SHA" ] || \
+             [ "$CLASSIFIED_BASE_SHA" != "$PR_BASE_SHA" ]; then
+            echo "Build event classifier PR identity is missing or stale" >&2
+            exit 1
+          fi
+        elif [ "$GITHUB_EVENT_NAME" = "push" ]; then
+          if [ "$IDENTITY_VALID" != "true" ] || [ -z "$PUSH_SHA" ] || \
+             [ "$CLASSIFIED_BUILD_SHA" != "$PUSH_SHA" ] || \
+             [ -n "$CLASSIFIED_BASE_SHA" ] || \
+             [ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \
+             [ "$FALLBACK_KIND" != "push" ] || [ "$FALLBACK_SHA" != "$PUSH_SHA" ]; then
+            echo "Build event classifier push identity is missing or stale" >&2
+            exit 1
+          fi
+        else
+          echo "Build event classifier received an unsupported event" >&2
+          exit 1
+        fi
+
+        if [ "$CLASSIFICATION" = "metadata-only" ]; then
+          if [ "$RUN_EXPENSIVE" != "false" ]; then
+            echo "metadata-only classification did not suppress workers" >&2
+            exit 1
+          fi
+          for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \
+            "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
+          do
+            if [ "$result" != "skipped" ]; then
+              echo "metadata-only Build worker was not skipped: $result" >&2
+              exit 1
+            fi
+          done
+          if [ "$PATCH_RELEASE_RESULT" != "skipped" ]; then
+            echo "metadata-only Build unexpectedly ran publisher: $PATCH_RELEASE_RESULT" >&2
+            exit 1
+          fi
+          exit 0
+        fi
+
+        if [ "$CLASSIFICATION" != "full" ] || [ "$RUN_EXPENSIVE" != "true" ]; then
+          echo "unknown Build event classification output" >&2
+          exit 1
+        fi
         for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" "$EXTENDED_HOST_TESTS_RESULT" \
           "$LEGACY_RESULT"
         do
@@ -542,3 +2055,12 @@ jobs:
             exit 1
           fi
         done
+        if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+          if [ "$PATCH_RELEASE_RESULT" != "success" ]; then
+            echo "required master publisher did not succeed: $PATCH_RELEASE_RESULT" >&2
+            exit 1
+          fi
+        elif [ "$PATCH_RELEASE_RESULT" != "skipped" ]; then
+          echo "pull-request Build unexpectedly ran publisher: $PATCH_RELEASE_RESULT" >&2
+          exit 1
+        fi

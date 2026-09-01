@@ -41,11 +41,13 @@ decision.
 `reports/baseline/`, `tools/gba-playtest/fingerprints/`, and
 `scripts/shiftcheck/tas/fingerprint.lua` are reviewed oracles, not generated
 output that tooling should silently normalize. A mismatch is a signal to
-investigate the change, not to regenerate the fingerprint. Any pull request
-that touches these paths must explain, in the PR description, why the oracle
-itself is changing and what was independently verified. `CODEOWNERS` names
-`@laqieer` for these paths so GitHub requests that reviewer; it does not by
-itself gate merging (see below).
+investigate the change, not to regenerate the fingerprint. The PR body keeps
+only the frozen baseline/fingerprint plan. If a candidate actually touches
+these paths, record the exact oracle change, rationale, and independent
+verification in exactly one canonical marked comment, following
+[`workflow-pilot.md`](workflow-pilot.md#build-event-classification-and-candidate-evidence).
+`CODEOWNERS` names `@laqieer` for these paths so GitHub requests that reviewer;
+it does not by itself gate merging (see below).
 
 This repository does **not** ship an automated baseline diff/history engine.
 Reviewing a baseline/fingerprint change is an evidence-based judgment assisted
