@@ -317,10 +317,14 @@ oracle-backed edge therefore rejects even when stable IDs and pairs remain.
 Normalized unrelated workflow or Make semantics do not invalidate those
 edges.
 This introducing PR's base lacks that package,
-so CI emits `bootstrap-not-authoritative`; candidate tests and the public gate
-still run, but direct adversarial review is the introduction evidence. After
-merge, every ordinary PR enters `exact-base-pinned` mode. Git remains the
-identity authority; no source-hash ledger is committed.
+so both hosted CI and the candidate-staged local verifier emit
+`bootstrap-not-authoritative` with `authority` set to `none`; candidate tests
+and the public gate still run, but direct adversarial review is the
+introduction evidence. The exact-base capability check requires the complete
+runtime/schema/graph/oracle path set. No paths means introduction mode, while
+a partial set rejects rather than downgrading. After merge, every ordinary PR
+enters `exact-base-pinned` mode. Git remains the identity authority; no
+source-hash ledger is committed.
 
 Domain-separated seals continue to cover the strict schema, probe oracle,
 complete graph, resolved edges, and live evidence-authority fingerprints.

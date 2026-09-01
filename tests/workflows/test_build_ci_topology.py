@@ -13,6 +13,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from scripts.validation_ownership import ci_verifier as ownership_ci_verifier
 from scripts.validation_ownership import reporter as ownership_reporter
 from scripts.workflow_pilot import (
     candidate_evidence,
@@ -164,6 +165,20 @@ VALIDATION_OWNERSHIP_CANDIDATE_SHA_ENV = (
 VALIDATION_OWNERSHIP_TEMP_ENV = (
     "        VALIDATION_OWNERSHIP_TEMP: ${{ runner.temp }}"
 )
+VALIDATION_OWNERSHIP_BASE_REQUIRED_PATHS = (
+    ".github/validation-ownership-graph.json",
+    ".github/validation-ownership-make-dynamics.json",
+    "scripts/validation_ownership/ci_gate.mk",
+    "scripts/validation_ownership/ci_verifier.py",
+    "scripts/validation_ownership/generated_registry_probe.py",
+    "scripts/validation_ownership/graph.schema.json",
+    "scripts/validation_ownership/isolated_launcher.py",
+    "scripts/validation_ownership/make_probe.py",
+    "scripts/validation_ownership/probe-oracle.json",
+    "scripts/validation_ownership/reporter.py",
+    "scripts/validation_ownership/sandbox_exec.py",
+    "scripts/validation_ownership/shell_interceptor.c",
+)
 VALIDATION_OWNERSHIP_BASE_CONTRACT = (
     "        BUILD_EVENT_NAME: ${{ github.event_name }}",
     VALIDATION_OWNERSHIP_BASE_SHA_ENV,
@@ -179,6 +194,9 @@ VALIDATION_OWNERSHIP_BASE_CONTRACT = (
     "/usr/bin/mktemp --directory",
     'validation-ownership-base.XXXXXXXXXX',
     '/bin/rm -rf --one-file-system -- "$trusted_root"',
+    "base_validation_present=0",
+    'if [ "$base_validation_present" = 1 ]; then',
+    *VALIDATION_OWNERSHIP_BASE_REQUIRED_PATHS,
     "validation-ownership: bootstrap-not-authoritative",
 )
 EXPECTED_BUILD_SHA_EXPRESSION = (
@@ -3881,6 +3899,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
     def test_validation_ownership_verifier_is_exact_base_pinned(self):
         host_tests = _job_blocks(self.text)["host-tests"]
+        self.assertEqual(
+            set(VALIDATION_OWNERSHIP_BASE_REQUIRED_PATHS),
+            set(ownership_ci_verifier.BASE_AUTHORITY_PATHS),
+        )
         self.assertLess(
             host_tests.index(VALIDATION_OWNERSHIP_BASE_STEP),
             host_tests.index(
@@ -3915,6 +3937,14 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             (
                 'test ! -L "$VALIDATION_OWNERSHIP_TEMP"',
                 'test -d "$VALIDATION_OWNERSHIP_TEMP"',
+            ),
+            (
+                "base_validation_present=0",
+                "base_validation_present=1",
+            ),
+            (
+                "scripts/validation_ownership/graph.schema.json",
+                "scripts/validation_ownership/missing.schema.json",
             ),
         )
         for original, replacement in mutations:

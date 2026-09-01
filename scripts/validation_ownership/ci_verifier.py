@@ -23,6 +23,27 @@ from scripts.validation_ownership import reporter
 
 TRUSTED_PREFIX = "scripts/validation_ownership/"
 BASE_STEP_MARKER = "    - name: Validate ownership with exact PR-base verifier\n"
+TRUSTED_RUNTIME_PATHS = frozenset(
+    {
+        f"{TRUSTED_PREFIX}ci_gate.mk",
+        f"{TRUSTED_PREFIX}ci_verifier.py",
+        f"{TRUSTED_PREFIX}generated_registry_probe.py",
+        f"{TRUSTED_PREFIX}graph.schema.json",
+        f"{TRUSTED_PREFIX}isolated_launcher.py",
+        f"{TRUSTED_PREFIX}make_probe.py",
+        f"{TRUSTED_PREFIX}reporter.py",
+        f"{TRUSTED_PREFIX}sandbox_exec.py",
+        f"{TRUSTED_PREFIX}shell_interceptor.c",
+    }
+)
+BASE_AUTHORITY_PATHS = frozenset(
+    {
+        *TRUSTED_RUNTIME_PATHS,
+        reporter.GRAPH_PATH.as_posix(),
+        reporter.MAKE_DYNAMIC_PATH.as_posix(),
+        reporter.PROBE_ORACLE_PATH.as_posix(),
+    }
+)
 
 
 class PinnedAuthorityLoader(reporter.AuthorityLoader):
@@ -119,6 +140,24 @@ def _prepare_trusted_runtime_root(trusted_root: Path) -> Path:
     return runtime_root
 
 
+def _base_authority_mode(
+    base_entries: dict[str, reporter.GitTreeEntry],
+) -> str:
+    has_validation_package = any(
+        path.startswith(TRUSTED_PREFIX)
+        for path in base_entries
+    )
+    present_authority = BASE_AUTHORITY_PATHS & set(base_entries)
+    if not has_validation_package and not present_authority:
+        return "bootstrap-not-authoritative"
+    missing = sorted(BASE_AUTHORITY_PATHS - set(base_entries))
+    if missing:
+        raise reporter.OwnershipError(
+            f"exact base has incomplete validation authority: {missing}"
+        )
+    return "exact-base-pinned"
+
+
 def _trusted_paths(
     trusted_root: Path,
     base_loader: reporter.AuthorityLoader,
@@ -130,17 +169,7 @@ def _trusted_paths(
         and entry.object_type == "blob"
         and entry.mode in {"100644", "100755"}
     }
-    required = {
-        f"{TRUSTED_PREFIX}ci_gate.mk",
-        f"{TRUSTED_PREFIX}ci_verifier.py",
-        f"{TRUSTED_PREFIX}generated_registry_probe.py",
-        f"{TRUSTED_PREFIX}isolated_launcher.py",
-        f"{TRUSTED_PREFIX}make_probe.py",
-        f"{TRUSTED_PREFIX}reporter.py",
-        f"{TRUSTED_PREFIX}sandbox_exec.py",
-        f"{TRUSTED_PREFIX}shell_interceptor.c",
-    }
-    if not required <= paths:
+    if not TRUSTED_RUNTIME_PATHS <= paths:
         raise reporter.OwnershipError(
             "exact base lacks the complete validation ownership verifier"
         )
@@ -444,6 +473,15 @@ def verify(
             "candidate SHA does not match the checked-out HEAD"
         )
     base_entries = reporter.git_tree_entries(repository_root, base_sha)
+    base_mode = _base_authority_mode(base_entries)
+    if base_mode == "bootstrap-not-authoritative":
+        return {
+            "authority": "none",
+            "base_sha": base_sha,
+            "candidate_sha": candidate_sha,
+            "mode": base_mode,
+            "reason": "exact base predates validation ownership authority",
+        }
     runtime_root = _prepare_trusted_runtime_root(trusted_root)
     base_loader = reporter.AuthorityLoader(
         repository_root,

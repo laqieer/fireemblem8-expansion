@@ -1531,10 +1531,14 @@ exact base, and trusted edge invalidation must be empty for those edges. A
 shape-valid retarget from `owner.validation-check` to the live gba-playtest
 workflow step therefore rejects; an unrelated semantics-stable change passes.
 This introducing PR emits the explicit
-`bootstrap-not-authoritative` state because its base lacks the package, while
-candidate tests/public checks continue and direct adversarial review supplies
-introduction evidence. Missing/changed base staging, candidate gate paths,
-candidate-as-base SHA substitution, or loss of the bootstrap state rejects.
+`bootstrap-not-authoritative` state with no claimed authority because its base
+lacks every package/graph/oracle marker, while candidate tests/public checks
+continue and direct adversarial review supplies introduction evidence. The
+candidate-staged local verifier must report the same mode for that exact base.
+A future complete base selects `exact-base-pinned`; any partial base package
+rejects instead of downgrading. Missing/changed base staging, candidate gate
+paths, candidate-as-base SHA substitution, or loss of the bootstrap state
+rejects.
 
 The root Makefile rejects command-line ownership of `MAKECMDGOALS` before
 reading any include. `MAKECMDGOALS= -n`, all dry-run/touch/question/silent/

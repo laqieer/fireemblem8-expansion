@@ -101,6 +101,85 @@ class BasePinnedVerifierTests(unittest.TestCase):
         }
         return graph, model
 
+    @staticmethod
+    def base_entries(paths):
+        return {
+            path: reporter.GitTreeEntry(
+                path,
+                "100644",
+                "blob",
+                "0" * 40,
+            )
+            for path in paths
+        }
+
+    def test_base_mode_distinguishes_introduction_complete_and_partial(self):
+        self.assertEqual(
+            ci_verifier._base_authority_mode({}),
+            "bootstrap-not-authoritative",
+        )
+        complete = self.base_entries(ci_verifier.BASE_AUTHORITY_PATHS)
+        self.assertEqual(
+            ci_verifier._base_authority_mode(complete),
+            "exact-base-pinned",
+        )
+        partial = dict(complete)
+        partial.pop("scripts/validation_ownership/reporter.py")
+        with self.assertRaisesRegex(
+            reporter.OwnershipError,
+            "incomplete validation authority",
+        ):
+            ci_verifier._base_authority_mode(partial)
+
+    def test_introduction_verify_reports_no_authority_without_runtime(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            trusted = Path(directory)
+            head = subprocess.CompletedProcess(
+                ["/usr/bin/git", "rev-parse", "HEAD"],
+                0,
+                b"2" * 40 + b"\n",
+                b"",
+            )
+            with mock.patch.object(
+                ci_verifier.sys,
+                "path",
+                [str(trusted)],
+            ), mock.patch.object(
+                ci_verifier,
+                "_exact_commit",
+                side_effect=lambda root, value, label: value,
+            ), mock.patch.object(
+                ci_verifier,
+                "_git",
+                return_value=head,
+            ), mock.patch.object(
+                reporter,
+                "git_tree_entries",
+                return_value={},
+            ), mock.patch.object(
+                ci_verifier,
+                "_prepare_trusted_runtime_root",
+            ) as prepare_runtime:
+                result = ci_verifier.verify(
+                    trusted,
+                    ROOT,
+                    "1" * 40,
+                    "2" * 40,
+                )
+            self.assertEqual(
+                result,
+                {
+                    "authority": "none",
+                    "base_sha": "1" * 40,
+                    "candidate_sha": "2" * 40,
+                    "mode": "bootstrap-not-authoritative",
+                    "reason": (
+                        "exact base predates validation ownership authority"
+                    ),
+                },
+            )
+            prepare_runtime.assert_not_called()
+
     def test_candidate_owner_redirect_rejects_exact_base_oracle(self):
         oracle = {
             "probes": [

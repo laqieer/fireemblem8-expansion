@@ -579,8 +579,31 @@ jobs:
         trap cleanup_trusted_root EXIT
         test "$(/usr/bin/git rev-parse HEAD)" = "$EXPECTED_CANDIDATE_SHA"
         /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA^{commit}"
-        if /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA:scripts/validation_ownership/ci_verifier.py" &&
-           /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA:scripts/validation_ownership/ci_gate.mk"; then
+        base_validation_present=0
+        for marker in .github/validation-ownership-graph.json \
+          scripts/validation_ownership
+        do
+          if /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA:$marker"; then
+            base_validation_present=1
+          fi
+        done
+        if [ "$base_validation_present" = 1 ]; then
+          for required in \
+            .github/validation-ownership-graph.json \
+            .github/validation-ownership-make-dynamics.json \
+            scripts/validation_ownership/ci_gate.mk \
+            scripts/validation_ownership/ci_verifier.py \
+            scripts/validation_ownership/generated_registry_probe.py \
+            scripts/validation_ownership/graph.schema.json \
+            scripts/validation_ownership/isolated_launcher.py \
+            scripts/validation_ownership/make_probe.py \
+            scripts/validation_ownership/probe-oracle.json \
+            scripts/validation_ownership/reporter.py \
+            scripts/validation_ownership/sandbox_exec.py \
+            scripts/validation_ownership/shell_interceptor.c
+          do
+            /usr/bin/git cat-file -e "$EXPECTED_BASE_SHA:$required"
+          done
           /usr/bin/git archive --format=tar "$EXPECTED_BASE_SHA" |
             /usr/bin/tar -xf - -C "$trusted_root"
           BASH_ENV= ENV= GNUMAKEFLAGS= MAKEFLAGS= MAKEOVERRIDES= MFLAGS= \
