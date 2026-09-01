@@ -25,7 +25,10 @@ import subprocess
 from dataclasses import dataclass
 from typing import List
 
-from scripts.workflow_pilot import metadata_adapter_contract
+from scripts.workflow_pilot import (
+    metadata_adapter_contract,
+    summary_continuity_contract,
+)
 
 # A leading NAME=VALUE token in a gate command is an inline environment
 # assignment (POSIX shell semantics), mirrored verbatim from build.yml so
@@ -209,11 +212,6 @@ _DYNAMIC_JOB_NAMES = {
         "${{ needs.event-router.result == 'success' && "
         "needs.event-router.outputs.classification == 'metadata-only' && "
         "'metadata-classifier' || 'event-classifier' }}"
-    ),
-    "summary": (
-        "${{ needs.event-classifier.result == 'success' && "
-        "needs.event-classifier.outputs.classification == 'metadata-only' "
-        "&& 'metadata-summary' || 'summary' }}"
     ),
 }
 _IDENTITY_COMMANDS = (
@@ -782,36 +780,47 @@ _EXPECTED_JOB_ENV = {
     "patch-release": (
         ("PATCH_COMMIT", "${{ needs.event-identity.outputs.fallback_sha }}"),
     ),
-    "summary": (
-        ("BUILD_RESULT", "${{ needs.build.result }}"),
-        ("CLASSIFICATION", "${{ needs.event-classifier.outputs.classification }}"),
-        (
-            "CLASSIFIED_BASE_SHA",
-            "${{ needs.event-classifier.outputs.expected_base }}",
-        ),
-        (
-            "CLASSIFIED_BUILD_SHA",
-            "${{ needs.event-classifier.outputs.expected_head }}",
-        ),
-        ("CLASSIFIER_RESULT", "${{ needs.event-classifier.result }}"),
-        ("EXTENDED_HOST_TESTS_RESULT", "${{ needs.extended-host-tests.result }}"),
-        ("FALLBACK_IDENTITY_RESULT", "${{ needs.event-identity.result }}"),
-        ("FALLBACK_KIND", "${{ needs.event-identity.outputs.fallback_kind }}"),
-        ("FALLBACK_SHA", "${{ needs.event-identity.outputs.fallback_sha }}"),
-        ("FULL_FALLBACK", "${{ needs.event-classifier.outputs.full_fallback }}"),
-        ("HEAD_VALID", "${{ needs.event-classifier.outputs.head_valid }}"),
-        ("HOST_TESTS_RESULT", "${{ needs.host-tests.result }}"),
-        ("IDENTITY_VALID", "${{ needs.event-classifier.outputs.identity_valid }}"),
-        ("LEGACY_RESULT", "${{ needs.legacy.result }}"),
-        ("PATCH_RELEASE_RESULT", "${{ needs.patch-release.result }}"),
-        ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
-        ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
-        ("PUSH_SHA", "${{ github.event.after }}"),
-        ("RAW_PUSH_SHA", "${{ github.sha }}"),
-        ("RUN_EXPENSIVE", "${{ needs.event-classifier.outputs.run_expensive }}"),
+    "summary": tuple(
+        sorted(
+            (
+                ("BUILD_RESULT", "${{ needs.build.result }}"),
+                ("CLASSIFICATION", "${{ needs.event-classifier.outputs.classification }}"),
+                (
+                    "CLASSIFIED_BASE_SHA",
+                    "${{ needs.event-classifier.outputs.expected_base }}",
+                ),
+                (
+                    "CLASSIFIED_BUILD_SHA",
+                    "${{ needs.event-classifier.outputs.expected_head }}",
+                ),
+                ("CLASSIFIER_RESULT", "${{ needs.event-classifier.result }}"),
+                ("EXTENDED_HOST_TESTS_RESULT", "${{ needs.extended-host-tests.result }}"),
+                ("FALLBACK_IDENTITY_RESULT", "${{ needs.event-identity.result }}"),
+                ("FALLBACK_KIND", "${{ needs.event-identity.outputs.fallback_kind }}"),
+                ("FALLBACK_SHA", "${{ needs.event-identity.outputs.fallback_sha }}"),
+                ("FULL_FALLBACK", "${{ needs.event-classifier.outputs.full_fallback }}"),
+                ("GITHUB_API_URL", "${{ github.api_url }}"),
+                ("GITHUB_REPOSITORY", "${{ github.repository }}"),
+                ("GITHUB_TOKEN", "${{ github.token }}"),
+                ("HEAD_VALID", "${{ needs.event-classifier.outputs.head_valid }}"),
+                ("HOST_TESTS_RESULT", "${{ needs.host-tests.result }}"),
+                ("IDENTITY_VALID", "${{ needs.event-classifier.outputs.identity_valid }}"),
+                ("LEGACY_RESULT", "${{ needs.legacy.result }}"),
+                ("PATCH_RELEASE_RESULT", "${{ needs.patch-release.result }}"),
+                ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
+                ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
+                ("PR_NUMBER", "${{ github.event.number }}"),
+                ("PUSH_SHA", "${{ github.event.after }}"),
+                ("RAW_PUSH_SHA", "${{ github.sha }}"),
+                ("RUN_ATTEMPT", "${{ github.run_attempt }}"),
+                ("RUN_EXPENSIVE", "${{ needs.event-classifier.outputs.run_expensive }}"),
+                ("RUN_ID", "${{ github.run_id }}"),
+            )
+        )
     ),
 }
 _METADATA_ADAPTER_STEP_NAME = "Attest metadata-only branch-protection continuity"
+_SUMMARY_STEP_NAME = "Render fail-closed combined Build summary"
 _METADATA_ADAPTER_ENV = tuple(
     sorted(
         (
@@ -1231,9 +1240,9 @@ def _parse_workflow_context(text):
                     )
                 entries[key] = match.group(2).strip()
             permissions = tuple(sorted(entries.items()))
-            if permissions != (("contents", "read"),):
+            if permissions != (("actions", "read"), ("contents", "read")):
                 raise ValueError(
-                    "workflow permissions must be exactly contents: read"
+                    "workflow permissions must be exactly actions: read and contents: read"
                 )
             values[name] = permissions
         else:
@@ -1371,6 +1380,8 @@ def _parse_job_context(job_name, body):
             expected = (
                 job_name
                 if job_name in {"event-identity", "event-router"}
+                else "summary"
+                if job_name == "summary"
                 else _DYNAMIC_JOB_NAMES[job_name]
             )
             if value != expected or nested:
@@ -2038,6 +2049,17 @@ def _parse_step(block, job_name, index):
                 )
             except ValueError as error:
                 raise ValueError(f"{step_label} metadata adapter script differs") from error
+        elif job_name == "summary" and name == _SUMMARY_STEP_NAME:
+            if set(values) != {"name", "run"}:
+                raise ValueError(f"{step_label} must contain exactly name, run")
+            if literal_run_script is None:
+                raise ValueError(f"{step_label} summary script differs")
+            try:
+                summary_continuity_contract.validate_summary_continuity_script(
+                    literal_run_script
+                )
+            except ValueError as error:
+                raise ValueError(f"{step_label} summary script differs") from error
         else:
             expected_fields = (
                 {"name", "env", "run"}

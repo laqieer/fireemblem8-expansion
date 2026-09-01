@@ -7,6 +7,7 @@ on:
     branches: [ "master" ]
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -2739,10 +2740,11 @@ jobs:
   # Live branch protection currently keeps canonical `host-tests`, `build`,
   # and `summary` required. Metadata-only edits therefore use successful
   # trusted `host-tests`/`build` continuity adapters, keep `extended-host-tests`
-  # and `legacy` platform-skipped, and emit distinct `metadata-summary` so a
-  # prior full `summary` remains authoritative on the unchanged head/base.
+  # and `legacy` platform-skipped, and emit canonical `summary` only after a
+  # trusted no-checkout API proof confirms one prior successful complete full
+  # Build CI run for the same exact PR/base/head identity.
   summary:
-    name: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-summary' || 'summary' }}
+    name: summary
     if: always()
     needs: [event-identity, event-classifier, host-tests, build, extended-host-tests, legacy, patch-release]
     runs-on: ubuntu-latest
@@ -2768,6 +2770,12 @@ jobs:
       EXTENDED_HOST_TESTS_RESULT: ${{ needs.extended-host-tests.result }}
       LEGACY_RESULT: ${{ needs.legacy.result }}
       PATCH_RELEASE_RESULT: ${{ needs.patch-release.result }}
+      GITHUB_API_URL: ${{ github.api_url }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      GITHUB_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.number }}
+      RUN_ATTEMPT: ${{ github.run_attempt }}
+      RUN_ID: ${{ github.run_id }}
 
     steps:
     - name: Render fail-closed combined Build summary
@@ -2928,6 +2936,480 @@ jobs:
             echo "metadata-only Build unexpectedly ran publisher: $PATCH_RELEASE_RESULT" >&2
             exit 1
           fi
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "metadata-only Build continuity is not a pull_request event" >&2
+            exit 1
+          fi
+          /usr/bin/python3 -I -S - <<'PY' || exit 1
+        def main():
+          import decimal
+          import json
+          import math
+          import os
+          import re
+          import sys
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+
+          MAX_API_URL_BYTES = 512
+          MAX_FLOAT_LITERAL_BYTES = 128
+          MAX_HEADER_BYTES = 8192
+          MAX_JSON_BYTES = 4194304
+          MAX_PAGE_SIZE = 100
+          MAX_PR_NUMBER_BYTES = 20
+          MAX_REPOSITORY_BYTES = 256
+          MAX_RUN_PAGES = 5
+          MAX_TOKEN_BYTES = 8192
+          INT_RE = re.compile(r"^[1-9][0-9]{0,18}$")
+          REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+          SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+          WORKFLOW_FILENAME = "build.yml"
+          WORKFLOW_PATH_PREFIX = ".github/workflows/build.yml"
+          FULL_JOB_NAMES = frozenset(
+              {
+                  "event-identity",
+                  "event-router",
+                  "event-classifier",
+                  "host-tests",
+                  "build",
+                  "extended-host-tests",
+                  "legacy",
+                  "patch-release",
+                  "summary",
+              }
+          )
+          FULL_SUCCESS_JOB_NAMES = FULL_JOB_NAMES - frozenset({"patch-release"})
+
+          def fail(message):
+              print(message, file=sys.stderr)
+              raise SystemExit(1)
+
+          def utf8_len(value):
+              return len(value.encode("utf-8"))
+
+          def env(name, *, max_bytes):
+              value = os.environ.get(name)
+              if value is None or value == "":
+                  fail(f"metadata-only summary missing {name}")
+              if utf8_len(value) > max_bytes:
+                  fail(f"metadata-only summary {name} exceeds bounds")
+              return value
+
+          def reject_duplicates(pairs):
+              result = {}
+              for key, value in pairs:
+                  if key in result:
+                      fail(f"metadata-only summary JSON repeats key {key!r}")
+                  result[key] = value
+              return result
+
+          def reject_nonfinite_constant(value):
+              fail(f"metadata-only summary JSON contains non-finite number {value}")
+
+          def parse_strict_float(value):
+              if len(value) > MAX_FLOAT_LITERAL_BYTES:
+                  fail("metadata-only summary JSON float literal is too long")
+              try:
+                  decimal_value = decimal.Decimal(value)
+                  float_value = float(decimal_value)
+              except (decimal.InvalidOperation, OverflowError, ValueError):
+                  fail(f"metadata-only summary JSON float is invalid: {value}")
+              if not math.isfinite(float_value):
+                  fail(f"metadata-only summary JSON float overflows: {value}")
+              if decimal_value != 0 and float_value == 0:
+                  fail(f"metadata-only summary JSON float underflows: {value}")
+              return float_value
+
+          def ensure_finite_numbers(value):
+              if isinstance(value, float):
+                  if not math.isfinite(value):
+                      fail("metadata-only summary JSON contains non-finite float")
+                  return
+              if isinstance(value, dict):
+                  for item in value.values():
+                      ensure_finite_numbers(item)
+                  return
+              if isinstance(value, list):
+                  for item in value:
+                      ensure_finite_numbers(item)
+
+          def parse_json_bytes(raw, *, label):
+              if len(raw) > MAX_JSON_BYTES:
+                  fail(f"{label} response exceeds bounds")
+              try:
+                  payload = json.loads(
+                      raw.decode("utf-8"),
+                      object_pairs_hook=reject_duplicates,
+                      parse_constant=reject_nonfinite_constant,
+                      parse_float=parse_strict_float,
+                  )
+              except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                  fail(f"{label} response is not valid JSON: {error}")
+              ensure_finite_numbers(payload)
+              return payload
+
+          def parse_positive_int(text, *, field):
+              if INT_RE.fullmatch(text) is None:
+                  fail(f"{field} is invalid")
+              return int(text)
+
+          def parse_positive_int_value(value, *, field):
+              if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                  fail(f"{field} is invalid")
+              return value
+
+          def parse_sha(text, *, field):
+              if SHA_RE.fullmatch(text) is None:
+                  fail(f"{field} is invalid")
+              return text
+
+          def parse_repository(text):
+              if REPO_RE.fullmatch(text) is None or utf8_len(text) > MAX_REPOSITORY_BYTES:
+                  fail("metadata-only summary repository is invalid")
+              owner, repo = text.split("/", 1)
+              if owner in {".", ".."} or repo in {".", ".."}:
+                  fail("metadata-only summary repository is invalid")
+              return owner, repo
+
+          def parse_api_base(text):
+              if utf8_len(text) > MAX_API_URL_BYTES:
+                  fail("metadata-only summary API base exceeds bounds")
+              split = urllib.parse.urlsplit(text)
+              if (
+                  split.scheme not in {"http", "https"}
+                  or not split.netloc
+                  or split.query
+                  or split.fragment
+              ):
+                  fail("metadata-only summary API base is invalid")
+              return urllib.parse.urlunsplit(
+                  (split.scheme, split.netloc, split.path.rstrip("/"), "", "")
+              )
+
+          def parse_pull_request_binding(value):
+              if not isinstance(value, dict):
+                  fail("metadata-only summary pull_requests entry is invalid")
+              number = parse_positive_int_value(
+                  value.get("number"),
+                  field="metadata-only summary pull request number",
+              )
+              head = value.get("head")
+              base = value.get("base")
+              if not isinstance(head, dict) or not isinstance(base, dict):
+                  fail("metadata-only summary pull request binding is invalid")
+              return (
+                  number,
+                  parse_sha(
+                      head.get("sha", ""),
+                      field="metadata-only summary pull request head sha",
+                  ),
+                  parse_sha(
+                      base.get("sha", ""),
+                      field="metadata-only summary pull request base sha",
+                  ),
+              )
+
+          def parse_next_page(link, *, request_url, current_page, total_count, item_count):
+              if not link:
+                  if item_count == MAX_PAGE_SIZE and total_count > current_page * MAX_PAGE_SIZE:
+                      fail("metadata-only summary workflow runs pagination truncated")
+                  return None
+              if utf8_len(link) > MAX_HEADER_BYTES:
+                  fail("metadata-only summary workflow runs Link header exceeds bounds")
+              rels = {}
+              position = 0
+              while position < len(link):
+                  match = re.match(
+                      r'\s*<([^>]+)>\s*;\s*rel="([^"]+)"\s*(?:,\s*|$)',
+                      link[position:],
+                  )
+                  if match is None:
+                      fail("metadata-only summary workflow runs Link header is malformed")
+                  url, relation = match.groups()
+                  if relation in rels:
+                      fail("metadata-only summary workflow runs Link header repeats a relation")
+                  rels[relation] = url
+                  position += match.end()
+              next_url = rels.get("next")
+              if next_url is None:
+                  if item_count == MAX_PAGE_SIZE and total_count > current_page * MAX_PAGE_SIZE:
+                      fail("metadata-only summary workflow runs pagination truncated")
+                  return None
+              split = urllib.parse.urlsplit(next_url)
+              if (
+                  split.scheme != request_url.scheme
+                  or split.netloc != request_url.netloc
+                  or split.path != request_url.path
+                  or split.fragment
+              ):
+                  fail("metadata-only summary workflow runs next page escaped the reviewed endpoint")
+              try:
+                  query = urllib.parse.parse_qs(
+                      split.query,
+                      strict_parsing=True,
+                      keep_blank_values=False,
+                  )
+              except ValueError as error:
+                  fail(f"metadata-only summary workflow runs next page is malformed: {error}")
+              if set(query) != {"event", "head_sha", "page", "per_page"}:
+                  fail("metadata-only summary workflow runs next page has unexpected query keys")
+              for key in query:
+                  if len(query[key]) != 1:
+                      fail("metadata-only summary workflow runs next page repeats a query parameter")
+              if query["event"][0] != "pull_request":
+                  fail("metadata-only summary workflow runs next page event drifted")
+              if query["head_sha"][0] != head_sha:
+                  fail("metadata-only summary workflow runs next page head drifted")
+              if query["per_page"][0] != str(MAX_PAGE_SIZE):
+                  fail("metadata-only summary workflow runs next page width drifted")
+              next_page = parse_positive_int(
+                  query["page"][0],
+                  field="metadata-only summary workflow runs next page",
+              )
+              if next_page != current_page + 1:
+                  fail("metadata-only summary workflow runs next page is not sequential")
+              return next_page
+
+          def request_json(path, query_pairs, *, label):
+              query = urllib.parse.urlencode(query_pairs)
+              request_url = f"{api_base}{path}?{query}"
+              request = urllib.request.Request(
+                  request_url,
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "User-Agent": "workflow-pilot-summary",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                  },
+                  method="GET",
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=20) as response:
+                      raw = response.read(MAX_JSON_BYTES + 1)
+                      if len(raw) > MAX_JSON_BYTES:
+                          fail(f"{label} response exceeds bounds")
+                      link = response.headers.get("Link", "")
+              except urllib.error.HTTPError as error:
+                  fail(f"{label} request failed: HTTP {error.code}")
+              except urllib.error.URLError as error:
+                  fail(f"{label} request failed: {error.reason}")
+              return (
+                  parse_json_bytes(raw, label=label),
+                  link,
+                  urllib.parse.urlsplit(request_url),
+              )
+
+          def run_matches(run):
+              if not isinstance(run, dict):
+                  fail("metadata-only summary workflow run is invalid")
+              run_id = parse_positive_int_value(
+                  run.get("id"),
+                  field="metadata-only summary workflow run id",
+              )
+              if run_id == current_run_id:
+                  return None
+              run_attempt = parse_positive_int_value(
+                  run.get("run_attempt"),
+                  field="metadata-only summary workflow run attempt",
+              )
+              event = run.get("event")
+              status = run.get("status")
+              conclusion = run.get("conclusion")
+              run_head_sha = run.get("head_sha")
+              path = run.get("path")
+              url = run.get("url")
+              pull_requests = run.get("pull_requests")
+              if (
+                  not isinstance(event, str)
+                  or not isinstance(status, str)
+                  or (conclusion is not None and not isinstance(conclusion, str))
+                  or not isinstance(run_head_sha, str)
+                  or not isinstance(path, str)
+                  or not isinstance(url, str)
+                  or not isinstance(pull_requests, list)
+              ):
+                  fail("metadata-only summary workflow run fields are invalid")
+              if event != "pull_request":
+                  return None
+              if SHA_RE.fullmatch(run_head_sha) is None:
+                  fail("metadata-only summary workflow run head sha is invalid")
+              if run_head_sha != head_sha:
+                  return None
+              if not path.startswith(WORKFLOW_PATH_PREFIX):
+                  return None
+              split = urllib.parse.urlsplit(url)
+              if split.path != f"{expected_run_url_prefix}/{run_id}":
+                  return None
+              if status != "completed" or conclusion != "success":
+                  return None
+              matches = 0
+              for pull_request in pull_requests:
+                  number, pull_head_sha, pull_base_sha = parse_pull_request_binding(
+                      pull_request
+                  )
+                  if (
+                      number == pr_number
+                      and pull_head_sha == head_sha
+                      and pull_base_sha == base_sha
+                  ):
+                      matches += 1
+              if matches != 1:
+                  return None
+              return run_id, run_attempt
+
+          def jobs_prove_full_run(run_id, run_attempt):
+              payload, link, _request_url = request_json(
+                  f"/repos/{quoted_owner}/{quoted_repo}/actions/runs/{run_id}/attempts/{run_attempt}/jobs",
+                  [("per_page", str(MAX_PAGE_SIZE)), ("page", "1")],
+                  label=f"metadata-only summary prior run {run_id} jobs",
+              )
+              if link:
+                  fail("metadata-only summary prior run jobs pagination is unsupported")
+              if (
+                  not isinstance(payload, dict)
+                  or set(payload) != {"jobs", "total_count"}
+              ):
+                  fail("metadata-only summary prior run jobs response shape is invalid")
+              total_count = parse_positive_int_value(
+                  payload.get("total_count"),
+                  field="metadata-only summary prior run jobs total_count",
+              )
+              jobs = payload.get("jobs")
+              if not isinstance(jobs, list) or len(jobs) != total_count or total_count > MAX_PAGE_SIZE:
+                  fail("metadata-only summary prior run jobs pagination is invalid")
+              by_name = {}
+              for job in jobs:
+                  if not isinstance(job, dict):
+                      fail("metadata-only summary prior run job is invalid")
+                  name = job.get("name")
+                  status = job.get("status")
+                  conclusion = job.get("conclusion")
+                  runner_name = job.get("runner_name")
+                  if (
+                      not isinstance(name, str)
+                      or not name
+                      or not isinstance(status, str)
+                      or (conclusion is not None and not isinstance(conclusion, str))
+                      or (runner_name is not None and not isinstance(runner_name, str))
+                  ):
+                      fail("metadata-only summary prior run job fields are invalid")
+                  if name in by_name:
+                      fail("metadata-only summary prior run jobs repeat a name")
+                  by_name[name] = (status, conclusion, runner_name)
+              if set(by_name) != FULL_JOB_NAMES:
+                  return False
+              for name in FULL_SUCCESS_JOB_NAMES:
+                  status, conclusion, runner_name = by_name[name]
+                  if (
+                      status != "completed"
+                      or conclusion != "success"
+                      or runner_name in {None, ""}
+                  ):
+                      return False
+              patch_status, patch_conclusion, patch_runner = by_name["patch-release"]
+              return (
+                  patch_status == "completed"
+                  and patch_conclusion == "skipped"
+                  and patch_runner in {None, ""}
+              )
+
+          pr_number = parse_positive_int(
+              env("PR_NUMBER", max_bytes=MAX_PR_NUMBER_BYTES),
+              field="metadata-only summary PR number",
+          )
+          head_sha = parse_sha(
+              env("PR_HEAD_SHA", max_bytes=64),
+              field="metadata-only summary PR head sha",
+          )
+          base_sha = parse_sha(
+              env("PR_BASE_SHA", max_bytes=64),
+              field="metadata-only summary PR base sha",
+          )
+          current_run_id = parse_positive_int(
+              env("RUN_ID", max_bytes=MAX_PR_NUMBER_BYTES),
+              field="metadata-only summary run id",
+          )
+          current_run_attempt = parse_positive_int(
+              env("RUN_ATTEMPT", max_bytes=MAX_PR_NUMBER_BYTES),
+              field="metadata-only summary run attempt",
+          )
+          if current_run_attempt < 1:
+              fail("metadata-only summary run attempt is invalid")
+          owner, repo = parse_repository(
+              env("GITHUB_REPOSITORY", max_bytes=MAX_REPOSITORY_BYTES)
+          )
+          quoted_owner = urllib.parse.quote(owner, safe="")
+          quoted_repo = urllib.parse.quote(repo, safe="")
+          api_base = parse_api_base(
+              env("GITHUB_API_URL", max_bytes=MAX_API_URL_BYTES)
+          )
+          token = env("GITHUB_TOKEN", max_bytes=MAX_TOKEN_BYTES)
+          expected_run_url_prefix = f"/repos/{quoted_owner}/{quoted_repo}/actions/runs"
+
+          page = 1
+          seen_run_ids = set()
+          prior_full_run_id = None
+          while True:
+              payload, link, request_url = request_json(
+                  f"/repos/{quoted_owner}/{quoted_repo}/actions/workflows/{WORKFLOW_FILENAME}/runs",
+                  [
+                      ("event", "pull_request"),
+                      ("head_sha", head_sha),
+                      ("per_page", str(MAX_PAGE_SIZE)),
+                      ("page", str(page)),
+                  ],
+                  label=f"metadata-only summary workflow runs page {page}",
+              )
+              if (
+                  not isinstance(payload, dict)
+                  or set(payload) != {"total_count", "workflow_runs"}
+              ):
+                  fail("metadata-only summary workflow runs response shape is invalid")
+              total_count = payload.get("total_count")
+              workflow_runs = payload.get("workflow_runs")
+              if (
+                  isinstance(total_count, bool)
+                  or not isinstance(total_count, int)
+                  or total_count < 0
+                  or not isinstance(workflow_runs, list)
+                  or len(workflow_runs) > MAX_PAGE_SIZE
+              ):
+                  fail("metadata-only summary workflow runs pagination is invalid")
+              next_page = parse_next_page(
+                  link,
+                  request_url=request_url,
+                  current_page=page,
+                  total_count=total_count,
+                  item_count=len(workflow_runs),
+              )
+              for run in workflow_runs:
+                  match = run_matches(run)
+                  run_id = parse_positive_int_value(
+                      run.get("id"),
+                      field="metadata-only summary workflow run id",
+                  )
+                  if run_id in seen_run_ids:
+                      fail("metadata-only summary workflow runs repeated a run")
+                  seen_run_ids.add(run_id)
+                  if match is None:
+                      continue
+                  prior_run_id, prior_run_attempt = match
+                  if jobs_prove_full_run(prior_run_id, prior_run_attempt):
+                      prior_full_run_id = prior_run_id
+                      break
+              if prior_full_run_id is not None:
+                  break
+              if next_page is None:
+                  break
+              if next_page > MAX_RUN_PAGES:
+                  fail("metadata-only summary workflow runs exceed the reviewed pagination bound")
+              page = next_page
+
+          if prior_full_run_id is None:
+              fail("metadata-only summary requires a prior successful complete full Build CI run")
+        main()
+        PY
           exit 0
         fi
 

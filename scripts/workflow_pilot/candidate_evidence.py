@@ -18,7 +18,7 @@ KNOWN_JOB_IDS = frozenset(WORKER_JOB_IDS) | {
 FULL_CLASSIFIER = "event-classifier"
 FULL_ATTESTATION = "summary"
 METADATA_CLASSIFIER = "metadata-classifier"
-METADATA_ATTESTATION = "metadata-summary"
+METADATA_ATTESTATION = FULL_ATTESTATION
 REQUIRED_BUILD_CONTEXTS = frozenset({"build", "host-tests", FULL_ATTESTATION})
 
 
@@ -95,10 +95,11 @@ def _mode(contexts: dict[str, tuple[str, str]]) -> str:
         raise CandidateEvidenceError(
             "run lacks running classifier or summary attestation"
         )
-    pair = (classifier[0], summary[0])
-    if pair == (FULL_CLASSIFIER, FULL_ATTESTATION):
+    if summary[0] != FULL_ATTESTATION:
+        raise CandidateEvidenceError("summary attestation must stay canonical")
+    if classifier[0] == FULL_CLASSIFIER:
         return "full"
-    if pair == (METADATA_CLASSIFIER, METADATA_ATTESTATION):
+    if classifier[0] == METADATA_CLASSIFIER:
         return "metadata-only"
     raise CandidateEvidenceError("classifier and summary attest different modes")
 
@@ -126,6 +127,14 @@ def _validate_mode_contexts(
             "run lacks canonical skipped patch-release context"
         )
     if mode == "metadata-only":
+        if contexts["event-classifier"][1] != "success":
+            raise CandidateEvidenceError(
+                "metadata classifier must stay successful"
+            )
+        if contexts["summary"][1] not in {"failure", "success"}:
+            raise CandidateEvidenceError(
+                "metadata summary must stay terminal"
+            )
         for job_id in METADATA_ADAPTER_JOB_IDS:
             name, conclusion = require_context(job_id)
             if name != job_id:

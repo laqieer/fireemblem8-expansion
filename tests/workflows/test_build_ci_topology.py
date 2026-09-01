@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import fnmatch
+import http.server
 import io
 import json
 import os
@@ -12,8 +13,10 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import threading
 import types
 import unittest
+import urllib.parse
 from pathlib import Path
 from unittest import mock
 
@@ -23,6 +26,7 @@ from scripts.workflow_pilot import (
     hydrate_authority,
     metadata_adapter_contract,
     reporter,
+    summary_continuity_contract,
 )
 
 
@@ -184,11 +188,6 @@ EVENT_CLASSIFIER_DYNAMIC_NAME = (
     "${{ needs.event-router.result == 'success' && "
     "needs.event-router.outputs.classification == 'metadata-only' && "
     "'metadata-classifier' || 'event-classifier' }}"
-)
-SUMMARY_DYNAMIC_NAME = (
-    "${{ needs.event-classifier.result == 'success' && "
-    "needs.event-classifier.outputs.classification == 'metadata-only' && "
-    "'metadata-summary' || 'summary' }}"
 )
 HASHED_PIP_INSTALL = (
     "python3 -m pip install --require-hashes --only-binary=:all: --no-deps "
@@ -543,14 +542,6 @@ def _resolved_check_name(
             if decision is not None and decision.classification == "metadata-only"
             else job_name
         )
-    if job_name == "summary" and direct_name == SUMMARY_DYNAMIC_NAME:
-        return (
-            candidate_evidence.METADATA_ATTESTATION
-            if classifier_result == "success"
-            and decision is not None
-            and decision.classification == "metadata-only"
-            else job_name
-        )
     return direct_name
 
 
@@ -841,6 +832,239 @@ def _run_metadata_adapter_python_source(
     return code, stderr.getvalue()
 
 
+SUMMARY_TEST_REPOSITORY = "owner/repo"
+SUMMARY_TEST_HEAD_SHA = "1" * 40
+SUMMARY_TEST_BASE_SHA = "2" * 40
+SUMMARY_TEST_PR_NUMBER = 177
+SUMMARY_TEST_RUN_ID = 9001
+SUMMARY_TEST_RUN_ATTEMPT = 1
+
+
+def _summary_runs_path(*, repo: str = SUMMARY_TEST_REPOSITORY, head_sha: str = SUMMARY_TEST_HEAD_SHA, page: int = 1) -> str:
+    owner, name = repo.split("/", 1)
+    return (
+        f"/repos/{urllib.parse.quote(owner, safe='')}/"
+        f"{urllib.parse.quote(name, safe='')}/actions/workflows/build.yml/runs?"
+        + urllib.parse.urlencode(
+            [
+                ("event", "pull_request"),
+                ("head_sha", head_sha),
+                ("per_page", "100"),
+                ("page", str(page)),
+            ]
+        )
+    )
+
+
+def _summary_jobs_path(run_id: int, *, repo: str = SUMMARY_TEST_REPOSITORY, attempt: int = 1) -> str:
+    owner, name = repo.split("/", 1)
+    return (
+        f"/repos/{urllib.parse.quote(owner, safe='')}/"
+        f"{urllib.parse.quote(name, safe='')}/actions/runs/{run_id}/attempts/{attempt}/jobs?"
+        + urllib.parse.urlencode([("per_page", "100"), ("page", "1")])
+    )
+
+
+def _summary_workflow_run(
+    run_id: int,
+    *,
+    repo: str = SUMMARY_TEST_REPOSITORY,
+    pr_number: int = SUMMARY_TEST_PR_NUMBER,
+    head_sha: str = SUMMARY_TEST_HEAD_SHA,
+    base_sha: str = SUMMARY_TEST_BASE_SHA,
+    event: str = "pull_request",
+    status: str = "completed",
+    conclusion: str | None = "success",
+    run_attempt: int = 1,
+    path: str | None = None,
+    pull_requests: list[dict] | None = None,
+    url: str | None = None,
+) -> dict:
+    owner, name = repo.split("/", 1)
+    if path is None:
+        path = f".github/workflows/build.yml@refs/pull/{pr_number}/merge"
+    if pull_requests is None:
+        pull_requests = [
+            {
+                "number": pr_number,
+                "head": {"sha": head_sha},
+                "base": {"sha": base_sha},
+            }
+        ]
+    if url is None:
+        url = (
+            f"https://api.github.test/repos/"
+            f"{urllib.parse.quote(owner, safe='')}/"
+            f"{urllib.parse.quote(name, safe='')}/actions/runs/{run_id}"
+        )
+    return {
+        "id": run_id,
+        "run_attempt": run_attempt,
+        "event": event,
+        "status": status,
+        "conclusion": conclusion,
+        "head_sha": head_sha,
+        "path": path,
+        "pull_requests": pull_requests,
+        "url": url,
+    }
+
+
+def _summary_job(
+    name: str,
+    conclusion: str | None,
+    *,
+    status: str = "completed",
+    runner_name: str | None = "GitHub Actions 1",
+) -> dict:
+    return {
+        "name": name,
+        "status": status,
+        "conclusion": conclusion,
+        "runner_name": runner_name,
+    }
+
+
+def _summary_full_jobs() -> list[dict]:
+    return [
+        _summary_job("event-identity", "success"),
+        _summary_job("event-router", "success"),
+        _summary_job("event-classifier", "success"),
+        _summary_job("host-tests", "success"),
+        _summary_job("build", "success"),
+        _summary_job("extended-host-tests", "success"),
+        _summary_job("legacy", "success"),
+        _summary_job("patch-release", "skipped", runner_name=None),
+        _summary_job("summary", "success"),
+    ]
+
+
+def _summary_metadata_jobs() -> list[dict]:
+    return [
+        _summary_job("event-identity", "success"),
+        _summary_job("event-router", "success"),
+        _summary_job(candidate_evidence.METADATA_CLASSIFIER, "success"),
+        _summary_job("host-tests", "success"),
+        _summary_job("build", "success"),
+        _summary_job("extended-host-tests", "skipped", runner_name=None),
+        _summary_job("legacy", "skipped", runner_name=None),
+        _summary_job("patch-release", "skipped", runner_name=None),
+        _summary_job("summary", "success"),
+    ]
+
+
+def _summary_api_payload(key: str, items: list[dict]) -> dict:
+    return {"total_count": len(items), key: items}
+
+
+def _summary_response(body, *, status: int = 200, headers: dict[str, str] | None = None):
+    if isinstance(body, bytes):
+        payload = body
+    else:
+        payload = json.dumps(body, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+    return status, headers or {}, payload
+
+
+def _summary_metadata_env(**overrides: str) -> dict[str, str]:
+    env = {
+        "BUILD_RESULT": "success",
+        "CLASSIFICATION": "metadata-only",
+        "CLASSIFIED_BASE_SHA": SUMMARY_TEST_BASE_SHA,
+        "CLASSIFIED_BUILD_SHA": SUMMARY_TEST_HEAD_SHA,
+        "CLASSIFIER_RESULT": "success",
+        "EXTENDED_HOST_TESTS_RESULT": "skipped",
+        "FALLBACK_IDENTITY_RESULT": "success",
+        "FALLBACK_KIND": "pull_request",
+        "FALLBACK_SHA": SUMMARY_TEST_HEAD_SHA,
+        "FULL_FALLBACK": "false",
+        "GITHUB_EVENT_NAME": "pull_request",
+        "GITHUB_REF": f"refs/pull/{SUMMARY_TEST_PR_NUMBER}/merge",
+        "GITHUB_REPOSITORY": SUMMARY_TEST_REPOSITORY,
+        "GITHUB_TOKEN": "token",
+        "HEAD_VALID": "true",
+        "HOST_TESTS_RESULT": "success",
+        "IDENTITY_VALID": "true",
+        "LEGACY_RESULT": "skipped",
+        "PATCH_RELEASE_RESULT": "skipped",
+        "PR_BASE_SHA": SUMMARY_TEST_BASE_SHA,
+        "PR_HEAD_SHA": SUMMARY_TEST_HEAD_SHA,
+        "PR_NUMBER": str(SUMMARY_TEST_PR_NUMBER),
+        "PUSH_SHA": "",
+        "RAW_PUSH_SHA": "a" * 40,
+        "RUN_ATTEMPT": str(SUMMARY_TEST_RUN_ATTEMPT),
+        "RUN_EXPENSIVE": "false",
+        "RUN_ID": str(SUMMARY_TEST_RUN_ID),
+    }
+    env.update(overrides)
+    return env
+
+
+def _run_summary_with_api(
+    script: str,
+    *,
+    environment: dict[str, str],
+    routes: dict[str, tuple[int, dict[str, str], bytes] | list[tuple[int, dict[str, str], bytes]]],
+) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]]]:
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.server.requests.append(
+                {"path": self.path, "headers": dict(self.headers)}
+            )
+            responses = self.server.routes.get(self.path)
+            if not responses:
+                self.send_response(404)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            response = responses.pop(0)
+            status, headers, body = response
+            self.send_response(status)
+            for key, value in headers.items():
+                self.send_header(key, value.format(api_base=self.server.api_base))
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):
+            return
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    server.routes = {
+        path: list(value) if isinstance(value, list) else [value]
+        for path, value in routes.items()
+    }
+    server.requests = []
+    server.api_base = f"http://127.0.0.1:{server.server_port}"
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="workflow-summary-runtime-",
+            dir=artifact_root,
+        ) as temporary:
+            completed = subprocess.run(
+                ["/bin/bash", "-c", script],
+                cwd=ROOT,
+                env={
+                    **os.environ,
+                    **environment,
+                    "GITHUB_API_URL": server.api_base,
+                    "GITHUB_STEP_SUMMARY": str(Path(temporary) / "summary.md"),
+                },
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+        return completed, list(server.requests)
+    finally:
+        server.shutdown()
+        thread.join()
+        server.server_close()
+
+
 def _contains_command(job: str, command: str) -> bool:
     return any(
         _normalise(command) in _normalise(run)
@@ -1024,6 +1248,20 @@ def _metadata_adapter_step_is_reviewed(step: str) -> bool:
         return False
     try:
         metadata_adapter_contract.validate_metadata_adapter_script(
+            _literal_run_script(step)
+        )
+    except ValueError:
+        return False
+    return True
+
+
+def _summary_step_is_reviewed(step: str) -> bool:
+    if _step_name(step) != "Render fail-closed combined Build summary":
+        return False
+    if _direct_step_mapping_fields(step) != ["name", "run"]:
+        return False
+    try:
+        summary_continuity_contract.validate_summary_continuity_script(
             _literal_run_script(step)
         )
     except ValueError:
@@ -1787,8 +2025,11 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     ) in text:
         errors.append("Build must never substitute the merge SHA for a PR head")
     summary = jobs["summary"]
-    if f"    name: {SUMMARY_DYNAMIC_NAME}" not in summary:
-        errors.append("summary must keep metadata and candidate contexts distinct")
+    summary_steps = _step_blocks(summary)
+    if len(summary_steps) != 1 or not _summary_step_is_reviewed(summary_steps[0]):
+        errors.append("summary metadata continuity script differs from the reviewed contract")
+    if "    name: summary" not in summary:
+        errors.append("summary must stay canonical")
     if "if: always()" not in summary:
         errors.append("summary must run after failed combined jobs on both triggers")
     if SUMMARY_NEEDS not in summary:
@@ -3257,18 +3498,18 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             with self.subTest(job=job_name):
                 self.assertIsNone(_direct_job_name(jobs[job_name]))
         self.assertIn(EVENT_CLASSIFIER_DYNAMIC_NAME, jobs["event-classifier"])
-        self.assertIn(SUMMARY_DYNAMIC_NAME, jobs["summary"])
+        self.assertIn("    name: summary\n", jobs["summary"])
         self.assertEqual(_emitted_check_names(self.text, body_only), METADATA_CHECK_CONTEXTS)
         self.assertEqual(_emitted_check_names(self.text, base_edit), EMITTED_FULL_CHECKS)
         self.assertEqual(_emitted_check_names(self.text, opened), EMITTED_FULL_CHECKS)
         self.assertTrue(REQUIRED_BUILD_CONTEXTS <= EMITTED_FULL_CHECKS)
         self.assertEqual(
             REQUIRED_BUILD_CONTEXTS & METADATA_CHECK_CONTEXTS,
-            {"build", "host-tests"},
+            {"build", "host-tests", "summary"},
         )
-        self.assertNotIn(candidate_evidence.METADATA_ATTESTATION, EMITTED_FULL_CHECKS)
-        self.assertNotIn(candidate_evidence.FULL_ATTESTATION, METADATA_CHECK_CONTEXTS)
-        self.assertNotEqual(
+        self.assertIn(candidate_evidence.METADATA_ATTESTATION, EMITTED_FULL_CHECKS)
+        self.assertIn(candidate_evidence.FULL_ATTESTATION, METADATA_CHECK_CONTEXTS)
+        self.assertEqual(
             candidate_evidence.FULL_ATTESTATION,
             candidate_evidence.METADATA_ATTESTATION,
         )
@@ -5696,15 +5937,6 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "RUN_EXPENSIVE": "true",
             "PATCH_RELEASE_RESULT": "skipped",
         }
-        metadata = {
-            **full,
-            "BUILD_RESULT": "success",
-            "CLASSIFICATION": "metadata-only",
-            "EXTENDED_HOST_TESTS_RESULT": "skipped",
-            "HOST_TESTS_RESULT": "success",
-            "LEGACY_RESULT": "skipped",
-            "RUN_EXPENSIVE": "false",
-        }
         push = {
             **full,
             "CLASSIFIED_BASE_SHA": "",
@@ -5734,19 +5966,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "PR_BASE_SHA": "",
         }
         cases = (
-            ("metadata", metadata, 0, None),
             ("full-pr", full, 0, None),
             ("full-push", push, 0, None),
-            (
-                "successful-metadata-incoherent-event-ref",
-                {
-                    **metadata,
-                    "FALLBACK_KIND": "none",
-                    "FALLBACK_SHA": "",
-                },
-                1,
-                "successful PR classification lacks coherent trusted event identity",
-            ),
             (
                 "successful-full-incoherent-event-ref",
                 {
@@ -5920,12 +6141,6 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             ("identity-invalid", {**full, "IDENTITY_VALID": "false"}, 1, None),
             ("full-skipped", {**full, "BUILD_RESULT": "skipped"}, 1, None),
             (
-                "metadata-expensive-ran",
-                {**metadata, "EXTENDED_HOST_TESTS_RESULT": "success"},
-                1,
-                None,
-            ),
-            (
                 "unsupported-event",
                 {**full, "GITHUB_EVENT_NAME": "schedule"},
                 1,
@@ -5966,6 +6181,548 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     )
                     if error_fragment is not None:
                         self.assertIn(error_fragment, completed.stderr)
+
+    def test_summary_runtime_metadata_only_requires_prior_full_build(self):
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        completed = subprocess.run(
+            ["/bin/bash", "-n"],
+            input=script,
+            text=True,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        page_one_runs = [
+            _summary_workflow_run(SUMMARY_TEST_RUN_ID, run_attempt=SUMMARY_TEST_RUN_ATTEMPT),
+            _summary_workflow_run(8100),
+        ]
+        page_one_runs.extend(
+            _summary_workflow_run(
+                8200 + index,
+                event="push",
+                head_sha=SUMMARY_TEST_HEAD_SHA,
+                base_sha=SUMMARY_TEST_BASE_SHA,
+            )
+            for index in range(98)
+        )
+        link_header = f'<{{api_base}}{_summary_runs_path(page=2)}>; rel="next"'
+        routes = {
+            _summary_runs_path(page=1): _summary_response(
+                _summary_api_payload("workflow_runs", page_one_runs),
+                headers={"Link": link_header},
+            ),
+            _summary_runs_path(page=2): _summary_response(
+                _summary_api_payload("workflow_runs", [_summary_workflow_run(9100)])
+            ),
+            _summary_jobs_path(8100): _summary_response(
+                _summary_api_payload("jobs", _summary_metadata_jobs())
+            ),
+            _summary_jobs_path(9100): _summary_response(
+                _summary_api_payload("jobs", _summary_full_jobs())
+            ),
+        }
+        completed, requests = _run_summary_with_api(
+            script,
+            environment=_summary_metadata_env(),
+            routes=routes,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            [request["path"] for request in requests],
+            [
+                _summary_runs_path(page=1),
+                _summary_jobs_path(8100),
+                _summary_runs_path(page=2),
+                _summary_jobs_path(9100),
+            ],
+        )
+        self.assertTrue(requests)
+        for request in requests:
+            headers = request["headers"]
+            self.assertEqual(headers.get("Authorization"), "Bearer token")
+            self.assertEqual(
+                headers.get("Accept"), "application/vnd.github+json"
+            )
+
+    def test_summary_runtime_metadata_only_rejects_invalid_prior_full_evidence(self):
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        completed = subprocess.run(
+            ["/bin/bash", "-n"],
+            input=script,
+            text=True,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        self_only = {
+            _summary_runs_path(page=1): _summary_response(
+                _summary_api_payload(
+                    "workflow_runs",
+                    [
+                        _summary_workflow_run(
+                            SUMMARY_TEST_RUN_ID,
+                            run_attempt=SUMMARY_TEST_RUN_ATTEMPT,
+                        )
+                    ],
+                )
+            )
+        }
+        mixed_jobs_routes = {
+            _summary_runs_path(page=1): _summary_response(
+                _summary_api_payload(
+                    "workflow_runs",
+                    [
+                        _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                        _summary_workflow_run(8100),
+                        _summary_workflow_run(8101),
+                    ],
+                )
+            ),
+            _summary_jobs_path(8100): _summary_response(
+                _summary_api_payload(
+                    "jobs",
+                    [
+                        _summary_job("event-identity", "success"),
+                        _summary_job("event-router", "success"),
+                        _summary_job("event-classifier", "success"),
+                        _summary_job("host-tests", "success"),
+                        _summary_job("build", "success"),
+                    ],
+                )
+            ),
+            _summary_jobs_path(8101): _summary_response(
+                _summary_api_payload(
+                    "jobs",
+                    [
+                        _summary_job("extended-host-tests", "success"),
+                        _summary_job("legacy", "success"),
+                        _summary_job("patch-release", "skipped", runner_name=None),
+                        _summary_job("summary", "success"),
+                    ],
+                )
+            ),
+        }
+        repeated_run_routes = {
+            _summary_runs_path(page=1): _summary_response(
+                _summary_api_payload(
+                    "workflow_runs",
+                    [_summary_workflow_run(SUMMARY_TEST_RUN_ID)]
+                    + [
+                        _summary_workflow_run(
+                            8200 + index,
+                            event="push",
+                        )
+                        for index in range(99)
+                    ],
+                ),
+                headers={
+                    "Link": f'<{{api_base}}{_summary_runs_path(page=2)}>; rel="next"'
+                },
+            ),
+            _summary_runs_path(page=2): _summary_response(
+                _summary_api_payload("workflow_runs", [_summary_workflow_run(8200)])
+            ),
+        }
+        overflowing_pages = {
+            **{
+                _summary_runs_path(page=page): _summary_response(
+                    _summary_api_payload(
+                        "workflow_runs",
+                        [
+                            _summary_workflow_run(
+                                9000 + page * 100 + index,
+                                event="push",
+                            )
+                            for index in range(100)
+                        ],
+                    ),
+                    headers={
+                        "Link": (
+                            f'<{{api_base}}{_summary_runs_path(page=page + 1)}>; '
+                            'rel="next"'
+                        )
+                    },
+                )
+                for page in range(1, 6)
+            }
+        }
+        cases = (
+            (
+                "metadata-expensive-ran",
+                _summary_metadata_env(EXTENDED_HOST_TESTS_RESULT="success"),
+                {},
+                1,
+                "metadata-only expensive Build worker was not skipped",
+            ),
+            (
+                "missing-token",
+                _summary_metadata_env(GITHUB_TOKEN=""),
+                {},
+                1,
+                "metadata-only summary missing GITHUB_TOKEN",
+            ),
+            (
+                "no-prior-full",
+                _summary_metadata_env(),
+                self_only,
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "failed-prior-run",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, conclusion="failure"),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "in-progress-prior-run",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(
+                                    8100,
+                                    status="in_progress",
+                                    conclusion=None,
+                                ),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "cancelled-prior-run",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, conclusion="cancelled"),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "wrong-pr-binding",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, pr_number=SUMMARY_TEST_PR_NUMBER + 1),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "wrong-head-binding",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, head_sha="4" * 40),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "wrong-base-binding",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, base_sha="3" * 40),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "wrong-repository-url",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(
+                                    8100,
+                                    url=(
+                                        "https://api.github.test/repos/other/repo/"
+                                        "actions/runs/8100"
+                                    ),
+                                ),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "wrong-event",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, event="push"),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "wrong-workflow-path",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(
+                                    8100,
+                                    path=".github/workflows/other.yml@refs/pull/177/merge",
+                                ),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "metadata-masquerade",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100),
+                            ],
+                        )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", _summary_metadata_jobs())
+                    ),
+                },
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "mixed-jobs-across-runs",
+                _summary_metadata_env(),
+                mixed_jobs_routes,
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "missing-runner",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100),
+                            ],
+                        )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload(
+                            "jobs",
+                            [
+                                _summary_job("event-identity", "success"),
+                                _summary_job("event-router", "success"),
+                                _summary_job("event-classifier", "success"),
+                                _summary_job("host-tests", "success"),
+                                _summary_job("build", "success", runner_name=None),
+                                _summary_job("extended-host-tests", "success"),
+                                _summary_job("legacy", "success"),
+                                _summary_job("patch-release", "skipped", runner_name=None),
+                                _summary_job("summary", "success"),
+                            ],
+                        )
+                    ),
+                },
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "bad-run-attempt",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, run_attempt=0),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary workflow run attempt is invalid",
+            ),
+            (
+                "malformed-workflow-runs",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(b"{")
+                },
+                1,
+                "metadata-only summary workflow runs page 1 response is not valid JSON",
+            ),
+            (
+                "malformed-link",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(
+                                    8200 + index,
+                                    event="push",
+                                )
+                                for index in range(100)
+                            ],
+                        ),
+                        headers={"Link": "not a valid link"},
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs Link header is malformed",
+            ),
+            (
+                "repeated-run-across-pages",
+                _summary_metadata_env(),
+                repeated_run_routes,
+                1,
+                "metadata-only summary workflow runs repeated a run",
+            ),
+            (
+                "prior-run-jobs-repeat-name",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100),
+                            ],
+                        )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload(
+                            "jobs",
+                            [
+                                _summary_job("event-identity", "success"),
+                                _summary_job("event-identity", "success"),
+                            ],
+                        )
+                    ),
+                },
+                1,
+                "metadata-only summary prior run jobs repeat a name",
+            ),
+            (
+                "prior-run-jobs-pagination",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100),
+                            ],
+                        )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", _summary_full_jobs()),
+                        headers={"Link": '<https://api.github.test/jobs?page=2>; rel="next"'},
+                    ),
+                },
+                1,
+                "metadata-only summary prior run jobs pagination is unsupported",
+            ),
+            (
+                "http-error",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response({}, status=403)
+                },
+                1,
+                "metadata-only summary workflow runs page 1 request failed: HTTP 403",
+            ),
+            (
+                "overflowing-pagination-bound",
+                _summary_metadata_env(),
+                overflowing_pages,
+                1,
+                "metadata-only summary workflow runs exceed the reviewed pagination bound",
+            ),
+        )
+        for name, environment, routes, expected, error_fragment in cases:
+            with self.subTest(name=name):
+                completed, _requests = _run_summary_with_api(
+                    script,
+                    environment=environment,
+                    routes=routes,
+                )
+                self.assertEqual(completed.returncode, expected, completed.stderr)
+                self.assertIn(error_fragment, completed.stderr)
 
     def test_event_mode_runtime_separates_metadata_from_full_checks(self):
         mode_step = _step_blocks(_job_blocks(self.text)["event-classifier"])[0]

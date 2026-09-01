@@ -129,22 +129,24 @@ expose `event-classifier`, `host-tests`, `build`,
 `extended-host-tests`, `legacy`, and `summary`. The running `summary` context
 is the sole candidate attestation; it succeeds only after the same full run's
 classifier and all four workers succeed. Metadata-only runs expose the running
-`metadata-classifier` and `metadata-summary` attestations plus the same
-canonical worker checks `host-tests`, `build`, `extended-host-tests`, and
-`legacy`. Metadata-only mode requires runner-backed `success` for
-`host-tests`/`build` because those jobs run only the trusted continuity
-adapters, which independently revalidate the raw edited pull-request event and
-exact body/title-only `changes` payload from the runner-owned file-backed
+`metadata-classifier` plus the same canonical worker checks `host-tests`,
+`build`, `extended-host-tests`, `legacy`, `patch-release`, and `summary`.
+Metadata-only mode requires runner-backed `success` for `host-tests`/`build`
+because those jobs run only the trusted continuity adapters, which
+independently revalidate the raw edited pull-request event and exact
+body/title-only `changes` payload from the runner-owned file-backed
 `GITHUB_EVENT_PATH` before succeeding, and exact `skipped` for
 `extended-host-tests`/`legacy`. Those adapters accept only a same-owner
 regular event file up to 1 MiB, read at most one additional EOF byte, and do
-not env-copy large body/title/changes JSON. Repository branch protection therefore
-keeps the live canonical `host-tests`, `build`, and `summary` contexts
-unchanged. A later green metadata run still cannot
-replace `summary`, and `candidate_evidence.evaluate_candidate_runs()`
-continues to derive eligibility only from the latest exact full run with a
-successful canonical `summary`; a metadata-only run remains ineligible by
-itself even when the adapters succeed.
+not env-copy large body/title/changes JSON. Repository branch protection
+therefore keeps the live canonical `host-tests`, `build`, and `summary`
+contexts unchanged. The canonical metadata `summary` is branch-protection
+continuity only: it succeeds only after a trusted no-checkout Actions API
+proof confirms one prior successful complete full Build CI run for the same
+repository, PR number, authoritative base SHA, and immutable head SHA.
+`candidate_evidence.evaluate_candidate_runs()` still derives eligibility only
+from a matching full run, so a metadata-only run remains ineligible by itself
+even when the adapters and canonical `summary` succeed.
 
 [`scripts/workflow_pilot/candidate_evidence.py`](../scripts/workflow_pilot/candidate_evidence.py)
 derives mode only from the running classifier/summary names and evaluates the latest
@@ -221,8 +223,14 @@ explicit valid-head `full_fallback` decision is also required. On a
 metadata-only edit, `summary` succeeds only
 when classification succeeded, the classified head still equals the event
 head, the classified base still equals the event base, suppression is exactly
-false, and all four worker conclusions are exactly `skipped`. On a full event,
-normal workers check out the classifier's exact nonempty head output. Any
+false, `host-tests`/`build` succeed through the no-checkout continuity
+adapters, `extended-host-tests`/`legacy`/`patch-release` are exactly
+`skipped`, and a trusted no-checkout Actions API query proves one prior
+successful complete full Build CI run for the same repository, PR number,
+authoritative base SHA, and immutable head SHA. That canonical metadata
+`summary` preserves live required-check continuity only; it is never full-build
+evidence by itself. On a full event, normal workers check out the classifier's
+exact nonempty head output. Any
 missing, empty, malformed, or event-mismatched base ref/SHA with a valid exact
 PR head sets `head_valid=true`, `identity_valid=false`, and
 `full_fallback=true`. All four workers run at that exact head, then normal
@@ -304,15 +312,18 @@ Before the base exists, the fresh hosted publisher proves that no
 candidate-written `GITHUB_ENV`, `BASH_ENV`, background process, checkout, or
 executable state can survive the builder teardown.
 Build workflow preserves the live branch-protection contract directly: metadata
-body/title edits run distinct `metadata-classifier`/`metadata-summary`
-attestations plus canonical `host-tests`/`build` continuity adapters that do
-not checkout or execute candidate code, while `extended-host-tests` and
-`legacy` remain platform-skipped. The adapters independently reject missing,
-base-retarget, unknown, empty, duplicate, or unchanged raw `changes` payloads.
-The live required Build contexts therefore stay the canonical `host-tests`,
-`build`, and `summary` names, and
-`metadata-summary` remains distinct so a prior full `summary` stays
-authoritative on the unchanged head/base.
+body/title edits run the distinct `metadata-classifier` attestation plus
+canonical `host-tests`/`build` continuity adapters and a canonical continuity
+`summary` that do not checkout or execute candidate code, while
+`extended-host-tests` and `legacy` remain platform-skipped. The adapters
+independently reject missing, base-retarget, unknown, empty, duplicate, or
+unchanged raw `changes` payloads. The canonical metadata `summary` succeeds
+only after a trusted no-checkout Actions API proof confirms one prior
+successful complete full Build CI run for the same repository, PR number,
+authoritative base SHA, and immutable head SHA. The live required Build
+contexts therefore stay the canonical `host-tests`, `build`, and `summary`
+names, while metadata-only runs still remain ineligible candidate evidence by
+themselves even when those continuity attestations succeed.
 The current Build workflow has no explicit final-dispatch trigger; if that
 supported surface is introduced later, `workflow_dispatch` classifies as full
 and the trigger/topology contracts must be updated together.

@@ -22,12 +22,13 @@ _EXPECTED_HEREDOC_INTRODUCER = "/usr/bin/python3 -I - <<'PY'"
 _RAW_SCRIPT_SHA256 = "1e8865b83119e25f1ffc9e39af27c34532aa3b30b984cee35083c1f40de63b0b"
 MAX_PYTHON_SOURCE_BYTES = 16384
 MAX_AST_DEPTH = 256
-MAX_AST_NODES = 4096
+MAX_AST_NODES = 16384
 _ALLOWED_AST_FIELDS = {
     "Add": (),
     "And": (),
     "Assign": ("targets", "value", "type_comment"),
     "Attribute": ("value", "attr", "ctx"),
+    "AugAssign": ("target", "op", "value"),
     "BinOp": ("left", "op", "right"),
     "BitOr": (),
     "BoolOp": ("op", "values"),
@@ -35,6 +36,7 @@ _ALLOWED_AST_FIELDS = {
     "Call": ("func", "args", "keywords"),
     "Compare": ("left", "ops", "comparators"),
     "Constant": ("value", "kind"),
+    "Continue": (),
     "Dict": ("keys", "values"),
     "Eq": (),
     "ExceptHandler": ("type", "name", "body"),
@@ -55,10 +57,13 @@ _ALLOWED_AST_FIELDS = {
     "Import": ("names",),
     "In": (),
     "Is": (),
+    "IsNot": (),
     "JoinedStr": ("values",),
+    "List": ("elts", "ctx"),
     "Load": (),
     "Lt": (),
     "Module": ("body", "type_ignores"),
+    "Mult": (),
     "Name": ("id", "ctx"),
     "Not": (),
     "NotEq": (),
@@ -67,6 +72,7 @@ _ALLOWED_AST_FIELDS = {
     "Raise": ("exc", "cause"),
     "Return": ("value",),
     "Set": ("elts",),
+    "Slice": ("lower", "upper", "step"),
     "Store": (),
     "Sub": (),
     "Subscript": ("value", "slice", "ctx"),
@@ -74,11 +80,13 @@ _ALLOWED_AST_FIELDS = {
     "Tuple": ("elts", "ctx"),
     "UnaryOp": ("op", "operand"),
     "While": ("test", "body", "orelse"),
+    "With": ("items", "body", "type_comment"),
     "alias": ("name", "asname"),
     "arg": ("arg", "annotation", "type_comment"),
     "arguments": ("posonlyargs", "args", "vararg", "kwonlyargs", "kw_defaults", "kwarg", "defaults"),
     "comprehension": ("target", "iter", "ifs", "is_async"),
     "keyword": ("arg", "value"),
+    "withitem": ("context_expr", "optional_vars"),
 }
 _EMPTY_COMPATIBILITY_FIELDS = {
     "FunctionDef": ("type_params",),

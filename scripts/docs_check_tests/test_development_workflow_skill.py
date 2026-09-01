@@ -634,7 +634,7 @@ def workflow_tester_topology_violations(text):
                 "event-router",
                 "metadata-classifier",
                 "patch-release",
-                "metadata-summary",
+                "summary",
             }
         ),
         "preserved-pre-fix": workflow_job_ids(PRE_FIX_BUILD_WORKFLOW_PATH),
@@ -649,7 +649,7 @@ def workflow_tester_topology_violations(text):
                 "event-router",
                 "metadata-classifier",
                 "patch-release",
-                "metadata-summary",
+                "summary",
             }
         ),
         "live-restore-metadata": frozenset(
@@ -662,7 +662,7 @@ def workflow_tester_topology_violations(text):
                 "event-router",
                 "metadata-classifier",
                 "patch-release",
-                "metadata-summary",
+                "summary",
             }
         ),
     }
@@ -752,6 +752,10 @@ def live_title_probe_violations(text):
             '"repos/$repo/actions/runs/$opened_run_id/jobs"',
             '"repos/$repo/actions/runs/$title_run_id/jobs"',
             '"repos/$repo/actions/runs/$restore_run_id/jobs"',
+        ),
+        "required-checks-continuity": (
+            'gh pr checks "$pr" --required > "$evidence_dir/title-required-checks.txt"',
+            'gh pr checks "$pr" --required > "$evidence_dir/restore-required-checks.txt"',
         ),
         "bounded-exact-run-watcher": (
             "watch_build_run()",
@@ -882,6 +886,10 @@ def live_title_probe_violations(text):
             "validation-only",
             "never merged",
             "does not implement an independent issue",
+        ),
+        "summary-expected-regression-closed": (
+            "protected async merge attempt",
+            'Required status check "summary" is expected.',
         ),
         "no-empty-or-merge-commit": (
             "Never use git commit --allow-empty",
@@ -3931,7 +3939,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "extended-host-tests",
             "legacy",
             "platform-skipped",
-            "metadata-summary",
+            "canonical `summary`",
+            "prior successful complete full Build CI run",
         )
         forbidden_fragments = (
             "distinct metadata-only names",
@@ -4022,7 +4031,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "metadata-classifier",
             "host-tests",
             "build",
-            "metadata-summary",
+            "summary",
         )
         metadata_skipped_names = (
             "extended-host-tests",

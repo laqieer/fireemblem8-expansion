@@ -46,6 +46,7 @@ def _metadata_run(
     run_id,
     adapter_conclusion="success",
     skipped_conclusion="skipped",
+    summary="success",
 ):
     contexts = [_context("event-identity"), _context("event-router")]
     contexts.append(_context("patch-release", conclusion="skipped"))
@@ -60,9 +61,7 @@ def _metadata_run(
         _context(job_id, conclusion=skipped_conclusion)
         for job_id in candidate_evidence.METADATA_SKIPPED_JOB_IDS
     )
-    contexts.append(
-        _context("summary", candidate_evidence.METADATA_ATTESTATION)
-    )
+    contexts.append(_context("summary", candidate_evidence.METADATA_ATTESTATION, summary))
     return _run(run_id, contexts)
 
 
@@ -119,13 +118,12 @@ class CandidateEvidenceTests(unittest.TestCase):
         self.assertEqual(result.mode, "full")
         self.assertEqual(result.run_id, 10)
         latest = candidate_evidence.latest_contexts([failed_full, metadata])
-        self.assertEqual(latest["summary"], (10, "failure"))
-        self.assertEqual(latest["metadata-summary"], (11, "success"))
+        self.assertEqual(latest["summary"], (11, "success"))
         self.assertEqual(latest["host-tests"], (11, "success"))
         self.assertEqual(latest["build"], (11, "success"))
         self.assertEqual(latest["extended-host-tests"], (11, "skipped"))
         self.assertEqual(latest["legacy"], (11, "skipped"))
-        self.assertEqual(latest["summary"], (10, "failure"))
+        self.assertNotIn("metadata-summary", latest)
 
     def test_green_metadata_does_not_replace_prior_full_success(self):
         full = _full_run(20)
@@ -138,13 +136,12 @@ class CandidateEvidenceTests(unittest.TestCase):
         self.assertTrue(result.eligible)
         self.assertEqual(result.run_id, 20)
         latest = candidate_evidence.latest_contexts([full, metadata])
-        self.assertEqual(latest["summary"], (20, "success"))
-        self.assertEqual(latest["metadata-summary"], (21, "success"))
+        self.assertEqual(latest["summary"], (21, "success"))
         self.assertEqual(latest["host-tests"], (21, "success"))
         self.assertEqual(latest["build"], (21, "success"))
         self.assertEqual(latest["extended-host-tests"], (21, "skipped"))
         self.assertEqual(latest["legacy"], (21, "skipped"))
-        self.assertEqual(latest["summary"], (20, "success"))
+        self.assertNotIn("metadata-summary", latest)
 
     def test_metadata_contexts_reject_spoofed_names_or_wrong_adapter_results(self):
         cases = []
@@ -196,7 +193,7 @@ class CandidateEvidenceTests(unittest.TestCase):
         failed = _classifier_failure_metadata_run(35)
         with self.assertRaisesRegex(
             candidate_evidence.CandidateEvidenceError,
-            "attest different modes",
+            "metadata classifier must stay successful",
         ):
             candidate_evidence.run_mode(failed)
         with self.assertRaises(candidate_evidence.CandidateEvidenceError):

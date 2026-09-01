@@ -306,21 +306,21 @@ availability or grant credentials.
      `extended-host-tests`, `legacy`, `summary`}.
    - **Parsed current metadata-only job/check set:** {`event-identity`,
      `event-router`, `metadata-classifier`, `host-tests`, `build`,
-     `extended-host-tests`, `legacy`, `patch-release`, `metadata-summary`}.
+     `extended-host-tests`, `legacy`, `patch-release`, `summary`}.
    The pre-fix graph therefore starts all four expensive workers and summary;
    the current graph retains both mandatory setup contexts, preserves the live
-   canonical `host-tests`/`build` required contexts through trusted
-   branch-protection continuity adapters, keeps canonical skipped
-   `extended-host-tests`/`legacy` plus canonical skipped patch publication, and
-   uses only the running metadata classifier/summary attestations beyond those
-   existing required names.
+   canonical `host-tests`/`build`/`summary` required contexts through trusted
+   branch-protection continuity adapters plus the summary continuity proof,
+   keeps canonical skipped `extended-host-tests`/`legacy` plus canonical
+   skipped patch publication, and uses only the running metadata classifier
+   attestation beyond those existing required names.
 
 ### Expected result
 
 Body-only, title-only, and combined body/title edits emit
 `event-identity`, `event-router`, `metadata-classifier`, the canonical
 worker checks `host-tests`, `build`, `extended-host-tests`, and `legacy`,
-plus `patch-release` and `metadata-summary`. The trusted metadata-only path
+plus `patch-release` and canonical `summary`. The trusted metadata-only path
 starts runners for `host-tests` and `build`, but those two jobs execute only a
 fixed no-checkout continuity attestation that validates exact event identity,
 classifier, head, base, and the raw edited pull-request body/title-only
@@ -334,18 +334,27 @@ checkout/install/test/build step in those jobs is full/fallback-only and
 remains skipped. `extended-host-tests` and `legacy` stay platform-skipped with
 no runner. Live branch protection remains unchanged and therefore still
 requires canonical `host-tests`, `build`, `summary`, and the independent
-GitGuardian context. `metadata-summary`
-stays distinct, so newer metadata runs cannot supersede the required full
-`summary` context; without a prior green full `summary`, metadata-only edits
+GitGuardian context. Metadata `summary` succeeds only after a trusted
+no-checkout Actions API proof confirms one prior successful complete full Build
+CI run for the same repository, PR number, authoritative base SHA, and
+immutable head SHA; without that prior green full run, metadata-only edits
 still block merge. Metadata runs remain ineligible candidate evidence even when
-their continuity adapters succeed. Evaluated metadata labels, duplicates,
+their continuity adapters and canonical `summary` succeed. Evaluated metadata
+labels, duplicates,
 unknown names, or spoofed worker names reject instead of becoming candidate
 evidence.
+The recorded `gh pr checks --required` output after the title edit and restore
+shows canonical `host-tests`, `build`, and `summary` passing together, and a
+protected async merge attempt no longer fails with `Required status check
+"summary" is expected.`.
 The summary succeeds only when classifier status is `success`, the classified
 SHA equals the event's validated exact `pull_request.head.sha`, event number
 matches the exact `refs/pull/<number>/merge` ref, suppression is exactly false,
 `host-tests`/`build` succeed through the trusted continuity adapters, and
-`extended-host-tests`/`legacy` are exactly `skipped`.
+`extended-host-tests`/`legacy`/`patch-release` are exactly `skipped`, and the
+trusted Actions API proof confirms one prior successful complete full Build CI
+run with the same repository, PR number, authoritative base SHA, and
+immutable head SHA.
 
 Base-only edits, mixed edits, unknown and incomplete change records, `opened`,
 `synchronize`, and `reopened` select the classifier, all four expensive
@@ -929,11 +938,12 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    gh api --method GET --paginate --slurp \
      "repos/$repo/actions/runs/$title_run_id/jobs" -f per_page=100 \
      > "$evidence_dir/title-jobs.json"
+   gh pr checks "$pr" --required > "$evidence_dir/title-required-checks.txt"
    ```
 
    - **Parsed live title-edit job/check set:** {`event-identity`,
      `event-router`, `metadata-classifier`, `host-tests`, `build`,
-     `extended-host-tests`, `legacy`, `patch-release`, `metadata-summary`}.
+     `extended-host-tests`, `legacy`, `patch-release`, `summary`}.
 
    Every raw REST job record is scanned before normalization. Duplicate API
    IDs, duplicate names/stable IDs, unknown jobs, a metadata `host-tests` or
@@ -969,11 +979,12 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    gh api --method GET --paginate --slurp \
      "repos/$repo/actions/runs/$restore_run_id/jobs" -f per_page=100 \
      > "$evidence_dir/restore-jobs.json"
+   gh pr checks "$pr" --required > "$evidence_dir/restore-required-checks.txt"
    ```
 
    - **Parsed live title-restore job/check set:** {`event-identity`,
      `event-router`, `metadata-classifier`, `host-tests`, `build`,
-     `extended-host-tests`, `legacy`, `patch-release`, `metadata-summary`}.
+     `extended-host-tests`, `legacy`, `patch-release`, `summary`}.
 5. Normalize all three real runs and execute the candidate evaluator's full,
    metadata-only, combined, failed-full, and missing-full assertions:
 
@@ -1020,7 +1031,6 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
            "legacy": "legacy",
            "patch-release": "patch-release",
            "summary": "summary",
-           "metadata-summary": "summary",
        }
        workers = {
            "host-tests",
@@ -1052,7 +1062,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
                "extended-host-tests",
                "legacy",
                "patch-release",
-               "metadata-summary",
+               "summary",
            }
        )
        seen_api_ids = set()
@@ -1124,11 +1134,10 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    assert full_title_result.eligible
    assert full_title_result.run_id == opened["run_id"]
    latest_full = candidate_evidence.latest_contexts([opened, title])
-   assert latest_full["summary"] == (opened["run_id"], "success")
-   assert latest_full["metadata-summary"] == (title["run_id"], "success")
+   assert latest_full["summary"] == (title["run_id"], "success")
    assert latest_full["host-tests"] == (title["run_id"], "success")
    assert latest_full["build"] == (title["run_id"], "success")
-   assert latest_full["summary"] == (opened["run_id"], "success")
+   assert "metadata-summary" not in latest_full
    for job_id in candidate_evidence.METADATA_SKIPPED_JOB_IDS:
        assert latest_full[job_id] == (title["run_id"], "skipped")
    failed_opened = copy.deepcopy(opened)
@@ -1142,8 +1151,8 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    )
    assert not failed_result.eligible
    assert candidate_evidence.latest_contexts([failed_opened, title])["summary"] == (
-       failed_opened["run_id"],
-       "failure",
+       title["run_id"],
+       "success",
    )
    all_runs_result = candidate_evidence.evaluate_candidate_runs(
        [opened, title, restore], head_sha=head_sha, base_sha=base_sha
