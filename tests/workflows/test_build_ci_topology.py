@@ -702,7 +702,7 @@ def _run_block_commands(job: str) -> list[str]:
 
 
 def _literal_run_script(step: str) -> str:
-    lines = step.splitlines()
+    lines = step.split("\n")
     try:
         run_index = lines.index("      run: |")
     except ValueError as error:
@@ -3423,6 +3423,32 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     for error in _errors(changed, False)
                 )
             )
+        unicode_control_mutations = (
+            ("nbsp", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\u00a0\n"),
+            ("em-space", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\u2003\n"),
+            ("en-space", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\u2002\n"),
+            ("thin-space", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\u2009\n"),
+            ("ideographic-space", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\u3000\n"),
+            ("zero-width-space", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\u200b\n"),
+            ("bom", "        /usr/bin/python3 -I - <<'PY'\n", "\ufeff        /usr/bin/python3 -I - <<'PY'\n"),
+            ("line-separator", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\u2028\n"),
+            ("paragraph-separator", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\u2029\n"),
+            ("carriage-return", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\r\n"),
+            ("ascii-tab", "        import sys\n", "\t        import sys\n"),
+            ("ascii-escape", "        import sys\n", "        import sys\x1b\n"),
+            ("ascii-nul", "        import sys\n", "        import sys\x00\n"),
+        )
+        for name, old, new in unicode_control_mutations:
+            with self.subTest(mutation=name):
+                changed = self.text.replace(old, new, 1)
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "host-tests protected pre-pilot step sequence differs" in error
+                        or "build metadata continuity adapter differs" in error
+                        for error in _errors(changed, False)
+                    )
+                )
 
     def test_metadata_adapter_parsed_contract_rejects_extra_shell_and_python_behavior(self):
         mutations = (

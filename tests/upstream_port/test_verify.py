@@ -1342,6 +1342,84 @@ class VerifyCliCwdTests(unittest.TestCase):
                         )[0]
                     ),
                 ),
+                "nbsp": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<'PY'\u00a0\n",
+                ),
+                "em-space": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<'PY'\u2003\n",
+                ),
+                "en-space": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<'PY'\u2002\n",
+                ),
+                "thin-space": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<'PY'\u2009\n",
+                ),
+                "ideographic-space": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<'PY'\u3000\n",
+                ),
+                "zero-width-space": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<'PY'\u200b\n",
+                ),
+                "bom": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "\ufeff        /usr/bin/python3 -I - <<'PY'\n",
+                ),
+                "line-separator": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<'PY'\u2028\n",
+                ),
+                "paragraph-separator": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<'PY'\u2029\n",
+                ),
+                "carriage-return": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<'PY'\r\n",
+                ),
+                "ascii-tab": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        import sys\n",
+                    "\t        import sys\n",
+                ),
+                "ascii-escape": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        import sys\n",
+                    "        import sys\x1b\n",
+                ),
+                "ascii-nul": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        import sys\n",
+                    "        import sys\x00\n",
+                ),
             }
             for name, changed in mutations.items():
                 with self.subTest(mutation=name):
@@ -1350,7 +1428,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                         handle.write(changed)
                     with self.assertRaisesRegex(
                         ValueError,
-                        "metadata adapter script differs",
+                        "metadata adapter script differs|workflow has content after the jobs mapping",
                     ):
                         verify_mod.run_gates(target_root, dry_run=True)
 

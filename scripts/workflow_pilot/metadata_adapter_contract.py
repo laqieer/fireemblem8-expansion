@@ -85,6 +85,40 @@ class ParsedShellCommand:
     heredoc: str | None = None
 
 
+def _require_ascii_boundary(text: str, *, label: str) -> bytes:
+    try:
+        data = text.encode("ascii")
+    except UnicodeEncodeError as error:
+        raise ValueError(f"{label} must be ASCII") from error
+    for byte in data:
+        if byte == 0x0A:
+            continue
+        if 0x20 <= byte <= 0x7E:
+            continue
+        raise ValueError(
+            f"{label} contains unsupported control byte 0x{byte:02x}"
+        )
+    return data
+
+
+def _ascii_lstrip_space_tab(text: str) -> str:
+    index = 0
+    while index < len(text) and text[index] in " \t":
+        index += 1
+    return text[index:]
+
+
+def _ascii_rstrip_space_tab(text: str) -> str:
+    index = len(text)
+    while index > 0 and text[index - 1] in " \t":
+        index -= 1
+    return text[:index]
+
+
+def _ascii_strip_space_tab(text: str) -> str:
+    return _ascii_rstrip_space_tab(_ascii_lstrip_space_tab(text))
+
+
 def _tokenize_shell_command(command: str) -> tuple[str, ...]:
     lexer = shlex.shlex(
         command,
@@ -121,27 +155,28 @@ EXPECTED_METADATA_ADAPTER_SHELL_TOKENS = (
 
 
 def parse_metadata_adapter_shell(script: str) -> tuple[ParsedShellCommand, ...]:
-    lines = script.splitlines()
+    _require_ascii_boundary(script, label="metadata adapter shell")
+    lines = script.split("\n")
     commands = []
     continued = []
     line_index = 0
 
     while line_index < len(lines):
         line = lines[line_index]
-        if not line.strip():
+        if _ascii_strip_space_tab(line) == "":
             line_index += 1
             continue
 
-        rstripped = line.rstrip()
+        rstripped = _ascii_rstrip_space_tab(line)
         if rstripped.endswith("\\") and rstripped != line:
             raise ValueError(
                 "metadata adapter shell has trailing whitespace after a continuation backslash"
             )
 
-        text = line.strip()
+        text = _ascii_strip_space_tab(line)
         continued.append(text)
         if line.endswith("\\"):
-            continued[-1] = continued[-1][:-1].rstrip()
+            continued[-1] = _ascii_rstrip_space_tab(continued[-1][:-1])
             line_index += 1
             continue
 
@@ -274,10 +309,10 @@ def _semantic_ast_digest(tree: ast.AST) -> str:
 
 
 def validate_metadata_adapter_python(source: str) -> None:
-    try:
-        source_bytes = source.encode("utf-8")
-    except UnicodeEncodeError as error:
-        raise ValueError("metadata adapter Python source is not valid UTF-8") from error
+    source_bytes = _require_ascii_boundary(
+        source,
+        label="metadata adapter Python source",
+    )
     if len(source_bytes) > MAX_PYTHON_SOURCE_BYTES:
         raise ValueError("metadata adapter Python source exceeds size limit")
     try:

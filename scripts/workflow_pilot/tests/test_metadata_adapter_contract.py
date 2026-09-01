@@ -103,7 +103,7 @@ class MetadataAdapterContractTests(unittest.TestCase):
             with self.subTest(mutated=mutated.splitlines()[0]):
                 with self.assertRaisesRegex(
                     ValueError,
-                    "trailing whitespace after a continuation backslash",
+                    "trailing whitespace after a continuation backslash|unsupported control byte 0x09",
                 ):
                     metadata_adapter_contract.validate_metadata_adapter_script(mutated)
 
@@ -134,6 +134,33 @@ class MetadataAdapterContractTests(unittest.TestCase):
                 with self.assertRaisesRegex(
                     ValueError,
                     "heredoc introducer differs from the reviewed contract",
+                ):
+                    metadata_adapter_contract.validate_metadata_adapter_script(mutated)
+
+    def test_ascii_shell_boundary_rejects_unicode_whitespace_and_controls(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        script = _literal_run_script(_step_blocks(_job_blocks(text)["host-tests"])[0])
+        mutations = {
+            "nbsp": ('/usr/bin/python3 -I - <<\'PY\'\n', "/usr/bin/python3 -I - <<'PY'\u00a0\n"),
+            "em-space": ('/usr/bin/python3 -I - <<\'PY\'\n', "/usr/bin/python3 -I - <<'PY'\u2003\n"),
+            "en-space": ('/usr/bin/python3 -I - <<\'PY\'\n', "/usr/bin/python3 -I - <<'PY'\u2002\n"),
+            "thin-space": ('/usr/bin/python3 -I - <<\'PY\'\n', "/usr/bin/python3 -I - <<'PY'\u2009\n"),
+            "ideographic-space": ('/usr/bin/python3 -I - <<\'PY\'\n', "/usr/bin/python3 -I - <<'PY'\u3000\n"),
+            "zero-width-space": ('/usr/bin/python3 -I - <<\'PY\'\n', "/usr/bin/python3 -I - <<'PY'\u200b\n"),
+            "bom": ('/usr/bin/python3 -I - <<\'PY\'\n', "\ufeff/usr/bin/python3 -I - <<'PY'\n"),
+            "line-separator": ('/usr/bin/python3 -I - <<\'PY\'\n', "/usr/bin/python3 -I - <<'PY'\u2028\n"),
+            "paragraph-separator": ('/usr/bin/python3 -I - <<\'PY\'\n', "/usr/bin/python3 -I - <<'PY'\u2029\n"),
+            "carriage-return": ('/usr/bin/python3 -I - <<\'PY\'\n', "/usr/bin/python3 -I - <<'PY'\r\n"),
+            "tab": ('import sys\n', "\timport sys\n"),
+            "escape": ('import sys\n', "import sys\x1b\n"),
+            "nul": ('import sys\n', "import sys\x00\n"),
+        }
+        for name, (old, new) in mutations.items():
+            mutated = script.replace(old, new, 1)
+            with self.subTest(mutation=name):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "must be ASCII|unsupported control byte",
                 ):
                     metadata_adapter_contract.validate_metadata_adapter_script(mutated)
 
@@ -208,6 +235,22 @@ class MetadataAdapterContractTests(unittest.TestCase):
             "unsupported nonempty compatibility field FunctionDef.type_params",
         ):
             metadata_adapter_contract._semantic_ast_digest(tree)
+
+    def test_python_source_ascii_boundary_rejects_unicode_and_controls(self):
+        cases = (
+            "print('x')\u00a0\n",
+            "\ufeffprint('x')\n",
+            "print('x')\u2028\n",
+            "print('x')\r\n",
+            "print('x')\x00\n",
+        )
+        for source in cases:
+            with self.subTest(source=repr(source)):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "must be ASCII|unsupported control byte",
+                ):
+                    metadata_adapter_contract.validate_metadata_adapter_python(source)
 
     def test_semantic_ast_depth_limit_accepts_boundary_minus_one_and_rejects_plus_one(self):
         def nested_tree(depth: int) -> ast.Module:

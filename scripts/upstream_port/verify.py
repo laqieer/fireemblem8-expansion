@@ -1528,7 +1528,7 @@ def _literal_run_script(lines, start, end, value, step_label):
 
 
 def _parse_step(block, job_name, index):
-    lines = block.splitlines()
+    lines = block.split("\n")
     first_index = next(
         (
             line_index
@@ -2206,7 +2206,7 @@ def _read_workflow_gate_contract(repository_root):
             )
         if os.path.getsize(path) > 1024 * 1024:
             raise ValueError(f"Build workflow {path!r} exceeds 1 MiB")
-        with open(path, "r", encoding="utf-8") as handle:
+        with open(path, "r", encoding="utf-8", newline="") as handle:
             text = handle.read()
     except (OSError, UnicodeError) as error:
         raise ValueError(f"cannot read target Build workflow {path!r}: {error}") from error
