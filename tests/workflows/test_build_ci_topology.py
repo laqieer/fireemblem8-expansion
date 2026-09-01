@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import copy
 import fnmatch
+import http.server
+import io
 import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
+import threading
+import types
 import unittest
+import urllib.parse
 from pathlib import Path
 from unittest import mock
 
@@ -17,12 +24,16 @@ from scripts.workflow_pilot import (
     candidate_evidence,
     event_classifier,
     hydrate_authority,
+    metadata_adapter_contract,
     reporter,
+    summary_continuity_contract,
 )
 
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
+WORKFLOW_GOVERNANCE_CASE = ROOT / "docs" / "test-cases" / "workflow-governance.md"
+WORKFLOW_PILOT_DOC = ROOT / "docs" / "workflow-pilot.md"
 EVENT_FIXTURE = (
     ROOT
     / "scripts"
@@ -44,14 +55,97 @@ MASTER_PUBLISHER_CONDITION = (
     "needs.event-identity.outputs.fallback_sha == github.sha }}"
 )
 COMBINED_WORKERS = ("host-tests", "build", "extended-host-tests", "legacy")
+METADATA_ADAPTER_JOBS = candidate_evidence.METADATA_ADAPTER_JOB_IDS
+METADATA_SKIPPED_JOBS = candidate_evidence.METADATA_SKIPPED_JOB_IDS
 CLASSIFIER_JOB = "event-classifier"
+METADATA_TRIGGERED_JOBS = set(METADATA_ADAPTER_JOBS) | {
+    "event-identity",
+    "event-router",
+    CLASSIFIER_JOB,
+    "summary",
+}
+METADATA_CHECK_CONTEXTS = set(COMBINED_WORKERS) | {
+    "event-identity",
+    "event-router",
+    candidate_evidence.METADATA_CLASSIFIER,
+    "patch-release",
+    candidate_evidence.METADATA_ATTESTATION,
+}
+METADATA_CLASSIFIER_FAILURE_CHECKS = set(COMBINED_WORKERS) | {
+    "event-identity",
+    "event-router",
+    candidate_evidence.METADATA_CLASSIFIER,
+    "patch-release",
+    "summary",
+}
+REQUIRED_BUILD_CONTEXTS = frozenset(candidate_evidence.REQUIRED_BUILD_CONTEXTS)
 SUMMARY_NEEDS = (
     "needs: [event-identity, event-classifier, host-tests, build, "
     "extended-host-tests, legacy, patch-release]"
 )
 WORKER_NEEDS = "needs: [event-identity, event-classifier]"
+FULL_WORKER_STEP_CONDITION = (
+    "${{ needs.event-classifier.result == 'failure' || "
+    "needs.event-classifier.outputs.classification == 'full' }}"
+)
+METADATA_ADAPTER_STEP_CONDITION = (
+    "${{ needs.event-classifier.result == 'success' && "
+    "needs.event-classifier.outputs.classification == 'metadata-only' }}"
+)
 WORKER_CONDITION = (
     "${{ always() && ((needs.event-classifier.result == 'success' && "
+    "needs.event-identity.result == 'success' && "
+    "needs.event-classifier.outputs.classification == 'full' && "
+    "needs.event-classifier.outputs.head_valid == 'true' && "
+    "needs.event-classifier.outputs.run_expensive == 'true' && "
+    "((github.event_name == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_kind == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "needs.event-classifier.outputs.expected_head && "
+    "needs.event-classifier.outputs.expected_head == "
+    "github.event.pull_request.head.sha && "
+    "github.event.pull_request.head.sha != '' && "
+    "(needs.event-classifier.outputs.identity_valid == 'true' || "
+    "needs.event-classifier.outputs.full_fallback == 'true')) || "
+    "(github.event_name == 'push' && "
+    "needs.event-identity.outputs.fallback_kind == 'push' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "needs.event-classifier.outputs.expected_head && "
+    "needs.event-identity.outputs.fallback_sha == github.sha && "
+    "needs.event-classifier.outputs.identity_valid == 'true' && "
+    "needs.event-classifier.outputs.expected_head == github.event.after && "
+    "needs.event-classifier.outputs.expected_base == '' && "
+    "github.event.after != ''))) || "
+    "(needs.event-classifier.result == 'failure' && "
+    "needs.event-identity.result == 'success' && "
+    "((github.event_name == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_kind == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "github.event.pull_request.head.sha) || "
+    "(github.event_name == 'push' && "
+    "needs.event-identity.outputs.fallback_kind == 'push' && "
+    "needs.event-identity.outputs.fallback_sha == github.event.after && "
+    "needs.event-identity.outputs.fallback_sha == github.sha)))) }}"
+)
+HOST_BUILD_CONDITION = (
+    "${{ always() && ((needs.event-classifier.result == 'success' && "
+    "needs.event-identity.result == 'success' && "
+    "needs.event-classifier.outputs.classification == 'metadata-only' && "
+    "needs.event-classifier.outputs.head_valid == 'true' && "
+    "needs.event-classifier.outputs.identity_valid == 'true' && "
+    "needs.event-classifier.outputs.full_fallback == 'false' && "
+    "needs.event-classifier.outputs.run_expensive == 'false' && "
+    "github.event_name == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_kind == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "needs.event-classifier.outputs.expected_head && "
+    "needs.event-classifier.outputs.expected_head == "
+    "github.event.pull_request.head.sha && "
+    "needs.event-classifier.outputs.expected_base == "
+    "github.event.pull_request.base.sha && "
+    "github.event.pull_request.head.sha != '' && "
+    "github.event.pull_request.base.sha != '') || "
+    "(needs.event-classifier.result == 'success' && "
     "needs.event-identity.result == 'success' && "
     "needs.event-classifier.outputs.classification == 'full' && "
     "needs.event-classifier.outputs.head_valid == 'true' && "
@@ -91,6 +185,12 @@ CANDIDATE_FULL_JOBS = set(COMBINED_WORKERS) | {
     CLASSIFIER_JOB,
     "summary",
 }
+EMITTED_FULL_CHECKS = CANDIDATE_FULL_JOBS | {"patch-release"}
+EVENT_CLASSIFIER_DYNAMIC_NAME = (
+    "${{ needs.event-router.result == 'success' && "
+    "needs.event-router.outputs.classification == 'metadata-only' && "
+    "'metadata-classifier' || 'event-classifier' }}"
+)
 HASHED_PIP_INSTALL = (
     "python3 -m pip install --require-hashes --only-binary=:all: --no-deps "
     "-r .github/requirements/build.txt"
@@ -146,6 +246,22 @@ EXPECTED_BUILD_SHA_EXPRESSION = (
     "needs.event-identity.outputs.fallback_sha) || '' }}"
 )
 HOST_ENV_LINE = f"      EXPECTED_BUILD_SHA: {EXPECTED_BUILD_SHA_EXPRESSION}"
+METADATA_ADAPTER_ENV = (
+    "        BASH_ENV: ''",
+    "        CLASSIFICATION: ${{ needs.event-classifier.outputs.classification }}",
+    "        CLASSIFIED_BASE_SHA: ${{ needs.event-classifier.outputs.expected_base }}",
+    "        CLASSIFIED_BUILD_SHA: ${{ needs.event-classifier.outputs.expected_head }}",
+    "        CLASSIFIER_RESULT: ${{ needs.event-classifier.result }}",
+    "        ENV: ''",
+    "        FALLBACK_IDENTITY_RESULT: ${{ needs.event-identity.result }}",
+    "        FALLBACK_KIND: ${{ needs.event-identity.outputs.fallback_kind }}",
+    "        FALLBACK_SHA: ${{ needs.event-identity.outputs.fallback_sha }}",
+    "        FULL_FALLBACK: ${{ needs.event-classifier.outputs.full_fallback }}",
+    "        HEAD_VALID: ${{ needs.event-classifier.outputs.head_valid }}",
+    "        IDENTITY_VALID: ${{ needs.event-classifier.outputs.identity_valid }}",
+    "        PATH: /usr/bin:/bin",
+    "        RUN_EXPENSIVE: ${{ needs.event-classifier.outputs.run_expensive }}",
+)
 COMBINED_JOB_ENV = {
     "host-tests": (HOST_ENV_LINE,),
     "build": (HOST_ENV_LINE,),
@@ -388,9 +504,11 @@ def _triggered_jobs(text: str, event: dict) -> set[str]:
         and not decision.identity_valid
         and decision.full_fallback
     )
-    if (
-        not decision.run_expensive
-        or (not decision.identity_valid and not missing_base_fallback)
+    if decision.classification == "metadata-only":
+        jobs.difference_update(METADATA_SKIPPED_JOBS)
+        return jobs
+    if not decision.run_expensive or (
+        not decision.identity_valid and not missing_base_fallback
     ):
         jobs.difference_update(COMBINED_WORKERS)
     return jobs
@@ -404,6 +522,82 @@ def _pre_fix_triggered_jobs(text: str, event: dict) -> set[str]:
     if payload["action"] not in _pull_request_actions(header):
         return set()
     return set(_job_blocks(text))
+
+
+def _resolved_check_name(
+    text: str,
+    job_name: str,
+    event: dict,
+    decision: event_classifier.EventDecision | None,
+    *,
+    classifier_result: str,
+) -> str:
+    job = _job_blocks(text)[job_name]
+    direct_name = _direct_job_name(job)
+    if direct_name is None:
+        return job_name
+    if job_name in COMBINED_WORKERS:
+        return direct_name
+    if job_name == "event-classifier" and direct_name == EVENT_CLASSIFIER_DYNAMIC_NAME:
+        return (
+            candidate_evidence.METADATA_CLASSIFIER
+            if decision is not None and decision.classification == "metadata-only"
+            else job_name
+        )
+    return direct_name
+
+
+def _emitted_check_names(text: str, event: dict) -> set[str]:
+    scheduled = _triggered_jobs(text, event)
+    if not scheduled:
+        return set()
+
+    payload = event.get("payload", event)
+    runner = event.get("runner", {})
+    classifier_result = event.get("classifier_result", "success")
+    decision = None
+    if event["event_name"] in {"pull_request", "push"}:
+        pull_request = payload.get("pull_request", {})
+        base = pull_request.get("base", {}) if isinstance(pull_request, dict) else {}
+        head = pull_request.get("head", {}) if isinstance(pull_request, dict) else {}
+        try:
+            decision = event_classifier.classify_event(
+                event["event_name"],
+                payload,
+                github_ref=runner.get(
+                    "github_ref",
+                    event.get("github_ref", event.get("ref", "")),
+                ),
+                github_sha=runner.get(
+                    "github_sha",
+                    event.get("github_sha", event.get("sha", "")),
+                ),
+                pr_base_sha=runner.get(
+                    "pr_base_sha",
+                    base.get("sha", "") if isinstance(base, dict) else "",
+                ),
+                pr_head_sha=runner.get(
+                    "pr_head_sha",
+                    head.get("sha", "") if isinstance(head, dict) else "",
+                ),
+                push_sha=runner.get(
+                    "push_sha",
+                    event.get("sha", payload.get("after", "")),
+                ),
+            )
+        except event_classifier.EventClassificationError:
+            decision = None
+
+    return {
+        _resolved_check_name(
+            text,
+            job_name,
+            event,
+            decision,
+            classifier_result=classifier_result,
+        )
+        for job_name in _job_blocks(text)
+    }
 
 
 def _job_blocks(text: str) -> dict[str, str]:
@@ -460,6 +654,15 @@ def _direct_job_if(job: str) -> str:
     return matches[0]
 
 
+def _direct_job_name(job: str) -> str | None:
+    matches = re.findall(r"^    name: (?P<expression>.+)$", job, re.MULTILINE)
+    if not matches:
+        return None
+    if len(matches) != 1:
+        raise ValueError("job must contain exactly one direct name expression")
+    return matches[0]
+
+
 def _run_block_commands(job: str) -> list[str]:
     lines = job.splitlines()
     commands = []
@@ -492,7 +695,7 @@ def _run_block_commands(job: str) -> list[str]:
 
 
 def _literal_run_script(step: str) -> str:
-    lines = step.splitlines()
+    lines = step.split("\n")
     try:
         run_index = lines.index("      run: |")
     except ValueError as error:
@@ -503,6 +706,515 @@ def _literal_run_script(step: str) -> str:
             break
         script.append(line[8:] if line else "")
     return "\n".join(script) + "\n"
+
+
+def _metadata_adapter_scripts(text: str) -> dict[str, str]:
+    return {
+        job_name: _literal_run_script(_step_blocks(_job_blocks(text)[job_name])[0])
+        for job_name in METADATA_ADAPTER_JOBS
+    }
+
+
+def _metadata_adapter_python_source(script: str) -> str:
+    return metadata_adapter_contract.metadata_adapter_python_source(script)
+
+
+def _indent_metadata_adapter_heredoc(script: str) -> str:
+    source = metadata_adapter_contract.metadata_adapter_python_source(script)
+    indented = "".join(
+        f" {line}\n" if line else "\n"
+        for line in source.splitlines()
+    )
+    return script.replace(source, indented, 1)
+
+
+def _indent_metadata_adapter_heredoc_in_step(step: str) -> str:
+    lines = step.splitlines(keepends=True)
+    start = next(
+        index
+        for index, line in enumerate(lines)
+        if line.strip() == "/usr/bin/python3 -I - <<'PY'"
+    )
+    end = next(
+        index for index in range(start + 1, len(lines)) if lines[index].strip() == "PY"
+    )
+    for index in range(start + 1, end):
+        if lines[index].strip():
+            lines[index] = " " + lines[index]
+    return "".join(lines)
+
+
+def _metadata_adapter_payload(
+    *,
+    action: str = "edited",
+    number: int = 177,
+    base_ref: str = "master",
+    base_sha: str = "2" * 40,
+    head_sha: str = "1" * 40,
+    body: str | None = "New body",
+    title: str = "New title",
+    changes: dict | None = None,
+) -> dict:
+    if changes is None:
+        changes = {"body": {"from": "Old body"}}
+    return {
+        "action": action,
+        "changes": changes,
+        "number": number,
+        "pull_request": {
+            "base": {"ref": base_ref, "sha": base_sha},
+            "body": body,
+            "head": {"sha": head_sha},
+            "title": title,
+        },
+    }
+
+
+def _metadata_adapter_payload_bytes(payload: dict) -> bytes:
+    return (
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        + b"\n"
+    )
+
+
+def _metadata_adapter_python_env(event_path: Path | str) -> dict[str, str]:
+    return {
+        "CLASSIFIED_BASE_SHA": "2" * 40,
+        "CLASSIFIED_BUILD_SHA": "1" * 40,
+        "EXPECTED_BUILD_SHA": "1" * 40,
+        "FALLBACK_SHA": "1" * 40,
+        "GITHUB_EVENT_NAME": "pull_request",
+        "GITHUB_EVENT_PATH": str(event_path),
+        "GITHUB_REF": "refs/pull/177/merge",
+    }
+
+
+def _metadata_adapter_env_for_case(case: dict, event_path: Path | str) -> dict[str, str]:
+    runner = case["runner"]
+    pr_head_sha = runner.get("pr_head_sha", "")
+    pr_base_sha = runner.get("pr_base_sha", "")
+    return {
+        "CLASSIFICATION": "metadata-only",
+        "CLASSIFIED_BASE_SHA": pr_base_sha,
+        "CLASSIFIED_BUILD_SHA": pr_head_sha,
+        "CLASSIFIER_RESULT": "success",
+        "EXPECTED_BUILD_SHA": pr_head_sha,
+        "FALLBACK_IDENTITY_RESULT": "success",
+        "FALLBACK_KIND": "pull_request",
+        "FALLBACK_SHA": pr_head_sha,
+        "FULL_FALLBACK": "false",
+        "GITHUB_EVENT_NAME": case["event_name"],
+        "GITHUB_EVENT_PATH": str(event_path),
+        "GITHUB_REF": runner["github_ref"],
+        "HEAD_VALID": "true" if event_classifier._is_sha(pr_head_sha) else "false",
+        "IDENTITY_VALID": (
+            "true"
+            if event_classifier._is_sha(pr_head_sha)
+            and event_classifier._is_sha(pr_base_sha)
+            else "false"
+        ),
+        "RUN_EXPENSIVE": "false",
+    }
+
+
+def _run_metadata_adapter_python_source(
+    source: str,
+    env: dict[str, str],
+) -> tuple[int, str]:
+    stderr = io.StringIO()
+    code = 0
+    with (
+        mock.patch.dict(os.environ, env, clear=True),
+        mock.patch("sys.stderr", stderr),
+    ):
+        try:
+            exec(compile(source, "<metadata-adapter>", "exec"), {"__name__": "__main__"})
+        except SystemExit as exc:
+            code = exc.code if isinstance(exc.code, int) else 1
+    return code, stderr.getvalue()
+
+
+SUMMARY_TEST_REPOSITORY = "owner/repo"
+SUMMARY_TEST_WORKFLOW_ID = 123456789
+SUMMARY_TEST_HEAD_SHA = "1" * 40
+SUMMARY_TEST_BASE_SHA = "2" * 40
+SUMMARY_TEST_PR_NUMBER = 177
+SUMMARY_TEST_RUN_ID = 9001
+SUMMARY_TEST_RUN_NUMBER = 9001
+SUMMARY_TEST_RUN_ATTEMPT = 1
+SUMMARY_TEST_CREATED_AT = "2026-09-01T00:00:00Z"
+SUMMARY_TEST_RUN_STARTED_AT = "2026-09-01T00:00:01Z"
+SUMMARY_TEST_JOB_STARTED_AT = "2026-09-01T00:00:02Z"
+
+
+def _summary_timestamp(second: int) -> str:
+    return f"2026-09-01T00:00:{second:02d}Z"
+
+
+def _replace_summary_job(
+    jobs: list[dict],
+    job_name: str,
+    **changes,
+) -> list[dict]:
+    mutated = copy.deepcopy(jobs)
+    target = next(job for job in mutated if job["name"] == job_name)
+    target.update(changes)
+    return mutated
+
+
+def _summary_runs_path(*, repo: str = SUMMARY_TEST_REPOSITORY, head_sha: str = SUMMARY_TEST_HEAD_SHA, page: int = 1) -> str:
+    owner, name = repo.split("/", 1)
+    return (
+        f"/repos/{urllib.parse.quote(owner, safe='')}/"
+        f"{urllib.parse.quote(name, safe='')}/actions/workflows/build.yml/runs?"
+        + urllib.parse.urlencode(
+            [
+                ("event", "pull_request"),
+                ("head_sha", head_sha),
+                ("per_page", "100"),
+                ("page", str(page)),
+            ]
+        )
+    )
+
+
+def _summary_total_pages(total_count: int) -> int:
+    if total_count == 0:
+        return 1
+    page_count, remainder = divmod(total_count, 100)
+    return page_count + (1 if remainder else 0)
+
+
+def _summary_runs_link_header(
+    *,
+    current_page: int,
+    total_count: int,
+    repo: str = SUMMARY_TEST_REPOSITORY,
+    head_sha: str = SUMMARY_TEST_HEAD_SHA,
+    next_page: int | None = None,
+    last_page: int | None = None,
+    include_next: bool = True,
+    include_last: bool = True,
+    include_prev: bool = False,
+    include_first: bool = False,
+) -> str:
+    total_pages = _summary_total_pages(total_count)
+    if next_page is None:
+        next_page = current_page + 1
+    if last_page is None:
+        last_page = total_pages
+    links = []
+    if include_prev:
+        links.append(
+            f'<{{api_base}}'
+            f'{_summary_runs_path(repo=repo, head_sha=head_sha, page=current_page - 1)}>; '
+            'rel="prev"'
+        )
+    if include_next:
+        links.append(
+            f'<{{api_base}}'
+            f'{_summary_runs_path(repo=repo, head_sha=head_sha, page=next_page)}>; '
+            'rel="next"'
+        )
+    if include_last:
+        links.append(
+            f'<{{api_base}}'
+            f'{_summary_runs_path(repo=repo, head_sha=head_sha, page=last_page)}>; '
+            'rel="last"'
+        )
+    if include_first:
+        links.append(
+            f'<{{api_base}}'
+            f'{_summary_runs_path(repo=repo, head_sha=head_sha, page=1)}>; '
+            'rel="first"'
+        )
+    return ", ".join(links)
+
+
+def _summary_jobs_path(run_id: int, *, repo: str = SUMMARY_TEST_REPOSITORY, attempt: int = 1) -> str:
+    owner, name = repo.split("/", 1)
+    return (
+        f"/repos/{urllib.parse.quote(owner, safe='')}/"
+        f"{urllib.parse.quote(name, safe='')}/actions/runs/{run_id}/attempts/{attempt}/jobs?"
+        + urllib.parse.urlencode([("per_page", "100"), ("page", "1")])
+    )
+
+
+def _summary_workflow_run(
+    run_id: int,
+    *,
+    repo: str = SUMMARY_TEST_REPOSITORY,
+    workflow_id: int = SUMMARY_TEST_WORKFLOW_ID,
+    pr_number: int = SUMMARY_TEST_PR_NUMBER,
+    head_sha: str = SUMMARY_TEST_HEAD_SHA,
+    base_sha: str = SUMMARY_TEST_BASE_SHA,
+    event: str = "pull_request",
+    status: str = "completed",
+    conclusion: str | None = "success",
+    run_number: int | None = None,
+    run_attempt: int = 1,
+    path: str | None = None,
+    pull_requests: list[dict] | None = None,
+    url: str | None = None,
+    created_at: str = SUMMARY_TEST_CREATED_AT,
+    run_started_at: str | None = SUMMARY_TEST_RUN_STARTED_AT,
+) -> dict:
+    owner, name = repo.split("/", 1)
+    if path is None:
+        path = f".github/workflows/build.yml@refs/pull/{pr_number}/merge"
+    if pull_requests is None:
+        pull_requests = [
+            {
+                "number": pr_number,
+                "head": {"sha": head_sha},
+                "base": {"sha": base_sha},
+            }
+        ]
+    if url is None:
+        url = (
+            f"https://api.github.test/repos/"
+            f"{urllib.parse.quote(owner, safe='')}/"
+            f"{urllib.parse.quote(name, safe='')}/actions/runs/{run_id}"
+        )
+    if run_number is None:
+        run_number = SUMMARY_TEST_RUN_NUMBER if run_id == SUMMARY_TEST_RUN_ID else run_id
+    if run_id == SUMMARY_TEST_RUN_ID and status == "completed" and conclusion == "success":
+        status = "in_progress"
+        conclusion = None
+    return {
+        "id": run_id,
+        "workflow_id": workflow_id,
+        "run_number": run_number,
+        "run_attempt": run_attempt,
+        "event": event,
+        "status": status,
+        "conclusion": conclusion,
+        "created_at": created_at,
+        "head_sha": head_sha,
+        "path": path,
+        "pull_requests": pull_requests,
+        "run_started_at": run_started_at,
+        "url": url,
+    }
+
+
+def _summary_job(
+    name: str,
+    conclusion: str | None,
+    *,
+    status: str = "completed",
+    runner_name: str | None = "GitHub Actions 1",
+    started_at: str | None = SUMMARY_TEST_JOB_STARTED_AT,
+) -> dict:
+    return {
+        "name": name,
+        "status": status,
+        "conclusion": conclusion,
+        "runner_name": runner_name,
+        "started_at": started_at,
+    }
+
+
+def _summary_full_jobs() -> list[dict]:
+    return [
+        _summary_job("event-identity", "success"),
+        _summary_job("event-router", "success"),
+        _summary_job("event-classifier", "success"),
+        _summary_job("host-tests", "success"),
+        _summary_job("build", "success"),
+        _summary_job("extended-host-tests", "success"),
+        _summary_job("legacy", "success"),
+        _summary_job("patch-release", "skipped", runner_name=None, started_at=None),
+        _summary_job("summary", "success"),
+    ]
+
+
+def _summary_metadata_jobs() -> list[dict]:
+    return [
+        _summary_job("event-identity", "success"),
+        _summary_job("event-router", "success"),
+        _summary_job(candidate_evidence.METADATA_CLASSIFIER, "success"),
+        _summary_job("host-tests", "success"),
+        _summary_job("build", "success"),
+        _summary_job("extended-host-tests", "skipped", runner_name=None, started_at=None),
+        _summary_job("legacy", "skipped", runner_name=None, started_at=None),
+        _summary_job("patch-release", "skipped", runner_name=None, started_at=None),
+        _summary_job("summary", "success"),
+    ]
+
+
+def _summary_api_payload(
+    key: str,
+    items: list[dict],
+    *,
+    total_count: int | None = None,
+) -> dict:
+    return {
+        "total_count": len(items) if total_count is None else total_count,
+        key: items,
+    }
+
+
+def _summary_response(body, *, status: int = 200, headers: dict[str, str] | None = None):
+    if isinstance(body, bytes):
+        payload = body
+    else:
+        payload = json.dumps(body, ensure_ascii=True, separators=(",", ":")).encode("utf-8")
+    return status, headers or {}, payload
+
+
+def _summary_metadata_env(**overrides: str) -> dict[str, str]:
+    env = {
+        "BUILD_RESULT": "success",
+        "CLASSIFICATION": "metadata-only",
+        "CLASSIFIED_BASE_SHA": SUMMARY_TEST_BASE_SHA,
+        "CLASSIFIED_BUILD_SHA": SUMMARY_TEST_HEAD_SHA,
+        "CLASSIFIER_RESULT": "success",
+        "EXTENDED_HOST_TESTS_RESULT": "skipped",
+        "FALLBACK_IDENTITY_RESULT": "success",
+        "FALLBACK_KIND": "pull_request",
+        "FALLBACK_SHA": SUMMARY_TEST_HEAD_SHA,
+        "FULL_FALLBACK": "false",
+        "GITHUB_EVENT_NAME": "pull_request",
+        "GITHUB_REF": f"refs/pull/{SUMMARY_TEST_PR_NUMBER}/merge",
+        "GITHUB_REPOSITORY": SUMMARY_TEST_REPOSITORY,
+        "GITHUB_TOKEN": "token",
+        "HEAD_VALID": "true",
+        "HOST_TESTS_RESULT": "success",
+        "IDENTITY_VALID": "true",
+        "LEGACY_RESULT": "skipped",
+        "PATCH_RELEASE_RESULT": "skipped",
+        "PR_BASE_SHA": SUMMARY_TEST_BASE_SHA,
+        "PR_HEAD_SHA": SUMMARY_TEST_HEAD_SHA,
+        "PR_NUMBER": str(SUMMARY_TEST_PR_NUMBER),
+        "PUSH_SHA": "",
+        "RAW_PUSH_SHA": "a" * 40,
+        "RUN_ATTEMPT": str(SUMMARY_TEST_RUN_ATTEMPT),
+        "RUN_EXPENSIVE": "false",
+        "RUN_ID": str(SUMMARY_TEST_RUN_ID),
+        "RUN_NUMBER": str(SUMMARY_TEST_RUN_NUMBER),
+    }
+    env.update(overrides)
+    return env
+
+
+def _run_summary_with_api(
+    script: str,
+    *,
+    environment: dict[str, str],
+    routes: dict[str, tuple[int, dict[str, str], bytes] | list[tuple[int, dict[str, str], bytes]]],
+) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]]]:
+    completed, requests = _run_summary_with_api_servers(
+        script,
+        environment=environment,
+        primary_routes=routes,
+    )
+    return completed, requests["primary"]
+
+
+def _run_summary_with_api_servers(
+    script: str,
+    *,
+    environment: dict[str, str],
+    primary_routes: dict[str, tuple[int, dict[str, str], bytes] | list[tuple[int, dict[str, str], bytes]]],
+    secondary_routes: dict[str, tuple[int, dict[str, str], bytes] | list[tuple[int, dict[str, str], bytes]]] | None = None,
+) -> tuple[subprocess.CompletedProcess[str], dict[str, list[dict[str, object]]]]:
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.server.requests.append(
+                {"path": self.path, "headers": dict(self.headers)}
+            )
+            responses = self.server.routes.get(self.path)
+            if not responses:
+                self.send_response(404)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            response = responses.pop(0)
+            status, headers, body = response
+            self.send_response(status)
+            for key, value in headers.items():
+                self.send_header(key, value.format(**self.server.format_context))
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):
+            return
+
+    primary_server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    secondary_server = (
+        http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        if secondary_routes is not None
+        else None
+    )
+    primary_server.routes = {
+        path: list(value) if isinstance(value, list) else [value]
+        for path, value in primary_routes.items()
+    }
+    primary_server.requests = []
+    primary_server.api_base = f"http://127.0.0.1:{primary_server.server_port}"
+    redirect_api_base = (
+        f"http://127.0.0.1:{secondary_server.server_port}"
+        if secondary_server is not None
+        else primary_server.api_base
+    )
+    format_context = {
+        "api_base": primary_server.api_base,
+        "redirect_api_base": redirect_api_base,
+    }
+    primary_server.format_context = format_context
+    threads = [
+        threading.Thread(target=primary_server.serve_forever, daemon=True)
+    ]
+    if secondary_server is not None:
+        secondary_server.routes = {
+            path: list(value) if isinstance(value, list) else [value]
+            for path, value in secondary_routes.items()
+        }
+        secondary_server.requests = []
+        secondary_server.api_base = redirect_api_base
+        secondary_server.format_context = format_context
+        threads.append(
+            threading.Thread(target=secondary_server.serve_forever, daemon=True)
+        )
+    for thread in threads:
+        thread.start()
+    try:
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="workflow-summary-runtime-",
+            dir=artifact_root,
+        ) as temporary:
+            completed = subprocess.run(
+                ["/bin/bash", "-c", script],
+                cwd=ROOT,
+                env={
+                    **os.environ,
+                    **environment,
+                    "GITHUB_API_URL": primary_server.api_base,
+                    "GITHUB_STEP_SUMMARY": str(Path(temporary) / "summary.md"),
+                },
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+        requests = {"primary": list(primary_server.requests)}
+        requests["secondary"] = (
+            list(secondary_server.requests) if secondary_server is not None else []
+        )
+        return completed, requests
+    finally:
+        primary_server.shutdown()
+        if secondary_server is not None:
+            secondary_server.shutdown()
+        for thread in threads:
+            thread.join()
+        primary_server.server_close()
+        if secondary_server is not None:
+            secondary_server.server_close()
 
 
 def _contains_command(job: str, command: str) -> bool:
@@ -554,38 +1266,54 @@ def _direct_step_mapping_fields(step: str) -> list[str] | None:
     return fields
 
 
-def _contains_exact_command(job: str, command: str) -> bool:
+def _contains_exact_command(
+    job: str,
+    command: str,
+    *,
+    if_expression: str | None = None,
+    env_lines: tuple[str, ...] | None = None,
+) -> bool:
     expected = _normalise(command)
     for step in _step_blocks(job):
         commands = _run_block_commands(step)
         if len(commands) != 1 or _normalise(commands[0]) != expected:
             continue
         fields = _direct_step_mapping_fields(step)
-        if fields is not None and (
-            (len(fields) == 2 and set(fields) == {"name", "run"})
-            or (
-                len(fields) == 3
-                and set(fields) == {"name", "env", "run"}
-                and _step_has_scrubbed_environment(step)
-            )
-        ):
+        expected_fields = {"name", "run"}
+        if if_expression is not None:
+            expected_fields.add("if")
+        expected_env = env_lines
+        if expected_env is not None:
+            expected_fields.add("env")
+        elif _step_env_entries(step) == SCRUBBED_STEP_ENV:
+            expected_fields.add("env")
+            expected_env = SCRUBBED_STEP_ENV
+        if fields is not None and len(fields) == len(expected_fields) and set(fields) == expected_fields:
+            if if_expression is not None and f"      if: {if_expression}" not in step:
+                continue
+            if expected_env is not None and _step_env_entries(step) != expected_env:
+                continue
             return True
     return False
 
 
-def _step_has_scrubbed_environment(step: str) -> bool:
+def _step_env_entries(step: str) -> tuple[str, ...] | None:
     lines = step.splitlines()
     try:
         env_index = lines.index("      env:")
     except ValueError:
-        return False
+        return None
     entries = []
     for line in lines[env_index + 1 :]:
         if line.strip() and len(line) - len(line.lstrip(" ")) <= 6:
             break
         if line.strip() and not line.lstrip().startswith("#"):
             entries.append(line)
-    return tuple(entries) == SCRUBBED_STEP_ENV
+    return tuple(entries)
+
+
+def _step_has_scrubbed_environment(step: str) -> bool:
+    return _step_env_entries(step) == SCRUBBED_STEP_ENV
 
 
 def _step_name(step: str) -> str | None:
@@ -593,7 +1321,7 @@ def _step_name(step: str) -> str | None:
     return match.group("name") if match is not None else None
 
 
-def _checkout_step_is_exact(step: str) -> bool:
+def _checkout_step_is_exact(step: str, *, if_expression: str | None = None) -> bool:
     action = (
         "    - uses: actions/checkout@"
         "3d3c42e5aac5ba805825da76410c181273ba90b1"
@@ -605,7 +1333,10 @@ def _checkout_step_is_exact(step: str) -> bool:
     ]
     if action_lines != [action]:
         return False
-    if _direct_step_mapping_fields(step) != ["uses", "with"]:
+    expected_fields = ["uses", "if", "with"] if if_expression is not None else ["uses", "with"]
+    if _direct_step_mapping_fields(step) != expected_fields:
+        return False
+    if if_expression is not None and f"      if: {if_expression}" not in step:
         return False
     expected = (
         f"        ref: {EXPECTED_BUILD_SHA_EXPRESSION}",
@@ -632,83 +1363,137 @@ def _run_step_is_exact(
     name: str,
     commands: tuple[str, ...],
     scrubbed: bool = False,
+    if_expression: str | None = None,
+    env_lines: tuple[str, ...] | None = None,
 ) -> bool:
     if _step_name(step) != name:
         return False
     if tuple(_run_block_commands(step)) != commands:
         return False
+    if scrubbed and env_lines is None:
+        env_lines = SCRUBBED_STEP_ENV
     fields = _direct_step_mapping_fields(step)
-    expected_fields = (
-        {"name", "env", "run"} if scrubbed else {"name", "run"}
-    )
+    expected_fields = {"name", "run"}
+    if env_lines is not None:
+        expected_fields.add("env")
+    if if_expression is not None:
+        expected_fields.add("if")
     if fields is None or len(fields) != len(expected_fields):
         return False
     if set(fields) != expected_fields:
         return False
-    return not scrubbed or _step_has_scrubbed_environment(step)
+    if if_expression is not None and f"      if: {if_expression}" not in step:
+        return False
+    if env_lines is None:
+        return True
+    return _step_env_entries(step) == env_lines
+
+
+def _metadata_adapter_step_is_reviewed(step: str) -> bool:
+    if _step_name(step) != "Attest metadata-only branch-protection continuity":
+        return False
+    if _direct_step_mapping_fields(step) != ["name", "if", "env", "run"]:
+        return False
+    if f"      if: {METADATA_ADAPTER_STEP_CONDITION}" not in step:
+        return False
+    if _step_env_entries(step) != METADATA_ADAPTER_ENV:
+        return False
+    try:
+        metadata_adapter_contract.validate_metadata_adapter_script(
+            _literal_run_script(step)
+        )
+    except ValueError:
+        return False
+    return True
+
+
+def _summary_step_is_reviewed(step: str) -> bool:
+    if _step_name(step) != "Render fail-closed combined Build summary":
+        return False
+    if _direct_step_mapping_fields(step) != ["name", "run"]:
+        return False
+    try:
+        summary_continuity_contract.validate_summary_continuity_script(
+            _literal_run_script(step)
+        )
+    except ValueError:
+        return False
+    return True
 
 
 def _protected_host_prefix_errors(host: str) -> list[str]:
     steps = _step_blocks(host)
-    if len(steps) < 9:
+    if len(steps) < 10:
         return ["host-tests lacks the complete protected pre-pilot sequence"]
     expected = (
-        _checkout_step_is_exact(steps[0]),
-        _run_step_is_exact(
+        _metadata_adapter_step_is_reviewed(steps[0]),
+        _checkout_step_is_exact(
             steps[1],
+            if_expression=FULL_WORKER_STEP_CONDITION,
+        ),
+        _run_step_is_exact(
+            steps[2],
             "Verify checked-out revision",
             (
                 'ACTUAL_SHA="$(git rev-parse HEAD)"',
                 "printf 'checkout.sha=%s\\n' \"$ACTUAL_SHA\"",
                 'test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"',
             ),
-        ),
-        _run_step_is_exact(
-            steps[2],
-            "Hydrate workflow-pilot Git authority",
-            (WORKFLOW_PILOT_AUTHORITY_HYDRATION,),
-            scrubbed=True,
+            if_expression=FULL_WORKER_STEP_CONDITION,
         ),
         _run_step_is_exact(
             steps[3],
+            "Hydrate workflow-pilot Git authority",
+            (WORKFLOW_PILOT_AUTHORITY_HYDRATION,),
+            if_expression=FULL_WORKER_STEP_CONDITION,
+            env_lines=SCRUBBED_STEP_ENV,
+        ),
+        _run_step_is_exact(
+            steps[4],
             "Install host-only dependencies (no arm-none-eabi toolchain)",
             (
                 "sudo apt-get update && sudo apt-get install -y "
                 "build-essential libmgba-dev",
             ),
+            if_expression=FULL_WORKER_STEP_CONDITION,
         ),
         _run_step_is_exact(
-            steps[4],
+            steps[5],
             "Run gba-playtest host test suite",
             (
                 "GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover "
                 "-s tools/gba-playtest/tests -v",
             ),
-        ),
-        _run_step_is_exact(
-            steps[5],
-            "Run upstream-port tooling test suite",
-            ("python3 -m unittest discover -s tests/upstream_port -v",),
+            if_expression=FULL_WORKER_STEP_CONDITION,
         ),
         _run_step_is_exact(
             steps[6],
+            "Run upstream-port tooling test suite",
+            ("python3 -m unittest discover -s tests/upstream_port -v",),
+            if_expression=FULL_WORKER_STEP_CONDITION,
+        ),
+        _run_step_is_exact(
+            steps[7],
             "Run workflow contract test suite",
             (
                 "python3 -m unittest discover -s tests/workflows "
                 '-p "test_*.py" -v',
             ),
-        ),
-        _run_step_is_exact(
-            steps[7],
-            "Run workflow-pilot reporter regression suite (issue #176)",
-            (WORKFLOW_PILOT_GATE,),
-            scrubbed=True,
+            if_expression=FULL_WORKER_STEP_CONDITION,
         ),
         _run_step_is_exact(
             steps[8],
+            "Run workflow-pilot reporter regression suite (issue #176)",
+            (WORKFLOW_PILOT_GATE,),
+            if_expression=FULL_WORKER_STEP_CONDITION,
+            env_lines=SCRUBBED_STEP_ENV,
+        ),
+        _run_step_is_exact(
+            steps[9],
             "Validate workflow-pilot baseline against checked-out Git history",
             (WORKFLOW_PILOT_BASELINE_GATE,),
-            scrubbed=True,
+            if_expression=FULL_WORKER_STEP_CONDITION,
+            env_lines=SCRUBBED_STEP_ENV,
         ),
     )
     if all(expected):
@@ -791,9 +1576,10 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
             continue
         direct_lines.append(line)
     expected_timeout = 90 if job_name == "build" else 60
+    expected_condition = HOST_BUILD_CONDITION if job_name in METADATA_ADAPTER_JOBS else WORKER_CONDITION
     expected_direct = [
         f"    {WORKER_NEEDS}",
-        f"    if: {WORKER_CONDITION}",
+        f"    if: {expected_condition}",
         "    runs-on: ubuntu-latest",
         f"    timeout-minutes: {expected_timeout}",
         "    env:",
@@ -819,6 +1605,19 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
             entries.append(line)
     if tuple(entries) != COMBINED_JOB_ENV[job_name]:
         errors.append(f"{job_name} env differs from its reviewed exact mapping")
+
+    if job_name == "build":
+        steps = _step_blocks(job)
+        if len(steps) < 2:
+            errors.append("build lacks the trusted metadata continuity adapter")
+        else:
+            if not _metadata_adapter_step_is_reviewed(steps[0]):
+                errors.append("build metadata continuity adapter differs")
+            if not _checkout_step_is_exact(
+                steps[1],
+                if_expression=FULL_WORKER_STEP_CONDITION,
+            ):
+                errors.append("build checkout must stay full-mode only")
     return errors
 
 
@@ -1097,9 +1896,7 @@ def _classifier_contract_errors(job: str) -> list[str]:
 
 def _mode_contract_errors(job: str) -> list[str]:
     required = (
-        "    name: ${{ needs.event-router.result == 'success' && "
-        "needs.event-router.outputs.classification == "
-        "'metadata-only' && 'metadata-classifier' || 'event-classifier' }}",
+        f"    name: {EVENT_CLASSIFIER_DYNAMIC_NAME}",
         "    if: always()",
         "    needs: [event-identity, event-router]",
         "      CLASSIFIED_HEAD: ${{ needs.event-router.outputs.expected_head }}",
@@ -1136,9 +1933,7 @@ def _mode_contract_errors(job: str) -> list[str]:
         and not line.startswith("    -")
     ]
     if direct != [
-        "    name: ${{ needs.event-router.result == 'success' && "
-        "needs.event-router.outputs.classification == "
-        "'metadata-only' && 'metadata-classifier' || 'event-classifier' }}",
+        f"    name: {EVENT_CLASSIFIER_DYNAMIC_NAME}",
         "    if: always()",
         "    needs: [event-identity, event-router]",
         "    runs-on: ubuntu-latest",
@@ -1299,15 +2094,16 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
             ):
                 errors.append(f"{job_name} must use the reviewed hash-locked Python requirements")
         elif job_name == "patch-release":
+            run_commands = [_normalise(command) for command in _run_block_commands(job)]
             downloads = [
-                _normalise(invocation)
-                for invocation in pip_invocations
-                if "pip download" in invocation
+                invocation
+                for invocation in run_commands
+                if "-m pip download" in invocation
             ]
             installs = [
-                _normalise(invocation)
-                for invocation in pip_invocations
-                if "pip install" in invocation
+                _normalise(line.strip())
+                for line in job.splitlines()
+                if "-m pip install" in line
             ]
             if len(downloads) != 1 or len(installs) != 1:
                 errors.append(
@@ -1381,12 +2177,11 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     ) in text:
         errors.append("Build must never substitute the merge SHA for a PR head")
     summary = jobs["summary"]
-    if (
-        "    name: ${{ needs.event-classifier.result == 'success' && "
-        "needs.event-classifier.outputs.classification == "
-        "'metadata-only' && 'metadata-summary' || 'summary' }}"
-    ) not in summary:
-        errors.append("summary must keep metadata and candidate contexts distinct")
+    summary_steps = _step_blocks(summary)
+    if len(summary_steps) != 1 or not _summary_step_is_reviewed(summary_steps[0]):
+        errors.append("summary metadata continuity script differs from the reviewed contract")
+    if "    name: summary" not in summary:
+        errors.append("summary must stay canonical")
     if "if: always()" not in summary:
         errors.append("summary must run after failed combined jobs on both triggers")
     if SUMMARY_NEEDS not in summary:
@@ -1454,10 +2249,13 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     if (
         not metadata_section
         or '"$RUN_EXPENSIVE" != "false"' not in metadata_section
-        or '[ "$result" != "skipped" ]' not in metadata_section
+        or metadata_section.count('[ "$result" != "success" ]') != 1
+        or metadata_section.count('[ "$result" != "skipped" ]') != 1
+        or "metadata-only continuity adapter did not succeed" not in metadata_section
+        or "metadata-only expensive Build worker was not skipped" not in metadata_section
         or '"$PATCH_RELEASE_RESULT" != "skipped"' not in metadata_section
     ):
-        errors.append("summary must accept only exact metadata-only suppression")
+        errors.append("summary must accept only exact metadata-only continuity")
     if (
         '"$CLASSIFICATION" != "full"' not in summary
         or '"$RUN_EXPENSIVE" != "true"' not in summary
@@ -1501,13 +2299,20 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         if not _contains_command(jobs["host-tests"], command):
             errors.append(f"candidate host lost Build-owned evidence: {command}")
     for command in (WORKFLOW_PILOT_GATE, WORKFLOW_PILOT_BASELINE_GATE):
-        if not _contains_exact_command(jobs["host-tests"], command):
+        if not _contains_exact_command(
+            jobs["host-tests"],
+            command,
+            if_expression=FULL_WORKER_STEP_CONDITION,
+            env_lines=SCRUBBED_STEP_ENV,
+        ):
             errors.append(
                 f"candidate host lost exact fail-closed Build evidence: {command}"
             )
     if not _contains_exact_command(
         jobs["host-tests"],
         WORKFLOW_PILOT_AUTHORITY_HYDRATION,
+        if_expression=FULL_WORKER_STEP_CONDITION,
+        env_lines=SCRUBBED_STEP_ENV,
     ):
         errors.append(
             "candidate host lost exact workflow-pilot Git authority hydration"
@@ -1842,6 +2647,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             _contains_exact_command(
                 host,
                 WORKFLOW_PILOT_AUTHORITY_HYDRATION,
+                if_expression=FULL_WORKER_STEP_CONDITION,
+                env_lines=SCRUBBED_STEP_ENV,
             )
         )
         self.assertLess(
@@ -2627,7 +3434,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         self.assertNotIn("event-classifier", pre_fix_jobs)
         self.assertEqual(
             _triggered_jobs(self.text, body_only),
-            {"event-identity", "event-router", "event-classifier", "summary"},
+            METADATA_TRIGGERED_JOBS,
         )
 
     def test_incomplete_base_fixtures_run_exact_head_full_fallback(self):
@@ -2676,12 +3483,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 ("title", "title-only"),
             )
         }
-        metadata_jobs = {
-            "event-identity",
-            "event-router",
-            "event-classifier",
-            "summary",
-        }
+        metadata_jobs = METADATA_TRIGGERED_JOBS
         for ref_case in fixture["base_ref_validation_cases"]:
             for field, template in templates.items():
                 with self.subTest(case=ref_case["id"], field=field):
@@ -2710,22 +3512,156 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         self.assertTrue(decision.full_fallback)
                         self.assertFalse(decision.identity_valid)
 
+    def test_metadata_worker_names_require_complete_raw_pr_identity(self):
+        fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
+        body_only = next(
+            case
+            for case in fixture["cases"]
+            if case["id"] == "body-only-merge-sha-ignored"
+        )
+        cases = (
+            (
+                "metadata-body-edit",
+                body_only,
+                METADATA_CHECK_CONTEXTS,
+            ),
+            (
+                "missing-base-ref",
+                {
+                    **body_only,
+                    "payload": {
+                        **body_only["payload"],
+                        "pull_request": {
+                            **body_only["payload"]["pull_request"],
+                            "base": {
+                                "sha": body_only["payload"]["pull_request"]["base"]["sha"],
+                            },
+                        },
+                    },
+                },
+                EMITTED_FULL_CHECKS,
+            ),
+            (
+                "empty-base-ref",
+                {
+                    **body_only,
+                    "payload": {
+                        **body_only["payload"],
+                        "pull_request": {
+                            **body_only["payload"]["pull_request"],
+                            "base": {
+                                **body_only["payload"]["pull_request"]["base"],
+                                "ref": "",
+                            },
+                        },
+                    },
+                },
+                EMITTED_FULL_CHECKS,
+            ),
+            (
+                "missing-base-sha",
+                {
+                    **body_only,
+                    "payload": {
+                        **body_only["payload"],
+                        "pull_request": {
+                            **body_only["payload"]["pull_request"],
+                            "base": {
+                                "ref": body_only["payload"]["pull_request"]["base"]["ref"],
+                            },
+                        },
+                    },
+                },
+                EMITTED_FULL_CHECKS,
+            ),
+            (
+                "missing-head-sha",
+                {
+                    **body_only,
+                    "payload": {
+                        **body_only["payload"],
+                        "pull_request": {
+                            **body_only["payload"]["pull_request"],
+                            "head": {},
+                        },
+                    },
+                },
+                EMITTED_FULL_CHECKS,
+            ),
+            (
+                "wrong-pr-ref",
+                {
+                    **body_only,
+                    "runner": {
+                        **body_only["runner"],
+                        "github_ref": "refs/pull/999/merge",
+                    },
+                },
+                METADATA_CHECK_CONTEXTS,
+            ),
+            (
+                "no-body-change",
+                {
+                    **body_only,
+                    "payload": {
+                        **body_only["payload"],
+                        "changes": {
+                            "body": {
+                                "from": body_only["payload"]["pull_request"]["body"],
+                            },
+                        },
+                    },
+                },
+                EMITTED_FULL_CHECKS,
+            ),
+            (
+                "mixed-base-and-body",
+                next(
+                    case
+                    for case in fixture["cases"]
+                    if case["id"] == "mixed-base-and-body"
+                ),
+                EMITTED_FULL_CHECKS,
+            ),
+        )
+        for name, case, expected in cases:
+            with self.subTest(case=name):
+                self.assertEqual(_emitted_check_names(self.text, case), expected)
+
     def test_metadata_check_contexts_cannot_replace_candidate_contexts(self):
+        fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
+        body_only = next(
+            case
+            for case in fixture["cases"]
+            if case["id"] == "body-only-merge-sha-ignored"
+        )
+        base_edit = next(
+            case
+            for case in fixture["cases"]
+            if case["id"] == "base-only-stack-retarget"
+        )
+        opened = next(
+            case
+            for case in fixture["cases"]
+            if case["id"] == "stacked-opened"
+        )
         jobs = _job_blocks(self.text)
         for job_name in COMBINED_WORKERS:
             with self.subTest(job=job_name):
-                self.assertFalse(
-                    _has_direct_key(jobs[job_name], indent=4, key="name")
-                )
-        self.assertIn(
-            "'metadata-classifier' || 'event-classifier'",
-            jobs["event-classifier"],
+                self.assertIsNone(_direct_job_name(jobs[job_name]))
+        self.assertIn(EVENT_CLASSIFIER_DYNAMIC_NAME, jobs["event-classifier"])
+        self.assertIn("    name: summary\n", jobs["summary"])
+        self.assertEqual(_emitted_check_names(self.text, body_only), METADATA_CHECK_CONTEXTS)
+        self.assertEqual(_emitted_check_names(self.text, base_edit), EMITTED_FULL_CHECKS)
+        self.assertEqual(_emitted_check_names(self.text, opened), EMITTED_FULL_CHECKS)
+        self.assertTrue(REQUIRED_BUILD_CONTEXTS <= EMITTED_FULL_CHECKS)
+        self.assertEqual(
+            REQUIRED_BUILD_CONTEXTS & METADATA_CHECK_CONTEXTS,
+            {"build", "host-tests", "summary"},
         )
-        self.assertIn(
-            "'metadata-summary' || 'summary'",
-            jobs["summary"],
-        )
-        self.assertNotEqual(
+        self.assertIn(candidate_evidence.METADATA_ATTESTATION, EMITTED_FULL_CHECKS)
+        self.assertIn(candidate_evidence.FULL_ATTESTATION, METADATA_CHECK_CONTEXTS)
+        self.assertEqual(
             candidate_evidence.FULL_ATTESTATION,
             candidate_evidence.METADATA_ATTESTATION,
         )
@@ -2733,6 +3669,894 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             candidate_evidence.FULL_CLASSIFIER,
             candidate_evidence.METADATA_CLASSIFIER,
         )
+
+    def test_classifier_failure_on_metadata_shaped_edit_keeps_canonical_worker_names(self):
+        fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
+        body_only = next(
+            case
+            for case in fixture["cases"]
+            if case["id"] == "body-only-merge-sha-ignored"
+        )
+        case = json.loads(json.dumps(body_only))
+        case["classifier_result"] = "failure"
+        self.assertEqual(_triggered_jobs(self.text, case), CANDIDATE_FULL_JOBS)
+        self.assertEqual(
+            _emitted_check_names(self.text, case),
+            METADATA_CLASSIFIER_FAILURE_CHECKS,
+        )
+
+    def test_worker_name_overrides_fail_closed(self):
+        stale_dynamic_name = (
+            "${{ needs.event-classifier.outputs.classification == 'metadata-only' "
+            "&& 'attacker-host-tests' || 'host-tests' }}"
+        )
+        mutations = [
+            ("canonical-name", "    name: host-tests\n"),
+            ("stale-adapter-label", "    name: attacker-host-tests\n"),
+            ("dynamic-expression", f"    name: {stale_dynamic_name}\n"),
+            (
+                "duplicate-name-keys",
+                "    name: host-tests\n"
+                f"    name: {stale_dynamic_name}\n",
+            ),
+        ]
+        for name, injected in mutations:
+            with self.subTest(mutation=name):
+                changed = self.text.replace(
+                    "  host-tests:\n",
+                    "  host-tests:\n" + injected,
+                    1,
+                )
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "host-tests direct job mapping differs" in error
+                        or "host-tests uses unsupported" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_metadata_adapter_raw_event_checks_are_required(self):
+        mutations = (
+            (
+                "remove-event-path-read",
+                'event_path = env("GITHUB_EVENT_PATH", max_bytes=MAX_EVENT_PATH_BYTES)',
+                "event_path = '/dev/null'",
+            ),
+            (
+                "remove-lstat-check",
+                "metadata = os.lstat(event_path)",
+                "metadata = os.stat(event_path)",
+            ),
+            (
+                "remove-regular-file-check",
+                'if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):',
+                "if False:",
+            ),
+            (
+                "remove-owner-check",
+                'if metadata.st_uid != os.getuid():',
+                "if False:",
+            ),
+            (
+                "remove-size-check",
+                'if metadata.st_size > MAX_EVENT_BYTES:',
+                "if False:",
+            ),
+            (
+                "remove-base-ref-grammar-check",
+                "if not is_git_branch_ref(base_ref):",
+                "if False:",
+            ),
+            (
+                "remove-current-field-presence-check",
+                "if name not in pull_request:",
+                "if False:",
+            ),
+            (
+                "weaken-title-whitespace-check",
+                "if not text.strip():",
+                "if False:",
+            ),
+            (
+                "remove-nofollow-open",
+                'getattr(os, "O_NOFOLLOW", 0)',
+                "0",
+            ),
+            (
+                "remove-pre-read-race-check",
+                'if file_signature(opened) != file_signature(metadata):',
+                "if False:",
+            ),
+            (
+                "remove-post-read-race-check",
+                'if file_signature(final) != file_signature(opened) or len(raw) != opened.st_size:',
+                "if False:",
+            ),
+            (
+                "weaken-duplicate-json-check",
+                "object_pairs_hook=reject_duplicates",
+                "object_pairs_hook=None",
+            ),
+            (
+                "weaken-change-key-check",
+                "if change_keys not in ALLOWED_CHANGE_KEYS:",
+                "if False:",
+            ),
+            (
+                "weaken-change-difference-check",
+                "if previous == current:",
+                "if False:",
+            ),
+        )
+        for name, old, new in mutations:
+            with self.subTest(mutation=name):
+                changed = self.text.replace(old, new, 1)
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "host-tests protected pre-pilot step sequence differs" in error
+                        or "build metadata continuity adapter differs" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+        with self.subTest(mutation="uniform-python-heredoc-indent"):
+            host_job = _job_blocks(self.text)["host-tests"]
+            host_step = _step_blocks(host_job)[0]
+            changed = self.text.replace(
+                host_step,
+                _indent_metadata_adapter_heredoc_in_step(host_step),
+                1,
+            )
+            self.assertNotEqual(changed, self.text)
+            self.assertTrue(
+                any(
+                    "host-tests protected pre-pilot step sequence differs" in error
+                    or "build metadata continuity adapter differs" in error
+                    for error in _errors(changed, False)
+                )
+            )
+        for name, mutator in (
+            (
+                "raw-trailing-space-drift",
+                lambda step: step.replace("        fi\n", "        fi   \n", 1),
+            ),
+            (
+                "raw-comment-drift",
+                lambda step: step.replace(
+                    "        import sys\n",
+                    "        import sys\n        # lexical drift\n",
+                    1,
+                ),
+            ),
+        ):
+            with self.subTest(mutation=name):
+                host_job = _job_blocks(self.text)["host-tests"]
+                host_step = _step_blocks(host_job)[0]
+                changed = self.text.replace(host_step, mutator(host_step), 1)
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "host-tests protected pre-pilot step sequence differs" in error
+                        or "build metadata continuity adapter differs" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+        unicode_control_mutations = (
+            ("nbsp", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\u00a0\n"),
+            ("em-space", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\u2003\n"),
+            ("en-space", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\u2002\n"),
+            ("thin-space", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\u2009\n"),
+            ("ideographic-space", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\u3000\n"),
+            ("zero-width-space", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\u200b\n"),
+            ("bom", "        /usr/bin/python3 -I - <<'PY'\n", "\ufeff        /usr/bin/python3 -I - <<'PY'\n"),
+            ("line-separator", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\u2028\n"),
+            ("paragraph-separator", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\u2029\n"),
+            ("carriage-return", "        /usr/bin/python3 -I - <<'PY'\n", "        /usr/bin/python3 -I - <<'PY'\r\n"),
+            ("ascii-tab", "        import sys\n", "\t        import sys\n"),
+            ("ascii-escape", "        import sys\n", "        import sys\x1b\n"),
+            ("ascii-nul", "        import sys\n", "        import sys\x00\n"),
+        )
+        for name, old, new in unicode_control_mutations:
+            with self.subTest(mutation=name):
+                changed = self.text.replace(old, new, 1)
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "host-tests protected pre-pilot step sequence differs" in error
+                        or "build metadata continuity adapter differs" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_metadata_adapter_parsed_contract_rejects_extra_shell_and_python_behavior(self):
+        mutations = (
+            (
+                "extra-python-command",
+                '        PY\n',
+                '        PY\n        /usr/bin/python3 -c "pass"\n',
+            ),
+            (
+                "extra-curl-command",
+                '        fi\n        /usr/bin/python3 -I - <<\'PY\'\n',
+                '        fi\n        /usr/bin/curl https://example.invalid\n'
+                "        /usr/bin/python3 -I - <<'PY'\n",
+            ),
+            (
+                "extra-touch-command",
+                '        fi\n        /usr/bin/python3 -I - <<\'PY\'\n',
+                '        fi\n        /usr/bin/touch "$GITHUB_EVENT_PATH"\n'
+                "        /usr/bin/python3 -I - <<'PY'\n",
+            ),
+            (
+                "extra-shell-dead-branch",
+                '        fi\n        /usr/bin/python3 -I - <<\'PY\'\n',
+                "        fi\n"
+                "        if false; then\n"
+                "          /usr/bin/curl https://example.invalid\n"
+                "        fi\n"
+                "        /usr/bin/python3 -I - <<'PY'\n",
+            ),
+            (
+                "extra-python-import",
+                "        import sys\n",
+                "        import sys\n        import socket\n",
+            ),
+            (
+                "extra-python-call",
+                "        payload = load_event_payload()\n",
+                "        payload = load_event_payload()\n        json.dumps({})\n",
+            ),
+            (
+                "extra-python-dead-branch",
+                "        payload = load_event_payload()\n",
+                "        payload = load_event_payload()\n"
+                "        if False:\n"
+                "            json.dumps({})\n",
+            ),
+            (
+                "extra-python-unreachable-expression",
+                '        if "title" in changes:\n            validate_change("title")\n',
+                '        if "title" in changes:\n            validate_change("title")\n'
+                "        0\n",
+            ),
+            (
+                "unquoted-heredoc-introducer",
+                "        /usr/bin/python3 -I - <<'PY'\n",
+                "        /usr/bin/python3 -I - <<PY\n",
+            ),
+            (
+                "double-quoted-heredoc-introducer",
+                "        /usr/bin/python3 -I - <<'PY'\n",
+                '        /usr/bin/python3 -I - <<"PY"\n',
+            ),
+            (
+                "escaped-heredoc-introducer",
+                "        /usr/bin/python3 -I - <<'PY'\n",
+                "        /usr/bin/python3 -I - <<\\PY\n",
+            ),
+            (
+                "dash-heredoc-introducer",
+                "        /usr/bin/python3 -I - <<'PY'\n",
+                "        /usr/bin/python3 -I - <<-'PY'\n",
+            ),
+            (
+                "backslash-space",
+                '        if [ "$CLASSIFIER_RESULT" != "success" ] || \\\n',
+                '        if [ "$CLASSIFIER_RESULT" != "success" ] || \\ \n',
+            ),
+            (
+                "backslash-tab",
+                '           [ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \\\n',
+                '           [ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \\\t\n',
+            ),
+            (
+                "backslash-trailing-spaces",
+                '           [ "$GITHUB_EVENT_NAME" != "pull_request" ] || \\\n',
+                '           [ "$GITHUB_EVENT_NAME" != "pull_request" ] || \\  \n',
+            ),
+        )
+        for name, old, new in mutations:
+            with self.subTest(mutation=name):
+                changed = self.text.replace(old, new, 1)
+                self.assertNotEqual(changed, self.text)
+                self.assertTrue(
+                    any(
+                        "host-tests protected pre-pilot step sequence differs" in error
+                        or "build metadata continuity adapter differs" in error
+                        for error in _errors(changed, False)
+                    )
+                )
+
+    def test_metadata_adapter_runtime_requires_exact_raw_edited_event(self):
+        scripts = _metadata_adapter_scripts(self.text)
+        self.assertEqual(len(set(scripts.values())), 1)
+        self.assertEqual(
+            len({_metadata_adapter_python_source(script) for script in scripts.values()}),
+            1,
+        )
+        base_env = {
+            "CLASSIFICATION": "metadata-only",
+            "CLASSIFIED_BASE_SHA": "2" * 40,
+            "CLASSIFIED_BUILD_SHA": "1" * 40,
+            "CLASSIFIER_RESULT": "success",
+            "EXPECTED_BUILD_SHA": "1" * 40,
+            "FALLBACK_IDENTITY_RESULT": "success",
+            "FALLBACK_KIND": "pull_request",
+            "FALLBACK_SHA": "1" * 40,
+            "FULL_FALLBACK": "false",
+            "GITHUB_EVENT_NAME": "pull_request",
+            "GITHUB_REF": "refs/pull/177/merge",
+            "HEAD_VALID": "true",
+            "IDENTITY_VALID": "true",
+            "RUN_EXPENSIVE": "false",
+        }
+        large_body = '\\"' * 120000
+        self.assertGreater(len(json.dumps(large_body).encode("utf-8")), 131072)
+        large_payload = _metadata_adapter_payload(body=large_body)
+        large_payload_raw = _metadata_adapter_payload_bytes(large_payload)
+        self.assertLessEqual(len(large_payload_raw), event_classifier.MAX_EVENT_BYTES)
+        missing_current_body = _metadata_adapter_payload()
+        del missing_current_body["pull_request"]["body"]
+        missing_current_title = _metadata_adapter_payload(
+            body="Stable body",
+            changes={"title": {"from": "Old title"}},
+        )
+        del missing_current_title["pull_request"]["title"]
+        cases = (
+            {
+                "name": "valid-body",
+                "payload": _metadata_adapter_payload(),
+                "expected": 0,
+            },
+            {
+                "name": "valid-title",
+                "payload": _metadata_adapter_payload(
+                    body="Stable body",
+                    changes={"title": {"from": "Old title"}},
+                ),
+                "expected": 0,
+            },
+            {
+                "name": "valid-both",
+                "payload": _metadata_adapter_payload(
+                    changes={
+                        "body": {"from": "Old body"},
+                        "title": {"from": "Old title"},
+                    }
+                ),
+                "expected": 0,
+            },
+            {
+                "name": "valid-null-body",
+                "payload": _metadata_adapter_payload(body=None),
+                "expected": 0,
+            },
+            {
+                "name": "valid-large-body-file",
+                "payload": large_payload,
+                "raw": large_payload_raw,
+                "expected": 0,
+            },
+            {
+                "name": "missing-event-path",
+                "payload": _metadata_adapter_payload(),
+                "env_overrides": {"GITHUB_EVENT_PATH": None},
+                "expected": 1,
+                "error": "missing GITHUB_EVENT_PATH",
+            },
+            {
+                "name": "wrong-event-name",
+                "payload": _metadata_adapter_payload(),
+                "env_overrides": {"GITHUB_EVENT_NAME": "push"},
+                "expected": 1,
+                "error": "not authoritative",
+            },
+            {
+                "name": "wrong-action",
+                "payload": _metadata_adapter_payload(action="opened"),
+                "expected": 1,
+                "error": "not an edited pull_request",
+            },
+            {
+                "name": "wrong-ref",
+                "payload": _metadata_adapter_payload(),
+                "env_overrides": {"GITHUB_REF": "refs/pull/178/merge"},
+                "expected": 1,
+                "error": "ref is invalid",
+            },
+            {
+                "name": "wrong-number",
+                "payload": _metadata_adapter_payload(number=0),
+                "env_overrides": {"GITHUB_REF": "refs/pull/0/merge"},
+                "expected": 1,
+                "error": "PR number is invalid",
+            },
+            {
+                "name": "missing-pull-request",
+                "payload": {
+                    "action": "edited",
+                    "changes": {"body": {"from": "Old body"}},
+                    "number": 177,
+                },
+                "expected": 1,
+                "error": "pull_request is invalid",
+            },
+            {
+                "name": "missing-current-body",
+                "payload": missing_current_body,
+                "expected": 1,
+                "error": "pull_request.body is missing",
+            },
+            {
+                "name": "missing-current-title",
+                "payload": missing_current_title,
+                "expected": 1,
+                "error": "pull_request.title is missing",
+            },
+            {
+                "name": "empty-changes",
+                "payload": _metadata_adapter_payload(changes={}),
+                "expected": 1,
+                "error": "changes must be exactly body/title only",
+            },
+            {
+                "name": "invalid-base-ref",
+                "payload": _metadata_adapter_payload(base_ref="bad ref"),
+                "expected": 1,
+                "error": "base ref is invalid",
+            },
+            {
+                "name": "lone-at-base-ref",
+                "payload": _metadata_adapter_payload(base_ref="@"),
+                "expected": 1,
+                "error": "base ref is invalid",
+            },
+            {
+                "name": "base-change",
+                "payload": _metadata_adapter_payload(
+                    changes={"base": {"from": {"ref": "topic", "sha": "3" * 40}}}
+                ),
+                "expected": 1,
+                "error": "changes must be exactly body/title only",
+            },
+            {
+                "name": "extra-change",
+                "payload": _metadata_adapter_payload(
+                    changes={
+                        "body": {"from": "Old body"},
+                        "draft": {"from": False},
+                    }
+                ),
+                "expected": 1,
+                "error": "changes must be exactly body/title only",
+            },
+            {
+                "name": "same-old-current",
+                "payload": _metadata_adapter_payload(
+                    body="Same body",
+                    changes={"body": {"from": "Same body"}},
+                ),
+                "expected": 1,
+                "error": "body did not change",
+            },
+            {
+                "name": "duplicate-change-keys",
+                "raw": (
+                    b'{"action":"edited","changes":{"body":{"from":"Old body"},'
+                    b'"body":{"from":"Older body"}},"number":177,'
+                    b'"pull_request":{"base":{"ref":"master","sha":"'
+                    + b"2" * 40
+                    + b'"},"body":"New body","head":{"sha":"'
+                    + b"1" * 40
+                    + b'"},"title":"New title"}}\n'
+                ),
+                "expected": 1,
+                "error": "JSON repeats a key",
+            },
+            {
+                "name": "malformed-json",
+                "raw": b'{"action":"edited"\n',
+                "expected": 1,
+                "error": "payload is not valid JSON",
+            },
+            {
+                "name": "trailing-garbage",
+                "raw": _metadata_adapter_payload_bytes(_metadata_adapter_payload()) + b"x",
+                "expected": 1,
+                "error": "payload is not valid JSON",
+            },
+            {
+                "name": "nan-json",
+                "raw": (
+                    b'{"action":"edited","changes":{"body":{"from":"Old body"}},'
+                    b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                    + b"2" * 40
+                    + b'"},"body":"New body","head":{"sha":"'
+                    + b"1" * 40
+                    + b'"},"title":"New title"},"unused":NaN}\n'
+                ),
+                "expected": 1,
+                "error": "contains non-finite number",
+            },
+            {
+                "name": "infinity-json",
+                "raw": (
+                    b'{"action":"edited","changes":{"body":{"from":"Old body"}},'
+                    b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                    + b"2" * 40
+                    + b'"},"body":"New body","head":{"sha":"'
+                    + b"1" * 40
+                    + b'"},"title":"New title"},"unused":Infinity}\n'
+                ),
+                "expected": 1,
+                "error": "contains non-finite number",
+            },
+            {
+                "name": "negative-infinity-json",
+                "raw": (
+                    b'{"action":"edited","changes":{"body":{"from":"Old body"}},'
+                    b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                    + b"2" * 40
+                    + b'"},"body":"New body","head":{"sha":"'
+                    + b"1" * 40
+                    + b'"},"title":"New title"},"unused":-Infinity}\n'
+                ),
+                "expected": 1,
+                "error": "contains non-finite number",
+            },
+            {
+                "name": "overflow-float-json",
+                "raw": (
+                    b'{"action":"edited","changes":{"body":{"from":"Old body"}},'
+                    b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                    + b"2" * 40
+                    + b'"},"body":"New body","head":{"sha":"'
+                    + b"1" * 40
+                    + b'"},"title":"New title"},"unused":1e999}\n'
+                ),
+                "expected": 1,
+                "error": "float overflows",
+            },
+            {
+                "name": "nested-nonfinite-unknown-field",
+                "raw": (
+                    b'{"action":"edited","changes":{"body":{"from":"Old body"}},'
+                    b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                    + b"2" * 40
+                    + b'"},"body":"New body","head":{"sha":"'
+                    + b"1" * 40
+                    + b'"},"title":"New title"},'
+                    b'"unused":{"nested":[0,{"bad":NaN}]}}\n'
+                ),
+                "expected": 1,
+                "error": "contains non-finite number",
+            },
+            {
+                "name": "oversized-payload",
+                "raw": b" " * (event_classifier.MAX_EVENT_BYTES + 1),
+                "expected": 1,
+                "error": "payload exceeds 1 MiB",
+            },
+            {
+                "name": "symlink-payload",
+                "payload": _metadata_adapter_payload(),
+                "path_kind": "symlink",
+                "expected": 1,
+                "error": "payload must be a regular file",
+            },
+            {
+                "name": "fifo-payload",
+                "path_kind": "fifo",
+                "expected": 1,
+                "error": "payload must be a regular file",
+            },
+            {
+                "name": "device-payload",
+                "path_kind": "device",
+                "expected": 1,
+                "error": "payload must be a regular file",
+            },
+        )
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="workflow-metadata-adapter-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            for job_name, script in scripts.items():
+                for case in cases:
+                    with self.subTest(job=job_name, case=case["name"]):
+                        event_path = sandbox / f"{job_name}-{case['name']}.json"
+                        path_kind = case.get("path_kind", "file")
+                        raw = case.get("raw")
+                        if raw is None and "payload" in case:
+                            raw = _metadata_adapter_payload_bytes(case["payload"])
+                        if path_kind == "symlink":
+                            target = sandbox / f"{job_name}-{case['name']}-target.json"
+                            target.write_bytes(raw)
+                            event_path.unlink(missing_ok=True)
+                            event_path.symlink_to(target)
+                        elif path_kind == "fifo":
+                            event_path.unlink(missing_ok=True)
+                            os.mkfifo(event_path)
+                        elif path_kind == "device":
+                            event_path = Path("/dev/null")
+                        else:
+                            event_path.write_bytes(raw)
+                        env = {**os.environ, **base_env}
+                        env["GITHUB_EVENT_PATH"] = str(event_path)
+                        for key, value in case.get("env_overrides", {}).items():
+                            if value is None:
+                                env.pop(key, None)
+                            else:
+                                env[key] = value
+                        completed = subprocess.run(
+                            ["/bin/bash", "-c", script],
+                            cwd=ROOT,
+                            env=env,
+                            check=False,
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                        )
+                        self.assertEqual(
+                            completed.returncode,
+                            case["expected"],
+                            completed.stderr,
+                        )
+                        if case.get("error") is not None:
+                            self.assertIn(case["error"], completed.stderr)
+
+    def test_metadata_adapters_match_classifier_on_fixture_pull_request_cases(self):
+        scripts = _metadata_adapter_scripts(self.text)
+        self.assertEqual(len(set(scripts.values())), 1)
+        fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
+        templates = {
+            case["id"]: case
+            for case in fixture["cases"]
+            if case["event_name"] == "pull_request"
+        }
+        cases = [copy.deepcopy(case) for case in templates.values()]
+
+        missing_current_body = copy.deepcopy(templates["body-only-merge-sha-ignored"])
+        missing_current_body["id"] = "body-only-missing-current-body"
+        del missing_current_body["payload"]["pull_request"]["body"]
+        cases.append(missing_current_body)
+
+        missing_current_title = copy.deepcopy(templates["title-only"])
+        missing_current_title["id"] = "title-only-missing-current-title"
+        del missing_current_title["payload"]["pull_request"]["title"]
+        cases.append(missing_current_title)
+
+        overlength_ref = {
+            "accepted": False,
+            "id": "overlength",
+            "ref": "a" * (event_classifier.MAX_BRANCH_REF_BYTES + 1),
+        }
+        for template_id in ("body-only-merge-sha-ignored", "title-only"):
+            for ref_case in (*fixture["base_ref_validation_cases"], overlength_ref):
+                mutated = copy.deepcopy(templates[template_id])
+                mutated["id"] = f"{template_id}-base-ref-{ref_case['id']}"
+                mutated["payload"]["pull_request"]["base"]["ref"] = ref_case["ref"]
+                cases.append(mutated)
+
+        numeric_template = templates["body-only-merge-sha-ignored"]
+        numeric_runner = copy.deepcopy(numeric_template["runner"])
+        numeric_cases = (
+            (
+                "nan",
+                b'{"action":"edited","changes":{"body":{"from":"old evidence"}},'
+                b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                + b"2" * 40
+                + b'"},"body":"new evidence","head":{"sha":"'
+                + b"1" * 40
+                + b'"},"title":"Implement issue 177"},"unused":NaN}\n',
+            ),
+            (
+                "infinity",
+                b'{"action":"edited","changes":{"body":{"from":"old evidence"}},'
+                b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                + b"2" * 40
+                + b'"},"body":"new evidence","head":{"sha":"'
+                + b"1" * 40
+                + b'"},"title":"Implement issue 177"},"unused":Infinity}\n',
+            ),
+            (
+                "negative-infinity",
+                b'{"action":"edited","changes":{"body":{"from":"old evidence"}},'
+                b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                + b"2" * 40
+                + b'"},"body":"new evidence","head":{"sha":"'
+                + b"1" * 40
+                + b'"},"title":"Implement issue 177"},"unused":-Infinity}\n',
+            ),
+            (
+                "overflow-float",
+                b'{"action":"edited","changes":{"body":{"from":"old evidence"}},'
+                b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                + b"2" * 40
+                + b'"},"body":"new evidence","head":{"sha":"'
+                + b"1" * 40
+                + b'"},"title":"Implement issue 177"},"unused":1e999}\n',
+            ),
+            (
+                "nested-unknown-nonfinite",
+                b'{"action":"edited","changes":{"body":{"from":"old evidence"}},'
+                b'"number":177,"pull_request":{"base":{"ref":"master","sha":"'
+                + b"2" * 40
+                + b'"},"body":"new evidence","head":{"sha":"'
+                + b"1" * 40
+                + b'"},"title":"Implement issue 177"},'
+                b'"unused":{"nested":[0,{"bad":NaN}]}}\n',
+            ),
+        )
+        for case_id, raw in numeric_cases:
+            cases.append(
+                {
+                    "event_name": "pull_request",
+                    "id": f"body-only-{case_id}",
+                    "payload": copy.deepcopy(numeric_template["payload"]),
+                    "raw": raw,
+                    "runner": numeric_runner,
+                }
+            )
+
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="workflow-metadata-adapter-fixture-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            for case in cases:
+                payload = copy.deepcopy(case["payload"])
+                match = re.fullmatch(
+                    r"refs/pull/([1-9][0-9]*)/merge",
+                    case["runner"]["github_ref"],
+                )
+                payload.setdefault(
+                    "number",
+                    int(match.group(1)) if match is not None else 177,
+                )
+                raw = case.get("raw", _metadata_adapter_payload_bytes(payload))
+                for job_name, script in scripts.items():
+                    with self.subTest(
+                        case=case["id"],
+                        job=job_name,
+                    ):
+                        event_path = sandbox / f"{job_name}-{case['id']}.json"
+                        event_path.write_bytes(raw)
+                        try:
+                            loaded = event_classifier.load_event(event_path)
+                        except event_classifier.EventClassificationError as error:
+                            expected = 1
+                            decision_label = f"loader-error:{error}"
+                        else:
+                            decision = event_classifier.classify_event(
+                                case["event_name"],
+                                loaded,
+                                github_ref=case["runner"]["github_ref"],
+                                github_sha=case["runner"]["github_sha"],
+                                pr_base_sha=case["runner"]["pr_base_sha"],
+                                pr_head_sha=case["runner"]["pr_head_sha"],
+                                push_sha=case["runner"]["push_sha"],
+                            )
+                            expected = (
+                                0 if decision.classification == "metadata-only" else 1
+                            )
+                            decision_label = (
+                                f"{decision.classification}/{decision.reason}"
+                            )
+                        completed = subprocess.run(
+                            ["/bin/bash", "-c", script],
+                            cwd=ROOT,
+                            env={
+                                **os.environ,
+                                **_metadata_adapter_env_for_case(case, event_path),
+                            },
+                            check=False,
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                        )
+                        self.assertEqual(
+                            completed.returncode,
+                            expected,
+                            (
+                                f"{case['id']} => {decision_label}\n"
+                                f"{completed.stderr}"
+                            ),
+                        )
+
+    def test_metadata_adapter_event_file_loader_rejects_races(self):
+        scripts = _metadata_adapter_scripts(self.text)
+        self.assertEqual(len(set(scripts.values())), 1)
+        source = _metadata_adapter_python_source(next(iter(scripts.values())))
+        payload = _metadata_adapter_payload_bytes(_metadata_adapter_payload())
+        current_uid = os.getuid()
+
+        def regular_file_stat(*, ino: int, size: int, mtime_ns: int, ctime_ns: int):
+            return types.SimpleNamespace(
+                st_ctime_ns=ctime_ns,
+                st_dev=11,
+                st_ino=ino,
+                st_mode=stat.S_IFREG | 0o600,
+                st_mtime_ns=mtime_ns,
+                st_size=size,
+                st_uid=current_uid,
+            )
+
+        base_env = _metadata_adapter_python_env("/virtual/event.json")
+
+        with self.subTest(case="changed-before-read"):
+            read = mock.Mock(side_effect=AssertionError("os.read must not run"))
+            with (
+                mock.patch("os.getuid", return_value=current_uid),
+                mock.patch(
+                    "os.lstat",
+                    return_value=regular_file_stat(
+                        ino=1,
+                        size=len(payload),
+                        mtime_ns=10,
+                        ctime_ns=20,
+                    ),
+                ),
+                mock.patch("os.open", return_value=9),
+                mock.patch(
+                    "os.fstat",
+                    return_value=regular_file_stat(
+                        ino=2,
+                        size=len(payload),
+                        mtime_ns=10,
+                        ctime_ns=20,
+                    ),
+                ),
+                mock.patch("os.read", read),
+                mock.patch("os.close"),
+            ):
+                code, stderr = _run_metadata_adapter_python_source(source, base_env)
+            self.assertEqual(code, 1)
+            self.assertIn("payload changed before read", stderr)
+            read.assert_not_called()
+
+        with self.subTest(case="changed-while-read"):
+            with (
+                mock.patch("os.getuid", return_value=current_uid),
+                mock.patch(
+                    "os.lstat",
+                    return_value=regular_file_stat(
+                        ino=3,
+                        size=len(payload),
+                        mtime_ns=30,
+                        ctime_ns=40,
+                    ),
+                ),
+                mock.patch("os.open", return_value=10),
+                mock.patch(
+                    "os.fstat",
+                    side_effect=[
+                        regular_file_stat(
+                            ino=3,
+                            size=len(payload),
+                            mtime_ns=30,
+                            ctime_ns=40,
+                        ),
+                        regular_file_stat(
+                            ino=3,
+                            size=len(payload),
+                            mtime_ns=31,
+                            ctime_ns=41,
+                        ),
+                    ],
+                ),
+                mock.patch("os.read", side_effect=[payload, b""]),
+                mock.patch("os.close"),
+            ):
+                code, stderr = _run_metadata_adapter_python_source(source, base_env)
+            self.assertEqual(code, 1)
+            self.assertIn("payload changed while being read", stderr)
 
     def test_classifier_failure_fixtures_select_only_exact_event_head_fallbacks(self):
         fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
@@ -2958,6 +4782,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     expected.update(COMBINED_WORKERS)
                 if identity["run_publisher"]:
                     expected.add("patch-release")
+                if (
+                    identity["expected_classification"] == "metadata-only"
+                    and identity["expected_summary_success"]
+                ):
+                    expected.update(METADATA_ADAPTER_JOBS)
                 self.assertEqual(selected, expected)
 
                 decision = event_classifier.classify_event(
@@ -3066,29 +4895,30 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
     def test_combined_worker_expressions_are_balanced_and_fully_consumed(self):
         for job_name in COMBINED_WORKERS:
             job = _job_blocks(self.text)[job_name]
-            expression = _direct_job_if(job)
-            with self.subTest(job=job_name, control="real"):
+            condition = _direct_job_if(job)
+            self.assertIsNone(_direct_job_name(job))
+            with self.subTest(job=job_name, control="real-if"):
                 self.assertEqual(
-                    _github_expression_balance_errors(expression),
+                    _github_expression_balance_errors(condition),
                     [],
                 )
             for suffix, expected in (
                 (")", "unmatched closing"),
                 ("(", "unmatched opening"),
             ):
-                changed_expression = expression[:-3] + suffix + " }}"
-                with self.subTest(job=job_name, suffix=suffix):
+                changed_condition = condition[:-3] + suffix + " }}"
+                with self.subTest(job=job_name, suffix=suffix, field="if"):
                     self.assertTrue(
                         any(
                             expected in error
                             for error in _github_expression_balance_errors(
-                                changed_expression
+                                changed_condition
                             )
                         )
                     )
                     changed_job = job.replace(
-                        f"    if: {expression}",
-                        f"    if: {changed_expression}",
+                        f"    if: {condition}",
+                        f"    if: {changed_condition}",
                         1,
                     )
                     changed = self.text.replace(job, changed_job, 1)
@@ -3195,8 +5025,13 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         for job_name in COMBINED_WORKERS:
             with self.subTest(job=job_name):
                 job = _job_blocks(self.text)[job_name]
+                expected_condition = (
+                    HOST_BUILD_CONDITION
+                    if job_name in METADATA_ADAPTER_JOBS
+                    else WORKER_CONDITION
+                )
                 changed_job = job.replace(
-                    WORKER_CONDITION,
+                    expected_condition,
                     "${{ needs.event-classifier.outputs.run_expensive == 'true' }}",
                     1,
                 )
@@ -3264,7 +5099,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         for job_name in COMBINED_WORKERS:
             allowed = {
                 "needs": "[event-identity, event-classifier]",
-                "if": WORKER_CONDITION,
+                "if": (
+                    HOST_BUILD_CONDITION
+                    if job_name in METADATA_ADAPTER_JOBS
+                    else WORKER_CONDITION
+                ),
                 "runs-on": "ubuntu-latest",
                 "timeout-minutes": "90" if job_name == "build" else "60",
                 "env": "",
@@ -3389,7 +5228,6 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                             for error in _errors(changed, False)
                         )
                     )
-
             for allowed_line in (
                 "    runs-on: ubuntu-latest",
                 f"    timeout-minutes: {timeout}",
@@ -3536,9 +5374,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
     def test_publisher_depends_only_on_trusted_event_identity(self):
         patch_release = _job_blocks(self.text)["patch-release"]
-        self.assertIn("    needs: [event-identity]", patch_release)
-        self.assertNotIn("event-classifier", patch_release)
-        self.assertNotIn("host-tests", patch_release)
+        self.assertEqual(
+            re.findall(r"^    needs: (?P<value>.+)$", patch_release, re.MULTILINE),
+            ["[event-identity]"],
+        )
 
     def test_every_libpng_install_lane_declares_pkg_config(self):
         for job_name, job in _job_blocks(self.text).items():
@@ -3659,6 +5498,72 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         )
         self.assertTrue(any("summary must depend" in error for error in _errors(changed, False)))
 
+    def test_summary_requires_each_worker_dependency_and_result_check(self):
+        for worker, changed_needs in (
+            (
+                "host-tests",
+                "needs: [event-identity, event-classifier, build, "
+                "extended-host-tests, legacy, patch-release]",
+            ),
+            (
+                "build",
+                "needs: [event-identity, event-classifier, host-tests, "
+                "extended-host-tests, legacy, patch-release]",
+            ),
+            (
+                "extended-host-tests",
+                "needs: [event-identity, event-classifier, host-tests, "
+                "build, legacy, patch-release]",
+            ),
+            (
+                "legacy",
+                "needs: [event-identity, event-classifier, host-tests, "
+                "build, extended-host-tests, patch-release]",
+            ),
+            (
+                "patch-release",
+                "needs: [event-identity, event-classifier, host-tests, "
+                "build, extended-host-tests, legacy]",
+            ),
+        ):
+            with self.subTest(need=worker):
+                changed = self.text.replace(SUMMARY_NEEDS, changed_needs, 1)
+                self.assertTrue(
+                    any("summary must depend" in error for error in _errors(changed, False))
+                )
+        final_loop = (
+            'for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" '
+            '"$EXTENDED_HOST_TESTS_RESULT" \\\n'
+            '          "$LEGACY_RESULT"'
+        )
+        for missing, replacement in (
+            (
+                '"$HOST_TESTS_RESULT"',
+                'for result in "$BUILD_RESULT" "$EXTENDED_HOST_TESTS_RESULT" \\\n'
+                '          "$LEGACY_RESULT"',
+            ),
+            (
+                '"$BUILD_RESULT"',
+                'for result in "$HOST_TESTS_RESULT" "$EXTENDED_HOST_TESTS_RESULT" \\\n'
+                '          "$LEGACY_RESULT"',
+            ),
+            (
+                '"$EXTENDED_HOST_TESTS_RESULT"',
+                'for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \\\n'
+                '          "$LEGACY_RESULT"',
+            ),
+            (
+                '"$LEGACY_RESULT"',
+                'for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" '
+                '"$EXTENDED_HOST_TESTS_RESULT"',
+            ),
+        ):
+            with self.subTest(result_check=missing):
+                changed = self.text.replace(final_loop, replacement, 1)
+                self.assertTrue(
+                    any("summary loop omits" in error for error in _errors(changed, False))
+                )
+
     def test_workflow_pilot_suite_remains_owned_by_required_host_job(self):
         host_tests = _job_blocks(self.text)["host-tests"]
         for command in (WORKFLOW_PILOT_GATE, WORKFLOW_PILOT_BASELINE_GATE):
@@ -3667,6 +5572,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     _contains_exact_command(
                         host_tests,
                         command,
+                        if_expression=FULL_WORKER_STEP_CONDITION,
+                        env_lines=SCRUBBED_STEP_ENV,
                     )
                 )
         self.assertIn(
@@ -4127,7 +6034,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             (
                 '[ "$result" != "skipped" ]',
                 '[ "$result" != "success" ]',
-                "metadata-only suppression",
+                "metadata-only continuity",
             ),
             (
                 '"$CLASSIFICATION" != "full"',
@@ -4182,15 +6089,6 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "RUN_EXPENSIVE": "true",
             "PATCH_RELEASE_RESULT": "skipped",
         }
-        metadata = {
-            **full,
-            "BUILD_RESULT": "skipped",
-            "CLASSIFICATION": "metadata-only",
-            "EXTENDED_HOST_TESTS_RESULT": "skipped",
-            "HOST_TESTS_RESULT": "skipped",
-            "LEGACY_RESULT": "skipped",
-            "RUN_EXPENSIVE": "false",
-        }
         push = {
             **full,
             "CLASSIFIED_BASE_SHA": "",
@@ -4220,19 +6118,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             "PR_BASE_SHA": "",
         }
         cases = (
-            ("metadata", metadata, 0, None),
             ("full-pr", full, 0, None),
             ("full-push", push, 0, None),
-            (
-                "successful-metadata-incoherent-event-ref",
-                {
-                    **metadata,
-                    "FALLBACK_KIND": "none",
-                    "FALLBACK_SHA": "",
-                },
-                1,
-                "successful PR classification lacks coherent trusted event identity",
-            ),
             (
                 "successful-full-incoherent-event-ref",
                 {
@@ -4405,7 +6292,6 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             ),
             ("identity-invalid", {**full, "IDENTITY_VALID": "false"}, 1, None),
             ("full-skipped", {**full, "BUILD_RESULT": "skipped"}, 1, None),
-            ("metadata-ran", {**metadata, "BUILD_RESULT": "success"}, 1, None),
             (
                 "unsupported-event",
                 {**full, "GITHUB_EVENT_NAME": "schedule"},
@@ -4447,6 +6333,2025 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     )
                     if error_fragment is not None:
                         self.assertIn(error_fragment, completed.stderr)
+
+    def test_summary_runtime_metadata_only_requires_prior_full_build(self):
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        completed = subprocess.run(
+            ["/bin/bash", "-n"],
+            input=script,
+            text=True,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        page_one_runs = [
+            _summary_workflow_run(
+                9300 + index,
+                event="push",
+                head_sha=SUMMARY_TEST_HEAD_SHA,
+                base_sha=SUMMARY_TEST_BASE_SHA,
+                run_number=9200 - index,
+            )
+            for index in range(100)
+        ]
+        link_header = _summary_runs_link_header(current_page=1, total_count=103)
+        routes = {
+            _summary_runs_path(page=1): _summary_response(
+                _summary_api_payload("workflow_runs", page_one_runs, total_count=103),
+                headers={"Link": link_header},
+            ),
+            _summary_runs_path(page=2): _summary_response(
+                _summary_api_payload(
+                    "workflow_runs",
+                    [
+                        _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                        _summary_workflow_run(
+                            8101,
+                            created_at=_summary_timestamp(5),
+                            run_started_at=_summary_timestamp(6),
+                            run_number=8101,
+                        ),
+                        _summary_workflow_run(
+                            8100,
+                            created_at=_summary_timestamp(4),
+                            run_started_at=_summary_timestamp(5),
+                        )
+                    ],
+                    total_count=103,
+                ),
+                headers={
+                    "Link": _summary_runs_link_header(
+                        current_page=2,
+                        total_count=103,
+                        include_next=False,
+                        include_prev=True,
+                        include_first=True,
+                    )
+                },
+            ),
+            _summary_jobs_path(8101): _summary_response(
+                _summary_api_payload("jobs", _summary_metadata_jobs())
+            ),
+            _summary_jobs_path(8100): _summary_response(
+                _summary_api_payload("jobs", _summary_full_jobs())
+            ),
+        }
+        completed, requests = _run_summary_with_api(
+            script,
+            environment=_summary_metadata_env(),
+            routes=routes,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            [request["path"] for request in requests],
+            [
+                _summary_runs_path(page=1),
+                _summary_runs_path(page=2),
+                _summary_jobs_path(8101),
+                _summary_jobs_path(8100),
+            ],
+        )
+        self.assertTrue(requests)
+        for request in requests:
+            headers = request["headers"]
+            self.assertEqual(headers.get("Authorization"), "Bearer token")
+            self.assertEqual(
+                headers.get("Accept"), "application/vnd.github+json"
+            )
+
+    def test_summary_runtime_metadata_only_requires_current_run_observation(self):
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        completed = subprocess.run(
+            ["/bin/bash", "-n"],
+            input=script,
+            text=True,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        later_page_push_runs = [
+            _summary_workflow_run(
+                9500 + index,
+                event="push",
+                head_sha=SUMMARY_TEST_HEAD_SHA,
+                base_sha=SUMMARY_TEST_BASE_SHA,
+                run_number=9400 - index,
+            )
+            for index in range(100)
+        ]
+        duplicate_current = _summary_workflow_run(SUMMARY_TEST_RUN_ID)
+        mismatch_number_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            run_number=SUMMARY_TEST_RUN_NUMBER - 1,
+        )
+        mismatch_attempt_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            run_attempt=SUMMARY_TEST_RUN_ATTEMPT + 1,
+        )
+        mismatch_status_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            status="completed",
+            conclusion=None,
+        )
+        mismatch_head_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            head_sha="4" * 40,
+        )
+        mismatch_base_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            pull_requests=[
+                {
+                    "number": SUMMARY_TEST_PR_NUMBER,
+                    "head": {"sha": SUMMARY_TEST_HEAD_SHA},
+                    "base": {"sha": "4" * 40},
+                }
+            ],
+        )
+        mismatch_pr_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            pr_number=SUMMARY_TEST_PR_NUMBER + 1,
+            pull_requests=[
+                {
+                    "number": SUMMARY_TEST_PR_NUMBER + 1,
+                    "head": {"sha": SUMMARY_TEST_HEAD_SHA},
+                    "base": {"sha": SUMMARY_TEST_BASE_SHA},
+                }
+            ],
+        )
+        mismatch_workflow_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            workflow_id=SUMMARY_TEST_WORKFLOW_ID + 1,
+        )
+        mismatch_path_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            path=".github/workflows/other.yml@refs/pull/177/merge",
+        )
+        mismatch_started_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            run_started_at=None,
+        )
+        inconsistent_timestamps_current = _summary_workflow_run(
+            SUMMARY_TEST_RUN_ID,
+            created_at=_summary_timestamp(9),
+            run_started_at=_summary_timestamp(8),
+        )
+        newer_exact_run = _summary_workflow_run(
+            9002,
+            pr_number=SUMMARY_TEST_PR_NUMBER,
+            base_sha=SUMMARY_TEST_BASE_SHA,
+            head_sha=SUMMARY_TEST_HEAD_SHA,
+            run_number=SUMMARY_TEST_RUN_NUMBER + 1,
+            created_at=_summary_timestamp(9),
+            run_started_at=_summary_timestamp(10),
+            pull_requests=[
+                {
+                    "number": SUMMARY_TEST_PR_NUMBER,
+                    "head": {"sha": SUMMARY_TEST_HEAD_SHA},
+                    "base": {"sha": SUMMARY_TEST_BASE_SHA},
+                }
+            ],
+        )
+        cases = (
+            (
+                "missing-current-older-success-only",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload("workflow_runs", [_summary_workflow_run(8100)])
+                    )
+                },
+                "metadata-only summary current workflow run was not observed",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "duplicate-current",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [duplicate_current, duplicate_current],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run was duplicated",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-number-mismatch",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [mismatch_number_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run sequence drifted",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-attempt-mismatch",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [mismatch_attempt_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run sequence drifted",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-workflow-mismatch",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [mismatch_workflow_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary workflow runs workflow_id drifted",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-status-mismatch",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [mismatch_status_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run status drifted",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-head-mismatch",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [mismatch_head_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run identity drifted",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-base-mismatch",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [mismatch_base_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run identity drifted",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-pr-mismatch",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [mismatch_pr_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run identity drifted",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-path-mismatch",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [mismatch_path_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run identity drifted",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-started-at-missing",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [mismatch_started_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run run_started_at is invalid",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-timestamps-inconsistent",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [inconsistent_timestamps_current, _summary_workflow_run(8100)],
+                            total_count=2,
+                        )
+                    )
+                },
+                "metadata-only summary current workflow run timestamps are inconsistent",
+                [_summary_runs_path(page=1)],
+            ),
+            (
+                "current-not-first-exact-page",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            later_page_push_runs[:99] + [_summary_workflow_run(8100)],
+                            total_count=101,
+                        ),
+                        headers={
+                            "Link": _summary_runs_link_header(
+                                current_page=1,
+                                total_count=101,
+                            )
+                        },
+                    ),
+                    _summary_runs_path(page=2): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(SUMMARY_TEST_RUN_ID)],
+                            total_count=101,
+                        )
+                    ),
+                },
+                "metadata-only summary workflow runs are not ordered by run_number",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_runs_path(page=2),
+                ],
+            ),
+            (
+                "current-eventual-omission",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            later_page_push_runs,
+                            total_count=101,
+                        ),
+                        headers={
+                            "Link": _summary_runs_link_header(
+                                current_page=1,
+                                total_count=101,
+                            )
+                        },
+                    ),
+                    _summary_runs_path(page=2): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(8100)],
+                            total_count=101,
+                        )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", _summary_full_jobs())
+                    ),
+                },
+                "metadata-only summary current workflow run was not observed",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_runs_path(page=2),
+                ],
+            ),
+            (
+                "newer-exact-run-supersedes-current",
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [newer_exact_run, _summary_workflow_run(SUMMARY_TEST_RUN_ID), _summary_workflow_run(8100)],
+                            total_count=3,
+                        )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", _summary_full_jobs())
+                    ),
+                },
+                "metadata-only summary current workflow run is superseded",
+                [_summary_runs_path(page=1)],
+            ),
+        )
+        for name, routes, error_fragment, expected_requests in cases:
+            with self.subTest(name=name):
+                completed, requests = _run_summary_with_api(
+                    script,
+                    environment=_summary_metadata_env(),
+                    routes=routes,
+                )
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn(error_fragment, completed.stderr)
+                self.assertEqual(
+                    [request["path"] for request in requests],
+                    expected_requests,
+                )
+
+    def test_summary_runtime_metadata_only_skips_failed_metadata_retry(self):
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        completed = subprocess.run(
+            ["/bin/bash", "-n"],
+            input=script,
+            text=True,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        failed_metadata_jobs = _replace_summary_job(
+            _summary_metadata_jobs(),
+            "summary",
+            conclusion="failure",
+        )
+        routes = {
+            _summary_runs_path(page=1): _summary_response(
+                _summary_api_payload(
+                    "workflow_runs",
+                    [
+                        _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                        _summary_workflow_run(
+                            8102,
+                            conclusion="failure",
+                            created_at=_summary_timestamp(7),
+                            run_started_at=_summary_timestamp(8),
+                        ),
+                        _summary_workflow_run(
+                            8101,
+                            created_at=_summary_timestamp(6),
+                            run_started_at=_summary_timestamp(7),
+                        ),
+                    ],
+                )
+            ),
+            _summary_jobs_path(8102): _summary_response(
+                _summary_api_payload("jobs", failed_metadata_jobs)
+            ),
+            _summary_jobs_path(8101): _summary_response(
+                _summary_api_payload("jobs", _summary_full_jobs())
+            ),
+        }
+        completed, requests = _run_summary_with_api(
+            script,
+            environment=_summary_metadata_env(),
+            routes=routes,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            [request["path"] for request in requests],
+            [
+                _summary_runs_path(page=1),
+                _summary_jobs_path(8102),
+                _summary_jobs_path(8101),
+            ],
+        )
+
+    def test_summary_runtime_metadata_only_uses_newest_prior_full_authoritatively(self):
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        completed = subprocess.run(
+            ["/bin/bash", "-n"],
+            input=script,
+            text=True,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        full_success = _summary_full_jobs()
+        full_missing_started_at = _replace_summary_job(
+            full_success,
+            "build",
+            started_at=None,
+        )
+        unknown_shape = full_success + [_summary_job("attacker-job", "success")]
+        mixed_shape = _replace_summary_job(
+            full_success,
+            "event-classifier",
+            name="metadata-classifier",
+        )
+        cases = (
+            (
+                "newer-failed-full-blocks-older-success",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8101,
+                        conclusion="failure",
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                    _summary_workflow_run(
+                        8100,
+                        created_at=_summary_timestamp(6),
+                        run_started_at=_summary_timestamp(7),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101),
+                ],
+            ),
+            (
+                "null-start-newer-failed-full-blocks-older-success",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8101,
+                        conclusion="failure",
+                        created_at=_summary_timestamp(7),
+                        run_started_at=None,
+                    ),
+                    _summary_workflow_run(
+                        8100,
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101),
+                ],
+            ),
+            (
+                "newer-cancelled-full-blocks-older-success",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8101,
+                        conclusion="cancelled",
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                    _summary_workflow_run(
+                        8100,
+                        created_at=_summary_timestamp(6),
+                        run_started_at=_summary_timestamp(7),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101),
+                ],
+            ),
+            (
+                "newer-in-progress-full-blocks-older-success",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8101,
+                        status="in_progress",
+                        conclusion=None,
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                    _summary_workflow_run(
+                        8100,
+                        created_at=_summary_timestamp(6),
+                        run_started_at=_summary_timestamp(7),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101): _summary_response(
+                        _summary_api_payload(
+                            "jobs",
+                            _replace_summary_job(
+                                _replace_summary_job(
+                                    full_success,
+                                    "summary",
+                                    status="in_progress",
+                                    conclusion=None,
+                                ),
+                                "host-tests",
+                                status="in_progress",
+                                conclusion=None,
+                            ),
+                        )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101),
+                ],
+            ),
+            (
+                "null-start-newer-in-progress-full-blocks-older-success",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8101,
+                        status="in_progress",
+                        conclusion=None,
+                        created_at=_summary_timestamp(7),
+                        run_started_at=None,
+                    ),
+                    _summary_workflow_run(
+                        8100,
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101): _summary_response(
+                        _summary_api_payload(
+                            "jobs",
+                            _replace_summary_job(
+                                _replace_summary_job(
+                                    full_success,
+                                    "summary",
+                                    status="in_progress",
+                                    conclusion=None,
+                                ),
+                                "host-tests",
+                                status="in_progress",
+                                conclusion=None,
+                            ),
+                        )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101),
+                ],
+            ),
+            (
+                "newer-unknown-shape-blocks-older-success",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8101,
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                    _summary_workflow_run(
+                        8100,
+                        created_at=_summary_timestamp(6),
+                        run_started_at=_summary_timestamp(7),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101): _summary_response(
+                        _summary_api_payload("jobs", unknown_shape)
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary prior run 8101 jobs have unexpected mode shape",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101),
+                ],
+            ),
+            (
+                "newer-mixed-shape-blocks-older-success",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8101,
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                    _summary_workflow_run(
+                        8100,
+                        created_at=_summary_timestamp(6),
+                        run_started_at=_summary_timestamp(7),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101): _summary_response(
+                        _summary_api_payload("jobs", mixed_shape)
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary prior run 8101 metadata job extended-host-tests is malformed",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101),
+                ],
+            ),
+            (
+                "newer-malformed-full-blocks-older-success",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8101,
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                    _summary_workflow_run(
+                        8100,
+                        created_at=_summary_timestamp(6),
+                        run_started_at=_summary_timestamp(7),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101): _summary_response(
+                        _summary_api_payload("jobs", full_missing_started_at)
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary newest prior full Build CI job build is not a successful runner-backed completion",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101),
+                ],
+            ),
+            (
+                "same-timestamp-full-order-uses-higher-run-id",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8101,
+                        conclusion="failure",
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                    _summary_workflow_run(
+                        8100,
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101),
+                ],
+            ),
+            (
+                "rerun-latest-attempt-failure-blocks-older-attempt-success",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8101,
+                        run_attempt=2,
+                        conclusion="failure",
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101, attempt=2): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                    _summary_jobs_path(8101, attempt=1): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101, attempt=2),
+                ],
+            ),
+        )
+        for name, workflow_runs, job_routes, error_fragment, expected_requests in cases:
+            with self.subTest(name=name):
+                routes = {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload("workflow_runs", workflow_runs)
+                    ),
+                    **job_routes,
+                }
+                completed, requests = _run_summary_with_api(
+                    script,
+                    environment=_summary_metadata_env(),
+                    routes=routes,
+                )
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn(error_fragment, completed.stderr)
+                self.assertEqual(
+                    [request["path"] for request in requests],
+                    expected_requests,
+                )
+
+    def test_summary_runtime_metadata_only_chooses_newest_full_success(self):
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        completed = subprocess.run(
+            ["/bin/bash", "-n"],
+            input=script,
+            text=True,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        routes = {
+            _summary_runs_path(page=1): _summary_response(
+                _summary_api_payload(
+                    "workflow_runs",
+                    [
+                        _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                        _summary_workflow_run(
+                            8101,
+                            created_at=_summary_timestamp(7),
+                            run_started_at=_summary_timestamp(8),
+                        ),
+                        _summary_workflow_run(
+                            8100,
+                            created_at=_summary_timestamp(7),
+                            run_started_at=_summary_timestamp(8),
+                        ),
+                    ],
+                )
+            ),
+            _summary_jobs_path(8101): _summary_response(
+                _summary_api_payload("jobs", _summary_full_jobs())
+            ),
+            _summary_jobs_path(8100): _summary_response(
+                _summary_api_payload("jobs", _summary_full_jobs())
+            ),
+        }
+        completed, requests = _run_summary_with_api(
+            script,
+            environment=_summary_metadata_env(),
+            routes=routes,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            [request["path"] for request in requests],
+            [
+                _summary_runs_path(page=1),
+                _summary_jobs_path(8101),
+            ],
+        )
+
+    def test_summary_runtime_metadata_only_rejects_invalid_prior_full_evidence(self):
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        completed = subprocess.run(
+            ["/bin/bash", "-n"],
+            input=script,
+            text=True,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        self_only = {
+            _summary_runs_path(page=1): _summary_response(
+                _summary_api_payload(
+                    "workflow_runs",
+                    [
+                        _summary_workflow_run(
+                            SUMMARY_TEST_RUN_ID,
+                            run_attempt=SUMMARY_TEST_RUN_ATTEMPT,
+                        )
+                    ],
+                )
+            )
+        }
+        mixed_jobs_routes = {
+            _summary_runs_path(page=1): _summary_response(
+                _summary_api_payload(
+                    "workflow_runs",
+                    [
+                        _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                        _summary_workflow_run(8101),
+                        _summary_workflow_run(8100),
+                    ],
+                )
+            ),
+            _summary_jobs_path(8101): _summary_response(
+                _summary_api_payload(
+                    "jobs",
+                    [
+                        _summary_job("event-identity", "success"),
+                        _summary_job("event-router", "success"),
+                        _summary_job("event-classifier", "success"),
+                        _summary_job("host-tests", "success"),
+                        _summary_job("build", "success"),
+                    ],
+                )
+            ),
+            _summary_jobs_path(8100): _summary_response(
+                _summary_api_payload(
+                    "jobs",
+                    [
+                        _summary_job("extended-host-tests", "success"),
+                        _summary_job("legacy", "success"),
+                        _summary_job("patch-release", "skipped", runner_name=None),
+                        _summary_job("summary", "success"),
+                    ],
+                )
+            ),
+        }
+        repeated_run_routes = {
+            _summary_runs_path(page=1): _summary_response(
+                _summary_api_payload(
+                    "workflow_runs",
+                    [_summary_workflow_run(SUMMARY_TEST_RUN_ID)]
+                    + [
+                        _summary_workflow_run(
+                            8200 + index,
+                            event="push",
+                            run_number=8298 - index,
+                        )
+                        for index in range(99)
+                    ],
+                    total_count=101,
+                ),
+                headers={
+                    "Link": _summary_runs_link_header(current_page=1, total_count=101)
+                },
+            ),
+            _summary_runs_path(page=2): _summary_response(
+                _summary_api_payload(
+                    "workflow_runs",
+                    [_summary_workflow_run(8200)],
+                    total_count=101,
+                )
+            ),
+        }
+        page_cap_routes = {
+            **{
+                _summary_runs_path(page=page): _summary_response(
+                    _summary_api_payload(
+                        "workflow_runs",
+                        [
+                            _summary_workflow_run(
+                                10000 + (page - 1) * 100 + index,
+                                event="push",
+                                run_number=9000 - ((page - 1) * 100 + index),
+                            )
+                            for index in range(100)
+                        ],
+                        total_count=1000,
+                    ),
+                    headers={"Link": _summary_runs_link_header(current_page=page, total_count=1000)},
+                )
+                for page in range(1, 11)
+            }
+        }
+        missing_run_number = _summary_workflow_run(8100)
+        del missing_run_number["run_number"]
+        missing_workflow_id = _summary_workflow_run(8100)
+        del missing_workflow_id["workflow_id"]
+        cases = (
+            (
+                "metadata-expensive-ran",
+                _summary_metadata_env(EXTENDED_HOST_TESTS_RESULT="success"),
+                {},
+                1,
+                "metadata-only expensive Build worker was not skipped",
+            ),
+            (
+                "missing-token",
+                _summary_metadata_env(GITHUB_TOKEN=""),
+                {},
+                1,
+                "metadata-only summary missing GITHUB_TOKEN",
+            ),
+            (
+                "no-prior-full",
+                _summary_metadata_env(),
+                self_only,
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "missing-last-nonfinal",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(SUMMARY_TEST_RUN_ID)]
+                            + [
+                                _summary_workflow_run(
+                                    9100 - index,
+                                    event="push",
+                                    run_number=9000 - index,
+                                )
+                                for index in range(99)
+                            ],
+                            total_count=101,
+                        ),
+                        headers={
+                            "Link": f'<{{api_base}}{_summary_runs_path(page=2)}>; rel="next"'
+                        },
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs last page is required",
+            ),
+            (
+                "short-missing-next",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8101),
+                            ],
+                            total_count=3,
+                        ),
+                        headers={
+                            "Link": f'<{{api_base}}{_summary_runs_path(page=2)}>; rel="next"'
+                        },
+                    ),
+                    _summary_runs_path(page=2): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(8100)],
+                            total_count=3,
+                        )
+                    ),
+                },
+                1,
+                "metadata-only summary workflow runs page cardinality is invalid",
+            ),
+            (
+                "short-nonfinal-page",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(9100 - index) for index in range(99)],
+                            total_count=101,
+                        ),
+                        headers={
+                            "Link": _summary_runs_link_header(
+                                current_page=1,
+                                total_count=101,
+                            )
+                        },
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs page cardinality is invalid",
+            ),
+            (
+                "short-final-page",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(
+                                    9200 - index,
+                                    run_number=9000 - index,
+                                )
+                                for index in range(100)
+                            ],
+                            total_count=101,
+                        ),
+                        headers={
+                            "Link": _summary_runs_link_header(
+                                current_page=1,
+                                total_count=101,
+                            )
+                        },
+                    ),
+                    _summary_runs_path(page=2): _summary_response(
+                        _summary_api_payload("workflow_runs", [], total_count=101)
+                    ),
+                },
+                1,
+                "metadata-only summary workflow runs page cardinality is invalid",
+            ),
+            (
+                "overfull-final-page",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(
+                                    9200 - index,
+                                    run_number=9000 - index,
+                                )
+                                for index in range(100)
+                            ],
+                            total_count=101,
+                        ),
+                        headers={
+                            "Link": _summary_runs_link_header(
+                                current_page=1,
+                                total_count=101,
+                            )
+                        },
+                    ),
+                    _summary_runs_path(page=2): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(8101), _summary_workflow_run(8100)],
+                            total_count=101,
+                        )
+                    ),
+                },
+                1,
+                "metadata-only summary workflow runs page cardinality is invalid",
+            ),
+            (
+                "unexpected-next-after-complete",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(
+                                    9900 + index,
+                                    event="push",
+                                    run_number=9800 - index,
+                                )
+                                for index in range(100)
+                            ],
+                            total_count=101,
+                        ),
+                        headers={
+                            "Link": _summary_runs_link_header(
+                                current_page=1,
+                                total_count=101,
+                            )
+                        },
+                    ),
+                    _summary_runs_path(page=2): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(SUMMARY_TEST_RUN_ID)],
+                            total_count=101,
+                        ),
+                        headers={
+                            "Link": _summary_runs_link_header(
+                                current_page=2,
+                                total_count=101,
+                                next_page=3,
+                                include_prev=True,
+                                include_first=True,
+                            )
+                        },
+                    ),
+                },
+                1,
+                "metadata-only summary workflow runs reported an unexpected next page",
+            ),
+            (
+                "last-link-on-single-page",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100),
+                            ],
+                            total_count=2,
+                        ),
+                        headers={
+                            "Link": _summary_runs_link_header(
+                                current_page=1,
+                                total_count=2,
+                                include_next=False,
+                            )
+                        },
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs reported pagination for a single page",
+            ),
+            (
+                "changing-total-count",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(
+                                    9300 - index,
+                                    event="push",
+                                    run_number=9000 - index,
+                                )
+                                for index in range(100)
+                            ],
+                            total_count=101,
+                        ),
+                        headers={
+                            "Link": _summary_runs_link_header(
+                                current_page=1,
+                                total_count=101,
+                            )
+                        },
+                    ),
+                    _summary_runs_path(page=2): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(8100, event="push", run_number=8900)],
+                            total_count=102,
+                        )
+                    ),
+                },
+                1,
+                "metadata-only summary workflow runs total_count changed across pages",
+            ),
+            (
+                "overfull-nonfinal-page",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(
+                                    9200 - index,
+                                    event="push",
+                                    run_number=9000 - index,
+                                )
+                                for index in range(101)
+                            ],
+                            total_count=150,
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs pagination is invalid",
+            ),
+            (
+                "duplicate-last-relation",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(SUMMARY_TEST_RUN_ID)]
+                            + [
+                                _summary_workflow_run(
+                                    9300 - index,
+                                    event="push",
+                                    run_number=9000 - index,
+                                )
+                                for index in range(99)
+                            ],
+                            total_count=101,
+                        ),
+                        headers={
+                            "Link": (
+                                f'<{{api_base}}{_summary_runs_path(page=2)}>; rel="next", '
+                                f'<{{api_base}}{_summary_runs_path(page=2)}>; rel="last", '
+                                f'<{{api_base}}{_summary_runs_path(page=3)}>; rel="last"'
+                            )
+                        },
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs Link header repeats a relation",
+            ),
+            (
+                "looping-next-page",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(
+                                    9300 - index,
+                                    event="push",
+                                    run_number=9000 - index,
+                                )
+                                for index in range(100)
+                            ],
+                            total_count=101,
+                        ),
+                        headers={
+                            "Link": _summary_runs_link_header(
+                                current_page=1,
+                                total_count=101,
+                                next_page=1,
+                            )
+                        },
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs next page is not sequential",
+            ),
+            (
+                "wrong-last-page",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(SUMMARY_TEST_RUN_ID)]
+                            + [
+                                _summary_workflow_run(
+                                    9300 - index,
+                                    event="push",
+                                    run_number=9000 - index,
+                                )
+                                for index in range(99)
+                            ],
+                            total_count=101,
+                        ),
+                        headers={
+                            "Link": _summary_runs_link_header(
+                                current_page=1,
+                                total_count=101,
+                                last_page=3,
+                            )
+                        },
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs last page drifted",
+            ),
+            (
+                "skipped-next-page",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(
+                                    9300 - index,
+                                    event="push",
+                                    run_number=9000 - index,
+                                )
+                                for index in range(100)
+                            ],
+                            total_count=101,
+                        ),
+                        headers={
+                            "Link": _summary_runs_link_header(
+                                current_page=1,
+                                total_count=101,
+                                next_page=3,
+                            )
+                        },
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs next page is not sequential",
+            ),
+            (
+                "same-run-number-conflicting-ids",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8101, run_number=8100),
+                                _summary_workflow_run(8100, run_number=8100),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs repeat a run_number",
+            ),
+            (
+                "nonmonotonic-run-number-order",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, run_number=8000),
+                                _summary_workflow_run(8101, run_number=8001),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs are not ordered by run_number",
+            ),
+            (
+                "run-number-not-older-than-current",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, run_number=SUMMARY_TEST_RUN_NUMBER + 1),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs are not ordered by run_number",
+            ),
+            (
+                "missing-run-number",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                missing_run_number,
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary workflow run run_number is invalid",
+            ),
+            (
+                "missing-workflow-id",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                missing_workflow_id,
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary workflow run workflow_id is invalid",
+            ),
+            (
+                "workflow-id-drift",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, workflow_id=SUMMARY_TEST_WORKFLOW_ID + 1),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs workflow_id drifted",
+            ),
+            (
+                "failed-prior-run",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, conclusion="failure"),
+                            ],
+                        )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", _summary_full_jobs())
+                    ),
+                },
+                1,
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
+            ),
+            (
+                "in-progress-prior-run",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(
+                                    8100,
+                                    status="in_progress",
+                                    conclusion=None,
+                                ),
+                            ],
+                        )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", _summary_full_jobs())
+                    ),
+                },
+                1,
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
+            ),
+            (
+                "cancelled-prior-run",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, conclusion="cancelled"),
+                            ],
+                        )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", _summary_full_jobs())
+                    ),
+                },
+                1,
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
+            ),
+            (
+                "wrong-pr-binding",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, pr_number=SUMMARY_TEST_PR_NUMBER + 1),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "wrong-head-binding",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, head_sha="4" * 40),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "wrong-base-binding",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, base_sha="3" * 40),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "wrong-repository-url",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(
+                                    8100,
+                                    url=(
+                                        "https://api.github.test/repos/other/repo/"
+                                        "actions/runs/8100"
+                                    ),
+                                ),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "wrong-event",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, event="push"),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "wrong-workflow-path",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(
+                                    8100,
+                                    path=".github/workflows/other.yml@refs/pull/177/merge",
+                                ),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "metadata-masquerade",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100),
+                            ],
+                        )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", _summary_metadata_jobs())
+                    ),
+                },
+                1,
+                "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "mixed-jobs-across-runs",
+                _summary_metadata_env(),
+                mixed_jobs_routes,
+                1,
+                "metadata-only summary prior run 8101 jobs have unexpected mode shape",
+            ),
+            (
+                "missing-runner",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100),
+                            ],
+                        )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload(
+                            "jobs",
+                            [
+                                _summary_job("event-identity", "success"),
+                                _summary_job("event-router", "success"),
+                                _summary_job("event-classifier", "success"),
+                                _summary_job("host-tests", "success"),
+                                _summary_job("build", "success", runner_name=None),
+                                _summary_job("extended-host-tests", "success"),
+                                _summary_job("legacy", "success"),
+                                _summary_job("patch-release", "skipped", runner_name=None),
+                                _summary_job("summary", "success"),
+                            ],
+                        )
+                    ),
+                },
+                1,
+                "metadata-only summary newest prior full Build CI job build is not a successful runner-backed completion",
+            ),
+            (
+                "bad-run-attempt",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, run_attempt=0),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary workflow run attempt is invalid",
+            ),
+            (
+                "malformed-workflow-runs",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(b"{")
+                },
+                1,
+                "metadata-only summary workflow runs page 1 response is not valid JSON",
+            ),
+            (
+                "total-count-cap",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(SUMMARY_TEST_RUN_ID)],
+                            total_count=1001,
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs total_count is invalid",
+            ),
+            (
+                "malformed-link",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(
+                                    8300 + index,
+                                    event="push",
+                                    run_number=8300 - index,
+                                )
+                                for index in range(100)
+                            ],
+                        ),
+                        headers={"Link": "not a valid link"},
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs Link header is malformed",
+            ),
+            (
+                "repeated-run-across-pages",
+                _summary_metadata_env(),
+                repeated_run_routes,
+                1,
+                "metadata-only summary workflow runs repeated a run",
+            ),
+            (
+                "prior-run-jobs-repeat-name",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100),
+                            ],
+                        )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload(
+                            "jobs",
+                            [
+                                _summary_job("event-identity", "success"),
+                                _summary_job("event-identity", "success"),
+                            ],
+                        )
+                    ),
+                },
+                1,
+                "metadata-only summary prior run jobs repeat a name",
+            ),
+            (
+                "prior-run-jobs-pagination",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100),
+                            ],
+                        )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", _summary_full_jobs()),
+                        headers={"Link": '<https://api.github.test/jobs?page=2>; rel="next"'},
+                    ),
+                },
+                1,
+                "metadata-only summary prior run jobs pagination is unsupported",
+            ),
+            (
+                "http-error",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response({}, status=403)
+                },
+                1,
+                "metadata-only summary workflow runs page 1 request failed: HTTP 403",
+            ),
+            (
+                "overflowing-pagination-bound",
+                _summary_metadata_env(),
+                page_cap_routes,
+                1,
+                "metadata-only summary workflow runs exceed the reviewed pagination bound",
+            ),
+        )
+        for name, environment, routes, expected, error_fragment in cases:
+            with self.subTest(name=name):
+                completed, _requests = _run_summary_with_api(
+                    script,
+                    environment=environment,
+                    routes=routes,
+                )
+                self.assertEqual(completed.returncode, expected, completed.stderr)
+                self.assertIn(error_fragment, completed.stderr)
+
+    def test_workflow_governance_docs_bind_metadata_summary_to_prior_full_evidence(self):
+        governance = WORKFLOW_GOVERNANCE_CASE.read_text(encoding="utf-8")
+        governance_compact = " ".join(governance.split())
+        self.assertIn(
+            'latest_full["summary"] == (title["run_id"], "success")',
+            governance,
+        )
+        self.assertIn(
+            "A later metadata continuity run advances the required canonical "
+            "`summary` context only after proving that newest prior full run",
+            governance_compact,
+        )
+        self.assertIn(
+            "candidate eligibility remains bound to the newest prior complete full run",
+            governance_compact,
+        )
+        self.assertNotIn(
+            "the required canonical `summary` context remains on the latest "
+            "successful full run even though later metadata runs reuse the worker names",
+            governance_compact,
+        )
+        workflow_pilot = WORKFLOW_PILOT_DOC.read_text(encoding="utf-8")
+        workflow_pilot_compact = " ".join(workflow_pilot.split())
+        self.assertIn(
+            "a prior successful full run remains eligible because the later metadata continuity "
+            "run advances only the required canonical `summary` context after proving that "
+            "prior full run",
+            workflow_pilot_compact,
+        )
+        self.assertNotIn(
+            "contexts are distinct rather than replacements",
+            workflow_pilot_compact,
+        )
+
+    def test_summary_runtime_metadata_only_rejects_redirects_without_leaking_token(self):
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        completed = subprocess.run(
+            ["/bin/bash", "-n"],
+            input=script,
+            text=True,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        redirect_statuses = (301, 302, 303, 307, 308)
+        secret_token = "secret-redirect-token"
+        for status in redirect_statuses:
+            with self.subTest(kind="same-origin", status=status):
+                completed, requests = _run_summary_with_api(
+                    script,
+                    environment=_summary_metadata_env(GITHUB_TOKEN=secret_token),
+                    routes={
+                        _summary_runs_path(page=1): _summary_response(
+                            {},
+                            status=status,
+                            headers={
+                                "Location": "{api_base}/redirect-target",
+                            },
+                        ),
+                        "/redirect-target": _summary_response(
+                            _summary_api_payload("workflow_runs", [])
+                        ),
+                    },
+                )
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn(
+                    f"metadata-only summary workflow runs page 1 request rejected redirect: HTTP {status}",
+                    completed.stderr,
+                )
+                self.assertNotIn(secret_token, completed.stderr)
+                self.assertEqual(
+                    [request["path"] for request in requests],
+                    [_summary_runs_path(page=1)],
+                )
+
+            with self.subTest(kind="cross-origin", status=status):
+                completed, requests = _run_summary_with_api_servers(
+                    script,
+                    environment=_summary_metadata_env(GITHUB_TOKEN=secret_token),
+                    primary_routes={
+                        _summary_runs_path(page=1): _summary_response(
+                            {},
+                            status=status,
+                            headers={
+                                "Location": "{redirect_api_base}/redirect-target",
+                            },
+                        )
+                    },
+                    secondary_routes={
+                        "/redirect-target": _summary_response(
+                            _summary_api_payload("workflow_runs", [])
+                        )
+                    },
+                )
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn(
+                    f"metadata-only summary workflow runs page 1 request rejected redirect: HTTP {status}",
+                    completed.stderr,
+                )
+                self.assertNotIn(secret_token, completed.stderr)
+                self.assertEqual(
+                    [request["path"] for request in requests["primary"]],
+                    [_summary_runs_path(page=1)],
+                )
+                self.assertEqual(requests["secondary"], [])
 
     def test_event_mode_runtime_separates_metadata_from_full_checks(self):
         mode_step = _step_blocks(_job_blocks(self.text)["event-classifier"])[0]

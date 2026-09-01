@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import http.server
+import io
 import json
 import os
 import re
@@ -12,9 +13,12 @@ import shlex
 import socket
 import subprocess
 import tempfile
+import textwrap
 import threading
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
+from unittest import mock
 
 from scripts.modernize import patch_release
 
@@ -22,6 +26,7 @@ from scripts.modernize import patch_release
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
 PATCH_RELEASE_CASE = ROOT / "docs" / "test-cases" / "patch-release.md"
+PATCH_RELEASE_OVERVIEW = ROOT / "docs" / "patch_release.md"
 ARTIFACT_FILENAMES = (
     "README.txt",
     "fireemblem8-expansion-all-locales-all-features-aapcs.bps",
@@ -119,6 +124,162 @@ def named_step_run_script(workflow: str, name: str) -> str:
     return "\n".join(
         line[8:] for line in lines[run_index + 1:] if line.startswith("        ")
     )
+
+
+def dev_mount_target_parser_source(workflow: str) -> str:
+    steps = patch_release_step_blocks(workflow)
+    matches = [
+        step
+        for step in steps
+        if "    - name: Build candidate in isolated namespace and stage public inputs\n"
+        in step
+    ]
+    if len(matches) != 1:
+        raise AssertionError("publisher must define exactly one isolated builder step")
+    script = matches[0]
+    match = re.search(
+        r"(?ms)^\s*list_dev_mount_targets\(\) \{\n"
+        r"\s*/usr/bin/python3 -I -S - <<'PY'\n"
+        r"(?P<body>.*?)\n"
+        r"\s*PY\n"
+        r"\s*\}",
+        script,
+    )
+    if match is None:
+        raise AssertionError("publisher must embed exactly one decoded /dev mount parser")
+    return textwrap.dedent(match.group("body")) + "\n"
+
+
+def dev_mount_transport_section_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Build candidate in isolated namespace and stage public inputs",
+    )
+    start = script.index("create_supervisor_transport_file() {")
+    end_marker = (
+        "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor\n"
+        "/usr/bin/mount -t tmpfs \\\n"
+        "  -o nosuid,mode=0755,size=4m builder-dev /dev"
+    )
+    end = script.index(end_marker, start) + len(end_marker)
+    return script[start:end]
+
+
+def writable_mount_record_parser_source(workflow: str) -> str:
+    steps = patch_release_step_blocks(workflow)
+    matches = [
+        step
+        for step in steps
+        if "    - name: Build candidate in isolated namespace and stage public inputs\n"
+        in step
+    ]
+    if len(matches) != 1:
+        raise AssertionError("publisher must define exactly one isolated builder step")
+    script = matches[0]
+    match = re.search(
+        r"(?ms)^\s*list_writable_mount_records\(\) \{\n"
+        r"\s*/usr/bin/python3 -I -S - <<'PY'\n"
+        r"(?P<body>.*?)\n"
+        r"\s*PY\n"
+        r"\s*\}",
+        script,
+    )
+    if match is None:
+        raise AssertionError("publisher must embed exactly one writable mount parser")
+    return textwrap.dedent(match.group("body")) + "\n"
+
+
+def writable_mount_transport_section_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Build candidate in isolated namespace and stage public inputs",
+    )
+    start = script.index("list_writable_mount_records() {")
+    end_marker = "exec < /dev/null > /dev/null 2>&1\n"
+    end = script.index(end_marker, start)
+    return script[start:end]
+
+
+def run_dev_mount_target_parser(
+    source: str,
+    *,
+    stdout: bytes,
+    returncode: int = 0,
+    stderr: bytes = b"",
+) -> tuple[int, bytes, str]:
+    class StdoutCapture:
+        def __init__(self):
+            self.buffer = io.BytesIO()
+
+        def write(self, text):
+            return len(text)
+
+        def flush(self):
+            return None
+
+    stdout_capture = StdoutCapture()
+    stderr_capture = io.StringIO()
+    completed = subprocess.CompletedProcess(
+        ["/usr/bin/findmnt"],
+        returncode,
+        stdout,
+        stderr,
+    )
+    with (
+        mock.patch("subprocess.run", return_value=completed),
+        mock.patch("sys.stdout", stdout_capture),
+        redirect_stderr(stderr_capture),
+    ):
+        code = 0
+        try:
+            exec(
+                compile(source, "<decoded-dev-mount-parser>", "exec"),
+                {"__name__": "__main__"},
+            )
+        except SystemExit as exc:
+            code = exc.code if isinstance(exc.code, int) else 1
+    return code, stdout_capture.buffer.getvalue(), stderr_capture.getvalue()
+
+
+def run_writable_mount_record_parser(
+    source: str,
+    *,
+    stdout: bytes,
+    returncode: int = 0,
+    stderr: bytes = b"",
+) -> tuple[int, bytes, str]:
+    class StdoutCapture:
+        def __init__(self):
+            self.buffer = io.BytesIO()
+
+        def write(self, text):
+            return len(text)
+
+        def flush(self):
+            return None
+
+    stdout_capture = StdoutCapture()
+    stderr_capture = io.StringIO()
+    completed = subprocess.CompletedProcess(
+        ["/usr/bin/findmnt"],
+        returncode,
+        stdout,
+        stderr,
+    )
+    with (
+        mock.patch("subprocess.run", return_value=completed),
+        mock.patch("sys.stdout", stdout_capture),
+        redirect_stderr(stderr_capture),
+    ):
+        code = 0
+        try:
+            exec(
+                compile(source, "<writable-mount-record-parser>", "exec"),
+                {"__name__": "__main__"},
+            )
+        except SystemExit as exc:
+            code = exc.code if isinstance(exc.code, int) else 1
+    return code, stdout_capture.buffer.getvalue(), stderr_capture.getvalue()
 
 
 def patch_release_download_command(workflow: str) -> list[str]:
@@ -237,6 +398,96 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "candidate-output.log" in isolated_step
         or "candidate_sink" in isolated_step
         or "sink_size" in isolated_step
+        or "list_dev_mount_targets() {" not in isolated_step
+        or (
+            '["/usr/bin/findmnt", "--json", "--submounts", "--output", "TARGET", "/dev"]'
+            not in isolated_step
+        )
+        or "object_pairs_hook=reject_duplicates" not in isolated_step
+        or "findmnt target escapes /dev" not in isolated_step
+        or "findmnt target contains NUL" not in isolated_step
+        or "builder-supervisor /mnt/supervisor" not in isolated_step
+        or 'path="$(/usr/bin/mktemp "/mnt/supervisor/$1.XXXXXXXXXX")"'
+        not in isolated_step
+        or 'path="$(/usr/bin/mktemp "/dev/shm/$1.XXXXXXXXXX")"'
+        not in isolated_step
+        or "create_supervisor_transport_file() {" not in isolated_step
+        or "checked_supervisor_transport_signature() {" not in isolated_step
+        or "read_checked_supervisor_transport_file() {" not in isolated_step
+        or "remove_supervisor_transport_file() {" not in isolated_step
+        or "list_writable_mount_records() {" not in isolated_step
+        or (
+            '["/usr/bin/findmnt", "--json", "--list", "--uniq", "--output", "TARGET,OPTIONS", "-R", "/"]'
+            not in isolated_step
+        )
+        or "duplicate writable mount JSON key" not in isolated_step
+        or "findmnt target is not absolute" not in isolated_step
+        or 'options = validate_options(filesystem.get("options"))' not in isolated_step
+        or "findmnt option tokens are invalid" not in isolated_step
+        or "unexpected writable mount audit row keys" not in isolated_step
+        or "create_runtime_transport_file() {" not in isolated_step
+        or "checked_runtime_transport_signature() {" not in isolated_step
+        or "read_checked_runtime_transport_file() {" not in isolated_step
+        or "remove_runtime_transport_file() {" not in isolated_step
+        or isolated_step.count('test ! -L "$path" || return 125') != 4
+        or 'test "$(/usr/bin/stat -c %a "$path")" = 600' not in isolated_step
+        or isolated_step.count(
+            'test "$(/usr/bin/stat -c %h "$path")" = 1 || return 125'
+        )
+        != 4
+        or 'size="$(/usr/bin/stat -c %s "$path")"' not in isolated_step
+        or 'test "$size" -le "$size_limit" || return 125' not in isolated_step
+        or "stat -Lc '%d:%i:%f:%u:%g:%s:%h:%a' \"$path\"" not in isolated_step
+        or isolated_step.count('test ! -e "$path" || return 125') != 2
+        or 'list_dev_mount_targets > "$dev_mounts_file"' not in isolated_step
+        or (
+            'read_checked_supervisor_transport_file \\\n'
+            '          "$dev_mounts_file" "$dev_mount_targets_max_bytes" dev_mounts'
+        )
+        not in isolated_step
+        or 'remove_supervisor_transport_file "$dev_mounts_file"'
+        not in isolated_step
+        or (
+            "for ((index=${#dev_mounts[@]} - 1; index >= 0; index--)); do"
+        )
+        not in isolated_step
+        or '/dev/*) /usr/bin/umount -- "$dev_mount" ;;'
+        not in isolated_step
+        or 'list_dev_mount_targets > "$remaining_dev_mounts_file"'
+        not in isolated_step
+        or (
+            'read_checked_supervisor_transport_file \\\n'
+            '          "$remaining_dev_mounts_file" \\\n'
+            '          "$dev_mount_targets_max_bytes" \\\n'
+            "          remaining_dev_mounts"
+        )
+        not in isolated_step
+        or 'remove_supervisor_transport_file "$remaining_dev_mounts_file"'
+        not in isolated_step
+        or 'test "${#remaining_dev_mounts[@]}" -eq 1' not in isolated_step
+        or 'test "${remaining_dev_mounts[0]}" = /dev' not in isolated_step
+        or 'list_writable_mount_records > "$writable_mount_records_file"' not in isolated_step
+        or (
+            'read_checked_runtime_transport_file \\\n'
+            '          "$writable_mount_records_file" \\\n'
+            '          "$writable_mount_records_max_bytes" \\\n'
+            '          writable_mount_records'
+        )
+        not in isolated_step
+        or 'remove_runtime_transport_file "$writable_mount_records_file"'
+        not in isolated_step
+        or 'test "$(( ${#writable_mount_records[@]} % 2 ))" -eq 0'
+        not in isolated_step
+        or 'mount_target="${writable_mount_records[index]}"' not in isolated_step
+        or 'mount_options="${writable_mount_records[index + 1]}"' not in isolated_step
+        or "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"
+        not in isolated_step
+        or "/usr/bin/findmnt -Rrno TARGET /dev" in isolated_step
+        or "/usr/bin/findmnt --raw" in isolated_step
+        or "< <(list_dev_mount_targets)" in isolated_step
+        or "< <(list_writable_mount_records)" in isolated_step
+        or "/usr/bin/findmnt -Rrno TARGET,OPTIONS /" in isolated_step
+        or "/usr/bin/findmnt -Rno TARGET,OPTIONS /" in isolated_step
         or 'builder_isolation_script="$(/bin/cat \\\n'
         not in isolated_step
         or '/bin/bash -c "$builder_isolation_script" builder-isolation'
@@ -275,6 +526,12 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "builder-shm /dev/shm" not in isolated_step
         or "hidepid=2 /proc" not in isolated_step
         or "/usr/bin/mkdir -m 0700 /mnt/supervisor\n" not in isolated_step
+        or (
+            "/usr/bin/mount -t tmpfs \\\n"
+            "          -o nosuid,nodev,noexec,mode=0700,size=1m \\\n"
+            "          builder-supervisor /mnt/supervisor"
+        )
+        not in isolated_step
         or "/usr/bin/mkdir -m 0700 /mnt/supervisor/cgroup"
         not in isolated_step
         or 'test "$(/usr/bin/stat -c %u /mnt/supervisor)" = 0'
@@ -459,6 +716,203 @@ done
     )
 
 
+def _bounded_process_text(stream: str | bytes | None, limit: int = 120) -> str:
+    if stream is None:
+        return "<empty>"
+    if isinstance(stream, bytes):
+        stream = stream.decode("utf-8", errors="replace")
+    collapsed = " ".join(stream.split())
+    if not collapsed:
+        return "<empty>"
+    if len(collapsed) <= limit:
+        return collapsed
+    return collapsed[: limit - 3] + "..."
+
+
+def _bounded_process_diagnostic(
+    completed: subprocess.CompletedProcess,
+    *,
+    stream_limit: int = 120,
+    total_limit: int = 240,
+) -> str:
+    diagnostic = (
+        f"rc={completed.returncode}, "
+        f"stdout={_bounded_process_text(completed.stdout, stream_limit)!r}, "
+        f"stderr={_bounded_process_text(completed.stderr, stream_limit)!r}"
+    )
+    if len(diagnostic) <= total_limit:
+        return diagnostic
+    return diagnostic[: total_limit - 3] + "..."
+
+
+FINDMNT_UNIQ_NAMESPACE_PREFLIGHT_SCRIPT = """\
+set -euo pipefail
+root="$1"
+cleanup() {
+  local status=0
+  if [ -e "$root/target-upper-bound" ]; then
+    umount -- "$root/target" || status=1
+    rm -f -- "$root/target-upper-bound"
+  fi
+  if [ -e "$root/target-lower-bound" ]; then
+    umount -- "$root/target" || status=1
+    rm -f -- "$root/target-lower-bound"
+  fi
+  if [ -e "$root/upper-mounted" ]; then
+    umount -- "$root/upper" || status=1
+    rm -f -- "$root/upper-mounted"
+  fi
+  if [ -e "$root/lower-mounted" ]; then
+    umount -- "$root/lower" || status=1
+    rm -f -- "$root/lower-mounted"
+  fi
+  return "$status"
+}
+trap cleanup EXIT
+mkdir -p "$root/lower" "$root/upper" "$root/target"
+mount -t tmpfs tmpfs "$root/lower"
+: > "$root/lower-mounted"
+mount -t tmpfs tmpfs "$root/upper"
+: > "$root/upper-mounted"
+mount --bind "$root/lower" "$root/target"
+: > "$root/target-lower-bound"
+mount -o remount,bind,ro "$root/target"
+mount --bind "$root/upper" "$root/target"
+: > "$root/target-upper-bound"
+mount -o remount,bind,ro "$root/target"
+cleanup
+trap - EXIT
+"""
+
+
+FINDMNT_UNIQ_NAMESPACE_PROBE_SCRIPT = """\
+set -euo pipefail
+root="$1"
+lower_mode="$2"
+upper_mode="$3"
+cleanup() {
+  local status=0
+  if [ -e "$root/target-upper-bound" ]; then
+    umount -- "$root/target" || status=1
+    rm -f -- "$root/target-upper-bound"
+  fi
+  if [ -e "$root/target-lower-bound" ]; then
+    umount -- "$root/target" || status=1
+    rm -f -- "$root/target-lower-bound"
+  fi
+  if [ -e "$root/upper-mounted" ]; then
+    umount -- "$root/upper" || status=1
+    rm -f -- "$root/upper-mounted"
+  fi
+  if [ -e "$root/lower-mounted" ]; then
+    umount -- "$root/lower" || status=1
+    rm -f -- "$root/lower-mounted"
+  fi
+  return "$status"
+}
+trap cleanup EXIT
+mkdir -p "$root/lower" "$root/upper" "$root/target"
+mount -t tmpfs tmpfs "$root/lower"
+: > "$root/lower-mounted"
+mount -t tmpfs tmpfs "$root/upper"
+: > "$root/upper-mounted"
+mount --bind "$root/lower" "$root/target"
+: > "$root/target-lower-bound"
+if [ "$lower_mode" = ro ]; then
+  mount -o remount,bind,ro "$root/target"
+fi
+mount --bind "$root/upper" "$root/target"
+: > "$root/target-upper-bound"
+if [ "$upper_mode" = ro ]; then
+  mount -o remount,bind,ro "$root/target"
+fi
+findmnt --json --list --output TARGET,OPTIONS,ID,PARENT -R "$root/target" > "$root/all.json"
+findmnt --json --list --uniq --output TARGET,OPTIONS,ID,PARENT -R "$root/target" > "$root/uniq.json"
+cleanup
+trap - EXIT
+"""
+
+
+def run_rootless_mount_namespace(
+    script: str,
+    *args: str,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            "unshare",
+            "--user",
+            "--map-root-user",
+            "--mount",
+            "--pid",
+            "--fork",
+            "/bin/bash",
+            "-ceu",
+            script,
+            "--",
+            *args,
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def require_findmnt_uniq_namespace_capability(root: Path) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    completed = run_rootless_mount_namespace(
+        FINDMNT_UNIQ_NAMESPACE_PREFLIGHT_SCRIPT,
+        str(root),
+    )
+    if completed.returncode != 0:
+        raise unittest.SkipTest(
+            "mount namespace capability unavailable: "
+            + _bounded_process_diagnostic(completed)
+        )
+
+
+def _load_findmnt_probe_payload(path: Path) -> list[dict[str, object]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise AssertionError(f"namespace semantic probe missing {path.name}") from exc
+    except json.JSONDecodeError as exc:
+        raise AssertionError(f"namespace semantic probe malformed {path.name}") from exc
+    if not isinstance(payload, dict) or set(payload) != {"filesystems"}:
+        raise AssertionError(f"namespace semantic probe malformed {path.name}")
+    rows = payload["filesystems"]
+    if not isinstance(rows, list):
+        raise AssertionError(f"namespace semantic probe malformed {path.name}")
+    normalized = []
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {"id", "options", "parent", "target"}:
+            raise AssertionError(f"namespace semantic probe malformed {path.name}")
+        normalized.append(row)
+    return normalized
+
+
+def run_findmnt_uniq_namespace_semantic_probe(
+    root: Path,
+    lower_mode: str,
+    upper_mode: str,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    root.mkdir(parents=True, exist_ok=True)
+    completed = run_rootless_mount_namespace(
+        FINDMNT_UNIQ_NAMESPACE_PROBE_SCRIPT,
+        str(root),
+        lower_mode,
+        upper_mode,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(
+            "namespace semantic probe failed: " + _bounded_process_diagnostic(completed)
+        )
+    return (
+        _load_findmnt_probe_payload(root / "all.json"),
+        _load_findmnt_probe_payload(root / "uniq.json"),
+    )
+
+
 class PatchReleaseWorkflowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -601,6 +1055,16 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         )
         self.assertIn("supervisor_cgroup=/mnt/supervisor/cgroup", self.patch_job)
         self.assertIn('test ! -r /mnt/supervisor', self.patch_job)
+        self.assertIn('test ! -w /mnt/supervisor', self.patch_job)
+        self.assertIn('test ! -x /mnt/supervisor', self.patch_job)
+        self.assertIn(
+            "builder-supervisor /mnt/supervisor",
+            self.patch_job,
+        )
+        self.assertIn(
+            "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor",
+            self.patch_job,
+        )
         supervisor_bind = self.patch_job.index(
             '/usr/bin/mount --bind "$cgroup_path" /mnt/supervisor/cgroup'
         )
@@ -677,6 +1141,702 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             changed,
         ).group("body")
         self.assertEqual(changed_patch, self.patch_job)
+
+    def test_device_mount_teardown_executes_deepest_first(self):
+        section = dev_mount_transport_section_source(self.text)
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="device-mount-transport-order-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            trace = sandbox / "trace"
+            supervisor_root = sandbox / "supervisor"
+            supervisor_root.mkdir(mode=0o700)
+            section = section.replace(
+                "/mnt/supervisor",
+                "$SUPERVISOR_ROOT",
+            )
+            section = section.replace(
+                'test "$(/usr/bin/stat -c %u "$path")" = 0 || return 125',
+                'test "$(/usr/bin/stat -c %u "$path")" = "$SUPERVISOR_UID" || return 125',
+            )
+            section = section.replace(
+                "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec $SUPERVISOR_ROOT",
+                "printf 'OVERMOUNT\\n' >> \"$TRACE_PATH\"",
+            )
+            section = section.replace(
+                '/usr/bin/umount -- "$dev_mount"',
+                "printf '%s\\0' \"$dev_mount\"",
+            )
+            section = section.replace(
+                "/usr/bin/mount -t tmpfs \\\n"
+                "  -o nosuid,mode=0755,size=4m builder-dev /dev",
+                "true",
+            )
+            completed = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-c",
+                    "set -euo pipefail\n"
+                    "umask 077\n"
+                    "list_dev_mount_targets_calls=0\n"
+                    "list_dev_mount_targets() {\n"
+                    "  list_dev_mount_targets_calls=$((list_dev_mount_targets_calls + 1))\n"
+                    "  if [ \"$list_dev_mount_targets_calls\" -eq 1 ]; then\n"
+                    "    printf '%s\\0' \\\n"
+                    "      /dev \\\n"
+                    "      $'/dev/name with space' \\\n"
+                    "      $'/dev/back\\\\slash' \\\n"
+                    "      $'/dev/back\\\\slash/tab\\tchild' \\\n"
+                    "      $'/dev/back\\\\slash/new\\nline' \\\n"
+                    "      /dev/pts \\\n"
+                    "      /dev/pts/9\n"
+                    "  else\n"
+                    "    printf '%s\\0' /dev\n"
+                    "  fi\n"
+                    "}\n"
+                    'TRACE_PATH="$1"\n'
+                    'SUPERVISOR_ROOT="$2"\n'
+                    'SUPERVISOR_UID="$3"\n'
+                    + section,
+                    "--",
+                    str(trace),
+                    str(supervisor_root),
+                    str(os.getuid()),
+                ],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=ROOT,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                completed.stdout.split(b"\0")[:-1],
+                [
+                    b"/dev/pts/9",
+                    b"/dev/pts",
+                    b"/dev/back\\slash/new\nline",
+                    b"/dev/back\\slash/tab\tchild",
+                    b"/dev/back\\slash",
+                    b"/dev/name with space",
+                ],
+            )
+            self.assertEqual(trace.read_text(encoding="ascii"), "OVERMOUNT\n")
+            self.assertEqual(list(supervisor_root.iterdir()), [])
+
+    def test_device_mount_transport_propagates_producer_failure_before_unmount_or_overmount(self):
+        section = dev_mount_transport_section_source(self.text)
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="device-mount-transport-failure-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            trace = sandbox / "trace"
+            supervisor_root = sandbox / "supervisor"
+            supervisor_root.mkdir(mode=0o700)
+            section = section.replace("/mnt/supervisor", "$SUPERVISOR_ROOT")
+            section = section.replace(
+                'test "$(/usr/bin/stat -c %u "$path")" = 0 || return 125',
+                'test "$(/usr/bin/stat -c %u "$path")" = "$SUPERVISOR_UID" || return 125',
+            )
+            section = section.replace(
+                '/usr/bin/umount -- "$dev_mount"',
+                "printf 'UMOUNT:%s\\n' \"$dev_mount\" >> \"$TRACE_PATH\"",
+            )
+            section = section.replace(
+                "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec $SUPERVISOR_ROOT",
+                "printf 'SUPERVISOR-LOCK\\n' >> \"$TRACE_PATH\"",
+            )
+            section = section.replace(
+                "/usr/bin/mount -t tmpfs \\\n"
+                "  -o nosuid,mode=0755,size=4m builder-dev /dev",
+                "printf 'OVERMOUNT\\n' >> \"$TRACE_PATH\"",
+            )
+            completed = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-c",
+                    "set -euo pipefail\n"
+                    "umask 077\n"
+                    "list_dev_mount_targets() {\n"
+                    "  printf 'parser failed\\n' >&2\n"
+                    "  return 125\n"
+                    "}\n"
+                    'TRACE_PATH="$1"\n'
+                    'SUPERVISOR_ROOT="$2"\n'
+                    'SUPERVISOR_UID="$3"\n'
+                    + section,
+                    "--",
+                    str(trace),
+                    str(supervisor_root),
+                    str(os.getuid()),
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 125, completed.stderr)
+            self.assertIn("parser failed", completed.stderr)
+            self.assertFalse(trace.exists())
+
+    def test_device_mount_transport_rejects_symlink_hardlink_and_stale_files(self):
+        base_section = dev_mount_transport_section_source(self.text)
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="device-mount-transport-controls-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            trace = sandbox / "trace"
+            supervisor_root = sandbox / "supervisor"
+            supervisor_root.mkdir(mode=0o700)
+
+            def clear_supervisor_root():
+                for path in list(supervisor_root.iterdir()):
+                    if path.is_dir():
+                        for child in list(path.iterdir()):
+                            child.unlink()
+                        path.rmdir()
+                    else:
+                        path.unlink()
+
+            section = base_section.replace("/mnt/supervisor", "$SUPERVISOR_ROOT")
+            section = section.replace(
+                'test "$(/usr/bin/stat -c %u "$path")" = 0',
+                'test "$(/usr/bin/stat -c %u "$path")" = "$SUPERVISOR_UID"',
+            )
+            section = section.replace(
+                'path="$(/usr/bin/mktemp "$SUPERVISOR_ROOT/$1.XXXXXXXXXX")" || return 125',
+                'case "$1" in\n'
+                '    dev-mount-targets) path="$SUPERVISOR_ROOT/dev-mount-targets.fixture" ;;\n'
+                '    *) path="$(/usr/bin/mktemp "$SUPERVISOR_ROOT/$1.XXXXXXXXXX")" || return 125 ;;\n'
+                "  esac",
+            )
+            section = section.replace(
+                '/usr/bin/umount -- "$dev_mount"',
+                "printf 'UMOUNT:%s\\n' \"$dev_mount\" >> \"$TRACE_PATH\"",
+            )
+            section = section.replace(
+                "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec $SUPERVISOR_ROOT",
+                "printf 'SUPERVISOR-LOCK\\n' >> \"$TRACE_PATH\"",
+            )
+            section = section.replace(
+                "/usr/bin/mount -t tmpfs \\\n"
+                "  -o nosuid,mode=0755,size=4m builder-dev /dev",
+                "printf 'OVERMOUNT\\n' >> \"$TRACE_PATH\"",
+            )
+
+            def run_case(setup):
+                clear_supervisor_root()
+                if trace.exists():
+                    trace.unlink()
+                setup()
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        "set -euo pipefail\n"
+                        "umask 077\n"
+                        "list_dev_mount_targets() {\n"
+                        "  printf '%s\\0' /dev /dev/pts\n"
+                        "}\n"
+                        'TRACE_PATH="$1"\n'
+                        'SUPERVISOR_ROOT="$2"\n'
+                        'SUPERVISOR_UID="$3"\n'
+                        + section,
+                        "--",
+                        str(trace),
+                        str(supervisor_root),
+                        str(os.getuid()),
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertFalse(trace.exists())
+                return completed
+
+            def make_symlink():
+                target = supervisor_root / "symlink-target"
+                target.write_bytes(b"")
+                (supervisor_root / "dev-mount-targets.fixture").symlink_to(target)
+
+            def make_hardlink():
+                target = supervisor_root / "hardlink-target"
+                target.write_bytes(b"")
+                os.link(target, supervisor_root / "dev-mount-targets.fixture")
+
+            for name, setup, error in (
+                ("symlink", make_symlink, ""),
+                ("hardlink", make_hardlink, ""),
+            ):
+                with self.subTest(case=name):
+                    completed = run_case(setup)
+                    self.assertNotEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(completed.stdout, "")
+
+            clear_supervisor_root()
+            success_section = base_section.replace("/mnt/supervisor", "$SUPERVISOR_ROOT")
+            success_section = success_section.replace(
+                'test "$(/usr/bin/stat -c %u "$path")" = 0 || return 125',
+                'test "$(/usr/bin/stat -c %u "$path")" = "$SUPERVISOR_UID" || return 125',
+            )
+            success_section = success_section.replace(
+                "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec $SUPERVISOR_ROOT",
+                "true",
+            )
+            success_section = success_section.replace(
+                '/usr/bin/umount -- "$dev_mount"',
+                "true",
+            )
+            success_section = success_section.replace(
+                "/usr/bin/mount -t tmpfs \\\n"
+                "  -o nosuid,mode=0755,size=4m builder-dev /dev",
+                "true",
+            )
+            completed = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-c",
+                    "set -euo pipefail\n"
+                    "umask 077\n"
+                    "list_dev_mount_targets() {\n"
+                    "  printf '%s\\0' /dev\n"
+                    "}\n"
+                    'SUPERVISOR_ROOT="$1"\n'
+                    'SUPERVISOR_UID="$2"\n'
+                    + success_section,
+                    "--",
+                    str(supervisor_root),
+                    str(os.getuid()),
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(list(supervisor_root.iterdir()), [])
+
+    def test_dev_mount_target_parser_supports_decoded_paths_and_rejects_bad_json(self):
+        source = dev_mount_target_parser_source(self.text)
+        payload = {
+            "filesystems": [
+                {
+                    "target": "/dev",
+                    "children": [
+                        {"target": "/dev/name with space"},
+                        {
+                            "target": "/dev/back\\slash",
+                            "children": [
+                                {"target": "/dev/back\\slash/tab\tchild"},
+                                {"target": "/dev/back\\slash/new\nline"},
+                            ],
+                        },
+                        {
+                            "target": "/dev/pts",
+                            "children": [{"target": "/dev/pts/9"}],
+                        },
+                    ],
+                }
+            ]
+        }
+        code, output, stderr = run_dev_mount_target_parser(
+            source,
+            stdout=json.dumps(payload).encode("utf-8"),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(
+            output.split(b"\0")[:-1],
+            [
+                b"/dev",
+                b"/dev/name with space",
+                b"/dev/back\\slash",
+                b"/dev/back\\slash/tab\tchild",
+                b"/dev/back\\slash/new\nline",
+                b"/dev/pts",
+                b"/dev/pts/9",
+            ],
+        )
+        for name, stdout, expected in (
+            ("malformed", b'{"filesystems":[', "invalid findmnt JSON"),
+            (
+                "duplicate-key",
+                b'{"filesystems":[{"target":"/dev","target":"/dev/dup"}]}',
+                "duplicate findmnt JSON key",
+            ),
+            (
+                "outside-dev",
+                json.dumps({"filesystems": [{"target": "/etc"}]}).encode("utf-8"),
+                "findmnt target escapes /dev",
+            ),
+            (
+                "nul-target",
+                json.dumps({"filesystems": [{"target": "/dev/\u0000bad"}]}).encode("utf-8"),
+                "findmnt target contains NUL",
+            ),
+        ):
+            with self.subTest(case=name):
+                code, _output, stderr = run_dev_mount_target_parser(
+                    source,
+                    stdout=stdout,
+                )
+                self.assertEqual(code, 125)
+                self.assertIn(expected, stderr)
+
+    def test_local_findmnt_json_shape_is_supported(self):
+        completed = subprocess.run(
+            ["/usr/bin/findmnt", "--json", "--submounts", "--output", "TARGET", "/dev"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        payload = json.loads(completed.stdout)
+        self.assertEqual(set(payload), {"filesystems"})
+        self.assertIsInstance(payload["filesystems"], list)
+        self.assertEqual(len(payload["filesystems"]), 1)
+
+        targets = []
+
+        def visit(node):
+            targets.append(node["target"])
+            for child in node.get("children", []):
+                visit(child)
+
+        visit(payload["filesystems"][0])
+        self.assertEqual(targets[0], "/dev")
+        for target in targets:
+            self.assertTrue(target == "/dev" or target.startswith("/dev/"))
+
+    def test_writable_mount_record_parser_supports_decoded_targets_and_rejects_bad_json(self):
+        source = writable_mount_record_parser_source(self.text)
+        payload = {
+            "filesystems": [
+                {"target": "/", "options": "ro,relatime"},
+                {"target": "/mnt/home", "options": "rw,nosuid,nodev"},
+                {"target": "/mnt/name with space", "options": "rw,relatime"},
+                {"target": "/mnt/back\\slash", "options": "errors=remount-ro,data=ordered"},
+                {"target": "/tmp", "options": "rw,nosuid,nodev"},
+            ]
+        }
+        code, output, stderr = run_writable_mount_record_parser(
+            source,
+            stdout=json.dumps(payload).encode("utf-8"),
+        )
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(
+            output.split(b"\0")[:-1],
+            [
+                b"/",
+                b"ro,relatime",
+                b"/mnt/home",
+                b"rw,nosuid,nodev",
+                b"/mnt/name with space",
+                b"rw,relatime",
+                b"/mnt/back\\slash",
+                b"errors=remount-ro,data=ordered",
+                b"/tmp",
+                b"rw,nosuid,nodev",
+            ],
+        )
+        oversized = {
+            "filesystems": [
+                {"target": f"/mnt/{index}", "options": "ro"}
+                for index in range(513)
+            ]
+        }
+        for name, stdout, expected in (
+            ("malformed", b'{"filesystems":[', "invalid writable mount audit JSON"),
+            (
+                "duplicate-key",
+                b'{"filesystems":[{"target":"/","target":"/dup","options":"ro"}]}',
+                "duplicate writable mount JSON key",
+            ),
+            (
+                "missing-options",
+                json.dumps({"filesystems": [{"target": "/mnt/home"}]}).encode("utf-8"),
+                "findmnt options is invalid",
+            ),
+            (
+                "empty-options-token",
+                json.dumps({"filesystems": [{"target": "/mnt/home", "options": "rw,,nodev"}]}).encode("utf-8"),
+                "findmnt option tokens are invalid",
+            ),
+            (
+                "spaced-options-token",
+                json.dumps({"filesystems": [{"target": "/mnt/home", "options": "rw, relatime"}]}).encode("utf-8"),
+                "findmnt option tokens are invalid",
+            ),
+            (
+                "control-char-target",
+                json.dumps({"filesystems": [{"target": "/mnt/bad\tpath", "options": "rw"}]}).encode("utf-8"),
+                "findmnt target contains control character",
+            ),
+            (
+                "nonabsolute-target",
+                json.dumps({"filesystems": [{"target": "mnt/home", "options": "rw"}]}).encode("utf-8"),
+                "findmnt target is not absolute",
+            ),
+            (
+                "extra-row-keys",
+                json.dumps(
+                    {"filesystems": [{"target": "/mnt/home", "options": "rw", "children": []}]}
+                ).encode("utf-8"),
+                "unexpected writable mount audit row keys",
+            ),
+            (
+                "too-many-rows",
+                json.dumps(oversized).encode("utf-8"),
+                "writable mount audit mount count exceeds bounds",
+            ),
+        ):
+            with self.subTest(case=name):
+                code, _output, stderr = run_writable_mount_record_parser(
+                    source,
+                    stdout=stdout,
+                )
+                self.assertEqual(code, 125)
+                self.assertIn(expected, stderr)
+
+        for name, returncode, stderr, expected in (
+            ("findmnt-failed", 1, b"", "findmnt writable mount audit failed"),
+            ("findmnt-stderr", 0, b"warning", "findmnt writable mount audit wrote stderr"),
+        ):
+            with self.subTest(case=name):
+                code, _output, captured = run_writable_mount_record_parser(
+                    source,
+                    stdout=b"",
+                    returncode=returncode,
+                    stderr=stderr,
+                )
+                self.assertEqual(code, 125)
+                self.assertIn(expected, captured)
+
+    def test_local_writable_mount_findmnt_json_shape_is_supported(self):
+        all_completed = subprocess.run(
+            ["/usr/bin/findmnt", "--json", "--list", "--output", "TARGET,OPTIONS,ID,PARENT", "-R", "/"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(all_completed.returncode, 0, all_completed.stderr)
+        all_payload = json.loads(all_completed.stdout)
+        completed = subprocess.run(
+            ["/usr/bin/findmnt", "--json", "--list", "--uniq", "--output", "TARGET,OPTIONS,ID,PARENT", "-R", "/"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        payload = json.loads(completed.stdout)
+        self.assertEqual(set(payload), {"filesystems"})
+        self.assertIsInstance(payload["filesystems"], list)
+        self.assertGreater(len(payload["filesystems"]), 0)
+        duplicate_targets = set()
+        seen_all = set()
+        for row in all_payload["filesystems"]:
+            if row["target"] in seen_all:
+                duplicate_targets.add(row["target"])
+            seen_all.add(row["target"])
+        seen = set()
+        for row in payload["filesystems"]:
+            self.assertEqual(set(row), {"id", "options", "parent", "target"})
+            self.assertIsInstance(row["target"], str)
+            self.assertTrue(row["target"].startswith("/"))
+            self.assertIsInstance(row["options"], str)
+            self.assertTrue(row["options"])
+            self.assertNotIn(row["target"], seen)
+            seen.add(row["target"])
+        for target in duplicate_targets:
+            self.assertIn(target, seen_all)
+            self.assertIn(target, seen)
+
+    def test_findmnt_uniq_selects_effective_topmost_mount_in_namespace(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="findmnt-uniq-effective-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            require_findmnt_uniq_namespace_capability(sandbox / "preflight")
+            for name, lower_mode, upper_mode, expected_top in (
+                ("lower-rw-top-ro", "rw", "ro", "ro"),
+                ("lower-ro-top-rw", "ro", "rw", "rw"),
+            ):
+                case_root = sandbox / name
+                all_rows, uniq_rows = run_findmnt_uniq_namespace_semantic_probe(
+                    case_root,
+                    lower_mode,
+                    upper_mode,
+                )
+                target = str(case_root / "target")
+                all_rows = [row for row in all_rows if row["target"] == target]
+                uniq_rows = [row for row in uniq_rows if row["target"] == target]
+                self.assertEqual(len(all_rows), 2)
+                self.assertEqual(len(uniq_rows), 1)
+                self.assertIsInstance(uniq_rows[0]["id"], int)
+                uniq_tokens = set(uniq_rows[0]["options"].split(","))
+                if expected_top == "ro":
+                    self.assertIn("ro", uniq_tokens)
+                    self.assertNotIn("rw", uniq_tokens)
+                    self.assertTrue(
+                        any("rw" in set(row["options"].split(",")) for row in all_rows)
+                    )
+                else:
+                    self.assertIn("rw", uniq_tokens)
+                self.assertTrue(
+                    any("ro" in set(row["options"].split(",")) for row in all_rows)
+                )
+                self.assertGreaterEqual(uniq_rows[0]["id"], min(row["id"] for row in all_rows))
+
+    def test_findmnt_uniq_namespace_preflight_failure_skips_with_bounded_diagnostic(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        completed = subprocess.CompletedProcess(
+            args=["unshare"],
+            returncode=1,
+            stdout="",
+            stderr=("Operation not permitted " * 40).strip(),
+        )
+        with tempfile.TemporaryDirectory(
+            prefix="findmnt-uniq-preflight-",
+            dir=artifact_root,
+        ) as temporary, mock.patch(
+            f"{__name__}.run_rootless_mount_namespace",
+            return_value=completed,
+        ):
+            with self.assertRaises(unittest.SkipTest) as context:
+                require_findmnt_uniq_namespace_capability(Path(temporary))
+        message = str(context.exception)
+        self.assertIn("mount namespace capability unavailable:", message)
+        self.assertIn("rc=1", message)
+        self.assertIn("Operation not permitted", message)
+        self.assertLessEqual(len(message), 240)
+
+    def test_findmnt_uniq_namespace_probe_failure_is_assertion_failure(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        completed = subprocess.CompletedProcess(
+            args=["unshare"],
+            returncode=17,
+            stdout="",
+            stderr="forced probe failure",
+        )
+        with tempfile.TemporaryDirectory(
+            prefix="findmnt-uniq-probe-",
+            dir=artifact_root,
+        ) as temporary, mock.patch(
+            f"{__name__}.run_rootless_mount_namespace",
+            return_value=completed,
+        ):
+            with self.assertRaises(AssertionError) as context:
+                run_findmnt_uniq_namespace_semantic_probe(Path(temporary), "rw", "ro")
+        self.assertIn("namespace semantic probe failed:", str(context.exception))
+        self.assertIn("forced probe failure", str(context.exception))
+
+    def test_writable_mount_audit_rejects_unexpected_rw_targets_and_preserves_allowed_private_mounts(self):
+        base_section = writable_mount_transport_section_source(self.text)
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="writable-mount-audit-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            transport_root = sandbox / "transport"
+            transport_root.mkdir(mode=0o700)
+            records_path = sandbox / "records"
+
+            section = base_section.replace(
+                'path="$(/usr/bin/mktemp "/dev/shm/$1.XXXXXXXXXX")" || return 125',
+                'path="$(/usr/bin/mktemp "$TRANSPORT_ROOT/$1.XXXXXXXXXX")" || return 125',
+            )
+            section = section.replace(
+                'test "$(/usr/bin/stat -c %u "$path")" = 0',
+                'test "$(/usr/bin/stat -c %u "$path")" = "$TRANSPORT_UID"',
+            )
+            section = re.sub(
+                r"(?ms)^list_writable_mount_records\(\) \{\n.*?\n\}\n",
+                "list_writable_mount_records() {\n"
+                '  /bin/cat -- "$RECORDS_PATH"\n'
+                "}\n",
+                section,
+                count=1,
+            )
+
+            def run_case(records: list[str]) -> subprocess.CompletedProcess[str]:
+                if records_path.exists():
+                    records_path.unlink()
+                records_path.write_bytes(
+                    b"".join(record.encode("utf-8") + b"\0" for record in records)
+                )
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        "set -euo pipefail\n"
+                        "umask 077\n"
+                        'TRANSPORT_ROOT="$1"\n'
+                        'TRANSPORT_UID="$2"\n'
+                        'RECORDS_PATH="$3"\n'
+                        + section,
+                        "--",
+                        str(transport_root),
+                        str(os.getuid()),
+                        str(records_path),
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                return completed
+
+            completed = run_case(
+                [
+                    "/",
+                    "ro,relatime",
+                    "/mnt/home",
+                    "rw,nosuid,nodev",
+                    "/mnt/source",
+                    "rw,nosuid,nodev",
+                    "/mnt/handoff",
+                    "rw,nosuid,nodev",
+                    "/mnt/tmp",
+                    "rw,nosuid,nodev",
+                    "/tmp",
+                    "rw,nosuid,nodev",
+                    "/dev/shm",
+                    "rw,nosuid,nodev",
+                    "/mnt/name with space",
+                    "errors=remount-ro,data=ordered",
+                ]
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout, "")
+
+            completed = run_case(
+                [
+                    "/",
+                    "ro,relatime",
+                    "/mnt/name with space",
+                    "rw,relatime",
+                ]
+            )
+            self.assertEqual(completed.returncode, 1)
+            self.assertIn(
+                "unexpected writable mount: /mnt/name with space",
+                completed.stderr,
+            )
 
     def test_private_base_lifetime_is_fixed_and_candidate_free(self):
         self.assertEqual(publisher_boundary_errors(self.text), [])
@@ -861,9 +2021,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         candidate_output_regular_file = self.text.replace(
-            "        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec,hidepid=2 /proc\n"
             "        exec < /dev/null > /dev/null 2>&1",
-            "        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec,hidepid=2 /proc\n"
             "        exec < /dev/null > /mnt/source/candidate-output.log 2>&1",
             1,
         )
@@ -1014,6 +2172,73 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             '/bin/rm -rf -- "$BUILDER_ROOT"',
             1,
         )
+        structured_writable_mount_targets = self.text.replace(
+            '["/usr/bin/findmnt", "--json", "--list", "--uniq", "--output", "TARGET,OPTIONS", "-R", "/"]',
+            '["/usr/bin/findmnt", "-Rrno", "TARGET,OPTIONS", "/"]',
+            1,
+        )
+        nonuniq_writable_mount_targets = self.text.replace(
+            '["/usr/bin/findmnt", "--json", "--list", "--uniq", "--output", "TARGET,OPTIONS", "-R", "/"]',
+            '["/usr/bin/findmnt", "--json", "--list", "--output", "TARGET,OPTIONS", "-R", "/"]',
+            1,
+        )
+        retained_dev_descendants = self.text.replace(
+            '/dev/*) /usr/bin/umount -- "$dev_mount" ;;',
+            "/dev/*) true ;;",
+            1,
+        )
+        escaped_dev_targets = self.text.replace(
+            '["/usr/bin/findmnt", "--json", "--submounts", "--output", "TARGET", "/dev"]',
+            '["/usr/bin/findmnt", "-Rrno", "TARGET", "/dev"]',
+            1,
+        )
+        unchecked_dev_process_substitution = self.text.replace(
+            '        dev_mounts_file="$(create_supervisor_transport_file dev-mount-targets)"\n'
+            '        list_dev_mount_targets > "$dev_mounts_file"\n'
+            "        read_checked_supervisor_transport_file \\\n"
+            '          "$dev_mounts_file" "$dev_mount_targets_max_bytes" dev_mounts\n'
+            '        remove_supervisor_transport_file "$dev_mounts_file"',
+            "        mapfile -d '' -t dev_mounts < <(list_dev_mount_targets)",
+            1,
+        )
+        unchecked_writable_mount_process_substitution = self.text.replace(
+            '        writable_mount_records_file="$(create_runtime_transport_file writable-mount-records)"\n'
+            '        list_writable_mount_records > "$writable_mount_records_file"\n'
+            "        read_checked_runtime_transport_file \\\n"
+            '          "$writable_mount_records_file" \\\n'
+            '          "$writable_mount_records_max_bytes" \\\n'
+            '          writable_mount_records\n'
+            '        remove_runtime_transport_file "$writable_mount_records_file"',
+            "        mapfile -d '' -t writable_mount_records < <(list_writable_mount_records)",
+            1,
+        )
+        missing_dev_transport_link_guard = self.text.replace(
+            '          test "$(/usr/bin/stat -c %h "$path")" = 1 || return 125',
+            "          true",
+            1,
+        )
+        missing_dev_transport_symlink_guard = self.text.replace(
+            '          test ! -L "$path" || return 125',
+            "          true",
+            1,
+        )
+        missing_dev_transport_cleanup = self.text.replace(
+            '          test ! -e "$path" || return 125',
+            "          true",
+            1,
+        )
+        writable_supervisor_parent_during_candidate = self.text.replace(
+            "        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor\n"
+            "        /usr/bin/mount -t tmpfs \\",
+            "        /usr/bin/mount -t tmpfs \\",
+            1,
+        )
+        forward_dev_teardown = self.text.replace(
+            "for ((index=${#dev_mounts[@]} - 1; "
+            "index >= 0; index--)); do",
+            "for ((index=0; index < ${#dev_mounts[@]}; index++)); do",
+            1,
+        )
         ambient_dependency_python = self.text.replace(
             "/usr/bin/env -i HOME=\"$PATCH_RUNTIME_ROOT\" LC_ALL=C",
             "HOME=\"$PATCH_RUNTIME_ROOT\"",
@@ -1098,6 +2323,23 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             ("file-backed-wrapper", file_backed_wrapper),
             ("unmounted-open-dev", unmounted_open_dev),
             ("unprivileged-builder-cleanup", unprivileged_builder_cleanup),
+            ("structured-writable-mount-targets", structured_writable_mount_targets),
+            ("nonuniq-writable-mount-targets", nonuniq_writable_mount_targets),
+            ("retained-dev-descendants", retained_dev_descendants),
+            ("escaped-dev-targets", escaped_dev_targets),
+            ("unchecked-dev-process-substitution", unchecked_dev_process_substitution),
+            (
+                "unchecked-writable-mount-process-substitution",
+                unchecked_writable_mount_process_substitution,
+            ),
+            ("missing-dev-transport-symlink-guard", missing_dev_transport_symlink_guard),
+            ("missing-dev-transport-link-guard", missing_dev_transport_link_guard),
+            ("missing-dev-transport-cleanup", missing_dev_transport_cleanup),
+            (
+                "writable-supervisor-parent-during-candidate",
+                writable_supervisor_parent_during_candidate,
+            ),
+            ("forward-dev-teardown", forward_dev_teardown),
             ("ambient-dependency-python", ambient_dependency_python),
             ("unverified-builder-state", unverified_builder_state),
             ("allowed-unexpected-handoff", allowed_unexpected_handoff),
@@ -1703,6 +2945,7 @@ exit 37
 
     def test_patch_release_docs_publish_no_internal_rom_artifact(self):
         text = PATCH_RELEASE_CASE.read_text(encoding="utf-8")
+        compact = " ".join(text.split())
         self.assertIn(
             "target ROM remains only in the publisher-local isolated handoff "
             "and private\nstaging",
@@ -1714,6 +2957,75 @@ exit 37
         )
         self.assertIn("there\nis no internal or final ROM artifact", text)
         self.assertNotIn("one-day internal Actions artifact", text)
+        self.assertIn(
+            "decodes recursive `/dev` mount targets from structured `findmnt\n"
+            "--json --submounts --output TARGET /dev` output",
+            text,
+        )
+        self.assertIn(
+            "unmounts exact descendant paths deepest-first, removes the temp files",
+            text,
+        )
+        self.assertIn(
+            "root-owned mode-`0700` `/mnt/supervisor` parent denies candidate read",
+            text,
+        )
+        self.assertIn(
+            "raw escaped or whitespace-delimited mount-target transport",
+            compact,
+        )
+        self.assertIn(
+            "paths outside `/dev`",
+            text,
+        )
+        self.assertIn(
+            "unsafe transport files are rejected",
+            compact,
+        )
+        self.assertIn(
+            "structured\n`findmnt --json --list --uniq --output TARGET,OPTIONS -R /` output, "
+            "writes\nchecked NUL-framed mount target/option records",
+            text,
+        )
+        self.assertIn(
+            "Only `/dev/shm`, `/mnt/handoff`, `/mnt/home`, `/mnt/source`, `/mnt/tmp`, and",
+            text,
+        )
+        self.assertIn(
+            "`/tmp` may carry an exact `rw` option token",
+            text,
+        )
+        self.assertIn(
+            "util-linux documents `--uniq` as \"effectively skipping over-mounted\nmount points\"",
+            text,
+        )
+        self.assertIn(
+            "control-character targets,",
+            text,
+        )
+        self.assertIn(
+            "malformed option-token grammar",
+            text,
+        )
+
+    def test_patch_release_overview_docs_require_structured_mount_records(self):
+        text = PATCH_RELEASE_OVERVIEW.read_text(encoding="utf-8")
+        compact = " ".join(text.split())
+        self.assertIn(
+            "consumes only decoded structured JSON target records through checked NUL-delimited "
+            "transport",
+            compact,
+        )
+        self.assertIn(
+            "raw escaped or whitespace-delimited mount text can never be "
+            "mistaken for an "
+            "unapproved path",
+            compact,
+        )
+        self.assertNotIn(
+            "consumes raw `findmnt` targets",
+            compact,
+        )
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)

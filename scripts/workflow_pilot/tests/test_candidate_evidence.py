@@ -10,11 +10,6 @@ from scripts.workflow_pilot import candidate_evidence
 
 HEAD = "1" * 40
 BASE = "2" * 40
-LITERAL_SKIPPED_NAME = (
-    "${{ needs.event-classifier.result == 'success' && "
-    "needs.event-classifier.outputs.classification == 'metadata-only' && "
-    "'metadata-worker-skipped' || 'worker' }}"
-)
 
 
 def _context(job_id, name=None, conclusion="success"):
@@ -47,30 +42,54 @@ def _full_run(run_id, summary="success"):
     return _run(run_id, contexts)
 
 
-def _metadata_run(run_id, worker_conclusion="skipped"):
+def _metadata_run(
+    run_id,
+    adapter_conclusion="success",
+    skipped_conclusion="skipped",
+    summary="success",
+):
     contexts = [_context("event-identity"), _context("event-router")]
     contexts.append(_context("patch-release", conclusion="skipped"))
     contexts.append(
         _context("event-classifier", candidate_evidence.METADATA_CLASSIFIER)
     )
     contexts.extend(
-        _context(
-            job_id,
-            LITERAL_SKIPPED_NAME,
-            worker_conclusion,
-        )
-        for job_id in candidate_evidence.WORKER_JOB_IDS
+        _context(job_id, conclusion=adapter_conclusion)
+        for job_id in candidate_evidence.METADATA_ADAPTER_JOB_IDS
     )
-    contexts.append(
-        _context("summary", candidate_evidence.METADATA_ATTESTATION)
+    contexts.extend(
+        _context(job_id, conclusion=skipped_conclusion)
+        for job_id in candidate_evidence.METADATA_SKIPPED_JOB_IDS
     )
+    contexts.append(_context("summary", candidate_evidence.METADATA_ATTESTATION, summary))
     return _run(run_id, contexts)
+
+
+def _classifier_failure_metadata_run(run_id):
+    run = _metadata_run(run_id)
+    next(
+        context
+        for context in run["contexts"]
+        if context["job_id"] == "event-classifier"
+    )["conclusion"] = "failure"
+    summary = next(
+        context
+        for context in run["contexts"]
+        if context["job_id"] == "summary"
+    )
+    summary["name"] = candidate_evidence.FULL_ATTESTATION
+    summary["conclusion"] = "failure"
+    return run
 
 
 class CandidateEvidenceTests(unittest.TestCase):
     def test_full_success_is_eligible_and_metadata_only_is_not(self):
         full = _full_run(1)
         metadata = _metadata_run(2)
+        self.assertEqual(
+            candidate_evidence.REQUIRED_BUILD_CONTEXTS,
+            frozenset({"build", "host-tests", "summary"}),
+        )
         self.assertTrue(
             candidate_evidence.evaluate_candidate_runs(
                 [full],
@@ -99,51 +118,117 @@ class CandidateEvidenceTests(unittest.TestCase):
         self.assertEqual(result.mode, "full")
         self.assertEqual(result.run_id, 10)
         latest = candidate_evidence.latest_contexts([failed_full, metadata])
-        self.assertEqual(latest["summary"], (10, "failure"))
-        self.assertEqual(latest["metadata-summary"], (11, "success"))
+        self.assertEqual(latest["summary"], (11, "success"))
+        self.assertEqual(latest["host-tests"], (11, "success"))
+        self.assertEqual(latest["build"], (11, "success"))
+        self.assertEqual(latest["extended-host-tests"], (11, "skipped"))
+        self.assertEqual(latest["legacy"], (11, "skipped"))
+        self.assertNotIn("metadata-summary", latest)
 
     def test_green_metadata_does_not_replace_prior_full_success(self):
+        full = _full_run(20)
+        metadata = _metadata_run(21)
         result = candidate_evidence.evaluate_candidate_runs(
-            [_full_run(20), _metadata_run(21)],
+            [full, metadata],
             head_sha=HEAD,
             base_sha=BASE,
         )
         self.assertTrue(result.eligible)
         self.assertEqual(result.run_id, 20)
+        latest = candidate_evidence.latest_contexts([full, metadata])
+        self.assertEqual(latest["summary"], (21, "success"))
+        self.assertEqual(latest["host-tests"], (21, "success"))
+        self.assertEqual(latest["build"], (21, "success"))
+        self.assertEqual(latest["extended-host-tests"], (21, "skipped"))
+        self.assertEqual(latest["legacy"], (21, "skipped"))
+        self.assertNotIn("metadata-summary", latest)
 
-    def test_runner_1215_literal_skipped_names_are_inadmissible(self):
-        for conclusion in ("skipped", "success"):
-            for rendered_name in ("literal", "normal"):
-                with self.subTest(
-                    conclusion=conclusion,
-                    rendered_name=rendered_name,
-                ):
-                    metadata = _metadata_run(30, worker_conclusion=conclusion)
-                    if rendered_name == "normal":
-                        for context in metadata["contexts"]:
-                            if context["job_id"] in candidate_evidence.WORKER_JOB_IDS:
-                                context["name"] = context["job_id"]
-                    self.assertEqual(
-                        candidate_evidence.run_mode(metadata),
-                        "metadata-only",
-                    )
-                    result = candidate_evidence.evaluate_candidate_runs(
-                        [metadata],
+    def test_newer_failed_full_blocks_older_success(self):
+        older_success = _full_run(30)
+        newer_failure = _full_run(31, summary="failure")
+        metadata = _metadata_run(32)
+        result = candidate_evidence.evaluate_candidate_runs(
+            [older_success, newer_failure, metadata],
+            head_sha=HEAD,
+            base_sha=BASE,
+        )
+        self.assertFalse(result.eligible)
+        self.assertEqual(result.mode, "full")
+        self.assertEqual(result.run_id, 31)
+
+    def test_newest_full_success_is_authoritative(self):
+        older_success = _full_run(40)
+        newer_success = _full_run(41)
+        result = candidate_evidence.evaluate_candidate_runs(
+            [older_success, newer_success],
+            head_sha=HEAD,
+            base_sha=BASE,
+        )
+        self.assertTrue(result.eligible)
+        self.assertEqual(result.mode, "full")
+        self.assertEqual(result.run_id, 41)
+
+    def test_metadata_contexts_reject_spoofed_names_or_wrong_adapter_results(self):
+        cases = []
+
+        spoofed_name = _metadata_run(30)
+        next(
+            context
+            for context in spoofed_name["contexts"]
+            if context["job_id"] == "host-tests"
+        )["name"] = "attacker-host-tests"
+        cases.append(("spoofed-name", spoofed_name))
+
+        stale_label = _metadata_run(31)
+        next(
+            context
+            for context in stale_label["contexts"]
+            if context["job_id"] == "build"
+        )["name"] = "attacker-build-label"
+        cases.append(("stale-label", stale_label))
+
+        skipped_adapter = _metadata_run(32, adapter_conclusion="skipped")
+        cases.append(("skipped-adapter", skipped_adapter))
+
+        success_shaped = _metadata_run(33, skipped_conclusion="success")
+        cases.append(("success-shaped", success_shaped))
+
+        duplicate = _metadata_run(34)
+        next(
+            context
+            for context in duplicate["contexts"]
+            if context["job_id"] == "build"
+        )["name"] = "host-tests"
+        cases.append(("duplicate", duplicate))
+
+        for name, mutation in cases:
+            with self.subTest(mutation=name):
+                with self.assertRaises(candidate_evidence.CandidateEvidenceError):
+                    candidate_evidence.run_mode(mutation)
+                with self.assertRaises(candidate_evidence.CandidateEvidenceError):
+                    candidate_evidence.latest_contexts([mutation])
+                with self.assertRaises(candidate_evidence.CandidateEvidenceError):
+                    candidate_evidence.evaluate_candidate_runs(
+                        [mutation],
                         head_sha=HEAD,
                         base_sha=BASE,
                     )
-                    self.assertFalse(result.eligible)
-                    self.assertEqual(result.mode, "metadata-only")
-                    if rendered_name == "literal":
-                        for context in metadata["contexts"]:
-                            if (
-                                context["job_id"]
-                                in candidate_evidence.WORKER_JOB_IDS
-                            ):
-                                self.assertEqual(
-                                    context["name"],
-                                    LITERAL_SKIPPED_NAME,
-                                )
+
+    def test_classifier_failure_metadata_shape_is_rejected(self):
+        failed = _classifier_failure_metadata_run(35)
+        with self.assertRaisesRegex(
+            candidate_evidence.CandidateEvidenceError,
+            "metadata classifier must stay successful",
+        ):
+            candidate_evidence.run_mode(failed)
+        with self.assertRaises(candidate_evidence.CandidateEvidenceError):
+            candidate_evidence.latest_contexts([failed])
+        with self.assertRaises(candidate_evidence.CandidateEvidenceError):
+            candidate_evidence.evaluate_candidate_runs(
+                [failed],
+                head_sha=HEAD,
+                base_sha=BASE,
+            )
 
     def test_mode_and_context_mutations_fail_closed(self):
         mutations = []
@@ -172,7 +257,31 @@ class CandidateEvidenceTests(unittest.TestCase):
         )["name"] = "literal-or-dynamic-name"
         mutations.append(renamed_full_worker)
 
-        run_id = 44
+        metadata_named_full_worker = _full_run(44)
+        next(
+            context
+            for context in metadata_named_full_worker["contexts"]
+            if context["job_id"] == "build"
+        )["name"] = "attacker-build-label"
+        mutations.append(metadata_named_full_worker)
+
+        missing_full_worker = _full_run(45)
+        missing_full_worker["contexts"] = [
+            context
+            for context in missing_full_worker["contexts"]
+            if context["job_id"] != "host-tests"
+        ]
+        mutations.append(missing_full_worker)
+
+        missing_metadata_worker = _metadata_run(46)
+        missing_metadata_worker["contexts"] = [
+            context
+            for context in missing_metadata_worker["contexts"]
+            if context["job_id"] != "host-tests"
+        ]
+        mutations.append(missing_metadata_worker)
+
+        run_id = 47
         for mode, factory in (
             ("full", _full_run),
             ("metadata", _metadata_run),
