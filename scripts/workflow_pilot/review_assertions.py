@@ -34,6 +34,8 @@ BEHAVIOR_ROWS = {
 }
 EVIDENCE_CLASSES = {"positive", "adversarial", "default", "runtime"}
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+ASSERTION_FILE_MODES = {"100644", "100755", "120000"}
+MATERIALIZED_FILE_MODES = {"100644", "100755"}
 ASSERTION_INPUT_PATHS = (
     ".github/workflow-pilot-decisions.json",
     ".github/workflows/build.yml",
@@ -41,7 +43,9 @@ ASSERTION_INPUT_PATHS = (
     "docs/test-cases/registry.json",
     "docs/test-cases/workflow-governance.md",
     "docs/workflow-pilot.md",
+    "scripts/__init__.py",
     "scripts/check_docs.py",
+    "scripts/docs_check_tests/__init__.py",
     "scripts/docs_check_tests/test_check_docs.py",
     "scripts/docs_check_tests/test_development_workflow_skill.py",
     "scripts/workflow_pilot/__init__.py",
@@ -54,6 +58,7 @@ ASSERTION_INPUT_PATHS = (
     "scripts/workflow_pilot/reporter.py",
     "scripts/workflow_pilot/tests/fixtures/event_classification.json",
     "scripts/workflow_pilot/trusted_review_gate.py",
+    "tests/__init__.py",
     "tests/workflows/__init__.py",
     "tests/workflows/test_build_ci_topology.py",
 )
@@ -257,6 +262,20 @@ def expect_sha(value: Any, label: str) -> str:
     return value
 
 
+def expect_optional_sha(value: Any, label: str) -> str | None:
+    if value is None:
+        return None
+    return expect_sha(value, label)
+
+
+def expect_optional_mode(value: Any, label: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or value not in ASSERTION_FILE_MODES:
+        raise AssertionFailure(f"{label} must be null or an exact Git mode")
+    return value
+
+
 def expect_keys(value: dict[str, Any], label: str, required) -> None:
     required = set(required)
     if set(value) != required:
@@ -360,7 +379,7 @@ def validate_member_tree(root: Path) -> None:
         if not path.is_file():
             raise AssertionFailure("member artifact tree contains an unsafe entry")
         discovered.add(path.relative_to(root).as_posix())
-    if discovered != expected:
+    if not discovered <= expected:
         raise AssertionFailure(
             "member artifact tree does not match the allowlisted production inputs"
         )
@@ -575,13 +594,13 @@ def _resolve_dynamic_file_dependency(
     return _allowed_path(relative, allowed_paths)
 
 
-def _resolve_local_module_paths(
+def _resolve_local_module_entries(
     base_root: Path,
     module_name: str,
     allowed_paths: set[str],
     *,
     allow_missing: bool = False,
-) -> tuple[str, ...] | None:
+) -> tuple[tuple[str, bool], ...] | None:
     if not module_name or module_name.startswith("."):
         raise AssertionFailure(f"authority module name {module_name!r} is invalid")
     segments = module_name.split(".")
@@ -605,25 +624,31 @@ def _resolve_local_module_paths(
         raise AssertionFailure(
             f"authority module import {module_name!r} is ambiguous"
         )
-    paths = []
+    entries = []
     prefix = []
     for segment in segments[:-1]:
         prefix.append(segment)
         package_prefix = "/".join(prefix) + "/__init__.py"
         package_dir = base_root.joinpath(*prefix)
         prefix_init = base_root / package_prefix
-        if prefix_init.is_file():
-            paths.append(_allowed_path(package_prefix, allowed_paths))
-            continue
         if package_dir.is_dir():
+            entries.append(
+                (
+                    _allowed_path(package_prefix, allowed_paths),
+                    prefix_init.is_file(),
+                )
+            )
             continue
         raise AssertionFailure(f"authority package {'.'.join(prefix)!r} is unavailable")
     if package_exists:
-        paths.append(_allowed_path(package_rel, allowed_paths))
-        return tuple(paths)
+        entries.append((_allowed_path(package_rel, allowed_paths), True))
+        return tuple(entries)
     if file_exists:
-        paths.append(_allowed_path(file_rel, allowed_paths))
-        return tuple(paths)
+        entries.append((_allowed_path(file_rel, allowed_paths), True))
+        return tuple(entries)
+    if directory_exists:
+        entries.append((_allowed_path(package_rel, allowed_paths), False))
+        return tuple(entries)
     if allow_missing:
         return None
     raise AssertionFailure(
@@ -687,7 +712,7 @@ def _dependency_specs_from_statement(
                 raise AssertionFailure(
                     f"authority source {current_relative!r} uses a wildcard import"
                 )
-            submodule = _resolve_local_module_paths(
+            submodule = _resolve_local_module_entries(
                 base_root,
                 f"{module_name}.{alias.name}",
                 allowed_paths,
@@ -753,26 +778,29 @@ def resolve_authority_import_closure(
 ) -> tuple[str, ...]:
     allowed = set(ASSERTION_INPUT_PATHS if allowed_paths is None else allowed_paths)
     pending = list(roots)
-    resolved = set()
+    resolved_paths = set()
+    scanned_paths = set()
     while pending:
         kind, value = pending.pop()
         if kind in {"module", "module-optional"}:
-            paths = _resolve_local_module_paths(
+            entries = _resolve_local_module_entries(
                 base_root,
                 value,
                 allowed,
                 allow_missing=kind == "module-optional",
             )
-            if paths is None:
+            if entries is None:
                 continue
-            for relative in reversed(paths):
-                if relative not in resolved:
+            for relative, should_scan in reversed(entries):
+                resolved_paths.add(relative)
+                if should_scan and relative not in scanned_paths:
                     pending.append(("file", relative))
             continue
         if kind != "file":
             raise AssertionFailure(f"authority dependency kind {kind!r} is unsupported")
         relative = _allowed_path(value, allowed)
-        if relative in resolved:
+        resolved_paths.add(relative)
+        if relative in scanned_paths:
             continue
         source = read_text(base_root, relative)
         try:
@@ -792,8 +820,8 @@ def resolve_authority_import_closure(
                     allowed_paths=allowed,
                 )
             )
-        resolved.add(relative)
-    return tuple(sorted(resolved))
+        scanned_paths.add(relative)
+    return tuple(sorted(resolved_paths))
 
 
 def authority_dependency_paths(
@@ -1118,7 +1146,9 @@ def find_registry_entry(items: list[Any], key: str, value: str, label: str) -> d
     raise AssertionFailure(f"{label} {value!r} is unavailable")
 
 
-def assertion_artifact_index(checker_input: dict[str, Any]) -> dict[str, dict[str, str]]:
+def assertion_artifact_index(
+    checker_input: dict[str, Any]
+) -> dict[str, dict[str, str | None]]:
     artifacts = expect_list(
         checker_input["assertion_input_artifacts"],
         "member checker input.assertion_input_artifacts",
@@ -1129,19 +1159,50 @@ def assertion_artifact_index(checker_input: dict[str, Any]) -> dict[str, dict[st
         expect_keys(
             item,
             f"member checker input.assertion_input_artifacts[{position}]",
-            ("path", "origin_blob_oid", "head_blob_oid"),
+            (
+                "path",
+                "base_mode",
+                "base_blob_oid",
+                "origin_mode",
+                "origin_blob_oid",
+                "head_mode",
+                "head_blob_oid",
+            ),
         )
         path = expect_string(item["path"], f"member checker input.assertion_input_artifacts[{position}].path")
         index[path] = {
-            "origin_blob_oid": expect_sha(
+            "base_mode": expect_optional_mode(
+                item["base_mode"],
+                f"member checker input.assertion_input_artifacts[{position}].base_mode",
+            ),
+            "base_blob_oid": expect_optional_sha(
+                item["base_blob_oid"],
+                f"member checker input.assertion_input_artifacts[{position}].base_blob_oid",
+            ),
+            "origin_mode": expect_optional_mode(
+                item["origin_mode"],
+                f"member checker input.assertion_input_artifacts[{position}].origin_mode",
+            ),
+            "origin_blob_oid": expect_optional_sha(
                 item["origin_blob_oid"],
                 f"member checker input.assertion_input_artifacts[{position}].origin_blob_oid",
             ),
-            "head_blob_oid": expect_sha(
+            "head_mode": expect_optional_mode(
+                item["head_mode"],
+                f"member checker input.assertion_input_artifacts[{position}].head_mode",
+            ),
+            "head_blob_oid": expect_optional_sha(
                 item["head_blob_oid"],
                 f"member checker input.assertion_input_artifacts[{position}].head_blob_oid",
             ),
         }
+        for prefix in ("base", "origin", "head"):
+            mode = index[path][f"{prefix}_mode"]
+            blob_oid = index[path][f"{prefix}_blob_oid"]
+            if (mode is None) != (blob_oid is None):
+                raise AssertionFailure(
+                    f"member checker input.assertion_input_artifacts[{position}].{prefix}_mode and {prefix}_blob_oid must both be null or both be present"
+                )
     return index
 
 
@@ -1157,17 +1218,25 @@ def authority_dependency_records(
     for path in authority_dependency_paths(family, member, base_root=base_root):
         if path not in artifact_index:
             raise AssertionFailure(f"authority dependency {path!r} is unavailable")
-        base_blob_oid = blob_oid_for_root(base_root, path)
+        base_mode = artifact_index[path]["base_mode"]
+        base_blob_oid = artifact_index[path]["base_blob_oid"]
+        origin_mode = artifact_index[path]["origin_mode"]
         origin_blob_oid = artifact_index[path]["origin_blob_oid"]
+        head_mode = artifact_index[path]["head_mode"]
         head_blob_oid = artifact_index[path]["head_blob_oid"]
-        origin_changed = origin_blob_oid != base_blob_oid
-        head_changed = head_blob_oid != base_blob_oid
+        origin_changed = (
+            origin_mode != base_mode or origin_blob_oid != base_blob_oid
+        )
+        head_changed = head_mode != base_mode or head_blob_oid != base_blob_oid
         if origin_changed or head_changed:
             result.append(
                 {
                     "path": path,
+                    "base_mode": base_mode,
                     "base_blob_oid": base_blob_oid,
+                    "origin_mode": origin_mode,
                     "origin_blob_oid": origin_blob_oid,
+                    "head_mode": head_mode,
                     "head_blob_oid": head_blob_oid,
                     "origin_changed": origin_changed,
                     "head_changed": head_changed,

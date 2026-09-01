@@ -44,6 +44,8 @@ ASSERTION_PROGRAM_ARGV = (
     "review_assertions.py",
     "--stdin",
 )
+ASSERTION_FILE_MODES = {"100644", "100755", "120000"}
+MATERIALIZED_FILE_MODES = {"100644", "100755"}
 ASSERTION_INPUT_PATHS = (
     ".github/workflow-pilot-decisions.json",
     ".github/workflows/build.yml",
@@ -51,7 +53,9 @@ ASSERTION_INPUT_PATHS = (
     "docs/test-cases/registry.json",
     "docs/test-cases/workflow-governance.md",
     "docs/workflow-pilot.md",
+    "scripts/__init__.py",
     "scripts/check_docs.py",
+    "scripts/docs_check_tests/__init__.py",
     "scripts/docs_check_tests/test_check_docs.py",
     "scripts/docs_check_tests/test_development_workflow_skill.py",
     "scripts/workflow_pilot/__init__.py",
@@ -64,6 +68,7 @@ ASSERTION_INPUT_PATHS = (
     "scripts/workflow_pilot/reporter.py",
     "scripts/workflow_pilot/tests/fixtures/event_classification.json",
     "scripts/workflow_pilot/trusted_review_gate.py",
+    "tests/__init__.py",
     "tests/workflows/__init__.py",
     "tests/workflows/test_build_ci_topology.py",
 )
@@ -148,6 +153,20 @@ def expect_keys(value: dict[str, Any], label: str, required) -> None:
 def expect_sha(value: Any, label: str) -> str:
     if not isinstance(value, str) or SHA_RE.fullmatch(value) is None:
         raise CheckError(f"{label} must be a full lowercase Git SHA")
+    return value
+
+
+def expect_optional_sha(value: Any, label: str) -> str | None:
+    if value is None:
+        return None
+    return expect_sha(value, label)
+
+
+def expect_optional_mode(value: Any, label: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or value not in ASSERTION_FILE_MODES:
+        raise CheckError(f"{label} must be null or an exact Git mode")
     return value
 
 
@@ -248,6 +267,38 @@ def git_blob_oid_at_revision(
         raise CheckError(f"{label} is not available from trusted Git authority") from error
     expect_sha(blob_oid, label)
     return blob_oid
+
+
+def git_file_identity_at_revision(
+    repository_root: Path, revision: str, relative_path: str, label: str
+) -> dict[str, str | None]:
+    try:
+        raw = run_git(
+            repository_root,
+            "ls-tree",
+            "-z",
+            "--full-tree",
+            revision,
+            "--",
+            relative_path,
+        )
+    except CheckError as error:
+        raise CheckError(f"{label} is not available from trusted Git authority") from error
+    records = [record for record in raw.split(b"\0") if record]
+    if not records:
+        return {"mode": None, "blob_oid": None}
+    if len(records) != 1:
+        raise CheckError(f"{label} returned an ambiguous Git identity")
+    try:
+        metadata, raw_path = records[0].split(b"\t", 1)
+        mode, kind, blob_oid = metadata.decode("ascii").split()
+        actual_path = raw_path.decode("utf-8")
+    except (UnicodeDecodeError, ValueError) as error:
+        raise CheckError(f"{label} returned a malformed Git identity") from error
+    if actual_path != relative_path or kind != "blob" or mode not in ASSERTION_FILE_MODES:
+        raise CheckError(f"{label} returned an unsafe Git identity")
+    expect_sha(blob_oid, label)
+    return {"mode": mode, "blob_oid": blob_oid}
 
 
 def validate_repository_root(path: Path) -> Path:
@@ -757,52 +808,97 @@ def _validate_remote_findings(
 
 
 def _expected_assertion_artifacts(
-    repository_root: Path, finding_origin_sha: str, head_sha: str
-) -> list[dict[str, str]]:
-    return sorted(
-        [
+    repository_root: Path, base_sha: str, finding_origin_sha: str, head_sha: str
+) -> list[dict[str, str | None]]:
+    artifacts = []
+    for path in ASSERTION_INPUT_PATHS:
+        base_identity = git_file_identity_at_revision(
+            repository_root,
+            base_sha,
+            path,
+            f"checker input base production input {path!r}",
+        )
+        origin_identity = git_file_identity_at_revision(
+            repository_root,
+            finding_origin_sha,
+            path,
+            f"checker input origin production input {path!r}",
+        )
+        head_identity = git_file_identity_at_revision(
+            repository_root,
+            head_sha,
+            path,
+            f"checker input head production input {path!r}",
+        )
+        artifacts.append(
             {
                 "path": path,
-                "origin_blob_oid": git_blob_oid_at_revision(
-                    repository_root,
-                    finding_origin_sha,
-                    path,
-                    f"checker input origin production input {path!r}",
-                ),
-                "head_blob_oid": git_blob_oid_at_revision(
-                    repository_root,
-                    head_sha,
-                    path,
-                    f"checker input head production input {path!r}",
-                ),
+                "base_mode": base_identity["mode"],
+                "base_blob_oid": base_identity["blob_oid"],
+                "origin_mode": origin_identity["mode"],
+                "origin_blob_oid": origin_identity["blob_oid"],
+                "head_mode": head_identity["mode"],
+                "head_blob_oid": head_identity["blob_oid"],
             }
-            for path in ASSERTION_INPUT_PATHS
-        ],
+        )
+    return sorted(
+        artifacts,
         key=lambda item: item["path"],
     )
 
 
 def _validate_assertion_input_artifacts(
-    value: Any, expected: list[dict[str, str]]
-) -> list[dict[str, str]]:
+    value: Any, expected: list[dict[str, str | None]]
+) -> list[dict[str, str | None]]:
     artifacts = []
     for index, raw in enumerate(
         expect_list(value, "checker input.assertion_input_artifacts")
     ):
         label = f"checker input.assertion_input_artifacts[{index}]"
         artifact = expect_object(raw, label)
-        expect_keys(artifact, label, ("path", "origin_blob_oid", "head_blob_oid"))
+        expect_keys(
+            artifact,
+            label,
+            (
+                "path",
+                "base_mode",
+                "base_blob_oid",
+                "origin_mode",
+                "origin_blob_oid",
+                "head_mode",
+                "head_blob_oid",
+            ),
+        )
         artifacts.append(
             {
                 "path": normalized_path(artifact["path"], f"{label}.path"),
-                "origin_blob_oid": expect_sha(
+                "base_mode": expect_optional_mode(
+                    artifact["base_mode"], f"{label}.base_mode"
+                ),
+                "base_blob_oid": expect_optional_sha(
+                    artifact["base_blob_oid"], f"{label}.base_blob_oid"
+                ),
+                "origin_mode": expect_optional_mode(
+                    artifact["origin_mode"], f"{label}.origin_mode"
+                ),
+                "origin_blob_oid": expect_optional_sha(
                     artifact["origin_blob_oid"], f"{label}.origin_blob_oid"
                 ),
-                "head_blob_oid": expect_sha(
+                "head_mode": expect_optional_mode(
+                    artifact["head_mode"], f"{label}.head_mode"
+                ),
+                "head_blob_oid": expect_optional_sha(
                     artifact["head_blob_oid"], f"{label}.head_blob_oid"
                 ),
             }
         )
+        for prefix in ("base", "origin", "head"):
+            mode = artifacts[-1][f"{prefix}_mode"]
+            blob_oid = artifacts[-1][f"{prefix}_blob_oid"]
+            if (mode is None) != (blob_oid is None):
+                raise CheckError(
+                    f"{label}.{prefix}_mode and {prefix}_blob_oid must both be null or both be present"
+                )
     artifacts = sorted(artifacts, key=lambda item: item["path"])
     if artifacts != expected:
         raise CheckError(
@@ -812,7 +908,7 @@ def _validate_assertion_input_artifacts(
 
 
 def _validate_materialized_root(
-    root: Path, label: str, expected_blobs: dict[str, str]
+    root: Path, label: str, expected_identities: dict[str, dict[str, str | None]]
 ) -> Path:
     resolved_root = resolve_directory(root, label)
     discovered = {}
@@ -825,13 +921,18 @@ def _validate_materialized_root(
             raise CheckError(f"{label} contains an unsafe entry")
         relative = path.relative_to(root).as_posix()
         discovered[relative] = path
-    if set(discovered) != set(expected_blobs):
+    expected_files = {
+        path: identity
+        for path, identity in expected_identities.items()
+        if identity["mode"] in MATERIALIZED_FILE_MODES
+    }
+    if set(discovered) != set(expected_files):
         raise CheckError(f"{label} does not exactly materialize the production inputs")
-    for relative, expected_blob_oid in expected_blobs.items():
+    for relative, identity in expected_files.items():
         payload = read_regular_file(
             discovered[relative], f"{label}/{relative}"
         )
-        if git_blob_oid(payload) != expected_blob_oid:
+        if git_blob_oid(payload) != identity["blob_oid"]:
             raise CheckError(
                 f"{label}/{relative} does not match exact Git blob authority"
             )
@@ -1459,6 +1560,7 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         )
     expected_assertion_input_artifacts = _expected_assertion_artifacts(
         repository_root,
+        base_sha,
         finding_origin_sha,
         candidate_sha,
     )
@@ -1469,20 +1571,21 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         base_root,
         "checker input.base_root",
         {
-            path: git_blob_oid_at_revision(
-                repository_root,
-                base_sha,
-                path,
-                f"checker input base production input {path!r}",
-            )
-            for path in ASSERTION_INPUT_PATHS
+            item["path"]: {
+                "mode": item["base_mode"],
+                "blob_oid": item["base_blob_oid"],
+            }
+            for item in assertion_input_artifacts
         },
     )
     origin_root_resolved = _validate_materialized_root(
         origin_root,
         "checker input.origin_root",
         {
-            item["path"]: item["origin_blob_oid"]
+            item["path"]: {
+                "mode": item["origin_mode"],
+                "blob_oid": item["origin_blob_oid"],
+            }
             for item in assertion_input_artifacts
         },
     )
@@ -1490,7 +1593,10 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         head_root,
         "checker input.head_root",
         {
-            item["path"]: item["head_blob_oid"]
+            item["path"]: {
+                "mode": item["head_mode"],
+                "blob_oid": item["head_blob_oid"],
+            }
             for item in assertion_input_artifacts
         },
     )

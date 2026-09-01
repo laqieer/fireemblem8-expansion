@@ -48,6 +48,8 @@ ASSERTION_PROGRAM_ARGV = (
     "review_assertions.py",
     "--stdin",
 )
+ASSERTION_FILE_MODES = {"100644", "100755", "120000"}
+MATERIALIZED_FILE_MODES = {"100644", "100755"}
 ASSERTION_INPUT_PATHS = (
     DECISION_RECORD_PATH,
     ".github/workflows/build.yml",
@@ -55,7 +57,9 @@ ASSERTION_INPUT_PATHS = (
     "docs/test-cases/registry.json",
     "docs/test-cases/workflow-governance.md",
     "docs/workflow-pilot.md",
+    "scripts/__init__.py",
     "scripts/check_docs.py",
+    "scripts/docs_check_tests/__init__.py",
     "scripts/docs_check_tests/test_check_docs.py",
     "scripts/docs_check_tests/test_development_workflow_skill.py",
     "scripts/workflow_pilot/__init__.py",
@@ -68,6 +72,7 @@ ASSERTION_INPUT_PATHS = (
     "scripts/workflow_pilot/reporter.py",
     "scripts/workflow_pilot/tests/fixtures/event_classification.json",
     "scripts/workflow_pilot/trusted_review_gate.py",
+    "tests/__init__.py",
     "tests/workflows/__init__.py",
     "tests/workflows/test_build_ci_topology.py",
 )
@@ -679,16 +684,56 @@ def _git_text(repository_root: Path, *arguments: str) -> str:
     return reporter.run_git(repository_root, *arguments).decode("utf-8").strip()
 
 
+def _assertion_input_state(
+    repository_root: Path, revision: str, path: str
+) -> dict[str, str | None]:
+    raw = reporter.run_git(
+        repository_root,
+        "ls-tree",
+        "-z",
+        "--full-tree",
+        revision,
+        "--",
+        path,
+    )
+    records = [record for record in raw.split(b"\0") if record]
+    if not records:
+        return {"mode": None, "blob_oid": None}
+    if len(records) != 1:
+        raise reporter.PilotDataError(
+            f"Git tree returned ambiguous assertion input path {path!r}"
+        )
+    try:
+        metadata, raw_path = records[0].split(b"\t", 1)
+        mode, kind, blob_oid = metadata.decode("ascii").split()
+        actual_path = raw_path.decode("utf-8")
+    except (UnicodeDecodeError, ValueError) as error:
+        raise reporter.PilotDataError(
+            f"Git tree returned malformed assertion input path {path!r}"
+        ) from error
+    if actual_path != path or kind != "blob" or mode not in ASSERTION_FILE_MODES:
+        raise reporter.PilotDataError(
+            f"Git tree assertion input path {path!r} has an unsafe type or mode"
+        )
+    return {"mode": mode, "blob_oid": blob_oid}
+
+
 def _base_contains_gate(repository_root: Path, base_sha: str) -> bool:
-    for path in (
-        TRUSTED_GATE_PATH,
-        BASE_CHECKER_PATH,
-        ASSERTION_PROGRAM_PATH,
-        *ASSERTION_INPUT_PATHS,
-    ):
+    for path in TRUSTED_REQUIRED_PATHS:
         try:
-            reporter.run_git(repository_root, "cat-file", "-e", f"{base_sha}:{path}")
+            state = _assertion_input_state(repository_root, base_sha, path)
         except reporter.PilotDataError:
+            return False
+        if state["mode"] not in MATERIALIZED_FILE_MODES:
+            return False
+    for path in ASSERTION_INPUT_PATHS:
+        try:
+            state = _assertion_input_state(repository_root, base_sha, path)
+        except reporter.PilotDataError:
+            return False
+        if state["mode"] is None and path.endswith("/__init__.py"):
+            continue
+        if state["mode"] not in MATERIALIZED_FILE_MODES:
             return False
     return True
 
@@ -1034,34 +1079,29 @@ def run_base_pinned_checker(
     probe_root.mkdir(mode=0o700)
     assertion_input_artifacts = []
     for relative in ASSERTION_INPUT_PATHS:
-        base_bytes = reporter.run_git(root, "show", f"{base_sha}:{relative}")
-        origin_bytes = reporter.run_git(
-            root, "show", f"{finding_origin_sha}:{relative}"
-        )
-        head_bytes = reporter.run_git(root, "show", f"{candidate_sha}:{relative}")
-        base_target = base_root / relative
-        origin_target = origin_root / relative
-        head_target = head_root / relative
-        base_target.parent.mkdir(parents=True, exist_ok=True)
-        origin_target.parent.mkdir(parents=True, exist_ok=True)
-        head_target.parent.mkdir(parents=True, exist_ok=True)
-        base_target.write_bytes(base_bytes)
-        origin_target.write_bytes(origin_bytes)
-        head_target.write_bytes(head_bytes)
-        base_target.chmod(0o444)
-        origin_target.chmod(0o444)
-        head_target.chmod(0o444)
+        base_state = _assertion_input_state(root, base_sha, relative)
+        origin_state = _assertion_input_state(root, finding_origin_sha, relative)
+        head_state = _assertion_input_state(root, candidate_sha, relative)
+        for root_path, revision, state in (
+            (base_root, base_sha, base_state),
+            (origin_root, finding_origin_sha, origin_state),
+            (head_root, candidate_sha, head_state),
+        ):
+            if state["mode"] not in MATERIALIZED_FILE_MODES:
+                continue
+            target = root_path / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(reporter.run_git(root, "show", f"{revision}:{relative}"))
+            target.chmod(0o444)
         assertion_input_artifacts.append(
             {
                 "path": relative,
-                "origin_blob_oid": _git_text(
-                    root,
-                    "rev-parse",
-                    f"{finding_origin_sha}:{relative}",
-                ),
-                "head_blob_oid": _git_text(
-                    root, "rev-parse", f"{candidate_sha}:{relative}"
-                ),
+                "base_mode": base_state["mode"],
+                "base_blob_oid": base_state["blob_oid"],
+                "origin_mode": origin_state["mode"],
+                "origin_blob_oid": origin_state["blob_oid"],
+                "head_mode": head_state["mode"],
+                "head_blob_oid": head_state["blob_oid"],
             }
         )
     checker_path.write_bytes(checker_source)

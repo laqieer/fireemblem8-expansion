@@ -44,6 +44,10 @@ def git_bytes(root, *arguments):
     ).stdout
 
 
+def optional_file_bytes(path):
+    return path.read_bytes() if path.is_file() else None
+
+
 def changed_files(changes):
     return sorted(
         {
@@ -70,7 +74,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         cls.repo.mkdir()
         cls.case_ids = count()
         cls.input_snapshots = {
-            relative: (ROOT / relative).read_bytes() for relative in ASSERTION_INPUTS
+            relative: optional_file_bytes(ROOT / relative) for relative in ASSERTION_INPUTS
         }
         subprocess.run(
             reporter.git_command(cls.repo, "init", "-q"),
@@ -134,6 +138,11 @@ class ReviewBaseCheckerTests(unittest.TestCase):
     @classmethod
     def _restore_baseline(cls):
         for relative, payload in cls.input_snapshots.items():
+            target = cls.repo / relative
+            if payload is None:
+                if target.exists():
+                    target.unlink()
+                continue
             cls._write_relative(relative, payload)
         obsolete = cls.repo / "scripts/workflow_pilot/assertion_subjects"
         if obsolete.exists():
@@ -379,6 +388,22 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
 
     @classmethod
+    def _make_namespace_init_addition_head(cls, relative):
+        cls._restore_baseline()
+        path = cls.repo / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('"""namespace initializer"""\n', encoding="utf-8")
+        head = cls._commit(f"namespace-init-addition:{relative}")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
+
+    @classmethod
+    def _make_existing_init_removal_head(cls, relative):
+        cls._restore_baseline()
+        (cls.repo / relative).unlink()
+        head = cls._commit(f"existing-init-removal:{relative}")
+        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
+
+    @classmethod
     def _make_unrelated_file_head(cls):
         cls._restore_baseline()
         (cls.repo / "unrelated.txt").write_text("unrelated\n", encoding="utf-8")
@@ -575,6 +600,14 @@ class ReviewBaseCheckerTests(unittest.TestCase):
     def materialize_input_root(self, commit_sha, destination):
         destination.mkdir()
         for relative in ASSERTION_INPUTS:
+            identity = review_base_checker.git_file_identity_at_revision(
+                self.repo,
+                commit_sha,
+                relative,
+                f"test materialized input {relative!r}",
+            )
+            if identity["mode"] not in review_base_checker.MATERIALIZED_FILE_MODES:
+                continue
             target = destination / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(git_bytes(self.repo, "show", f"{commit_sha}:{relative}"))
@@ -836,18 +869,38 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         ]
 
     def assertion_artifacts(self, origin_sha, head_sha):
-        return [
-            {
-                "path": relative,
-                "origin_blob_oid": git_text(
-                    self.repo, "rev-parse", f"{origin_sha}:{relative}"
-                ),
-                "head_blob_oid": git_text(
-                    self.repo, "rev-parse", f"{head_sha}:{relative}"
-                ),
-            }
-            for relative in ASSERTION_INPUTS
-        ]
+        artifacts = []
+        for relative in ASSERTION_INPUTS:
+            base_identity = review_base_checker.git_file_identity_at_revision(
+                self.repo,
+                self.base,
+                relative,
+                f"test base input {relative!r}",
+            )
+            origin_identity = review_base_checker.git_file_identity_at_revision(
+                self.repo,
+                origin_sha,
+                relative,
+                f"test origin input {relative!r}",
+            )
+            head_identity = review_base_checker.git_file_identity_at_revision(
+                self.repo,
+                head_sha,
+                relative,
+                f"test head input {relative!r}",
+            )
+            artifacts.append(
+                {
+                    "path": relative,
+                    "base_mode": base_identity["mode"],
+                    "base_blob_oid": base_identity["blob_oid"],
+                    "origin_mode": origin_identity["mode"],
+                    "origin_blob_oid": origin_identity["blob_oid"],
+                    "head_mode": head_identity["mode"],
+                    "head_blob_oid": head_identity["blob_oid"],
+                }
+            )
+        return artifacts
 
     def build_input(self, *, review_round, candidate_sha=None, candidate_tree=None, assertion_requests=None):
         case_root = self.case_dir()
@@ -999,6 +1052,44 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             data["assertion_requests"],
         )
         binding = self.member_binding(data, assertion_id, "FINDING-WIRE-1")
+        return data, binding
+
+    def generated_member_input(
+        self,
+        *,
+        candidate_sha=None,
+        candidate_tree=None,
+        assertion_id="registry:sibling:generated:consumers:verified-unaffected:v2",
+        finding_id="FINDING-GENERATED-1",
+    ):
+        data = self.build_input(
+            review_round=2,
+            candidate_sha=candidate_sha,
+            candidate_tree=candidate_tree,
+            assertion_requests=[{"assertion_id": assertion_id, "finding_id": finding_id}],
+        )
+        data["all_remote_reviews"][0]["finding_ids"] = [finding_id]
+        data["remote_findings"] = [
+            {
+                "node_id": finding_id,
+                "review_id": "REMOTE_REVIEW_1",
+                "candidate_sha": self.head1,
+                "created_at": "2026-09-01T00:01:30Z",
+                "author_actor_id": "COPILOT",
+                "family": "generated",
+            }
+        ]
+        data["review_context"]["finding_ids"] = []
+        data["remote_finding_ids"] = []
+        data["captured_github_payload"] = self.captured_github_payload(
+            data["candidate_sha"], data["all_remote_reviews"], data["remote_findings"]
+        )
+        data["review_contract"]["family_sweeps"] = self.configured_family_sweeps(
+            data["original_pre_review"]["findings"],
+            data["remote_findings"],
+            data["assertion_requests"],
+        )
+        binding = self.member_binding(data, assertion_id, finding_id)
         return data, binding
 
     def authority_dependency_paths(self, family, member, *, base_root=None, allowed_paths=None):
@@ -1225,14 +1316,21 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             "wire", "producers", base_root=base_root
         )
         self.assertEqual(first, second)
+        self.assertIn("scripts/__init__.py", first)
         self.assertIn("scripts/workflow_pilot/__init__.py", first)
         self.assertIn("scripts/workflow_pilot/reporter.py", first)
 
         consumers = self.authority_dependency_paths(
             "generated", "consumers", base_root=base_root
         )
+        self.assertIn("tests/__init__.py", consumers)
         self.assertIn("tests/workflows/__init__.py", consumers)
         self.assertIn("scripts/workflow_pilot/hydrate_authority.py", consumers)
+
+        drift_checks = self.authority_dependency_paths(
+            "generated", "drift-checks", base_root=base_root
+        )
+        self.assertIn("scripts/docs_check_tests/__init__.py", drift_checks)
 
         cycle_root = self.case_dir() / "cycle-root"
         (cycle_root / "pkg").mkdir(parents=True)
@@ -1249,6 +1347,71 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             allowed_paths={"pkg/__init__.py", "pkg/a.py", "pkg/b.py"},
         )
         self.assertEqual(closure, ("pkg/__init__.py", "pkg/a.py", "pkg/b.py"))
+
+    def test_namespace_initializer_additions_trigger_member_holds(self):
+        scripts_head, scripts_tree = self._make_namespace_init_addition_head(
+            "scripts/__init__.py"
+        )
+        data, _binding = self.wire_member_input(
+            candidate_sha=scripts_head,
+            candidate_tree=scripts_tree,
+        )
+        self.assert_held(
+            data,
+            assertion_id="registry:sibling:wire:producers:verified-unaffected:v2",
+            finding_id="FINDING-WIRE-1",
+            dependency_paths=["scripts/__init__.py"],
+        )
+
+        tests_head, tests_tree = self._make_namespace_init_addition_head(
+            "tests/__init__.py"
+        )
+        data, _binding = self.generated_member_input(
+            candidate_sha=tests_head,
+            candidate_tree=tests_tree,
+            assertion_id="registry:sibling:generated:consumers:verified-unaffected:v2",
+        )
+        self.assert_held(
+            data,
+            assertion_id="registry:sibling:generated:consumers:verified-unaffected:v2",
+            finding_id="FINDING-GENERATED-1",
+            dependency_paths=["tests/__init__.py"],
+        )
+
+        docs_head, docs_tree = self._make_namespace_init_addition_head(
+            "scripts/docs_check_tests/__init__.py"
+        )
+        data, _binding = self.generated_member_input(
+            candidate_sha=docs_head,
+            candidate_tree=docs_tree,
+            assertion_id=(
+                "registry:sibling:generated:drift-checks:verified-unaffected:v2"
+            ),
+        )
+        self.assert_held(
+            data,
+            assertion_id=(
+                "registry:sibling:generated:drift-checks:verified-unaffected:v2"
+            ),
+            finding_id="FINDING-GENERATED-1",
+            dependency_paths=["scripts/docs_check_tests/__init__.py"],
+        )
+
+    def test_existing_initializer_removal_triggers_hold(self):
+        candidate_head, candidate_tree = self._make_existing_init_removal_head(
+            "tests/workflows/__init__.py"
+        )
+        data, _binding = self.generated_member_input(
+            candidate_sha=candidate_head,
+            candidate_tree=candidate_tree,
+            assertion_id="registry:sibling:generated:consumers:verified-unaffected:v2",
+        )
+        self.assert_held(
+            data,
+            assertion_id="registry:sibling:generated:consumers:verified-unaffected:v2",
+            finding_id="FINDING-GENERATED-1",
+            dependency_paths=["tests/workflows/__init__.py"],
+        )
 
     def test_stale_round_head_and_current_finding_collection_fail(self):
         data = self.build_input(review_round=2)
@@ -1331,42 +1494,12 @@ class ReviewBaseCheckerTests(unittest.TestCase):
 
     def test_dynamic_loader_dependency_change_holds_generated_drift_checks(self):
         candidate_head, candidate_tree = self._make_generated_dynamic_loader_break_head()
-        data = self.build_input(
-            review_round=2,
+        data, _binding = self.generated_member_input(
             candidate_sha=candidate_head,
             candidate_tree=candidate_tree,
-            assertion_requests=[
-                {
-                    "assertion_id": (
-                        "registry:sibling:generated:drift-checks:"
-                        "verified-unaffected:v2"
-                    ),
-                    "finding_id": "FINDING-GENERATED-1",
-                }
-            ],
-        )
-        data["all_remote_reviews"][0]["finding_ids"] = ["FINDING-GENERATED-1"]
-        data["remote_findings"] = [
-            {
-                "node_id": "FINDING-GENERATED-1",
-                "review_id": "REMOTE_REVIEW_1",
-                "candidate_sha": self.head1,
-                "created_at": "2026-09-01T00:01:30Z",
-                "author_actor_id": "COPILOT",
-                "family": "generated",
-            }
-        ]
-        data["review_context"]["finding_ids"] = []
-        data["remote_finding_ids"] = []
-        data["captured_github_payload"] = self.captured_github_payload(
-            data["candidate_sha"],
-            data["all_remote_reviews"],
-            data["remote_findings"],
-        )
-        data["review_contract"]["family_sweeps"] = self.configured_family_sweeps(
-            data["original_pre_review"]["findings"],
-            data["remote_findings"],
-            data["assertion_requests"],
+            assertion_id=(
+                "registry:sibling:generated:drift-checks:verified-unaffected:v2"
+            ),
         )
         self.assert_held(
             data,
@@ -1701,9 +1834,27 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             healthy_head,
             binding,
         )
+        self.assertFalse((Path(data["base_root"]) / "scripts/__init__.py").exists())
+        self.assertFalse((Path(data["head_root"]) / "scripts/__init__.py").exists())
         self.assertEqual(result["live_source_kind"], "live-gh-api")
         self.assertEqual(result["offline_source_kind"], "offline-transform-fixture")
         self.assertEqual(result["result_manifest_size"], 0)
+
+    def test_unrelated_initializer_outside_member_closure_does_not_hold(self):
+        candidate_head, candidate_tree = self._make_namespace_init_addition_head(
+            "scripts/docs_check_tests/__init__.py"
+        )
+        data, _binding = self.wire_member_input(
+            candidate_sha=candidate_head,
+            candidate_tree=candidate_tree,
+        )
+        result = self.execute(data)
+        member = result["results"][0]
+        self.assertEqual(member["status"], "pass")
+        self.assertEqual(
+            member["output"]["program_case"],
+            "member/wire/producers/verified-unaffected",
+        )
 
     def test_unrelated_file_change_does_not_trigger_authority_hold(self):
         candidate_head, candidate_tree = self._make_unrelated_file_head()

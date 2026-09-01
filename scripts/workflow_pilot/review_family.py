@@ -77,6 +77,7 @@ MEMBER_OUTCOME_REGISTRY = {
 RESULT_SOURCE_PATH = "scripts/workflow_pilot/tests/test_review_family.py"
 ASSERTION_PROGRAM_PATH = "scripts/workflow_pilot/review_assertions.py"
 TRIGGER_DECISION_PATH = reporter.DECISION_RECORD_PATH.as_posix()
+ASSERTION_FILE_MODES = {"100644", "100755", "120000"}
 ASSERTION_INPUT_PATHS = (
     TRIGGER_DECISION_PATH,
     ".github/workflows/build.yml",
@@ -84,7 +85,9 @@ ASSERTION_INPUT_PATHS = (
     "docs/test-cases/registry.json",
     "docs/test-cases/workflow-governance.md",
     "docs/workflow-pilot.md",
+    "scripts/__init__.py",
     "scripts/check_docs.py",
+    "scripts/docs_check_tests/__init__.py",
     "scripts/docs_check_tests/test_check_docs.py",
     "scripts/docs_check_tests/test_development_workflow_skill.py",
     "scripts/workflow_pilot/__init__.py",
@@ -97,6 +100,7 @@ ASSERTION_INPUT_PATHS = (
     "scripts/workflow_pilot/reporter.py",
     "scripts/workflow_pilot/tests/fixtures/event_classification.json",
     "scripts/workflow_pilot/trusted_review_gate.py",
+    "tests/__init__.py",
     "tests/workflows/__init__.py",
     "tests/workflows/test_build_ci_topology.py",
 )
@@ -154,6 +158,106 @@ def _validate_path(value: Any, label: str) -> str:
             f"{label} must be a normalized repository-relative path"
         )
     return source
+
+
+def _optional_mode(value: Any, label: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or value not in ASSERTION_FILE_MODES:
+        raise reporter.PilotDataError(
+            f"{label} must be null or an exact Git mode"
+        )
+    return value
+
+
+def _optional_blob_oid(value: Any, label: str) -> str | None:
+    return reporter.expect_sha(value, label, nullable=True)
+
+
+def _tree_state(
+    repository_root: Path, revision: str, path: str
+) -> dict[str, str | None]:
+    raw = reporter.run_git(
+        repository_root,
+        "ls-tree",
+        "-z",
+        "--full-tree",
+        revision,
+        "--",
+        path,
+    )
+    records = [record for record in raw.split(b"\0") if record]
+    if not records:
+        return {"mode": None, "blob_oid": None}
+    if len(records) != 1:
+        raise reporter.PilotDataError(
+            f"Git tree returned ambiguous path {path!r}"
+        )
+    try:
+        metadata, raw_path = records[0].split(b"\t", 1)
+        mode, kind, blob_oid = metadata.decode("ascii").split()
+        actual_path = raw_path.decode("utf-8")
+    except (ValueError, UnicodeDecodeError) as error:
+        raise reporter.PilotDataError(
+            f"Git tree returned malformed path {path!r}"
+        ) from error
+    if actual_path != path or kind != "blob" or mode not in ASSERTION_FILE_MODES:
+        raise reporter.PilotDataError(
+            f"Git tree path {path!r} has an unsafe type or mode"
+        )
+    return {"mode": mode, "blob_oid": blob_oid}
+
+
+def _validate_assertion_input_artifacts(
+    value: Any, label: str
+) -> list[dict[str, str | None]]:
+    artifacts = []
+    for index, raw in enumerate(reporter.expect_list(value, label)):
+        item_label = f"{label}[{index}]"
+        artifact = reporter.expect_object(raw, item_label)
+        reporter.expect_keys(
+            artifact,
+            item_label,
+            (
+                "path",
+                "base_mode",
+                "base_blob_oid",
+                "origin_mode",
+                "origin_blob_oid",
+                "head_mode",
+                "head_blob_oid",
+            ),
+        )
+        normalized = {
+            "path": _validate_path(artifact["path"], f"{item_label}.path"),
+            "base_mode": _optional_mode(
+                artifact["base_mode"], f"{item_label}.base_mode"
+            ),
+            "base_blob_oid": _optional_blob_oid(
+                artifact["base_blob_oid"], f"{item_label}.base_blob_oid"
+            ),
+            "origin_mode": _optional_mode(
+                artifact["origin_mode"], f"{item_label}.origin_mode"
+            ),
+            "origin_blob_oid": _optional_blob_oid(
+                artifact["origin_blob_oid"], f"{item_label}.origin_blob_oid"
+            ),
+            "head_mode": _optional_mode(
+                artifact["head_mode"], f"{item_label}.head_mode"
+            ),
+            "head_blob_oid": _optional_blob_oid(
+                artifact["head_blob_oid"], f"{item_label}.head_blob_oid"
+            ),
+        }
+        for prefix in ("base", "origin", "head"):
+            if (normalized[f"{prefix}_mode"] is None) != (
+                normalized[f"{prefix}_blob_oid"] is None
+            ):
+                raise reporter.PilotDataError(
+                    f"{item_label}.{prefix}_mode and {prefix}_blob_oid must both be null or both be present"
+                )
+        artifacts.append(normalized)
+    return sorted(artifacts, key=lambda item: item["path"])
 
 
 def _tree_blob(
@@ -1642,8 +1746,11 @@ def _validate_authority_hold_output(
             f"{label}.authority_dependencies[{index}]",
             (
                 "path",
+                "base_mode",
                 "base_blob_oid",
+                "origin_mode",
                 "origin_blob_oid",
+                "head_mode",
                 "head_blob_oid",
                 "origin_changed",
                 "head_changed",
@@ -1659,7 +1766,52 @@ def _validate_authority_hold_output(
         )
         if not origin_changed and not head_changed:
             raise reporter.PilotDataError(
-                f"{label}.authority_dependencies[{index}] does not record a changed authority blob"
+                f"{label}.authority_dependencies[{index}] does not record a changed authority state"
+            )
+        base_mode = _optional_mode(
+            dependency["base_mode"],
+            f"{label}.authority_dependencies[{index}].base_mode",
+        )
+        base_blob_oid = _optional_blob_oid(
+            dependency["base_blob_oid"],
+            f"{label}.authority_dependencies[{index}].base_blob_oid",
+        )
+        origin_mode = _optional_mode(
+            dependency["origin_mode"],
+            f"{label}.authority_dependencies[{index}].origin_mode",
+        )
+        origin_blob_oid = _optional_blob_oid(
+            dependency["origin_blob_oid"],
+            f"{label}.authority_dependencies[{index}].origin_blob_oid",
+        )
+        head_mode = _optional_mode(
+            dependency["head_mode"],
+            f"{label}.authority_dependencies[{index}].head_mode",
+        )
+        head_blob_oid = _optional_blob_oid(
+            dependency["head_blob_oid"],
+            f"{label}.authority_dependencies[{index}].head_blob_oid",
+        )
+        for prefix, mode, blob_oid in (
+            ("base", base_mode, base_blob_oid),
+            ("origin", origin_mode, origin_blob_oid),
+            ("head", head_mode, head_blob_oid),
+        ):
+            if (mode is None) != (blob_oid is None):
+                raise reporter.PilotDataError(
+                    f"{label}.authority_dependencies[{index}].{prefix}_mode and {prefix}_blob_oid must both be null or both be present"
+                )
+        if origin_changed != (
+            origin_mode != base_mode or origin_blob_oid != base_blob_oid
+        ):
+            raise reporter.PilotDataError(
+                f"{label}.authority_dependencies[{index}].origin_changed contradicts the authority state"
+            )
+        if head_changed != (
+            head_mode != base_mode or head_blob_oid != base_blob_oid
+        ):
+            raise reporter.PilotDataError(
+                f"{label}.authority_dependencies[{index}].head_changed contradicts the authority state"
             )
         validated.append(
             {
@@ -1667,18 +1819,12 @@ def _validate_authority_hold_output(
                     dependency["path"],
                     f"{label}.authority_dependencies[{index}].path",
                 ),
-                "base_blob_oid": reporter.expect_sha(
-                    dependency["base_blob_oid"],
-                    f"{label}.authority_dependencies[{index}].base_blob_oid",
-                ),
-                "origin_blob_oid": reporter.expect_sha(
-                    dependency["origin_blob_oid"],
-                    f"{label}.authority_dependencies[{index}].origin_blob_oid",
-                ),
-                "head_blob_oid": reporter.expect_sha(
-                    dependency["head_blob_oid"],
-                    f"{label}.authority_dependencies[{index}].head_blob_oid",
-                ),
+                "base_mode": base_mode,
+                "base_blob_oid": base_blob_oid,
+                "origin_mode": origin_mode,
+                "origin_blob_oid": origin_blob_oid,
+                "head_mode": head_mode,
+                "head_blob_oid": head_blob_oid,
                 "origin_changed": origin_changed,
                 "head_changed": head_changed,
             }
@@ -1982,7 +2128,7 @@ def _validate_execution_receipts(value: Any) -> list[dict[str, Any]]:
                     receipt["finding_origin_tree"],
                     f"{label}.finding_origin_tree",
                 ),
-                "assertion_input_artifacts": reporter.expect_list(
+                "assertion_input_artifacts": _validate_assertion_input_artifacts(
                     receipt["assertion_input_artifacts"],
                     f"{label}.assertion_input_artifacts",
                 ),
@@ -2681,22 +2827,23 @@ def _validate_execution(
             "rev-parse",
             f"{finding_origin_sha}^{{tree}}",
         ).decode("ascii").strip()
-        assertion_input_artifacts = [
-            {
-                "path": path,
-                "origin_blob_oid": reporter.run_git(
-                    authority["root"],
-                    "rev-parse",
-                    f"{finding_origin_sha}:{path}",
-                ).decode("ascii").strip(),
-                "head_blob_oid": reporter.run_git(
-                    authority["root"],
-                    "rev-parse",
-                    f"{target_head}:{path}",
-                ).decode("ascii").strip(),
-            }
-            for path in ASSERTION_INPUT_PATHS
-        ]
+        assertion_input_artifacts = []
+        for path in ASSERTION_INPUT_PATHS:
+            base_state = _tree_state(authority["root"], contract["base_sha"], path)
+            origin_state = _tree_state(authority["root"], finding_origin_sha, path)
+            head_state = _tree_state(authority["root"], target_head, path)
+            assertion_input_artifacts.append(
+                {
+                    "path": path,
+                    "base_mode": base_state["mode"],
+                    "base_blob_oid": base_state["blob_oid"],
+                    "origin_mode": origin_state["mode"],
+                    "origin_blob_oid": origin_state["blob_oid"],
+                    "head_mode": head_state["mode"],
+                    "head_blob_oid": head_state["blob_oid"],
+                }
+            )
+        assertion_input_artifacts.sort(key=lambda item: item["path"])
         receipt_hold = any(
             result["status"] == "hold" for result in receipt["assertion_results"]
         )

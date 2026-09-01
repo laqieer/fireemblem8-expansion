@@ -41,6 +41,20 @@ def git(root, *arguments):
     )
 
 
+def optional_file_bytes(path: Path) -> bytes | None:
+    return path.read_bytes() if path.is_file() else None
+
+
+def write_optional_tree_file(root: Path, relative: str, payload: bytes | None) -> None:
+    target = root / relative
+    if payload is None:
+        if target.exists():
+            target.unlink()
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(payload)
+
+
 def review_report(
     base=BASE,
     candidate=CANDIDATE,
@@ -130,9 +144,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
             trusted_review_gate.ASSERTION_PROGRAM_PATH,
             *trusted_review_gate.ASSERTION_INPUT_PATHS,
         ):
-            target = cls.repo / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes((ROOT / relative).read_bytes())
+            write_optional_tree_file(cls.repo, relative, optional_file_bytes(ROOT / relative))
         (cls.repo / ".gitignore").write_text("build/\n", encoding="utf-8")
         (cls.repo / "changed.txt").write_text("base\n", encoding="utf-8")
         git(cls.repo, "add", ".")
@@ -151,9 +163,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
             *trusted_review_gate.TRUSTED_REQUIRED_PATHS,
             *trusted_review_gate.ASSERTION_INPUT_PATHS,
         ):
-            target = cls.trusted / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes((ROOT / relative).read_bytes())
+            write_optional_tree_file(cls.trusted, relative, optional_file_bytes(ROOT / relative))
         git(cls.trusted, "add", ".")
         git(cls.trusted, "commit", "-q", "-m", "external independent base")
         cls.trusted_sha = (
@@ -242,9 +252,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
             "https://github.com/laqieer/fireemblem8-expansion.git",
         )
         for relative in trusted_review_gate.ASSERTION_INPUT_PATHS:
-            target = repo / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes((ROOT / relative).read_bytes())
+            write_optional_tree_file(repo, relative, optional_file_bytes(ROOT / relative))
         (repo / ".gitignore").write_text("build/\n", encoding="utf-8")
         (repo / "changed.txt").write_text("base\n", encoding="utf-8")
         self.write_decision_record(repo, *entries)
@@ -1232,9 +1240,9 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 *trusted_review_gate.TRUSTED_REQUIRED_PATHS,
                 *trusted_review_gate.ASSERTION_INPUT_PATHS,
             ):
-                target = repository / relative
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes((ROOT / relative).read_bytes())
+                write_optional_tree_file(
+                    repository, relative, optional_file_bytes(ROOT / relative)
+                )
             (repository / ".gitignore").write_text("build/\n", encoding="utf-8")
             (repository / "feature.txt").write_text("base\n", encoding="utf-8")
             self.write_decision_record(
@@ -1484,9 +1492,11 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     *trusted_review_gate.TRUSTED_REQUIRED_PATHS,
                     *trusted_review_gate.ASSERTION_INPUT_PATHS,
                 ):
-                    target = unrelated / relative
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_bytes((ROOT / relative).read_bytes())
+                    write_optional_tree_file(
+                        unrelated,
+                        relative,
+                        optional_file_bytes(ROOT / relative),
+                    )
                 (unrelated / ".gitignore").write_text("build/\n", encoding="utf-8")
                 self.write_decision_record(
                     unrelated,
@@ -1690,9 +1700,9 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 *trusted_review_gate.TRUSTED_REQUIRED_PATHS,
                 *trusted_review_gate.ASSERTION_INPUT_PATHS,
             ):
-                target = repository / relative
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes((ROOT / relative).read_bytes())
+                write_optional_tree_file(
+                    repository, relative, optional_file_bytes(ROOT / relative)
+                )
             (repository / ".gitignore").write_text(
                 "build/\n", encoding="utf-8"
             )
@@ -1705,7 +1715,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 ),
             )
             baseline_inputs = {
-                relative: (repository / relative).read_bytes()
+                relative: optional_file_bytes(repository / relative)
                 for relative in trusted_review_gate.ASSERTION_INPUT_PATHS
             }
 
@@ -1754,9 +1764,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
 
             def restore_baseline():
                 for relative, payload in baseline_inputs.items():
-                    target = repository / relative
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_bytes(payload)
+                    write_optional_tree_file(repository, relative, payload)
 
             def replace_once(relative, old, new):
                 path = repository / relative

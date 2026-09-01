@@ -1434,7 +1434,11 @@ game behavior needs a compensating change.
    from trusted base AST/import resolution over the actual exact-base modules
    the member executes, including package `__init__.py` files, shared modules
    such as `reporter.py`, and constant-path local scripts loaded dynamically.
-   Missing or ambiguous local imports fail closed.
+   Missing or ambiguous local imports fail closed. Treat every parent package
+   initializer in that closure as authority-bearing presence/absence state,
+   even when the exact base lacks the file; adding `scripts/__init__.py`,
+   `scripts/docs_check_tests/__init__.py`, `tests/__init__.py`, or another
+   in-closure initializer later must hold before execution.
 7. Sign canonical pre-review bytes with a test-only external key. Verify exact
    repository/PR/base/head, epoch, purpose, expiry, nonce, and atomic replay.
    Keep `LOCAL-` findings in that immutable receipt, separately collect later

@@ -636,6 +636,13 @@ validators/consumers over the real production artifacts. The child receives a
 closed environment without
 GitHub/HMAC credentials, proxy/PYTHONPATH injection, network-capable
 candidate programs, or inherited startup hooks.
+Namespace-package parent initializers are authority too: every imported local
+module contributes its full parent chain (for example `scripts/__init__.py`,
+`scripts/docs_check_tests/__init__.py`, and `tests/__init__.py`) as exact
+presence/absence state even when the base tree lacks the file. Adding,
+removing, or mode-changing one of those parent initializers therefore produces
+the same hold before execution rather than silently changing future import
+semantics.
 
 Each `affected-fixed` assertion executes the fixed member program against the
 origin artifact and requires failing semantics, then executes it against the
