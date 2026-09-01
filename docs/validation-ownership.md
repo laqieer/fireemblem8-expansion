@@ -212,7 +212,10 @@ makefile-remake chain. The resulting concrete considered-target graph, pattern
 stems, terminal tracked/gitlink/generated inputs, expanded recipes, includes,
 errors, and normalized trace records form the authority fingerprint. Scratch
 prefixes and source line numbers are normalized; comments and unrelated target
-changes remain stable when GNU Make's observed semantics remain stable.
+changes remain stable when GNU Make's observed semantics remain stable. GNU
+Make database `Last modified` diagnostics from fresh copied trees are excluded
+as nonsemantic execution timestamps; rule, prerequisite, recipe, and status
+records remain bound.
 The in-process optimization cache keys live-tree Make authority by exact blob
 content, mode, and type rather than file size or timestamps, so same-size
 mutations with restored metadata cannot reuse state from an earlier test.

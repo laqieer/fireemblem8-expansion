@@ -488,6 +488,36 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 "untrusted stale state\n",
             )
 
+    def test_database_semantics_ignore_only_copy_timestamps(self):
+        first = (
+            "GNU Make data base\n"
+            "# Files\n"
+            "all: input\n"
+            "\t@printf stable\n"
+            "#  Last modified 2026-09-01 10:00:00.000000000\n"
+            "# Finished Make data base\n"
+        )
+        second = first.replace(
+            "2026-09-01 10:00:00.000000000",
+            "2026-09-01 10:01:02.123456789",
+        )
+        self.assertEqual(
+            make_probe._database_semantics(first),
+            make_probe._database_semantics(second),
+        )
+        self.assertNotEqual(
+            make_probe._database_semantics(first),
+            make_probe._database_semantics(
+                first.replace("all: input", "all: changed-input")
+            ),
+        )
+        self.assertNotEqual(
+            make_probe._database_semantics(first),
+            make_probe._database_semantics(
+                first.replace("printf stable", "printf changed")
+            ),
+        )
+
     def test_candidate_make_cannot_forge_supervisor_control_files(self):
         directory, root, entries = self.fixture(
             "$(file >/work/events.bin,candidate-forgery)\n"

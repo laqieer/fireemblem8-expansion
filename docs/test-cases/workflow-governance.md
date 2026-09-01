@@ -1462,10 +1462,15 @@ evaluator; exact concrete closures, pattern stems, expanded recipes, terminal
 inputs, includes, dynamic outputs, errors, argv, environment, and tool
 identities participate in authority. Comments and unrelated targets stay
 stable only when their observed target semantics stay stable.
-Live-tree cache identity comes from exact content rather than size/mtime.
-A same-size Make mutation with its original timestamp restored must miss the
-cache, while repeated probes remain byte-identical with an unrelated stale
-scratch child present.
+Make cache and prior-invalidation identity includes every selected tracked
+entry's path, object type, Git mode, and content identity, not only named Make
+inputs. Adding/removing wildcard-visible `src/b.c`, changing a regular entry
+to executable or symlink mode, or making a same-size change with its original
+timestamp restored must miss the cache. Cached and cold probes remain
+byte-identical across repeated and cross-root execution with an unrelated
+stale scratch child present. Fresh-copy `Last modified` database diagnostics
+normalize away, while database rule, prerequisite, and recipe mutations remain
+distinguishable.
 Every local scratch path component is opened relative to the trusted
 repository descriptor with no symlink following before any temporary
 directory is created. Tracked `build` and intermediate `test-artifacts` or
@@ -1536,8 +1541,11 @@ lacks every package/graph/oracle marker, while candidate tests/public checks
 continue and direct adversarial review supplies introduction evidence. The
 candidate-staged local verifier must report the same mode for that exact base.
 A future complete base selects `exact-base-pinned`; any partial base package
-rejects instead of downgrading. Missing/changed base staging, candidate gate
-paths, candidate-as-base SHA substitution, or loss of the bootstrap state
+rejects instead of downgrading, including a base containing only the
+Make-dynamics marker. Before the first Git command, the hosted step must unset
+the exact ten path-bearing Git redirects while retaining its config,
+replacement, and lazy-fetch scrubs. Missing/changed base staging, candidate
+gate paths, candidate-as-base SHA substitution, or loss of the bootstrap state
 rejects.
 
 The root Makefile rejects command-line ownership of `MAKECMDGOALS` before

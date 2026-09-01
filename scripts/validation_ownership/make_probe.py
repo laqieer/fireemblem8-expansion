@@ -1106,6 +1106,11 @@ def _database_semantics(output: str) -> str:
     ):
         if end_marker in result:
             result = result.split(end_marker, 1)[0]
+    result = "\n".join(
+        line
+        for line in result.splitlines()
+        if not line.startswith("#  Last modified ")
+    )
     return re.sub(r":[0-9]+", ":<LINE>", result)
 
 
