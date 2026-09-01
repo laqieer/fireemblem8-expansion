@@ -357,20 +357,60 @@ jobs:
   # budget: a normal run is roughly 34 minutes including setup, but shared
   # runner variance has reached the former 45-minute ceiling.
   # All host test steps are genuine gates (required status), not advisory.
-  # Worker jobs intentionally keep their canonical job IDs/names even when
-  # metadata-only PR edits skip them with no runner. Repository rulesets must
-  # require the fail-closed `summary` context rather than individual worker
-  # names, because metadata runs publish a distinct `metadata-summary`.
+  # Live branch protection currently requires the canonical `host-tests`,
+  # `build`, and `summary` contexts. Metadata-only PR edits therefore run only
+  # a trusted no-checkout continuity attestation in `host-tests`/`build`;
+  # every existing checkout/install/test/build step remains full/fallback-only.
+  # `extended-host-tests` and `legacy` stay platform-skipped for metadata
+  # edits, and `metadata-summary` remains distinct so prior full `summary`
+  # evidence still governs candidate eligibility.
   host-tests:
     needs: [event-identity, event-classifier]
-    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && needs.event-identity.result == 'success' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha)))) }}
+    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'false' && github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && needs.event-classifier.outputs.expected_base == github.event.pull_request.base.sha && github.event.pull_request.head.sha != '' && github.event.pull_request.base.sha != '') || (needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && needs.event-identity.result == 'success' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha)))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
 
     steps:
+    - name: Attest metadata-only branch-protection continuity
+      if: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' }}
+      env:
+        BASH_ENV: ''
+        CLASSIFICATION: ${{ needs.event-classifier.outputs.classification }}
+        CLASSIFIED_BASE_SHA: ${{ needs.event-classifier.outputs.expected_base }}
+        CLASSIFIED_BUILD_SHA: ${{ needs.event-classifier.outputs.expected_head }}
+        CLASSIFIER_RESULT: ${{ needs.event-classifier.result }}
+        ENV: ''
+        FALLBACK_IDENTITY_RESULT: ${{ needs.event-identity.result }}
+        FALLBACK_KIND: ${{ needs.event-identity.outputs.fallback_kind }}
+        FALLBACK_SHA: ${{ needs.event-identity.outputs.fallback_sha }}
+        FULL_FALLBACK: ${{ needs.event-classifier.outputs.full_fallback }}
+        HEAD_VALID: ${{ needs.event-classifier.outputs.head_valid }}
+        IDENTITY_VALID: ${{ needs.event-classifier.outputs.identity_valid }}
+        PATH: /usr/bin:/bin
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        RUN_EXPENSIVE: ${{ needs.event-classifier.outputs.run_expensive }}
+      run: |
+        if [ "$CLASSIFIER_RESULT" != "success" ] || \
+           [ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \
+           [ "$GITHUB_EVENT_NAME" != "pull_request" ] || \
+           [ "$CLASSIFICATION" != "metadata-only" ] || \
+           [ "$FALLBACK_KIND" != "pull_request" ] || \
+           [ -z "$FALLBACK_SHA" ] || [ -z "$PR_HEAD_SHA" ] || \
+           [ -z "$PR_BASE_SHA" ] || \
+           [ "$FULL_FALLBACK" != "false" ] || [ "$HEAD_VALID" != "true" ] || \
+           [ "$IDENTITY_VALID" != "true" ] || [ "$RUN_EXPENSIVE" != "false" ] || \
+           [ "$EXPECTED_BUILD_SHA" != "$CLASSIFIED_BUILD_SHA" ] || \
+           [ "$FALLBACK_SHA" != "$PR_HEAD_SHA" ] || \
+           [ "$FALLBACK_SHA" != "$CLASSIFIED_BUILD_SHA" ] || \
+           [ "$CLASSIFIED_BASE_SHA" != "$PR_BASE_SHA" ]; then
+          echo "metadata-only branch-protection continuity is not authoritative" >&2
+          exit 1
+        fi
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       with:
         ref: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
         fetch-depth: 0
@@ -378,6 +418,7 @@ jobs:
         persist-credentials: false
 
     - name: Verify checked-out revision
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: |
         ACTUAL_SHA="$(git rev-parse HEAD)"
         printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
@@ -388,6 +429,7 @@ jobs:
     # fetches only missing commits without refs/tags/eager blobs, and proves
     # both refs and the candidate checkout remain unchanged.
     - name: Hydrate workflow-pilot Git authority
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       env:
         BASH_ENV: ''
         ENV: ''
@@ -415,6 +457,7 @@ jobs:
       run: /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py hydrate --repository-root "$GITHUB_WORKSPACE" --fixture scripts/workflow_pilot/tests/fixtures/baseline.json --decisions .github/workflow-pilot-decisions.json --expected-head "$EXPECTED_BUILD_SHA"
 
     - name: Install host-only dependencies (no arm-none-eabi toolchain)
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: sudo apt-get update && sudo apt-get install -y build-essential libmgba-dev
 
     # GBA_PLAYTEST_HOST_ONLY=1 is the single public switch that makes this a
@@ -430,6 +473,7 @@ jobs:
     # it is not weakened here. The env is inline on this one step only: the
     # `build` job must NOT inherit it, or its runtime gates would skip.
     - name: Run gba-playtest host test suite
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover -s tools/gba-playtest/tests -v
 
     # Issue #12/#15 upstream-port review tooling (scripts/upstream_port):
@@ -442,15 +486,18 @@ jobs:
     # same gate commands, argv-identical and in order, so `verify` reproduces
     # this CI locally without a runner.
     - name: Run upstream-port tooling test suite
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: python3 -m unittest discover -s tests/upstream_port -v
 
     # Consolidated Build CI topology contract: candidate/master triggers,
     # combined workers, evidence ownership, and fail-closed summary. Pure
     # stdlib/YAML-text parsing; no ROM/toolchain.
     - name: Run workflow contract test suite
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: python3 -m unittest discover -s tests/workflows -p "test_*.py" -v
 
     - name: Run workflow-pilot reporter regression suite (issue #176)
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       env:
         BASH_ENV: ''
         ENV: ''
@@ -478,6 +525,7 @@ jobs:
       run: /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py reporter-tests
 
     - name: Validate workflow-pilot baseline against checked-out Git history
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       env:
         BASH_ENV: ''
         ENV: ''
@@ -516,6 +564,7 @@ jobs:
     # job below (those require a real booted ROM and are reached through
     # expansion-modern-linker-check's own dependency list, not this step).
     - name: Run localization host test suite (issue #18)
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: python3 -m unittest discover -s scripts/localization/tests -p "test_*.py"
 
     # The full-game payload has a separate source format from the expansion
@@ -523,6 +572,7 @@ jobs:
     # metrics-aware generated-break validation, and native text consumer
     # checks, so an overfull JA/ZH stream cannot pass the default CI lane.
     - name: Run full-game localization width contract (issue #18)
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: |
         make game-localization-test
         python3 -m scripts.localization.game_locales check
@@ -546,7 +596,7 @@ jobs:
   # target-ROM checks.
   build:
     needs: [event-identity, event-classifier]
-    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && needs.event-identity.result == 'success' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha)))) }}
+    if: ${{ always() && ((needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.full_fallback == 'false' && needs.event-classifier.outputs.run_expensive == 'false' && github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && needs.event-classifier.outputs.expected_base == github.event.pull_request.base.sha && github.event.pull_request.head.sha != '' && github.event.pull_request.base.sha != '') || (needs.event-classifier.result == 'success' && needs.event-identity.result == 'success' && needs.event-classifier.outputs.classification == 'full' && needs.event-classifier.outputs.head_valid == 'true' && needs.event-classifier.outputs.run_expensive == 'true' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-classifier.outputs.expected_head == github.event.pull_request.head.sha && github.event.pull_request.head.sha != '' && (needs.event-classifier.outputs.identity_valid == 'true' || needs.event-classifier.outputs.full_fallback == 'true')) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == needs.event-classifier.outputs.expected_head && needs.event-identity.outputs.fallback_sha == github.sha && needs.event-classifier.outputs.identity_valid == 'true' && needs.event-classifier.outputs.expected_head == github.event.after && needs.event-classifier.outputs.expected_base == '' && github.event.after != ''))) || (needs.event-classifier.result == 'failure' && needs.event-identity.result == 'success' && ((github.event_name == 'pull_request' && needs.event-identity.outputs.fallback_kind == 'pull_request' && needs.event-identity.outputs.fallback_sha == github.event.pull_request.head.sha) || (github.event_name == 'push' && needs.event-identity.outputs.fallback_kind == 'push' && needs.event-identity.outputs.fallback_sha == github.event.after && needs.event-identity.outputs.fallback_sha == github.sha)))) }}
     runs-on: ubuntu-latest
     # Exact-head runs 33425252664 and 33420585863 reached the former
     # 60-minute ceiling while still compiling. Keep enough shared-runner
@@ -556,7 +606,44 @@ jobs:
       EXPECTED_BUILD_SHA: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
 
     steps:
+    - name: Attest metadata-only branch-protection continuity
+      if: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' }}
+      env:
+        BASH_ENV: ''
+        CLASSIFICATION: ${{ needs.event-classifier.outputs.classification }}
+        CLASSIFIED_BASE_SHA: ${{ needs.event-classifier.outputs.expected_base }}
+        CLASSIFIED_BUILD_SHA: ${{ needs.event-classifier.outputs.expected_head }}
+        CLASSIFIER_RESULT: ${{ needs.event-classifier.result }}
+        ENV: ''
+        FALLBACK_IDENTITY_RESULT: ${{ needs.event-identity.result }}
+        FALLBACK_KIND: ${{ needs.event-identity.outputs.fallback_kind }}
+        FALLBACK_SHA: ${{ needs.event-identity.outputs.fallback_sha }}
+        FULL_FALLBACK: ${{ needs.event-classifier.outputs.full_fallback }}
+        HEAD_VALID: ${{ needs.event-classifier.outputs.head_valid }}
+        IDENTITY_VALID: ${{ needs.event-classifier.outputs.identity_valid }}
+        PATH: /usr/bin:/bin
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        RUN_EXPENSIVE: ${{ needs.event-classifier.outputs.run_expensive }}
+      run: |
+        if [ "$CLASSIFIER_RESULT" != "success" ] || \
+           [ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \
+           [ "$GITHUB_EVENT_NAME" != "pull_request" ] || \
+           [ "$CLASSIFICATION" != "metadata-only" ] || \
+           [ "$FALLBACK_KIND" != "pull_request" ] || \
+           [ -z "$FALLBACK_SHA" ] || [ -z "$PR_HEAD_SHA" ] || \
+           [ -z "$PR_BASE_SHA" ] || \
+           [ "$FULL_FALLBACK" != "false" ] || [ "$HEAD_VALID" != "true" ] || \
+           [ "$IDENTITY_VALID" != "true" ] || [ "$RUN_EXPENSIVE" != "false" ] || \
+           [ "$EXPECTED_BUILD_SHA" != "$CLASSIFIED_BUILD_SHA" ] || \
+           [ "$FALLBACK_SHA" != "$PR_HEAD_SHA" ] || \
+           [ "$FALLBACK_SHA" != "$CLASSIFIED_BUILD_SHA" ] || \
+           [ "$CLASSIFIED_BASE_SHA" != "$PR_BASE_SHA" ]; then
+          echo "metadata-only branch-protection continuity is not authoritative" >&2
+          exit 1
+        fi
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       with:
         ref: ${{ (needs.event-classifier.result == 'success' && needs.event-classifier.outputs.expected_head) || (needs.event-classifier.result == 'failure' && needs.event-identity.outputs.fallback_sha) || '' }}
         fetch-depth: 0
@@ -564,6 +651,7 @@ jobs:
         persist-credentials: false
 
     - name: Verify checked-out revision
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: |
         ACTUAL_SHA="$(git rev-parse HEAD)"
         printf 'checkout.sha=%s\n' "$ACTUAL_SHA"
@@ -574,6 +662,7 @@ jobs:
     # build output, so a prohibited tracked artifact fails fast on Git object
     # content instead of being masked by later build products.
     - name: Check tracked artifacts
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: |
         python3 -m unittest discover -s scripts/artifact_guard_tests -p 'test_*.py' -v
         python3 scripts/artifact_guard.py --revision HEAD
@@ -589,20 +678,24 @@ jobs:
     # install/tool build/ROM linker gates below, so a documentation
     # regression fails in seconds instead of after a multi-minute build.
     - name: Check documentation (issues #7/#17)
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: |
         python3 -m unittest discover -s scripts/docs_check_tests -v
         python3 scripts/check_docs.py --check --check-examples
 
     - name: Install dependencies
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential binutils-arm-none-eabi libpng-dev pkg-config gcc-arm-none-eabi libnewlib-arm-none-eabi libmgba-dev
         python3 -m pip install --require-hashes --only-binary=:all: --no-deps -r .github/requirements/build.txt
 
     - name: Build tools
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: ./build_tools.sh
 
     - name: Run CodeQL alert regression suite (issue #84)
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: make codeql-alerts-test CODEQL_REQUIRE_FANALYZER=1
 
     # Issue #15 closure: a bare `make`/`make all` must unconditionally
@@ -616,6 +709,7 @@ jobs:
     # fail fast on any structural regression before the slower linker gate
     # below.
     - name: Check default build lane and quickstart legacy glue (issue #15)
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: |
         python3 -m unittest discover -s scripts/modernize/tests -p "test_build_default_lane.py" -v
         python3 -m unittest discover -s scripts/modernize/tests -p "test_quickstart.py" -v
@@ -628,6 +722,7 @@ jobs:
     # fails fast with actionable file:line diagnostics instead of being
     # masked by (or confused with) a much slower linker failure.
     - name: Check generated-data tables for drift
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: |
         make generated-data-test
         make generated-data-check
@@ -641,6 +736,7 @@ jobs:
     # rebuilding per check. This is the default-cap lane; the expanded-cap
     # issue #10 item-ID-expansion gate below is the final target-ROM step.
     - name: Build and verify modern target ROMs and linker
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: |
         make expansion-modern-linker-check MODERN_CONFIG=debug MODERN_ABI=aapcs -j2
         make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs -j2
@@ -676,11 +772,13 @@ jobs:
     # This is the workflow's final untrusted correctness gate. Pull-request
     # runs receive no base-image secret and publish no artifact.
     - name: Boundary/serialization item-ID-expansion + content runtime gate (cap 0xCE)
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: |
         FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=debug   MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1 -j2
         FE8_ITEM_ID_CAP=0xCE FE8_EXPANSION_ITEMTEST=1 make expansion-modern-itemexpansion-check MODERN_CONFIG=release MODERN_ABI=aapcs EXPANSION_STARTER_CONTENT=1 EXPANSION_MECHANICS_HOOKS=1 EXPANSION_MECHANICS_SAMPLE=1 -j2
 
     - name: Build and verify all-locales/all-features map menu (issues #49/#168)
+      if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
       run: make expansion-modern-map-menu-presentation-check -j1
 
   # This lane holds unique broader host evidence for both candidate and
@@ -1877,9 +1975,11 @@ jobs:
         if-no-files-found: error
         retention-days: 30
 
-  # Repository rulesets should require this canonical `summary` context rather
-  # than individual worker names; metadata-only runs emit `metadata-summary`
-  # while keeping the workers as skipped canonical checks with no runner.
+  # Live branch protection currently keeps canonical `host-tests`, `build`,
+  # and `summary` required. Metadata-only edits therefore use successful
+  # trusted `host-tests`/`build` continuity adapters, keep `extended-host-tests`
+  # and `legacy` platform-skipped, and emit distinct `metadata-summary` so a
+  # prior full `summary` remains authoritative on the unchanged head/base.
   summary:
     name: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-summary' || 'summary' }}
     if: always()
@@ -2049,11 +2149,17 @@ jobs:
             echo "metadata-only classification did not suppress workers" >&2
             exit 1
           fi
-          for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT" \
-            "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
+          for result in "$HOST_TESTS_RESULT" "$BUILD_RESULT"
+          do
+            if [ "$result" != "success" ]; then
+              echo "metadata-only continuity adapter did not succeed: $result" >&2
+              exit 1
+            fi
+          done
+          for result in "$EXTENDED_HOST_TESTS_RESULT" "$LEGACY_RESULT"
           do
             if [ "$result" != "skipped" ]; then
-              echo "metadata-only Build worker was not skipped: $result" >&2
+              echo "metadata-only expensive Build worker was not skipped: $result" >&2
               exit 1
             fi
           done

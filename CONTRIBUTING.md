@@ -92,18 +92,12 @@ existing Build owners; no duplicate Matrix path or manual dispatch exists. The
 expected combined-gate wall clock is approximately 35–40 minutes because the
 jobs run in parallel; that operational range is not a duration assertion.
 Repository branch protection or rulesets should require this workflow's
-canonical `summary` context rather than individual worker names, while leaving
-independent security/review contexts unchanged.
-Use the committed source/target ruleset contract in
-`.github/required-summary-checks.json` and the trusted stdlib verifier
-`scripts/workflow_pilot/required_summary_checks.py` to preview, verify, or
-owner-apply that migration without guessing the live default-branch ruleset
-state. `apply-live` requires explicit owner-supplied `--repository`,
-`--ruleset-id`, and `--expected-contract-sha256` values from an
-owner-inspected immutable snapshot, validates them before trusting the
-contract, performs the exact GET/strong-ETag/`If-Match` PUT/refetch sequence,
-and ignores request-scoped `current_user_can_bypass` metadata while still
-enforcing the exact `bypass_actors` policy.
+canonical `host-tests`, `build`, and `summary` contexts, while leaving
+independent security/review contexts unchanged. Metadata-only PR edits keep
+those existing required names green by running only the trusted no-checkout
+continuity attestation in `host-tests`/`build`; `extended-host-tests` and
+`legacy` stay platform-skipped and `metadata-summary` remains distinct so a
+prior full `summary` still governs eligibility.
 
 If post-merge Build fails, fix forward or revert the affected `master` change.
 That failure blocks the affected issue's closure and

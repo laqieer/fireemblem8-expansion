@@ -698,7 +698,7 @@ def workflow_tester_topology_violations(text):
         if documented[name] != expected[name]
     ]
     skipped_names_contract = normalize_policy(
-        "repository branch protection must require the fail closed canonical summary context rather than individual worker names"
+        "live branch protection remains unchanged and therefore still requires canonical host-tests build summary and the independent gitguardian context"
     )
     if skipped_names_contract not in normalize_policy(body_case):
         violations.append("skipped-worker-names-are-semantic")
@@ -826,7 +826,14 @@ def live_title_probe_violations(text):
             "contexts.append(",
             "assert required_names <= seen_names",
         ),
+        "metadata-adapter-runs": (
+            'metadata_adapter_ids = {"host-tests", "build"}',
+            'assert job["conclusion"] == "success"',
+            'assert isinstance(job["runner_name"], str) and job["runner_name"]',
+            "assert isinstance(started_at, str)",
+        ),
         "metadata-worker-no-start": (
+            'metadata_skipped_ids = {"extended-host-tests", "legacy"}',
             'started_at = job["started_at"]',
             'assert job["conclusion"] == "skipped"',
             "assert started_at is None or isinstance(started_at, str)",
@@ -917,6 +924,13 @@ def live_title_probe_violations(text):
         violations.append("title-edit-and-restore")
     if commands.count("candidate_evidence.evaluate_candidate_runs") != 7:
         violations.append("actual-evaluator-assertions")
+    if (
+        commands.count(
+            'assert isinstance(job["runner_name"], str) and job["runner_name"]'
+        )
+        != 1
+    ):
+        violations.append("metadata-adapter-runs")
     if commands.count('assert job["runner_name"] is None') != 2:
         violations.append("metadata-worker-no-start")
     evaluator_assertions = (
@@ -3865,9 +3879,10 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         self.assertEqual(workflow_tester_topology_violations(reordered), [])
 
         semantic_names, count = re.subn(
-            r"repository branch protection must require\s+the fail-closed "
-            r"canonical `summary` context rather than individual worker\s+names",
-            "branch protection may require host-tests and build directly",
+            r"Live branch protection\s+remains unchanged and therefore still "
+            r"requires canonical `host-tests`,\s+`build`,\s+`summary`, and "
+            r"the independent GitGuardian context",
+            "branch protection may skip full summary continuity",
             governance,
             1,
         )
@@ -3949,11 +3964,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "event-identity",
             "event-router",
             "metadata-classifier",
+            "host-tests",
+            "build",
             "metadata-summary",
         )
         metadata_skipped_names = (
-            "host-tests",
-            "build",
             "extended-host-tests",
             "legacy",
             "patch-release",
@@ -4144,6 +4159,11 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 "raw-job-scan",
                 "for job in raw_jobs:",
                 "for job in []:",
+            ),
+            (
+                "metadata-adapter-runs",
+                'assert isinstance(job["runner_name"], str) and job["runner_name"]',
+                "assert True",
             ),
             (
                 "metadata-worker-no-start",

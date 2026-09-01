@@ -6,6 +6,8 @@ from dataclasses import dataclass
 
 
 WORKER_JOB_IDS = ("host-tests", "build", "extended-host-tests", "legacy")
+METADATA_ADAPTER_JOB_IDS = ("host-tests", "build")
+METADATA_SKIPPED_JOB_IDS = ("extended-host-tests", "legacy")
 KNOWN_JOB_IDS = frozenset(WORKER_JOB_IDS) | {
     "event-identity",
     "event-router",
@@ -17,7 +19,7 @@ FULL_CLASSIFIER = "event-classifier"
 FULL_ATTESTATION = "summary"
 METADATA_CLASSIFIER = "metadata-classifier"
 METADATA_ATTESTATION = "metadata-summary"
-REQUIRED_BUILD_CONTEXTS = frozenset({FULL_ATTESTATION})
+REQUIRED_BUILD_CONTEXTS = frozenset({"build", "host-tests", FULL_ATTESTATION})
 
 
 class CandidateEvidenceError(ValueError):
@@ -124,7 +126,17 @@ def _validate_mode_contexts(
             "run lacks canonical skipped patch-release context"
         )
     if mode == "metadata-only":
-        for job_id in WORKER_JOB_IDS:
+        for job_id in METADATA_ADAPTER_JOB_IDS:
+            name, conclusion = require_context(job_id)
+            if name != job_id:
+                raise CandidateEvidenceError(
+                    f"metadata worker {job_id!r} has noncanonical check name"
+                )
+            if conclusion != "success":
+                raise CandidateEvidenceError(
+                    f"metadata worker {job_id!r} must stay successful"
+                )
+        for job_id in METADATA_SKIPPED_JOB_IDS:
             name, conclusion = require_context(job_id)
             if name != job_id:
                 raise CandidateEvidenceError(

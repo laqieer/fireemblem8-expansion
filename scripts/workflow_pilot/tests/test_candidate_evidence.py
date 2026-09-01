@@ -54,15 +54,23 @@ def _full_run(run_id, summary="success"):
     return _run(run_id, contexts)
 
 
-def _metadata_run(run_id, worker_conclusion="skipped"):
+def _metadata_run(
+    run_id,
+    adapter_conclusion="success",
+    skipped_conclusion="skipped",
+):
     contexts = [_context("event-identity"), _context("event-router")]
     contexts.append(_context("patch-release", conclusion="skipped"))
     contexts.append(
         _context("event-classifier", candidate_evidence.METADATA_CLASSIFIER)
     )
     contexts.extend(
-        _context(job_id, conclusion=worker_conclusion)
-        for job_id in candidate_evidence.WORKER_JOB_IDS
+        _context(job_id, conclusion=adapter_conclusion)
+        for job_id in candidate_evidence.METADATA_ADAPTER_JOB_IDS
+    )
+    contexts.extend(
+        _context(job_id, conclusion=skipped_conclusion)
+        for job_id in candidate_evidence.METADATA_SKIPPED_JOB_IDS
     )
     contexts.append(
         _context("summary", candidate_evidence.METADATA_ATTESTATION)
@@ -129,7 +137,7 @@ class CandidateEvidenceTests(unittest.TestCase):
         metadata = _metadata_run(2)
         self.assertEqual(
             candidate_evidence.REQUIRED_BUILD_CONTEXTS,
-            frozenset({"summary"}),
+            frozenset({"build", "host-tests", "summary"}),
         )
         self.assertTrue(
             candidate_evidence.evaluate_candidate_runs(
@@ -161,12 +169,11 @@ class CandidateEvidenceTests(unittest.TestCase):
         latest = candidate_evidence.latest_contexts([failed_full, metadata])
         self.assertEqual(latest["summary"], (10, "failure"))
         self.assertEqual(latest["metadata-summary"], (11, "success"))
-        for context_name in candidate_evidence.REQUIRED_BUILD_CONTEXTS:
-            with self.subTest(required=context_name):
-                self.assertEqual(latest[context_name], (10, "failure"))
-        for job_id in candidate_evidence.WORKER_JOB_IDS:
-            with self.subTest(job_id=job_id):
-                self.assertEqual(latest[job_id], (11, "skipped"))
+        self.assertEqual(latest["host-tests"], (11, "success"))
+        self.assertEqual(latest["build"], (11, "success"))
+        self.assertEqual(latest["extended-host-tests"], (11, "skipped"))
+        self.assertEqual(latest["legacy"], (11, "skipped"))
+        self.assertEqual(latest["summary"], (10, "failure"))
 
     def test_green_metadata_does_not_replace_prior_full_success(self):
         full = _full_run(20)
@@ -181,12 +188,11 @@ class CandidateEvidenceTests(unittest.TestCase):
         latest = candidate_evidence.latest_contexts([full, metadata])
         self.assertEqual(latest["summary"], (20, "success"))
         self.assertEqual(latest["metadata-summary"], (21, "success"))
-        for context_name in candidate_evidence.REQUIRED_BUILD_CONTEXTS:
-            with self.subTest(required=context_name):
-                self.assertEqual(latest[context_name], (20, "success"))
-        for job_id in candidate_evidence.WORKER_JOB_IDS:
-            with self.subTest(job_id=job_id):
-                self.assertEqual(latest[job_id], (21, "skipped"))
+        self.assertEqual(latest["host-tests"], (21, "success"))
+        self.assertEqual(latest["build"], (21, "success"))
+        self.assertEqual(latest["extended-host-tests"], (21, "skipped"))
+        self.assertEqual(latest["legacy"], (21, "skipped"))
+        self.assertEqual(latest["summary"], (20, "success"))
 
     def test_live_literal_worker_names_are_rejected_as_negative_proof(self):
         exact = _metadata_run(30)
@@ -245,7 +251,7 @@ class CandidateEvidenceTests(unittest.TestCase):
                 context["name"] = f"metadata-{context['job_id']}-skipped"
         cases.append(("evaluated-metadata-name", canonical))
 
-        success_shaped = _metadata_run(33, worker_conclusion="success")
+        success_shaped = _metadata_run(33, skipped_conclusion="success")
         cases.append(("success-shaped", success_shaped))
 
         duplicate = _metadata_run(34)

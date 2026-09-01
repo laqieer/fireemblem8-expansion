@@ -17,7 +17,6 @@ from scripts.workflow_pilot import (
     candidate_evidence,
     event_classifier,
     hydrate_authority,
-    required_summary_checks,
     reporter,
 )
 
@@ -48,23 +47,6 @@ LIVE_METADATA_RESTORE_FIXTURE = (
     / "fixtures"
     / "live_metadata_jobs_33472111689.json"
 )
-CURRENT_RULESET_FIXTURE = (
-    ROOT
-    / "scripts"
-    / "workflow_pilot"
-    / "tests"
-    / "fixtures"
-    / "ruleset_19088702_current.json"
-)
-DESIRED_RULESET_FIXTURE = (
-    ROOT
-    / "scripts"
-    / "workflow_pilot"
-    / "tests"
-    / "fixtures"
-    / "ruleset_19088702_desired.json"
-)
-RULESET_PAYLOAD = ROOT / ".github" / "required-summary-checks.json"
 PRE_FIX_WORKFLOW = EVENT_FIXTURE.with_name("pre_fix_build.yml")
 PYTHON_REQUIREMENTS = ROOT / ".github" / "requirements" / "build.txt"
 RETIRED_WORKFLOW_FILENAME = "full" + "-matrix.yml"
@@ -78,7 +60,15 @@ MASTER_PUBLISHER_CONDITION = (
     "needs.event-identity.outputs.fallback_sha == github.sha }}"
 )
 COMBINED_WORKERS = ("host-tests", "build", "extended-host-tests", "legacy")
+METADATA_ADAPTER_JOBS = candidate_evidence.METADATA_ADAPTER_JOB_IDS
+METADATA_SKIPPED_JOBS = candidate_evidence.METADATA_SKIPPED_JOB_IDS
 CLASSIFIER_JOB = "event-classifier"
+METADATA_TRIGGERED_JOBS = set(METADATA_ADAPTER_JOBS) | {
+    "event-identity",
+    "event-router",
+    CLASSIFIER_JOB,
+    "summary",
+}
 METADATA_CHECK_CONTEXTS = set(COMBINED_WORKERS) | {
     "event-identity",
     "event-router",
@@ -93,14 +83,74 @@ METADATA_CLASSIFIER_FAILURE_CHECKS = set(COMBINED_WORKERS) | {
     "patch-release",
     "summary",
 }
-REQUIRED_SUMMARY_CONTEXTS = frozenset(candidate_evidence.REQUIRED_BUILD_CONTEXTS)
+REQUIRED_BUILD_CONTEXTS = frozenset(candidate_evidence.REQUIRED_BUILD_CONTEXTS)
 SUMMARY_NEEDS = (
     "needs: [event-identity, event-classifier, host-tests, build, "
     "extended-host-tests, legacy, patch-release]"
 )
 WORKER_NEEDS = "needs: [event-identity, event-classifier]"
+FULL_WORKER_STEP_CONDITION = (
+    "${{ needs.event-classifier.result == 'failure' || "
+    "needs.event-classifier.outputs.classification == 'full' }}"
+)
+METADATA_ADAPTER_STEP_CONDITION = (
+    "${{ needs.event-classifier.result == 'success' && "
+    "needs.event-classifier.outputs.classification == 'metadata-only' }}"
+)
 WORKER_CONDITION = (
     "${{ always() && ((needs.event-classifier.result == 'success' && "
+    "needs.event-identity.result == 'success' && "
+    "needs.event-classifier.outputs.classification == 'full' && "
+    "needs.event-classifier.outputs.head_valid == 'true' && "
+    "needs.event-classifier.outputs.run_expensive == 'true' && "
+    "((github.event_name == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_kind == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "needs.event-classifier.outputs.expected_head && "
+    "needs.event-classifier.outputs.expected_head == "
+    "github.event.pull_request.head.sha && "
+    "github.event.pull_request.head.sha != '' && "
+    "(needs.event-classifier.outputs.identity_valid == 'true' || "
+    "needs.event-classifier.outputs.full_fallback == 'true')) || "
+    "(github.event_name == 'push' && "
+    "needs.event-identity.outputs.fallback_kind == 'push' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "needs.event-classifier.outputs.expected_head && "
+    "needs.event-identity.outputs.fallback_sha == github.sha && "
+    "needs.event-classifier.outputs.identity_valid == 'true' && "
+    "needs.event-classifier.outputs.expected_head == github.event.after && "
+    "needs.event-classifier.outputs.expected_base == '' && "
+    "github.event.after != ''))) || "
+    "(needs.event-classifier.result == 'failure' && "
+    "needs.event-identity.result == 'success' && "
+    "((github.event_name == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_kind == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "github.event.pull_request.head.sha) || "
+    "(github.event_name == 'push' && "
+    "needs.event-identity.outputs.fallback_kind == 'push' && "
+    "needs.event-identity.outputs.fallback_sha == github.event.after && "
+    "needs.event-identity.outputs.fallback_sha == github.sha)))) }}"
+)
+HOST_BUILD_CONDITION = (
+    "${{ always() && ((needs.event-classifier.result == 'success' && "
+    "needs.event-identity.result == 'success' && "
+    "needs.event-classifier.outputs.classification == 'metadata-only' && "
+    "needs.event-classifier.outputs.head_valid == 'true' && "
+    "needs.event-classifier.outputs.identity_valid == 'true' && "
+    "needs.event-classifier.outputs.full_fallback == 'false' && "
+    "needs.event-classifier.outputs.run_expensive == 'false' && "
+    "github.event_name == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_kind == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "needs.event-classifier.outputs.expected_head && "
+    "needs.event-classifier.outputs.expected_head == "
+    "github.event.pull_request.head.sha && "
+    "needs.event-classifier.outputs.expected_base == "
+    "github.event.pull_request.base.sha && "
+    "github.event.pull_request.head.sha != '' && "
+    "github.event.pull_request.base.sha != '') || "
+    "(needs.event-classifier.result == 'success' && "
     "needs.event-identity.result == 'success' && "
     "needs.event-classifier.outputs.classification == 'full' && "
     "needs.event-classifier.outputs.head_valid == 'true' && "
@@ -206,6 +256,42 @@ EXPECTED_BUILD_SHA_EXPRESSION = (
     "needs.event-identity.outputs.fallback_sha) || '' }}"
 )
 HOST_ENV_LINE = f"      EXPECTED_BUILD_SHA: {EXPECTED_BUILD_SHA_EXPRESSION}"
+METADATA_ADAPTER_ENV = (
+    "        BASH_ENV: ''",
+    "        CLASSIFICATION: ${{ needs.event-classifier.outputs.classification }}",
+    "        CLASSIFIED_BASE_SHA: ${{ needs.event-classifier.outputs.expected_base }}",
+    "        CLASSIFIED_BUILD_SHA: ${{ needs.event-classifier.outputs.expected_head }}",
+    "        CLASSIFIER_RESULT: ${{ needs.event-classifier.result }}",
+    "        ENV: ''",
+    "        FALLBACK_IDENTITY_RESULT: ${{ needs.event-identity.result }}",
+    "        FALLBACK_KIND: ${{ needs.event-identity.outputs.fallback_kind }}",
+    "        FALLBACK_SHA: ${{ needs.event-identity.outputs.fallback_sha }}",
+    "        FULL_FALLBACK: ${{ needs.event-classifier.outputs.full_fallback }}",
+    "        HEAD_VALID: ${{ needs.event-classifier.outputs.head_valid }}",
+    "        IDENTITY_VALID: ${{ needs.event-classifier.outputs.identity_valid }}",
+    "        PATH: /usr/bin:/bin",
+    "        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}",
+    "        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}",
+    "        RUN_EXPENSIVE: ${{ needs.event-classifier.outputs.run_expensive }}",
+)
+METADATA_ADAPTER_COMMANDS = (
+    'if [ "$CLASSIFIER_RESULT" != "success" ] || \\',
+    '[ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \\',
+    '[ "$GITHUB_EVENT_NAME" != "pull_request" ] || \\',
+    '[ "$CLASSIFICATION" != "metadata-only" ] || \\',
+    '[ "$FALLBACK_KIND" != "pull_request" ] || \\',
+    '[ -z "$FALLBACK_SHA" ] || [ -z "$PR_HEAD_SHA" ] || \\',
+    '[ -z "$PR_BASE_SHA" ] || \\',
+    '[ "$FULL_FALLBACK" != "false" ] || [ "$HEAD_VALID" != "true" ] || \\',
+    '[ "$IDENTITY_VALID" != "true" ] || [ "$RUN_EXPENSIVE" != "false" ] || \\',
+    '[ "$EXPECTED_BUILD_SHA" != "$CLASSIFIED_BUILD_SHA" ] || \\',
+    '[ "$FALLBACK_SHA" != "$PR_HEAD_SHA" ] || \\',
+    '[ "$FALLBACK_SHA" != "$CLASSIFIED_BUILD_SHA" ] || \\',
+    '[ "$CLASSIFIED_BASE_SHA" != "$PR_BASE_SHA" ]; then',
+    'echo "metadata-only branch-protection continuity is not authoritative" >&2',
+    "exit 1",
+    "fi",
+)
 COMBINED_JOB_ENV = {
     "host-tests": (HOST_ENV_LINE,),
     "build": (HOST_ENV_LINE,),
@@ -448,9 +534,11 @@ def _triggered_jobs(text: str, event: dict) -> set[str]:
         and not decision.identity_valid
         and decision.full_fallback
     )
-    if (
-        not decision.run_expensive
-        or (not decision.identity_valid and not missing_base_fallback)
+    if decision.classification == "metadata-only":
+        jobs.difference_update(METADATA_SKIPPED_JOBS)
+        return jobs
+    if not decision.run_expensive or (
+        not decision.identity_valid and not missing_base_fallback
     ):
         jobs.difference_update(COMBINED_WORKERS)
     return jobs
@@ -707,38 +795,54 @@ def _direct_step_mapping_fields(step: str) -> list[str] | None:
     return fields
 
 
-def _contains_exact_command(job: str, command: str) -> bool:
+def _contains_exact_command(
+    job: str,
+    command: str,
+    *,
+    if_expression: str | None = None,
+    env_lines: tuple[str, ...] | None = None,
+) -> bool:
     expected = _normalise(command)
     for step in _step_blocks(job):
         commands = _run_block_commands(step)
         if len(commands) != 1 or _normalise(commands[0]) != expected:
             continue
         fields = _direct_step_mapping_fields(step)
-        if fields is not None and (
-            (len(fields) == 2 and set(fields) == {"name", "run"})
-            or (
-                len(fields) == 3
-                and set(fields) == {"name", "env", "run"}
-                and _step_has_scrubbed_environment(step)
-            )
-        ):
+        expected_fields = {"name", "run"}
+        if if_expression is not None:
+            expected_fields.add("if")
+        expected_env = env_lines
+        if expected_env is not None:
+            expected_fields.add("env")
+        elif _step_env_entries(step) == SCRUBBED_STEP_ENV:
+            expected_fields.add("env")
+            expected_env = SCRUBBED_STEP_ENV
+        if fields is not None and len(fields) == len(expected_fields) and set(fields) == expected_fields:
+            if if_expression is not None and f"      if: {if_expression}" not in step:
+                continue
+            if expected_env is not None and _step_env_entries(step) != expected_env:
+                continue
             return True
     return False
 
 
-def _step_has_scrubbed_environment(step: str) -> bool:
+def _step_env_entries(step: str) -> tuple[str, ...] | None:
     lines = step.splitlines()
     try:
         env_index = lines.index("      env:")
     except ValueError:
-        return False
+        return None
     entries = []
     for line in lines[env_index + 1 :]:
         if line.strip() and len(line) - len(line.lstrip(" ")) <= 6:
             break
         if line.strip() and not line.lstrip().startswith("#"):
             entries.append(line)
-    return tuple(entries) == SCRUBBED_STEP_ENV
+    return tuple(entries)
+
+
+def _step_has_scrubbed_environment(step: str) -> bool:
+    return _step_env_entries(step) == SCRUBBED_STEP_ENV
 
 
 def _step_name(step: str) -> str | None:
@@ -746,7 +850,7 @@ def _step_name(step: str) -> str | None:
     return match.group("name") if match is not None else None
 
 
-def _checkout_step_is_exact(step: str) -> bool:
+def _checkout_step_is_exact(step: str, *, if_expression: str | None = None) -> bool:
     action = (
         "    - uses: actions/checkout@"
         "3d3c42e5aac5ba805825da76410c181273ba90b1"
@@ -758,7 +862,10 @@ def _checkout_step_is_exact(step: str) -> bool:
     ]
     if action_lines != [action]:
         return False
-    if _direct_step_mapping_fields(step) != ["uses", "with"]:
+    expected_fields = ["uses", "if", "with"] if if_expression is not None else ["uses", "with"]
+    if _direct_step_mapping_fields(step) != expected_fields:
+        return False
+    if if_expression is not None and f"      if: {if_expression}" not in step:
         return False
     expected = (
         f"        ref: {EXPECTED_BUILD_SHA_EXPRESSION}",
@@ -785,83 +892,111 @@ def _run_step_is_exact(
     name: str,
     commands: tuple[str, ...],
     scrubbed: bool = False,
+    if_expression: str | None = None,
+    env_lines: tuple[str, ...] | None = None,
 ) -> bool:
     if _step_name(step) != name:
         return False
     if tuple(_run_block_commands(step)) != commands:
         return False
+    if scrubbed and env_lines is None:
+        env_lines = SCRUBBED_STEP_ENV
     fields = _direct_step_mapping_fields(step)
-    expected_fields = (
-        {"name", "env", "run"} if scrubbed else {"name", "run"}
-    )
+    expected_fields = {"name", "run"}
+    if env_lines is not None:
+        expected_fields.add("env")
+    if if_expression is not None:
+        expected_fields.add("if")
     if fields is None or len(fields) != len(expected_fields):
         return False
     if set(fields) != expected_fields:
         return False
-    return not scrubbed or _step_has_scrubbed_environment(step)
+    if if_expression is not None and f"      if: {if_expression}" not in step:
+        return False
+    if env_lines is None:
+        return True
+    return _step_env_entries(step) == env_lines
 
 
 def _protected_host_prefix_errors(host: str) -> list[str]:
     steps = _step_blocks(host)
-    if len(steps) < 9:
+    if len(steps) < 10:
         return ["host-tests lacks the complete protected pre-pilot sequence"]
     expected = (
-        _checkout_step_is_exact(steps[0]),
         _run_step_is_exact(
+            steps[0],
+            "Attest metadata-only branch-protection continuity",
+            METADATA_ADAPTER_COMMANDS,
+            if_expression=METADATA_ADAPTER_STEP_CONDITION,
+            env_lines=METADATA_ADAPTER_ENV,
+        ),
+        _checkout_step_is_exact(
             steps[1],
+            if_expression=FULL_WORKER_STEP_CONDITION,
+        ),
+        _run_step_is_exact(
+            steps[2],
             "Verify checked-out revision",
             (
                 'ACTUAL_SHA="$(git rev-parse HEAD)"',
                 "printf 'checkout.sha=%s\\n' \"$ACTUAL_SHA\"",
                 'test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"',
             ),
-        ),
-        _run_step_is_exact(
-            steps[2],
-            "Hydrate workflow-pilot Git authority",
-            (WORKFLOW_PILOT_AUTHORITY_HYDRATION,),
-            scrubbed=True,
+            if_expression=FULL_WORKER_STEP_CONDITION,
         ),
         _run_step_is_exact(
             steps[3],
+            "Hydrate workflow-pilot Git authority",
+            (WORKFLOW_PILOT_AUTHORITY_HYDRATION,),
+            if_expression=FULL_WORKER_STEP_CONDITION,
+            env_lines=SCRUBBED_STEP_ENV,
+        ),
+        _run_step_is_exact(
+            steps[4],
             "Install host-only dependencies (no arm-none-eabi toolchain)",
             (
                 "sudo apt-get update && sudo apt-get install -y "
                 "build-essential libmgba-dev",
             ),
+            if_expression=FULL_WORKER_STEP_CONDITION,
         ),
         _run_step_is_exact(
-            steps[4],
+            steps[5],
             "Run gba-playtest host test suite",
             (
                 "GBA_PLAYTEST_HOST_ONLY=1 python3 -m unittest discover "
                 "-s tools/gba-playtest/tests -v",
             ),
-        ),
-        _run_step_is_exact(
-            steps[5],
-            "Run upstream-port tooling test suite",
-            ("python3 -m unittest discover -s tests/upstream_port -v",),
+            if_expression=FULL_WORKER_STEP_CONDITION,
         ),
         _run_step_is_exact(
             steps[6],
+            "Run upstream-port tooling test suite",
+            ("python3 -m unittest discover -s tests/upstream_port -v",),
+            if_expression=FULL_WORKER_STEP_CONDITION,
+        ),
+        _run_step_is_exact(
+            steps[7],
             "Run workflow contract test suite",
             (
                 "python3 -m unittest discover -s tests/workflows "
                 '-p "test_*.py" -v',
             ),
-        ),
-        _run_step_is_exact(
-            steps[7],
-            "Run workflow-pilot reporter regression suite (issue #176)",
-            (WORKFLOW_PILOT_GATE,),
-            scrubbed=True,
+            if_expression=FULL_WORKER_STEP_CONDITION,
         ),
         _run_step_is_exact(
             steps[8],
+            "Run workflow-pilot reporter regression suite (issue #176)",
+            (WORKFLOW_PILOT_GATE,),
+            if_expression=FULL_WORKER_STEP_CONDITION,
+            env_lines=SCRUBBED_STEP_ENV,
+        ),
+        _run_step_is_exact(
+            steps[9],
             "Validate workflow-pilot baseline against checked-out Git history",
             (WORKFLOW_PILOT_BASELINE_GATE,),
-            scrubbed=True,
+            if_expression=FULL_WORKER_STEP_CONDITION,
+            env_lines=SCRUBBED_STEP_ENV,
         ),
     )
     if all(expected):
@@ -944,9 +1079,10 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
             continue
         direct_lines.append(line)
     expected_timeout = 90 if job_name == "build" else 60
+    expected_condition = HOST_BUILD_CONDITION if job_name in METADATA_ADAPTER_JOBS else WORKER_CONDITION
     expected_direct = [
         f"    {WORKER_NEEDS}",
-        f"    if: {WORKER_CONDITION}",
+        f"    if: {expected_condition}",
         "    runs-on: ubuntu-latest",
         f"    timeout-minutes: {expected_timeout}",
         "    env:",
@@ -972,6 +1108,25 @@ def _combined_job_contract_errors(job_name: str, job: str) -> list[str]:
             entries.append(line)
     if tuple(entries) != COMBINED_JOB_ENV[job_name]:
         errors.append(f"{job_name} env differs from its reviewed exact mapping")
+
+    if job_name == "build":
+        steps = _step_blocks(job)
+        if len(steps) < 2:
+            errors.append("build lacks the trusted metadata continuity adapter")
+        else:
+            if not _run_step_is_exact(
+                steps[0],
+                "Attest metadata-only branch-protection continuity",
+                METADATA_ADAPTER_COMMANDS,
+                if_expression=METADATA_ADAPTER_STEP_CONDITION,
+                env_lines=METADATA_ADAPTER_ENV,
+            ):
+                errors.append("build metadata continuity adapter differs")
+            if not _checkout_step_is_exact(
+                steps[1],
+                if_expression=FULL_WORKER_STEP_CONDITION,
+            ):
+                errors.append("build checkout must stay full-mode only")
     return errors
 
 
@@ -1599,10 +1754,13 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
     if (
         not metadata_section
         or '"$RUN_EXPENSIVE" != "false"' not in metadata_section
-        or '[ "$result" != "skipped" ]' not in metadata_section
+        or metadata_section.count('[ "$result" != "success" ]') != 1
+        or metadata_section.count('[ "$result" != "skipped" ]') != 1
+        or "metadata-only continuity adapter did not succeed" not in metadata_section
+        or "metadata-only expensive Build worker was not skipped" not in metadata_section
         or '"$PATCH_RELEASE_RESULT" != "skipped"' not in metadata_section
     ):
-        errors.append("summary must accept only exact metadata-only suppression")
+        errors.append("summary must accept only exact metadata-only continuity")
     if (
         '"$CLASSIFICATION" != "full"' not in summary
         or '"$RUN_EXPENSIVE" != "true"' not in summary
@@ -1646,13 +1804,20 @@ def _errors(text: str, retired_workflow_exists: bool) -> list[str]:
         if not _contains_command(jobs["host-tests"], command):
             errors.append(f"candidate host lost Build-owned evidence: {command}")
     for command in (WORKFLOW_PILOT_GATE, WORKFLOW_PILOT_BASELINE_GATE):
-        if not _contains_exact_command(jobs["host-tests"], command):
+        if not _contains_exact_command(
+            jobs["host-tests"],
+            command,
+            if_expression=FULL_WORKER_STEP_CONDITION,
+            env_lines=SCRUBBED_STEP_ENV,
+        ):
             errors.append(
                 f"candidate host lost exact fail-closed Build evidence: {command}"
             )
     if not _contains_exact_command(
         jobs["host-tests"],
         WORKFLOW_PILOT_AUTHORITY_HYDRATION,
+        if_expression=FULL_WORKER_STEP_CONDITION,
+        env_lines=SCRUBBED_STEP_ENV,
     ):
         errors.append(
             "candidate host lost exact workflow-pilot Git authority hydration"
@@ -1987,6 +2152,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             _contains_exact_command(
                 host,
                 WORKFLOW_PILOT_AUTHORITY_HYDRATION,
+                if_expression=FULL_WORKER_STEP_CONDITION,
+                env_lines=SCRUBBED_STEP_ENV,
             )
         )
         self.assertLess(
@@ -2772,7 +2939,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         self.assertNotIn("event-classifier", pre_fix_jobs)
         self.assertEqual(
             _triggered_jobs(self.text, body_only),
-            {"event-identity", "event-router", "event-classifier", "summary"},
+            METADATA_TRIGGERED_JOBS,
         )
 
     def test_incomplete_base_fixtures_run_exact_head_full_fallback(self):
@@ -2821,12 +2988,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 ("title", "title-only"),
             )
         }
-        metadata_jobs = {
-            "event-identity",
-            "event-router",
-            "event-classifier",
-            "summary",
-        }
+        metadata_jobs = METADATA_TRIGGERED_JOBS
         for ref_case in fixture["base_ref_validation_cases"]:
             for field, template in templates.items():
                 with self.subTest(case=ref_case["id"], field=field):
@@ -2997,8 +3159,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         self.assertEqual(_emitted_check_names(self.text, body_only), METADATA_CHECK_CONTEXTS)
         self.assertEqual(_emitted_check_names(self.text, base_edit), EMITTED_FULL_CHECKS)
         self.assertEqual(_emitted_check_names(self.text, opened), EMITTED_FULL_CHECKS)
-        self.assertTrue(REQUIRED_SUMMARY_CONTEXTS <= EMITTED_FULL_CHECKS)
-        self.assertTrue(REQUIRED_SUMMARY_CONTEXTS.isdisjoint(METADATA_CHECK_CONTEXTS))
+        self.assertTrue(REQUIRED_BUILD_CONTEXTS <= EMITTED_FULL_CHECKS)
+        self.assertEqual(
+            REQUIRED_BUILD_CONTEXTS & METADATA_CHECK_CONTEXTS,
+            {"build", "host-tests"},
+        )
         self.assertNotIn(candidate_evidence.METADATA_ATTESTATION, EMITTED_FULL_CHECKS)
         self.assertNotIn(candidate_evidence.FULL_ATTESTATION, METADATA_CHECK_CONTEXTS)
         self.assertNotEqual(
@@ -3291,6 +3456,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     expected.update(COMBINED_WORKERS)
                 if identity["run_publisher"]:
                     expected.add("patch-release")
+                if (
+                    identity["expected_classification"] == "metadata-only"
+                    and identity["expected_summary_success"]
+                ):
+                    expected.update(METADATA_ADAPTER_JOBS)
                 self.assertEqual(selected, expected)
 
                 decision = event_classifier.classify_event(
@@ -3529,8 +3699,13 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         for job_name in COMBINED_WORKERS:
             with self.subTest(job=job_name):
                 job = _job_blocks(self.text)[job_name]
+                expected_condition = (
+                    HOST_BUILD_CONDITION
+                    if job_name in METADATA_ADAPTER_JOBS
+                    else WORKER_CONDITION
+                )
                 changed_job = job.replace(
-                    WORKER_CONDITION,
+                    expected_condition,
                     "${{ needs.event-classifier.outputs.run_expensive == 'true' }}",
                     1,
                 )
@@ -3598,7 +3773,11 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         for job_name in COMBINED_WORKERS:
             allowed = {
                 "needs": "[event-identity, event-classifier]",
-                "if": WORKER_CONDITION,
+                "if": (
+                    HOST_BUILD_CONDITION
+                    if job_name in METADATA_ADAPTER_JOBS
+                    else WORKER_CONDITION
+                ),
                 "runs-on": "ubuntu-latest",
                 "timeout-minutes": "90" if job_name == "build" else "60",
                 "env": "",
@@ -3869,9 +4048,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
     def test_publisher_depends_only_on_trusted_event_identity(self):
         patch_release = _job_blocks(self.text)["patch-release"]
-        self.assertIn("    needs: [event-identity]", patch_release)
-        self.assertNotIn("event-classifier", patch_release)
-        self.assertNotIn("host-tests", patch_release)
+        self.assertEqual(
+            re.findall(r"^    needs: (?P<value>.+)$", patch_release, re.MULTILINE),
+            ["[event-identity]"],
+        )
 
     def test_every_libpng_install_lane_declares_pkg_config(self):
         for job_name, job in _job_blocks(self.text).items():
@@ -3992,62 +4172,6 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         )
         self.assertTrue(any("summary must depend" in error for error in _errors(changed, False)))
 
-    def test_required_summary_ruleset_payload_is_exact(self):
-        contract = required_summary_checks.validate_contract(
-            required_summary_checks.load_json(RULESET_PAYLOAD)
-        )
-        self.assertEqual(contract.repository, "laqieer/fireemblem8-expansion")
-        self.assertEqual(contract.ruleset_identity["id"], 19088702)
-        self.assertEqual(contract.negative_proof_run_ids, (33472008301, 33472111689))
-        self.assertEqual(contract.post_apply_volatile_fields, ("updated_at",))
-        self.assertEqual(
-            contract.status_check_contract["required"],
-            [{"context": "summary", "integration_id": 15368}],
-        )
-        self.assertEqual(
-            contract.status_check_contract["preserved_independent"],
-            [{"context": "GitGuardian Security Checks", "integration_id": 46505}],
-        )
-        self.assertEqual(
-            contract.status_check_contract["removed"],
-            [
-                {"context": "build", "integration_id": 15368},
-                {"context": "host-tests", "integration_id": 15368},
-            ],
-        )
-        source = required_summary_checks.load_json(CURRENT_RULESET_FIXTURE)
-        desired = required_summary_checks.load_json(DESIRED_RULESET_FIXTURE)
-        self.assertEqual(
-            contract.source_ruleset_response,
-            required_summary_checks.normalize_ruleset_response(
-                source,
-                "fixture.current",
-                volatile_fields=(),
-            ),
-        )
-        self.assertEqual(
-            contract.desired_ruleset_response,
-            required_summary_checks.normalize_ruleset_response(
-                desired,
-                "fixture.desired",
-                volatile_fields=("updated_at",),
-            ),
-        )
-        self.assertEqual(
-            required_summary_checks.preview_patch(contract, source),
-            contract.desired_patch_body,
-        )
-        self.assertEqual(
-            required_summary_checks.verify_live_ruleset(contract, desired),
-            {
-                "repository": "laqieer/fireemblem8-expansion",
-                "required_build_contexts": ["summary"],
-                "ruleset_id": 19088702,
-                "status": "ok",
-                "verified_state": "desired",
-            },
-        )
-
     def test_summary_requires_each_worker_dependency_and_result_check(self):
         for worker, changed_needs in (
             (
@@ -4122,6 +4246,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     _contains_exact_command(
                         host_tests,
                         command,
+                        if_expression=FULL_WORKER_STEP_CONDITION,
+                        env_lines=SCRUBBED_STEP_ENV,
                     )
                 )
         self.assertIn(
@@ -4582,7 +4708,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             (
                 '[ "$result" != "skipped" ]',
                 '[ "$result" != "success" ]',
-                "metadata-only suppression",
+                "metadata-only continuity",
             ),
             (
                 '"$CLASSIFICATION" != "full"',
@@ -4639,10 +4765,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         }
         metadata = {
             **full,
-            "BUILD_RESULT": "skipped",
+            "BUILD_RESULT": "success",
             "CLASSIFICATION": "metadata-only",
             "EXTENDED_HOST_TESTS_RESULT": "skipped",
-            "HOST_TESTS_RESULT": "skipped",
+            "HOST_TESTS_RESULT": "success",
             "LEGACY_RESULT": "skipped",
             "RUN_EXPENSIVE": "false",
         }
@@ -4860,7 +4986,12 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             ),
             ("identity-invalid", {**full, "IDENTITY_VALID": "false"}, 1, None),
             ("full-skipped", {**full, "BUILD_RESULT": "skipped"}, 1, None),
-            ("metadata-ran", {**metadata, "BUILD_RESULT": "success"}, 1, None),
+            (
+                "metadata-expensive-ran",
+                {**metadata, "EXTENDED_HOST_TESTS_RESULT": "success"},
+                1,
+                None,
+            ),
             (
                 "unsupported-event",
                 {**full, "GITHUB_EVENT_NAME": "schedule"},

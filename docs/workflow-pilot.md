@@ -303,15 +303,14 @@ capture PR #190 metadata runs whose skipped workers reported long literal
 raw jobs are negative proof that worker `job.name` expressions are unstable on
 hosted Runner and must not be used for canonical workflow contracts or branch
 protection.
-The committed `.github/required-summary-checks.json` contract and trusted
-stdlib verifier `scripts/workflow_pilot/required_summary_checks.py` encode the
-exact pre-migration live ruleset `19088702`, the desired post-state requiring
-only canonical `summary`, and the owner-only preview/verify/apply-live
-migration flow. `apply-live` fetches the live ruleset through trusted `gh api`,
-requires explicit owner-supplied repository, ruleset ID, and reviewed contract
-SHA-256 inputs from an immutable snapshot, requires a strong ETag, PUTs only
-with `If-Match`, refetches, and verifies the exact desired post-state while
-ignoring request-scoped `current_user_can_bypass` metadata.
+Build workflow preserves the live branch-protection contract directly: metadata
+body/title edits run distinct `metadata-classifier`/`metadata-summary`
+attestations plus canonical `host-tests`/`build` continuity adapters that do
+not checkout or execute candidate code, while `extended-host-tests` and
+`legacy` remain platform-skipped. The live required Build contexts therefore
+stay the canonical `host-tests`, `build`, and `summary` names, and
+`metadata-summary` remains distinct so a prior full `summary` stays
+authoritative on the unchanged head/base.
 The current Build workflow has no explicit final-dispatch trigger; if that
 supported surface is introduced later, `workflow_dispatch` classifies as full
 and the trigger/topology contracts must be updated together.

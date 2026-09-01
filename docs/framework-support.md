@@ -29,19 +29,15 @@ source-changing push/PR.** A PR candidate uses the complete combined Build
 gate and Copilot review concurrently. Parsed body/title-only edits retain the
 identity validator/router plus distinct running `metadata-classifier` and
 `metadata-summary`
-contexts plus the canonical skipped worker checks `host-tests`, `build`,
-`extended-host-tests`, and `legacy`; repository rulesets must therefore
-require the fail-closed canonical `summary` context rather than direct worker
-names, while preserving any existing independent security/review contexts.
-The committed `.github/required-summary-checks.json` contract and
-`scripts/workflow_pilot/required_summary_checks.py` verifier freeze that exact
-owner-only ruleset migration for default-branch protection rule `19088702`.
-The verifier's `apply-live` command performs the live GET/strong-ETag/`If-Match`
-PUT/refetch flow directly, requires explicit owner-supplied
-`--repository laqieer/fireemblem8-expansion`, `--ruleset-id 19088702`, and the
-reviewed contract SHA-256 from an immutable snapshot, and ignores
-request-scoped `current_user_can_bypass` metadata while preserving the exact
-`bypass_actors` policy.
+contexts plus canonical worker checks `host-tests`, `build`,
+`extended-host-tests`, and `legacy`. In metadata mode, `host-tests` and
+`build` run only a trusted no-checkout continuity attestation so the existing
+required live contexts stay green; `extended-host-tests` and `legacy` remain
+platform-skipped with no runner. Live branch protection therefore remains the
+current canonical `host-tests` + `build` + `summary` Build contract while
+preserving any existing independent security/review contexts, and
+`metadata-summary` stays distinct so a prior full `summary` still governs
+eligibility.
 Base, mixed, unknown/incomplete,
 opened, synchronize, and reopened events with complete identity fail closed to
 the complete graph. Any missing, malformed, or incoherent base ref/SHA with a

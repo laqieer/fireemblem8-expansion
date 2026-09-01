@@ -310,9 +310,13 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         self.assertTrue(_parse_workflow_gate_commands_text(workflow))
         adversarial = workflow.replace(
             "    - name: Run workflow-pilot reporter regression suite (issue #176)\n"
+            "      if: ${{ needs.event-classifier.result == 'failure' || "
+            "needs.event-classifier.outputs.classification == 'full' }}\n"
             "      env:\n"
             "        BASH_ENV: ''\n",
             "    - name: Run workflow-pilot reporter regression suite (issue #176)\n"
+            "      if: ${{ needs.event-classifier.result == 'failure' || "
+            "needs.event-classifier.outputs.classification == 'full' }}\n"
             "      env:\n"
             + ("        a\n" * 50000)
             + "        BASH_ENV: ''\n",
@@ -361,7 +365,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                     with self.assertRaisesRegex(
                         ValueError,
                         "unsupported direct mapping|unsupported direct fields|"
-                        "must contain exactly",
+                        "must contain exactly|duplicate direct fields",
                     ):
                         _parse_workflow_gate_commands_text(changed)
 
@@ -963,11 +967,15 @@ class VerifyCliCwdTests(unittest.TestCase):
 
             upstream_step = (
                 "    - name: Run upstream-port tooling test suite\n"
+                "      if: ${{ needs.event-classifier.result == 'failure' || "
+                "needs.event-classifier.outputs.classification == 'full' }}\n"
                 "      run: python3 -m unittest discover "
                 "-s tests/upstream_port -v\n"
             )
             workflow_step = (
                 "    - name: Run workflow contract test suite\n"
+                "      if: ${{ needs.event-classifier.result == 'failure' || "
+                "needs.event-classifier.outputs.classification == 'full' }}\n"
                 '      run: python3 -m unittest discover -s tests/workflows '
                 '-p "test_*.py" -v\n'
             )
@@ -1155,13 +1163,18 @@ class VerifyCliCwdTests(unittest.TestCase):
         with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
             original = handle.read()
         for job_name in verify_mod._COMBINED_JOBS:
+            expected_if = (
+                verify_mod._HOST_BUILD_CONDITION
+                if job_name in verify_mod._METADATA_ADAPTER_JOBS
+                else verify_mod._WORKER_CONDITION
+            )
             for old, new in (
                 (
                     "    needs: [event-identity, event-classifier]",
                     "    needs: [event-classifier]",
                 ),
                 (
-                    f"    if: {verify_mod._WORKER_CONDITION}",
+                    f"    if: {expected_if}",
                     "    if: ${{ needs.event-classifier.outputs."
                     "run_expensive == 'true' }}",
                 ),
@@ -1226,7 +1239,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                         handle.write(changed)
                     with self.assertRaisesRegex(
                         ValueError,
-                        "duplicate step names",
+                        "duplicate step names|must contain exactly",
                     ):
                         verify_mod.run_gates(target_root, dry_run=True)
 

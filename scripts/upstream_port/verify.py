@@ -36,6 +36,7 @@ _SOURCE_ROOT = os.path.realpath(
 )
 _BUILD_WORKFLOW_RELATIVE = os.path.join(".github", "workflows", "build.yml")
 _COMBINED_JOBS = ("host-tests", "build", "extended-host-tests", "legacy")
+_METADATA_ADAPTER_JOBS = ("host-tests", "build")
 _EVENT_IDENTITY_JOB = "event-identity"
 _EVENT_ROUTER_JOB = "event-router"
 _EVENT_CLASSIFIER_JOB = "event-classifier"
@@ -93,6 +94,14 @@ _EXPECTED_BUILD_SHA_EXPRESSION = (
     "(needs.event-classifier.result == 'failure' && "
     "needs.event-identity.outputs.fallback_sha) || '' }}"
 )
+_FULL_WORKER_STEP_CONDITION = (
+    "${{ needs.event-classifier.result == 'failure' || "
+    "needs.event-classifier.outputs.classification == 'full' }}"
+)
+_METADATA_ADAPTER_STEP_CONDITION = (
+    "${{ needs.event-classifier.result == 'success' && "
+    "needs.event-classifier.outputs.classification == 'metadata-only' }}"
+)
 _CLASSIFIER_REF_EXPRESSION = (
     "${{ needs.event-identity.outputs.classifier_ref }}"
 )
@@ -101,6 +110,58 @@ _CLASSIFIER_EXPECTED_SHA_EXPRESSION = (
 )
 _WORKER_CONDITION = (
     "${{ always() && ((needs.event-classifier.result == 'success' && "
+    "needs.event-identity.result == 'success' && "
+    "needs.event-classifier.outputs.classification == 'full' && "
+    "needs.event-classifier.outputs.head_valid == 'true' && "
+    "needs.event-classifier.outputs.run_expensive == 'true' && "
+    "((github.event_name == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_kind == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "needs.event-classifier.outputs.expected_head && "
+    "needs.event-classifier.outputs.expected_head == "
+    "github.event.pull_request.head.sha && "
+    "github.event.pull_request.head.sha != '' && "
+    "(needs.event-classifier.outputs.identity_valid == 'true' || "
+    "needs.event-classifier.outputs.full_fallback == 'true')) || "
+    "(github.event_name == 'push' && "
+    "needs.event-identity.outputs.fallback_kind == 'push' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "needs.event-classifier.outputs.expected_head && "
+    "needs.event-identity.outputs.fallback_sha == github.sha && "
+    "needs.event-classifier.outputs.identity_valid == 'true' && "
+    "needs.event-classifier.outputs.expected_head == github.event.after && "
+    "needs.event-classifier.outputs.expected_base == '' && "
+    "github.event.after != ''))) || "
+    "(needs.event-classifier.result == 'failure' && "
+    "needs.event-identity.result == 'success' && "
+    "((github.event_name == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_kind == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "github.event.pull_request.head.sha) || "
+    "(github.event_name == 'push' && "
+    "needs.event-identity.outputs.fallback_kind == 'push' && "
+    "needs.event-identity.outputs.fallback_sha == github.event.after && "
+    "needs.event-identity.outputs.fallback_sha == github.sha)))) }}"
+)
+_HOST_BUILD_CONDITION = (
+    "${{ always() && ((needs.event-classifier.result == 'success' && "
+    "needs.event-identity.result == 'success' && "
+    "needs.event-classifier.outputs.classification == 'metadata-only' && "
+    "needs.event-classifier.outputs.head_valid == 'true' && "
+    "needs.event-classifier.outputs.identity_valid == 'true' && "
+    "needs.event-classifier.outputs.full_fallback == 'false' && "
+    "needs.event-classifier.outputs.run_expensive == 'false' && "
+    "github.event_name == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_kind == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "needs.event-classifier.outputs.expected_head && "
+    "needs.event-classifier.outputs.expected_head == "
+    "github.event.pull_request.head.sha && "
+    "needs.event-classifier.outputs.expected_base == "
+    "github.event.pull_request.base.sha && "
+    "github.event.pull_request.head.sha != '' && "
+    "github.event.pull_request.base.sha != '') || "
+    "(needs.event-classifier.result == 'success' && "
     "needs.event-identity.result == 'success' && "
     "needs.event-classifier.outputs.classification == 'full' && "
     "needs.event-classifier.outputs.head_valid == 'true' && "
@@ -748,7 +809,31 @@ _EXPECTED_JOB_ENV = {
         ("RUN_EXPENSIVE", "${{ needs.event-classifier.outputs.run_expensive }}"),
     ),
 }
+_METADATA_ADAPTER_STEP_NAME = "Attest metadata-only branch-protection continuity"
+_METADATA_ADAPTER_ENV = tuple(
+    sorted(
+        (
+            ("BASH_ENV", "''"),
+            ("CLASSIFICATION", "${{ needs.event-classifier.outputs.classification }}"),
+            ("CLASSIFIED_BASE_SHA", "${{ needs.event-classifier.outputs.expected_base }}"),
+            ("CLASSIFIED_BUILD_SHA", "${{ needs.event-classifier.outputs.expected_head }}"),
+            ("CLASSIFIER_RESULT", "${{ needs.event-classifier.result }}"),
+            ("ENV", "''"),
+            ("FALLBACK_IDENTITY_RESULT", "${{ needs.event-identity.result }}"),
+            ("FALLBACK_KIND", "${{ needs.event-identity.outputs.fallback_kind }}"),
+            ("FALLBACK_SHA", "${{ needs.event-identity.outputs.fallback_sha }}"),
+            ("FULL_FALLBACK", "${{ needs.event-classifier.outputs.full_fallback }}"),
+            ("HEAD_VALID", "${{ needs.event-classifier.outputs.head_valid }}"),
+            ("IDENTITY_VALID", "${{ needs.event-classifier.outputs.identity_valid }}"),
+            ("PATH", "/usr/bin:/bin"),
+            ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
+            ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
+            ("RUN_EXPENSIVE", "${{ needs.event-classifier.outputs.run_expensive }}"),
+        )
+    )
+)
 _NON_GATE_STEP_NAMES = {
+    _METADATA_ADAPTER_STEP_NAME,
     "Verify checked-out revision",
     "Hydrate workflow-pilot Git authority",
     "Install host-only dependencies (no arm-none-eabi toolchain)",
@@ -766,6 +851,29 @@ _WORKFLOW_PILOT_TEST_STEP_NAME = (
 _WORKFLOW_PILOT_BASELINE_STEP_NAME = (
     "Validate workflow-pilot baseline against checked-out Git history"
 )
+_FULL_MODE_ONLY_JOB_STEPS = {
+    ("host-tests", "Verify checked-out revision"),
+    ("host-tests", "Hydrate workflow-pilot Git authority"),
+    ("host-tests", "Install host-only dependencies (no arm-none-eabi toolchain)"),
+    ("host-tests", "Run gba-playtest host test suite"),
+    ("host-tests", "Run upstream-port tooling test suite"),
+    ("host-tests", "Run workflow contract test suite"),
+    ("host-tests", _WORKFLOW_PILOT_TEST_STEP_NAME),
+    ("host-tests", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
+    ("host-tests", "Run localization host test suite (issue #18)"),
+    ("host-tests", "Run full-game localization width contract (issue #18)"),
+    ("build", "Verify checked-out revision"),
+    ("build", "Check tracked artifacts"),
+    ("build", _DOCS_GOVERNANCE_STEP_NAME),
+    ("build", "Install dependencies"),
+    ("build", "Build tools"),
+    ("build", "Run CodeQL alert regression suite (issue #84)"),
+    ("build", "Check default build lane and quickstart legacy glue (issue #15)"),
+    ("build", "Check generated-data tables for drift"),
+    ("build", "Build and verify modern target ROMs and linker"),
+    ("build", "Boundary/serialization item-ID-expansion + content runtime gate (cap 0xCE)"),
+    ("build", "Build and verify all-locales/all-features map menu (issues #49/#168)"),
+}
 _SCRUBBED_PILOT_ENV = (
     "BASH_ENV: ''",
     "ENV: ''",
@@ -836,6 +944,7 @@ _EXPECTED_STEP_ROLES = {
         ("setup", "Verify authoritative Build event mode"),
     ),
     "host-tests": (
+        ("setup", _METADATA_ADAPTER_STEP_NAME),
         ("setup", None),
         ("setup", "Verify checked-out revision"),
         ("setup", "Hydrate workflow-pilot Git authority"),
@@ -849,6 +958,7 @@ _EXPECTED_STEP_ROLES = {
         ("gate", "Run full-game localization width contract (issue #18)"),
     ),
     "build": (
+        ("setup", _METADATA_ADAPTER_STEP_NAME),
         ("setup", None),
         ("setup", "Verify checked-out revision"),
         ("gate", "Check tracked artifacts"),
@@ -1268,7 +1378,7 @@ def _parse_job_context(job_name, body):
             values[name] = value
         elif name == "if":
             expected = (
-                _WORKER_CONDITION
+                (_HOST_BUILD_CONDITION if job_name in _METADATA_ADAPTER_JOBS else _WORKER_CONDITION)
                 if job_name in _COMBINED_JOBS
                 else {
                     "event-router": (
@@ -1870,45 +1980,109 @@ def _parse_step(block, job_name, index):
             raise ValueError(f"{step_label} summary mapping differs")
         role = "summary"
     elif name is None:
+        expected_index = 1 if job_name in _METADATA_ADAPTER_JOBS else 0
+        expected_fields = (
+            {"uses", "if", "with"}
+            if job_name in _METADATA_ADAPTER_JOBS
+            else {"uses", "with"}
+        )
         if (
-            set(values) != {"uses", "with"}
+            set(values) != expected_fields
             or values["uses"] != _CHECKOUT_USES
             or values["with"] != _CHECKOUT_WITH
-            or index != 0
+            or index != expected_index
+            or (
+                job_name in _METADATA_ADAPTER_JOBS
+                and values["if"] != _FULL_WORKER_STEP_CONDITION
+            )
         ):
             raise ValueError(
                 f"{step_label} is an unreviewed unnamed step"
             )
         role = "setup"
     else:
-        expected_fields = (
-            {"name", "env", "run"}
-            if name
-            in {
-                _WORKFLOW_PILOT_TEST_STEP_NAME,
-                _WORKFLOW_PILOT_BASELINE_STEP_NAME,
-                "Hydrate workflow-pilot Git authority",
-            }
-            else {"name", "run"}
-        )
-        if set(values) != expected_fields:
-            raise ValueError(
-                f"{step_label} must contain exactly "
-                f"{', '.join(sorted(expected_fields))}"
-            )
-        if "env" in values and values["env"] != tuple(
-            sorted(
-                tuple(
-                    entry.split(": ", 1)
-                    if ": " in entry
-                    else (entry[:-1], "")
+        if name == _METADATA_ADAPTER_STEP_NAME:
+            if set(values) != {"name", "if", "env", "run"}:
+                raise ValueError(
+                    f"{step_label} must contain exactly env, if, name, run"
                 )
-                for entry in _SCRUBBED_PILOT_ENV
+            if values["if"] != _METADATA_ADAPTER_STEP_CONDITION:
+                raise ValueError(f"{step_label} metadata adapter if differs")
+            if values["env"] != _METADATA_ADAPTER_ENV:
+                raise ValueError(f"{step_label} metadata adapter env differs")
+            adapter_text = " ".join(
+                token for command in values["run"] for token in command
             )
-        ):
-            raise ValueError(
-                f"{step_label} changes its reviewed scrubbed environment"
+            required_fragments = (
+                "$CLASSIFIER_RESULT",
+                "$FALLBACK_IDENTITY_RESULT",
+                "$GITHUB_EVENT_NAME",
+                "$CLASSIFICATION",
+                "$FALLBACK_KIND",
+                "$FALLBACK_SHA",
+                "$PR_HEAD_SHA",
+                "$PR_BASE_SHA",
+                "$FULL_FALLBACK",
+                "$HEAD_VALID",
+                "$IDENTITY_VALID",
+                "$RUN_EXPENSIVE",
+                "$EXPECTED_BUILD_SHA",
+                "$CLASSIFIED_BUILD_SHA",
+                "$CLASSIFIED_BASE_SHA",
+                "metadata-only branch-protection continuity is not authoritative",
             )
+            if not all(fragment in adapter_text for fragment in required_fragments):
+                raise ValueError(f"{step_label} metadata adapter script differs")
+            if any(
+                token in adapter_text
+                for token in (
+                    "actions/checkout",
+                    "/usr/bin/python3",
+                    "python3",
+                    "/usr/bin/git",
+                    "git ",
+                    "sudo ",
+                    "apt-get",
+                    "./build_tools.sh",
+                    "make ",
+                )
+            ):
+                raise ValueError(
+                    f"{step_label} metadata adapter must not run candidate or build commands"
+                )
+        else:
+            expected_fields = (
+                {"name", "env", "run"}
+                if name
+                in {
+                    _WORKFLOW_PILOT_TEST_STEP_NAME,
+                    _WORKFLOW_PILOT_BASELINE_STEP_NAME,
+                    "Hydrate workflow-pilot Git authority",
+                }
+                else {"name", "run"}
+            )
+            if (job_name, name) in _FULL_MODE_ONLY_JOB_STEPS:
+                expected_fields.add("if")
+            if set(values) != expected_fields:
+                raise ValueError(
+                    f"{step_label} must contain exactly "
+                    f"{', '.join(sorted(expected_fields))}"
+                )
+            if (job_name, name) in _FULL_MODE_ONLY_JOB_STEPS and values["if"] != _FULL_WORKER_STEP_CONDITION:
+                raise ValueError(f"{step_label} full-mode if differs")
+            if "env" in values and values["env"] != tuple(
+                sorted(
+                    tuple(
+                        entry.split(": ", 1)
+                        if ": " in entry
+                        else (entry[:-1], "")
+                    )
+                    for entry in _SCRUBBED_PILOT_ENV
+                )
+            ):
+                raise ValueError(
+                    f"{step_label} changes its reviewed scrubbed environment"
+                )
         if name in _NON_GATE_STEP_NAMES:
             role = "setup"
         elif name == _DOCS_GOVERNANCE_STEP_NAME:
