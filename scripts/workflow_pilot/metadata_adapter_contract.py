@@ -12,6 +12,10 @@ from dataclasses import dataclass
 _SHELL_PUNCTUATION = "|;&<>()"
 _PYTHON_SEMANTIC_SHA256 = "230946bc7f4f3f00e1785cd2056083070ae2c8df3c81d32877447d6e4d858ad3"
 _ALLOWED_IMPORTS = ("decimal", "json", "math", "os", "re", "stat", "sys")
+_EXPECTED_HEREDOC_INTRODUCER = "/usr/bin/python3 -I - <<'PY'"
+MAX_PYTHON_SOURCE_BYTES = 16384
+MAX_AST_DEPTH = 256
+MAX_AST_NODES = 4096
 _ALLOWED_AST_FIELDS = {
     "Add": (),
     "And": (),
@@ -77,6 +81,7 @@ _EMPTY_COMPATIBILITY_FIELDS = {
 @dataclass(frozen=True)
 class ParsedShellCommand:
     tokens: tuple[str, ...]
+    raw: str
     heredoc: str | None = None
 
 
@@ -92,11 +97,6 @@ def _tokenize_shell_command(command: str) -> tuple[str, ...]:
     if not tokens:
         raise ValueError("metadata adapter shell command is empty")
     return tokens
-
-
-def _expected_command(command: str, *, heredoc: str | None = None) -> ParsedShellCommand:
-    return ParsedShellCommand(tokens=_tokenize_shell_command(command), heredoc=heredoc)
-
 
 EXPECTED_METADATA_ADAPTER_SHELL_TOKENS = (
     _tokenize_shell_command(
@@ -116,7 +116,7 @@ EXPECTED_METADATA_ADAPTER_SHELL_TOKENS = (
     ),
     _tokenize_shell_command("exit 1"),
     _tokenize_shell_command("fi"),
-    _tokenize_shell_command("/usr/bin/python3 -I - <<'PY'"),
+    _tokenize_shell_command(_EXPECTED_HEREDOC_INTRODUCER),
 )
 
 
@@ -150,6 +150,10 @@ def parse_metadata_adapter_shell(script: str) -> tuple[ParsedShellCommand, ...]:
         tokens = _tokenize_shell_command(logical)
 
         if "<<" in tokens:
+            if logical != _EXPECTED_HEREDOC_INTRODUCER:
+                raise ValueError(
+                    "metadata adapter shell heredoc introducer differs from the reviewed contract"
+                )
             if tokens.count("<<") != 1:
                 raise ValueError("metadata adapter shell heredoc must have one delimiter")
             if tokens[-2] != "<<" or tokens[-1] != "PY":
@@ -167,13 +171,14 @@ def parse_metadata_adapter_shell(script: str) -> tuple[ParsedShellCommand, ...]:
             commands.append(
                 ParsedShellCommand(
                     tokens=tokens,
+                    raw=logical,
                     heredoc="\n".join(heredoc_lines) + "\n",
                 )
             )
             line_index += 1
             continue
 
-        commands.append(ParsedShellCommand(tokens=tokens))
+        commands.append(ParsedShellCommand(tokens=tokens, raw=logical))
         line_index += 1
 
     if continued:
@@ -189,58 +194,72 @@ def metadata_adapter_python_source(script: str) -> str:
 
 
 def _normalize_semantic_ast(node: object) -> object:
-    if isinstance(node, ast.AST):
-        node_type = type(node).__name__
-        if node_type not in _ALLOWED_AST_FIELDS:
-            raise ValueError(
-                f"metadata adapter Python uses unsupported AST node {node_type}"
-            )
-        required_fields = _ALLOWED_AST_FIELDS[node_type]
-        compatibility_fields = _EMPTY_COMPATIBILITY_FIELDS.get(node_type, ())
-        available_fields = tuple(getattr(node, "_fields", ()))
-        unknown_fields = [
-            field
-            for field in available_fields
-            if field not in required_fields and field not in compatibility_fields
-        ]
-        if unknown_fields:
-            raise ValueError(
-                "metadata adapter Python uses unsupported AST fields "
-                + ", ".join(f"{node_type}.{field}" for field in unknown_fields)
-            )
-        missing_fields = [
-            field for field in required_fields if field not in available_fields
-        ]
-        if missing_fields:
-            raise ValueError(
-                "metadata adapter Python is missing AST fields "
-                + ", ".join(f"{node_type}.{field}" for field in missing_fields)
-            )
-        for field in compatibility_fields:
-            if field not in available_fields:
-                continue
-            value = getattr(node, field)
-            if not isinstance(value, (list, tuple)) or value:
+    state = {"nodes": 0}
+
+    def normalize(current: object, *, depth: int) -> object:
+        state["nodes"] += 1
+        if state["nodes"] > MAX_AST_NODES:
+            raise ValueError("metadata adapter Python AST exceeds node limit")
+        if depth > MAX_AST_DEPTH:
+            raise ValueError("metadata adapter Python AST exceeds depth limit")
+
+        if isinstance(current, ast.AST):
+            node_type = type(current).__name__
+            if node_type not in _ALLOWED_AST_FIELDS:
                 raise ValueError(
-                    "metadata adapter Python uses unsupported nonempty compatibility field "
-                    f"{node_type}.{field}"
+                    f"metadata adapter Python uses unsupported AST node {node_type}"
                 )
-        return {
-            "node": node_type,
-            "fields": [
-                [field, _normalize_semantic_ast(getattr(node, field))]
-                for field in required_fields
-            ],
-        }
-    if isinstance(node, list):
-        return [_normalize_semantic_ast(item) for item in node]
-    if isinstance(node, tuple):
-        return [_normalize_semantic_ast(item) for item in node]
-    if node is None or isinstance(node, (bool, int, float, str)):
-        return node
-    raise ValueError(
-        f"metadata adapter Python uses unsupported literal {type(node).__name__}"
-    )
+            required_fields = _ALLOWED_AST_FIELDS[node_type]
+            compatibility_fields = _EMPTY_COMPATIBILITY_FIELDS.get(node_type, ())
+            available_fields = tuple(getattr(current, "_fields", ()))
+            unknown_fields = [
+                field
+                for field in available_fields
+                if field not in required_fields and field not in compatibility_fields
+            ]
+            if unknown_fields:
+                raise ValueError(
+                    "metadata adapter Python uses unsupported AST fields "
+                    + ", ".join(f"{node_type}.{field}" for field in unknown_fields)
+                )
+            missing_fields = [
+                field for field in required_fields if field not in available_fields
+            ]
+            if missing_fields:
+                raise ValueError(
+                    "metadata adapter Python is missing AST fields "
+                    + ", ".join(f"{node_type}.{field}" for field in missing_fields)
+                )
+            for field in compatibility_fields:
+                if field not in available_fields:
+                    continue
+                value = getattr(current, field)
+                if not isinstance(value, (list, tuple)) or value:
+                    raise ValueError(
+                        "metadata adapter Python uses unsupported nonempty compatibility field "
+                        f"{node_type}.{field}"
+                    )
+            return {
+                "node": node_type,
+                "fields": [
+                    [field, normalize(getattr(current, field), depth=depth + 1)]
+                    for field in required_fields
+                ],
+            }
+        if isinstance(current, list):
+            return [normalize(item, depth=depth + 1) for item in current]
+        if isinstance(current, tuple):
+            return [normalize(item, depth=depth + 1) for item in current]
+        if current is None or isinstance(current, (bool, int, float, str)):
+            return current
+        raise ValueError(
+            f"metadata adapter Python uses unsupported literal {type(current).__name__}"
+        )
+
+    try:
+        return normalize(node, depth=0)
+    except RecursionError as error:
+        raise ValueError("metadata adapter Python AST recursion exceeds limits") from error
 
 
 def _semantic_ast_digest(tree: ast.AST) -> str:
@@ -256,9 +275,17 @@ def _semantic_ast_digest(tree: ast.AST) -> str:
 
 def validate_metadata_adapter_python(source: str) -> None:
     try:
+        source_bytes = source.encode("utf-8")
+    except UnicodeEncodeError as error:
+        raise ValueError("metadata adapter Python source is not valid UTF-8") from error
+    if len(source_bytes) > MAX_PYTHON_SOURCE_BYTES:
+        raise ValueError("metadata adapter Python source exceeds size limit")
+    try:
         tree = ast.parse(source)
     except SyntaxError as error:
         raise ValueError(f"metadata adapter Python is invalid: {error}") from error
+    except RecursionError as error:
+        raise ValueError("metadata adapter Python recursion exceeds limits") from error
 
     if any(isinstance(node, ast.ImportFrom) for node in ast.walk(tree)):
         raise ValueError("metadata adapter Python must not use from-imports")
@@ -273,7 +300,10 @@ def validate_metadata_adapter_python(source: str) -> None:
     # Exact semantic-tree binding is intentional here because this is a named
     # security boundary: even unreachable or no-op nodes would widen the
     # adapter's side-effect surface beyond the reviewed no-checkout contract.
-    digest = _semantic_ast_digest(tree)
+    try:
+        digest = _semantic_ast_digest(tree)
+    except RecursionError as error:
+        raise ValueError("metadata adapter Python AST recursion exceeds limits") from error
     if digest != _PYTHON_SEMANTIC_SHA256:
         raise ValueError("metadata adapter Python AST differs from the reviewed contract")
 

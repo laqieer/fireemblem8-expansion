@@ -5,8 +5,10 @@ from __future__ import annotations
 import ast
 import copy
 import re
+import subprocess
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts.workflow_pilot import metadata_adapter_contract
 
@@ -115,6 +117,26 @@ class MetadataAdapterContractTests(unittest.TestCase):
         )
         metadata_adapter_contract.validate_metadata_adapter_script(mutated)
 
+    def test_shell_parser_rejects_unreviewed_heredoc_introducers(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        script = _literal_run_script(_step_blocks(_job_blocks(text)["host-tests"])[0])
+        mutations = (
+            "/usr/bin/python3 -I - <<PY\n",
+            '/usr/bin/python3 -I - <<"PY"\n',
+            "/usr/bin/python3 -I - <<\\PY\n",
+            "/usr/bin/python3 -I - <<-'PY'\n",
+            "/usr/bin/python3 -I - <<'PY' # trailing\n",
+            "/usr/bin/python3 -I - <<'PY' && :\n",
+        )
+        for introducer in mutations:
+            mutated = script.replace("/usr/bin/python3 -I - <<'PY'\n", introducer, 1)
+            with self.subTest(introducer=introducer.rstrip()):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "heredoc introducer differs from the reviewed contract",
+                ):
+                    metadata_adapter_contract.validate_metadata_adapter_script(mutated)
+
     def test_python_validator_rejects_uniform_extra_heredoc_indentation(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         script = _literal_run_script(_step_blocks(_job_blocks(text)["host-tests"])[0])
@@ -135,6 +157,29 @@ class MetadataAdapterContractTests(unittest.TestCase):
                 "<metadata-adapter-raw>",
                 "exec",
             )
+
+    def test_unquoted_heredoc_runtime_is_not_equivalent(self):
+        quoted = "/usr/bin/python3 -I - <<'PY'\nprint('$MARKER')\nPY\n"
+        unquoted = '/usr/bin/python3 -I - <<PY\nprint("$MARKER")\nPY\n'
+        environment = {"MARKER": "expanded-value"}
+        quoted_result = subprocess.run(
+            ["/bin/bash", "-c", quoted],
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        unquoted_result = subprocess.run(
+            ["/bin/bash", "-c", unquoted],
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(quoted_result.returncode, 0, quoted_result.stderr)
+        self.assertEqual(unquoted_result.returncode, 0, unquoted_result.stderr)
+        self.assertEqual(quoted_result.stdout.strip(), "$MARKER")
+        self.assertEqual(unquoted_result.stdout.strip(), "expanded-value")
 
     def test_semantic_ast_digest_is_stable_across_empty_type_params_compatibility(self):
         text = WORKFLOW.read_text(encoding="utf-8")
@@ -163,6 +208,112 @@ class MetadataAdapterContractTests(unittest.TestCase):
             "unsupported nonempty compatibility field FunctionDef.type_params",
         ):
             metadata_adapter_contract._semantic_ast_digest(tree)
+
+    def test_semantic_ast_depth_limit_accepts_boundary_minus_one_and_rejects_plus_one(self):
+        def nested_tree(depth: int) -> ast.Module:
+            value: ast.expr = ast.Name(id="value", ctx=ast.Load())
+            for _ in range(depth):
+                value = ast.Subscript(
+                    value=value,
+                    slice=ast.Constant(value=0),
+                    ctx=ast.Load(),
+                )
+            return ast.Module(
+                body=[
+                    ast.Assign(
+                        targets=[ast.Name(id="result", ctx=ast.Store())],
+                        value=value,
+                        type_comment=None,
+                    )
+                ],
+                type_ignores=[],
+            )
+
+        last_ok = None
+        first_bad = None
+        for depth in range(1, metadata_adapter_contract.MAX_AST_DEPTH * 2):
+            try:
+                metadata_adapter_contract._semantic_ast_digest(nested_tree(depth))
+            except ValueError as error:
+                if "depth limit" in str(error):
+                    first_bad = depth
+                    break
+                raise
+            else:
+                last_ok = depth
+        self.assertIsNotNone(last_ok)
+        self.assertIsNotNone(first_bad)
+        self.assertEqual(first_bad, last_ok + 1)
+
+    def test_semantic_ast_node_limit_accepts_boundary_minus_one_and_rejects_plus_one(self):
+        def list_tree(count: int) -> ast.Module:
+            return ast.Module(
+                body=[
+                    ast.Assign(
+                        targets=[ast.Name(id="result", ctx=ast.Store())],
+                        value=ast.Tuple(
+                            elts=[ast.Constant(value=0) for _ in range(count)],
+                            ctx=ast.Load(),
+                        ),
+                        type_comment=None,
+                    )
+                ],
+                type_ignores=[],
+            )
+
+        low = 1
+        high = 1
+        while True:
+            try:
+                metadata_adapter_contract._semantic_ast_digest(list_tree(high))
+            except ValueError as error:
+                if "node limit" in str(error):
+                    break
+                raise
+            low = high
+            high *= 2
+
+        while low + 1 < high:
+            mid = (low + high) // 2
+            try:
+                metadata_adapter_contract._semantic_ast_digest(list_tree(mid))
+            except ValueError as error:
+                if "node limit" in str(error):
+                    high = mid
+                else:
+                    raise
+            else:
+                low = mid
+
+        metadata_adapter_contract._semantic_ast_digest(list_tree(low))
+        with self.assertRaisesRegex(ValueError, "node limit"):
+            metadata_adapter_contract._semantic_ast_digest(list_tree(high))
+        self.assertEqual(high, low + 1)
+
+    def test_deep_malformed_python_rejects_normally(self):
+        malformed = "result = value" + "[0" * (metadata_adapter_contract.MAX_AST_DEPTH + 32)
+        with self.assertRaisesRegex(ValueError, "metadata adapter Python is invalid"):
+            metadata_adapter_contract.validate_metadata_adapter_python(malformed)
+
+    def test_validate_python_converts_recursion_errors_to_valueerror(self):
+        with mock.patch.object(
+            metadata_adapter_contract.ast,
+            "parse",
+            side_effect=RecursionError("boom"),
+        ):
+            with self.assertRaisesRegex(ValueError, "recursion exceeds limits"):
+                metadata_adapter_contract.validate_metadata_adapter_python("result = 0\n")
+
+        text = WORKFLOW.read_text(encoding="utf-8")
+        script = _literal_run_script(_step_blocks(_job_blocks(text)["host-tests"])[0])
+        source = metadata_adapter_contract.metadata_adapter_python_source(script)
+        with mock.patch.object(
+            metadata_adapter_contract,
+            "_semantic_ast_digest",
+            side_effect=RecursionError("boom"),
+        ):
+            with self.assertRaisesRegex(ValueError, "AST recursion exceeds limits"):
+                metadata_adapter_contract.validate_metadata_adapter_python(source)
 
 
 if __name__ == "__main__":

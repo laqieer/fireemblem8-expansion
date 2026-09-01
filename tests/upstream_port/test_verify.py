@@ -1288,6 +1288,30 @@ class VerifyCliCwdTests(unittest.TestCase):
                     "        if False:\n"
                     "            json.dumps({})\n",
                 ),
+                "unquoted-heredoc-introducer": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<PY\n",
+                ),
+                "double-quoted-heredoc-introducer": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    '        /usr/bin/python3 -I - <<"PY"\n',
+                ),
+                "escaped-heredoc-introducer": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<\\PY\n",
+                ),
+                "dash-heredoc-introducer": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<-'PY'\n",
+                ),
                 "backslash-space": self.replace_in_job(
                     original,
                     "host-tests",

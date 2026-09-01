@@ -3476,6 +3476,26 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "        0\n",
             ),
             (
+                "unquoted-heredoc-introducer",
+                "        /usr/bin/python3 -I - <<'PY'\n",
+                "        /usr/bin/python3 -I - <<PY\n",
+            ),
+            (
+                "double-quoted-heredoc-introducer",
+                "        /usr/bin/python3 -I - <<'PY'\n",
+                '        /usr/bin/python3 -I - <<"PY"\n',
+            ),
+            (
+                "escaped-heredoc-introducer",
+                "        /usr/bin/python3 -I - <<'PY'\n",
+                "        /usr/bin/python3 -I - <<\\PY\n",
+            ),
+            (
+                "dash-heredoc-introducer",
+                "        /usr/bin/python3 -I - <<'PY'\n",
+                "        /usr/bin/python3 -I - <<-'PY'\n",
+            ),
+            (
                 "backslash-space",
                 '        if [ "$CLASSIFIER_RESULT" != "success" ] || \\\n',
                 '        if [ "$CLASSIFIER_RESULT" != "success" ] || \\ \n',
