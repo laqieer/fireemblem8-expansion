@@ -17,6 +17,7 @@ from scripts.check_docs import (
     parse_atx_heading,
     parse_fence_opening,
 )
+from scripts.workflow_pilot import candidate_evidence
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -565,7 +566,7 @@ def documented_job_set(text, label):
     entries = [entry.strip() for entry in matches[0].group("body").split(",")]
     names = []
     for entry in entries:
-        match = re.fullmatch(r"`([A-Za-z][A-Za-z0-9_-]*)`", entry)
+        match = re.fullmatch(r"`([^`]+)`", entry)
         if match is None:
             raise AssertionError(
                 f"documented job set {label!r} has malformed entry {entry!r}"
@@ -621,45 +622,37 @@ def workflow_tester_topology_violations(text):
     )
     current_jobs = workflow_job_ids(BUILD_WORKFLOW_PATH)
     selected_full_pr_jobs = current_jobs - {"patch-release"}
+    metadata_literals = frozenset(candidate_evidence.METADATA_WORKER_LITERALS.values())
     expected = {
         "stacked-full-pr": selected_full_pr_jobs,
-        "current-metadata": frozenset(
+        "current-metadata": metadata_literals
+        | frozenset(
             {
                 "event-identity",
                 "event-router",
                 "metadata-classifier",
-                "metadata-host-tests-skipped",
-                "metadata-build-skipped",
-                "metadata-extended-host-tests-skipped",
-                "metadata-legacy-skipped",
                 "patch-release",
                 "metadata-summary",
             }
         ),
         "preserved-pre-fix": workflow_job_ids(PRE_FIX_BUILD_WORKFLOW_PATH),
         "live-opened-full": current_jobs,
-        "live-title-metadata": frozenset(
+        "live-title-metadata": metadata_literals
+        | frozenset(
             {
                 "event-identity",
                 "event-router",
                 "metadata-classifier",
-                "metadata-host-tests-skipped",
-                "metadata-build-skipped",
-                "metadata-extended-host-tests-skipped",
-                "metadata-legacy-skipped",
                 "patch-release",
                 "metadata-summary",
             }
         ),
-        "live-restore-metadata": frozenset(
+        "live-restore-metadata": metadata_literals
+        | frozenset(
             {
                 "event-identity",
                 "event-router",
                 "metadata-classifier",
-                "metadata-host-tests-skipped",
-                "metadata-build-skipped",
-                "metadata-extended-host-tests-skipped",
-                "metadata-legacy-skipped",
                 "patch-release",
                 "metadata-summary",
             }
@@ -697,7 +690,7 @@ def workflow_tester_topology_violations(text):
         if documented[name] != expected[name]
     ]
     skipped_names_contract = normalize_policy(
-        "their distinct metadata names cannot supersede required full"
+        "those unique literal names can never supersede required full"
     )
     if skipped_names_contract not in normalize_policy(body_case):
         violations.append("skipped-worker-names-are-semantic")
@@ -1104,11 +1097,10 @@ def classifier_bootstrap_contract_violations(text):
             "canonical successful event-router context",
             "missing, failed, skipped, renamed, duplicate, or unknown",
         ),
-        "classifier-failure-metadata-names": (
-            "classifier failure follows an otherwise metadata-shaped raw PR edit",
-            "metadata-prefixed names",
-            "summary stays canonical",
-            "candidate evidence rejects the run",
+        "classifier-failure-canonical-workers": (
+            "validated authoritative pr head",
+            "canonical worker names",
+            "summary still fails",
         ),
         "base-ref-git-grammar": (
             "1024 UTF-8 bytes",
@@ -3865,8 +3857,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
         self.assertEqual(workflow_tester_topology_violations(reordered), [])
 
         semantic_names, count = re.subn(
-            r"their distinct metadata\s+names cannot supersede required full",
-            "metadata worker names can replace required full contexts",
+            r"[Tt]hose unique literal\s+names can never\s+supersede required full",
+            "literal metadata worker names can replace required full contexts",
             governance,
             1,
         )
@@ -3950,13 +3942,15 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "metadata-classifier",
             "metadata-summary",
         )
-        metadata_skipped_names = (
-            "metadata-host-tests-skipped",
-            "metadata-build-skipped",
-            "metadata-extended-host-tests-skipped",
-            "metadata-legacy-skipped",
-            "patch-release",
-        )
+        metadata_skipped_names = tuple(
+            candidate_evidence.METADATA_WORKER_LITERALS[job_id]
+            for job_id in (
+                "host-tests",
+                "build",
+                "extended-host-tests",
+                "legacy",
+            )
+        ) + ("patch-release",)
         full_jobs = [
             job_record(index, name)
             for index, name in enumerate(full_names, start=100)
@@ -4036,12 +4030,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             )
             self.assertEqual(accepted.returncode, 0, accepted.stderr)
 
-            for worker_name in (
-                "metadata-host-tests-skipped",
-                "metadata-build-skipped",
-                "metadata-extended-host-tests-skipped",
-                "metadata-legacy-skipped",
-            ):
+            for worker_name in metadata_skipped_names[:-1]:
                 with self.subTest(started_worker=worker_name):
                     adversarial_jobs = copy.deepcopy(metadata_jobs)
                     started_worker = next(

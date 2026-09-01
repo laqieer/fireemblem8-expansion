@@ -29,22 +29,19 @@ source-changing push/PR.** A PR candidate uses the complete combined Build
 gate and Copilot review concurrently. Parsed body/title-only edits retain the
 identity validator/router plus distinct running `metadata-classifier` and
 `metadata-summary`
-contexts plus distinct skipped `metadata-host-tests-skipped`,
-`metadata-build-skipped`, `metadata-extended-host-tests-skipped`, and
-`metadata-legacy-skipped` checks; those metadata-only names cannot supersede
-required canonical full-worker contexts. Those metadata-prefixed worker names
-require the pull-request event/action/ref plus nonempty raw head/base/base-ref
-identities, no base change, and a real title/body metadata transition that are
-available before scheduling. Base, mixed, unknown/incomplete,
+contexts plus distinct skipped-worker checks whose raw API names are the exact
+per-worker literal `needs.event-classifier...` expressions with
+`metadata-host-tests-skipped`, `metadata-build-skipped`,
+`metadata-extended-host-tests-skipped`, and `metadata-legacy-skipped` true
+branches; those unique literal names can never supersede required canonical
+full-worker contexts. Base, mixed, unknown/incomplete,
 opened, synchronize, and reopened events with complete identity fail closed to
 the complete graph. Any missing, malformed, or incoherent base ref/SHA with a
 valid exact PR head also runs the four workers at that head and fails normal
 summary; a valid base SHA may be retained only for diagnostics. Missing,
 malformed, stale, or spoofed head identity runs none. A classifier failure with
-a validated PR event head runs all four workers at that exact head and then
-fails summary. If classifier failure follows an otherwise metadata-shaped raw
-PR edit, the worker checks may still carry metadata-prefixed names while
-summary stays canonical and candidate evidence rejects the run. A master-push
+a validated authoritative PR head runs all four workers at that exact head
+under canonical worker names, then summary still fails. A master-push
 classifier failure does the same at validated
 `github.sha` and audits the master-only publisher before failing; without a
 validated event-specific fallback SHA, it starts no worker or publisher. The
@@ -222,10 +219,11 @@ no ROM build or network access is required for either.
 Prefer focused local checks during iteration. A no-checkout `event-identity`
 validator, base-authoritative `event-router`, and mode-specific classifier
 check precede candidate `host-tests`, `build`, `extended-host-tests`, `legacy`,
-and fail-closed `summary` jobs plus Copilot review. Metadata uses distinct
-skipped `metadata-host-tests-skipped`, `metadata-build-skipped`,
-`metadata-extended-host-tests-skipped`, and `metadata-legacy-skipped` worker
-contexts plus a distinct running `metadata-summary`; normal `summary`
+and fail-closed `summary` jobs plus Copilot review. Metadata uses four exact
+literal skipped-worker `name:` expressions whose true branches are
+`metadata-host-tests-skipped`, `metadata-build-skipped`,
+`metadata-extended-host-tests-skipped`, and `metadata-legacy-skipped`, plus a
+distinct running `metadata-summary`; normal `summary`
 is the sole candidate attestation and requires all four workers from that same
 full run. Only parsed body/title-only
 edits skip the four expensive workers. A

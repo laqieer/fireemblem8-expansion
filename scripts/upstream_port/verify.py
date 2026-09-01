@@ -147,42 +147,16 @@ _METADATA_WORKER_NAMES = {
     "extended-host-tests": "metadata-extended-host-tests-skipped",
     "legacy": "metadata-legacy-skipped",
 }
-_RAW_METADATA_NAME_CONDITION = (
-    "github.event_name == 'pull_request' && "
-    "github.event.action == 'edited' && "
-    "github.event.number && "
-    "github.ref == format('refs/pull/{0}/merge', github.event.number) && "
-    "github.event.pull_request.head.sha && "
-    "github.event.pull_request.base.sha && "
-    "github.event.pull_request.base.ref && "
-    "!github.event.changes.base && "
-    "((github.event.changes.body && !github.event.changes.title && "
-    "toJSON(github.event.changes) == format('{{\"body\":{0}}}', "
-    "toJSON(github.event.changes.body)) && "
-    "github.event.changes.body.from != github.event.pull_request.body) || "
-    "(github.event.changes.title && !github.event.changes.body && "
-    "toJSON(github.event.changes) == format('{{\"title\":{0}}}', "
-    "toJSON(github.event.changes.title)) && "
-    "github.event.changes.title.from != github.event.pull_request.title) || "
-    "(github.event.changes.body && github.event.changes.title && "
-    "(toJSON(github.event.changes) == format('{{\"body\":{0},\"title\":{1}}}', "
-    "toJSON(github.event.changes.body), "
-    "toJSON(github.event.changes.title)) || "
-    "toJSON(github.event.changes) == format('{{\"title\":{0},\"body\":{1}}}', "
-    "toJSON(github.event.changes.title), "
-    "toJSON(github.event.changes.body))) && "
-    "github.event.changes.body.from != github.event.pull_request.body && "
-    "github.event.changes.title.from != github.event.pull_request.title))"
-)
+_METADATA_WORKER_LITERALS = {
+    job_name: (
+        "${{ needs.event-classifier.result == 'success' && "
+        "needs.event-classifier.outputs.classification == 'metadata-only' && "
+        f"'{metadata_name}' || '{job_name}' }}}}"
+    )
+    for job_name, metadata_name in _METADATA_WORKER_NAMES.items()
+}
 _DYNAMIC_JOB_NAMES = {
-    **{
-        job_name: (
-            "${{ "
-            + _RAW_METADATA_NAME_CONDITION
-            + f" && '{metadata_name}' || '{job_name}' }}}}"
-        )
-        for job_name, metadata_name in _METADATA_WORKER_NAMES.items()
-    },
+    **_METADATA_WORKER_LITERALS,
     "event-classifier": (
         "${{ needs.event-router.result == 'success' && "
         "needs.event-router.outputs.classification == 'metadata-only' && "

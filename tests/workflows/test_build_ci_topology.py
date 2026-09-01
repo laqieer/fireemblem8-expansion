@@ -31,6 +31,14 @@ EVENT_FIXTURE = (
     / "fixtures"
     / "event_classification.json"
 )
+LIVE_METADATA_JOBS_FIXTURE = (
+    ROOT
+    / "scripts"
+    / "workflow_pilot"
+    / "tests"
+    / "fixtures"
+    / "live_metadata_jobs_33472008301.json"
+)
 PRE_FIX_WORKFLOW = EVENT_FIXTURE.with_name("pre_fix_build.yml")
 PYTHON_REQUIREMENTS = ROOT / ".github" / "requirements" / "build.txt"
 RETIRED_WORKFLOW_FILENAME = "full" + "-matrix.yml"
@@ -49,24 +57,28 @@ METADATA_WORKER_NAMES = {
     job_id: candidate_evidence.METADATA_WORKER_NAMES[job_id]
     for job_id in COMBINED_WORKERS
 }
-METADATA_CHECK_CONTEXTS = set(METADATA_WORKER_NAMES.values()) | {
+METADATA_WORKER_LITERALS = {
+    job_id: candidate_evidence.METADATA_WORKER_LITERALS[job_id]
+    for job_id in COMBINED_WORKERS
+}
+METADATA_CHECK_CONTEXTS = set(METADATA_WORKER_LITERALS.values()) | {
     "event-identity",
     "event-router",
     candidate_evidence.METADATA_CLASSIFIER,
     "patch-release",
     candidate_evidence.METADATA_ATTESTATION,
 }
-METADATA_FAILURE_CHECK_CONTEXTS = set(METADATA_WORKER_NAMES.values()) | {
+METADATA_CLASSIFIER_FAILURE_CHECKS = set(COMBINED_WORKERS) | {
     "event-identity",
     "event-router",
     candidate_evidence.METADATA_CLASSIFIER,
     "patch-release",
     "summary",
 }
-CANONICAL_WORKER_METADATA_CLASSIFIER_FAILURE_CHECKS = set(COMBINED_WORKERS) | {
+FULL_CLASSIFIER_LITERAL_WORKER_CHECKS = set(METADATA_WORKER_LITERALS.values()) | {
     "event-identity",
     "event-router",
-    candidate_evidence.METADATA_CLASSIFIER,
+    "event-classifier",
     "patch-release",
     "summary",
 }
@@ -117,33 +129,6 @@ CANDIDATE_FULL_JOBS = set(COMBINED_WORKERS) | {
     "summary",
 }
 EMITTED_FULL_CHECKS = CANDIDATE_FULL_JOBS | {"patch-release"}
-RAW_METADATA_NAME_CONDITION = (
-    "github.event_name == 'pull_request' && "
-    "github.event.action == 'edited' && "
-    "github.event.number && "
-    "github.ref == format('refs/pull/{0}/merge', github.event.number) && "
-    "github.event.pull_request.head.sha && "
-    "github.event.pull_request.base.sha && "
-    "github.event.pull_request.base.ref && "
-    "!github.event.changes.base && "
-    "((github.event.changes.body && !github.event.changes.title && "
-    "toJSON(github.event.changes) == format('{{\"body\":{0}}}', "
-    "toJSON(github.event.changes.body)) && "
-    "github.event.changes.body.from != github.event.pull_request.body) || "
-    "(github.event.changes.title && !github.event.changes.body && "
-    "toJSON(github.event.changes) == format('{{\"title\":{0}}}', "
-    "toJSON(github.event.changes.title)) && "
-    "github.event.changes.title.from != github.event.pull_request.title) || "
-    "(github.event.changes.body && github.event.changes.title && "
-    "(toJSON(github.event.changes) == format('{{\"body\":{0},\"title\":{1}}}', "
-    "toJSON(github.event.changes.body), "
-    "toJSON(github.event.changes.title)) || "
-    "toJSON(github.event.changes) == format('{{\"title\":{0},\"body\":{1}}}', "
-    "toJSON(github.event.changes.title), "
-    "toJSON(github.event.changes.body))) && "
-    "github.event.changes.body.from != github.event.pull_request.body && "
-    "github.event.changes.title.from != github.event.pull_request.title))"
-)
 EVENT_CLASSIFIER_DYNAMIC_NAME = (
     "${{ needs.event-router.result == 'success' && "
     "needs.event-router.outputs.classification == 'metadata-only' && "
@@ -469,66 +454,6 @@ def _pre_fix_triggered_jobs(text: str, event: dict) -> set[str]:
     return set(_job_blocks(text))
 
 
-def _is_metadata_name_event(event: dict) -> bool:
-    if event["event_name"] != "pull_request":
-        return False
-    payload = event.get("payload", event)
-    if payload.get("action") != "edited":
-        return False
-    changes = payload.get("changes")
-    pull_request = payload.get("pull_request")
-    if not isinstance(changes, dict) or not changes or not isinstance(
-        pull_request, dict
-    ):
-        return False
-    runner = event.get("runner", {})
-    pr_number = runner.get(
-        "pr_number",
-        event.get("number", payload.get("number", 177)),
-    )
-    github_ref = runner.get(
-        "github_ref",
-        event.get(
-            "github_ref",
-            f"refs/pull/{pr_number}/merge"
-            if isinstance(pr_number, int)
-            and not isinstance(pr_number, bool)
-            and pr_number > 0
-            else "",
-        ),
-    )
-    head = pull_request.get("head")
-    base = pull_request.get("base")
-    head_sha = head.get("sha") if isinstance(head, dict) else None
-    base_sha = base.get("sha") if isinstance(base, dict) else None
-    base_ref = base.get("ref") if isinstance(base, dict) else None
-    if (
-        not isinstance(pr_number, int)
-        or isinstance(pr_number, bool)
-        or pr_number < 1
-        or not isinstance(github_ref, str)
-        or github_ref != f"refs/pull/{pr_number}/merge"
-        or not isinstance(head_sha, str)
-        or not head_sha
-        or not isinstance(base_sha, str)
-        or not base_sha
-        or not isinstance(base_ref, str)
-        or not base_ref
-    ):
-        return False
-    changed_fields = frozenset(changes)
-    if changed_fields not in (
-        frozenset({"body"}),
-        frozenset({"title"}),
-        frozenset({"body", "title"}),
-    ):
-        return False
-    return all(
-        event_classifier._valid_metadata_change(name, changes[name], pull_request)
-        for name in changed_fields
-    )
-
-
 def _resolved_check_name(
     text: str,
     job_name: str,
@@ -536,6 +461,7 @@ def _resolved_check_name(
     decision: event_classifier.EventDecision | None,
     *,
     classifier_result: str,
+    scheduled: set[str],
 ) -> str:
     job = _job_blocks(text)[job_name]
     direct_name = _direct_job_name(job)
@@ -543,11 +469,7 @@ def _resolved_check_name(
         return job_name
     if job_name in COMBINED_WORKERS:
         if direct_name == _worker_name_expression(job_name):
-            return (
-                METADATA_WORKER_NAMES[job_name]
-                if _is_metadata_name_event(event)
-                else job_name
-            )
+            return direct_name if job_name not in scheduled else job_name
         return direct_name
     if job_name == "event-classifier" and direct_name == EVENT_CLASSIFIER_DYNAMIC_NAME:
         return (
@@ -614,6 +536,7 @@ def _emitted_check_names(text: str, event: dict) -> set[str]:
             event,
             decision,
             classifier_result=classifier_result,
+            scheduled=scheduled,
         )
         for job_name in _job_blocks(text)
     }
@@ -683,11 +606,7 @@ def _direct_job_name(job: str) -> str | None:
 
 
 def _worker_name_expression(job_id: str) -> str:
-    return (
-        "${{ "
-        + RAW_METADATA_NAME_CONDITION
-        + f" && '{METADATA_WORKER_NAMES[job_id]}' || '{job_id}' }}}}"
-    )
+    return METADATA_WORKER_LITERALS[job_id]
 
 
 def _run_block_commands(job: str) -> list[str]:
@@ -3007,19 +2926,18 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         },
                     },
                 },
-                EMITTED_FULL_CHECKS,
+                FULL_CLASSIFIER_LITERAL_WORKER_CHECKS,
             ),
             (
                 "wrong-pr-ref",
                 {
                     **body_only,
-                    "classifier_result": "failure",
                     "runner": {
                         **body_only["runner"],
                         "github_ref": "refs/pull/999/merge",
                     },
                 },
-                CANONICAL_WORKER_METADATA_CLASSIFIER_FAILURE_CHECKS,
+                METADATA_CHECK_CONTEXTS,
             ),
             (
                 "no-body-change",
@@ -3097,8 +3015,9 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         for job_name in COMBINED_WORKERS:
             with self.subTest(job=job_name):
                 self.assertNotEqual(job_name, METADATA_WORKER_NAMES[job_name])
+                self.assertNotEqual(job_name, METADATA_WORKER_LITERALS[job_name])
 
-    def test_classifier_failure_on_metadata_shaped_edit_keeps_metadata_names(self):
+    def test_classifier_failure_on_metadata_shaped_edit_keeps_canonical_worker_names(self):
         fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))
         body_only = next(
             case
@@ -3110,7 +3029,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         self.assertEqual(_triggered_jobs(self.text, case), CANDIDATE_FULL_JOBS)
         self.assertEqual(
             _emitted_check_names(self.text, case),
-            METADATA_FAILURE_CHECK_CONTEXTS,
+            METADATA_CLASSIFIER_FAILURE_CHECKS,
         )
 
     def test_metadata_worker_name_regressions_fail_closed(self):
@@ -3125,16 +3044,24 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             for case in fixture["cases"]
             if case["id"] == "base-only-stack-retarget"
         )
-        opened = next(
-            case
-            for case in fixture["cases"]
-            if case["id"] == "stacked-opened"
+        old_literal_name = next(
+            context["name"]
+            for context in json.loads(
+                LIVE_METADATA_JOBS_FIXTURE.read_text(encoding="utf-8")
+            )["jobs"]
+            if context["id"] == 334720083014
         )
-        literal_name = (
-            "${{ needs.event-classifier.result == 'success' && "
-            "needs.event-classifier.outputs.classification == 'metadata-only' && "
-            "'metadata-host-tests-skipped' || 'host-tests' }}"
-        )
+
+        def resolved(changed: str, job_name: str, event: dict, *, classifier_result: str = "success") -> str:
+            return _resolved_check_name(
+                changed,
+                job_name,
+                event,
+                None,
+                classifier_result=classifier_result,
+                scheduled=_triggered_jobs(changed, event),
+            )
+
         mutations = (
             (
                 "remove-dynamic-name",
@@ -3144,110 +3071,85 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     1,
                 ),
                 lambda changed: self.assertEqual(
-                    _resolved_check_name(
-                        changed,
-                        "host-tests",
-                        body_only,
-                        None,
-                        classifier_result="success",
-                    ),
+                    resolved(changed, "host-tests", body_only),
                     "host-tests",
                 ),
             ),
             (
-                "needs-based-name",
+                "old-raw-event-literal-drift",
                 self.text.replace(
                     f"    name: {_worker_name_expression('host-tests')}",
-                    f"    name: {literal_name}",
+                    f"    name: {old_literal_name}",
                     1,
                 ),
                 lambda changed: self.assertEqual(
-                    _resolved_check_name(
-                        changed,
-                        "host-tests",
-                        body_only,
-                        None,
-                        classifier_result="success",
-                    ),
-                    literal_name,
+                    resolved(changed, "host-tests", body_only),
+                    old_literal_name,
                 ),
             ),
             (
-                "shared-duplicate-metadata-name",
+                "shared-duplicate-literal-name",
                 self.text.replace(
                     f"    name: {_worker_name_expression('build')}",
-                    "    name: metadata-host-tests-skipped",
+                    f"    name: {_worker_name_expression('host-tests')}",
                     1,
                 ),
                 lambda changed: self.assertEqual(
-                    _resolved_check_name(
-                        changed,
-                        "host-tests",
-                        body_only,
-                        None,
-                        classifier_result="success",
-                    ),
-                    _resolved_check_name(
-                        changed,
-                        "build",
-                        body_only,
-                        None,
-                        classifier_result="success",
-                    ),
+                    resolved(changed, "host-tests", body_only),
+                    resolved(changed, "build", body_only),
                 ),
             ),
             (
-                "metadata-names-canonical",
+                "metadata-literal-canonical",
                 self.text.replace(
                     f"    name: {_worker_name_expression('host-tests')}",
                     "    name: host-tests",
                     1,
                 ),
                 lambda changed: self.assertEqual(
-                    _resolved_check_name(
-                        changed,
-                        "host-tests",
-                        body_only,
-                        None,
-                        classifier_result="success",
-                    ),
+                    resolved(changed, "host-tests", body_only),
                     "host-tests",
                 ),
             ),
             (
-                "full-names-metadata",
+                "evaluated-metadata-label",
                 self.text.replace(
                     f"    name: {_worker_name_expression('host-tests')}",
-                    "    name: metadata-host-tests-skipped",
+                    f"    name: {METADATA_WORKER_NAMES['host-tests']}",
                     1,
                 ),
                 lambda changed: self.assertEqual(
-                    _resolved_check_name(
-                        changed,
-                        "host-tests",
-                        opened,
-                        None,
-                        classifier_result="success",
-                    ),
-                    "metadata-host-tests-skipped",
+                    resolved(changed, "host-tests", body_only),
+                    METADATA_WORKER_NAMES["host-tests"],
                 ),
             ),
             (
                 "base-change-misnamed-metadata",
                 self.text.replace(
                     f"    name: {_worker_name_expression('host-tests')}",
-                    "    name: metadata-host-tests-skipped",
+                    f"    name: {METADATA_WORKER_NAMES['host-tests']}",
                     1,
                 ),
                 lambda changed: self.assertEqual(
-                    _resolved_check_name(
+                    resolved(changed, "host-tests", base_edit),
+                    METADATA_WORKER_NAMES["host-tests"],
+                ),
+            ),
+            (
+                "classifier-failure-metadata-name",
+                self.text.replace(
+                    f"    name: {_worker_name_expression('host-tests')}",
+                    f"    name: {METADATA_WORKER_NAMES['host-tests']}",
+                    1,
+                ),
+                lambda changed: self.assertEqual(
+                    resolved(
                         changed,
                         "host-tests",
-                        base_edit,
-                        None,
-                        classifier_result="success",
+                        {**body_only, "classifier_result": "failure"},
+                        classifier_result="failure",
                     ),
-                    "metadata-host-tests-skipped",
+                    METADATA_WORKER_NAMES["host-tests"],
                 ),
             ),
         )

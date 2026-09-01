@@ -130,23 +130,20 @@ expose `event-classifier`, `host-tests`, `build`,
 is the sole candidate attestation; it succeeds only after the same full run's
 classifier and all four workers succeed. Metadata-only runs expose the running
 `metadata-classifier` and `metadata-summary` attestations plus four distinct
-platform-skipped worker checks:
+platform-skipped worker checks. Their raw API names are the exact per-worker
+literal `needs.event-classifier...` expressions whose true branches are
 `metadata-host-tests-skipped`, `metadata-build-skipped`,
 `metadata-extended-host-tests-skipped`, and `metadata-legacy-skipped`.
-Each worker job derives that metadata-only name solely from immutable raw
-edited-event payload fields that are available before job scheduling: PR
-event/action/ref, nonempty PR head/base identities, no base change, and a
-real title/body metadata change. Successful metadata runs therefore never
-reuse the canonical full `host-tests`, `build`, `extended-host-tests`, or
-`legacy` check names, while successful full runs and successful
-incomplete-base `full_fallback` runs keep the canonical names. If classifier
-failure follows an otherwise metadata-shaped raw PR edit, fallback workers may
-still surface metadata-prefixed names because skipped-job names cannot safely
-depend on `needs.*`; summary stays canonical and candidate evidence rejects
-the run. Candidate normalization
-requires exact metadata worker names only in metadata mode and canonical
-worker names only in full mode; duplicate, unknown, literal, spoofed,
-missing, or success-shaped metadata worker records reject. A later green
+GitHub Runner returns those literal expression strings for skipped metadata
+workers instead of evaluated display names, so that literal output is the
+reviewed external contract. Successful metadata runs therefore never reuse the
+canonical full `host-tests`, `build`, `extended-host-tests`, or `legacy`
+check names, while successful full runs, successful incomplete-base
+`full_fallback` runs, and classifier-failure fallback runs keep the canonical
+worker names. Candidate normalization requires those exact job-specific
+literal strings only in metadata mode and canonical worker names only in full
+mode; evaluated metadata labels, older raw-event literal strings, duplicate,
+unknown, spoofed, missing, or success-shaped metadata worker records reject. A later green
 metadata run therefore cannot replace `summary` or any required canonical full
 context.
 
@@ -206,9 +203,10 @@ Base-only edits, mixed edits, unknown fields, incomplete change records,
 unknown actions, `opened`, `synchronize`, `reopened`, and `master` pushes with
 complete identity select the complete required graph. A classifier
 parser/runtime failure (including malformed, duplicate-key, or non-finite
-JSON) on a PR with a validated authoritative event head also runs all four
-workers at that exact `pull_request.head.sha`; it never uses merge `github.sha`.
-Summary verifies that every fallback worker succeeded, then still fails to
+JSON) on a PR with a validated authoritative PR head also runs all four
+workers at that exact `pull_request.head.sha` under canonical worker names; it
+never uses merge `github.sha`. Summary verifies that every fallback worker
+succeeded, then summary still fails to
 surface the classifier defect. On a `master` push, classifier failure with a
 validated authoritative `github.sha` similarly runs all four workers and the
 master-only publisher at that exact push SHA, audits success, then fails
@@ -250,11 +248,7 @@ metadata classifications, normal workers, and summary must all bind their
 classified head to that same kind and SHA.
 Metadata-only classification is accepted only for a coherently bound
 `pull_request`; metadata-shaped router output on push or another event fails
-the classifier and takes the validated full fallback path. On a genuine
-classifier failure after an otherwise metadata-shaped raw PR edit, the worker
-jobs may still carry their metadata-prefixed names while summary stays
-canonical; candidate evidence rejects the run, and that mismatch is
-intentional fail-closed evidence. Missing, uppercase,
+the classifier and takes the validated full fallback path. Missing, uppercase,
 short, nonhex,
 ref-name, ref-number-mismatched, malformed, or cross-event identities select
 no worker and cannot produce a successful summary. Classifier-failure workers
@@ -306,6 +300,12 @@ No whole-file source hash pins are used.
 Before the base exists, the fresh hosted publisher proves that no
 candidate-written `GITHUB_ENV`, `BASH_ENV`, background process, checkout, or
 executable state can survive the builder teardown.
+The checked-in live fixture
+`scripts/workflow_pilot/tests/fixtures/live_metadata_jobs_33472008301.json`
+captures PR #190 metadata run `33472008301`, which proved Runner's skipped-job
+API returns the literal earlier raw-event expressions with `runner_name: null`
+and `conclusion: skipped`; after the shorter reviewed needs-based expressions
+land, that saved run is a literal-drift negative control.
 The current Build workflow has no explicit final-dispatch trigger; if that
 supported surface is introduced later, `workflow_dispatch` classifies as full
 and the trigger/topology contracts must be updated together.

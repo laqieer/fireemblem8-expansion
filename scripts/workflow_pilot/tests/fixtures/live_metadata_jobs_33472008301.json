@@ -1,0 +1,68 @@
+{
+  "jobs": [
+    {
+      "conclusion": "success",
+      "id": 334720083011,
+      "name": "event-identity",
+      "runner_name": "GitHub Actions 1",
+      "started_at": "2026-09-01T05:02:25Z"
+    },
+    {
+      "conclusion": "success",
+      "id": 334720083012,
+      "name": "event-router",
+      "runner_name": "GitHub Actions 1",
+      "started_at": "2026-09-01T05:02:26Z"
+    },
+    {
+      "conclusion": "success",
+      "id": 334720083013,
+      "name": "metadata-classifier",
+      "runner_name": "GitHub Actions 1",
+      "started_at": "2026-09-01T05:02:27Z"
+    },
+    {
+      "conclusion": "skipped",
+      "id": 334720083014,
+      "name": "${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.number && github.ref == format('refs/pull/{0}/merge', github.event.number) && github.event.pull_request.head.sha && github.event.pull_request.base.sha && github.event.pull_request.base.ref && !github.event.changes.base && ((github.event.changes.body && !github.event.changes.title && toJSON(github.event.changes) == format('{{\"body\":{0}}}', toJSON(github.event.changes.body)) && github.event.changes.body.from != github.event.pull_request.body) || (github.event.changes.title && !github.event.changes.body && toJSON(github.event.changes) == format('{{\"title\":{0}}}', toJSON(github.event.changes.title)) && github.event.changes.title.from != github.event.pull_request.title) || (github.event.changes.body && github.event.changes.title && (toJSON(github.event.changes) == format('{{\"body\":{0},\"title\":{1}}}', toJSON(github.event.changes.body), toJSON(github.event.changes.title)) || toJSON(github.event.changes) == format('{{\"title\":{0},\"body\":{1}}}', toJSON(github.event.changes.title), toJSON(github.event.changes.body))) && github.event.changes.body.from != github.event.pull_request.body && github.event.changes.title.from != github.event.pull_request.title)) && 'metadata-host-tests-skipped' || 'host-tests' }}",
+      "runner_name": null,
+      "started_at": "2026-09-01T05:02:31Z"
+    },
+    {
+      "conclusion": "skipped",
+      "id": 334720083015,
+      "name": "${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.number && github.ref == format('refs/pull/{0}/merge', github.event.number) && github.event.pull_request.head.sha && github.event.pull_request.base.sha && github.event.pull_request.base.ref && !github.event.changes.base && ((github.event.changes.body && !github.event.changes.title && toJSON(github.event.changes) == format('{{\"body\":{0}}}', toJSON(github.event.changes.body)) && github.event.changes.body.from != github.event.pull_request.body) || (github.event.changes.title && !github.event.changes.body && toJSON(github.event.changes) == format('{{\"title\":{0}}}', toJSON(github.event.changes.title)) && github.event.changes.title.from != github.event.pull_request.title) || (github.event.changes.body && github.event.changes.title && (toJSON(github.event.changes) == format('{{\"body\":{0},\"title\":{1}}}', toJSON(github.event.changes.body), toJSON(github.event.changes.title)) || toJSON(github.event.changes) == format('{{\"title\":{0},\"body\":{1}}}', toJSON(github.event.changes.title), toJSON(github.event.changes.body))) && github.event.changes.body.from != github.event.pull_request.body && github.event.changes.title.from != github.event.pull_request.title)) && 'metadata-build-skipped' || 'build' }}",
+      "runner_name": null,
+      "started_at": "2026-09-01T05:02:31Z"
+    },
+    {
+      "conclusion": "skipped",
+      "id": 334720083016,
+      "name": "${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.number && github.ref == format('refs/pull/{0}/merge', github.event.number) && github.event.pull_request.head.sha && github.event.pull_request.base.sha && github.event.pull_request.base.ref && !github.event.changes.base && ((github.event.changes.body && !github.event.changes.title && toJSON(github.event.changes) == format('{{\"body\":{0}}}', toJSON(github.event.changes.body)) && github.event.changes.body.from != github.event.pull_request.body) || (github.event.changes.title && !github.event.changes.body && toJSON(github.event.changes) == format('{{\"title\":{0}}}', toJSON(github.event.changes.title)) && github.event.changes.title.from != github.event.pull_request.title) || (github.event.changes.body && github.event.changes.title && (toJSON(github.event.changes) == format('{{\"body\":{0},\"title\":{1}}}', toJSON(github.event.changes.body), toJSON(github.event.changes.title)) || toJSON(github.event.changes) == format('{{\"title\":{0},\"body\":{1}}}', toJSON(github.event.changes.title), toJSON(github.event.changes.body))) && github.event.changes.body.from != github.event.pull_request.body && github.event.changes.title.from != github.event.pull_request.title)) && 'metadata-extended-host-tests-skipped' || 'extended-host-tests' }}",
+      "runner_name": null,
+      "started_at": "2026-09-01T05:02:31Z"
+    },
+    {
+      "conclusion": "skipped",
+      "id": 334720083017,
+      "name": "${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.number && github.ref == format('refs/pull/{0}/merge', github.event.number) && github.event.pull_request.head.sha && github.event.pull_request.base.sha && github.event.pull_request.base.ref && !github.event.changes.base && ((github.event.changes.body && !github.event.changes.title && toJSON(github.event.changes) == format('{{\"body\":{0}}}', toJSON(github.event.changes.body)) && github.event.changes.body.from != github.event.pull_request.body) || (github.event.changes.title && !github.event.changes.body && toJSON(github.event.changes) == format('{{\"title\":{0}}}', toJSON(github.event.changes.title)) && github.event.changes.title.from != github.event.pull_request.title) || (github.event.changes.body && github.event.changes.title && (toJSON(github.event.changes) == format('{{\"body\":{0},\"title\":{1}}}', toJSON(github.event.changes.body), toJSON(github.event.changes.title)) || toJSON(github.event.changes) == format('{{\"title\":{0},\"body\":{1}}}', toJSON(github.event.changes.title), toJSON(github.event.changes.body))) && github.event.changes.body.from != github.event.pull_request.body && github.event.changes.title.from != github.event.pull_request.title)) && 'metadata-legacy-skipped' || 'legacy' }}",
+      "runner_name": null,
+      "started_at": "2026-09-01T05:02:31Z"
+    },
+    {
+      "conclusion": "skipped",
+      "id": 334720083018,
+      "name": "patch-release",
+      "runner_name": null,
+      "started_at": "2026-09-01T05:02:31Z"
+    },
+    {
+      "conclusion": "success",
+      "id": 334720083019,
+      "name": "metadata-summary",
+      "runner_name": "GitHub Actions 1",
+      "started_at": "2026-09-01T05:02:34Z"
+    }
+  ],
+  "run_id": 33472008301
+}

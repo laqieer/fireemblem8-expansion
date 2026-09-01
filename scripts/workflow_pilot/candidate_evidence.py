@@ -12,6 +12,14 @@ METADATA_WORKER_NAMES = {
     "extended-host-tests": "metadata-extended-host-tests-skipped",
     "legacy": "metadata-legacy-skipped",
 }
+METADATA_WORKER_LITERALS = {
+    job_id: (
+        "${{ needs.event-classifier.result == 'success' && "
+        "needs.event-classifier.outputs.classification == 'metadata-only' && "
+        f"'{metadata_name}' || '{job_id}' }}}}"
+    )
+    for job_id, metadata_name in METADATA_WORKER_NAMES.items()
+}
 KNOWN_JOB_IDS = frozenset(WORKER_JOB_IDS) | {
     "event-identity",
     "event-router",
@@ -131,9 +139,9 @@ def _validate_mode_contexts(
     if mode == "metadata-only":
         for job_id in WORKER_JOB_IDS:
             name, conclusion = require_context(job_id)
-            if name != METADATA_WORKER_NAMES[job_id]:
+            if name != METADATA_WORKER_LITERALS[job_id]:
                 raise CandidateEvidenceError(
-                    f"metadata worker {job_id!r} has nonmetadata check name"
+                    f"metadata worker {job_id!r} has nonliteral metadata check name"
                 )
             if conclusion != "skipped":
                 raise CandidateEvidenceError(

@@ -304,32 +304,32 @@ availability or grant credentials.
      `extended-host-tests`, `legacy`, `summary`}.
    - **Parsed current metadata-only job/check set:** {`event-identity`,
      `event-router`, `metadata-classifier`,
-     `metadata-host-tests-skipped`, `metadata-build-skipped`,
-     `metadata-extended-host-tests-skipped`, `metadata-legacy-skipped`,
+     `${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-host-tests-skipped' || 'host-tests' }}`,
+     `${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-build-skipped' || 'build' }}`,
+     `${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-extended-host-tests-skipped' || 'extended-host-tests' }}`,
+     `${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-legacy-skipped' || 'legacy' }}`,
      `patch-release`, `metadata-summary`}.
    The pre-fix graph therefore starts all four expensive workers and summary;
    the current graph retains both mandatory setup contexts, four distinct
-   metadata-skipped worker checks, canonical skipped patch publication, and
-   only the running metadata classifier/summary attestations.
+   literal skipped-worker check names, canonical skipped patch publication,
+   and only the running metadata classifier/summary attestations.
 
 ### Expected result
 
 Body-only, title-only, and combined body/title edits emit
-`event-identity`, `event-router`, `metadata-classifier`,
+`event-identity`, `event-router`, `metadata-classifier`, four exact literal
+worker-name expressions whose true branches are
 `metadata-host-tests-skipped`, `metadata-build-skipped`,
-`metadata-extended-host-tests-skipped`, `metadata-legacy-skipped`,
-`patch-release`, and `metadata-summary`. The four expensive workers do not
-start; GitHub still surfaces them as platform-skipped checks with no runner,
-and their distinct metadata names cannot supersede required full
-`host-tests`, `build`, `extended-host-tests`, or `legacy` contexts.
-Success-shaped, canonical, duplicate, literal, unknown, or spoofed metadata
-worker names reject normalization instead of becoming candidate evidence.
-Those metadata-prefixed names require every scheduling-time raw identity fact
-the workflow can know before jobs start: pull-request event/action, exact
-`refs/pull/<number>/merge` ref, nonempty head/base SHA and base ref, no
-base change, and a real title/body metadata transition. Missing base/head,
-empty base ref/SHA, wrong PR ref, no-op metadata edits, and mixed base edits
-therefore keep canonical full worker names.
+`metadata-extended-host-tests-skipped`, and `metadata-legacy-skipped`,
+plus `patch-release` and `metadata-summary`. The four expensive workers do
+not start; GitHub surfaces those skipped workers with `runner_name: null`,
+`conclusion: skipped`, and the exact literal `name:` expression text rather
+than an evaluated metadata display name. Those unique literal names can never
+supersede required full `host-tests`, `build`, `extended-host-tests`, or
+`legacy` contexts. Only the exact reviewed job-specific literal expressions
+are accepted during normalization; evaluated metadata labels, stale/other
+literals, canonical full names, duplicates, unknown names, or spoofed names
+reject instead of becoming candidate evidence.
 The summary succeeds only when classifier status is `success`, the classified
 SHA equals the event's validated exact `pull_request.head.sha`, event number
 matches the exact `refs/pull/<number>/merge` ref, suppression is exactly false,
@@ -340,12 +340,9 @@ Base-only edits, mixed edits, unknown and incomplete change records, `opened`,
 workers, and summary at the exact PR head. A `master` push additionally selects
 the existing patch publisher and runs the complete graph from its separate
 push SHA. Malformed/duplicate/non-finite JSON or another classifier failure with a
-validated authoritative PR head runs all four workers at that exact head, then
-summary still fails to expose the classifier defect. When that classifier
-failure follows an otherwise metadata-shaped raw PR edit, the fallback workers
-may still surface metadata-prefixed names because skipped-job names cannot
-safely depend on `needs.*`; `summary` stays canonical and candidate evidence
-rejects the run. A classifier failure on a
+validated authoritative PR head runs all four workers at that exact head under
+their canonical worker names, then summary still fails to expose the classifier
+defect. A classifier failure on a
 master push with validated `github.sha` runs all four workers and the publisher
 at that exact push SHA, then summary still fails. Any
 missing, empty, malformed, or event-mismatched base ref/SHA with a valid exact
@@ -357,6 +354,13 @@ Missing/stale successful output cannot select a fallback ref.
 An accepted base retarget requires valid, differing previous/current ref and
 SHA pairs; ref-only, SHA-only, same, missing, extra, or spoofed transition
 records remain full fail-closed edits and never metadata suppression.
+The checked-in live fixture
+`scripts/workflow_pilot/tests/fixtures/live_metadata_jobs_33472008301.json`
+freezes the disproved earlier raw-event literal contract from PR #190 run
+`33472008301`: each skipped worker had `runner_name: null`,
+`conclusion: skipped`, and a long raw-event literal `name:` string. The new
+shorter needs-based literals are now the exact accepted API surface, and that
+saved live fixture is a literal-drift negative control.
 Base refs are bounded to 1024 UTF-8 bytes and must satisfy full
 `git check-ref-format refs/heads/<base.ref>` semantics; `--branch` shorthand
 is not used, and lone `@` is rejected. Python applies the equivalent grammar
@@ -452,7 +456,7 @@ workers or produce a successful summary,
 duplicate JSON keys, `NaN`/positive or negative `Infinity`, positive/negative
 exponent overflow, nonzero-to-zero underflow, huge exponents, an unused
 overflow field on metadata-only input, oversized event
-files, base or mixed edits, canonical/duplicate/literal/spoofed metadata
+files, base or mixed edits, canonical/evaluated/other-literal/spoofed metadata
 worker names, merge-SHA fallback, malformed fallback identities,
 successful classification with a cross-event/malformed/number-mismatched ref,
 missing/failed/skipped/renamed/duplicate event-identity or event-router
@@ -922,8 +926,10 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
 
    - **Parsed live title-edit job/check set:** {`event-identity`,
      `event-router`, `metadata-classifier`,
-     `metadata-host-tests-skipped`, `metadata-build-skipped`,
-     `metadata-extended-host-tests-skipped`, `metadata-legacy-skipped`,
+     `${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-host-tests-skipped' || 'host-tests' }}`,
+     `${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-build-skipped' || 'build' }}`,
+     `${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-extended-host-tests-skipped' || 'extended-host-tests' }}`,
+     `${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-legacy-skipped' || 'legacy' }}`,
      `patch-release`, `metadata-summary`}.
 
    Every raw REST job record is scanned before normalization. Duplicate API
@@ -931,9 +937,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    assigned `runner_name` or non-`skipped` conclusion fail. GitHub may stamp
    `started_at` on a platform-skipped record; that timestamp is admissible only
    when `runner_name` is null and the conclusion is exactly `skipped`. Every
-   metadata worker record is included with its stable ID, distinct
-   metadata-only name, and skipped conclusion rather than hidden behind the
-   running metadata classifier/summary names.
+   metadata worker record is included with its stable ID, exact literal API
+   name, and skipped conclusion rather than hidden behind the running metadata
+   classifier/summary names.
    `patch-release` is mandatory in every pull-request run and must have exact
    stable ID/name `patch-release`, conclusion `skipped`, and no runner.
    Missing, successful, failed, renamed, or duplicate publisher context
@@ -963,8 +969,10 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
 
    - **Parsed live title-restore job/check set:** {`event-identity`,
      `event-router`, `metadata-classifier`,
-     `metadata-host-tests-skipped`, `metadata-build-skipped`,
-     `metadata-extended-host-tests-skipped`, `metadata-legacy-skipped`,
+     `${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-host-tests-skipped' || 'host-tests' }}`,
+     `${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-build-skipped' || 'build' }}`,
+     `${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-extended-host-tests-skipped' || 'extended-host-tests' }}`,
+     `${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' && 'metadata-legacy-skipped' || 'legacy' }}`,
      `patch-release`, `metadata-summary`}.
 5. Normalize all three real runs and execute the candidate evaluator's full,
    metadata-only, combined, failed-full, and missing-full assertions:
@@ -1007,16 +1015,16 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
            "event-classifier": "event-classifier",
            "metadata-classifier": "event-classifier",
            "host-tests": "host-tests",
-           "metadata-host-tests-skipped": "host-tests",
            "build": "build",
-           "metadata-build-skipped": "build",
            "extended-host-tests": "extended-host-tests",
-           "metadata-extended-host-tests-skipped": "extended-host-tests",
            "legacy": "legacy",
-           "metadata-legacy-skipped": "legacy",
            "patch-release": "patch-release",
            "summary": "summary",
            "metadata-summary": "summary",
+           **{
+               literal: job_id
+               for job_id, literal in candidate_evidence.METADATA_WORKER_LITERALS.items()
+           },
        }
        workers = {
            "host-tests",
@@ -1041,13 +1049,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
                "event-identity",
                "event-router",
                "metadata-classifier",
-               "metadata-host-tests-skipped",
-               "metadata-build-skipped",
-               "metadata-extended-host-tests-skipped",
-               "metadata-legacy-skipped",
                "patch-release",
                "metadata-summary",
-           }
+           } | set(candidate_evidence.METADATA_WORKER_LITERALS.values())
        )
        seen_api_ids = set()
        seen_names = set()
@@ -1116,7 +1120,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    latest_full = candidate_evidence.latest_contexts([opened, title])
    assert latest_full["summary"] == (opened["run_id"], "success")
    assert latest_full["metadata-summary"] == (title["run_id"], "success")
-   for job_id, metadata_name in candidate_evidence.METADATA_WORKER_NAMES.items():
+   for job_id, metadata_name in candidate_evidence.METADATA_WORKER_LITERALS.items():
        assert latest_full[job_id] == (opened["run_id"], "success")
        assert latest_full[metadata_name] == (title["run_id"], "skipped")
    failed_opened = copy.deepcopy(opened)
