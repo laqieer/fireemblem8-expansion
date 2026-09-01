@@ -143,12 +143,14 @@ therefore keeps the live canonical `host-tests`, `build`, and `summary`
 contexts unchanged. The canonical metadata `summary` is branch-protection
 continuity only: it succeeds only after a trusted no-checkout Actions API
 proof enumerates the complete exact paginated result set with stable
-`total_count`/`Link` consistency, rejects redirects before any second
-authenticated request, classifies exact prior runs newest-first, skips only
-conclusively metadata-shaped runs, and confirms the newest conclusively full
-Build CI run for the same repository, PR number, authoritative base SHA, and
-immutable head SHA completed successfully. A newer failed, cancelled,
-in-progress, or malformed full run blocks older successes.
+`total_count`/`Link` consistency and exact per-page cardinality, rejects
+redirects before any second authenticated request, validates stable
+`workflow_id` plus positive `run_number`/`run_attempt`, classifies exact prior
+runs newest-first by `run_number`, skips only conclusively metadata-shaped
+runs, and confirms the newest conclusively full Build CI run for the same
+repository, PR number, authoritative base SHA, and immutable head SHA
+completed successfully. A newer failed, cancelled, in-progress, or malformed
+full run blocks older successes.
 `candidate_evidence.evaluate_candidate_runs()` still derives eligibility only
 from a matching full run, so a metadata-only run remains ineligible by itself
 even when the adapters and canonical `summary` succeed.
@@ -234,7 +236,8 @@ adapters, `extended-host-tests`/`legacy`/`patch-release` are exactly
 runs newest-first so only the newest conclusively full run for the same
 repository, PR number, authoritative base SHA, and immutable head SHA can
 authorize continuity. That query first proves pagination completeness with
-stable counts and valid next links, and rejects redirects before any second
+stable counts, exact page sizes, valid next/last links, stable `workflow_id`,
+and ordered `run_number` values, then rejects redirects before any second
 authenticated request. Older full successes never override a newer failed,
 cancelled, in-progress, or malformed full run. That canonical metadata
 `summary` preserves live required-check continuity only; it is never full-build

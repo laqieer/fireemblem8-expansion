@@ -3942,6 +3942,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "canonical `summary`",
             "newest conclusively full Build CI run",
             "rejects redirects",
+            "run_number",
         )
         forbidden_fragments = (
             "distinct metadata-only names",

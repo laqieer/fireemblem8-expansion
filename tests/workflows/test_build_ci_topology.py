@@ -833,10 +833,12 @@ def _run_metadata_adapter_python_source(
 
 
 SUMMARY_TEST_REPOSITORY = "owner/repo"
+SUMMARY_TEST_WORKFLOW_ID = 123456789
 SUMMARY_TEST_HEAD_SHA = "1" * 40
 SUMMARY_TEST_BASE_SHA = "2" * 40
 SUMMARY_TEST_PR_NUMBER = 177
 SUMMARY_TEST_RUN_ID = 9001
+SUMMARY_TEST_RUN_NUMBER = 9001
 SUMMARY_TEST_RUN_ATTEMPT = 1
 SUMMARY_TEST_CREATED_AT = "2026-09-01T00:00:00Z"
 SUMMARY_TEST_RUN_STARTED_AT = "2026-09-01T00:00:01Z"
@@ -887,12 +889,14 @@ def _summary_workflow_run(
     run_id: int,
     *,
     repo: str = SUMMARY_TEST_REPOSITORY,
+    workflow_id: int = SUMMARY_TEST_WORKFLOW_ID,
     pr_number: int = SUMMARY_TEST_PR_NUMBER,
     head_sha: str = SUMMARY_TEST_HEAD_SHA,
     base_sha: str = SUMMARY_TEST_BASE_SHA,
     event: str = "pull_request",
     status: str = "completed",
     conclusion: str | None = "success",
+    run_number: int | None = None,
     run_attempt: int = 1,
     path: str | None = None,
     pull_requests: list[dict] | None = None,
@@ -917,8 +921,12 @@ def _summary_workflow_run(
             f"{urllib.parse.quote(owner, safe='')}/"
             f"{urllib.parse.quote(name, safe='')}/actions/runs/{run_id}"
         )
+    if run_number is None:
+        run_number = run_id
     return {
         "id": run_id,
+        "workflow_id": workflow_id,
+        "run_number": run_number,
         "run_attempt": run_attempt,
         "event": event,
         "status": status,
@@ -1026,6 +1034,7 @@ def _summary_metadata_env(**overrides: str) -> dict[str, str]:
         "RUN_ATTEMPT": str(SUMMARY_TEST_RUN_ATTEMPT),
         "RUN_EXPENSIVE": "false",
         "RUN_ID": str(SUMMARY_TEST_RUN_ID),
+        "RUN_NUMBER": str(SUMMARY_TEST_RUN_NUMBER),
     }
     env.update(overrides)
     return env
@@ -6280,21 +6289,23 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
 
         page_one_runs = [
             _summary_workflow_run(SUMMARY_TEST_RUN_ID, run_attempt=SUMMARY_TEST_RUN_ATTEMPT),
+            *[
+                _summary_workflow_run(
+                    9200 + index,
+                    event="push",
+                    head_sha=SUMMARY_TEST_HEAD_SHA,
+                    base_sha=SUMMARY_TEST_BASE_SHA,
+                    run_number=8199 - index,
+                )
+                for index in range(98)
+            ],
             _summary_workflow_run(
                 8101,
                 created_at=_summary_timestamp(5),
                 run_started_at=_summary_timestamp(6),
+                run_number=8101,
             ),
         ]
-        page_one_runs.extend(
-            _summary_workflow_run(
-                8200 + index,
-                event="push",
-                head_sha=SUMMARY_TEST_HEAD_SHA,
-                base_sha=SUMMARY_TEST_BASE_SHA,
-            )
-            for index in range(98)
-        )
         link_header = f'<{{api_base}}{_summary_runs_path(page=2)}>; rel="next"'
         routes = {
             _summary_runs_path(page=1): _summary_response(
@@ -6457,6 +6468,36 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 ],
             ),
             (
+                "null-start-newer-failed-full-blocks-older-success",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8101,
+                        conclusion="failure",
+                        created_at=_summary_timestamp(7),
+                        run_started_at=None,
+                    ),
+                    _summary_workflow_run(
+                        8100,
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101),
+                ],
+            ),
+            (
                 "newer-cancelled-full-blocks-older-success",
                 [
                     _summary_workflow_run(SUMMARY_TEST_RUN_ID),
@@ -6501,6 +6542,50 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         8100,
                         created_at=_summary_timestamp(6),
                         run_started_at=_summary_timestamp(7),
+                    ),
+                ],
+                {
+                    _summary_jobs_path(8101): _summary_response(
+                        _summary_api_payload(
+                            "jobs",
+                            _replace_summary_job(
+                                _replace_summary_job(
+                                    full_success,
+                                    "summary",
+                                    status="in_progress",
+                                    conclusion=None,
+                                ),
+                                "host-tests",
+                                status="in_progress",
+                                conclusion=None,
+                            ),
+                        )
+                    ),
+                    _summary_jobs_path(8100): _summary_response(
+                        _summary_api_payload("jobs", full_success)
+                    ),
+                },
+                "metadata-only summary newest prior full Build CI run did not complete successfully",
+                [
+                    _summary_runs_path(page=1),
+                    _summary_jobs_path(8101),
+                ],
+            ),
+            (
+                "null-start-newer-in-progress-full-blocks-older-success",
+                [
+                    _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                    _summary_workflow_run(
+                        8101,
+                        status="in_progress",
+                        conclusion=None,
+                        created_at=_summary_timestamp(7),
+                        run_started_at=None,
+                    ),
+                    _summary_workflow_run(
+                        8100,
+                        created_at=_summary_timestamp(7),
+                        run_started_at=_summary_timestamp(8),
                     ),
                 ],
                 {
@@ -6622,13 +6707,13 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 [
                     _summary_workflow_run(SUMMARY_TEST_RUN_ID),
                     _summary_workflow_run(
-                        8100,
+                        8101,
+                        conclusion="failure",
                         created_at=_summary_timestamp(7),
                         run_started_at=_summary_timestamp(8),
                     ),
                     _summary_workflow_run(
-                        8101,
-                        conclusion="failure",
+                        8100,
                         created_at=_summary_timestamp(7),
                         run_started_at=_summary_timestamp(8),
                     ),
@@ -6712,12 +6797,12 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     [
                         _summary_workflow_run(SUMMARY_TEST_RUN_ID),
                         _summary_workflow_run(
-                            8100,
+                            8101,
                             created_at=_summary_timestamp(7),
                             run_started_at=_summary_timestamp(8),
                         ),
                         _summary_workflow_run(
-                            8101,
+                            8100,
                             created_at=_summary_timestamp(7),
                             run_started_at=_summary_timestamp(8),
                         ),
@@ -6775,12 +6860,12 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     "workflow_runs",
                     [
                         _summary_workflow_run(SUMMARY_TEST_RUN_ID),
-                        _summary_workflow_run(8100),
                         _summary_workflow_run(8101),
+                        _summary_workflow_run(8100),
                     ],
                 )
             ),
-            _summary_jobs_path(8100): _summary_response(
+            _summary_jobs_path(8101): _summary_response(
                 _summary_api_payload(
                     "jobs",
                     [
@@ -6792,7 +6877,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     ],
                 )
             ),
-            _summary_jobs_path(8101): _summary_response(
+            _summary_jobs_path(8100): _summary_response(
                 _summary_api_payload(
                     "jobs",
                     [
@@ -6813,6 +6898,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         _summary_workflow_run(
                             8200 + index,
                             event="push",
+                            run_number=8298 - index,
                         )
                         for index in range(99)
                     ],
@@ -6837,8 +6923,9 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         "workflow_runs",
                         [
                             _summary_workflow_run(
-                                9000 + page * 100 + index,
+                                10000 + (page - 1) * 100 + index,
                                 event="push",
+                                run_number=9000 - ((page - 1) * 100 + index),
                             )
                             for index in range(100)
                         ],
@@ -6854,6 +6941,10 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 for page in range(1, 11)
             }
         }
+        missing_run_number = _summary_workflow_run(8100)
+        del missing_run_number["run_number"]
+        missing_workflow_id = _summary_workflow_run(8100)
+        del missing_workflow_id["workflow_id"]
         cases = (
             (
                 "metadata-expensive-ran",
@@ -6883,13 +6974,102 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     _summary_runs_path(page=1): _summary_response(
                         _summary_api_payload(
                             "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8101),
+                            ],
+                            total_count=3,
+                        ),
+                        headers={
+                            "Link": f'<{{api_base}}{_summary_runs_path(page=2)}>; rel="next"'
+                        },
+                    ),
+                    _summary_runs_path(page=2): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
                             [_summary_workflow_run(8100)],
                             total_count=3,
                         )
+                    ),
+                },
+                1,
+                "metadata-only summary workflow runs page cardinality is invalid",
+            ),
+            (
+                "short-nonfinal-page",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(9100 - index) for index in range(99)],
+                            total_count=101,
+                        ),
+                        headers={
+                            "Link": f'<{{api_base}}{_summary_runs_path(page=2)}>; rel="next"'
+                        },
                     )
                 },
                 1,
-                "metadata-only summary workflow runs pagination truncated",
+                "metadata-only summary workflow runs page cardinality is invalid",
+            ),
+            (
+                "short-final-page",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(
+                                    9200 - index,
+                                    run_number=9000 - index,
+                                )
+                                for index in range(100)
+                            ],
+                            total_count=101,
+                        ),
+                        headers={
+                            "Link": f'<{{api_base}}{_summary_runs_path(page=2)}>; rel="next"'
+                        },
+                    ),
+                    _summary_runs_path(page=2): _summary_response(
+                        _summary_api_payload("workflow_runs", [], total_count=101)
+                    ),
+                },
+                1,
+                "metadata-only summary workflow runs page cardinality is invalid",
+            ),
+            (
+                "overfull-final-page",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(
+                                    9200 - index,
+                                    run_number=9000 - index,
+                                )
+                                for index in range(100)
+                            ],
+                            total_count=101,
+                        ),
+                        headers={
+                            "Link": f'<{{api_base}}{_summary_runs_path(page=2)}>; rel="next"'
+                        },
+                    ),
+                    _summary_runs_path(page=2): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(8101), _summary_workflow_run(8100)],
+                            total_count=101,
+                        )
+                    ),
+                },
+                1,
+                "metadata-only summary workflow runs page cardinality is invalid",
             ),
             (
                 "unexpected-next-after-complete",
@@ -6919,8 +7099,15 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     _summary_runs_path(page=1): _summary_response(
                         _summary_api_payload(
                             "workflow_runs",
-                            [_summary_workflow_run(SUMMARY_TEST_RUN_ID)],
-                            total_count=2,
+                            [
+                                _summary_workflow_run(
+                                    9300 - index,
+                                    event="push",
+                                    run_number=9000 - index,
+                                )
+                                for index in range(100)
+                            ],
+                            total_count=101,
                         ),
                         headers={
                             "Link": f'<{{api_base}}{_summary_runs_path(page=2)}>; rel="next"'
@@ -6929,8 +7116,8 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     _summary_runs_path(page=2): _summary_response(
                         _summary_api_payload(
                             "workflow_runs",
-                            [_summary_workflow_run(8100)],
-                            total_count=1,
+                            [_summary_workflow_run(8100, event="push", run_number=8900)],
+                            total_count=102,
                         )
                     ),
                 },
@@ -6938,22 +7125,26 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "metadata-only summary workflow runs total_count changed across pages",
             ),
             (
-                "exceeded-total-count",
+                "overfull-nonfinal-page",
                 _summary_metadata_env(),
                 {
                     _summary_runs_path(page=1): _summary_response(
                         _summary_api_payload(
                             "workflow_runs",
                             [
-                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
-                                _summary_workflow_run(8100),
+                                _summary_workflow_run(
+                                    9200 - index,
+                                    event="push",
+                                    run_number=9000 - index,
+                                )
+                                for index in range(101)
                             ],
-                            total_count=1,
+                            total_count=150,
                         )
                     )
                 },
                 1,
-                "metadata-only summary workflow runs exceeded total_count",
+                "metadata-only summary workflow runs pagination is invalid",
             ),
             (
                 "looping-next-page",
@@ -6962,8 +7153,15 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     _summary_runs_path(page=1): _summary_response(
                         _summary_api_payload(
                             "workflow_runs",
-                            [_summary_workflow_run(SUMMARY_TEST_RUN_ID)],
-                            total_count=2,
+                            [
+                                _summary_workflow_run(
+                                    9300 - index,
+                                    event="push",
+                                    run_number=9000 - index,
+                                )
+                                for index in range(100)
+                            ],
+                            total_count=101,
                         ),
                         headers={
                             "Link": f'<{{api_base}}{_summary_runs_path(page=1)}>; rel="next"'
@@ -6980,8 +7178,15 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                     _summary_runs_path(page=1): _summary_response(
                         _summary_api_payload(
                             "workflow_runs",
-                            [_summary_workflow_run(SUMMARY_TEST_RUN_ID)],
-                            total_count=2,
+                            [
+                                _summary_workflow_run(
+                                    9300 - index,
+                                    event="push",
+                                    run_number=9000 - index,
+                                )
+                                for index in range(100)
+                            ],
+                            total_count=101,
                         ),
                         headers={
                             "Link": f'<{{api_base}}{_summary_runs_path(page=3)}>; rel="next"'
@@ -6990,6 +7195,110 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 },
                 1,
                 "metadata-only summary workflow runs next page is not sequential",
+            ),
+            (
+                "same-run-number-conflicting-ids",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8101, run_number=8100),
+                                _summary_workflow_run(8100, run_number=8100),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs repeat a run_number",
+            ),
+            (
+                "nonmonotonic-run-number-order",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, run_number=8000),
+                                _summary_workflow_run(8101, run_number=8001),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs are not ordered by run_number",
+            ),
+            (
+                "run-number-not-older-than-current",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, run_number=SUMMARY_TEST_RUN_NUMBER + 1),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs are not older than the current run",
+            ),
+            (
+                "missing-run-number",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                missing_run_number,
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary workflow run run_number is invalid",
+            ),
+            (
+                "missing-workflow-id",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                missing_workflow_id,
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary workflow run workflow_id is invalid",
+            ),
+            (
+                "workflow-id-drift",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100, workflow_id=SUMMARY_TEST_WORKFLOW_ID + 1),
+                            ],
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs workflow_id drifted",
             ),
             (
                 "failed-prior-run",
@@ -7276,8 +7585,9 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                             "workflow_runs",
                             [
                                 _summary_workflow_run(
-                                    8200 + index,
+                                    8300 + index,
                                     event="push",
+                                    run_number=8300 - index,
                                 )
                                 for index in range(100)
                             ],

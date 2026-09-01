@@ -2776,6 +2776,7 @@ jobs:
       PR_NUMBER: ${{ github.event.number }}
       RUN_ATTEMPT: ${{ github.run_attempt }}
       RUN_ID: ${{ github.run_id }}
+      RUN_NUMBER: ${{ github.run_number }}
 
     steps:
     - name: Render fail-closed combined Build summary
@@ -2960,6 +2961,7 @@ jobs:
           MAX_PR_NUMBER_BYTES = 20
           MAX_REPOSITORY_BYTES = 256
           MAX_RUN_PAGES = 10
+          MAX_SEQUENCE_VALUE = 999999999999999999
           MAX_TOTAL_RUNS = MAX_PAGE_SIZE * MAX_RUN_PAGES
           MAX_TOKEN_BYTES = 8192
           INT_RE = re.compile(r"^[1-9][0-9]{0,18}$")
@@ -3070,7 +3072,12 @@ jobs:
               return int(text)
 
           def parse_positive_int_value(value, *, field):
-              if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+              if (
+                  isinstance(value, bool)
+                  or not isinstance(value, int)
+                  or value < 1
+                  or value > MAX_SEQUENCE_VALUE
+              ):
                   fail(f"{field} is invalid")
               return value
 
@@ -3147,7 +3154,77 @@ jobs:
                   ),
               )
 
-          def parse_next_page(link, *, request_url, current_page):
+          def total_pages_for_count(total_count):
+              if total_count == 0:
+                  return 1
+              page_count, remainder = divmod(total_count, MAX_PAGE_SIZE)
+              if remainder:
+                  page_count += 1
+              return page_count
+
+          def expected_page_count(total_count, current_page):
+              total_pages = total_pages_for_count(total_count)
+              if current_page > total_pages:
+                  fail("metadata-only summary workflow runs page exceeded total_count")
+              if total_pages == 1:
+                  return total_count
+              if current_page < total_pages:
+                  return MAX_PAGE_SIZE
+              remainder = total_count % MAX_PAGE_SIZE
+              if remainder == 0:
+                  return MAX_PAGE_SIZE
+              return remainder
+
+          def parse_page_relation_url(url, *, request_url, relation):
+              split = urllib.parse.urlsplit(url)
+              if (
+                  split.scheme != request_url.scheme
+                  or split.netloc != request_url.netloc
+                  or split.username is not None
+                  or split.password is not None
+                  or split.path != request_url.path
+                  or split.fragment
+              ):
+                  fail(
+                      f"metadata-only summary workflow runs {relation} page escaped the reviewed endpoint"
+                  )
+              try:
+                  query = urllib.parse.parse_qs(
+                      split.query,
+                      strict_parsing=True,
+                      keep_blank_values=False,
+                  )
+              except ValueError as error:
+                  fail(
+                      f"metadata-only summary workflow runs {relation} page is malformed: {error}"
+                  )
+              if set(query) != {"event", "head_sha", "page", "per_page"}:
+                  fail(
+                      f"metadata-only summary workflow runs {relation} page has unexpected query keys"
+                  )
+              for key in query:
+                  if len(query[key]) != 1:
+                      fail(
+                          f"metadata-only summary workflow runs {relation} page repeats a query parameter"
+                      )
+              if query["event"][0] != "pull_request":
+                  fail(
+                      f"metadata-only summary workflow runs {relation} page event drifted"
+                  )
+              if query["head_sha"][0] != head_sha:
+                  fail(
+                      f"metadata-only summary workflow runs {relation} page head drifted"
+                  )
+              if query["per_page"][0] != str(MAX_PAGE_SIZE):
+                  fail(
+                      f"metadata-only summary workflow runs {relation} page width drifted"
+                  )
+              return parse_positive_int(
+                  query["page"][0],
+                  field=f"metadata-only summary workflow runs {relation} page",
+              )
+
+          def parse_next_page(link, *, request_url, current_page, total_pages):
               if not link:
                   return None
               if utf8_len(link) > MAX_HEADER_BYTES:
@@ -3166,46 +3243,48 @@ jobs:
                       fail("metadata-only summary workflow runs Link header repeats a relation")
                   rels[relation] = url
                   position += match.end()
-              next_url = rels.get("next")
-              if next_url is None:
-                  return None
-              split = urllib.parse.urlsplit(next_url)
-              if (
-                  split.scheme != request_url.scheme
-                  or split.netloc != request_url.netloc
-                  or split.username is not None
-                  or split.password is not None
-                  or split.path != request_url.path
-                  or split.fragment
-              ):
-                  fail("metadata-only summary workflow runs next page escaped the reviewed endpoint")
-              try:
-                  query = urllib.parse.parse_qs(
-                      split.query,
-                      strict_parsing=True,
-                      keep_blank_values=False,
+              unexpected_relations = set(rels) - {"first", "last", "next", "prev"}
+              if unexpected_relations:
+                  fail("metadata-only summary workflow runs Link header has an unexpected relation")
+              next_page = None
+              if "next" in rels:
+                  next_page = parse_page_relation_url(
+                      rels["next"],
+                      request_url=request_url,
+                      relation="next",
                   )
-              except ValueError as error:
-                  fail(f"metadata-only summary workflow runs next page is malformed: {error}")
-              if set(query) != {"event", "head_sha", "page", "per_page"}:
-                  fail("metadata-only summary workflow runs next page has unexpected query keys")
-              for key in query:
-                  if len(query[key]) != 1:
-                      fail("metadata-only summary workflow runs next page repeats a query parameter")
-              if query["event"][0] != "pull_request":
-                  fail("metadata-only summary workflow runs next page event drifted")
-              if query["head_sha"][0] != head_sha:
-                  fail("metadata-only summary workflow runs next page head drifted")
-              if query["per_page"][0] != str(MAX_PAGE_SIZE):
-                  fail("metadata-only summary workflow runs next page width drifted")
-              next_page = parse_positive_int(
-                  query["page"][0],
-                  field="metadata-only summary workflow runs next page",
-              )
-              if next_page != current_page + 1:
-                  fail("metadata-only summary workflow runs next page is not sequential")
-              if next_page > MAX_RUN_PAGES:
-                  fail("metadata-only summary workflow runs exceed the reviewed pagination bound")
+                  if next_page != current_page + 1:
+                      fail("metadata-only summary workflow runs next page is not sequential")
+                  if next_page > MAX_RUN_PAGES:
+                      fail("metadata-only summary workflow runs exceed the reviewed pagination bound")
+              if current_page < total_pages and next_page is None:
+                  fail("metadata-only summary workflow runs pagination truncated")
+              if current_page == total_pages and next_page is not None:
+                  fail("metadata-only summary workflow runs reported an unexpected next page")
+              if "last" in rels:
+                  last_page = parse_page_relation_url(
+                      rels["last"],
+                      request_url=request_url,
+                      relation="last",
+                  )
+                  if last_page != total_pages:
+                      fail("metadata-only summary workflow runs last page drifted")
+              if "first" in rels:
+                  first_page = parse_page_relation_url(
+                      rels["first"],
+                      request_url=request_url,
+                      relation="first",
+                  )
+                  if first_page != 1:
+                      fail("metadata-only summary workflow runs first page drifted")
+              if "prev" in rels:
+                  prev_page = parse_page_relation_url(
+                      rels["prev"],
+                      request_url=request_url,
+                      relation="prev",
+                  )
+                  if prev_page != current_page - 1:
+                      fail("metadata-only summary workflow runs previous page is not sequential")
               return next_page
 
           def request_json(path, query_pairs, *, label):
@@ -3261,9 +3340,17 @@ jobs:
                   urllib.parse.urlsplit(request_url),
               )
 
-          def parse_prior_run(run, *, run_id):
+          def parse_visible_run(run, *, run_id):
               if not isinstance(run, dict):
                   fail("metadata-only summary workflow run is invalid")
+              workflow_id = parse_positive_int_value(
+                  run.get("workflow_id"),
+                  field="metadata-only summary workflow run workflow_id",
+              )
+              run_number = parse_positive_int_value(
+                  run.get("run_number"),
+                  field="metadata-only summary workflow run run_number",
+              )
               run_attempt = parse_positive_int_value(
                   run.get("run_attempt"),
                   field="metadata-only summary workflow run attempt",
@@ -3303,19 +3390,47 @@ jobs:
               pull_requests = run.get("pull_requests")
               if not isinstance(pull_requests, list):
                   fail("metadata-only summary workflow run pull_requests is invalid")
-              if run_id == current_run_id:
-                  return None
-              if event != "pull_request":
-                  return None
               if SHA_RE.fullmatch(run_head_sha) is None:
                   fail("metadata-only summary workflow run head sha is invalid")
-              if run_head_sha != head_sha:
-                  return None
-              if not path.startswith(WORKFLOW_PATH_PREFIX):
-                  return None
+              path_matches = path == WORKFLOW_PATH_PREFIX or path.startswith(
+                  WORKFLOW_PATH_PREFIX + "@"
+              )
               split = urllib.parse.urlsplit(url)
-              if split.path != f"{expected_run_url_prefix}/{run_id}":
-                  return None
+              url_matches = split.path == f"{expected_run_url_prefix}/{run_id}"
+              if run_id == current_run_id:
+                  if run_number != current_run_number:
+                      fail("metadata-only summary current workflow run number drifted")
+                  if run_attempt != current_run_attempt:
+                      fail("metadata-only summary current workflow run attempt drifted")
+                  if (
+                      event != "pull_request"
+                      or run_head_sha != head_sha
+                      or not path_matches
+                      or not url_matches
+                  ):
+                      fail("metadata-only summary current workflow run identity drifted")
+              elif run_number >= current_run_number:
+                  fail("metadata-only summary workflow runs are not older than the current run")
+              if event != "pull_request":
+                  return {
+                      "exact_candidate": False,
+                      "run_attempt": run_attempt,
+                      "run_id": run_id,
+                      "run_number": run_number,
+                      "run_started_at": run_started_at,
+                      "status": status,
+                      "workflow_id": workflow_id,
+                  }
+              if run_head_sha != head_sha or not path_matches or not url_matches:
+                  return {
+                      "exact_candidate": False,
+                      "run_attempt": run_attempt,
+                      "run_id": run_id,
+                      "run_number": run_number,
+                      "run_started_at": run_started_at,
+                      "status": status,
+                      "workflow_id": workflow_id,
+                  }
               matches = 0
               for pull_request in pull_requests:
                   number, pull_head_sha, pull_base_sha = parse_pull_request_binding(
@@ -3327,15 +3442,21 @@ jobs:
                       and pull_base_sha == base_sha
                   ):
                       matches += 1
-              if matches != 1:
-                  return None
+              if run_id == current_run_id and matches != 1:
+                  fail("metadata-only summary current workflow run identity drifted")
+              if matches > 1:
+                  fail("metadata-only summary workflow run pull request binding is ambiguous")
+              exact_candidate = matches == 1 and run_id != current_run_id
               return {
                   "conclusion": conclusion,
                   "created_at": created_at,
+                  "exact_candidate": exact_candidate,
                   "run_attempt": run_attempt,
                   "run_id": run_id,
+                  "run_number": run_number,
                   "run_started_at": run_started_at,
                   "status": status,
+                  "workflow_id": workflow_id,
               }
 
           def parse_total_count(value):
@@ -3458,18 +3579,6 @@ jobs:
                       "metadata-only summary newest prior full Build CI patch-release is invalid"
                   )
 
-          def prior_run_sort_key(prior_run):
-              started_at = prior_run["run_started_at"]
-              if started_at is None:
-                  started_key = ""
-              else:
-                  started_key = started_at
-              return (
-                  prior_run["created_at"],
-                  started_key,
-                  prior_run["run_id"],
-              )
-
           pr_number = parse_positive_int(
               env("PR_NUMBER", max_bytes=MAX_PR_NUMBER_BYTES),
               field="metadata-only summary PR number",
@@ -3490,6 +3599,10 @@ jobs:
               env("RUN_ATTEMPT", max_bytes=MAX_PR_NUMBER_BYTES),
               field="metadata-only summary run attempt",
           )
+          current_run_number = parse_positive_int(
+              env("RUN_NUMBER", max_bytes=MAX_PR_NUMBER_BYTES),
+              field="metadata-only summary run number",
+          )
           if current_run_attempt < 1:
               fail("metadata-only summary run attempt is invalid")
           owner, repo = parse_repository(
@@ -3505,8 +3618,11 @@ jobs:
 
           page = 1
           expected_total_count = None
+          expected_workflow_id = None
           prior_runs = []
           seen_run_ids = set()
+          seen_run_numbers = {}
+          previous_visible_run_number = None
           prior_full_run_id = None
           while True:
               payload, link, request_url = request_json(
@@ -3535,6 +3651,9 @@ jobs:
                   expected_total_count = total_count
               elif total_count != expected_total_count:
                   fail("metadata-only summary workflow runs total_count changed across pages")
+              total_pages = total_pages_for_count(total_count)
+              if len(workflow_runs) != expected_page_count(total_count, page):
+                  fail("metadata-only summary workflow runs page cardinality is invalid")
               for run in workflow_runs:
                   if not isinstance(run, dict):
                       fail("metadata-only summary workflow run is invalid")
@@ -3545,9 +3664,22 @@ jobs:
                   if run_id in seen_run_ids:
                       fail("metadata-only summary workflow runs repeated a run")
                   seen_run_ids.add(run_id)
-                  prior_run = parse_prior_run(run, run_id=run_id)
-                  if prior_run is not None:
-                      prior_runs.append(prior_run)
+                  visible_run = parse_visible_run(run, run_id=run_id)
+                  if expected_workflow_id is None:
+                      expected_workflow_id = visible_run["workflow_id"]
+                  elif visible_run["workflow_id"] != expected_workflow_id:
+                      fail("metadata-only summary workflow runs workflow_id drifted")
+                  prior_id = seen_run_numbers.get(visible_run["run_number"])
+                  if prior_id is not None and prior_id != run_id:
+                      fail("metadata-only summary workflow runs repeat a run_number")
+                  seen_run_numbers[visible_run["run_number"]] = run_id
+                  if previous_visible_run_number is not None and (
+                      visible_run["run_number"] >= previous_visible_run_number
+                  ):
+                      fail("metadata-only summary workflow runs are not ordered by run_number")
+                  previous_visible_run_number = visible_run["run_number"]
+                  if visible_run["exact_candidate"]:
+                      prior_runs.append(visible_run)
               visible_run_count = len(seen_run_ids)
               if visible_run_count > total_count:
                   fail("metadata-only summary workflow runs exceeded total_count")
@@ -3555,17 +3687,12 @@ jobs:
                   link,
                   request_url=request_url,
                   current_page=page,
+                  total_pages=total_pages,
               )
-              if visible_run_count < total_count:
-                  if next_page is None:
-                      fail("metadata-only summary workflow runs pagination truncated")
-              elif next_page is not None:
-                  fail("metadata-only summary workflow runs reported an unexpected next page")
               if next_page is None:
                   break
               page = next_page
 
-          prior_runs.sort(key=prior_run_sort_key, reverse=True)
           for prior_run in prior_runs:
               mode, by_name = classify_prior_run(
                   prior_run["run_id"],

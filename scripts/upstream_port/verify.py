@@ -815,6 +815,7 @@ _EXPECTED_JOB_ENV = {
                 ("RUN_ATTEMPT", "${{ github.run_attempt }}"),
                 ("RUN_EXPENSIVE", "${{ needs.event-classifier.outputs.run_expensive }}"),
                 ("RUN_ID", "${{ github.run_id }}"),
+                ("RUN_NUMBER", "${{ github.run_number }}"),
             )
         )
     ),
