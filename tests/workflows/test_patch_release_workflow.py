@@ -715,6 +715,203 @@ done
     )
 
 
+def _bounded_process_text(stream: str | bytes | None, limit: int = 120) -> str:
+    if stream is None:
+        return "<empty>"
+    if isinstance(stream, bytes):
+        stream = stream.decode("utf-8", errors="replace")
+    collapsed = " ".join(stream.split())
+    if not collapsed:
+        return "<empty>"
+    if len(collapsed) <= limit:
+        return collapsed
+    return collapsed[: limit - 3] + "..."
+
+
+def _bounded_process_diagnostic(
+    completed: subprocess.CompletedProcess,
+    *,
+    stream_limit: int = 120,
+    total_limit: int = 240,
+) -> str:
+    diagnostic = (
+        f"rc={completed.returncode}, "
+        f"stdout={_bounded_process_text(completed.stdout, stream_limit)!r}, "
+        f"stderr={_bounded_process_text(completed.stderr, stream_limit)!r}"
+    )
+    if len(diagnostic) <= total_limit:
+        return diagnostic
+    return diagnostic[: total_limit - 3] + "..."
+
+
+FINDMNT_UNIQ_NAMESPACE_PREFLIGHT_SCRIPT = """\
+set -euo pipefail
+root="$1"
+cleanup() {
+  local status=0
+  if [ -e "$root/target-upper-bound" ]; then
+    umount -- "$root/target" || status=1
+    rm -f -- "$root/target-upper-bound"
+  fi
+  if [ -e "$root/target-lower-bound" ]; then
+    umount -- "$root/target" || status=1
+    rm -f -- "$root/target-lower-bound"
+  fi
+  if [ -e "$root/upper-mounted" ]; then
+    umount -- "$root/upper" || status=1
+    rm -f -- "$root/upper-mounted"
+  fi
+  if [ -e "$root/lower-mounted" ]; then
+    umount -- "$root/lower" || status=1
+    rm -f -- "$root/lower-mounted"
+  fi
+  return "$status"
+}
+trap cleanup EXIT
+mkdir -p "$root/lower" "$root/upper" "$root/target"
+mount -t tmpfs tmpfs "$root/lower"
+: > "$root/lower-mounted"
+mount -t tmpfs tmpfs "$root/upper"
+: > "$root/upper-mounted"
+mount --bind "$root/lower" "$root/target"
+: > "$root/target-lower-bound"
+mount -o remount,bind,ro "$root/target"
+mount --bind "$root/upper" "$root/target"
+: > "$root/target-upper-bound"
+mount -o remount,bind,ro "$root/target"
+cleanup
+trap - EXIT
+"""
+
+
+FINDMNT_UNIQ_NAMESPACE_PROBE_SCRIPT = """\
+set -euo pipefail
+root="$1"
+lower_mode="$2"
+upper_mode="$3"
+cleanup() {
+  local status=0
+  if [ -e "$root/target-upper-bound" ]; then
+    umount -- "$root/target" || status=1
+    rm -f -- "$root/target-upper-bound"
+  fi
+  if [ -e "$root/target-lower-bound" ]; then
+    umount -- "$root/target" || status=1
+    rm -f -- "$root/target-lower-bound"
+  fi
+  if [ -e "$root/upper-mounted" ]; then
+    umount -- "$root/upper" || status=1
+    rm -f -- "$root/upper-mounted"
+  fi
+  if [ -e "$root/lower-mounted" ]; then
+    umount -- "$root/lower" || status=1
+    rm -f -- "$root/lower-mounted"
+  fi
+  return "$status"
+}
+trap cleanup EXIT
+mkdir -p "$root/lower" "$root/upper" "$root/target"
+mount -t tmpfs tmpfs "$root/lower"
+: > "$root/lower-mounted"
+mount -t tmpfs tmpfs "$root/upper"
+: > "$root/upper-mounted"
+mount --bind "$root/lower" "$root/target"
+: > "$root/target-lower-bound"
+if [ "$lower_mode" = ro ]; then
+  mount -o remount,bind,ro "$root/target"
+fi
+mount --bind "$root/upper" "$root/target"
+: > "$root/target-upper-bound"
+if [ "$upper_mode" = ro ]; then
+  mount -o remount,bind,ro "$root/target"
+fi
+findmnt --json --list --output TARGET,OPTIONS,ID,PARENT -R "$root/target" > "$root/all.json"
+findmnt --json --list --uniq --output TARGET,OPTIONS,ID,PARENT -R "$root/target" > "$root/uniq.json"
+cleanup
+trap - EXIT
+"""
+
+
+def run_rootless_mount_namespace(
+    script: str,
+    *args: str,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            "unshare",
+            "--user",
+            "--map-root-user",
+            "--mount",
+            "--pid",
+            "--fork",
+            "/bin/bash",
+            "-ceu",
+            script,
+            "--",
+            *args,
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def require_findmnt_uniq_namespace_capability(root: Path) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    completed = run_rootless_mount_namespace(
+        FINDMNT_UNIQ_NAMESPACE_PREFLIGHT_SCRIPT,
+        str(root),
+    )
+    if completed.returncode != 0:
+        raise unittest.SkipTest(
+            "mount namespace capability unavailable: "
+            + _bounded_process_diagnostic(completed)
+        )
+
+
+def _load_findmnt_probe_payload(path: Path) -> list[dict[str, object]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise AssertionError(f"namespace semantic probe missing {path.name}") from exc
+    except json.JSONDecodeError as exc:
+        raise AssertionError(f"namespace semantic probe malformed {path.name}") from exc
+    if not isinstance(payload, dict) or set(payload) != {"filesystems"}:
+        raise AssertionError(f"namespace semantic probe malformed {path.name}")
+    rows = payload["filesystems"]
+    if not isinstance(rows, list):
+        raise AssertionError(f"namespace semantic probe malformed {path.name}")
+    normalized = []
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {"id", "options", "parent", "target"}:
+            raise AssertionError(f"namespace semantic probe malformed {path.name}")
+        normalized.append(row)
+    return normalized
+
+
+def run_findmnt_uniq_namespace_semantic_probe(
+    root: Path,
+    lower_mode: str,
+    upper_mode: str,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    root.mkdir(parents=True, exist_ok=True)
+    completed = run_rootless_mount_namespace(
+        FINDMNT_UNIQ_NAMESPACE_PROBE_SCRIPT,
+        str(root),
+        lower_mode,
+        upper_mode,
+    )
+    if completed.returncode != 0:
+        raise AssertionError(
+            "namespace semantic probe failed: " + _bounded_process_diagnostic(completed)
+        )
+    return (
+        _load_findmnt_probe_payload(root / "all.json"),
+        _load_findmnt_probe_payload(root / "uniq.json"),
+    )
+
+
 class PatchReleaseWorkflowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -1469,61 +1666,23 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             dir=artifact_root,
         ) as temporary:
             sandbox = Path(temporary)
+            require_findmnt_uniq_namespace_capability(sandbox / "preflight")
             for name, lower_mode, upper_mode, expected_top in (
                 ("lower-rw-top-ro", "rw", "ro", "ro"),
                 ("lower-ro-top-rw", "ro", "rw", "rw"),
             ):
                 case_root = sandbox / name
-                case_root.mkdir()
-                command = (
-                    "set -euo pipefail\n"
-                    "root=\"$1\"\n"
-                    "lower_mode=\"$2\"\n"
-                    "upper_mode=\"$3\"\n"
-                    "mkdir -p \"$root/lower\" \"$root/upper\" \"$root/target\"\n"
-                    "mount -t tmpfs tmpfs \"$root/lower\"\n"
-                    "mount -t tmpfs tmpfs \"$root/upper\"\n"
-                    "mount --bind \"$root/lower\" \"$root/target\"\n"
-                    "if [ \"$lower_mode\" = ro ]; then\n"
-                    "  mount -o remount,bind,ro \"$root/target\"\n"
-                    "fi\n"
-                    "mount --bind \"$root/upper\" \"$root/target\"\n"
-                    "if [ \"$upper_mode\" = ro ]; then\n"
-                    "  mount -o remount,bind,ro \"$root/target\"\n"
-                    "fi\n"
-                    "findmnt --json --list --output TARGET,OPTIONS,ID,PARENT -R \"$root/target\" > \"$root/all.json\"\n"
-                    "findmnt --json --list --uniq --output TARGET,OPTIONS,ID,PARENT -R \"$root/target\" > \"$root/uniq.json\"\n"
+                all_rows, uniq_rows = run_findmnt_uniq_namespace_semantic_probe(
+                    case_root,
+                    lower_mode,
+                    upper_mode,
                 )
-                completed = subprocess.run(
-                    [
-                        "unshare",
-                        "--user",
-                        "--map-root-user",
-                        "--mount",
-                        "--pid",
-                        "--fork",
-                        "/bin/bash",
-                        "-ceu",
-                        command,
-                        "--",
-                        str(case_root),
-                        lower_mode,
-                        upper_mode,
-                    ],
-                    cwd=ROOT,
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                )
-                if completed.returncode != 0:
-                    self.skipTest(f"mount namespace unavailable: {completed.stderr.strip()}")
-                all_payload = json.loads((case_root / "all.json").read_text(encoding="utf-8"))
-                uniq_payload = json.loads((case_root / "uniq.json").read_text(encoding="utf-8"))
                 target = str(case_root / "target")
-                all_rows = [row for row in all_payload["filesystems"] if row["target"] == target]
-                uniq_rows = [row for row in uniq_payload["filesystems"] if row["target"] == target]
+                all_rows = [row for row in all_rows if row["target"] == target]
+                uniq_rows = [row for row in uniq_rows if row["target"] == target]
                 self.assertEqual(len(all_rows), 2)
                 self.assertEqual(len(uniq_rows), 1)
+                self.assertIsInstance(uniq_rows[0]["id"], int)
                 uniq_tokens = set(uniq_rows[0]["options"].split(","))
                 if expected_top == "ro":
                     self.assertIn("ro", uniq_tokens)
@@ -1537,6 +1696,51 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     any("ro" in set(row["options"].split(",")) for row in all_rows)
                 )
                 self.assertGreaterEqual(uniq_rows[0]["id"], min(row["id"] for row in all_rows))
+
+    def test_findmnt_uniq_namespace_preflight_failure_skips_with_bounded_diagnostic(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        completed = subprocess.CompletedProcess(
+            args=["unshare"],
+            returncode=1,
+            stdout="",
+            stderr=("Operation not permitted " * 40).strip(),
+        )
+        with tempfile.TemporaryDirectory(
+            prefix="findmnt-uniq-preflight-",
+            dir=artifact_root,
+        ) as temporary, mock.patch(
+            f"{__name__}.run_rootless_mount_namespace",
+            return_value=completed,
+        ):
+            with self.assertRaises(unittest.SkipTest) as context:
+                require_findmnt_uniq_namespace_capability(Path(temporary))
+        message = str(context.exception)
+        self.assertIn("mount namespace capability unavailable:", message)
+        self.assertIn("rc=1", message)
+        self.assertIn("Operation not permitted", message)
+        self.assertLessEqual(len(message), 240)
+
+    def test_findmnt_uniq_namespace_probe_failure_is_assertion_failure(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        completed = subprocess.CompletedProcess(
+            args=["unshare"],
+            returncode=17,
+            stdout="",
+            stderr="forced probe failure",
+        )
+        with tempfile.TemporaryDirectory(
+            prefix="findmnt-uniq-probe-",
+            dir=artifact_root,
+        ) as temporary, mock.patch(
+            f"{__name__}.run_rootless_mount_namespace",
+            return_value=completed,
+        ):
+            with self.assertRaises(AssertionError) as context:
+                run_findmnt_uniq_namespace_semantic_probe(Path(temporary), "rw", "ro")
+        self.assertIn("namespace semantic probe failed:", str(context.exception))
+        self.assertIn("forced probe failure", str(context.exception))
 
     def test_writable_mount_audit_rejects_unexpected_rw_targets_and_preserves_allowed_private_mounts(self):
         base_section = writable_mount_transport_section_source(self.text)
