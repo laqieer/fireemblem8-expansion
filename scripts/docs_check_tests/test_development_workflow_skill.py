@@ -3941,6 +3941,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "platform-skipped",
             "canonical `summary`",
             "newest conclusively full Build CI run",
+            "rejects redirects",
         )
         forbidden_fragments = (
             "distinct metadata-only names",

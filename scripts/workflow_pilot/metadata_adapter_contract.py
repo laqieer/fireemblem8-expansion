@@ -62,6 +62,7 @@ _ALLOWED_AST_FIELDS = {
     "List": ("elts", "ctx"),
     "Load": (),
     "Lt": (),
+    "LtE": (),
     "Module": ("body", "type_ignores"),
     "Mult": (),
     "Name": ("id", "ctx"),

@@ -39,8 +39,10 @@ attestation: it succeeds only after a trusted no-checkout Actions API proof
 classifies exact prior runs newest-first, skips only conclusively metadata
 runs, and confirms the newest conclusively full Build CI run for the same
 repository, PR number, authoritative base SHA, and immutable head SHA
-completed successfully. A newer failed, cancelled, in-progress, or malformed
-full run blocks older successes. Live
+completed successfully. That proof first requires complete paginated results
+with stable `total_count`/`Link` consistency and rejects redirects before any
+second authenticated request. A newer failed, cancelled, in-progress, or
+malformed full run blocks older successes. Live
 branch protection therefore remains the current canonical `host-tests` +
 `build` + `summary` Build contract while preserving any existing independent
 security/review contexts, and metadata-only runs still remain ineligible
@@ -242,7 +244,9 @@ through env. Metadata `summary` succeeds only after a trusted no-checkout
 Actions API proof classifies exact prior runs newest-first, skips only
 conclusively metadata runs, and confirms the newest conclusively full Build CI
 run for the same repository, PR number, authoritative base SHA, and immutable
-head SHA completed successfully. A newer failed, cancelled, in-progress, or
+head SHA completed successfully. It first requires complete paginated results
+with stable `total_count`/`Link` consistency and rejects redirects before any
+second authenticated request. A newer failed, cancelled, in-progress, or
 malformed full run blocks older successes. Normal `summary` remains the sole
 candidate attestation, and
 `candidate_evidence` still treats a metadata-only run as ineligible by itself.

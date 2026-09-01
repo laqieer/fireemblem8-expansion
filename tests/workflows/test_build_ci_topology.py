@@ -977,8 +977,16 @@ def _summary_metadata_jobs() -> list[dict]:
     ]
 
 
-def _summary_api_payload(key: str, items: list[dict]) -> dict:
-    return {"total_count": len(items), key: items}
+def _summary_api_payload(
+    key: str,
+    items: list[dict],
+    *,
+    total_count: int | None = None,
+) -> dict:
+    return {
+        "total_count": len(items) if total_count is None else total_count,
+        key: items,
+    }
 
 
 def _summary_response(body, *, status: int = 200, headers: dict[str, str] | None = None):
@@ -1029,6 +1037,21 @@ def _run_summary_with_api(
     environment: dict[str, str],
     routes: dict[str, tuple[int, dict[str, str], bytes] | list[tuple[int, dict[str, str], bytes]]],
 ) -> tuple[subprocess.CompletedProcess[str], list[dict[str, object]]]:
+    completed, requests = _run_summary_with_api_servers(
+        script,
+        environment=environment,
+        primary_routes=routes,
+    )
+    return completed, requests["primary"]
+
+
+def _run_summary_with_api_servers(
+    script: str,
+    *,
+    environment: dict[str, str],
+    primary_routes: dict[str, tuple[int, dict[str, str], bytes] | list[tuple[int, dict[str, str], bytes]]],
+    secondary_routes: dict[str, tuple[int, dict[str, str], bytes] | list[tuple[int, dict[str, str], bytes]]] | None = None,
+) -> tuple[subprocess.CompletedProcess[str], dict[str, list[dict[str, object]]]]:
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
             self.server.requests.append(
@@ -1044,7 +1067,7 @@ def _run_summary_with_api(
             status, headers, body = response
             self.send_response(status)
             for key, value in headers.items():
-                self.send_header(key, value.format(api_base=self.server.api_base))
+                self.send_header(key, value.format(**self.server.format_context))
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -1052,15 +1075,44 @@ def _run_summary_with_api(
         def log_message(self, format, *args):
             return
 
-    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-    server.routes = {
+    primary_server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    secondary_server = (
+        http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        if secondary_routes is not None
+        else None
+    )
+    primary_server.routes = {
         path: list(value) if isinstance(value, list) else [value]
-        for path, value in routes.items()
+        for path, value in primary_routes.items()
     }
-    server.requests = []
-    server.api_base = f"http://127.0.0.1:{server.server_port}"
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
+    primary_server.requests = []
+    primary_server.api_base = f"http://127.0.0.1:{primary_server.server_port}"
+    redirect_api_base = (
+        f"http://127.0.0.1:{secondary_server.server_port}"
+        if secondary_server is not None
+        else primary_server.api_base
+    )
+    format_context = {
+        "api_base": primary_server.api_base,
+        "redirect_api_base": redirect_api_base,
+    }
+    primary_server.format_context = format_context
+    threads = [
+        threading.Thread(target=primary_server.serve_forever, daemon=True)
+    ]
+    if secondary_server is not None:
+        secondary_server.routes = {
+            path: list(value) if isinstance(value, list) else [value]
+            for path, value in secondary_routes.items()
+        }
+        secondary_server.requests = []
+        secondary_server.api_base = redirect_api_base
+        secondary_server.format_context = format_context
+        threads.append(
+            threading.Thread(target=secondary_server.serve_forever, daemon=True)
+        )
+    for thread in threads:
+        thread.start()
     try:
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
@@ -1074,7 +1126,7 @@ def _run_summary_with_api(
                 env={
                     **os.environ,
                     **environment,
-                    "GITHUB_API_URL": server.api_base,
+                    "GITHUB_API_URL": primary_server.api_base,
                     "GITHUB_STEP_SUMMARY": str(Path(temporary) / "summary.md"),
                 },
                 check=False,
@@ -1082,11 +1134,20 @@ def _run_summary_with_api(
                 text=True,
                 timeout=20,
             )
-        return completed, list(server.requests)
+        requests = {"primary": list(primary_server.requests)}
+        requests["secondary"] = (
+            list(secondary_server.requests) if secondary_server is not None else []
+        )
+        return completed, requests
     finally:
-        server.shutdown()
-        thread.join()
-        server.server_close()
+        primary_server.shutdown()
+        if secondary_server is not None:
+            secondary_server.shutdown()
+        for thread in threads:
+            thread.join()
+        primary_server.server_close()
+        if secondary_server is not None:
+            secondary_server.server_close()
 
 
 def _contains_command(job: str, command: str) -> bool:
@@ -6237,7 +6298,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
         link_header = f'<{{api_base}}{_summary_runs_path(page=2)}>; rel="next"'
         routes = {
             _summary_runs_path(page=1): _summary_response(
-                _summary_api_payload("workflow_runs", page_one_runs),
+                _summary_api_payload("workflow_runs", page_one_runs, total_count=101),
                 headers={"Link": link_header},
             ),
             _summary_runs_path(page=2): _summary_response(
@@ -6250,6 +6311,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                             run_started_at=_summary_timestamp(5),
                         )
                     ],
+                    total_count=101,
                 )
             ),
             _summary_jobs_path(8101): _summary_response(
@@ -6754,16 +6816,21 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         )
                         for index in range(99)
                     ],
+                    total_count=101,
                 ),
                 headers={
                     "Link": f'<{{api_base}}{_summary_runs_path(page=2)}>; rel="next"'
                 },
             ),
             _summary_runs_path(page=2): _summary_response(
-                _summary_api_payload("workflow_runs", [_summary_workflow_run(8200)])
+                _summary_api_payload(
+                    "workflow_runs",
+                    [_summary_workflow_run(8200)],
+                    total_count=101,
+                )
             ),
         }
-        overflowing_pages = {
+        page_cap_routes = {
             **{
                 _summary_runs_path(page=page): _summary_response(
                     _summary_api_payload(
@@ -6775,6 +6842,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                             )
                             for index in range(100)
                         ],
+                        total_count=1000,
                     ),
                     headers={
                         "Link": (
@@ -6783,7 +6851,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                         )
                     },
                 )
-                for page in range(1, 6)
+                for page in range(1, 11)
             }
         }
         cases = (
@@ -6807,6 +6875,121 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 self_only,
                 1,
                 "metadata-only summary requires a prior successful complete full Build CI run",
+            ),
+            (
+                "short-missing-next",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(8100)],
+                            total_count=3,
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs pagination truncated",
+            ),
+            (
+                "unexpected-next-after-complete",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100),
+                            ],
+                            total_count=2,
+                        ),
+                        headers={
+                            "Link": f'<{{api_base}}{_summary_runs_path(page=2)}>; rel="next"'
+                        },
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs reported an unexpected next page",
+            ),
+            (
+                "changing-total-count",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(SUMMARY_TEST_RUN_ID)],
+                            total_count=2,
+                        ),
+                        headers={
+                            "Link": f'<{{api_base}}{_summary_runs_path(page=2)}>; rel="next"'
+                        },
+                    ),
+                    _summary_runs_path(page=2): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(8100)],
+                            total_count=1,
+                        )
+                    ),
+                },
+                1,
+                "metadata-only summary workflow runs total_count changed across pages",
+            ),
+            (
+                "exceeded-total-count",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [
+                                _summary_workflow_run(SUMMARY_TEST_RUN_ID),
+                                _summary_workflow_run(8100),
+                            ],
+                            total_count=1,
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs exceeded total_count",
+            ),
+            (
+                "looping-next-page",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(SUMMARY_TEST_RUN_ID)],
+                            total_count=2,
+                        ),
+                        headers={
+                            "Link": f'<{{api_base}}{_summary_runs_path(page=1)}>; rel="next"'
+                        },
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs next page is not sequential",
+            ),
+            (
+                "skipped-next-page",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(SUMMARY_TEST_RUN_ID)],
+                            total_count=2,
+                        ),
+                        headers={
+                            "Link": f'<{{api_base}}{_summary_runs_path(page=3)}>; rel="next"'
+                        },
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs next page is not sequential",
             ),
             (
                 "failed-prior-run",
@@ -7070,6 +7253,21 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 "metadata-only summary workflow runs page 1 response is not valid JSON",
             ),
             (
+                "total-count-cap",
+                _summary_metadata_env(),
+                {
+                    _summary_runs_path(page=1): _summary_response(
+                        _summary_api_payload(
+                            "workflow_runs",
+                            [_summary_workflow_run(SUMMARY_TEST_RUN_ID)],
+                            total_count=1001,
+                        )
+                    )
+                },
+                1,
+                "metadata-only summary workflow runs total_count is invalid",
+            ),
+            (
                 "malformed-link",
                 _summary_metadata_env(),
                 {
@@ -7156,7 +7354,7 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             (
                 "overflowing-pagination-bound",
                 _summary_metadata_env(),
-                overflowing_pages,
+                page_cap_routes,
                 1,
                 "metadata-only summary workflow runs exceed the reviewed pagination bound",
             ),
@@ -7170,6 +7368,79 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 )
                 self.assertEqual(completed.returncode, expected, completed.stderr)
                 self.assertIn(error_fragment, completed.stderr)
+
+    def test_summary_runtime_metadata_only_rejects_redirects_without_leaking_token(self):
+        script = _literal_run_script(_step_blocks(_job_blocks(self.text)["summary"])[0])
+        completed = subprocess.run(
+            ["/bin/bash", "-n"],
+            input=script,
+            text=True,
+            check=False,
+            capture_output=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        redirect_statuses = (301, 302, 303, 307, 308)
+        secret_token = "secret-redirect-token"
+        for status in redirect_statuses:
+            with self.subTest(kind="same-origin", status=status):
+                completed, requests = _run_summary_with_api(
+                    script,
+                    environment=_summary_metadata_env(GITHUB_TOKEN=secret_token),
+                    routes={
+                        _summary_runs_path(page=1): _summary_response(
+                            {},
+                            status=status,
+                            headers={
+                                "Location": "{api_base}/redirect-target",
+                            },
+                        ),
+                        "/redirect-target": _summary_response(
+                            _summary_api_payload("workflow_runs", [])
+                        ),
+                    },
+                )
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn(
+                    f"metadata-only summary workflow runs page 1 request rejected redirect: HTTP {status}",
+                    completed.stderr,
+                )
+                self.assertNotIn(secret_token, completed.stderr)
+                self.assertEqual(
+                    [request["path"] for request in requests],
+                    [_summary_runs_path(page=1)],
+                )
+
+            with self.subTest(kind="cross-origin", status=status):
+                completed, requests = _run_summary_with_api_servers(
+                    script,
+                    environment=_summary_metadata_env(GITHUB_TOKEN=secret_token),
+                    primary_routes={
+                        _summary_runs_path(page=1): _summary_response(
+                            {},
+                            status=status,
+                            headers={
+                                "Location": "{redirect_api_base}/redirect-target",
+                            },
+                        )
+                    },
+                    secondary_routes={
+                        "/redirect-target": _summary_response(
+                            _summary_api_payload("workflow_runs", [])
+                        )
+                    },
+                )
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn(
+                    f"metadata-only summary workflow runs page 1 request rejected redirect: HTTP {status}",
+                    completed.stderr,
+                )
+                self.assertNotIn(secret_token, completed.stderr)
+                self.assertEqual(
+                    [request["path"] for request in requests["primary"]],
+                    [_summary_runs_path(page=1)],
+                )
+                self.assertEqual(requests["secondary"], [])
 
     def test_event_mode_runtime_separates_metadata_from_full_checks(self):
         mode_step = _step_blocks(_job_blocks(self.text)["event-classifier"])[0]

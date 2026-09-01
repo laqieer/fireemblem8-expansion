@@ -110,7 +110,7 @@ class SummaryContinuityContractTests(unittest.TestCase):
         source = summary_continuity_contract.summary_continuity_python_source(
             self._summary_script()
         )
-        semantic_drift = source.replace("MAX_RUN_PAGES = 5", "MAX_RUN_PAGES = 6", 1)
+        semantic_drift = source.replace("MAX_RUN_PAGES = 10", "MAX_RUN_PAGES = 11", 1)
         from_import = source.replace(
             "  import urllib.request\n",
             "  from urllib import request\n",
