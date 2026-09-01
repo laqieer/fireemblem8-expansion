@@ -35,7 +35,7 @@
       "$ref": "#/$defs/historyAuthority"
     },
     "delivery_graph": {
-      "type": "object"
+      "$ref": "#/$defs/deliveryGraph"
     },
     "coordinators": {
       "type": "array",
@@ -53,10 +53,16 @@
       }
     },
     "workflow_runs": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/workflowRun"
+      }
     },
     "watchers": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/watcher"
+      }
     },
     "coordinator_receipt": {
       "$ref": "#/$defs/coordinatorReceipt"
@@ -73,7 +79,8 @@
     },
     "time": {
       "type": "string",
-      "format": "date-time"
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$"
     },
     "githubLogin": {
       "type": "string",
@@ -795,7 +802,11 @@
         },
         "exclude_refs": {
           "type": "array",
-          "maxItems": 0
+          "maxItems": 0,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
         "update_restricted": {
           "const": true
@@ -1656,6 +1667,1312 @@
         }
       ]
     },
+    "deliveryRelationship": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "child_issue",
+        "parent_issue",
+        "handoff_id",
+        "type"
+      ],
+      "properties": {
+        "child_issue": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "parent_issue": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "handoff_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "const": "code_contract"
+        }
+      }
+    },
+    "deliveryTask": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "issue",
+        "pull_request",
+        "phase",
+        "status",
+        "status_reason",
+        "handoff_id",
+        "candidate_sha"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "issue": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "pull_request": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "phase": {
+          "enum": [
+            "closure",
+            "completion",
+            "fix_forward_revert",
+            "implementation",
+            "merge",
+            "post_merge_build",
+            "remote_completion"
+          ]
+        },
+        "status": {
+          "enum": [
+            "blocked",
+            "done",
+            "in_progress",
+            "not_required",
+            "pending"
+          ]
+        },
+        "status_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "handoff_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "candidate_sha": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/sha"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "blocked"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "status_reason": {
+                "enum": [
+                  "dependency",
+                  "owner_interrupted",
+                  "workflow_failed"
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "status_reason": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "phase": {
+                "const": "implementation"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "handoff_id": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "handoff_id": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "deliveryDependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task",
+        "depends_on",
+        "type"
+      ],
+      "properties": {
+        "task": {
+          "type": "string",
+          "minLength": 1
+        },
+        "depends_on": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "enum": [
+            "code_contract",
+            "delivery_gate"
+          ]
+        }
+      }
+    },
+    "deliveryWorkflowRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "run_task",
+        "head_sha",
+        "status",
+        "conclusion",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "run_task": {
+          "type": "string",
+          "minLength": 1
+        },
+        "head_sha": {
+          "$ref": "#/$defs/sha"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "in_progress",
+            "queued"
+          ]
+        },
+        "conclusion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "const": "github-actions-api"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "completed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "conclusion": {
+                "enum": [
+                  "action_required",
+                  "cancelled",
+                  "failure",
+                  "neutral",
+                  "skipped",
+                  "success"
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "conclusion": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "deliveryWatcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "run_id",
+        "process_state"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "process_state": {
+          "enum": [
+            "completed",
+            "error",
+            "running",
+            "timeout"
+          ]
+        }
+      }
+    },
+    "deliveryGraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relationships",
+        "tasks",
+        "dependencies",
+        "workflow_runs",
+        "watchers"
+      ],
+      "properties": {
+        "relationships": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/deliveryRelationship"
+          }
+        },
+        "tasks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/deliveryTask"
+          }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/deliveryDependency"
+          }
+        },
+        "workflow_runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/deliveryWorkflowRun"
+          }
+        },
+        "watchers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/deliveryWatcher"
+          }
+        }
+      }
+    },
+    "handoffState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "at"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "assignment_sent",
+            "assignment_received",
+            "progressing",
+            "committed",
+            "handed_off",
+            "interrupted"
+          ]
+        },
+        "at": {
+          "$ref": "#/$defs/time"
+        }
+      }
+    },
+    "handoffEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "status",
+        "exit_code",
+        "completed_at",
+        "detail"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "acceptance",
+            "budget",
+            "check",
+            "recovery"
+          ]
+        },
+        "status": {
+          "enum": [
+            "failed",
+            "incomplete",
+            "passed"
+          ]
+        },
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "completed_at": {
+          "$ref": "#/$defs/time"
+        },
+        "detail": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "passed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "exit_code": {
+                "const": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "incomplete"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "exit_code": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "checkerTrustTrustedParentBlob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "repository_path",
+        "blob_oid"
+      ],
+      "properties": {
+        "mode": {
+          "const": "trusted-parent-blob"
+        },
+        "repository_path": {
+          "const": "scripts/workflow_pilot/raw_diff_check.py"
+        },
+        "blob_oid": {
+          "$ref": "#/$defs/sha"
+        }
+      }
+    },
+    "checkerTrustExternalBootstrap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "sha256"
+      ],
+      "properties": {
+        "mode": {
+          "const": "external-bootstrap"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "checkerTrust": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/checkerTrustTrustedParentBlob"
+        },
+        {
+          "$ref": "#/$defs/checkerTrustExternalBootstrap"
+        }
+      ]
+    },
+    "checkReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "check_id",
+        "contract",
+        "argv",
+        "checker_trust",
+        "parent_sha",
+        "candidate_sha",
+        "worktree_identity",
+        "started_at",
+        "completed_at",
+        "exit_code",
+        "output_sha256",
+        "seal"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "check_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contract": {
+          "const": "git-diff-check"
+        },
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "checker_trust": {
+          "$ref": "#/$defs/checkerTrust"
+        },
+        "parent_sha": {
+          "$ref": "#/$defs/sha"
+        },
+        "candidate_sha": {
+          "$ref": "#/$defs/sha"
+        },
+        "worktree_identity": {
+          "$ref": "#/$defs/sha256"
+        },
+        "started_at": {
+          "$ref": "#/$defs/time"
+        },
+        "completed_at": {
+          "$ref": "#/$defs/time"
+        },
+        "exit_code": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "seal": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "handoffResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha"
+      ],
+      "properties": {
+        "sha": {
+          "$ref": "#/$defs/sha"
+        }
+      }
+    },
+    "handoffInterruption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "signal",
+        "occurred_at",
+        "kernel_evidence",
+        "interrupted_check_ids",
+        "preserved_paths",
+        "replacement_handoff_id",
+        "host_process_actions"
+      ],
+      "properties": {
+        "kind": {
+          "const": "sigkill_oom"
+        },
+        "signal": {
+          "const": 9
+        },
+        "occurred_at": {
+          "$ref": "#/$defs/time"
+        },
+        "kernel_evidence": {
+          "type": "string",
+          "minLength": 1
+        },
+        "interrupted_check_ids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "preserved_paths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/repositoryPath"
+          }
+        },
+        "replacement_handoff_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "host_process_actions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "recoveryResolutionRestored": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "original_sha256",
+        "disposition",
+        "result_path",
+        "result_blob_oid",
+        "reason"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/repositoryPath"
+        },
+        "original_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "disposition": {
+          "const": "restored"
+        },
+        "result_path": {
+          "$ref": "#/$defs/repositoryPath"
+        },
+        "result_blob_oid": {
+          "$ref": "#/$defs/sha"
+        },
+        "reason": {
+          "type": "null"
+        }
+      }
+    },
+    "recoveryResolutionResolved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "original_sha256",
+        "disposition",
+        "result_path",
+        "result_blob_oid",
+        "reason"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/repositoryPath"
+        },
+        "original_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "disposition": {
+          "const": "resolved"
+        },
+        "result_path": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/repositoryPath"
+            }
+          ]
+        },
+        "result_blob_oid": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/sha"
+            }
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "recoveryResolution": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/recoveryResolutionRestored"
+        },
+        {
+          "$ref": "#/$defs/recoveryResolutionResolved"
+        }
+      ]
+    },
+    "workflowRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "handoff_id",
+        "head_sha",
+        "status",
+        "conclusion",
+        "observed_at",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "handoff_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "head_sha": {
+          "$ref": "#/$defs/sha"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "in_progress",
+            "queued"
+          ]
+        },
+        "conclusion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "observed_at": {
+          "$ref": "#/$defs/time"
+        },
+        "source": {
+          "const": "github-actions-api"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "completed"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "conclusion": {
+                "enum": [
+                  "action_required",
+                  "cancelled",
+                  "failure",
+                  "neutral",
+                  "skipped",
+                  "success"
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "conclusion": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "watcher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "coordinator_id",
+        "run_id",
+        "head_sha",
+        "kind",
+        "started_at",
+        "ended_at",
+        "process_result"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "coordinator_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "head_sha": {
+          "$ref": "#/$defs/sha"
+        },
+        "kind": {
+          "const": "direct_shell"
+        },
+        "started_at": {
+          "$ref": "#/$defs/time"
+        },
+        "ended_at": {
+          "$ref": "#/$defs/time"
+        },
+        "process_result": {
+          "enum": [
+            "error",
+            "success",
+            "timeout"
+          ]
+        }
+      }
+    },
+    "coordinatorReceiptOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nonce",
+        "started_at",
+        "implementation_terminated_at",
+        "collected_through",
+        "eligibility_instant",
+        "implementation_terminated",
+        "single_use",
+        "consume_store_id",
+        "consume_sequence",
+        "consume_previous_anchor",
+        "consume_anchor"
+      ],
+      "properties": {
+        "nonce": {
+          "$ref": "#/$defs/sha256"
+        },
+        "started_at": {
+          "$ref": "#/$defs/time"
+        },
+        "implementation_terminated_at": {
+          "$ref": "#/$defs/time"
+        },
+        "collected_through": {
+          "$ref": "#/$defs/time"
+        },
+        "eligibility_instant": {
+          "$ref": "#/$defs/time"
+        },
+        "implementation_terminated": {
+          "const": true
+        },
+        "single_use": {
+          "const": true
+        },
+        "consume_store_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "consume_sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "consume_previous_anchor": {
+          "$ref": "#/$defs/sha256"
+        },
+        "consume_anchor": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "authorityProtection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "repository_id",
+        "repository_full_name",
+        "authority_ref",
+        "anchor_ref",
+        "authority_object_id",
+        "anchor_object_id",
+        "observed_at",
+        "response"
+      ],
+      "properties": {
+        "source": {
+          "const": "github-rulesets-api"
+        },
+        "repository_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "repository_full_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authority_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "anchor_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authority_object_id": {
+          "$ref": "#/$defs/sha"
+        },
+        "anchor_object_id": {
+          "$ref": "#/$defs/sha"
+        },
+        "observed_at": {
+          "$ref": "#/$defs/time"
+        },
+        "response": {
+          "$ref": "#/$defs/rulesetResponse"
+        }
+      }
+    },
+    "availability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "observed_at",
+        "valid_until",
+        "unattended_from",
+        "unattended_until",
+        "autostop_enabled",
+        "stop_on_disconnect",
+        "enforcement_source"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "always_on",
+            "local"
+          ]
+        },
+        "observed_at": {
+          "$ref": "#/$defs/time"
+        },
+        "valid_until": {
+          "$ref": "#/$defs/time"
+        },
+        "unattended_from": {
+          "$ref": "#/$defs/time"
+        },
+        "unattended_until": {
+          "$ref": "#/$defs/time"
+        },
+        "autostop_enabled": {
+          "type": "boolean"
+        },
+        "stop_on_disconnect": {
+          "type": "boolean"
+        },
+        "enforcement_source": {
+          "const": "coordinator-launcher"
+        }
+      }
+    },
+    "remoteCoverageActor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "login",
+        "database_id",
+        "resolved_at",
+        "source"
+      ],
+      "properties": {
+        "login": {
+          "$ref": "#/$defs/githubLogin"
+        },
+        "database_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "resolved_at": {
+          "$ref": "#/$defs/time"
+        },
+        "source": {
+          "const": "github-actor-api"
+        }
+      }
+    },
+    "remoteAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "handoff_id",
+        "actor_login",
+        "actor_database_id",
+        "action",
+        "occurred_at",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "handoff_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "actor_login": {
+          "$ref": "#/$defs/githubLogin"
+        },
+        "actor_database_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "action": {
+          "enum": [
+            "comment",
+            "create_remote_ref",
+            "dispatch_ci",
+            "merge",
+            "open_pull_request",
+            "push",
+            "read_github",
+            "request_review",
+            "update_pull_request",
+            "watch_ci"
+          ]
+        },
+        "occurred_at": {
+          "$ref": "#/$defs/time"
+        },
+        "source": {
+          "enum": [
+            "github-timeline",
+            "github-actions-runs",
+            "git-refs",
+            "github-audit-log"
+          ]
+        }
+      }
+    },
+    "remoteCoverageSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "available",
+        "complete",
+        "total_count",
+        "observed_at",
+        "events"
+      ],
+      "properties": {
+        "name": {
+          "enum": [
+            "github-timeline",
+            "github-actions-runs",
+            "git-refs",
+            "github-audit-log"
+          ]
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "total_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "observed_at": {
+          "$ref": "#/$defs/time"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/remoteAction"
+          }
+        }
+      }
+    },
+    "implementationProcess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "handoff_id",
+        "started_at",
+        "ended_at",
+        "credentials_available",
+        "network_mode",
+        "source"
+      ],
+      "properties": {
+        "handoff_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "started_at": {
+          "$ref": "#/$defs/time"
+        },
+        "ended_at": {
+          "$ref": "#/$defs/time"
+        },
+        "credentials_available": {
+          "type": "boolean"
+        },
+        "network_mode": {
+          "enum": [
+            "allowed",
+            "denied"
+          ]
+        },
+        "source": {
+          "const": "coordinator-launcher"
+        }
+      }
+    },
+    "runtimeTelemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "handoff_id",
+        "owner_database_id",
+        "started_at",
+        "ended_at",
+        "peak_rss_bytes",
+        "coordination_turns",
+        "recovery_minutes",
+        "interruption_snapshot",
+        "source"
+      ],
+      "properties": {
+        "handoff_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner_database_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "started_at": {
+          "$ref": "#/$defs/time"
+        },
+        "ended_at": {
+          "$ref": "#/$defs/time"
+        },
+        "peak_rss_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "coordination_turns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "recovery_minutes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "interruption_snapshot": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/historyInterruptionSnapshot"
+            }
+          ]
+        },
+        "source": {
+          "const": "coordinator-runtime"
+        }
+      }
+    },
+    "resourceReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "handoff_id",
+        "parent_sha",
+        "candidate_sha",
+        "closed",
+        "sources",
+        "dependency_authority",
+        "dependency_inputs",
+        "rom_bytes",
+        "ram_bytes"
+      ],
+      "properties": {
+        "handoff_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parent_sha": {
+          "$ref": "#/$defs/sha"
+        },
+        "candidate_sha": {
+          "$ref": "#/$defs/sha"
+        },
+        "closed": {
+          "type": "boolean"
+        },
+        "sources": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "build",
+              "map",
+              "resource"
+            ]
+          },
+          "allOf": [
+            {
+              "contains": {
+                "const": "build"
+              }
+            },
+            {
+              "contains": {
+                "const": "map"
+              }
+            },
+            {
+              "contains": {
+                "const": "resource"
+              }
+            }
+          ]
+        },
+        "dependency_authority": {
+          "const": "parsed-build-dependency-closure"
+        },
+        "dependency_inputs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/repositoryPath"
+          }
+        },
+        "rom_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ram_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "remoteCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "interval_start",
+        "interval_end",
+        "actors",
+        "sources",
+        "observed_actions",
+        "implementation_processes"
+      ],
+      "properties": {
+        "interval_start": {
+          "$ref": "#/$defs/time"
+        },
+        "interval_end": {
+          "$ref": "#/$defs/time"
+        },
+        "actors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/remoteCoverageActor"
+          }
+        },
+        "sources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/remoteCoverageSource"
+          }
+        },
+        "observed_actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/remoteAction"
+          }
+        },
+        "implementation_processes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/implementationProcess"
+          }
+        }
+      }
+    },
     "handoff": {
       "type": "object",
       "additionalProperties": false,
@@ -1737,27 +3054,36 @@
           "type": "array",
           "minItems": 1,
           "items": {
-            "type": "string",
-            "minLength": 1
+            "$ref": "#/$defs/repositoryPath"
           }
         },
         "finding_ids": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
         },
         "acceptance_criteria": {
           "type": "array",
-          "minItems": 1
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/acceptanceCriterion"
+          }
         },
         "required_checks": {
           "type": "array",
-          "minItems": 1
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/requiredCheck"
+          }
         },
         "budgets": {
-          "type": "object"
+          "$ref": "#/$defs/budgetEnvelope"
         },
         "prohibited_remote_actions": {
-          "type": "array",
-          "minItems": 1
+          "$ref": "#/$defs/prohibitedRemoteActions"
         },
         "max_lifetime_seconds": {
           "type": "integer",
@@ -1769,28 +3095,48 @@
         },
         "states": {
           "type": "array",
-          "minItems": 1
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/handoffState"
+          }
         },
         "evidence": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/handoffEvidence"
+          }
         },
         "check_receipts": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/checkReceipt"
+          }
         },
         "result": {
-          "type": [
-            "object",
-            "null"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/handoffResult"
+            }
           ]
         },
         "interruption": {
-          "type": [
-            "object",
-            "null"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/handoffInterruption"
+            }
           ]
         },
         "recovery_resolution": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/recoveryResolution"
+          }
         }
       }
     },
@@ -1836,10 +3182,10 @@
           "$ref": "#/$defs/time"
         },
         "operation": {
-          "type": "object"
+          "$ref": "#/$defs/coordinatorReceiptOperation"
         },
         "authority_protection": {
-          "type": "object"
+          "$ref": "#/$defs/authorityProtection"
         },
         "pull_request_observation": {
           "anyOf": [
@@ -1852,16 +3198,22 @@
           ]
         },
         "availability": {
-          "type": "object"
+          "$ref": "#/$defs/availability"
         },
         "remote_coverage": {
-          "type": "object"
+          "$ref": "#/$defs/remoteCoverage"
         },
         "runtime_telemetry": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/runtimeTelemetry"
+          }
         },
         "resource_receipts": {
-          "type": "array"
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/resourceReceipt"
+          }
         },
         "signature": {
           "type": "string",

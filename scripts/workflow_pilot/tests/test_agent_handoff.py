@@ -52,6 +52,20 @@ def schema_ref(schema, ref):
 def iso_utc(value):
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
+
+def assert_schema_runtime_rejects(
+    testcase,
+    *,
+    validator,
+    document,
+    repository_root,
+    runtime_error,
+):
+    with testcase.assertRaises(ValidationError):
+        validator.validate(document)
+    with testcase.assertRaisesRegex(agent_handoff.HandoffDataError, runtime_error):
+        agent_handoff.validate_document(document, repository_root)
+
 SIGNER_SERVICE = r"""
 import base64
 import json
@@ -2018,18 +2032,29 @@ class ExactHandoffTests(unittest.TestCase):
             schema["$defs"]["historyReceiptInterrupted"],
         )
 
-    def test_schema_v2_has_no_closed_object_without_properties(self):
+    def test_schema_v2_has_no_generic_object_or_array_placeholders(self):
         schema = load_handoff_schema()
 
         def walk(node, path):
             if isinstance(node, dict):
                 if (
                     node.get("type") == "object"
-                    and node.get("additionalProperties") is False
-                    and node.get("required")
                     and "properties" not in node
+                    and "$ref" not in node
+                    and "oneOf" not in node
+                    and "allOf" not in node
+                    and "anyOf" not in node
                 ):
-                    self.fail(f"{path} closes object fields without properties")
+                    self.fail(f"{path} leaves an object placeholder open")
+                if (
+                    node.get("type") == "array"
+                    and "items" not in node
+                    and "$ref" not in node
+                    and "oneOf" not in node
+                    and "allOf" not in node
+                    and "anyOf" not in node
+                ):
+                    self.fail(f"{path} leaves an array placeholder open")
                 for key, value in node.items():
                     walk(value, f"{path}.{key}")
             elif isinstance(node, list):
@@ -2097,6 +2122,121 @@ class ExactHandoffTests(unittest.TestCase):
         wrong_type_receipt["consume_sequence"] = "1"
         with self.assertRaises(ValidationError):
             receipt_validator.validate(wrong_type_receipt)
+
+    def test_schema_v2_matches_runtime_structural_mutation_corpus(self):
+        schema = load_handoff_schema()
+        validator = validator_for_schema(schema)
+
+        with handoff_repository() as (root, _base, parent, result):
+            document = handoff_document(root, parent, result)
+            validator.validate(document)
+            accepted = agent_handoff.validate_document(document, root)
+            self.assertTrue(accepted["summary"]["trusted_push_eligible"])
+
+            def with_offset(value):
+                return value[:-1] + "+00:00"
+
+            def top_run_offset_time(doc):
+                add_run(doc, result)
+                doc["workflow_runs"][0]["observed_at"] = with_offset(
+                    doc["workflow_runs"][0]["observed_at"]
+                )
+                refresh_coordinator_receipt(doc, root)
+
+            cases = {
+                "delivery-graph-placeholder": (
+                    lambda doc: doc.__setitem__("delivery_graph", {}),
+                    "delivery_graph is missing fields",
+                ),
+                "workflow-runs-placeholder": (
+                    lambda doc: doc.__setitem__("workflow_runs", [123]),
+                    "workflow_runs\\[0\\] must be an object",
+                ),
+                "watchers-placeholder": (
+                    lambda doc: doc.__setitem__("watchers", [123]),
+                    "watchers\\[0\\] must be an object",
+                ),
+                "acceptance-criteria-placeholder": (
+                    lambda doc: doc["handoffs"][0].__setitem__(
+                        "acceptance_criteria",
+                        [123],
+                    ),
+                    "handoffs\\[0\\]\\.acceptance_criteria\\[0\\] must be an object",
+                ),
+                "required-checks-placeholder": (
+                    lambda doc: doc["handoffs"][0].__setitem__(
+                        "required_checks",
+                        [123],
+                    ),
+                    "handoffs\\[0\\]\\.required_checks\\[0\\] must be an object",
+                ),
+                "budgets-placeholder": (
+                    lambda doc: doc["handoffs"][0].__setitem__("budgets", []),
+                    "handoffs\\[0\\]\\.budgets must be an object",
+                ),
+                "top-run-offset-time": (
+                    top_run_offset_time,
+                    "workflow_runs\\[0\\]\\.observed_at must be an RFC 3339 UTC timestamp",
+                ),
+                "operation-placeholder": (
+                    lambda doc: doc["coordinator_receipt"].__setitem__("operation", {}),
+                    "coordinator_receipt\\.operation is missing fields",
+                ),
+                "authority-protection-placeholder": (
+                    lambda doc: doc["coordinator_receipt"].__setitem__(
+                        "authority_protection",
+                        {},
+                    ),
+                    "coordinator_receipt\\.authority_protection is missing fields",
+                ),
+                "availability-placeholder": (
+                    lambda doc: doc["coordinator_receipt"].__setitem__(
+                        "availability",
+                        {},
+                    ),
+                    "coordinator_receipt\\.availability is missing fields",
+                ),
+                "remote-coverage-placeholder": (
+                    lambda doc: doc["coordinator_receipt"].__setitem__(
+                        "remote_coverage",
+                        {},
+                    ),
+                    "coordinator_receipt\\.remote_coverage is missing fields",
+                ),
+                "runtime-telemetry-placeholder": (
+                    lambda doc: doc["coordinator_receipt"].__setitem__(
+                        "runtime_telemetry",
+                        [123],
+                    ),
+                    "coordinator_receipt\\.runtime_telemetry\\[0\\] must be an object",
+                ),
+                "resource-receipts-placeholder": (
+                    lambda doc: doc["coordinator_receipt"].__setitem__(
+                        "resource_receipts",
+                        [123],
+                    ),
+                    "coordinator_receipt\\.resource_receipts\\[0\\] must be an object",
+                ),
+                "issued-at-offset-time": (
+                    lambda doc: doc["coordinator_receipt"].__setitem__(
+                        "issued_at",
+                        with_offset(doc["coordinator_receipt"]["issued_at"]),
+                    ),
+                    "coordinator_receipt\\.issued_at must be an RFC 3339 UTC timestamp",
+                ),
+            }
+
+            for name, (mutate, runtime_error) in cases.items():
+                with self.subTest(name=name):
+                    mutated = copy.deepcopy(document)
+                    mutate(mutated)
+                    assert_schema_runtime_rejects(
+                        self,
+                        validator=validator,
+                        document=mutated,
+                        repository_root=root,
+                        runtime_error=runtime_error,
+                    )
 
     def test_exact_clean_strict_descendant_is_accepted(self):
         with handoff_repository() as (root, _base, parent, result):
@@ -5545,10 +5685,11 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
 
         rehashed = copy.deepcopy(fixture)
         bundle = rehashed["implementation_handoffs"][0]
-        bundle["result"]["summary"]["max_peak_rss_bytes"] = 1
-        bundle["result"]["handoffs"][0]["peak_rss_bytes"] = 1
-        bundle["result"]["summary"]["accepted_handoffs"] = 0
-        bundle["result"]["handoffs"][0]["outcome"] = "rejected"
+        bundle["result"]["git_authority"]["head_sha"] = "0" * 40
+        bundle["result"]["git_seal"] = agent_handoff.seal_git_authority(
+            bundle["result"]["git_authority"]
+        )
+        bundle["git_seal"] = bundle["result"]["git_seal"]
         bundle["result"]["result_seal"] = agent_handoff.seal_handoff_result(
             bundle["result"]
         )
@@ -5609,6 +5750,11 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 ][0]["credentials_available"] = True
                 sign_coordinator_document(document, root)
 
+            def local_rejected_with_duplicate_watcher(document):
+                duplicate_watcher(document)
+                document["handoffs"][0]["result"]["sha"] = parent
+                sign_coordinator_document(document, root)
+
             cases = {
                 "duplicate-watcher": (
                     "issue-178-duplicate-watcher",
@@ -5655,6 +5801,21 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                     },
                     incomplete_coverage,
                 ),
+                "local-rejected-duplicate-watcher": (
+                    "issue-178-local-rejected-duplicate-watcher",
+                    "owner-5",
+                    105,
+                    "rejected",
+                    {
+                        "accepted": 1,
+                        "bundle_rejected": 0,
+                        "rejected": 1,
+                        "interrupted": 0,
+                        "in_progress": 0,
+                        "stale_responses": 1,
+                    },
+                    local_rejected_with_duplicate_watcher,
+                ),
             }
 
             for code, (
@@ -5678,6 +5839,15 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                         document,
                         root,
                     )
+                    (
+                        _expected_summary,
+                        expected_bundle_codes,
+                        _delivery_graph,
+                        _watchers,
+                    ) = agent_handoff.derive_reporter_result_summary(
+                        document,
+                        result_report,
+                    )
                     record = reporter_record(
                         root,
                         document,
@@ -5698,15 +5868,10 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                             normalized["outcome"],
                             "accepted",
                         )
-                        self.assertEqual(
-                            normalized["bundle_rejection_codes"],
-                            sorted(result_report["summary"]["rejection_codes"]),
-                        )
-                    else:
-                        self.assertEqual(
-                            normalized["bundle_rejection_codes"],
-                            [],
-                        )
+                    self.assertEqual(
+                        normalized["bundle_rejection_codes"],
+                        expected_bundle_codes,
+                    )
                     report = test_reporter.authoritative_report(
                         fixture,
                         test_reporter.minimal_decisions(),
@@ -5736,6 +5901,67 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                         report["implementation_handoffs"]["rejection_codes"],
                         sorted(result_report["summary"]["rejection_codes"]),
                     )
+
+    def test_verify_reporter_record_rederives_bundle_summary_from_signed_inputs(self):
+        with handoff_repository() as (root, _base, parent, result):
+            honest_document = handoff_document(root, parent, result)
+            add_run(honest_document, result)
+            duplicate = copy.deepcopy(honest_document["watchers"][0])
+            duplicate["id"] = "watcher-9001-duplicate"
+            honest_document["watchers"].append(duplicate)
+            refresh_coordinator_receipt(honest_document, root)
+            honest_result = agent_handoff.validate_document(honest_document, root)
+            self.assertFalse(honest_result["summary"]["trusted_push_eligible"])
+            self.assertIn(
+                "duplicate-watcher",
+                honest_result["summary"]["rejection_codes"],
+            )
+            honest_record = reporter_record(
+                root,
+                honest_document,
+                honest_result,
+            )
+            agent_handoff.verify_reporter_record(
+                honest_record,
+                revalidate_git=False,
+            )
+
+        with handoff_repository() as (root, _base, parent, result):
+            document = handoff_document(root, parent, result)
+            add_run(document, result)
+            duplicate = copy.deepcopy(document["watchers"][0])
+            duplicate["id"] = "watcher-9001-duplicate"
+            document["watchers"].append(duplicate)
+            refresh_coordinator_receipt(document, root)
+            result_report = agent_handoff.validate_document(document, root)
+            tampered_result = copy.deepcopy(result_report)
+            tampered_result["summary"]["trusted_push_eligible"] = True
+            tampered_result["result_seal"] = agent_handoff.seal_handoff_result(
+                tampered_result
+            )
+            tampered_record = {
+                "source_handoff_ids": sorted(
+                    item["id"] for item in document["handoffs"]
+                ),
+                "document": copy.deepcopy(document),
+                "input_seal": tampered_result["input_seal"],
+                "git_seal": tampered_result["git_seal"],
+                "result_seal": tampered_result["result_seal"],
+                "result": tampered_result,
+                "result_attestation": finalize_result_attestation(
+                    root,
+                    document,
+                    tampered_result,
+                ),
+            }
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "result summary does not verify",
+            ):
+                agent_handoff.verify_reporter_record(
+                    tampered_record,
+                    revalidate_git=False,
+                )
 
     def test_frozen_version_one_schema_remains_closed_and_unchanged(self):
         baseline = reporter.load_json(test_reporter.BASELINE)

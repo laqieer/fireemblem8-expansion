@@ -1454,63 +1454,13 @@ def validate_implementation_handoffs(
             )
         except agent_handoff.HandoffDataError as error:
             raise PilotDataError(f"{label}: {error}") from error
-        summary = expect_object(bundle["result"]["summary"], f"{label}.result.summary")
-        expect_keys(
-            summary,
-            f"{label}.result.summary",
-            (
-                "trusted_push_eligible",
-                "delivery_eligible",
-                "accepted_handoffs",
-                "rejected_handoffs",
-                "interrupted_handoffs",
-                "stale_responses",
-                "max_owner_lifetime_seconds",
-                "max_peak_rss_bytes",
-                "coordination_turns",
-                "recovery_count",
-                "recovery_minutes",
-                "rejection_codes",
-            ),
-        )
-        bundle_trusted_push_eligible = expect_bool(
-            summary["trusted_push_eligible"],
-            f"{label}.result.summary.trusted_push_eligible",
-        )
-        expect_bool(
-            summary["delivery_eligible"],
-            f"{label}.result.summary.delivery_eligible",
-        )
-        for field in (
-            "accepted_handoffs",
-            "rejected_handoffs",
-            "interrupted_handoffs",
-            "stale_responses",
-            "max_owner_lifetime_seconds",
-            "max_peak_rss_bytes",
-            "coordination_turns",
-            "recovery_count",
-            "recovery_minutes",
-        ):
-            expect_int(
-                summary[field],
-                f"{label}.result.summary.{field}",
-                0,
+        summary, bundle_rejection_codes, _delivery_graph, _watchers = (
+            agent_handoff.derive_reporter_result_summary(
+                bundle["document"],
+                bundle["result"],
             )
-        bundle_rejection_codes = expect_list(
-            summary["rejection_codes"],
-            f"{label}.result.summary.rejection_codes",
         )
-        for code_index, code in enumerate(bundle_rejection_codes):
-            expect_enum(
-                code,
-                HANDOFF_REJECTION_CODES,
-                f"{label}.result.summary.rejection_codes[{code_index}]",
-            )
-        expect_unique(
-            bundle_rejection_codes,
-            f"{label}.result.summary.rejection_codes",
-        )
+        bundle_trusted_push_eligible = summary["trusted_push_eligible"]
         identity = bundle["input_seal"]
         if identity in bundles:
             raise PilotDataError(
@@ -1648,19 +1598,14 @@ def validate_implementation_handoffs(
                 raise PilotDataError(
                     f"{handoff_label} in_progress outcome cannot have closed_at"
                 )
-            if outcome == "accepted" and not bundle_trusted_push_eligible:
-                if not bundle_rejection_codes:
-                    raise PilotDataError(
-                        f"{handoff_label} trusted-ineligible bundle lacks "
-                        "bundle rejection codes"
-                    )
-                handoff["bundle_rejection_codes"] = copy.deepcopy(
-                    bundle_rejection_codes
-                )
-                handoff["reported_outcome"] = "bundle_rejected"
-            else:
-                handoff["bundle_rejection_codes"] = []
-                handoff["reported_outcome"] = outcome
+            handoff["bundle_rejection_codes"] = copy.deepcopy(
+                bundle_rejection_codes
+            )
+            handoff["reported_outcome"] = (
+                "bundle_rejected"
+                if outcome == "accepted" and not bundle_trusted_push_eligible
+                else outcome
+            )
             handoffs[handoff_id] = handoff
     expect_unique(owner_ids, "implementation handoff owner IDs")
     return {"bundles": bundles, "handoffs": handoffs}

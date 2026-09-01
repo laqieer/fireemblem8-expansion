@@ -992,10 +992,14 @@ version 1 and rejects a handoff field. Version 2 is an additive operational
 fixture schema that requires normalized `implementation_handoffs` records from
 the validator. The public handoff document format itself stays at protocol
 version 8 / `schema_version: 2`: the shipped JSON Schema now closes
-`history_authority` and `prior_handoffs` with standards-compliant field
+every live protocol section — `history_authority`, `prior_handoffs`,
+`delivery_graph`, handoff arrays/objects, top-level run/watcher receipts, and
+the full coordinator receipt surface — with standards-compliant field
 definitions that match the runtime parser's nested objects, enums, nullability,
 numeric bounds, and `additionalProperties: false` behavior instead of leaving
-those objects unsatisfiable.
+those objects unsatisfiable. Every schema timestamp now follows the same exact
+runtime grammar: RFC 3339 UTC with a terminal `Z`. Offset forms such as
+`+00:00` remain invalid because the runtime does not accept them.
 
 Each normalized record contains the complete source document, source handoff
 identities, and matching input/Git/check/coordinator/result seals. The
@@ -1024,15 +1028,22 @@ accepted. The aggregate output therefore reports
 accepted/bundle-rejected/rejected/interrupted/in-progress counts plus the
 union of rejection codes, stale responses, maximum owner lifetime/RSS,
 coordination turns, and recovery minutes exclusively from verified results.
-Line usage remains Git-derived. Protocol changes come from the parsed,
-monotonically versioned `scripts/workflow_pilot/agent_handoff.schema.json`.
-ROM/RAM derives zero only for exact proven host-only path prefixes. Linker
-scripts, Makefiles, assets, configuration, fonts, text, generated data, and
-every unclassified tracked input require a closed build/map/resource receipt
-whose dependency inputs exactly equal the conservative Git-derived set. RSS,
-lifetime, turns, and recovery come from coordinator runtime telemetry.
-Claim-only tampering fails its seal. This adds no mutable decision record and
-does not alter version 1 expected paths, values, or seals.
+Bundle/global rejection codes derived from sealed runs/watchers remain present
+even when the affected handoff already has its own local rejection outcome, so
+aggregate failure reporting never loses watcher or authoritative-run defects
+and never double-counts the same handoff as both rejected and bundle-rejected.
+`verify_reporter_record()` re-derives the signed summary and bundle-global
+rejection semantics from the sealed document/result payload instead of trusting
+the mutable summary object. Line usage remains Git-derived. Protocol changes
+come from the parsed, monotonically versioned
+`scripts/workflow_pilot/agent_handoff.schema.json`. ROM/RAM derives zero only
+for exact proven host-only path prefixes. Linker scripts, Makefiles, assets,
+configuration, fonts, text, generated data, and every unclassified tracked
+input require a closed build/map/resource receipt whose dependency inputs
+exactly equal the conservative Git-derived set. RSS, lifetime, turns, and
+recovery come from coordinator runtime telemetry. Claim-only tampering fails
+its seal. This adds no mutable decision record and does not alter version 1
+expected paths, values, or seals.
 Run a version 2 operational fixture without the version 1-only `--expected`
 argument:
 

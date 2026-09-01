@@ -142,6 +142,9 @@ RSA_SHA256_DIGEST_INFO_PREFIX = bytes.fromhex(
 )
 AUTHORITY_READ_ATTEMPTS = 3
 LIVE_ATTESTATION_MAX_AGE_SECONDS = 2
+TRUSTED_PUSH_SUMMARY_EXEMPT_REJECTIONS = frozenset(
+    {"authoritative-run-failed", "authoritative-run-incomplete"}
+)
 
 
 class HandoffDataError(Exception):
@@ -3281,6 +3284,329 @@ def make_history_receipt(
     return receipt
 
 
+def _parse_reporter_result_handoffs(raw_handoffs: Any) -> list[dict[str, Any]]:
+    parsed = []
+    handoff_ids = []
+    for index, raw in enumerate(
+        expect_list(raw_handoffs, "handoff reporter record.result.handoffs")
+    ):
+        label = f"handoff reporter record.result.handoffs[{index}]"
+        handoff = copy.deepcopy(expect_object(raw, label))
+        expect_keys(
+            handoff,
+            label,
+            (
+                "id",
+                "owner_id",
+                "issue",
+                "pull_request",
+                "assigned_at",
+                "closed_at",
+                "state",
+                "outcome",
+                "result_sha",
+                "changed_lines",
+                "changed_paths",
+                "commit_message_sha256",
+                "stale_response",
+                "lifetime_seconds",
+                "peak_rss_bytes",
+                "coordination_turns",
+                "recovery_minutes",
+                "budget_usage",
+                "interruption_snapshot",
+                "rejection_codes",
+            ),
+        )
+        handoff_id = expect_string(handoff["id"], f"{label}.id")
+        handoff_ids.append(handoff_id)
+        expect_string(handoff["owner_id"], f"{label}.owner_id")
+        expect_int(handoff["issue"], f"{label}.issue", 1)
+        if handoff["pull_request"] is not None:
+            expect_int(handoff["pull_request"], f"{label}.pull_request", 1)
+        parse_time(handoff["assigned_at"], f"{label}.assigned_at")
+        closed_at = parse_time(
+            handoff["closed_at"],
+            f"{label}.closed_at",
+            nullable=True,
+        )
+        expect_enum(handoff["state"], HANDOFF_STATES, f"{label}.state")
+        outcome = expect_enum(
+            handoff["outcome"],
+            {"accepted", "in_progress", "interrupted", "rejected"},
+            f"{label}.outcome",
+        )
+        if handoff["result_sha"] is not None:
+            expect_sha(handoff["result_sha"], f"{label}.result_sha")
+        if handoff["changed_lines"] is not None:
+            expect_int(handoff["changed_lines"], f"{label}.changed_lines", 0)
+        changed_paths = handoff["changed_paths"]
+        if changed_paths is not None:
+            paths = expect_list(changed_paths, f"{label}.changed_paths")
+            for path_index, path in enumerate(paths):
+                _validate_repository_path(
+                    path,
+                    f"{label}.changed_paths[{path_index}]",
+                    prefix=False,
+                )
+            expect_unique(paths, f"{label}.changed_paths")
+        commit_message_sha256 = handoff["commit_message_sha256"]
+        if commit_message_sha256 is not None:
+            if (
+                not isinstance(commit_message_sha256, str)
+                or reporter.SHA256_RE.fullmatch(commit_message_sha256) is None
+            ):
+                raise HandoffDataError(
+                    f"{label}.commit_message_sha256 must be a lowercase SHA-256"
+                )
+        expect_bool(handoff["stale_response"], f"{label}.stale_response")
+        for field in (
+            "lifetime_seconds",
+            "peak_rss_bytes",
+            "coordination_turns",
+            "recovery_minutes",
+        ):
+            expect_int(handoff[field], f"{label}.{field}", 0)
+        budget_usage = expect_object(handoff["budget_usage"], f"{label}.budget_usage")
+        expect_keys(
+            budget_usage,
+            f"{label}.budget_usage",
+            ("rom_bytes", "ram_bytes", "protocol_changes"),
+        )
+        for field in ("rom_bytes", "ram_bytes", "protocol_changes"):
+            expect_int(
+                budget_usage[field],
+                f"{label}.budget_usage.{field}",
+                0,
+            )
+        snapshot = handoff["interruption_snapshot"]
+        if snapshot is not None:
+            snapshot = expect_object(snapshot, f"{label}.interruption_snapshot")
+            expect_keys(
+                snapshot,
+                f"{label}.interruption_snapshot",
+                ("status_sha256", "dirty_paths", "preserved_paths", "files"),
+            )
+            if (
+                not isinstance(snapshot["status_sha256"], str)
+                or reporter.SHA256_RE.fullmatch(snapshot["status_sha256"]) is None
+            ):
+                raise HandoffDataError(
+                    f"{label}.interruption_snapshot.status_sha256 is invalid"
+                )
+            for field in ("dirty_paths", "preserved_paths"):
+                paths = expect_list(
+                    snapshot[field],
+                    f"{label}.interruption_snapshot.{field}",
+                )
+                for path_index, path in enumerate(paths):
+                    _validate_repository_path(
+                        path,
+                        f"{label}.interruption_snapshot.{field}[{path_index}]",
+                        prefix=False,
+                    )
+                expect_unique(
+                    paths,
+                    f"{label}.interruption_snapshot.{field}",
+                )
+            for file_index, raw_file in enumerate(
+                expect_list(
+                    snapshot["files"],
+                    f"{label}.interruption_snapshot.files",
+                )
+            ):
+                file_label = f"{label}.interruption_snapshot.files[{file_index}]"
+                file_record = expect_object(raw_file, file_label)
+                expect_keys(
+                    file_record,
+                    file_label,
+                    ("path", "mode", "sha256", "content_base64"),
+                )
+                _validate_repository_path(
+                    file_record["path"],
+                    f"{file_label}.path",
+                    prefix=False,
+                )
+                expect_int(file_record["mode"], f"{file_label}.mode", 0)
+                if (
+                    not isinstance(file_record["sha256"], str)
+                    or reporter.SHA256_RE.fullmatch(file_record["sha256"]) is None
+                ):
+                    raise HandoffDataError(
+                        f"{file_label}.sha256 must be a lowercase SHA-256"
+                    )
+                expect_string(
+                    file_record["content_base64"],
+                    f"{file_label}.content_base64",
+                    allow_empty=True,
+                )
+        rejection_codes = expect_list(
+            handoff["rejection_codes"],
+            f"{label}.rejection_codes",
+        )
+        for code_index, code in enumerate(rejection_codes):
+            expect_enum(
+                code,
+                reporter.HANDOFF_REJECTION_CODES,
+                f"{label}.rejection_codes[{code_index}]",
+            )
+        expect_unique(rejection_codes, f"{label}.rejection_codes")
+        if outcome == "accepted":
+            if closed_at is None or rejection_codes:
+                raise HandoffDataError(
+                    f"{label} accepted outcome requires closure without rejections"
+                )
+        elif outcome == "rejected":
+            if not rejection_codes:
+                raise HandoffDataError(
+                    f"{label} rejected outcome requires rejection_codes"
+                )
+        elif outcome == "interrupted":
+            if closed_at is None:
+                raise HandoffDataError(
+                    f"{label} interrupted outcome requires closed_at"
+                )
+        elif closed_at is not None:
+            raise HandoffDataError(
+                f"{label} in_progress outcome cannot have closed_at"
+            )
+        parsed.append(handoff)
+    expect_unique(handoff_ids, "handoff reporter result handoff IDs")
+    return parsed
+
+
+def derive_reporter_result_summary(
+    document: dict[str, Any],
+    result: dict[str, Any],
+) -> tuple[dict[str, Any], list[str], dict[str, Any], list[dict[str, Any]]]:
+    document_handoffs = [
+        _parse_handoff(copy.deepcopy(raw), index)
+        for index, raw in enumerate(
+            expect_list(
+                document["handoffs"],
+                "handoff reporter record.document.handoffs",
+            )
+        )
+    ]
+    reported_handoffs = _parse_reporter_result_handoffs(result["handoffs"])
+    expected_ids = sorted(handoff["id"] for handoff in document_handoffs)
+    if sorted(handoff["id"] for handoff in reported_handoffs) != expected_ids:
+        raise HandoffDataError(
+            "handoff reporter result handoff identities contradict its document"
+        )
+    if result["repository"] != document["repository"]:
+        raise HandoffDataError(
+            "handoff reporter result repository contradicts its document"
+        )
+
+    coordinators = _parse_coordinators(copy.deepcopy(document["coordinators"]))
+    if coordinators:
+        expected_coordinator_id = coordinators[0]["id"]
+    else:
+        expected_coordinator_id = None
+    if result["coordinator_id"] != expected_coordinator_id:
+        raise HandoffDataError(
+            "handoff reporter result coordinator identity contradicts its document"
+        )
+
+    delivery_graph = evaluate_delivery_graph(copy.deepcopy(document["delivery_graph"]))
+
+    runs = _parse_runs(copy.deepcopy(document["workflow_runs"]))
+    watchers = _parse_watchers(copy.deepcopy(document["watchers"]))
+    global_rejections = set()
+    watcher_results = []
+    watcher_counts = Counter(watcher["run_id"] for watcher in watchers)
+    if any(count > 1 for count in watcher_counts.values()):
+        global_rejections.add("duplicate-watcher")
+    for run_id, run in sorted(runs.items()):
+        matching = [watcher for watcher in watchers if watcher["run_id"] == run_id]
+        if len(matching) != 1:
+            global_rejections.add("missing-or-duplicate-watcher")
+            continue
+        watcher = matching[0]
+        if watcher["head_sha"] != run["head_sha"]:
+            global_rejections.add("watcher-run-mismatch")
+        if watcher["coordinator_id"] != expected_coordinator_id:
+            global_rejections.add("watcher-owner-mismatch")
+        if parse_time(
+            run["observed_at"],
+            f"handoff reporter run {run_id}.observed_at",
+        ) < parse_time(
+            watcher["ended_at"],
+            f"handoff reporter watcher {watcher['id']}.ended_at",
+        ):
+            global_rejections.add("watcher-authority-stale")
+        authoritative_outcome = (
+            run["conclusion"] if run["status"] == "completed" else "active"
+        )
+        watcher_results.append(
+            {
+                "run_id": run_id,
+                "head_sha": run["head_sha"],
+                "watcher_process_result": watcher["process_result"],
+                "authoritative_outcome": authoritative_outcome,
+                "reconciled": (
+                    watcher["process_result"] != "success"
+                    and run["status"] == "completed"
+                ),
+            }
+        )
+        if run["status"] != "completed":
+            global_rejections.add("authoritative-run-incomplete")
+        elif run["conclusion"] != "success":
+            global_rejections.add("authoritative-run-failed")
+
+    local_rejections = {
+        code for handoff in reported_handoffs for code in handoff["rejection_codes"]
+    }
+    rejection_codes = sorted(local_rejections | global_rejections)
+    completed = [
+        handoff for handoff in reported_handoffs if handoff["outcome"] == "accepted"
+    ]
+    trusted_push_eligible = bool(completed) and not any(
+        code
+        for code in rejection_codes
+        if code not in TRUSTED_PUSH_SUMMARY_EXEMPT_REJECTIONS
+    )
+    delivery_eligible = trusted_push_eligible and all(
+        parent["delivery_eligible"] for parent in delivery_graph["parent_delivery"]
+    ) and all(
+        run["status"] == "completed" and run["conclusion"] == "success"
+        for run in runs.values()
+    )
+    summary = {
+        "trusted_push_eligible": trusted_push_eligible,
+        "delivery_eligible": delivery_eligible,
+        "accepted_handoffs": len(completed),
+        "rejected_handoffs": sum(
+            handoff["outcome"] == "rejected" for handoff in reported_handoffs
+        ),
+        "interrupted_handoffs": sum(
+            handoff["outcome"] == "interrupted" for handoff in reported_handoffs
+        ),
+        "stale_responses": sum(
+            handoff["stale_response"] for handoff in reported_handoffs
+        ),
+        "max_owner_lifetime_seconds": max(
+            handoff["lifetime_seconds"] for handoff in reported_handoffs
+        ),
+        "max_peak_rss_bytes": max(
+            handoff["peak_rss_bytes"] for handoff in reported_handoffs
+        ),
+        "coordination_turns": sum(
+            handoff["coordination_turns"] for handoff in reported_handoffs
+        ),
+        "recovery_count": sum(
+            handoff["interruption"] is not None for handoff in document_handoffs
+        ),
+        "recovery_minutes": sum(
+            handoff["recovery_minutes"] for handoff in reported_handoffs
+        ),
+        "rejection_codes": rejection_codes,
+    }
+    return summary, sorted(global_rejections), delivery_graph, watcher_results
+
+
 def reporter_record(
     document: dict[str, Any],
     result: dict[str, Any],
@@ -3410,6 +3736,21 @@ def verify_reporter_record(
     if result["result_seal"] != seal_handoff_result(result):
         raise HandoffDataError(
             "handoff reporter record result seal does not verify"
+        )
+    expected_summary, _global_rejection_codes, delivery_graph, watcher_results = (
+        derive_reporter_result_summary(document, result)
+    )
+    if result["summary"] != expected_summary:
+        raise HandoffDataError(
+            "handoff reporter record result summary does not verify"
+        )
+    if result["delivery_graph"] != delivery_graph:
+        raise HandoffDataError(
+            "handoff reporter record delivery graph does not verify"
+        )
+    if result["watchers"] != watcher_results:
+        raise HandoffDataError(
+            "handoff reporter record watcher summary does not verify"
         )
     result_attestation = expect_object(
         record["result_attestation"],

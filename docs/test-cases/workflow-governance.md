@@ -1390,8 +1390,10 @@ game behavior needs a compensating change.
    2020-12 JSON Schema validator. Validate one real generated handoff
    document, its `history_authority`, and a sealed `prior_handoffs` receipt.
    Reject unknown, missing, and wrong-type authority/history adversaries, and
-   confirm no closed object definition combines required fields with
-   `additionalProperties: false` while omitting `properties`.
+   confirm no live protocol section leaves a generic open object or array
+   placeholder. The published schema must reject the same representative
+   structural defects as the runtime, including bare `{}`/`[123]` placeholders
+   in delivery-graph, handoff, run/watcher, and coordinator-receipt sections.
 3. Inspect the temporary real-Git success fixture. Confirm its result is the
    clean worktree `HEAD`, has exactly the assigned direct parent and expected
    branch, changes only allowlisted paths within the numeric line budget, ends
@@ -1414,7 +1416,9 @@ game behavior needs a compensating change.
    and protocol usage. Confirm a whole one-second lifetime is accepted even
    when its RFC 3339 endpoints include fractional seconds, while 1.9-second
    and other non-whole-second telemetry deltas reject before integer
-   truncation. Then change a resource path and require a closed
+   truncation. Confirm the same strict UTC `Z` timestamp grammar in both the
+   published schema and the runtime; `+00:00` offsets remain invalid. Then
+   change a resource path and require a closed
    build/map/resource receipt. Prove `ldscript.txt`, Makefiles, assets,
    configuration, fonts, text, generated data, and every unclassified input
    cannot derive zero. Change the parsed schema and require a monotonic
@@ -1576,10 +1580,13 @@ validates the public handoff schema against real authority/history examples,
 rejects unsatisfied closed definitions, and reports
 accepted/bundle-rejected/rejected/interrupted/in-progress counts together
 with rejection codes, stale responses, maximum owner lifetime and RSS,
-coordination turns, and recovery cost only from coordinator telemetry. Git
-derives line usage, parsed schema derives protocol changes, and only exact
-proven host-only paths derive zero ROM/RAM; all other tracked inputs require
-closed dependency-bound build/map/resource evidence. Its
+coordination turns, and recovery cost only from coordinator telemetry. When a
+bundle-level watcher or authoritative-run defect accompanies a locally rejected
+handoff, the reporter retains both the local and bundle/global rejection codes
+without double-counting the outcome class. Git derives line usage, parsed
+schema derives protocol changes, and only exact proven host-only paths derive
+zero ROM/RAM; all other tracked inputs require closed dependency-bound
+build/map/resource evidence. Its
 frozen version 1 baseline, expected
 values, seals, lifecycle, trusted-push, and centralized-watcher contracts are
 unchanged. Historical version 2 accepts no hand-authored aggregate: it verifies
