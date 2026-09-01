@@ -243,6 +243,10 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
             "        )"
         )
         not in isolated_step
+        or (
+            "for ((index=${#dev_mounts[@]} - 1; index >= 0; index--)); do"
+        )
+        not in isolated_step
         or '/dev/*) /usr/bin/umount -- "$dev_mount" ;;'
         not in isolated_step
         or 'test "$(/usr/bin/findmnt -Rrno TARGET /dev)" = /dev'
@@ -678,6 +682,35 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             self.patch_job,
         )
 
+    def test_device_mount_teardown_executes_deepest_first(self):
+        loop_match = re.search(
+            r"(?ms)^        for \(\(index=\$\{#dev_mounts\[@\]\} - 1; "
+            r"index >= 0; index--\)\); do\n"
+            r".*?^        done$",
+            self.patch_job,
+        )
+        self.assertIsNotNone(loop_match)
+        loop = loop_match.group(0).replace(
+            '/usr/bin/umount -- "$dev_mount"',
+            "printf '%s\\n' \"$dev_mount\"",
+        )
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "-c",
+                "dev_mounts=(/dev /dev/pts /dev/pts/9 /dev/shm)\n" + loop,
+            ],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            completed.stdout.splitlines(),
+            ["/dev/shm", "/dev/pts/9", "/dev/pts"],
+        )
+
         attack = (
             "\n    - name: Candidate persistence attack\n"
             "      run: |\n"
@@ -1037,6 +1070,12 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "/dev/*) true ;;",
             1,
         )
+        forward_dev_teardown = self.text.replace(
+            "for ((index=${#dev_mounts[@]} - 1; "
+            "index >= 0; index--)); do",
+            "for ((index=0; index < ${#dev_mounts[@]}; index++)); do",
+            1,
+        )
         ambient_dependency_python = self.text.replace(
             "/usr/bin/env -i HOME=\"$PATCH_RUNTIME_ROOT\" LC_ALL=C",
             "HOME=\"$PATCH_RUNTIME_ROOT\"",
@@ -1123,6 +1162,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             ("unprivileged-builder-cleanup", unprivileged_builder_cleanup),
             ("decorated-mount-targets", decorated_mount_targets),
             ("retained-dev-descendants", retained_dev_descendants),
+            ("forward-dev-teardown", forward_dev_teardown),
             ("ambient-dependency-python", ambient_dependency_python),
             ("unverified-builder-state", unverified_builder_state),
             ("allowed-unexpected-handoff", allowed_unexpected_handoff),
