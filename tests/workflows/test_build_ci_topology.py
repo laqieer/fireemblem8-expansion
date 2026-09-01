@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import fnmatch
+import io
 import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -242,15 +245,11 @@ EXPECTED_BUILD_SHA_EXPRESSION = (
 HOST_ENV_LINE = f"      EXPECTED_BUILD_SHA: {EXPECTED_BUILD_SHA_EXPRESSION}"
 METADATA_ADAPTER_ENV = (
     "        BASH_ENV: ''",
-    "        CHANGES_JSON: ${{ toJSON(github.event.changes) }}",
     "        CLASSIFICATION: ${{ needs.event-classifier.outputs.classification }}",
     "        CLASSIFIED_BASE_SHA: ${{ needs.event-classifier.outputs.expected_base }}",
     "        CLASSIFIED_BUILD_SHA: ${{ needs.event-classifier.outputs.expected_head }}",
     "        CLASSIFIER_RESULT: ${{ needs.event-classifier.result }}",
     "        ENV: ''",
-    "        EVENT_ACTION: ${{ github.event.action }}",
-    "        EVENT_NAME: ${{ github.event_name }}",
-    "        EVENT_REF: ${{ github.ref }}",
     "        FALLBACK_IDENTITY_RESULT: ${{ needs.event-identity.result }}",
     "        FALLBACK_KIND: ${{ needs.event-identity.outputs.fallback_kind }}",
     "        FALLBACK_SHA: ${{ needs.event-identity.outputs.fallback_sha }}",
@@ -258,71 +257,78 @@ METADATA_ADAPTER_ENV = (
     "        HEAD_VALID: ${{ needs.event-classifier.outputs.head_valid }}",
     "        IDENTITY_VALID: ${{ needs.event-classifier.outputs.identity_valid }}",
     "        PATH: /usr/bin:/bin",
-    "        PR_BASE_REF: ${{ github.event.pull_request.base.ref }}",
-    "        PR_BASE_REF_JSON: ${{ toJSON(github.event.pull_request.base.ref) }}",
-    "        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}",
-    "        PR_BASE_SHA_JSON: ${{ toJSON(github.event.pull_request.base.sha) }}",
-    "        PR_BODY_JSON: ${{ toJSON(github.event.pull_request.body) }}",
-    "        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}",
-    "        PR_HEAD_SHA_JSON: ${{ toJSON(github.event.pull_request.head.sha) }}",
-    "        PR_NUMBER: ${{ github.event.number }}",
-    "        PR_NUMBER_JSON: ${{ toJSON(github.event.number) }}",
-    "        PR_TITLE_JSON: ${{ toJSON(github.event.pull_request.title) }}",
     "        RUN_EXPENSIVE: ${{ needs.event-classifier.outputs.run_expensive }}",
 )
 METADATA_ADAPTER_REQUIRED_FRAGMENTS = (
     'if [ "$CLASSIFIER_RESULT" != "success" ] || \\',
     '[ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \\',
-    '[ "$EVENT_NAME" != "pull_request" ] || \\',
+    '[ "$GITHUB_EVENT_NAME" != "pull_request" ] || \\',
     '[ "$CLASSIFICATION" != "metadata-only" ] || \\',
     '[ "$FALLBACK_KIND" != "pull_request" ] || \\',
-    '[ -z "$FALLBACK_SHA" ] || [ -z "$PR_HEAD_SHA" ] || \\',
-    '[ -z "$PR_BASE_SHA" ] || \\',
+    '[ -z "$FALLBACK_SHA" ] || \\',
     '[ "$FULL_FALLBACK" != "false" ] || [ "$HEAD_VALID" != "true" ] || \\',
     '[ "$IDENTITY_VALID" != "true" ] || [ "$RUN_EXPENSIVE" != "false" ] || \\',
     '[ "$EXPECTED_BUILD_SHA" != "$CLASSIFIED_BUILD_SHA" ] || \\',
-    '[ "$FALLBACK_SHA" != "$PR_HEAD_SHA" ] || \\',
-    '[ "$FALLBACK_SHA" != "$CLASSIFIED_BUILD_SHA" ] || \\',
-    '[ "$CLASSIFIED_BASE_SHA" != "$PR_BASE_SHA" ]; then',
+    '[ "$FALLBACK_SHA" != "$CLASSIFIED_BUILD_SHA" ]; then',
     'echo "metadata-only branch-protection continuity is not authoritative" >&2',
     "/usr/bin/python3 -I - <<'PY'",
     "import json",
     "import os",
     "import re",
+    "import stat",
     "import sys",
-    'event_name = env("EVENT_NAME", max_bytes=32)',
-    'event_action = env("EVENT_ACTION", max_bytes=32)',
-    'pr_number_text = env("PR_NUMBER", max_bytes=MAX_NUMBER_BYTES)',
-    'pr_number = parse_json_env("PR_NUMBER_JSON", max_bytes=32)',
-    'event_ref = env("EVENT_REF", max_bytes=MAX_EVENT_REF_BYTES)',
-    'base_ref = env("PR_BASE_REF", max_bytes=MAX_REF_BYTES)',
-    'parse_json_env("PR_BASE_REF_JSON", max_bytes=MAX_JSON_BYTES)',
-    'parse_json_env("PR_BASE_SHA_JSON", max_bytes=128)',
-    'parse_json_env("PR_HEAD_SHA_JSON", max_bytes=128)',
-    'parse_json_env("PR_BODY_JSON", max_bytes=MAX_JSON_BYTES)',
-    'parse_json_env("PR_TITLE_JSON", max_bytes=MAX_JSON_BYTES)',
-    'changes = parse_json_env("CHANGES_JSON", max_bytes=MAX_JSON_BYTES)',
-    '"EVENT_ACTION"',
-    '"EVENT_REF"',
-    '"PR_NUMBER"',
-    '"PR_BASE_REF"',
-    '"PR_BASE_REF_JSON"',
-    '"PR_BASE_SHA_JSON"',
-    '"PR_BODY_JSON"',
-    '"PR_HEAD_SHA_JSON"',
-    '"PR_NUMBER_JSON"',
-    '"PR_TITLE_JSON"',
-    '"CHANGES_JSON"',
+    "MAX_EVENT_PATH_BYTES = 4096",
+    "MAX_EVENT_BYTES = 1048576",
+    "MAX_EVENT_READ_BYTES = MAX_EVENT_BYTES + 1",
+    "EVENT_FILE_FLAGS = (",
+    'getattr(os, "O_CLOEXEC", 0)',
+    'getattr(os, "O_NOFOLLOW", 0)',
+    'getattr(os, "O_NONBLOCK", 0)',
+    'event_path = env("GITHUB_EVENT_PATH", max_bytes=MAX_EVENT_PATH_BYTES)',
+    "metadata = os.lstat(event_path)",
+    'fail(f"metadata-only raw event cannot inspect payload: {error}")',
+    'if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):',
+    'fail("metadata-only raw event payload must be a regular file")',
+    'if metadata.st_uid != os.getuid():',
+    'fail("metadata-only raw event payload owner is invalid")',
+    'if metadata.st_size > MAX_EVENT_BYTES:',
+    'fail("metadata-only raw event payload exceeds 1 MiB")',
+    "fd = os.open(event_path, EVENT_FILE_FLAGS)",
+    "opened = os.fstat(fd)",
+    'if file_signature(opened) != file_signature(metadata):',
+    'fail("metadata-only raw event payload changed before read")',
+    "chunk = os.read(fd, min(65536, MAX_EVENT_READ_BYTES - len(raw)))",
+    "final = os.fstat(fd)",
+    'if file_signature(final) != file_signature(opened) or len(raw) != opened.st_size:',
+    'fail("metadata-only raw event payload changed while being read")',
+    "payload = json.loads(",
+    "object_pairs_hook=reject_duplicates",
+    'fail(f"metadata-only raw event payload is not valid JSON: {error}")',
+    'fail("metadata-only raw event payload must be an object")',
+    'event_name = env("GITHUB_EVENT_NAME", max_bytes=32)',
+    'event_action = payload.get("action")',
+    'pr_number = payload.get("number")',
+    'event_ref = env("GITHUB_REF", max_bytes=MAX_EVENT_REF_BYTES)',
+    'pull_request = payload.get("pull_request")',
+    'base = pull_request.get("base")',
+    'base.get("ref")',
+    'base.get("sha")',
+    'head = pull_request.get("head")',
+    'head.get("sha")',
+    'or classified_head != env("EXPECTED_BUILD_SHA", max_bytes=64)',
+    'pull_request.get("body")',
+    'pull_request.get("title")',
+    'changes = payload.get("changes")',
     'if event_action != "edited":',
     'if event_ref != f"refs/pull/{pr_number}/merge":',
     "if change_keys not in ALLOWED_CHANGE_KEYS:",
     "if previous == current:",
-    "object_pairs_hook=reject_duplicates",
     "metadata-only raw event is not an edited pull_request",
     "metadata-only raw event PR number is invalid",
     "metadata-only raw event ref is invalid",
+    "metadata-only raw event pull_request is invalid",
     "metadata-only raw event base ref is invalid",
-    "metadata-only raw event base sha is invalid",
+    'parse_sha(base.get("sha"), field="base sha")',
     "metadata-only raw event head sha is invalid",
     "metadata-only raw event does not match classifier identity",
     "metadata-only raw event changes must be an object",
@@ -343,6 +349,20 @@ METADATA_ADAPTER_FORBIDDEN_FRAGMENTS = (
     "import scripts",
     "from scripts",
     "subprocess",
+    "parse_json_env",
+    "CHANGES_JSON",
+    "PR_BODY_JSON",
+    "PR_TITLE_JSON",
+    "PR_BASE_REF_JSON",
+    "PR_BASE_SHA_JSON",
+    "PR_HEAD_SHA_JSON",
+    "PR_NUMBER_JSON",
+    'env("EVENT_ACTION"',
+    'env("EVENT_REF"',
+    'env("PR_NUMBER"',
+    'env("PR_BASE_REF"',
+    'env("PR_BASE_SHA"',
+    'env("PR_HEAD_SHA"',
 )
 COMBINED_JOB_ENV = {
     "host-tests": (HOST_ENV_LINE,),
@@ -796,6 +816,87 @@ def _literal_run_script(step: str) -> str:
             break
         script.append(line[8:] if line else "")
     return "\n".join(script) + "\n"
+
+
+def _metadata_adapter_scripts(text: str) -> dict[str, str]:
+    return {
+        job_name: _literal_run_script(_step_blocks(_job_blocks(text)[job_name])[0])
+        for job_name in METADATA_ADAPTER_JOBS
+    }
+
+
+def _metadata_adapter_python_source(script: str) -> str:
+    lines = script.splitlines()
+    try:
+        start = lines.index("/usr/bin/python3 -I - <<'PY'")
+        end = lines.index("PY", start + 1)
+    except ValueError as error:
+        raise AssertionError(
+            "metadata adapter script must contain exactly one Python heredoc"
+        ) from error
+    return "\n".join(lines[start + 1 : end]) + "\n"
+
+
+def _metadata_adapter_payload(
+    *,
+    action: str = "edited",
+    number: int = 177,
+    base_ref: str = "master",
+    base_sha: str = "2" * 40,
+    head_sha: str = "1" * 40,
+    body: str | None = "New body",
+    title: str = "New title",
+    changes: dict | None = None,
+) -> dict:
+    if changes is None:
+        changes = {"body": {"from": "Old body"}}
+    return {
+        "action": action,
+        "changes": changes,
+        "number": number,
+        "pull_request": {
+            "base": {"ref": base_ref, "sha": base_sha},
+            "body": body,
+            "head": {"sha": head_sha},
+            "title": title,
+        },
+    }
+
+
+def _metadata_adapter_payload_bytes(payload: dict) -> bytes:
+    return (
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        + b"\n"
+    )
+
+
+def _metadata_adapter_python_env(event_path: Path | str) -> dict[str, str]:
+    return {
+        "CLASSIFIED_BASE_SHA": "2" * 40,
+        "CLASSIFIED_BUILD_SHA": "1" * 40,
+        "EXPECTED_BUILD_SHA": "1" * 40,
+        "FALLBACK_SHA": "1" * 40,
+        "GITHUB_EVENT_NAME": "pull_request",
+        "GITHUB_EVENT_PATH": str(event_path),
+        "GITHUB_REF": "refs/pull/177/merge",
+    }
+
+
+def _run_metadata_adapter_python_source(
+    source: str,
+    env: dict[str, str],
+) -> tuple[int, str]:
+    stderr = io.StringIO()
+    code = 0
+    with (
+        mock.patch.dict(os.environ, env, clear=True),
+        mock.patch("sys.stderr", stderr),
+    ):
+        try:
+            exec(compile(source, "<metadata-adapter>", "exec"), {"__name__": "__main__"})
+        except SystemExit as exc:
+            code = exc.code if isinstance(exc.code, int) else 1
+    return code, stderr.getvalue()
 
 
 def _contains_command(job: str, command: str) -> bool:
@@ -3280,28 +3381,43 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
     def test_metadata_adapter_raw_event_checks_are_required(self):
         mutations = (
             (
-                "missing-changes-env",
-                "        CHANGES_JSON: ${{ toJSON(github.event.changes) }}\n",
-                "",
+                "remove-event-path-read",
+                'event_path = env("GITHUB_EVENT_PATH", max_bytes=MAX_EVENT_PATH_BYTES)',
+                "event_path = '/dev/null'",
             ),
             (
-                "missing-action-env",
-                "        EVENT_ACTION: ${{ github.event.action }}\n",
-                "",
+                "remove-lstat-check",
+                "metadata = os.lstat(event_path)",
+                "metadata = os.stat(event_path)",
             ),
             (
-                "missing-number-env",
-                "        PR_NUMBER_JSON: ${{ toJSON(github.event.number) }}\n",
-                "",
+                "remove-regular-file-check",
+                'if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):',
+                "if False:",
             ),
             (
-                "weaken-action-check",
-                'if event_action != "edited":',
-                'if event_action != "opened":',
+                "remove-owner-check",
+                'if metadata.st_uid != os.getuid():',
+                "if False:",
             ),
             (
-                "weaken-ref-check",
-                'if event_ref != f"refs/pull/{pr_number}/merge":',
+                "remove-size-check",
+                'if metadata.st_size > MAX_EVENT_BYTES:',
+                "if False:",
+            ),
+            (
+                "remove-nofollow-open",
+                'getattr(os, "O_NOFOLLOW", 0)',
+                "0",
+            ),
+            (
+                "remove-pre-read-race-check",
+                'if file_signature(opened) != file_signature(metadata):',
+                "if False:",
+            ),
+            (
+                "remove-post-read-race-check",
+                'if file_signature(final) != file_signature(opened) or len(raw) != opened.st_size:',
                 "if False:",
             ),
             (
@@ -3333,137 +3449,197 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                 )
 
     def test_metadata_adapter_runtime_requires_exact_raw_edited_event(self):
-        scripts = {
-            job_name: _literal_run_script(_step_blocks(_job_blocks(self.text)[job_name])[0])
-            for job_name in METADATA_ADAPTER_JOBS
-        }
+        scripts = _metadata_adapter_scripts(self.text)
         self.assertEqual(len(set(scripts.values())), 1)
+        self.assertEqual(
+            len({_metadata_adapter_python_source(script) for script in scripts.values()}),
+            1,
+        )
         base_env = {
-            "CHANGES_JSON": json.dumps({"body": {"from": "Old body"}}),
             "CLASSIFICATION": "metadata-only",
             "CLASSIFIED_BASE_SHA": "2" * 40,
             "CLASSIFIED_BUILD_SHA": "1" * 40,
             "CLASSIFIER_RESULT": "success",
-            "EVENT_ACTION": "edited",
-            "EVENT_NAME": "pull_request",
-            "EVENT_REF": "refs/pull/177/merge",
             "EXPECTED_BUILD_SHA": "1" * 40,
             "FALLBACK_IDENTITY_RESULT": "success",
             "FALLBACK_KIND": "pull_request",
             "FALLBACK_SHA": "1" * 40,
             "FULL_FALLBACK": "false",
+            "GITHUB_EVENT_NAME": "pull_request",
+            "GITHUB_REF": "refs/pull/177/merge",
             "HEAD_VALID": "true",
             "IDENTITY_VALID": "true",
-            "PR_BASE_REF": "master",
-            "PR_BASE_REF_JSON": json.dumps("master"),
-            "PR_BASE_SHA": "2" * 40,
-            "PR_BASE_SHA_JSON": json.dumps("2" * 40),
-            "PR_BODY_JSON": json.dumps("New body"),
-            "PR_HEAD_SHA": "1" * 40,
-            "PR_HEAD_SHA_JSON": json.dumps("1" * 40),
-            "PR_NUMBER": "177",
-            "PR_NUMBER_JSON": "177",
-            "PR_TITLE_JSON": json.dumps("New title"),
             "RUN_EXPENSIVE": "false",
         }
+        large_body = '\\"' * 120000
+        self.assertGreater(len(json.dumps(large_body).encode("utf-8")), 131072)
+        large_payload = _metadata_adapter_payload(body=large_body)
+        large_payload_raw = _metadata_adapter_payload_bytes(large_payload)
+        self.assertLessEqual(len(large_payload_raw), event_classifier.MAX_EVENT_BYTES)
         cases = (
-            ("valid-body", {}, 0, None),
-            (
-                "valid-title",
-                {
-                    "CHANGES_JSON": json.dumps({"title": {"from": "Old title"}}),
-                    "PR_BODY_JSON": json.dumps("Stable body"),
+            {
+                "name": "valid-body",
+                "payload": _metadata_adapter_payload(),
+                "expected": 0,
+            },
+            {
+                "name": "valid-title",
+                "payload": _metadata_adapter_payload(
+                    body="Stable body",
+                    changes={"title": {"from": "Old title"}},
+                ),
+                "expected": 0,
+            },
+            {
+                "name": "valid-both",
+                "payload": _metadata_adapter_payload(
+                    changes={
+                        "body": {"from": "Old body"},
+                        "title": {"from": "Old title"},
+                    }
+                ),
+                "expected": 0,
+            },
+            {
+                "name": "valid-null-body",
+                "payload": _metadata_adapter_payload(body=None),
+                "expected": 0,
+            },
+            {
+                "name": "valid-large-body-file",
+                "payload": large_payload,
+                "raw": large_payload_raw,
+                "expected": 0,
+            },
+            {
+                "name": "missing-event-path",
+                "payload": _metadata_adapter_payload(),
+                "env_overrides": {"GITHUB_EVENT_PATH": None},
+                "expected": 1,
+                "error": "missing GITHUB_EVENT_PATH",
+            },
+            {
+                "name": "wrong-event-name",
+                "payload": _metadata_adapter_payload(),
+                "env_overrides": {"GITHUB_EVENT_NAME": "push"},
+                "expected": 1,
+                "error": "not authoritative",
+            },
+            {
+                "name": "wrong-action",
+                "payload": _metadata_adapter_payload(action="opened"),
+                "expected": 1,
+                "error": "not an edited pull_request",
+            },
+            {
+                "name": "wrong-ref",
+                "payload": _metadata_adapter_payload(),
+                "env_overrides": {"GITHUB_REF": "refs/pull/178/merge"},
+                "expected": 1,
+                "error": "ref is invalid",
+            },
+            {
+                "name": "wrong-number",
+                "payload": _metadata_adapter_payload(number=0),
+                "env_overrides": {"GITHUB_REF": "refs/pull/0/merge"},
+                "expected": 1,
+                "error": "PR number is invalid",
+            },
+            {
+                "name": "missing-pull-request",
+                "payload": {
+                    "action": "edited",
+                    "changes": {"body": {"from": "Old body"}},
+                    "number": 177,
                 },
-                0,
-                None,
-            ),
-            (
-                "valid-both",
-                {
-                    "CHANGES_JSON": json.dumps(
-                        {
-                            "body": {"from": "Old body"},
-                            "title": {"from": "Old title"},
-                        }
-                    ),
-                },
-                0,
-                None,
-            ),
-            (
-                "valid-null-body",
-                {
-                    "CHANGES_JSON": json.dumps({"body": {"from": "Old body"}}),
-                    "PR_BODY_JSON": "null",
-                },
-                0,
-                None,
-            ),
-            ("missing-action-env", {"EVENT_ACTION": None}, 1, "missing EVENT_ACTION"),
-            ("missing-changes-env", {"CHANGES_JSON": None}, 1, "missing CHANGES_JSON"),
-            (
-                "wrong-action",
-                {"EVENT_ACTION": "opened"},
-                1,
-                "not an edited pull_request",
-            ),
-            (
-                "wrong-ref",
-                {"EVENT_REF": "refs/pull/178/merge"},
-                1,
-                "ref is invalid",
-            ),
-            (
-                "wrong-number",
-                {
-                    "PR_NUMBER": "0",
-                    "PR_NUMBER_JSON": "0",
-                    "EVENT_REF": "refs/pull/0/merge",
-                },
-                1,
-                "PR number is invalid",
-            ),
-            (
-                "empty-changes",
-                {"CHANGES_JSON": "{}"},
-                1,
-                "changes must be exactly body/title only",
-            ),
-            (
-                "base-change",
-                {
-                    "CHANGES_JSON": json.dumps(
-                        {"base": {"from": {"ref": "topic", "sha": "3" * 40}}}
-                    )
-                },
-                1,
-                "changes must be exactly body/title only",
-            ),
-            (
-                "unknown-change",
-                {"CHANGES_JSON": json.dumps({"draft": {"from": False}})},
-                1,
-                "changes must be exactly body/title only",
-            ),
-            (
-                "same-old-current",
-                {
-                    "PR_BODY_JSON": json.dumps("Same body"),
-                    "CHANGES_JSON": json.dumps({"body": {"from": "Same body"}}),
-                },
-                1,
-                "body did not change",
-            ),
-            (
-                "duplicate-change-keys",
-                {
-                    "CHANGES_JSON": (
-                        '{"body":{"from":"Old body"},"body":{"from":"Older body"}}'
-                    )
-                },
-                1,
-                "JSON repeats a key",
-            ),
+                "expected": 1,
+                "error": "pull_request is invalid",
+            },
+            {
+                "name": "empty-changes",
+                "payload": _metadata_adapter_payload(changes={}),
+                "expected": 1,
+                "error": "changes must be exactly body/title only",
+            },
+            {
+                "name": "base-change",
+                "payload": _metadata_adapter_payload(
+                    changes={"base": {"from": {"ref": "topic", "sha": "3" * 40}}}
+                ),
+                "expected": 1,
+                "error": "changes must be exactly body/title only",
+            },
+            {
+                "name": "extra-change",
+                "payload": _metadata_adapter_payload(
+                    changes={
+                        "body": {"from": "Old body"},
+                        "draft": {"from": False},
+                    }
+                ),
+                "expected": 1,
+                "error": "changes must be exactly body/title only",
+            },
+            {
+                "name": "same-old-current",
+                "payload": _metadata_adapter_payload(
+                    body="Same body",
+                    changes={"body": {"from": "Same body"}},
+                ),
+                "expected": 1,
+                "error": "body did not change",
+            },
+            {
+                "name": "duplicate-change-keys",
+                "raw": (
+                    b'{"action":"edited","changes":{"body":{"from":"Old body"},'
+                    b'"body":{"from":"Older body"}},"number":177,'
+                    b'"pull_request":{"base":{"ref":"master","sha":"'
+                    + b"2" * 40
+                    + b'"},"body":"New body","head":{"sha":"'
+                    + b"1" * 40
+                    + b'"},"title":"New title"}}\n'
+                ),
+                "expected": 1,
+                "error": "JSON repeats a key",
+            },
+            {
+                "name": "malformed-json",
+                "raw": b'{"action":"edited"\n',
+                "expected": 1,
+                "error": "payload is not valid JSON",
+            },
+            {
+                "name": "trailing-garbage",
+                "raw": _metadata_adapter_payload_bytes(_metadata_adapter_payload()) + b"x",
+                "expected": 1,
+                "error": "payload is not valid JSON",
+            },
+            {
+                "name": "oversized-payload",
+                "raw": b" " * (event_classifier.MAX_EVENT_BYTES + 1),
+                "expected": 1,
+                "error": "payload exceeds 1 MiB",
+            },
+            {
+                "name": "symlink-payload",
+                "payload": _metadata_adapter_payload(),
+                "path_kind": "symlink",
+                "expected": 1,
+                "error": "payload must be a regular file",
+            },
+            {
+                "name": "fifo-payload",
+                "path_kind": "fifo",
+                "expected": 1,
+                "error": "payload must be a regular file",
+            },
+            {
+                "name": "device-payload",
+                "path_kind": "device",
+                "expected": 1,
+                "error": "payload must be a regular file",
+            },
         )
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
@@ -3471,11 +3647,30 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             prefix="workflow-metadata-adapter-",
             dir=artifact_root,
         ) as temporary:
+            sandbox = Path(temporary)
             for job_name, script in scripts.items():
-                for case_name, overrides, expected, error_fragment in cases:
-                    with self.subTest(job=job_name, case=case_name):
+                for case in cases:
+                    with self.subTest(job=job_name, case=case["name"]):
+                        event_path = sandbox / f"{job_name}-{case['name']}.json"
+                        path_kind = case.get("path_kind", "file")
+                        raw = case.get("raw")
+                        if raw is None and "payload" in case:
+                            raw = _metadata_adapter_payload_bytes(case["payload"])
+                        if path_kind == "symlink":
+                            target = sandbox / f"{job_name}-{case['name']}-target.json"
+                            target.write_bytes(raw)
+                            event_path.unlink(missing_ok=True)
+                            event_path.symlink_to(target)
+                        elif path_kind == "fifo":
+                            event_path.unlink(missing_ok=True)
+                            os.mkfifo(event_path)
+                        elif path_kind == "device":
+                            event_path = Path("/dev/null")
+                        else:
+                            event_path.write_bytes(raw)
                         env = {**os.environ, **base_env}
-                        for key, value in overrides.items():
+                        env["GITHUB_EVENT_PATH"] = str(event_path)
+                        for key, value in case.get("env_overrides", {}).items():
                             if value is None:
                                 env.pop(key, None)
                             else:
@@ -3487,14 +3682,103 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
                             check=False,
                             capture_output=True,
                             text=True,
+                            timeout=5,
                         )
                         self.assertEqual(
                             completed.returncode,
-                            expected,
+                            case["expected"],
                             completed.stderr,
                         )
-                        if error_fragment is not None:
-                            self.assertIn(error_fragment, completed.stderr)
+                        if case.get("error") is not None:
+                            self.assertIn(case["error"], completed.stderr)
+
+    def test_metadata_adapter_event_file_loader_rejects_races(self):
+        scripts = _metadata_adapter_scripts(self.text)
+        self.assertEqual(len(set(scripts.values())), 1)
+        source = _metadata_adapter_python_source(next(iter(scripts.values())))
+        payload = _metadata_adapter_payload_bytes(_metadata_adapter_payload())
+        current_uid = os.getuid()
+
+        def regular_file_stat(*, ino: int, size: int, mtime_ns: int, ctime_ns: int):
+            return types.SimpleNamespace(
+                st_ctime_ns=ctime_ns,
+                st_dev=11,
+                st_ino=ino,
+                st_mode=stat.S_IFREG | 0o600,
+                st_mtime_ns=mtime_ns,
+                st_size=size,
+                st_uid=current_uid,
+            )
+
+        base_env = _metadata_adapter_python_env("/virtual/event.json")
+
+        with self.subTest(case="changed-before-read"):
+            read = mock.Mock(side_effect=AssertionError("os.read must not run"))
+            with (
+                mock.patch("os.getuid", return_value=current_uid),
+                mock.patch(
+                    "os.lstat",
+                    return_value=regular_file_stat(
+                        ino=1,
+                        size=len(payload),
+                        mtime_ns=10,
+                        ctime_ns=20,
+                    ),
+                ),
+                mock.patch("os.open", return_value=9),
+                mock.patch(
+                    "os.fstat",
+                    return_value=regular_file_stat(
+                        ino=2,
+                        size=len(payload),
+                        mtime_ns=10,
+                        ctime_ns=20,
+                    ),
+                ),
+                mock.patch("os.read", read),
+                mock.patch("os.close"),
+            ):
+                code, stderr = _run_metadata_adapter_python_source(source, base_env)
+            self.assertEqual(code, 1)
+            self.assertIn("payload changed before read", stderr)
+            read.assert_not_called()
+
+        with self.subTest(case="changed-while-read"):
+            with (
+                mock.patch("os.getuid", return_value=current_uid),
+                mock.patch(
+                    "os.lstat",
+                    return_value=regular_file_stat(
+                        ino=3,
+                        size=len(payload),
+                        mtime_ns=30,
+                        ctime_ns=40,
+                    ),
+                ),
+                mock.patch("os.open", return_value=10),
+                mock.patch(
+                    "os.fstat",
+                    side_effect=[
+                        regular_file_stat(
+                            ino=3,
+                            size=len(payload),
+                            mtime_ns=30,
+                            ctime_ns=40,
+                        ),
+                        regular_file_stat(
+                            ino=3,
+                            size=len(payload),
+                            mtime_ns=31,
+                            ctime_ns=41,
+                        ),
+                    ],
+                ),
+                mock.patch("os.read", side_effect=[payload, b""]),
+                mock.patch("os.close"),
+            ):
+                code, stderr = _run_metadata_adapter_python_source(source, base_env)
+            self.assertEqual(code, 1)
+            self.assertIn("payload changed while being read", stderr)
 
     def test_classifier_failure_fixtures_select_only_exact_event_head_fallbacks(self):
         fixture = json.loads(EVENT_FIXTURE.read_text(encoding="utf-8"))

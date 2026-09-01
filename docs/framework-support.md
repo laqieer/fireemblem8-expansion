@@ -33,7 +33,9 @@ contexts plus canonical worker checks `host-tests`, `build`,
 `extended-host-tests`, and `legacy`. In metadata mode, `host-tests` and
 `build` run only a trusted no-checkout continuity attestation so the existing
 required live contexts stay green; `extended-host-tests` and `legacy` remain
-platform-skipped with no runner. Live branch protection therefore remains the
+platform-skipped with no runner. That attestation reads the runner-owned
+file-backed `GITHUB_EVENT_PATH` payload directly instead of env-copying the
+PR body/title/changes JSON. Live branch protection therefore remains the
 current canonical `host-tests` + `build` + `summary` Build contract while
 preserving any existing independent security/review contexts, and
 `metadata-summary` stays distinct so a prior full `summary` still governs
@@ -226,9 +228,12 @@ check precede candidate `host-tests`, `build`, `extended-host-tests`, `legacy`,
 and fail-closed `summary` jobs plus Copilot review. Metadata uses runner-backed
 `host-tests`/`build` continuity adapters plus a distinct running
 `metadata-summary`; those adapters independently revalidate the raw edited
-pull-request event, exact body/title-only `changes` keys, and changed prior
-values without any checkout or candidate import. Normal `summary` is the sole
-candidate attestation and requires all four workers from that same full run.
+pull-request event from the runner-owned file-backed `GITHUB_EVENT_PATH`,
+exact body/title-only `changes` keys, and changed prior values without any
+checkout or candidate import. They accept only a same-owner regular event file
+up to 1 MiB, read at most one additional EOF byte, and never copy large
+body/title/changes JSON through env. Normal `summary` is the sole candidate
+attestation and requires all four workers from that same full run.
 Only parsed body/title-only edits suppress the four expensive worker steps; the
 two required adapters may still take runners briefly while they perform only
 their fixed no-checkout attestation. A

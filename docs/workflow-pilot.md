@@ -134,8 +134,11 @@ canonical worker checks `host-tests`, `build`, `extended-host-tests`, and
 `legacy`. Metadata-only mode requires runner-backed `success` for
 `host-tests`/`build` because those jobs run only the trusted continuity
 adapters, which independently revalidate the raw edited pull-request event and
-exact body/title-only `changes` payload before succeeding, and exact `skipped`
-for `extended-host-tests`/`legacy`. Repository branch protection therefore
+exact body/title-only `changes` payload from the runner-owned file-backed
+`GITHUB_EVENT_PATH` before succeeding, and exact `skipped` for
+`extended-host-tests`/`legacy`. Those adapters accept only a same-owner
+regular event file up to 1 MiB, read at most one additional EOF byte, and do
+not env-copy large body/title/changes JSON. Repository branch protection therefore
 keeps the live canonical `host-tests`, `build`, and `summary` contexts
 unchanged. A later green metadata run still cannot
 replace `summary`, and `candidate_evidence.evaluate_candidate_runs()`
@@ -155,7 +158,10 @@ A canonical successful `event-identity` context is mandatory in both modes.
 A canonical successful `event-router` context is mandatory in both modes.
 
 The classifier reads the bounded `GITHUB_EVENT_PATH` JSON file with duplicate
-key and non-finite `NaN`/`Infinity` rejection. JSON floats are converted
+key and non-finite `NaN`/`Infinity` rejection. The metadata continuity
+adapters independently read the same runner-owned file path with no-follow,
+same-owner regular-file checks, and a 1 MiB plus EOF bound before parsing.
+JSON floats are converted
 through `Decimal` to finite binary64: positive/negative exponent overflow and
 nonzero values that underflow to zero are rejected, including huge exponents;
 normal finite values, representable subnormals, and signed zero remain valid.

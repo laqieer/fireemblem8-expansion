@@ -3925,6 +3925,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "continuity adapters",
             "runner-backed",
             "body/title-only",
+            "GITHUB_EVENT_PATH",
             "extended-host-tests",
             "legacy",
             "platform-skipped",

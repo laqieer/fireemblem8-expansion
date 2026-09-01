@@ -377,15 +377,11 @@ jobs:
       if: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' }}
       env:
         BASH_ENV: ''
-        CHANGES_JSON: ${{ toJSON(github.event.changes) }}
         CLASSIFICATION: ${{ needs.event-classifier.outputs.classification }}
         CLASSIFIED_BASE_SHA: ${{ needs.event-classifier.outputs.expected_base }}
         CLASSIFIED_BUILD_SHA: ${{ needs.event-classifier.outputs.expected_head }}
         CLASSIFIER_RESULT: ${{ needs.event-classifier.result }}
         ENV: ''
-        EVENT_ACTION: ${{ github.event.action }}
-        EVENT_NAME: ${{ github.event_name }}
-        EVENT_REF: ${{ github.ref }}
         FALLBACK_IDENTITY_RESULT: ${{ needs.event-identity.result }}
         FALLBACK_KIND: ${{ needs.event-identity.outputs.fallback_kind }}
         FALLBACK_SHA: ${{ needs.event-identity.outputs.fallback_sha }}
@@ -393,31 +389,18 @@ jobs:
         HEAD_VALID: ${{ needs.event-classifier.outputs.head_valid }}
         IDENTITY_VALID: ${{ needs.event-classifier.outputs.identity_valid }}
         PATH: /usr/bin:/bin
-        PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
-        PR_BASE_REF_JSON: ${{ toJSON(github.event.pull_request.base.ref) }}
-        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        PR_BASE_SHA_JSON: ${{ toJSON(github.event.pull_request.base.sha) }}
-        PR_BODY_JSON: ${{ toJSON(github.event.pull_request.body) }}
-        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        PR_HEAD_SHA_JSON: ${{ toJSON(github.event.pull_request.head.sha) }}
-        PR_NUMBER: ${{ github.event.number }}
-        PR_NUMBER_JSON: ${{ toJSON(github.event.number) }}
-        PR_TITLE_JSON: ${{ toJSON(github.event.pull_request.title) }}
         RUN_EXPENSIVE: ${{ needs.event-classifier.outputs.run_expensive }}
       run: |
         if [ "$CLASSIFIER_RESULT" != "success" ] || \
            [ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \
-           [ "$EVENT_NAME" != "pull_request" ] || \
+           [ "$GITHUB_EVENT_NAME" != "pull_request" ] || \
            [ "$CLASSIFICATION" != "metadata-only" ] || \
            [ "$FALLBACK_KIND" != "pull_request" ] || \
-           [ -z "$FALLBACK_SHA" ] || [ -z "$PR_HEAD_SHA" ] || \
-           [ -z "$PR_BASE_SHA" ] || \
+           [ -z "$FALLBACK_SHA" ] || \
            [ "$FULL_FALLBACK" != "false" ] || [ "$HEAD_VALID" != "true" ] || \
            [ "$IDENTITY_VALID" != "true" ] || [ "$RUN_EXPENSIVE" != "false" ] || \
            [ "$EXPECTED_BUILD_SHA" != "$CLASSIFIED_BUILD_SHA" ] || \
-           [ "$FALLBACK_SHA" != "$PR_HEAD_SHA" ] || \
-           [ "$FALLBACK_SHA" != "$CLASSIFIED_BUILD_SHA" ] || \
-           [ "$CLASSIFIED_BASE_SHA" != "$PR_BASE_SHA" ]; then
+           [ "$FALLBACK_SHA" != "$CLASSIFIED_BUILD_SHA" ]; then
           echo "metadata-only branch-protection continuity is not authoritative" >&2
           exit 1
         fi
@@ -425,20 +408,29 @@ jobs:
         import json
         import os
         import re
+        import stat
         import sys
 
+        MAX_EVENT_PATH_BYTES = 4096
         MAX_EVENT_REF_BYTES = 128
         MAX_NUMBER_BYTES = 20
         MAX_REF_BYTES = 1024
-        MAX_JSON_BYTES = 1048576
+        MAX_EVENT_BYTES = 1048576
+        MAX_EVENT_READ_BYTES = MAX_EVENT_BYTES + 1
         MAX_TITLE_BYTES = 65536
-        MAX_BODY_BYTES = 1048576
+        MAX_BODY_BYTES = MAX_EVENT_BYTES
         SHA_RE = re.compile(r"^[0-9a-f]{40}$")
         NUMBER_RE = re.compile(r"^[1-9][0-9]{0,18}$")
         ALLOWED_CHANGE_KEYS = (
             frozenset({"body"}),
             frozenset({"title"}),
             frozenset({"body", "title"}),
+        )
+        EVENT_FILE_FLAGS = (
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0)
         )
 
         def fail(message):
@@ -464,12 +456,78 @@ jobs:
                 result[key] = value
             return result
 
-        def parse_json_env(name, *, max_bytes):
-            raw = env(name, max_bytes=max_bytes)
+        def parse_required_text(value, *, field, max_bytes):
+            if not isinstance(value, str) or value == "":
+                fail(f"metadata-only raw event {field} is invalid")
+            if utf8_len(value) > max_bytes:
+                fail(f"metadata-only raw event {field} exceeds bounds")
+            return value
+
+        def parse_sha(value, *, field):
+            if not isinstance(value, str) or SHA_RE.fullmatch(value) is None:
+                fail(f"metadata-only raw event {field} is invalid")
+            return value
+
+        def file_signature(metadata):
+            return (
+                metadata.st_dev,
+                metadata.st_ino,
+                metadata.st_mode,
+                metadata.st_uid,
+                metadata.st_size,
+                getattr(metadata, "st_mtime_ns", 0),
+                getattr(metadata, "st_ctime_ns", 0),
+            )
+
+        def load_event_payload():
+            event_path = env("GITHUB_EVENT_PATH", max_bytes=MAX_EVENT_PATH_BYTES)
             try:
-                return json.loads(raw, object_pairs_hook=reject_duplicates)
-            except json.JSONDecodeError as error:
-                fail(f"metadata-only raw event {name} is not valid JSON: {error}")
+                metadata = os.lstat(event_path)
+            except OSError as error:
+                fail(f"metadata-only raw event cannot inspect payload: {error}")
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                fail("metadata-only raw event payload must be a regular file")
+            if metadata.st_uid != os.getuid():
+                fail("metadata-only raw event payload owner is invalid")
+            if metadata.st_size > MAX_EVENT_BYTES:
+                fail("metadata-only raw event payload exceeds 1 MiB")
+            try:
+                fd = os.open(event_path, EVENT_FILE_FLAGS)
+            except OSError as error:
+                fail(f"metadata-only raw event cannot open payload: {error}")
+            try:
+                opened = os.fstat(fd)
+                if not stat.S_ISREG(opened.st_mode):
+                    fail("metadata-only raw event payload must be a regular file")
+                if opened.st_uid != metadata.st_uid or opened.st_uid != os.getuid():
+                    fail("metadata-only raw event payload owner is invalid")
+                if file_signature(opened) != file_signature(metadata):
+                    fail("metadata-only raw event payload changed before read")
+                raw = bytearray()
+                while len(raw) < MAX_EVENT_READ_BYTES:
+                    chunk = os.read(fd, min(65536, MAX_EVENT_READ_BYTES - len(raw)))
+                    if not chunk:
+                        break
+                    raw.extend(chunk)
+                final = os.fstat(fd)
+            except OSError as error:
+                fail(f"metadata-only raw event cannot read payload: {error}")
+            finally:
+                os.close(fd)
+            if len(raw) > MAX_EVENT_BYTES:
+                fail("metadata-only raw event payload exceeds 1 MiB")
+            if file_signature(final) != file_signature(opened) or len(raw) != opened.st_size:
+                fail("metadata-only raw event payload changed while being read")
+            try:
+                payload = json.loads(
+                    raw.decode("utf-8"),
+                    object_pairs_hook=reject_duplicates,
+                )
+            except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                fail(f"metadata-only raw event payload is not valid JSON: {error}")
+            if not isinstance(payload, dict):
+                fail("metadata-only raw event payload must be an object")
+            return payload
 
         def parse_nullable_text(value, *, field, max_bytes):
             if value is None:
@@ -480,68 +538,74 @@ jobs:
                 fail(f"metadata-only raw event {field} exceeds bounds")
             return value
 
-        event_name = env("EVENT_NAME", max_bytes=32)
+        payload = load_event_payload()
+
+        event_name = env("GITHUB_EVENT_NAME", max_bytes=32)
         if event_name != "pull_request":
             fail("metadata-only raw event is not an edited pull_request")
-        event_action = env("EVENT_ACTION", max_bytes=32)
+        event_action = payload.get("action")
         if event_action != "edited":
             fail("metadata-only raw event is not an edited pull_request")
 
-        pr_number_text = env("PR_NUMBER", max_bytes=MAX_NUMBER_BYTES)
-        if NUMBER_RE.fullmatch(pr_number_text) is None:
-            fail("metadata-only raw event PR number is invalid")
-        pr_number = parse_json_env("PR_NUMBER_JSON", max_bytes=32)
+        pr_number = payload.get("number")
         if (
             isinstance(pr_number, bool)
             or not isinstance(pr_number, int)
             or pr_number < 1
-            or str(pr_number) != pr_number_text
+            or utf8_len(str(pr_number)) > MAX_NUMBER_BYTES
+            or NUMBER_RE.fullmatch(str(pr_number)) is None
         ):
             fail("metadata-only raw event PR number is invalid")
 
-        event_ref = env("EVENT_REF", max_bytes=MAX_EVENT_REF_BYTES)
+        event_ref = env("GITHUB_REF", max_bytes=MAX_EVENT_REF_BYTES)
         if event_ref != f"refs/pull/{pr_number}/merge":
             fail("metadata-only raw event ref is invalid")
 
-        base_ref = env("PR_BASE_REF", max_bytes=MAX_REF_BYTES)
-        if parse_json_env("PR_BASE_REF_JSON", max_bytes=MAX_JSON_BYTES) != base_ref:
+        pull_request = payload.get("pull_request")
+        if not isinstance(pull_request, dict):
+            fail("metadata-only raw event pull_request is invalid")
+
+        base = pull_request.get("base")
+        if not isinstance(base, dict):
             fail("metadata-only raw event base ref is invalid")
+        parse_required_text(
+            base.get("ref"),
+            field="base ref",
+            max_bytes=MAX_REF_BYTES,
+        )
 
-        base_sha = env("PR_BASE_SHA", max_bytes=64)
-        if (
-            SHA_RE.fullmatch(base_sha) is None
-            or parse_json_env("PR_BASE_SHA_JSON", max_bytes=128) != base_sha
-        ):
-            fail("metadata-only raw event base sha is invalid")
+        base_sha = parse_sha(base.get("sha"), field="base sha")
 
-        head_sha = env("PR_HEAD_SHA", max_bytes=64)
-        if (
-            SHA_RE.fullmatch(head_sha) is None
-            or parse_json_env("PR_HEAD_SHA_JSON", max_bytes=128) != head_sha
-        ):
+        head = pull_request.get("head")
+        if not isinstance(head, dict):
             fail("metadata-only raw event head sha is invalid")
+        head_sha = parse_sha(head.get("sha"), field="head sha")
 
         classified_base = env("CLASSIFIED_BASE_SHA", max_bytes=64)
         classified_head = env("CLASSIFIED_BUILD_SHA", max_bytes=64)
         fallback_sha = env("FALLBACK_SHA", max_bytes=64)
         if (
-            classified_base != base_sha
+            SHA_RE.fullmatch(classified_base) is None
+            or SHA_RE.fullmatch(classified_head) is None
+            or SHA_RE.fullmatch(fallback_sha) is None
+            or classified_head != env("EXPECTED_BUILD_SHA", max_bytes=64)
+            or classified_base != base_sha
             or classified_head != head_sha
             or fallback_sha != head_sha
         ):
             fail("metadata-only raw event does not match classifier identity")
 
         current_body = parse_nullable_text(
-            parse_json_env("PR_BODY_JSON", max_bytes=MAX_JSON_BYTES),
+            pull_request.get("body"),
             field="pull_request.body",
             max_bytes=MAX_BODY_BYTES,
         )
-        current_title = parse_nullable_text(
-            parse_json_env("PR_TITLE_JSON", max_bytes=MAX_JSON_BYTES),
+        current_title = parse_required_text(
+            pull_request.get("title"),
             field="pull_request.title",
             max_bytes=MAX_TITLE_BYTES,
         )
-        changes = parse_json_env("CHANGES_JSON", max_bytes=MAX_JSON_BYTES)
+        changes = payload.get("changes")
         if not isinstance(changes, dict):
             fail("metadata-only raw event changes must be an object")
         change_keys = frozenset(changes)
@@ -552,11 +616,18 @@ jobs:
             change = changes.get(name)
             if not isinstance(change, dict) or set(change) != {"from"}:
                 fail(f"metadata-only raw event changes.{name} must contain only from")
-            previous = parse_nullable_text(
-                change["from"],
-                field=f"changes.{name}.from",
-                max_bytes=max_bytes,
-            )
+            if name == "title":
+                previous = parse_required_text(
+                    change["from"],
+                    field=f"changes.{name}.from",
+                    max_bytes=max_bytes,
+                )
+            else:
+                previous = parse_nullable_text(
+                    change["from"],
+                    field=f"changes.{name}.from",
+                    max_bytes=max_bytes,
+                )
             if previous == current:
                 fail(f"metadata-only raw event {name} did not change")
 
@@ -766,15 +837,11 @@ jobs:
       if: ${{ needs.event-classifier.result == 'success' && needs.event-classifier.outputs.classification == 'metadata-only' }}
       env:
         BASH_ENV: ''
-        CHANGES_JSON: ${{ toJSON(github.event.changes) }}
         CLASSIFICATION: ${{ needs.event-classifier.outputs.classification }}
         CLASSIFIED_BASE_SHA: ${{ needs.event-classifier.outputs.expected_base }}
         CLASSIFIED_BUILD_SHA: ${{ needs.event-classifier.outputs.expected_head }}
         CLASSIFIER_RESULT: ${{ needs.event-classifier.result }}
         ENV: ''
-        EVENT_ACTION: ${{ github.event.action }}
-        EVENT_NAME: ${{ github.event_name }}
-        EVENT_REF: ${{ github.ref }}
         FALLBACK_IDENTITY_RESULT: ${{ needs.event-identity.result }}
         FALLBACK_KIND: ${{ needs.event-identity.outputs.fallback_kind }}
         FALLBACK_SHA: ${{ needs.event-identity.outputs.fallback_sha }}
@@ -782,31 +849,18 @@ jobs:
         HEAD_VALID: ${{ needs.event-classifier.outputs.head_valid }}
         IDENTITY_VALID: ${{ needs.event-classifier.outputs.identity_valid }}
         PATH: /usr/bin:/bin
-        PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
-        PR_BASE_REF_JSON: ${{ toJSON(github.event.pull_request.base.ref) }}
-        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        PR_BASE_SHA_JSON: ${{ toJSON(github.event.pull_request.base.sha) }}
-        PR_BODY_JSON: ${{ toJSON(github.event.pull_request.body) }}
-        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        PR_HEAD_SHA_JSON: ${{ toJSON(github.event.pull_request.head.sha) }}
-        PR_NUMBER: ${{ github.event.number }}
-        PR_NUMBER_JSON: ${{ toJSON(github.event.number) }}
-        PR_TITLE_JSON: ${{ toJSON(github.event.pull_request.title) }}
         RUN_EXPENSIVE: ${{ needs.event-classifier.outputs.run_expensive }}
       run: |
         if [ "$CLASSIFIER_RESULT" != "success" ] || \
            [ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \
-           [ "$EVENT_NAME" != "pull_request" ] || \
+           [ "$GITHUB_EVENT_NAME" != "pull_request" ] || \
            [ "$CLASSIFICATION" != "metadata-only" ] || \
            [ "$FALLBACK_KIND" != "pull_request" ] || \
-           [ -z "$FALLBACK_SHA" ] || [ -z "$PR_HEAD_SHA" ] || \
-           [ -z "$PR_BASE_SHA" ] || \
+           [ -z "$FALLBACK_SHA" ] || \
            [ "$FULL_FALLBACK" != "false" ] || [ "$HEAD_VALID" != "true" ] || \
            [ "$IDENTITY_VALID" != "true" ] || [ "$RUN_EXPENSIVE" != "false" ] || \
            [ "$EXPECTED_BUILD_SHA" != "$CLASSIFIED_BUILD_SHA" ] || \
-           [ "$FALLBACK_SHA" != "$PR_HEAD_SHA" ] || \
-           [ "$FALLBACK_SHA" != "$CLASSIFIED_BUILD_SHA" ] || \
-           [ "$CLASSIFIED_BASE_SHA" != "$PR_BASE_SHA" ]; then
+           [ "$FALLBACK_SHA" != "$CLASSIFIED_BUILD_SHA" ]; then
           echo "metadata-only branch-protection continuity is not authoritative" >&2
           exit 1
         fi
@@ -814,20 +868,29 @@ jobs:
         import json
         import os
         import re
+        import stat
         import sys
 
+        MAX_EVENT_PATH_BYTES = 4096
         MAX_EVENT_REF_BYTES = 128
         MAX_NUMBER_BYTES = 20
         MAX_REF_BYTES = 1024
-        MAX_JSON_BYTES = 1048576
+        MAX_EVENT_BYTES = 1048576
+        MAX_EVENT_READ_BYTES = MAX_EVENT_BYTES + 1
         MAX_TITLE_BYTES = 65536
-        MAX_BODY_BYTES = 1048576
+        MAX_BODY_BYTES = MAX_EVENT_BYTES
         SHA_RE = re.compile(r"^[0-9a-f]{40}$")
         NUMBER_RE = re.compile(r"^[1-9][0-9]{0,18}$")
         ALLOWED_CHANGE_KEYS = (
             frozenset({"body"}),
             frozenset({"title"}),
             frozenset({"body", "title"}),
+        )
+        EVENT_FILE_FLAGS = (
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0)
         )
 
         def fail(message):
@@ -853,12 +916,78 @@ jobs:
                 result[key] = value
             return result
 
-        def parse_json_env(name, *, max_bytes):
-            raw = env(name, max_bytes=max_bytes)
+        def parse_required_text(value, *, field, max_bytes):
+            if not isinstance(value, str) or value == "":
+                fail(f"metadata-only raw event {field} is invalid")
+            if utf8_len(value) > max_bytes:
+                fail(f"metadata-only raw event {field} exceeds bounds")
+            return value
+
+        def parse_sha(value, *, field):
+            if not isinstance(value, str) or SHA_RE.fullmatch(value) is None:
+                fail(f"metadata-only raw event {field} is invalid")
+            return value
+
+        def file_signature(metadata):
+            return (
+                metadata.st_dev,
+                metadata.st_ino,
+                metadata.st_mode,
+                metadata.st_uid,
+                metadata.st_size,
+                getattr(metadata, "st_mtime_ns", 0),
+                getattr(metadata, "st_ctime_ns", 0),
+            )
+
+        def load_event_payload():
+            event_path = env("GITHUB_EVENT_PATH", max_bytes=MAX_EVENT_PATH_BYTES)
             try:
-                return json.loads(raw, object_pairs_hook=reject_duplicates)
-            except json.JSONDecodeError as error:
-                fail(f"metadata-only raw event {name} is not valid JSON: {error}")
+                metadata = os.lstat(event_path)
+            except OSError as error:
+                fail(f"metadata-only raw event cannot inspect payload: {error}")
+            if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                fail("metadata-only raw event payload must be a regular file")
+            if metadata.st_uid != os.getuid():
+                fail("metadata-only raw event payload owner is invalid")
+            if metadata.st_size > MAX_EVENT_BYTES:
+                fail("metadata-only raw event payload exceeds 1 MiB")
+            try:
+                fd = os.open(event_path, EVENT_FILE_FLAGS)
+            except OSError as error:
+                fail(f"metadata-only raw event cannot open payload: {error}")
+            try:
+                opened = os.fstat(fd)
+                if not stat.S_ISREG(opened.st_mode):
+                    fail("metadata-only raw event payload must be a regular file")
+                if opened.st_uid != metadata.st_uid or opened.st_uid != os.getuid():
+                    fail("metadata-only raw event payload owner is invalid")
+                if file_signature(opened) != file_signature(metadata):
+                    fail("metadata-only raw event payload changed before read")
+                raw = bytearray()
+                while len(raw) < MAX_EVENT_READ_BYTES:
+                    chunk = os.read(fd, min(65536, MAX_EVENT_READ_BYTES - len(raw)))
+                    if not chunk:
+                        break
+                    raw.extend(chunk)
+                final = os.fstat(fd)
+            except OSError as error:
+                fail(f"metadata-only raw event cannot read payload: {error}")
+            finally:
+                os.close(fd)
+            if len(raw) > MAX_EVENT_BYTES:
+                fail("metadata-only raw event payload exceeds 1 MiB")
+            if file_signature(final) != file_signature(opened) or len(raw) != opened.st_size:
+                fail("metadata-only raw event payload changed while being read")
+            try:
+                payload = json.loads(
+                    raw.decode("utf-8"),
+                    object_pairs_hook=reject_duplicates,
+                )
+            except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                fail(f"metadata-only raw event payload is not valid JSON: {error}")
+            if not isinstance(payload, dict):
+                fail("metadata-only raw event payload must be an object")
+            return payload
 
         def parse_nullable_text(value, *, field, max_bytes):
             if value is None:
@@ -869,68 +998,74 @@ jobs:
                 fail(f"metadata-only raw event {field} exceeds bounds")
             return value
 
-        event_name = env("EVENT_NAME", max_bytes=32)
+        payload = load_event_payload()
+
+        event_name = env("GITHUB_EVENT_NAME", max_bytes=32)
         if event_name != "pull_request":
             fail("metadata-only raw event is not an edited pull_request")
-        event_action = env("EVENT_ACTION", max_bytes=32)
+        event_action = payload.get("action")
         if event_action != "edited":
             fail("metadata-only raw event is not an edited pull_request")
 
-        pr_number_text = env("PR_NUMBER", max_bytes=MAX_NUMBER_BYTES)
-        if NUMBER_RE.fullmatch(pr_number_text) is None:
-            fail("metadata-only raw event PR number is invalid")
-        pr_number = parse_json_env("PR_NUMBER_JSON", max_bytes=32)
+        pr_number = payload.get("number")
         if (
             isinstance(pr_number, bool)
             or not isinstance(pr_number, int)
             or pr_number < 1
-            or str(pr_number) != pr_number_text
+            or utf8_len(str(pr_number)) > MAX_NUMBER_BYTES
+            or NUMBER_RE.fullmatch(str(pr_number)) is None
         ):
             fail("metadata-only raw event PR number is invalid")
 
-        event_ref = env("EVENT_REF", max_bytes=MAX_EVENT_REF_BYTES)
+        event_ref = env("GITHUB_REF", max_bytes=MAX_EVENT_REF_BYTES)
         if event_ref != f"refs/pull/{pr_number}/merge":
             fail("metadata-only raw event ref is invalid")
 
-        base_ref = env("PR_BASE_REF", max_bytes=MAX_REF_BYTES)
-        if parse_json_env("PR_BASE_REF_JSON", max_bytes=MAX_JSON_BYTES) != base_ref:
+        pull_request = payload.get("pull_request")
+        if not isinstance(pull_request, dict):
+            fail("metadata-only raw event pull_request is invalid")
+
+        base = pull_request.get("base")
+        if not isinstance(base, dict):
             fail("metadata-only raw event base ref is invalid")
+        parse_required_text(
+            base.get("ref"),
+            field="base ref",
+            max_bytes=MAX_REF_BYTES,
+        )
 
-        base_sha = env("PR_BASE_SHA", max_bytes=64)
-        if (
-            SHA_RE.fullmatch(base_sha) is None
-            or parse_json_env("PR_BASE_SHA_JSON", max_bytes=128) != base_sha
-        ):
-            fail("metadata-only raw event base sha is invalid")
+        base_sha = parse_sha(base.get("sha"), field="base sha")
 
-        head_sha = env("PR_HEAD_SHA", max_bytes=64)
-        if (
-            SHA_RE.fullmatch(head_sha) is None
-            or parse_json_env("PR_HEAD_SHA_JSON", max_bytes=128) != head_sha
-        ):
+        head = pull_request.get("head")
+        if not isinstance(head, dict):
             fail("metadata-only raw event head sha is invalid")
+        head_sha = parse_sha(head.get("sha"), field="head sha")
 
         classified_base = env("CLASSIFIED_BASE_SHA", max_bytes=64)
         classified_head = env("CLASSIFIED_BUILD_SHA", max_bytes=64)
         fallback_sha = env("FALLBACK_SHA", max_bytes=64)
         if (
-            classified_base != base_sha
+            SHA_RE.fullmatch(classified_base) is None
+            or SHA_RE.fullmatch(classified_head) is None
+            or SHA_RE.fullmatch(fallback_sha) is None
+            or classified_head != env("EXPECTED_BUILD_SHA", max_bytes=64)
+            or classified_base != base_sha
             or classified_head != head_sha
             or fallback_sha != head_sha
         ):
             fail("metadata-only raw event does not match classifier identity")
 
         current_body = parse_nullable_text(
-            parse_json_env("PR_BODY_JSON", max_bytes=MAX_JSON_BYTES),
+            pull_request.get("body"),
             field="pull_request.body",
             max_bytes=MAX_BODY_BYTES,
         )
-        current_title = parse_nullable_text(
-            parse_json_env("PR_TITLE_JSON", max_bytes=MAX_JSON_BYTES),
+        current_title = parse_required_text(
+            pull_request.get("title"),
             field="pull_request.title",
             max_bytes=MAX_TITLE_BYTES,
         )
-        changes = parse_json_env("CHANGES_JSON", max_bytes=MAX_JSON_BYTES)
+        changes = payload.get("changes")
         if not isinstance(changes, dict):
             fail("metadata-only raw event changes must be an object")
         change_keys = frozenset(changes)
@@ -941,11 +1076,18 @@ jobs:
             change = changes.get(name)
             if not isinstance(change, dict) or set(change) != {"from"}:
                 fail(f"metadata-only raw event changes.{name} must contain only from")
-            previous = parse_nullable_text(
-                change["from"],
-                field=f"changes.{name}.from",
-                max_bytes=max_bytes,
-            )
+            if name == "title":
+                previous = parse_required_text(
+                    change["from"],
+                    field=f"changes.{name}.from",
+                    max_bytes=max_bytes,
+                )
+            else:
+                previous = parse_nullable_text(
+                    change["from"],
+                    field=f"changes.{name}.from",
+                    max_bytes=max_bytes,
+                )
             if previous == current:
                 fail(f"metadata-only raw event {name} did not change")
 
