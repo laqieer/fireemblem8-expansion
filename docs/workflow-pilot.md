@@ -603,10 +603,11 @@ standalone prefix `workflow-review-family-decision:v1 ` before the first remote
 review. Its canonical closed JSON binds the exact repository ID/name, PR
 number, base SHA, original first-reviewed head, preregistered current head,
 and the full normalized decision entry. The comment author must equal the
-current trusted authenticated GraphQL actor exactly, `createdAt` must equal
-`updatedAt`, and the candidate's decision-file entry must still match that
-preregistered decision exactly. Candidate-only decision records remain
-inadmissible.
+current trusted authenticated GraphQL actor exactly, the top-level
+`pullRequest.comments` selection must carry both `createdAt` and `updatedAt`,
+those timestamps must be exact RFC 3339 UTC strings with byte-identical values,
+and the candidate's decision-file entry must still match that preregistered
+decision exactly. Candidate-only decision records remain inadmissible.
 
 Before importing a package initializer or reading credentials, the launcher
 requires empty porcelain-v2 status including tracked, index, and untracked
@@ -694,7 +695,9 @@ coordinator must publish immutable PR comments with the standalone prefix
 binds the exact repository ID/name, PR number, base SHA, original first-reviewed
 head, authoritative remote review node ID and head, plus the accepted
 finding-to-family mapping for that review. Candidate sweeps must match that
-trusted family mapping exactly, and every accepted finding sweep must still
+trusted family mapping exactly; any mismatch is a `family-authority-drift`
+hold, and downstream assertion binding continues to use the trusted classified
+family rather than a candidate rewrite. Every accepted finding sweep must still
 include at least one `affected-fixed` sibling. Unrelated PR comments,
 including deleted-user `author: null` comments, are ignored before actor
 parsing; only prefixed authority/disposition comments require an authenticated

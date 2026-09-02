@@ -4072,6 +4072,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "dirfd/openat",
             "workflow-review-family-decision:v1",
             "workflow-review-family-classification:v1",
+            "the top-level `pullRequest.comments` selection must carry both `createdAt` and `updatedAt`",
+            "family-authority-drift",
             "every accepted finding sweep must still include at least one `affected-fixed` sibling",
             "deleted-user `author: null` comments, are ignored before actor parsing",
         ):
@@ -4087,6 +4089,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "dirfd/openat no-follow directory walk",
             "workflow-review-family-decision:v1",
             "workflow-review-family-classification:v1",
+            "The top-level PR comment query must carry `createdAt` and `updatedAt`",
+            "family-authority-drift",
             "Every accepted finding sweep must include at least one `affected-fixed` sibling",
             "derive the trusted family mapping from immutable",
         ):

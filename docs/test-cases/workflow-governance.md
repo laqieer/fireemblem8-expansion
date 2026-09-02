@@ -1517,7 +1517,9 @@ game behavior needs a compensating change.
    immutable trusted coordinator comment with prefix
    `workflow-review-family-decision:v1 ` before the first remote review, and
    bind its canonical JSON to the exact repository ID/name, PR, base, initial
-   head, preregistered current head, and normalized decision entry.
+   head, preregistered current head, and normalized decision entry. The
+   top-level PR comment query must carry `createdAt` and `updatedAt`, and those
+   timestamps must be strict RFC 3339 UTC strings with byte-identical values.
 5. Confirm a synthetic exact base without the trusted checker or decision
    consumer takes explicit `introduction` mode. Require false merge/push
    authority plus an external-coordinator requirement. Do not substitute a
@@ -1587,8 +1589,9 @@ game behavior needs a compensating change.
    preserve one shared wire schema across both modes.
    For remote findings, derive the trusted family mapping from immutable
    `workflow-review-family-classification:v1 ` coordinator comments rather than
-   the candidate contract, and reject family swaps even when the candidate's
-   sibling assertions remain internally consistent.
+   the candidate contract, reject `family-authority-drift`, and keep the
+   trusted family authoritative even when the candidate's sibling assertions
+   remain internally consistent.
    Reuse the current checkout or swap dirty materialized roots and require the
    authoritative origin/head Git-tree binding to fail before execution.
 9. Parse the captured clean PR #183 body and accept its first-line exact

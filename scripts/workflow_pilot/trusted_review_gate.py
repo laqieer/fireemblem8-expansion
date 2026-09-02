@@ -164,6 +164,7 @@ query ReviewFamilyEvidence($owner: String!, $name: String!, $number: Int!) {
         nodes {
           id
           createdAt
+          updatedAt
           body
           author { __typename login ... on Node { id } }
         }
@@ -176,6 +177,9 @@ query ReviewFamilyEvidence($owner: String!, $name: String!, $number: Int!) {
 
 reporter: Any = None
 review_family: Any = None
+RFC3339_UTC_TIMESTAMP_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$"
+)
 
 
 def _utc_now() -> datetime:
@@ -1882,9 +1886,10 @@ def _comment_object_and_body(raw: Any, label: str) -> tuple[dict[str, Any], str]
     reporter.expect_keys(
         comment,
         label,
-        ("id", "createdAt", "body", "author"),
-        optional=("updatedAt",),
+        ("id", "createdAt", "updatedAt", "body", "author"),
     )
+    _comment_created_time(comment, label)
+    _comment_updated_time(comment, label)
     body = reporter.expect_string(comment["body"], f"{label}.body", allow_empty=True)
     return comment, body
 
@@ -1904,18 +1909,29 @@ def _canonical_prefixed_comment_payload(
 
 def _comment_created_time(comment: dict[str, Any], label: str) -> tuple[str, datetime]:
     created_at = reporter.expect_string(comment["createdAt"], f"{label}.createdAt")
+    if RFC3339_UTC_TIMESTAMP_RE.fullmatch(created_at) is None:
+        raise reporter.PilotDataError(
+            f"{label}.createdAt must be an RFC 3339 UTC timestamp"
+        )
     created = reporter.parse_time(created_at, f"{label}.createdAt")
     assert created is not None
     return created_at, created
 
 
-def _require_unedited_comment(comment: dict[str, Any], label: str) -> datetime:
-    updated_at = reporter.expect_string(
-        comment.get("updatedAt"), f"{label}.updatedAt"
-    )
+def _comment_updated_time(comment: dict[str, Any], label: str) -> tuple[str, datetime]:
+    updated_at = reporter.expect_string(comment["updatedAt"], f"{label}.updatedAt")
+    if RFC3339_UTC_TIMESTAMP_RE.fullmatch(updated_at) is None:
+        raise reporter.PilotDataError(
+            f"{label}.updatedAt must be an RFC 3339 UTC timestamp"
+        )
     updated = reporter.parse_time(updated_at, f"{label}.updatedAt")
-    created_at, created = _comment_created_time(comment, label)
     assert updated is not None
+    return updated_at, updated
+
+
+def _require_unedited_comment(comment: dict[str, Any], label: str) -> datetime:
+    created_at, created = _comment_created_time(comment, label)
+    updated_at, updated = _comment_updated_time(comment, label)
     if updated_at != created_at or updated != created:
         raise reporter.PilotDataError(f"{label} must not be edited")
     return created
@@ -2537,14 +2553,19 @@ def collect_live_evidence_bytes(
             }
         )
 
-    finding_families = review_family.finding_family_map(contract)
+    candidate_families = review_family.finding_family_map(contract)
     for finding in remote_findings:
         finding_id = finding["node_id"]
-        if finding_id not in finding_families:
+        expected_family = candidate_families.get(finding_id)
+        if expected_family is None:
             raise reporter.PilotDataError(
                 f"remote finding {finding_id!r} has no candidate family sweep"
             )
-        finding["family"] = finding_families[finding_id]
+        if expected_family != finding["family"]:
+            raise reporter.PilotDataError(
+                f"remote finding {finding_id!r} family-authority-drift: "
+                "candidate family sweep does not match trusted classification"
+            )
         if finding_id not in finding_to_thread:
             raise reporter.PilotDataError(
                 f"remote finding {finding_id!r} has no review thread"
@@ -2576,7 +2597,7 @@ def collect_live_evidence_bytes(
         for finding in review_report["findings"]
     ]
     for finding in pre_findings:
-        expected_family = finding_families.get(finding["id"])
+        expected_family = candidate_families.get(finding["id"])
         if expected_family != finding["family"]:
             raise reporter.PilotDataError(
                 f"local finding {finding['id']!r} family sweep does not match "

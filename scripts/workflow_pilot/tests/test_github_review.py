@@ -639,12 +639,40 @@ class TrustedGitHubGateTests(unittest.TestCase):
         self.assertIn("headRefOid", query)
         self.assertIn("nameWithOwner", query)
         self.assertIn("\n    id\n", query)
-        self.assertIn("updatedAt", query)
+        self.assertEqual(query.count("updatedAt"), 2)
+        top_level_comments = query.rsplit("      comments(first: 100) {", 1)[1]
+        self.assertIn("\n          updatedAt\n", top_level_comments)
         self.assertGreaterEqual(query.count("__typename"), 7)
         self.assertGreaterEqual(query.count("... on Node { id }"), 6)
         self.assertNotIn("author { id login }", query)
         self.assertNotIn("owner { id login }", query)
         self.assertIn("author { __typename", query)
+
+    def test_top_level_authority_comment_helpers_match_unedited_graphql_shape(self):
+        comments = [
+            authoritative_decision_comment(
+                base_sha=self.base_sha,
+                head_sha=self.candidate_sha,
+            ),
+            authoritative_family_comment(
+                base_sha=self.base_sha,
+                original_head=self.candidate_sha,
+                review_id="REMOTE_REVIEW_LIVE_001",
+                candidate_sha=self.candidate_sha,
+                mappings=[
+                    {
+                        "finding_id": "FINDING_ACTION_001",
+                        "family": "action",
+                    }
+                ],
+            ),
+        ]
+        for comment in comments:
+            self.assertEqual(
+                sorted(comment),
+                ["author", "body", "createdAt", "id", "updatedAt"],
+            )
+            self.assertEqual(comment["updatedAt"], comment["createdAt"])
 
     def test_exact_actor_parser_supports_explicit_graphql_and_rest_shapes(self):
         graphql_actor = trusted_review_gate._actor(
@@ -841,6 +869,11 @@ class TrustedGitHubGateTests(unittest.TestCase):
             [finding["node_id"] for finding in evidence["findings"]],
             ["FINDING_ACTION_001"],
         )
+        self.assertEqual(evidence["findings"][0]["family"], "action")
+        self.assertEqual(
+            evidence["findings"][0]["authority_comment_id"],
+            "COMMENT_CLASSIFICATION_001",
+        )
         self.assertEqual(
             evidence["threads"],
             [
@@ -912,6 +945,21 @@ class TrustedGitHubGateTests(unittest.TestCase):
         with self.assertRaisesRegex(reporter.PilotDataError, "must be an object"):
             self.collect_exact_live_evidence(payload)
 
+    def test_authoritative_family_comment_requires_unedited_updated_at(self):
+        for case_name, mutate, pattern in (
+            ("missing", lambda comment: comment.pop("updatedAt"), "updatedAt"),
+            ("edited", lambda comment: comment.__setitem__("updatedAt", "2026-08-31T03:37:31Z"), "must not be edited"),
+            ("malformed", lambda comment: comment.__setitem__("updatedAt", "2026-08-31 03:37:30Z"), "RFC 3339 UTC timestamp"),
+        ):
+            payload = self.exact_graphql_payload(with_finding=True)
+            comment = payload["data"]["repository"]["pullRequest"]["comments"]["nodes"][0]
+            mutate(comment)
+            with self.subTest(case=case_name), self.assertRaisesRegex(
+                reporter.PilotDataError,
+                pattern,
+            ):
+                self.collect_exact_live_evidence(payload, kind="complete")
+
     def test_non_authoritative_reviews_do_not_satisfy_copilot_authority(self):
         for actor in (human_graphql_actor(), lookalike_graphql_actor()):
             payload = self.exact_graphql_payload(with_finding=True)
@@ -972,6 +1020,28 @@ class TrustedGitHubGateTests(unittest.TestCase):
         with self.assertRaisesRegex(
             reporter.PilotDataError,
             "duplicate review threads",
+        ):
+            self.collect_exact_live_evidence(payload, kind="complete")
+
+    def test_collect_live_evidence_rejects_family_authority_drift(self):
+        payload = self.exact_graphql_payload(with_finding=True)
+        payload["data"]["repository"]["pullRequest"]["comments"]["nodes"][0] = (
+            authoritative_family_comment(
+                base_sha=self.base_sha,
+                original_head=self.candidate_sha,
+                review_id="REMOTE_REVIEW_LIVE_001",
+                candidate_sha=self.candidate_sha,
+                mappings=[
+                    {
+                        "finding_id": "FINDING_ACTION_001",
+                        "family": "generated",
+                    }
+                ],
+            )
+        )
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "family-authority-drift",
         ):
             self.collect_exact_live_evidence(payload, kind="complete")
 
@@ -1851,6 +1921,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
     def test_external_preregistration_must_be_exact_and_unique(self):
         cases = (
             ("missing", "missing", "requires authoritative trigger decision or trusted preregistration evidence"),
+            ("missing-updatedAt", "drop-updatedAt", "updatedAt"),
             ("late", {"createdAt": "2026-08-31T03:15:00Z", "updatedAt": "2026-08-31T03:15:00Z"}, "not before first remote review"),
             ("edited", {"updatedAt": "2026-08-31T03:11:31Z"}, "must not be edited"),
             ("wrong-actor", {"author": human_graphql_actor()}, "exact trusted coordinator actor"),
@@ -1890,6 +1961,9 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 )
                 if override == "missing":
                     pr["comments"]["nodes"] = []
+                elif override == "drop-updatedAt":
+                    comment.pop("updatedAt")
+                    pr["comments"]["nodes"] = [comment]
                 elif override == "duplicate":
                     pr["comments"]["nodes"] = [comment, copy.deepcopy(comment)]
                     pr["comments"]["nodes"][1]["id"] = "COMMENT_DECISION_002"
@@ -2642,6 +2716,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                                         {
                                             "id": "DISPOSITION_PREPUSH_3",
                                             "createdAt": "2026-08-31T03:13:30Z",
+                                            "updatedAt": "2026-08-31T03:13:30Z",
                                             "body": (
                                                 "workflow-review-family-disposition:v2 "
                                                 + json.dumps(
@@ -3255,6 +3330,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 {
                     "id": "DISPOSITION_MULTI_3",
                     "createdAt": "2026-08-31T03:15:30Z",
+                    "updatedAt": "2026-08-31T03:15:30Z",
                     "body": (
                         "workflow-review-family-disposition:v2 "
                         + json.dumps(
@@ -3276,6 +3352,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 {
                     "id": "DISPOSITION_MULTI_6",
                     "createdAt": "2026-08-31T03:21:30Z",
+                    "updatedAt": "2026-08-31T03:21:30Z",
                     "body": (
                         "workflow-review-family-disposition:v2 "
                         + json.dumps(
