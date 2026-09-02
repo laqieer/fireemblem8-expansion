@@ -302,6 +302,36 @@ def signer_public_with_key_id(signer_public):
         + agent_handoff.normalized_json(signed)
     ).hexdigest()
     return refreshed
+BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+def noncanonical_base64_alias(value):
+    if value.endswith("=="):
+        index = BASE64_ALPHABET.index(value[-3])
+        return value[:-3] + BASE64_ALPHABET[index | 0x01] + "=="
+    if value.endswith("="):
+        index = BASE64_ALPHABET.index(value[-2])
+        return value[:-2] + BASE64_ALPHABET[index | 0x01] + "="
+    raise AssertionError("expected standard padded base64")
+def signature_plus_modulus_alias(repository_root, payload):
+    signer = installation_manifest(repository_root)["signer_public"]
+    modulus = int(signer["modulus_hex"], 16)
+    size = (modulus.bit_length() + 7) // 8
+    ceiling = 1 << (size * 8)
+    for suffix in range(256):
+        candidate_payload = payload + bytes([suffix])
+        signature_text = external_sign(repository_root, candidate_payload)
+        signature = base64.b64decode(signature_text, validate=True)
+        signature_value = int.from_bytes(signature, "big")
+        mutated_value = signature_value + modulus
+        if mutated_value < ceiling:
+            return (
+                signer,
+                candidate_payload,
+                signature_text,
+                base64.b64encode(
+                    mutated_value.to_bytes(size, "big")
+                ).decode("ascii"),
+            )
+    raise AssertionError("could not find a same-width signature alias")
 def ruleset_response(issue=178, repository_root=None):
     if repository_root is None:
         authorized = [{"login": "coordinator", "database_id": 9001}]
@@ -1008,6 +1038,15 @@ def set_history_authority(
         issue=issue,
         pull_request=pull_request,
     )
+def ensure_remote_branch(repository_root, branch):
+    head_sha = git(repository_root, "rev-parse", f"refs/heads/{branch}")
+    git(
+        repository_root,
+        "push",
+        "-q",
+        "origin",
+        f"{head_sha}:refs/heads/{branch}",
+    )
 def bind_history_authority(
     repository_root,
     *,
@@ -1024,6 +1063,10 @@ def bind_history_authority(
         issue,
         None,
     )
+    if head_branch is None:
+        head_branch = current["delivery_expectation"]["delivery_branch"]
+    ensure_remote_branch(repository_root, base_branch)
+    ensure_remote_branch(repository_root, head_branch)
     pr_observation = pull_request_observation(
         repository_root,
         current,
@@ -1148,6 +1191,14 @@ def publish_bound_authority(
     **overrides,
 ):
     if observation is None:
+        ensure_remote_branch(
+            repository_root,
+            current["delivery_expectation"]["immediate_base_branch"],
+        )
+        ensure_remote_branch(
+            repository_root,
+            current["delivery_expectation"]["delivery_branch"],
+        )
         observation = pull_request_observation(repository_root, current)
     if publication is None:
         publication = authority_publication(
@@ -3713,13 +3764,43 @@ class ExactHandoffTests(unittest.TestCase):
                 "unauthorized typed bypass",
             ):
                 agent_handoff.validate_document(extra_bypass, root)
+    def test_bare_remote_installation_requires_force_push_and_deletion_disabled(self):
+        with handoff_repository() as (root, _base, _parent, _result):
+            self.assertEqual(
+                agent_handoff.load_coordinator_installation(root)[
+                    "authority_protection"
+                ]["mode"],
+                "bare-remote-config",
+            )
+            installation_path = installation_root_path(root) / "installation.json"
+            baseline = installation_manifest(root)
+            for field, pattern in (
+                ("force_pushes_allowed", "must reject force pushes"),
+                ("deletions_allowed", "must reject deletions"),
+            ):
+                with self.subTest(field=field):
+                    mutated = copy.deepcopy(baseline)
+                    mutated["authority_protection"][field] = True
+                    installation_path.write_text(
+                        json.dumps(mutated),
+                        encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(
+                        agent_handoff.HandoffDataError,
+                        pattern,
+                    ):
+                        agent_handoff.load_coordinator_installation(root)
+                    installation_path.write_text(
+                        json.dumps(baseline),
+                        encoding="utf-8",
+                    )
             current = agent_handoff.read_history_authority(
                 root,
                 "example/workflow",
                 178,
                 None,
             )
-            base_document = handoff_document(root, parent, result)
+            base_document = handoff_document(root, _parent, _result)
             base_result = agent_handoff.validate_document(
                 base_document,
                 root,
@@ -4147,6 +4228,115 @@ class ExactHandoffTests(unittest.TestCase):
                     handoff_document=document,
                     handoff_result=valid_result,
                     handoff_id="issue-178-round-1",
+                )
+    def test_signed_fields_require_canonical_base64_text(self):
+        with handoff_repository() as (root, _base, parent, result):
+            document = handoff_document(root, parent, result)
+            document["coordinator_receipt"]["signature"] = noncanonical_base64_alias(
+                document["coordinator_receipt"]["signature"]
+            )
+            report = agent_handoff.validate_document(document, root)
+            self.assertIn(
+                "invalid-coordinator-attestation",
+                report["summary"]["rejection_codes"],
+            )
+            record_document = handoff_document(root, parent, result)
+            record_result = agent_handoff.validate_document(record_document, root)
+            record = reporter_record(
+                root,
+                record_document,
+                record_result,
+            )
+            record["result_attestation"]["signature"] = noncanonical_base64_alias(
+                record["result_attestation"]["signature"]
+            )
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "canonical base64",
+            ):
+                agent_handoff.verify_reporter_record(
+                    record,
+                    revalidate_git=False,
+                )
+            _, _, current, _, _ = protected_root_authority(root, parent, result)
+            publish_bound_authority(root, current)
+            bound = agent_handoff.read_history_authority(
+                root,
+                "example/workflow",
+                178,
+                None,
+            )
+            publication = copy.deepcopy(bound["publication_attestation"])
+            publication["signature"] = noncanonical_base64_alias(
+                publication["signature"]
+            )
+            self.assertEqual(
+                base64.b64decode(publication["signature"], validate=True),
+                base64.b64decode(
+                    bound["publication_attestation"]["signature"],
+                    validate=True,
+                ),
+            )
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "canonical base64",
+            ):
+                agent_handoff.parse_publication_attestation(
+                    publication,
+                    signer=bound["signer"],
+                    repository="example/workflow",
+                    repository_database_id=7001,
+                    issue=178,
+                    authority_ref=bound["ref"],
+                    anchor_ref=bound["anchor_ref"],
+                    authority_object_id=bound["previous_object_id"],
+                    anchor_object_id=bound["publication_attestation"][
+                        "anchor_object_id"
+                    ],
+                    ruleset_id=bound["ruleset_id"],
+                    authorized_bypass_actors=bound["authorized_bypass_actors"],
+                )
+            observation = copy.deepcopy(bound["pr_binding"])
+            observation["signature"] = noncanonical_base64_alias(
+                observation["signature"]
+            )
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "canonical base64",
+            ):
+                agent_handoff.parse_pull_request_observation(
+                    observation,
+                    signer=bound["signer"],
+                    repository="example/workflow",
+                    repository_database_id=7001,
+                    authority_object_id=bound["pr_binding"][
+                        "authority_object_id"
+                    ],
+                    anchor_object_id=bound["pr_binding"]["anchor_object_id"],
+                )
+    def test_verify_external_signature_rejects_same_width_representatives_ge_modulus(self):
+        with handoff_repository() as (root, _base, _parent, _result):
+            signer, payload, signature_text, alias_text = (
+                signature_plus_modulus_alias(
+                    root,
+                    b"workflow-pilot-modulus-alias:",
+                )
+            )
+            agent_handoff.verify_external_signature(
+                signer,
+                payload,
+                signature_text,
+                "signature",
+            )
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "does not verify",
+            ):
+                agent_handoff.verify_external_signature(
+                    signer,
+                    payload,
+                    alias_text,
+                    "signature",
                 )
     def test_pr_binding_requires_exact_signed_api_response(self):
         with handoff_repository() as (root, _base, parent, result):
@@ -4739,11 +4929,20 @@ class ExactHandoffTests(unittest.TestCase):
                     178,
                     200,
                 )
+            reporter.validate_fixture(fixture)
+            agent_handoff.verify_reporter_record(
+                bundle,
+                revalidate_git=False,
+            )
             with self.assertRaisesRegex(
-                reporter.PilotDataError,
+                agent_handoff.HandoffDataError,
                 "stale for authority state",
             ):
-                reporter.validate_fixture(fixture)
+                agent_handoff.verify_reporter_record(
+                    bundle,
+                    revalidate_git=True,
+                    repository_root=root,
+                )
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
                 "stale for authority state",
@@ -4777,11 +4976,16 @@ class ExactHandoffTests(unittest.TestCase):
                     178,
                     200,
                 )
+            reporter.validate_fixture(fixture)
             with self.assertRaisesRegex(
-                reporter.PilotDataError,
+                agent_handoff.HandoffDataError,
                 "does not match its immediately prior sealed handoff",
             ):
-                reporter.validate_fixture(fixture)
+                agent_handoff.verify_reporter_record(
+                    bundle,
+                    revalidate_git=True,
+                    repository_root=root,
+                )
     def test_historical_bind_requires_matching_carried_handoff_sequence_and_seal(self):
         cases = (
             ("wrong-handoff-sequence", {"handoff_sequence": 0}),
@@ -4840,11 +5044,16 @@ class ExactHandoffTests(unittest.TestCase):
                 "publication does not bind its event",
             ):
                 agent_handoff.validate_document(document, root)
+            reporter.validate_fixture(fixture)
             with self.assertRaisesRegex(
-                reporter.PilotDataError,
+                agent_handoff.HandoffDataError,
                 "publication does not bind its event",
             ):
-                reporter.validate_fixture(fixture)
+                agent_handoff.verify_reporter_record(
+                    bundle,
+                    revalidate_git=True,
+                    repository_root=root,
+                )
     def test_historical_bind_rewritten_base_rejects_read_reporter_and_eligibility(self):
         with handoff_repository() as (root, base, parent, result):
             document, report, current, _history, bundle = protected_root_authority(root, parent, result, with_bundle=True)
@@ -4868,11 +5077,16 @@ class ExactHandoffTests(unittest.TestCase):
                 "not descended from the frozen delivery base",
             ):
                 agent_handoff.validate_document(document, root)
+            reporter.validate_fixture(fixture)
             with self.assertRaisesRegex(
-                reporter.PilotDataError,
+                agent_handoff.HandoffDataError,
                 "not descended from the frozen delivery base",
             ):
-                reporter.validate_fixture(fixture)
+                agent_handoff.verify_reporter_record(
+                    bundle,
+                    revalidate_git=True,
+                    repository_root=root,
+                )
     def test_review_successor_is_linear_causal_and_nonoverlapping(self):
         with handoff_repository() as (root, _base, parent, first_result):
             first = handoff_document(root, parent, first_result)
@@ -5550,6 +5764,33 @@ class ExactHandoffTests(unittest.TestCase):
             self.assertIn(
                 "remote-coverage-incomplete",
                 report["summary"]["rejection_codes"],
+            )
+    def test_terminal_remote_reconciliation_rejects_post_snapshot_push(self):
+        with handoff_repository() as (root, _base, parent, result):
+            document = handoff_document(root, parent, result)
+            git(
+                root,
+                "push",
+                "-q",
+                "origin",
+                f"{result}:refs/heads/{document['handoffs'][0]['expected_branch']}",
+            )
+            report = agent_handoff.validate_document(document, root)
+            self.assertEqual(report["handoffs"][0]["outcome"], "accepted")
+            self.assertFalse(report["summary"]["trusted_push_eligible"])
+            self.assertIn(
+                "remote-coverage-incomplete",
+                report["summary"]["rejection_codes"],
+            )
+            record = reporter_record(root, document, report)
+            fixture = reporter_fixture_with_handoffs(record)
+            normalized = reporter.validate_fixture(fixture)[
+                "implementation_handoffs"
+            ][document["handoffs"][0]["id"]]
+            self.assertEqual(normalized["reported_outcome"], "bundle_rejected")
+            self.assertIn(
+                "remote-coverage-incomplete",
+                normalized["bundle_rejection_codes"],
             )
     def test_history_authority_requires_exact_installation_anchoring(self):
         authorized_non_user = [
@@ -6235,6 +6476,26 @@ class ExactHandoffTests(unittest.TestCase):
             ):
                 agent_handoff.validate_document(document, root)
 class ReporterHandoffExtensionTests(unittest.TestCase):
+    def test_reporter_record_offline_verifies_after_source_removal(self):
+        with handoff_repository() as (root, _base, parent, result):
+            record = validated_record(
+                root,
+                handoff_document(root, parent, result),
+            )
+            fixture = reporter_fixture_with_handoffs(record)
+        agent_handoff.verify_reporter_record(
+            record,
+            revalidate_git=False,
+        )
+        reporter.validate_fixture(fixture)
+        with self.assertRaisesRegex(
+            agent_handoff.HandoffDataError,
+            "requires repository_root",
+        ):
+            agent_handoff.verify_reporter_record(
+                record,
+                revalidate_git=True,
+            )
     def test_historical_successors_aggregate_and_require_current_ancestry(self):
         with handoff_repository() as (root, _base, parent, first_result):
             first_document = handoff_document(root, parent, first_result)
@@ -6420,13 +6681,18 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             git(remote, "update-ref", current["ref"], alternate_authority)
             git(remote, "update-ref", current["anchor_ref"], alternate_anchor)
             hook.chmod(0o700)
+            agent_handoff.verify_reporter_record(
+                first_record,
+                revalidate_git=False,
+            )
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
                 "not in current protected head",
             ):
                 agent_handoff.verify_reporter_record(
                     first_record,
-                    revalidate_git=False,
+                    revalidate_git=True,
+                    repository_root=root,
                 )
     def test_version_two_fixture_reports_sealed_handoff_metrics(self):
         with handoff_repository() as (root, _base, parent, result):
@@ -6858,6 +7124,9 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                             agent_handoff.verify_reporter_record(
                                 copy.deepcopy(record),
                                 revalidate_git=revalidate_git,
+                                repository_root=(
+                                    root if revalidate_git else None
+                                ),
                             )
                     with self.assertRaisesRegex(
                         reporter.PilotDataError,

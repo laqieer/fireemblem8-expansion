@@ -1435,7 +1435,10 @@ game behavior needs a compensating change.
    Set local `core.whitespace=-trailing-space`, hostile diff/textconv/alias
    config, ambient global/system/external-diff controls, and tracked diff
    attributes; trailing whitespace must still fail under the pinned argv.
-   Confirm nonempty local `.git/info/attributes` rejects.
+   Confirm nonempty local `.git/info/attributes` rejects. Mutate valid
+   signature text through nonzero pad-bit base64 aliases and same-width
+   RSA `s + n` representatives whose byte width still fits; both must reject
+   before verification can accept them.
 4. Exercise the repeated-parent/stale, wrong-parent, unrelated-branch, dirty,
    incomplete, missing-evidence, missing-trailer, out-of-scope, line-budget,
    lifetime, and RSS fixtures. Confirm script-only diffs derive zero ROM, RAM,
@@ -1496,11 +1499,16 @@ game behavior needs a compensating change.
    inside an otherwise signed carrier document/result, refresh the publication
    `history_carrier_digest`, and confirm readback still rejects because the
    original handoff signatures and recomputed `make_history_receipt()` no
-   longer verify.
+   longer verify. In `bare-remote-config`, set either protected-ref force-push
+   or deletion allowance true and confirm installation trust fails before
+   authority bootstrap or handoff validation begins.
 6. Repoint the protected authority remote through a stalling transport and
    prove both authority reads and atomic-push preflight exit under an explicit
    wall-clock timeout, kill the whole process group, and stop after one
    bounded attempt rather than spinning retries or leaving an orphan helper.
+   Then perform a real post-snapshot remote push to the delivery branch and
+   confirm terminal remote reconciliation marks coverage incomplete before
+   trusted push while reporter aggregation preserves the bundle rejection.
 7. Reconcile a direct watcher timeout with an authoritative successful
    `github-actions-api` run. Then use an authoritative failed run plus a
    watcher process error and confirm delivery remains failed.
@@ -1556,7 +1564,10 @@ game behavior needs a compensating change.
    double-finalized, tampered, and nonancestor rows. Confirm duplicate
    watchers, watcher-owner mismatches, and rejected remote-coverage envelopes
    surface as bundle-global rejection codes while otherwise accepted handoff
-   rows normalize to `bundle_rejected` instead of accepted delivery.
+   rows normalize to `bundle_rejected` instead of accepted delivery. Confirm
+   offline or relocated verification succeeds from the sealed record alone,
+   while explicit live revalidation with the original repository root still
+   enforces current authority ancestry and live Git facts.
 12. Run
    `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`,
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`,
@@ -1576,8 +1587,9 @@ Git, and result seals are deterministic. Required checks execute only a closed
 structured contract; passed labels do not replace its exact receipt or rerun.
 The actual safe pass fixture succeeds, while the safe trailing-whitespace
 failure plus literal `false`, stale/wrong-command/SHA/worktree/timestamp
-receipts reject. Hostile local/global/system/env Git configuration cannot
-change that outcome.
+receipts reject. Canonical base64 pad-bit aliases and same-width RSA
+representatives at or above the modulus also reject. Hostile
+local/global/system/env Git configuration cannot change that outcome.
 
 The watcher timeout records process failure while preserving authoritative CI
 success. The true failed run records authoritative failure and cannot become
@@ -1613,7 +1625,10 @@ push/comment/review/dispatch events. Incomplete GitHub
 coverage succeeds only with a credentialless network-denied process interval.
 Timed-out authority `ls-remote`, fetch, and atomic-preflight Git transport
 commands exit through the bounded lifecycle budget, kill their process group,
-and surface typed timeout failures instead of retrying indefinitely.
+and surface typed timeout failures instead of retrying indefinitely. Final
+eligibility also rechecks the protected authority refs and the relevant live
+delivery/base refs, so a post-snapshot remote push cannot race past the
+signed collector snapshot.
 
 The typed dependency graph reports `child-implement` ready as soon as
 `parent-merge` is done, independently of a healthy running master watcher and
@@ -1645,9 +1660,10 @@ zero ROM/RAM; all other tracked inputs require closed dependency-bound
 build/map/resource evidence. Its
 frozen version 1 baseline, expected
 values, seals, lifecycle, trusted-push, and centralized-watcher contracts are
-unchanged. Historical version 2 accepts no hand-authored aggregate: it verifies
-the original signature and current protected ancestry without consulting the
-old worktree HEAD.
+unchanged. Historical version 2 accepts no hand-authored aggregate: offline or
+relocated verification replays the sealed record structure without consulting
+the old worktree HEAD, while explicit live revalidation with the original
+repository root still verifies current protected ancestry and live Git facts.
 ### Negative control
 
 Each stale/repeated SHA, non-direct or wrong parent, wrong branch/worktree,
@@ -1673,7 +1689,9 @@ unexpected or role-typed user bypasses, signer/ruleset/non-user-bypass
 installation drift, invented/closed/merged PR observations, replayed consume
 nonce, after-sign pushes, rehashed result metrics, split/non-atomic
 publication, overlapping review successors, lost recovery bytes, zero-impact
-linker claims, nonancestor history, and unverified protection reject
+linker claims, noncanonical base64 pad-bit aliases, same-width RSA `s + n`
+signature aliases, post-snapshot remote delivery/base ref moves, nonancestor
+history, and unverified protection reject
 independently. A missing/reset canonical authority or anchor branch, hostile
 Git config or local attributes, unbounded stalled transport retries, or an
 orphaned transport helper, incomplete-prefix rejection, and equal/predated/
@@ -1684,9 +1702,10 @@ invalidates the sealed dual-ref observation. Parentless checker bootstrap,
 authority rollback/replay/ABA, PR rebinding, swapped stored bind digests,
 replayed publication binding expectations, out-of-band bind heads, copied
 anchors/seals/sequences, stale signed authority observations, and a second
-issue root also fail. Historical reporter verification still requires the external finalize
-signature and current authority/anchor ancestry, but it never recreates live
-trusted-push eligibility from an old receipt.
+issue root also fail. Historical reporter verification still requires the
+external finalize signature and never recreates live trusted-push eligibility
+from an old receipt; current ancestry and live Git facts return only when the
+original repository root is supplied for revalidation.
 ### Interactions and save compatibility
 
 Dependency: issue #176. Dependent: issue #181. Conflicts: none with existing

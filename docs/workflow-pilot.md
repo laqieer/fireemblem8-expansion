@@ -745,7 +745,10 @@ namespace; protected authority history pins only public RSA verification
 material and the service isolation attestation. The signature covers the
 complete document: assignment/scope, delivery graph, handoffs and successor
 edges, interruptions, metrics, PR/ruleset observations, remote source events,
-runs, watchers, availability, process policy, and resource receipts.
+runs, watchers, availability, process policy, and resource receipts. Every
+signature field is canonical standard-padded base64 text, and RSA verification
+rejects any same-width representative greater than or equal to the public
+modulus before exponentiation.
 
 `--coordinator-installation` (or
 `WORKFLOW_PILOT_COORDINATOR_INSTALLATION`) points outside the candidate
@@ -758,7 +761,10 @@ trust. Authority reads reject any fetched authority chain whose signer
 identity/public material digest, ruleset ID, full bypass actor set, or frozen
 delivery repository/branch identity drift from that verified installation
 before any fetched publication signature or ruleset response can self-attest
-the substitute history. Missing external asymmetric attestation fails closed.
+the substitute history. In `bare-remote-config` mode, the installation must
+also reject both force pushes and deletions for the protected refs before
+bootstrap or trust begins. Missing external asymmetric attestation fails
+closed.
 
 `assignment_sent`, `assignment_received`, `progressing`, `committed`, and
 `handed_off` are distinct, unique, strictly ordered states. A result is
@@ -995,7 +1001,10 @@ publication. Local validation cannot make a preissued receipt freshly
 eligible; the live receipt must satisfy the same narrow freshness window as
 live PR/publication observations, and receipt repository IDs/full names must
 match the installation manifest and frozen delivery expectation. Any after-sign
-event or document/run/watcher mutation invalidates it.
+event or document/run/watcher mutation invalidates it. Before trusted-push
+eligibility is granted, the validator also rechecks the protected authority
+refs and reconciles the bound delivery/base branch refs against the live
+remote so a post-snapshot push or base rewrite cannot race past eligibility.
 
 An interrupted owner has the exact `assignment_sent` ->
 `assignment_received` -> `progressing` -> `interrupted` sequence. SIGKILL/OOM
@@ -1042,15 +1051,13 @@ identities, and matching input/Git/check/coordinator/result seals. The
 reporter separates live eligibility from historical verification. The external
 service finalizes once and signs the complete canonical source-plus-result
 payload, including outcomes, reporter summary, RSS, and all verified metrics.
-The unkeyed result hash is integrity-only. Historical verification requires
-the finalize signature and proves the original authority/anchor OIDs remain
-ancestors of current protected heads. It does not require the old worktree
-HEAD or live-receipt freshness, so sequential root, OOM-replacement, and
-review-successor metrics remain aggregatable, but that historical authenticity
-never restores current trusted-push eligibility for a stale receipt. It also
-fails if the current protected history replays a stored PR binding whose
-digest, publication binding expectation, or frozen-base ancestry no longer
-verifies. A hand-authored or nonancestor row rejects.
+The unkeyed result hash is integrity-only. Offline or relocated historical
+verification checks the finalize signature, document/result seals, structural
+row facts, and bundle-global semantics without consulting the old worktree.
+When a caller supplies the original repository root for live revalidation, the
+same verifier additionally proves current authority/anchor ancestry plus the
+live Git-derived handoff facts. Neither mode restores current trusted-push
+eligibility from a stale receipt, and a hand-authored aggregate still rejects.
 
 Runtime lifetime telemetry remains owner-supplied evidence, not a rounding
 hint. The validator rejects any non-whole-second owner lifetime delta before

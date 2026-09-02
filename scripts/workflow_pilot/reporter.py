@@ -1453,17 +1453,53 @@ def validate_implementation_handoffs(
         try:
             bundle = agent_handoff.verify_reporter_record(
                 raw,
-                revalidate_git=repository_root is not None,
+                revalidate_git=False,
             )
         except agent_handoff.HandoffDataError as error:
             raise PilotDataError(f"{label}: {error}") from error
-        summary, bundle_rejection_codes, _delivery_graph, _watchers = (
-            agent_handoff.derive_reporter_result_summary(
-                bundle["document"],
-                bundle["result"],
+        summary = expect_object(
+            bundle["result"]["summary"],
+            f"{label}.result.summary",
+        )
+        local_rejection_codes = {
+            code
+            for handoff in expect_list(
+                bundle["result"]["handoffs"],
+                f"{label}.result.handoffs",
+            )
+            for code in expect_list(
+                expect_object(
+                    handoff,
+                    f"{label}.result.handoffs item",
+                )["rejection_codes"],
+                f"{label}.result.handoffs.rejection_codes",
+            )
+        }
+        (
+            _derived_summary,
+            derived_bundle_rejection_codes,
+            _delivery_graph,
+            _watchers,
+        ) = agent_handoff.derive_reporter_result_summary(
+            bundle["document"],
+            bundle["result"],
+        )
+        bundle_rejection_codes = sorted(
+            set(derived_bundle_rejection_codes)
+            | (
+                set(
+                    expect_list(
+                        summary["rejection_codes"],
+                        f"{label}.result.summary.rejection_codes",
+                    )
+                )
+                - local_rejection_codes
             )
         )
-        bundle_trusted_push_eligible = summary["trusted_push_eligible"]
+        bundle_trusted_push_eligible = expect_bool(
+            summary["trusted_push_eligible"],
+            f"{label}.result.summary.trusted_push_eligible",
+        )
         identity = bundle["input_seal"]
         if identity in bundles:
             raise PilotDataError(

@@ -153,6 +153,9 @@ LIVE_ATTESTATION_MAX_AGE_SECONDS = 2
 TRUSTED_PUSH_SUMMARY_EXEMPT_REJECTIONS = frozenset(
     {"authoritative-run-failed", "authoritative-run-incomplete"}
 )
+STRUCTURAL_SUMMARY_LIVE_ONLY_REJECTIONS = frozenset(
+    {"remote-coverage-incomplete"}
+)
 class HandoffDataError(Exception):
     """The handoff document cannot produce trustworthy coordination evidence."""
 def _raise_pilot_error(function, *args, **kwargs):
@@ -1070,28 +1073,32 @@ def _parse_signer_public(raw: Any, label: str) -> dict[str, Any]:
     if key_id != expected_key_id:
         raise HandoffDataError(f"{label}.key_id does not match public material")
     return signer
+def _decode_canonical_base64(value: Any, label: str) -> bytes:
+    text = expect_string(value, label)
+    try:
+        decoded = base64.b64decode(text, validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise HandoffDataError(f"{label} is not canonical base64") from error
+    if base64.b64encode(decoded).decode("ascii") != text:
+        raise HandoffDataError(f"{label} is not canonical base64")
+    return decoded
 def verify_external_signature(
     signer: dict[str, Any],
     payload: bytes,
     signature_value: Any,
     label: str,
 ) -> None:
-    try:
-        signature = base64.b64decode(
-            expect_string(signature_value, label),
-            validate=True,
-        )
-    except (binascii.Error, ValueError) as error:
-        raise HandoffDataError(f"{label} is not canonical base64") from error
+    signature = _decode_canonical_base64(signature_value, label)
     modulus = int(signer["modulus_hex"], 16)
     size = (modulus.bit_length() + 7) // 8
     if len(signature) != size:
         raise HandoffDataError(f"{label} has the wrong RSA size")
-    encoded = pow(
-        int.from_bytes(signature, "big"),
-        signer["exponent"],
-        modulus,
-    ).to_bytes(size, "big")
+    signature_int = int.from_bytes(signature, "big")
+    if signature_int >= modulus:
+        raise HandoffDataError(f"{label} does not verify")
+    encoded = pow(signature_int, signer["exponent"], modulus).to_bytes(
+        size, "big"
+    )
     digest_info = RSA_SHA256_DIGEST_INFO_PREFIX + hashlib.sha256(payload).digest()
     padding_size = size - len(digest_info) - 3
     expected = b"\x00\x01" + b"\xff" * padding_size + b"\x00" + digest_info
@@ -1541,6 +1548,15 @@ def load_coordinator_installation(
         protection["deletions_allowed"],
         "coordinator installation.authority_protection.deletions_allowed",
     )
+    if protection["mode"] == "bare-remote-config":
+        if protection["force_pushes_allowed"]:
+            raise HandoffDataError(
+                "coordinator installation bare-remote-config must reject force pushes"
+            )
+        if protection["deletions_allowed"]:
+            raise HandoffDataError(
+                "coordinator installation bare-remote-config must reject deletions"
+            )
     delivery = expect_object(
         manifest["delivery"],
         "coordinator installation.delivery",
@@ -2748,6 +2764,36 @@ def confirm_history_authority_observation(
     )
     if current != object_id or current_anchor != anchor_object_id:
         raise HandoffDataError("authority-moved")
+def _terminal_remote_state_rejections(
+    repository_root: Path,
+    canonical_authority: dict[str, Any],
+) -> set[str]:
+    delivery_ref = "refs/heads/" + canonical_authority["delivery_expectation"][
+        "delivery_branch"
+    ]
+    current_delivery_head = _remote_ref_oid(
+        repository_root,
+        delivery_ref,
+        allow_missing=True,
+    )
+    binding = canonical_authority["pr_binding"]
+    if binding is None:
+        return (
+            {"remote-coverage-incomplete"}
+            if current_delivery_head is not None
+            else set()
+        )
+    rejections = set()
+    if current_delivery_head != binding["head_oid"]:
+        rejections.add("remote-coverage-incomplete")
+    current_base_head = _remote_ref_oid(
+        repository_root,
+        "refs/heads/" + binding["base_branch"],
+        allow_missing=True,
+    )
+    if current_base_head != binding["base_oid"]:
+        rejections.add("remote-coverage-incomplete")
+    return rejections
 def read_history_authority(
     repository_root: Path,
     repository: str,
@@ -4757,10 +4803,317 @@ def derive_reporter_result_summary(
         "rejection_codes": rejection_codes,
     }
     return summary, sorted(global_rejections), delivery_graph, watcher_results
+def _parse_reporter_result_summary(
+    raw_summary: Any,
+    *,
+    expected_summary: dict[str, Any],
+) -> dict[str, Any]:
+    summary = copy.deepcopy(
+        expect_object(raw_summary, "handoff verification result summary")
+    )
+    expect_keys(
+        summary,
+        "handoff verification result summary",
+        (
+            "trusted_push_eligible",
+            "delivery_eligible",
+            "accepted_handoffs",
+            "rejected_handoffs",
+            "interrupted_handoffs",
+            "stale_responses",
+            "max_owner_lifetime_seconds",
+            "max_peak_rss_bytes",
+            "coordination_turns",
+            "recovery_count",
+            "recovery_minutes",
+            "rejection_codes",
+        ),
+    )
+    for field in ("trusted_push_eligible", "delivery_eligible"):
+        expect_bool(
+            summary[field],
+            f"handoff verification result summary.{field}",
+        )
+    for field in (
+        "accepted_handoffs",
+        "rejected_handoffs",
+        "interrupted_handoffs",
+        "stale_responses",
+        "max_owner_lifetime_seconds",
+        "max_peak_rss_bytes",
+        "coordination_turns",
+        "recovery_count",
+        "recovery_minutes",
+    ):
+        expect_int(
+            summary[field],
+            f"handoff verification result summary.{field}",
+            0,
+        )
+    rejection_codes = expect_list(
+        summary["rejection_codes"],
+        "handoff verification result summary.rejection_codes",
+    )
+    for index, code in enumerate(rejection_codes):
+        expect_enum(
+            code,
+            reporter.HANDOFF_REJECTION_CODES,
+            f"handoff verification result summary.rejection_codes[{index}]",
+        )
+    expect_unique(
+        rejection_codes,
+        "handoff verification result summary.rejection_codes",
+    )
+    for field in (
+        "accepted_handoffs",
+        "rejected_handoffs",
+        "interrupted_handoffs",
+        "stale_responses",
+        "max_owner_lifetime_seconds",
+        "max_peak_rss_bytes",
+        "coordination_turns",
+        "recovery_count",
+        "recovery_minutes",
+    ):
+        if summary[field] != expected_summary[field]:
+            raise HandoffDataError(
+                "handoff verification result summary does not verify"
+            )
+    expected_codes = set(expected_summary["rejection_codes"])
+    actual_codes = set(rejection_codes)
+    if not expected_codes <= actual_codes or not (
+        actual_codes - expected_codes
+    ) <= STRUCTURAL_SUMMARY_LIVE_ONLY_REJECTIONS:
+        raise HandoffDataError(
+            "handoff verification result summary does not verify"
+        )
+    if actual_codes == expected_codes:
+        if (
+            summary["trusted_push_eligible"]
+            != expected_summary["trusted_push_eligible"]
+            or summary["delivery_eligible"]
+            != expected_summary["delivery_eligible"]
+        ):
+            raise HandoffDataError(
+                "handoff verification result summary does not verify"
+            )
+    elif summary["trusted_push_eligible"] or summary["delivery_eligible"]:
+        raise HandoffDataError(
+            "handoff verification result summary does not verify"
+        )
+    return summary
+def _verify_structural_reporter_handoffs(
+    document: dict[str, Any],
+    reported_handoffs: list[dict[str, Any]],
+) -> None:
+    document_handoffs = {
+        handoff["id"]: handoff
+        for handoff in (
+            _parse_handoff(copy.deepcopy(raw), index)
+            for index, raw in enumerate(
+                expect_list(
+                    document["handoffs"],
+                    "handoff reporter record.document.handoffs",
+                )
+            )
+        )
+    }
+    telemetry = {}
+    for index, raw_metric in enumerate(
+        expect_list(
+            document["coordinator_receipt"]["runtime_telemetry"],
+            "handoff reporter record.document.coordinator_receipt.runtime_telemetry",
+        )
+    ):
+        label = (
+            "handoff reporter record.document.coordinator_receipt."
+            f"runtime_telemetry[{index}]"
+        )
+        metric = expect_object(raw_metric, label)
+        expect_keys(
+            metric,
+            label,
+            (
+                "handoff_id",
+                "owner_database_id",
+                "started_at",
+                "ended_at",
+                "peak_rss_bytes",
+                "coordination_turns",
+                "recovery_minutes",
+                "interruption_snapshot",
+                "source",
+            ),
+        )
+        handoff_id = expect_string(metric["handoff_id"], f"{label}.handoff_id")
+        if handoff_id in telemetry:
+            raise HandoffDataError(
+                "handoff verification result handoffs do not verify"
+            )
+        telemetry[handoff_id] = metric
+    for row in reported_handoffs:
+        handoff = document_handoffs.get(row["id"])
+        metric = telemetry.get(row["id"])
+        if handoff is None or metric is None:
+            raise HandoffDataError(
+                "handoff verification result handoffs do not verify"
+            )
+        if (
+            row["owner_id"] != handoff["_owner"]["identity"]
+            or row["issue"] != handoff["issue"]
+            or row["pull_request"] != handoff["pull_request"]
+            or row["assigned_at"] != handoff["_states"][0]["at"]
+            or row["state"] != handoff["_state_names"][-1]
+        ):
+            raise HandoffDataError(
+                "handoff verification result handoffs do not verify"
+            )
+        expected_closed_at = (
+            handoff["_states"][-1]["at"]
+            if handoff["_state_names"][-1] in {"handed_off", "interrupted"}
+            else None
+        )
+        expected_result_sha = (
+            None if handoff["result"] is None else handoff["result"]["sha"]
+        )
+        if (
+            row["closed_at"] != expected_closed_at
+            or row["result_sha"] != expected_result_sha
+            or row["stale_response"]
+            != (
+                expected_result_sha is not None
+                and expected_result_sha == handoff["assigned_parent_sha"]
+            )
+            or row["peak_rss_bytes"]
+            != expect_int(metric["peak_rss_bytes"], f"{row['id']} peak_rss_bytes", 0)
+            or row["coordination_turns"]
+            != expect_int(
+                metric["coordination_turns"],
+                f"{row['id']} coordination_turns",
+                0,
+            )
+            or row["recovery_minutes"]
+            != expect_int(
+                metric["recovery_minutes"],
+                f"{row['id']} recovery_minutes",
+                0,
+            )
+            or row["interruption_snapshot"] != metric["interruption_snapshot"]
+        ):
+            raise HandoffDataError(
+                "handoff verification result handoffs do not verify"
+            )
+        lifetime_seconds = whole_second_duration(
+            parse_time(metric["started_at"], f"{row['id']} started_at"),
+            parse_time(metric["ended_at"], f"{row['id']} ended_at"),
+            label=f"{row['id']} lifetime",
+        )
+        if lifetime_seconds is None or row["lifetime_seconds"] != lifetime_seconds:
+            raise HandoffDataError(
+                "handoff verification result handoffs do not verify"
+            )
+        expected_outcome = None
+        if handoff["interruption"] is not None:
+            expected_outcome = "interrupted"
+        elif handoff["_state_names"] in IN_PROGRESS_STATE_PREFIXES:
+            expected_outcome = "in_progress"
+        if expected_outcome is not None and row["outcome"] != expected_outcome:
+            raise HandoffDataError(
+                "handoff verification result handoffs do not verify"
+            )
+def _structural_reporter_git_authority(
+    document: dict[str, Any],
+    handoffs: list[dict[str, Any]],
+    *,
+    git_authority: dict[str, Any],
+) -> dict[str, Any]:
+    worktree_identity_value = git_authority["worktree_identity"]
+    if (
+        not isinstance(worktree_identity_value, str)
+        or reporter.SHA256_RE.fullmatch(worktree_identity_value) is None
+    ):
+        raise HandoffDataError(
+            "handoff verification Git authority worktree_identity does not verify"
+        )
+    raw_handoffs = expect_list(
+        document["handoffs"],
+        "handoff reporter record.document.handoffs",
+    )
+    branches = {
+        expect_string(
+            raw["expected_branch"],
+            f"handoff reporter document.handoffs[{index}].expected_branch",
+        )
+        for index, raw in enumerate(raw_handoffs)
+    }
+    if len(branches) != 1:
+        raise HandoffDataError(
+            "handoff reporter record Git authority has inconsistent branches"
+        )
+    accepted_results = [
+        handoff["result_sha"]
+        for handoff in handoffs
+        if handoff["outcome"] == "accepted" and handoff["result_sha"] is not None
+    ]
+    if accepted_results:
+        head_sha = accepted_results[-1]
+    elif any(handoff["outcome"] == "interrupted" for handoff in handoffs):
+        head_sha = next(
+            (
+                expect_sha(
+                    raw["assigned_parent_sha"],
+                    "handoff reporter document.handoffs"
+                    f"[{index}].assigned_parent_sha",
+                )
+                for index, (raw, handoff) in enumerate(
+                    zip(raw_handoffs, handoffs)
+                )
+                if handoff["outcome"] == "interrupted"
+            ),
+            None,
+        )
+    else:
+        head_sha = expect_sha(
+            git_authority.get("head_sha"),
+            "handoff verification result.git_authority.head_sha",
+        )
+    dirty_paths = sorted(
+        {
+            path
+            for handoff in handoffs
+            if handoff["interruption_snapshot"] is not None
+            for path in handoff["interruption_snapshot"]["dirty_paths"]
+        }
+    )
+    return {
+        "worktree_identity": worktree_identity_value,
+        "branch": next(iter(branches)),
+        "head_sha": head_sha,
+        "clean": not dirty_paths,
+        "conflicts": [],
+        "dirty_paths": dirty_paths,
+        "handoffs": [
+            {
+                "id": handoff["id"],
+                "assigned_parent_sha": expect_sha(
+                    raw["assigned_parent_sha"],
+                    "handoff reporter document.handoffs"
+                    f"[{index}].assigned_parent_sha",
+                ),
+                "result_sha": handoff["result_sha"],
+                "changed_paths": handoff["changed_paths"],
+                "changed_lines": handoff["changed_lines"],
+                "commit_message_sha256": handoff["commit_message_sha256"],
+            }
+            for index, (raw, handoff) in enumerate(zip(raw_handoffs, handoffs))
+        ],
+    }
 def _verify_handoff_document_result(
     document: dict[str, Any],
     result: dict[str, Any],
     *,
+    revalidate_git: bool,
+    repository_root: Path | None = None,
     current_authority: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     expect_keys(
@@ -4828,10 +5181,14 @@ def _verify_handoff_document_result(
     expected_summary, _global_rejection_codes, delivery_graph, watcher_results = (
         derive_reporter_result_summary(document, result)
     )
-    if result["summary"] != expected_summary:
-        raise HandoffDataError(
-            "handoff verification result summary does not verify"
-        )
+    _parse_reporter_result_summary(
+        result["summary"],
+        expected_summary=expected_summary,
+    )
+    _verify_structural_reporter_handoffs(
+        document,
+        reported_handoffs,
+    )
     if result["delivery_graph"] != delivery_graph:
         raise HandoffDataError(
             "handoff verification delivery graph does not verify"
@@ -4839,6 +5196,32 @@ def _verify_handoff_document_result(
     if result["watchers"] != watcher_results:
         raise HandoffDataError(
             "handoff verification watcher summary does not verify"
+        )
+    git_authority = expect_object(
+        result["git_authority"],
+        "handoff verification result.git_authority",
+    )
+    expect_keys(
+        git_authority,
+        "handoff verification result.git_authority",
+        (
+            "worktree_identity",
+            "branch",
+            "head_sha",
+            "clean",
+            "conflicts",
+            "dirty_paths",
+            "handoffs",
+        ),
+    )
+    expected_structural_git_authority = _structural_reporter_git_authority(
+        document,
+        reported_handoffs,
+        git_authority=git_authority,
+    )
+    if git_authority != expected_structural_git_authority:
+        raise HandoffDataError(
+            "handoff verification Git authority does not verify"
         )
     source_worktrees = {
         handoff["allowed_worktree"]
@@ -4848,7 +5231,6 @@ def _verify_handoff_document_result(
         raise HandoffDataError(
             "handoff verification must identify one source worktree"
         )
-    source_root = Path(next(iter(source_worktrees)))
     receipt = expect_object(
         document["coordinator_receipt"],
         "handoff verification coordinator receipt",
@@ -4923,6 +5305,13 @@ def _verify_handoff_document_result(
         receipt["signature"],
         "handoff verification coordinator signature",
     )
+    if not revalidate_git:
+        return original_signer
+    if repository_root is None:
+        raise HandoffDataError(
+            "handoff reporter live Git revalidation requires repository_root"
+        )
+    source_root = validate_repository_root(repository_root)
     original_anchor, _anchor_parents = _read_history_anchor_commit(
         source_root,
         original_anchor_object_id,
@@ -5066,6 +5455,8 @@ def _verify_history_event_carrier(
     _verify_handoff_document_result(
         document,
         result,
+        revalidate_git=True,
+        repository_root=repository_root,
         current_authority=current_authority,
     )
     return make_history_receipt(
@@ -5099,6 +5490,7 @@ def verify_reporter_record(
     raw_record: Any,
     *,
     revalidate_git: bool,
+    repository_root: Path | None = None,
 ) -> dict[str, Any]:
     record = copy.deepcopy(expect_object(raw_record, "handoff reporter record"))
     expect_keys(
@@ -5222,6 +5614,8 @@ def verify_reporter_record(
     _verify_handoff_document_result(
         document,
         result,
+        revalidate_git=revalidate_git,
+        repository_root=repository_root,
     )
     return record
 def _repository_from_origin(repository_root: Path) -> str:
@@ -8893,6 +9287,12 @@ def validate_document(
         repository_root,
         canonical_authority["observation"],
     )
+    for code in _terminal_remote_state_rejections(
+        repository_root,
+        canonical_authority,
+    ):
+        for handoff in handoffs:
+            reject(code, handoff["id"])
     completed = [
         result for result in results.values() if result["outcome"] == "accepted"
     ]
