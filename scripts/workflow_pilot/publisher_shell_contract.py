@@ -103,6 +103,7 @@ _LITERAL_RUN_HEADER_RE = re.compile(
 )
 _NICE_OLD_STYLE_RE = re.compile(r"-[0-9+-]+")
 _NICE_SHORT_ADJUSTMENT_RE = re.compile(r"-n[0-9+-]+")
+_OBVIOUS_WRAPPER_OPERAND_RE = re.compile(r"(?:0x[0-9A-Fa-f]+|[0-9]+(?:-[0-9]+)?(?:,[0-9]+(?:-[0-9]+)?)*)")
 _WRAPPER_BASENAMES = frozenset({"command", "nice", "setsid", "sudo", "timeout"})
 
 
@@ -610,6 +611,135 @@ def _is_shell_interpreter_reference_token(token: _ShellToken) -> bool:
     return posixpath.basename(normalized) in _SHELL_INTERPRETER_BASENAMES
 
 
+def _literal_token_is_obvious_wrapper_operand(token: _ShellToken) -> bool:
+    if _token_has_shell_syntax(token):
+        return False
+    if _OBVIOUS_WRAPPER_OPERAND_RE.fullmatch(token.text):
+        return True
+    path = _canonical_literal_path(token)
+    return path is not None and path.startswith("/dev/")
+
+
+def _token_looks_like_short_option_cluster(text: str, option: str) -> bool:
+    return text.startswith("-") and not text.startswith("--") and option in text[1:]
+
+
+def _could_be_env_short_option_token(token: str) -> bool:
+    if not token.startswith("-") or token.startswith("--") or token == "-":
+        return False
+    cluster = token[1:]
+    if not cluster:
+        return False
+
+    index = 0
+    while index < len(cluster):
+        option = cluster[index]
+        if option == "S":
+            return index == len(cluster) - 1
+        if option == "i":
+            index += 1
+            continue
+        if option in {"C", "u"}:
+            return True
+        return False
+    return True
+
+
+def _token_could_start_env_surface(token: _ShellToken) -> bool:
+    if _token_has_shell_syntax(token):
+        return False
+    text = token.text
+    return (
+        text in _ENV_ZERO_ARG_OPTIONS
+        or text in _ENV_OPTIONS_WITH_ARGS
+        or text.startswith("--chdir=")
+        or text.startswith("--unset=")
+        or _reject_env_split_string_option(text)
+        or _could_be_env_short_option_token(text)
+    )
+
+
+def _nonliteral_token_starts_shell_c_surface(
+    tokens: tuple[_ShellToken, ...],
+    *,
+    start_index: int,
+) -> bool:
+    if start_index + 1 >= len(tokens):
+        return False
+    next_text = tokens[start_index + 1].text
+    return next_text == "-c" or _token_looks_like_short_option_cluster(next_text, "c")
+
+
+def _nonliteral_token_starts_env_surface(
+    tokens: tuple[_ShellToken, ...],
+    *,
+    start_index: int,
+) -> bool:
+    if start_index + 1 >= len(tokens):
+        return False
+    next_token = tokens[start_index + 1]
+    if not _token_could_start_env_surface(next_token):
+        return False
+    next_index, suspicious = _parse_env_execution_segment(
+        tokens,
+        start_index=start_index + 1,
+    )
+    return suspicious or next_index is not None
+
+
+def _nonliteral_token_starts_busybox_env_surface(
+    tokens: tuple[_ShellToken, ...],
+    *,
+    start_index: int,
+) -> bool:
+    if start_index + 2 >= len(tokens):
+        return False
+    applet = tokens[start_index + 1]
+    if not (_token_has_shell_syntax(applet) or _is_env_executable_token(applet)):
+        return False
+    option_token = tokens[start_index + 2]
+    if not _token_could_start_env_surface(option_token):
+        return False
+    next_index, suspicious = _parse_env_execution_segment(
+        tokens,
+        start_index=start_index + 2,
+    )
+    return suspicious or next_index is not None
+
+
+def _unmodeled_literal_prefix_hides_nonliteral_command_surface(
+    tokens: tuple[_ShellToken, ...],
+    *,
+    start_index: int,
+) -> bool:
+    index = start_index
+    while index < len(tokens):
+        token = tokens[index]
+        if _token_has_shell_syntax(token):
+            return (
+                _nonliteral_token_starts_shell_c_surface(tokens, start_index=index)
+                or _nonliteral_token_starts_env_surface(tokens, start_index=index)
+                or _nonliteral_token_starts_busybox_env_surface(tokens, start_index=index)
+            )
+        if _is_env_executable_token(token) or _is_busybox_executable_token(token):
+            return False
+        basename = _literal_token_basename(token)
+        if basename in _WRAPPER_BASENAMES:
+            next_index = _next_wrapper_command_index(tokens, start_index=index)
+            if next_index is None:
+                return True
+            index = next_index
+            continue
+        if token.text == "--" or token.text.startswith("-"):
+            index += 1
+            continue
+        if _literal_token_is_obvious_wrapper_operand(token):
+            index += 1
+            continue
+        return False
+    return False
+
+
 def _strip_command_prefixes(command: tuple[_ShellToken, ...]) -> tuple[_ShellToken, ...]:
     tokens = list(command)
     while tokens:
@@ -1054,7 +1184,10 @@ def _command_has_forbidden_nonliteral_executable(
                 return True
             index = next_index
             continue
-        return False
+        return _unmodeled_literal_prefix_hides_nonliteral_command_surface(
+            tokens,
+            start_index=index + 1,
+        )
     return False
 
 

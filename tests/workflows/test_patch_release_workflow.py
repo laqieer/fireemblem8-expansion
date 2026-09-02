@@ -811,6 +811,101 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
             ),
         ),
         (
+            "nohup-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'nohup "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "nohup-setsid-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'nohup /usr/bin/setsid --wait "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "taskset-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'taskset -c 0 "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "ionice-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'ionice -c3 "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "flock-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'flock -n /dev/null "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "nohup-variable-busybox-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "busybox_cmd=/bin/busybox",
+                "ENV_APPLET=env",
+                'nohup "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "nohup-setsid-variable-busybox-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "busybox_cmd=/bin/busybox",
+                "ENV_APPLET=env",
+                'nohup /usr/bin/setsid --wait "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "taskset-variable-busybox-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "busybox_cmd=/bin/busybox",
+                "ENV_APPLET=env",
+                'taskset -c 0 "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "ionice-variable-busybox-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "busybox_cmd=/bin/busybox",
+                "ENV_APPLET=env",
+                'ionice -c3 "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "flock-variable-busybox-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "busybox_cmd=/bin/busybox",
+                "ENV_APPLET=env",
+                'flock -n /dev/null "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
             "env-combined-options-wrapper",
             (
                 "root=/mnt",
@@ -4077,6 +4172,255 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                         label=label,
                     )
                 )
+
+    def test_unknown_literal_wrappers_execute_hidden_env_surfaces_and_detector_rejects_them(
+        self,
+    ):
+        prefix = (
+            'ROOT=/mnt\n'
+            'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+        )
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="unknown-wrapper-busybox-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            busybox = sandbox / "busybox"
+            busybox.write_text(
+                "#!/bin/sh\n"
+                'if [ "$1" != "env" ]; then\n'
+                "  exit 125\n"
+                "fi\n"
+                "shift\n"
+                'exec /bin/env "$@"\n',
+                encoding="ascii",
+            )
+            busybox.chmod(0o755)
+
+            cases = (
+                (
+                    "nohup-variable-env",
+                    'cmd="printf RUNTIME_NOHUP_ENV"\n'
+                    "env_cmd=/bin/env\n"
+                    'nohup "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_NOHUP_ENV",
+                    prefix
+                    + "env_cmd=/bin/env\n"
+                    + 'nohup "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "nohup-setsid-variable-env",
+                    'cmd="printf RUNTIME_NOHUP_SETSID_ENV"\n'
+                    "env_cmd=/bin/env\n"
+                    'nohup /usr/bin/setsid --wait "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_NOHUP_SETSID_ENV",
+                    prefix
+                    + "env_cmd=/bin/env\n"
+                    + 'nohup /usr/bin/setsid --wait "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "taskset-variable-env",
+                    'cmd="printf RUNTIME_TASKSET_ENV"\n'
+                    "env_cmd=/bin/env\n"
+                    'taskset -c 0 "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_TASKSET_ENV",
+                    prefix
+                    + "env_cmd=/bin/env\n"
+                    + 'taskset -c 0 "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "ionice-variable-env",
+                    'cmd="printf RUNTIME_IONICE_ENV"\n'
+                    "env_cmd=/bin/env\n"
+                    'ionice -c3 "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_IONICE_ENV",
+                    prefix
+                    + "env_cmd=/bin/env\n"
+                    + 'ionice -c3 "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "flock-variable-env",
+                    'cmd="printf RUNTIME_FLOCK_ENV"\n'
+                    "env_cmd=/bin/env\n"
+                    'flock -n /dev/null "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_FLOCK_ENV",
+                    prefix
+                    + "env_cmd=/bin/env\n"
+                    + 'flock -n /dev/null "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "nohup-variable-busybox-env",
+                    'cmd="printf RUNTIME_NOHUP_BUSYBOX_ENV"\n'
+                    f'busybox_cmd="{busybox}"\n'
+                    "ENV_APPLET=env\n"
+                    'nohup "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_NOHUP_BUSYBOX_ENV",
+                    prefix
+                    + f"busybox_cmd={busybox}\n"
+                    + "ENV_APPLET=env\n"
+                    + 'nohup "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "nohup-setsid-variable-busybox-env",
+                    'cmd="printf RUNTIME_NOHUP_SETSID_BUSYBOX_ENV"\n'
+                    f'busybox_cmd="{busybox}"\n'
+                    "ENV_APPLET=env\n"
+                    'nohup /usr/bin/setsid --wait "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_NOHUP_SETSID_BUSYBOX_ENV",
+                    prefix
+                    + f"busybox_cmd={busybox}\n"
+                    + "ENV_APPLET=env\n"
+                    + 'nohup /usr/bin/setsid --wait "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "taskset-variable-busybox-env",
+                    'cmd="printf RUNTIME_TASKSET_BUSYBOX_ENV"\n'
+                    f'busybox_cmd="{busybox}"\n'
+                    "ENV_APPLET=env\n"
+                    'taskset -c 0 "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_TASKSET_BUSYBOX_ENV",
+                    prefix
+                    + f"busybox_cmd={busybox}\n"
+                    + "ENV_APPLET=env\n"
+                    + 'taskset -c 0 "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "ionice-variable-busybox-env",
+                    'cmd="printf RUNTIME_IONICE_BUSYBOX_ENV"\n'
+                    f'busybox_cmd="{busybox}"\n'
+                    "ENV_APPLET=env\n"
+                    'ionice -c3 "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_IONICE_BUSYBOX_ENV",
+                    prefix
+                    + f"busybox_cmd={busybox}\n"
+                    + "ENV_APPLET=env\n"
+                    + 'ionice -c3 "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "flock-variable-busybox-env",
+                    'cmd="printf RUNTIME_FLOCK_BUSYBOX_ENV"\n'
+                    f'busybox_cmd="{busybox}"\n'
+                    "ENV_APPLET=env\n"
+                    'flock -n /dev/null "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_FLOCK_BUSYBOX_ENV",
+                    prefix
+                    + f"busybox_cmd={busybox}\n"
+                    + "ENV_APPLET=env\n"
+                    + 'flock -n /dev/null "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                ),
+            )
+
+            for label, runtime_script, expected_stdout, semantic_script in cases:
+                with self.subTest(case=label):
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "--noprofile",
+                            "--norc",
+                            "-eu",
+                            "-o",
+                            "pipefail",
+                            "-c",
+                            runtime_script,
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(completed.stdout, expected_stdout)
+                    self.assertEqual(completed.stderr, "")
+                    self.assertTrue(
+                        publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                            semantic_script,
+                            label=label,
+                        )
+                    )
+
+    def test_unknown_literal_wrappers_keep_literal_command_arguments_semantic_clean(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="unknown-wrapper-flock-safe-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            lock_file = sandbox / "lock"
+            lock_file.write_text("", encoding="ascii")
+            env_cmd = "/bin/env"
+            cases = (
+                (
+                    "nohup-literal-command-data",
+                    f'env_cmd="{env_cmd}"\n'
+                    'nohup /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                    "/bin/env -S",
+                    f'env_cmd="{env_cmd}"\n'
+                    'nohup /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                ),
+                (
+                    "nohup-setsid-literal-command-data",
+                    f'env_cmd="{env_cmd}"\n'
+                    'nohup /usr/bin/setsid --wait /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                    "/bin/env -S",
+                    f'env_cmd="{env_cmd}"\n'
+                    'nohup /usr/bin/setsid --wait /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                ),
+                (
+                    "taskset-literal-command-data",
+                    f'env_cmd="{env_cmd}"\n'
+                    'taskset -c 0 /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                    "/bin/env -S",
+                    f'env_cmd="{env_cmd}"\n'
+                    'taskset -c 0 /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                ),
+                (
+                    "ionice-literal-command-data",
+                    f'env_cmd="{env_cmd}"\n'
+                    'ionice -c3 /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                    "/bin/env -S",
+                    f'env_cmd="{env_cmd}"\n'
+                    'ionice -c3 /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                ),
+                (
+                    "flock-literal-command-data",
+                    f'env_cmd="{env_cmd}"\n'
+                    f'flock -n "{lock_file}" /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                    "/bin/env -S",
+                    f'env_cmd="{env_cmd}"\n'
+                    f'flock -n "{lock_file}" /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                ),
+            )
+
+            for label, runtime_script, expected_stdout, semantic_script in cases:
+                with self.subTest(case=label):
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "--noprofile",
+                            "--norc",
+                            "-eu",
+                            "-o",
+                            "pipefail",
+                            "-c",
+                            runtime_script,
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(completed.stdout, expected_stdout)
+                    self.assertEqual(completed.stderr, "")
+                    self.assertFalse(
+                        publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                            semantic_script,
+                            label=label,
+                        )
+                    )
 
     def test_structural_prefix_env_split_string_repros_execute_and_detector_rejects_them(
         self,
