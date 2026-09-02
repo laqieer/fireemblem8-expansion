@@ -409,21 +409,9 @@ class ReviewBaseCheckerTests(unittest.TestCase):
     def _set_resource_enabled_health(cls, healthy):
         path = cls.repo / ".github/workflow-pilot-decisions.json"
         decisions = json.loads(path.read_text(encoding="utf-8"))
-        decisions["pull_requests"] = [
-            entry
-            for entry in decisions["pull_requests"]
-            if entry["pull_request"] != PULL_REQUEST
-        ]
+        decisions["pull_requests"] = [entry for entry in decisions["pull_requests"] if entry["pull_request"] != PULL_REQUEST]
         if healthy:
-            decisions["pull_requests"].append(
-                next(
-                    entry
-                    for entry in json.loads(
-                        synthetic_decision_record_snapshot().decode("ascii")
-                    )["pull_requests"]
-                    if entry["pull_request"] == PULL_REQUEST
-                )
-            )
+            decisions["pull_requests"].append(next(entry for entry in json.loads(synthetic_decision_record_snapshot().decode("ascii"))["pull_requests"] if entry["pull_request"] == PULL_REQUEST))
         path.write_bytes(reporter.normalized_json(decisions))
 
     @classmethod
@@ -1771,146 +1759,54 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         )
 
     def test_lifecycle_entries_affected_fixed_uses_review_progression(self):
-        data = self.build_input(
-            review_round=2,
-            assertion_requests=[
-                {
-                    "assertion_id": (
-                        "registry:sibling:lifecycle:entries:affected-fixed:v2"
-                    ),
-                    "finding_id": "FINDING-LIFECYCLE-1",
-                }
-            ],
-        )
+        data = self.build_input(review_round=2, assertion_requests=[{"assertion_id": "registry:sibling:lifecycle:entries:affected-fixed:v2", "finding_id": "FINDING-LIFECYCLE-1"}])
         data["all_remote_reviews"][0]["finding_ids"] = ["FINDING-LIFECYCLE-1"]
-        data["remote_findings"] = [
-            {
-                "node_id": "FINDING-LIFECYCLE-1",
-                "review_id": "REMOTE_REVIEW_1",
-                "candidate_sha": self.head1,
-                "created_at": "2026-09-01T00:01:30Z",
-                "author_actor_id": COPILOT_ACTOR_ID,
-                "family": "lifecycle",
-            }
-        ]
-        data["review_context"]["finding_ids"] = []
-        data["remote_finding_ids"] = []
-        data["captured_github_payload"] = self.captured_github_payload(
-            data["candidate_sha"], data["all_remote_reviews"], data["remote_findings"]
-        )
-        data["review_contract"]["family_sweeps"] = self.configured_family_sweeps(
-            data["original_pre_review"]["findings"],
-            data["remote_findings"],
-            data["assertion_requests"],
-        )
+        data["remote_findings"] = [{"node_id": "FINDING-LIFECYCLE-1", "review_id": "REMOTE_REVIEW_1", "candidate_sha": self.head1, "created_at": "2026-09-01T00:01:30Z", "author_actor_id": COPILOT_ACTOR_ID, "family": "lifecycle"}]
+        data["review_context"]["finding_ids"] = []; data["remote_finding_ids"] = []
+        data["captured_github_payload"] = self.captured_github_payload(data["candidate_sha"], data["all_remote_reviews"], data["remote_findings"])
+        data["review_contract"]["family_sweeps"] = self.configured_family_sweeps(data["original_pre_review"]["findings"], data["remote_findings"], data["assertion_requests"])
         member = self.execute(data)["results"][0]
-        self.assertEqual(
-            (member["status"], member["output"]["program_case"]),
-            ("pass", "member/lifecycle/entries/affected-fixed"),
-        )
-        self.assertEqual(
-            (member["output"]["origin_status"], member["output"]["head_status"]),
-            ("fail", "pass"),
-        )
+        self.assertEqual((member["status"], member["output"]["program_case"]), ("pass", "member/lifecycle/entries/affected-fixed"))
+        self.assertEqual((member["output"]["origin_status"], member["output"]["head_status"]), ("fail", "pass"))
 
     def test_action_member_passes_when_checker_authority_matches_base(self):
         self._restore_baseline()
-        (self.repo / "changed.txt").write_text(
-            "clean action candidate\n", encoding="utf-8"
-        )
-        action_head = self._commit("action-clean-head")
-        action_tree = git_text(self.repo, "rev-parse", f"{action_head}^{{tree}}")
-        original_changes = review_family.derive_change_records(
-            self.repo, self.base, action_head
-        )
-        data = self.build_input(
-            review_round=1,
-            candidate_sha=action_head,
-            candidate_tree=action_tree,
-            assertion_requests=[
-                {
-                    "assertion_id": (
-                        "registry:sibling:action:items:affected-fixed:v2"
-                    ),
-                    "finding_id": "LOCAL-ACTION-1",
-                }
-            ],
-        )
+        (self.repo / "changed.txt").write_text("clean action candidate\n", encoding="utf-8")
+        action_head = self._commit("action-clean-head"); action_tree = git_text(self.repo, "rev-parse", f"{action_head}^{{tree}}")
+        original_changes = review_family.derive_change_records(self.repo, self.base, action_head)
+        data = self.build_input(review_round=1, candidate_sha=action_head, candidate_tree=action_tree, assertion_requests=[{"assertion_id": "registry:sibling:action:items:affected-fixed:v2", "finding_id": "LOCAL-ACTION-1"}])
         data["original_pre_review_head"] = action_head
         data["original_changes"] = copy.deepcopy(original_changes)
-        data["original_pre_review"] = {
-            **self.review_report(),
-            "candidate_sha": action_head,
-            "reviewed_files": changed_files(original_changes),
-            "reviewed_changes": copy.deepcopy(original_changes),
-            "findings": [
-                {
-                    "id": "LOCAL-ACTION-1",
-                    "family": "action",
-                    "created_at": "2026-09-01T00:00:30Z",
-                }
-            ],
-        }
+        data["original_pre_review"] = {**self.review_report(), "candidate_sha": action_head, "reviewed_files": changed_files(original_changes), "reviewed_changes": copy.deepcopy(original_changes), "findings": [{"id": "LOCAL-ACTION-1", "family": "action", "created_at": "2026-09-01T00:00:30Z"}]}
         original_receipt = copy.deepcopy(self.original_review_receipt())
-        original_receipt["candidate_sha"] = action_head
-        original_receipt["payload_b64"] = base64.b64encode(
-            reporter.normalized_json(data["original_pre_review"])
-        ).decode("ascii")
-        data["original_review_receipt"] = original_receipt
-        data["original_receipt_sha256"] = hashlib.sha256(
-            reporter.normalized_json(original_receipt)
-        ).hexdigest()
+        original_receipt["candidate_sha"] = action_head; original_receipt["payload_b64"] = base64.b64encode(reporter.normalized_json(data["original_pre_review"])).decode("ascii")
+        data["original_review_receipt"] = original_receipt; data["original_receipt_sha256"] = hashlib.sha256(reporter.normalized_json(original_receipt)).hexdigest()
         data["review_context"]["candidate_sha"] = action_head
         data["all_remote_reviews"][0]["candidate_sha"] = action_head
-        data["review_context"]["finding_ids"] = []
-        data["all_remote_reviews"][0]["finding_ids"] = []
-        data["remote_findings"] = []
-        data["remote_finding_ids"] = []
+        data["review_context"]["finding_ids"] = []; data["all_remote_reviews"][0]["finding_ids"] = []; data["remote_findings"] = []; data["remote_finding_ids"] = []
         data["review_contract"] = self.review_contract(action_head)
         data["review_contract"]["original_pre_review_head"] = action_head
-        data["review_contract"]["family_sweeps"] = self.configured_family_sweeps(
-            data["original_pre_review"]["findings"],
-            [],
-            data["assertion_requests"],
-        )
-        data["captured_github_payload"] = self.captured_github_payload(
-            action_head, data["all_remote_reviews"], []
-        )
+        data["review_contract"]["family_sweeps"] = self.configured_family_sweeps(data["original_pre_review"]["findings"], [], data["assertion_requests"])
+        data["captured_github_payload"] = self.captured_github_payload(action_head, data["all_remote_reviews"], [])
         result = self.execute_via_cli(data)
         self.assertEqual(result["results"][0]["status"], "pass")
-        self.assertEqual(
-            result["results"][0]["output"]["program_case"],
-            "member/action/items/affected-fixed",
-        )
-        self.assertEqual(
-            (
-                result["results"][0]["output"]["origin_status"],
-                result["results"][0]["output"]["head_status"],
-            ),
-            ("fail", "pass"),
-        )
+        self.assertEqual(result["results"][0]["output"]["program_case"], "member/action/items/affected-fixed")
+        self.assertEqual((result["results"][0]["output"]["origin_status"], result["results"][0]["output"]["head_status"]), ("fail", "pass"))
 
     def test_resource_enabled_affected_fixed_reads_subject_decision_record(self):
         self._restore_baseline()
         self._set_resource_enabled_health(False)
-        (self.repo / "changed.txt").write_text("resource origin\n", encoding="utf-8")
-        origin = self._commit("resource-origin")
-        origin_tree = git_text(self.repo, "rev-parse", f"{origin}^{{tree}}")
+        (self.repo / "changed.txt").write_text("resource origin\n", encoding="utf-8"); origin = self._commit("resource-origin"); origin_tree = git_text(self.repo, "rev-parse", f"{origin}^{{tree}}")
         self._restore_baseline()
-        (self.repo / "changed.txt").write_text("resource head\n", encoding="utf-8")
-        head = self._commit("resource-head")
-        head_tree = git_text(self.repo, "rev-parse", f"{head}^{{tree}}")
+        (self.repo / "changed.txt").write_text("resource head\n", encoding="utf-8"); head = self._commit("resource-head"); head_tree = git_text(self.repo, "rev-parse", f"{head}^{{tree}}")
         data = self.build_input(review_round=2, candidate_sha=head, candidate_tree=head_tree, assertion_requests=[{"assertion_id": "registry:sibling:resource:enabled:affected-fixed:v2", "finding_id": "FINDING-RESOURCE-1"}])
         shutil.rmtree(data["origin_root"])
         self.materialize_input_root(origin, Path(data["origin_root"]))
-        data["all_remote_reviews"][0]["candidate_sha"] = origin
-        data["all_remote_reviews"][0]["finding_ids"] = ["FINDING-RESOURCE-1"]
+        data["all_remote_reviews"][0]["candidate_sha"] = origin; data["all_remote_reviews"][0]["finding_ids"] = ["FINDING-RESOURCE-1"]
         data["remote_findings"] = [{"node_id": "FINDING-RESOURCE-1", "review_id": "REMOTE_REVIEW_1", "candidate_sha": origin, "created_at": "2026-09-01T00:01:30Z", "author_actor_id": COPILOT_ACTOR_ID, "family": "resource"}]
-        data["finding_origin_sha"] = origin
-        data["finding_origin_tree"] = origin_tree
+        data["finding_origin_sha"] = origin; data["finding_origin_tree"] = origin_tree
         data["assertion_input_artifacts"] = self.assertion_artifacts(origin, head)
-        data["review_context"]["finding_ids"] = []
-        data["remote_finding_ids"] = []
+        data["review_context"]["finding_ids"] = []; data["remote_finding_ids"] = []
         data["captured_github_payload"] = self.captured_github_payload(head, data["all_remote_reviews"], data["remote_findings"])
         data["review_contract"]["family_sweeps"] = self.configured_family_sweeps(data["original_pre_review"]["findings"], data["remote_findings"], data["assertion_requests"])
         member = self.execute(data)["results"][0]
@@ -2090,35 +1986,20 @@ class ReviewBaseCheckerTests(unittest.TestCase):
 
     def test_wire_stale_bindings_affected_fixed_uses_current_review_binding(self):
         self._restore_baseline()
-        (self.repo / "changed.txt").write_text("wire stale origin\n", encoding="utf-8")
-        origin = self._commit("wire-stale-origin")
+        (self.repo / "changed.txt").write_text("wire stale origin\n", encoding="utf-8"); origin = self._commit("wire-stale-origin")
         self._restore_baseline()
-        (self.repo / "changed.txt").write_text("wire stale head\n", encoding="utf-8")
-        head = self._commit("wire-stale-head")
-        head_tree = git_text(self.repo, "rev-parse", f"{head}^{{tree}}")
-        data, _binding = self.wire_member_input(
-            candidate_sha=head,
-            candidate_tree=head_tree,
-            assertion_id="registry:sibling:wire:stale-bindings:affected-fixed:v2",
-        )
+        (self.repo / "changed.txt").write_text("wire stale head\n", encoding="utf-8"); head = self._commit("wire-stale-head"); head_tree = git_text(self.repo, "rev-parse", f"{head}^{{tree}}")
+        data, _binding = self.wire_member_input(candidate_sha=head, candidate_tree=head_tree, assertion_id="registry:sibling:wire:stale-bindings:affected-fixed:v2")
         shutil.rmtree(data["origin_root"])
         self.materialize_input_root(origin, Path(data["origin_root"]))
-        data["all_remote_reviews"][0]["candidate_sha"] = origin
-        data["remote_findings"][0]["candidate_sha"] = origin
-        data["finding_origin_sha"] = origin
-        data["finding_origin_tree"] = git_text(self.repo, "rev-parse", f"{origin}^{{tree}}")
+        data["all_remote_reviews"][0]["candidate_sha"] = origin; data["remote_findings"][0]["candidate_sha"] = origin
+        data["finding_origin_sha"] = origin; data["finding_origin_tree"] = git_text(self.repo, "rev-parse", f"{origin}^{{tree}}")
         data["assertion_input_artifacts"] = self.assertion_artifacts(origin, head)
         data["captured_github_payload"] = self.captured_github_payload(head, data["all_remote_reviews"], data["remote_findings"])
         data["review_contract"]["family_sweeps"] = self.configured_family_sweeps(data["original_pre_review"]["findings"], data["remote_findings"], data["assertion_requests"])
         member = self.execute(data)["results"][0]
-        self.assertEqual(
-            (member["status"], member["output"]["program_case"]),
-            ("pass", "member/wire/stale-bindings/affected-fixed"),
-        )
-        self.assertEqual(
-            (member["output"]["origin_status"], member["output"]["head_status"]),
-            ("fail", "pass"),
-        )
+        self.assertEqual((member["status"], member["output"]["program_case"]), ("pass", "member/wire/stale-bindings/affected-fixed"))
+        self.assertEqual((member["output"]["origin_status"], member["output"]["head_status"]), ("fail", "pass"))
 
 
 if __name__ == "__main__":
