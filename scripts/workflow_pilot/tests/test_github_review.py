@@ -106,8 +106,7 @@ def authoritative_decision_comment(
     updated_at="2026-08-31T03:11:30Z",
     author=None,
 ):
-    if decision is None:
-        decision = decision_record_entry(risks=("lifecycle", "protocol"), triggers=("changed-files", "risk-boundary"))
+    if decision is None: decision = decision_record_entry(risks=("lifecycle", "protocol"), triggers=("changed-files", "risk-boundary"))
     payload = {
         "repository_id": repository_identity()["id"],
         "repository": repository_identity()["name"],
@@ -2162,9 +2161,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
         contract["original_pre_review_head"] = original_head
         result = trusted_review_gate._parse_external_trigger_comment(
             [authoritative_decision_comment(base_sha=self.base_sha, head_sha=original_head, candidate_sha=current_head)],
-            viewer=trusted_review_gate._graphql_actor(
-                trusted_comment_actor(), "GitHub viewer"
-            ),
+            viewer=trusted_review_gate._graphql_actor(trusted_comment_actor(), "GitHub viewer"),
             repository_id=repository_identity()["id"],
             repository_name=repository_identity()["name"],
             contract=contract,

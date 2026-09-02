@@ -1921,9 +1921,7 @@ def evaluate_wire_replay(
     gate_module, _, _ = load_base_gate_modules(base_root)
     receipt = copy.deepcopy(checker_input["original_review_receipt"])
     receipt_bytes = normalized_json(receipt)
-    replay_store = _receipt_store(
-        Path(checker_input["repository_root"]), "assertion-replay", receipt
-    )
+    replay_store = _receipt_store(Path(checker_input["repository_root"]), "assertion-replay", receipt)
     publish = {
         "repository": checker_input["repository"],
         "pull_request": checker_input["pull_request"],
@@ -1932,22 +1930,15 @@ def evaluate_wire_replay(
         "key_id": receipt["key_id"],
         "key_epoch": receipt["key_epoch"],
     }
-    if replay_store.exists():
-        shutil.rmtree(replay_store)
+    if replay_store.exists(): shutil.rmtree(replay_store)
     replay_store.mkdir(parents=True)
     try:
-        final_name = gate_module._receipt_final_name(
-            gate_module._receipt_scope_id(**publish)
-        )
+        final_name = gate_module._receipt_final_name(gate_module._receipt_scope_id(**publish))
         gate_module.persist_original_receipt(receipt_bytes, replay_store, **publish)
         gate_module.persist_original_receipt(receipt_bytes, replay_store, **publish)
         preserved = gate_module.preserved_receipt_bytes(replay_store, **publish)
         try:
-            gate_module.persist_original_receipt(
-                normalized_json({**receipt, "nonce": f"{receipt['nonce']}-replay"}),
-                replay_store,
-                **publish,
-            )
+            gate_module.persist_original_receipt(normalized_json({**receipt, "nonce": f"{receipt['nonce']}-replay"}), replay_store, **publish)
         except gate_module.reporter.PilotDataError as error:
             rejection = str(error)
         else:
@@ -1957,11 +1948,7 @@ def evaluate_wire_replay(
         shutil.rmtree(replay_store)
     if preserved != receipt_bytes or entries != [final_name]:
         raise AssertionFailure("replay store changed across idempotent persist")
-    return {
-        "replay_entries": entries,
-        "replay_sha256": hashlib.sha256(preserved).hexdigest(),
-        "replay_rejection": rejection,
-    }
+    return {"replay_entries": entries, "replay_sha256": hashlib.sha256(preserved).hexdigest(), "replay_rejection": rejection}
 
 
 def evaluate_wire_stale_bindings(

@@ -1948,22 +1948,14 @@ class ReviewBaseCheckerTests(unittest.TestCase):
 
     def test_wire_producer_real_contract_still_passes(self):
         self._restore_baseline()
-        (self.repo / "changed.txt").write_text(
-            "wire producer healthy\n", encoding="utf-8"
-        )
+        (self.repo / "changed.txt").write_text("wire producer healthy\n", encoding="utf-8")
         healthy_head = self._commit("wire-producer-healthy")
         healthy_tree = git_text(self.repo, "rev-parse", f"{healthy_head}^{{tree}}")
         data, binding = self.wire_member_input(
             candidate_sha=healthy_head,
             candidate_tree=healthy_tree,
         )
-        result = self.evaluate_member_contract(
-            "wire",
-            "producers",
-            data,
-            healthy_head,
-            binding,
-        )
+        result = self.evaluate_member_contract("wire", "producers", data, healthy_head, binding)
         self.assertFalse(any((Path(data[root]) / "scripts/__init__.py").exists() for root in ("base_root", "head_root")))
         self.assertEqual((result["live_source_kind"], result["offline_source_kind"], result["result_manifest_size"]), ("live-gh-api", "offline-transform-fixture", 0))
         replay_data, replay_binding = self.wire_member_input(
