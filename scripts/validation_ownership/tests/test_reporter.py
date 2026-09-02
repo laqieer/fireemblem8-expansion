@@ -521,11 +521,11 @@ class OwnershipGraphTests(unittest.TestCase):
                     {"cache-test-target"},
                     require_dynamic_contracts=True,
                 )
-            self.assertEqual(run_count, 3)
-            self.assertNotEqual(
-                before["cache-test-target"]["content"],
-                after["cache-test-target"]["content"],
-            )
+                self.assertEqual(run_count, 3)
+                self.assertNotEqual(
+                    before["cache-test-target"]["content"],
+                    after["cache-test-target"]["content"],
+                )
         finally:
             authority.write_bytes(original)
             os.utime(
@@ -534,6 +534,88 @@ class OwnershipGraphTests(unittest.TestCase):
             )
             reporter._MAKE_AUTHORITY_CACHE.clear()
             reporter._MAKE_AUTHORITY_CACHE.update(cache_before)
+
+    def test_unused_make_domain_cannot_be_backfilled_from_registry(self):
+        ambient = reporter.load_make_ambient_contracts(
+            self.loader,
+            required=True,
+        )
+        trusted, scoped, escaped = (
+            reporter.load_make_typed_variable_contracts(
+                self.loader,
+                required=True,
+            )
+        )
+        domains = reporter.load_make_prerequisite_domains(
+            self.loader,
+            required=True,
+        )
+        omitted = next(iter(sorted(domains)))
+        symbolic = reporter.load_make_symbolic_recipe_names(
+            self.loader,
+            required=True,
+        )
+        observed = {
+            "all": {
+                "variable_census": {
+                    "ambient_undefined": sorted(
+                        name
+                        for name, contract in ambient.items()
+                        if contract["category"] == "undefined"
+                    ),
+                    "trusted_builtins": sorted(trusted),
+                    "scoped_variables": sorted(scoped),
+                    "escaped_literals": sorted(escaped),
+                },
+                "prerequisite_domain_census": {
+                    "generated_paths": [],
+                    "used": sorted(set(domains) - {omitted}),
+                },
+                "record": {
+                    "symbolic_recipe_names": sorted(symbolic),
+                },
+            }
+        }
+        evidence = {
+            "owner": {
+                "authority": {
+                    "kind": "make-target",
+                    "target": "all",
+                }
+            }
+        }
+        with mock.patch.object(
+            reporter,
+            "_parse_make_authorities",
+            return_value=observed,
+        ), self.assertRaisesRegex(
+            reporter.OwnershipError,
+            "Make prerequisite domain census does not match",
+        ):
+            reporter._validate_authorities(
+                self.loader,
+                evidence,
+                [],
+                strict_workflow=False,
+            )
+
+        observed["all"]["prerequisite_domain_census"]["used"] = sorted(
+            domains
+        )
+        with mock.patch.object(
+            reporter,
+            "_parse_make_authorities",
+            return_value=observed,
+        ), self.assertRaisesRegex(
+            reporter.OwnershipError,
+            "Make generated prerequisite census does not match",
+        ):
+            reporter._validate_authorities(
+                self.loader,
+                evidence,
+                [],
+                strict_workflow=False,
+            )
 
     def test_make_tree_state_covers_paths_modes_content_and_roots(self):
         base_entries = {

@@ -996,25 +996,11 @@ def load_make_dynamic_contracts(
                     ),
                 },
                 "scoped_variables": {
-                    "%": ("automatic-variable", "<automatic-variable:%>"),
-                    "%D": ("automatic-variable", "<automatic-variable:%D>"),
-                    "%F": ("automatic-variable", "<automatic-variable:%F>"),
                     "*": ("automatic-variable", "<automatic-variable:*>"),
-                    "*D": ("automatic-variable", "<automatic-variable:*D>"),
-                    "*F": ("automatic-variable", "<automatic-variable:*F>"),
-                    "+": ("automatic-variable", "<automatic-variable:+>"),
-                    "+D": ("automatic-variable", "<automatic-variable:+D>"),
-                    "+F": ("automatic-variable", "<automatic-variable:+F>"),
-                    "0": ("call-argument", "<call-argument:0>"),
                     "1": ("call-argument", "<call-argument:1>"),
                     "2": ("call-argument", "<call-argument:2>"),
                     "3": ("call-argument", "<call-argument:3>"),
                     "4": ("call-argument", "<call-argument:4>"),
-                    "5": ("call-argument", "<call-argument:5>"),
-                    "6": ("call-argument", "<call-argument:6>"),
-                    "7": ("call-argument", "<call-argument:7>"),
-                    "8": ("call-argument", "<call-argument:8>"),
-                    "9": ("call-argument", "<call-argument:9>"),
                     "GENERATED_DATA_LINKED_SYMBOL_PREFIX_characters": (
                         "computed-empty",
                         "<computed-empty:GENERATED_DATA_LINKED_SYMBOL_PREFIX_characters>",
@@ -1028,19 +1014,10 @@ def load_make_dynamic_contracts(
                         "<computed-empty:GENERATED_DATA_LINKED_SYMBOL_PREFIX_items>",
                     ),
                     "<": ("automatic-variable", "<automatic-variable:<>"),
-                    "<D": ("automatic-variable", "<automatic-variable:<D>"),
-                    "<F": ("automatic-variable", "<automatic-variable:<F>"),
-                    "?": ("automatic-variable", "<automatic-variable:?>"),
-                    "?D": ("automatic-variable", "<automatic-variable:?D>"),
-                    "?F": ("automatic-variable", "<automatic-variable:?F>"),
                     "@": ("automatic-variable", "<automatic-variable:@>"),
                     "@D": ("automatic-variable", "<automatic-variable:@D>"),
-                    "@F": ("automatic-variable", "<automatic-variable:@F>"),
                     "^": ("automatic-variable", "<automatic-variable:^>"),
-                    "^D": ("automatic-variable", "<automatic-variable:^D>"),
-                    "^F": ("automatic-variable", "<automatic-variable:^F>"),
                     "t": ("foreach-iteration", "<scoped-variable:t>"),
-                    "|": ("automatic-variable", "<automatic-variable:|>"),
                 },
                 "escaped_literals": {
                     "sort": (
@@ -1548,7 +1525,16 @@ def _parse_make_authorities(
             dynamic_contracts,
             declared_external_names=set(ambient_contracts),
             environment_names=set(ambient_contracts),
+            generated_path_names=set(generated_paths),
             symbolic_recipe_names=symbolic_recipe_names,
+            ambient_undefined_names={
+                name
+                for name, contract in ambient_contracts.items()
+                if contract["category"] == "undefined"
+            },
+            escaped_literal_names=escaped_literals,
+            scoped_variable_names=scoped_variables,
+            trusted_builtin_names=trusted_builtins,
             trusted_reference_names={
                 *trusted_builtins,
                 *scoped_variables,
@@ -1572,27 +1558,7 @@ def _parse_make_authorities(
         key=lambda item: item["id"],
     )
     for authority in result.values():
-        census = authority["variable_census"]
-        census["ambient_undefined"] = sorted(
-            name
-            for name, contract in ambient_contracts.items()
-            if contract["category"] == "undefined"
-        )
-        census["trusted_builtins"] = sorted(trusted_builtins)
-        census["scoped_variables"] = sorted(scoped_variables)
-        census["escaped_literals"] = sorted(escaped_literals)
-        census["handled_names"] = sorted(
-            {
-                *census["ambient_undefined"],
-                *census["trusted_builtins"],
-                *census["scoped_variables"],
-                *census["escaped_literals"],
-            }
-        )
         authority["dynamic_dependencies"] = dynamic_values
-        authority["prerequisite_domain_census"]["generated_paths"] = sorted(
-            generated_paths
-        )
     if len(_MAKE_AUTHORITY_CACHE) >= _MAKE_AUTHORITY_CACHE_LIMIT:
         _MAKE_AUTHORITY_CACHE.pop(next(iter(_MAKE_AUTHORITY_CACHE)))
     _MAKE_AUTHORITY_CACHE[cache_key] = result
@@ -1783,6 +1749,24 @@ def _validate_authorities(
             "Make prerequisite domain census does not match the sealed "
             f"registry (actual={sorted(actual_prerequisite_domains)}, "
             f"expected={sorted(prerequisite_domains)})"
+        )
+    symbolic_recipe_names = load_make_symbolic_recipe_names(
+        loader,
+        required=True,
+    )
+    actual_symbolic_recipe_names = {
+        name
+        for target in make_targets.values()
+        for name in target["record"]["symbolic_recipe_names"]
+    }
+    if (
+        requested_make_targets
+        and actual_symbolic_recipe_names != symbolic_recipe_names
+    ):
+        raise OwnershipError(
+            "Make symbolic recipe census does not match the sealed registry "
+            f"(actual={sorted(actual_symbolic_recipe_names)}, "
+            f"expected={sorted(symbolic_recipe_names)})"
         )
     generated_prerequisites = load_make_generated_prerequisite_paths(
         loader,

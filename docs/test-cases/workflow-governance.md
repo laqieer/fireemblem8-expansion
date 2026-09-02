@@ -1492,7 +1492,8 @@ game behavior needs a compensating change.
    symlink, retarget an oracle owner to another live workflow step, and
    disconnect each lifecycle trigger. Confirm outside sentinels survive and no
    external directory is created. Confirm direct
-   GNU Make comparisons cover all 83 live CLI domains, environment/fallback origins,
+   GNU Make comparisons cover all 112 live CLI domains,
+   environment/fallback origins,
    `MODE=two`, `$(eval $(RULE))`, a concrete `%.out: %.in` recipe mutation,
    target-local/automatic/braced/one-character variables, literal missing
    prerequisites, active `$(error)`, unknown direct shell, and unused `!=`.
@@ -1541,17 +1542,22 @@ redirected edge family fail with the missing contract named.
 Make authority is observed from confined `/usr/bin/make`, never from a
 handwritten parser. A fresh exact-tree + exact-gitlink scratch root, empty
 generated-output overlay, fixed locale/time/environment, and trusted absolute
-GNU Make/interceptor binaries are mandatory. Every 83-domain command-line
+GNU Make/interceptor binaries are mandatory. Every 112-domain command-line
 variant and each environment-sensitive origin executes the actual parser and
 evaluator; exact concrete closures, pattern stems, expanded recipes, terminal
 inputs, includes, dynamic outputs, errors, argv, environment, and tool
 identities participate in authority. Comments and unrelated targets stay
 stable only when their observed target semantics stay stable.
-The closed external-default syntax boundary enumerates static `?=` names from
-all Make inputs, while GNU Make undefined-variable warnings cover evaluated
-undefined and computed references. Undeclared `MODE`, dynamic default names,
-and references reached through `define`/`eval`/`call`/`foreach` reject; a
-finite sealed MODE domain passes and changes concrete closure.
+The closed external-selector syntax boundary enumerates static `?=` names,
+direct/secondary references, definition dependencies, and graph-versus-recipe
+positions from GNU Make-loaded inputs, while GNU Make undefined-variable
+warnings cover evaluated undefined and computed references. Undeclared
+`MODE`, dynamic default names, a symbolic `DEP` used as a prerequisite, and
+references reached through `define`/`eval`/`call`/`foreach`/computed names
+reject; a finite sealed MODE or DEP domain passes and changes concrete closure.
+An unused `UNUSED` finite domain, unobserved typed variable, or stale generated
+path fails registry completeness: the registry is never copied into the
+observed census.
 The conservative reference graph may reduce irrelevant solo variants only
 after a real combined-root GNU Make database comparison proves no parsed
 change; a changed database always triggers the corresponding standalone
@@ -1580,7 +1586,8 @@ Each target is probed with its standalone `MAKECMDGOALS`; an `a b` invocation
 whose `a` branch differs from solo `a` must record the solo branch for `a` in
 both input orders.
 Unbounded/unregistered domains, malformed or oversized values, cyclic/dynamic/
-escaping/unknown targets, and stale symbolic recipe classifications reject.
+escaping/unknown targets, stale finite domains, and symbolic recipe
+classifications that reach any graph-shaping position reject.
 
 The Make sandbox exposes no executable shell other than the static
 interceptor. Trace or normalized recipe text never authorizes an interceptor

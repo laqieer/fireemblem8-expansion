@@ -184,6 +184,7 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         domains: dict[str, dict] | None = None,
         dynamic: dict[str, dict] | None = None,
         environment_names: set[str] | None = None,
+        generated_path_names: set[str] | None = None,
     ):
         return make_probe.run_probe(
             reporter.AuthorityLoader(root, entries),
@@ -194,6 +195,7 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 {} if domains is None else domains
             ),
             environment_names=environment_names,
+            generated_path_names=generated_path_names,
             scratch_root=root / "artifacts",
         )["all"]
 
@@ -908,6 +910,48 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             )
 
         directory, root, entries = self.fixture(
+            "DEP ?=\nall: $(DEP)\n"
+        )
+        with directory, self.assertRaisesRegex(
+            make_probe.MakeProbeError,
+            "symbolic Make variables can shape.*DEP",
+        ):
+            make_probe.run_probe(
+                reporter.AuthorityLoader(root, entries),
+                {"all"},
+                {},
+                {},
+                declared_external_names={"DEP"},
+                environment_names={"DEP"},
+                scratch_root=root / "artifacts",
+                symbolic_recipe_names={"DEP"},
+            )
+
+        directory, root, entries = self.fixture(
+            "DEP ?=\nall: $(DEP)\nchild:\n\t@printf child\\n\n"
+        )
+        with directory:
+            authority = self.probe(
+                root,
+                entries,
+                domains={
+                    "DEP": {
+                        "kind": "explicit",
+                        "values": ["", "child"],
+                    }
+                },
+                environment_names={"DEP"},
+            )
+            self.assertEqual(
+                set(authority["transitive"]),
+                {"child"},
+            )
+            self.assertEqual(
+                authority["prerequisite_domain_census"]["used"],
+                ["DEP"],
+            )
+
+        directory, root, entries = self.fixture(
             "MESSAGE ?= fallback\n"
             "all:\n\t@printf '%s\\n' '$(MESSAGE)'\n"
         )
@@ -927,6 +971,124 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 ["MESSAGE"],
             )
             self.assertEqual(len(authority["record"]["variants"]), 1)
+
+    def test_transitive_graph_selectors_cannot_be_symbolic(self):
+        fixtures = {
+            "define-eval": (
+                "DEP ?= child\n"
+                "define RULE\n"
+                "all: $(DEP)\n"
+                "endef\n"
+                "$(eval $(RULE))\n"
+                "child:\n\t@printf child\\n\n",
+                {"DEP"},
+            ),
+            "call": (
+                "DEP ?= child\n"
+                "RULE = all: $(1)\n"
+                "$(eval $(call RULE,$(DEP)))\n"
+                "child:\n\t@printf child\\n\n",
+                {"DEP"},
+            ),
+            "foreach": (
+                "DEP ?= child\n"
+                "all: $(foreach item,$(DEP),$(item))\n"
+                "child:\n\t@printf child\\n\n",
+                {"DEP"},
+            ),
+            "computed-name": (
+                "NAME ?= DEP\n"
+                "DEP ?= child\n"
+                "all: $($(NAME))\n"
+                "child:\n\t@printf child\\n\n",
+                {"DEP", "NAME"},
+            ),
+            "second-expansion": (
+                ".SECONDEXPANSION:\n"
+                "DEP ?= child\n"
+                "all: $$(DEP)\n"
+                "child:\n\t@printf child\\n\n",
+                {"DEP"},
+            ),
+        }
+        for label, (makefile, names) in fixtures.items():
+            with self.subTest(label=label):
+                directory, root, entries = self.fixture(makefile)
+                with directory, self.assertRaisesRegex(
+                    make_probe.MakeProbeError,
+                    "symbolic Make variables can shape",
+                ):
+                    make_probe.run_probe(
+                        reporter.AuthorityLoader(root, entries),
+                        {"all"},
+                        {},
+                        {},
+                        declared_external_names=names,
+                        environment_names=names,
+                        scratch_root=root / "artifacts",
+                        symbolic_recipe_names=names,
+                    )
+
+    def test_census_reports_only_observed_domains(self):
+        directory, root, entries = self.fixture(
+            "all:\n\t@printf all\\n\n",
+            files={
+                "unloaded.mk": (
+                    "UNLOADED ?= child\n"
+                    "unrelated: $(UNLOADED)\n"
+                )
+            },
+        )
+        with directory:
+            authority = self.probe(root, entries)
+            self.assertEqual(
+                authority["variable_census"]["external_defaults"],
+                [],
+            )
+
+        directory, root, entries = self.fixture(
+            "USED ?= child\n"
+            "UNUSED ?= child\n"
+            "all: $(USED)\n"
+            "child:\n\t@printf child\\n\n"
+        )
+        with directory:
+            authority = self.probe(
+                root,
+                entries,
+                domains={
+                    "USED": {"kind": "tracked-fallback"},
+                    "UNUSED": {"kind": "tracked-fallback"},
+                },
+            )
+            self.assertEqual(
+                authority["prerequisite_domain_census"]["used"],
+                ["USED"],
+            )
+            self.assertEqual(
+                authority["variable_census"]["external_defaults"],
+                ["USED"],
+            )
+
+        directory, root, entries = self.fixture(
+            "all: tools/example/generated\n"
+            "tools/example/generated:\n"
+            "\t@printf tools/example/generated-extra\\n\n"
+        )
+        with directory:
+            authority = self.probe(
+                root,
+                entries,
+                generated_path_names={
+                    "tools/example/generate",
+                    "tools/example/generated",
+                    "tools/example/generated-extra",
+                },
+            )
+            self.assertEqual(
+                authority["prerequisite_domain_census"]["generated_paths"],
+                ["tools/example/generated"],
+            )
 
 
 if __name__ == "__main__":

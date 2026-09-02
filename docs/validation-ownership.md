@@ -229,24 +229,36 @@ by an interrupted process.
 
 Schema version 5 seals each external selector as either a finite exact domain,
 an exact tracked fallback, or symbolic recipe/environment-only authority.
-Every one of the 83 prerequisite domains is run through a real command-line
+Every one of the 112 prerequisite domains is run through a real command-line
 GNU Make invocation; environment-sensitive domains are also run through a
 clean process-environment origin. The baseline plus all variant traces are
 unioned per evidence target. An unclassified external input, stale symbolic
 classification, oversized domain, missing target, alternate active error, or
 failed variant rejects. Symbolic recipe inputs are retained in the fingerprint
-but cannot contribute an enumerated target.
+but are admitted only when the closed reference-position census proves that
+every transitive use is confined to a recipe/environment payload. A use in a
+target, prerequisite or secondary expansion, include, conditional,
+target-specific assignment, or `eval` expansion requires a finite domain even
+when the registry mislabeled it as symbolic.
 
-The named external-default census is the one irreplaceable lexical Make
-boundary: a closed comment/recipe/`define`-aware parser extracts static `?=`
-names from every authoritative Make input and rejects dynamic left-hand sides.
-It decides no Make behavior. GNU Make remains the behavioral authority, runs
-with undefined-variable diagnostics, and rejects every evaluated undefined
-name not covered by a finite/symbolic registry entry or a typed
+The named external-selector syntax census is the one irreplaceable lexical
+Make boundary: a closed comment/recipe/`define`-aware parser extracts static
+`?=` names, direct and secondary-expansion references, definition
+dependencies, and graph-versus-recipe positions from every GNU Make-loaded
+authoritative input. It rejects dynamic left-hand sides and conservatively
+classifies computed names. It decides no target or recipe semantics;
+behavioral mutation tests prove each classified graph position through real
+GNU Make. GNU Make remains the behavioral authority, runs with
+undefined-variable diagnostics, and rejects every evaluated undefined name
+not covered by a finite/symbolic registry entry or a typed
 builtin/automatic/scoped contract. This covers defaults and references reached
 through `define`, `eval`, `call`, `foreach`, and computed names without relying
-on identifier spelling as behavior evidence. For bounded performance, the
-reference graph conservatively narrows each solo target's candidate domains;
+on identifier spelling as behavior evidence. The probe emits domains, symbolic
+names, generated paths, and typed-variable census fields only from loaded
+source and baseline/variant observations. Registry entries are expected
+inputs, never synthesized observations, so an unused domain or stale generated
+path rejects. For bounded performance, the reference graph conservatively
+narrows each solo target's candidate domains;
 an actual GNU Make database comparison over the combined roots must prove a
 variant unchanged before baseline semantics can be reused. Any changed
 database is re-evaluated with the standalone target.

@@ -57,6 +57,16 @@ DIRECT_VARIABLE_RE = re.compile(
     r"|\{(?P<brace>[A-Za-z_][A-Za-z0-9_]*)(?=[:}])"
     r"|(?P<short>[A-Za-z]))"
 )
+SCOPED_VARIABLE_RE = re.compile(
+    r"(?<!\$)\$(?:"
+    r"\((?P<paren>[@%*+<?^|](?:D|F)?|[0-9])\)"
+    r"|\{(?P<brace>[@%*+<?^|](?:D|F)?|[0-9])\}"
+    r"|(?P<short>[@%*+<?^|0-9]))"
+)
+SECOND_EXPANSION_VARIABLE_RE = re.compile(
+    r"\$\$(?:\((?P<paren>[A-Za-z_][A-Za-z0-9_]*)"
+    r"|\{(?P<brace>[A-Za-z_][A-Za-z0-9_]*)\})"
+)
 INTROSPECTION_VARIABLE_RE = re.compile(
     r"\$\((?:flavor|origin|value)\s+"
     r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\)"
@@ -68,6 +78,16 @@ VARIABLE_ASSIGNMENT_RE = re.compile(
     r"^\s*(?:(?:export|override|private)\s+)*"
     r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*"
     r"(?:\?=|:=|::=|\+=|!=|=)(?P<value>.*)$"
+)
+TARGET_VARIABLE_ASSIGNMENT_RE = re.compile(
+    r"^(?P<target>.*?)\s*:\s*"
+    r"(?:(?:export|override|private)\s+)*"
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*"
+    r"(?:\?=|:=|::=|\+=|!=|=)(?P<value>.*)$"
+)
+DEFINE_RE = re.compile(
+    r"^\s*(?:(?:export|override|private)\s+)*"
+    r"define\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)"
 )
 
 
@@ -741,16 +761,23 @@ def _strip_make_comment(line: str) -> str:
     return "".join(result)
 
 
-def _external_default_names(loader: Any) -> set[str]:
+def _external_default_names(
+    loader: Any,
+    loaded_sources: set[str],
+) -> set[str]:
     names = set()
     for path, entry in sorted(loader.entries.items()):
         if (
             path != "Makefile"
             and not path.endswith(".mk")
-        ) or entry.object_type != "blob" or entry.mode not in {
-            "100644",
-            "100755",
-        }:
+        ) or (
+            path not in loaded_sources
+            or entry.object_type != "blob"
+            or entry.mode not in {
+                "100644",
+                "100755",
+            }
+        ):
             continue
         try:
             text = loader.read_blob(
@@ -785,16 +812,56 @@ def _external_default_names(loader: Any) -> set[str]:
     return names
 
 
+def _make_reference_names(line: str) -> set[str]:
+    names = {
+        next(
+            value
+            for value in match.group(
+                "paren",
+                "brace",
+                "short",
+            )
+            if value is not None
+        )
+        for match in DIRECT_VARIABLE_RE.finditer(line)
+    }
+    names.update(
+        match.group("name")
+        for match in INTROSPECTION_VARIABLE_RE.finditer(line)
+    )
+    names.update(
+        next(
+            value
+            for value in match.group("paren", "brace", "short")
+            if value is not None
+        )
+        for match in SCOPED_VARIABLE_RE.finditer(line)
+    )
+    conditional = CONDITIONAL_VARIABLE_RE.match(line)
+    if conditional is not None:
+        names.add(conditional.group("name"))
+    return names
+
+
+def _second_expansion_reference_names(line: str) -> set[str]:
+    return {
+        match.group("paren") or match.group("brace")
+        for match in SECOND_EXPANSION_VARIABLE_RE.finditer(line)
+    }
+
+
 def _make_reference_census(
     loader: Any,
 ) -> tuple[
     dict[str, set[str]],
     dict[str, set[str]],
     dict[str, set[str]],
+    dict[str, set[str]],
 ]:
-    references_by_path: dict[str, set[str]] = {}
+    all_by_path: dict[str, set[str]] = {}
+    graph_by_path: dict[str, set[str]] = {}
+    recipe_by_path: dict[str, set[str]] = {}
     dependencies: dict[str, set[str]] = {}
-    defaults_by_path: dict[str, set[str]] = {}
     for path, entry in sorted(loader.entries.items()):
         if (
             path != "Makefile"
@@ -813,84 +880,112 @@ def _make_reference_census(
             raise MakeProbeError(
                 f"Make input {path!r} is not UTF-8"
             ) from error
-        references = set()
+        references: set[str] = set()
+        graph_references: set[str] = set()
+        recipe_references: set[str] = set()
         defaults = set()
-        computed = False
+        current_define: str | None = None
+        computed_graph = False
+        computed_recipe = False
+        computed_variables: set[str] = set()
         for raw_line in text.splitlines():
             line = _strip_make_comment(raw_line)
-            references.update(
-                next(
-                    value
-                    for value in match.group(
-                        "paren",
-                        "brace",
-                        "short",
-                    )
-                    if value is not None
-                )
-                for match in DIRECT_VARIABLE_RE.finditer(line)
+            define = DEFINE_RE.match(line)
+            if define is not None and current_define is None:
+                current_define = define.group("name")
+                dependencies.setdefault(current_define, set())
+                continue
+            if current_define is not None:
+                if line.strip() == "endef":
+                    current_define = None
+                    continue
+                define_references = _make_reference_names(line)
+                references.update(define_references)
+                dependencies[current_define].update(define_references)
+                if "$($" in line or "${$" in line:
+                    computed_variables.add(current_define)
+                if "$(eval" in line or "${eval" in line:
+                    graph_references.add(current_define)
+                continue
+
+            line_references = _make_reference_names(line)
+            references.update(line_references)
+            is_recipe = raw_line.startswith("\t")
+            assignment = (
+                None if is_recipe else VARIABLE_ASSIGNMENT_RE.match(line)
             )
-            references.update(
-                match.group("name")
-                for match in INTROSPECTION_VARIABLE_RE.finditer(line)
+            target_assignment = (
+                None
+                if is_recipe
+                else TARGET_VARIABLE_ASSIGNMENT_RE.match(line)
             )
-            conditional = CONDITIONAL_VARIABLE_RE.match(line)
-            if conditional is not None:
-                references.add(conditional.group("name"))
-            assignment = VARIABLE_ASSIGNMENT_RE.match(line)
             if assignment is not None:
                 dependencies.setdefault(
                     assignment.group("name"),
                     set(),
+                ).update(_make_reference_names(assignment.group("value")))
+                if line.lstrip().startswith("export "):
+                    recipe_references.update(line_references)
+                if "$(eval" in assignment.group("value") or (
+                    "${eval" in assignment.group("value")
+                ):
+                    graph_references.update(line_references)
+            elif target_assignment is not None:
+                dependencies.setdefault(
+                    target_assignment.group("name"),
+                    set(),
                 ).update(
-                    next(
-                        value
-                        for value in match.group(
-                            "paren",
-                            "brace",
-                            "short",
-                        )
-                        if value is not None
-                    )
-                    for match in DIRECT_VARIABLE_RE.finditer(
-                        assignment.group("value")
-                    )
+                    _make_reference_names(target_assignment.group("value"))
                 )
+                graph_references.update(
+                    _make_reference_names(target_assignment.group("target"))
+                )
+                if "$(eval" in target_assignment.group("value") or (
+                    "${eval" in target_assignment.group("value")
+                ):
+                    graph_references.update(line_references)
+            elif raw_line.startswith("\t"):
+                if "$(eval" in line or "${eval" in line:
+                    graph_references.update(line_references)
+                else:
+                    recipe_references.update(line_references)
+            else:
+                graph_references.update(line_references)
+                second_expansion = _second_expansion_reference_names(line)
+                references.update(second_expansion)
+                graph_references.update(second_expansion)
+
             default_matches = list(EXTERNAL_DEFAULT_RE.finditer(line))
             defaults.update(
                 match.group("name")
                 for match in default_matches
                 if "override" not in match.group("modifiers").split()
             )
-            computed |= "$($" in line or "${$" in line
-        references_by_path[path] = references
-        defaults_by_path[path] = defaults if computed else set()
-    return references_by_path, dependencies, defaults_by_path
+            if "$($" in line or "${$" in line:
+                if assignment is not None:
+                    computed_variables.add(assignment.group("name"))
+                elif target_assignment is not None:
+                    computed_variables.add(target_assignment.group("name"))
+                elif raw_line.startswith("\t"):
+                    computed_recipe = True
+                else:
+                    computed_graph = True
+        for name in computed_variables:
+            dependencies[name].update(defaults)
+        if computed_graph:
+            graph_references.update(defaults)
+        if computed_recipe:
+            recipe_references.update(defaults)
+        all_by_path[path] = references
+        graph_by_path[path] = graph_references
+        recipe_by_path[path] = recipe_references
+    return all_by_path, graph_by_path, recipe_by_path, dependencies
 
 
-def _target_domain_names(
-    baseline: dict[str, Any],
-    prerequisite_domains: dict[str, dict[str, Any]],
-    reference_census: tuple[
-        dict[str, set[str]],
-        dict[str, set[str]],
-        dict[str, set[str]],
-    ],
+def _expand_make_references(
+    pending: set[str],
+    dependencies: dict[str, set[str]],
 ) -> set[str]:
-    references_by_path, dependencies, computed_defaults = reference_census
-    sources = {"Makefile"}
-    for trace in baseline["traces"].values():
-        sources.update(trace["sources"])
-    pending = {
-        name
-        for source in sources
-        for name in references_by_path.get(source, ())
-    }
-    pending.update(
-        name
-        for source in sources
-        for name in computed_defaults.get(source, ())
-    )
     reached = set()
     while pending:
         name = pending.pop()
@@ -898,7 +993,56 @@ def _target_domain_names(
             continue
         reached.add(name)
         pending.update(dependencies.get(name, ()))
-    return reached & set(prerequisite_domains)
+    return reached
+
+
+def _target_variable_usage(
+    baseline: dict[str, Any],
+    reference_census: tuple[
+        dict[str, set[str]],
+        dict[str, set[str]],
+        dict[str, set[str]],
+        dict[str, set[str]],
+    ],
+) -> dict[str, set[str]]:
+    all_by_path, graph_by_path, recipe_by_path, dependencies = (
+        reference_census
+    )
+    sources = {"Makefile"}
+    sources.update(item["path"] for item in baseline["includes"])
+    for trace in baseline["traces"].values():
+        sources.update(trace["sources"])
+    observed = _expand_make_references(
+        {
+            name
+            for source in sources
+            for name in all_by_path.get(source, ())
+        },
+        dependencies,
+    )
+    graph = _expand_make_references(
+        {
+            name
+            for source in sources
+            for name in graph_by_path.get(source, ())
+        },
+        dependencies,
+    )
+    recipe = _expand_make_references(
+        {
+            name
+            for source in sources
+            for name in recipe_by_path.get(source, ())
+        },
+        dependencies,
+    )
+    observed.update(graph)
+    observed.update(recipe)
+    return {
+        "all": observed,
+        "graph": graph,
+        "recipe_only": recipe - graph,
+    }
 
 
 def _undefined_variable_names(output: str) -> set[str]:
@@ -1456,8 +1600,13 @@ def run_probe(
     *,
     declared_external_names: set[str] | None = None,
     environment_names: set[str] | None = None,
+    generated_path_names: set[str] | None = None,
     scratch_root: Path,
     symbolic_recipe_names: set[str] | None = None,
+    ambient_undefined_names: set[str] | None = None,
+    escaped_literal_names: set[str] | None = None,
+    scoped_variable_names: set[str] | None = None,
+    trusted_builtin_names: set[str] | None = None,
     trusted_reference_names: set[str] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Run actual GNU Make for every sealed domain value/origin pair."""
@@ -1469,27 +1618,50 @@ def run_probe(
         else declared_external_names
     )
     environment_names = set() if environment_names is None else environment_names
+    generated_path_names = (
+        set() if generated_path_names is None else set(generated_path_names)
+    )
     symbolic_recipe_names = (
         set()
         if symbolic_recipe_names is None
         else symbolic_recipe_names
+    )
+    ambient_undefined_names = (
+        set()
+        if ambient_undefined_names is None
+        else set(ambient_undefined_names)
+    )
+    escaped_literal_names = (
+        set()
+        if escaped_literal_names is None
+        else set(escaped_literal_names)
+    )
+    scoped_variable_names = (
+        set()
+        if scoped_variable_names is None
+        else set(scoped_variable_names)
+    )
+    trusted_builtin_names = (
+        set()
+        if trusted_builtin_names is None
+        else set(trusted_builtin_names)
     )
     trusted_reference_names = (
         set()
         if trusted_reference_names is None
         else trusted_reference_names
     )
+    trusted_reference_names |= (
+        ambient_undefined_names
+        | escaped_literal_names
+        | scoped_variable_names
+        | trusted_builtin_names
+    )
     sealed_external_names = (
         declared_external_names | set(prerequisite_domains)
     )
-    external_default_names = _external_default_names(loader)
     reference_census = _make_reference_census(loader)
-    undeclared_defaults = external_default_names - sealed_external_names
-    if undeclared_defaults:
-        raise MakeProbeError(
-            "Make external defaults lack sealed ambient authority: "
-            f"{sorted(undeclared_defaults)}"
-        )
+    _external_default_names(loader, set(reference_census[0]))
     unclassified = (
         declared_external_names
         - set(prerequisite_domains)
@@ -1834,14 +2006,45 @@ def run_probe(
                 if group == ["validation-ownership-check"]
                 else invoke(group, database_only=True)["database_sha256"]
             )
-        target_domain_names = {
-            group[0]: _target_domain_names(
+        loaded_sources = {"Makefile"}
+        for baseline in baseline_by_group:
+            loaded_sources.update(
+                item["path"] for item in baseline["includes"]
+            )
+            for trace in baseline["traces"].values():
+                loaded_sources.update(trace["sources"])
+        external_default_names = _external_default_names(
+            loader,
+            loaded_sources,
+        )
+        undeclared_defaults = external_default_names - sealed_external_names
+        if undeclared_defaults:
+            raise MakeProbeError(
+                "Make external defaults lack sealed ambient authority: "
+                f"{sorted(undeclared_defaults)}"
+            )
+        target_variable_usage = {
+            group[0]: _target_variable_usage(
                 baseline,
-                prerequisite_domains,
                 reference_census,
             )
             for group, baseline in zip(target_groups, baseline_by_group)
             if group != ["validation-ownership-check"]
+        }
+        graph_shaping_symbolic = {
+            name
+            for usage in target_variable_usage.values()
+            for name in usage["graph"] & symbolic_recipe_names
+        }
+        if graph_shaping_symbolic:
+            raise MakeProbeError(
+                "symbolic Make variables can shape targets, prerequisites, "
+                "includes, conditionals, or eval output and require finite "
+                f"domains: {sorted(graph_shaping_symbolic)}"
+            )
+        target_domain_names = {
+            target: usage["all"] & set(prerequisite_domains)
+            for target, usage in target_variable_usage.items()
         }
 
         def target_semantics(
@@ -2044,17 +2247,11 @@ def run_probe(
 
         make_inputs = _makefile_modes(loader)
         result = {}
-        observed_undefined_names = sorted(
-            {
-                name
-                for variant in variant_results
-                for name in variant["undefined_names"]
-            }
-        )
         for target in sorted(targets):
             target_variants = []
             baseline_semantics = None
             all_closure_items = set()
+            target_undefined_names = set()
             for variant in variant_results:
                 if variant["requested_targets"] != [target]:
                     continue
@@ -2062,6 +2259,7 @@ def run_probe(
                     continue
                 closure = variant["closures"][target]
                 all_closure_items.update(closure)
+                target_undefined_names.update(variant["undefined_names"])
                 semantics = (
                     baseline_semantics
                     if variant.get("same_as_fallback")
@@ -2103,15 +2301,39 @@ def run_probe(
                 elif semantics != baseline_semantics:
                     record["semantics"] = semantics
                 target_variants.append(record)
+            usage = target_variable_usage.get(
+                target,
+                {"all": set(), "graph": set(), "recipe_only": set()},
+            )
+            observed_generated_paths = {
+                path
+                for path in generated_path_names
+                if path in all_closure_items
+            }
+            observed_symbolic = (
+                usage["recipe_only"] & symbolic_recipe_names
+            )
+            target_observed_undefined = (
+                target_undefined_names & ambient_undefined_names
+            )
+            target_observed_names = usage["all"] | target_undefined_names
+            handled_names = (
+                target_observed_undefined
+                | (target_observed_names & trusted_builtin_names)
+                | (target_observed_names & scoped_variable_names)
+                | (target_observed_names & escaped_literal_names)
+            )
             result[target] = {
                 "cycles": [],
                 "dynamic_dependencies": [],
                 "effective_exported_environment": {},
                 "global_exported_environment": {},
                 "prerequisite_domain_census": {
-                    "generated_paths": [],
+                    "generated_paths": sorted(observed_generated_paths),
                     "unconstrained": [],
-                    "used": sorted(prerequisite_domains),
+                    "used": sorted(
+                        usage["all"] & set(prerequisite_domains)
+                    ),
                 },
                 "record": {
                     "interceptor": interceptor_authority,
@@ -2137,7 +2359,7 @@ def run_probe(
                         target,
                         False,
                     ),
-                    "symbolic_recipe_names": sorted(symbolic_recipe_names),
+                    "symbolic_recipe_names": sorted(observed_symbolic),
                     "variants": target_variants,
                 },
                 "target": target,
@@ -2146,13 +2368,23 @@ def run_probe(
                 ),
                 "unknown_dynamic_prerequisites": [],
                 "variable_census": {
-                    "ambient_undefined": [],
-                    "escaped_literals": [],
-                    "external_defaults": sorted(external_default_names),
-                    "handled_names": [],
-                    "observed_undefined": observed_undefined_names,
-                    "scoped_variables": [],
-                    "trusted_builtins": [],
+                    "ambient_undefined": sorted(
+                        target_observed_undefined
+                    ),
+                    "escaped_literals": sorted(
+                        target_observed_names & escaped_literal_names
+                    ),
+                    "external_defaults": sorted(
+                        usage["all"] & external_default_names
+                    ),
+                    "handled_names": sorted(handled_names),
+                    "observed_undefined": sorted(target_undefined_names),
+                    "scoped_variables": sorted(
+                        target_observed_names & scoped_variable_names
+                    ),
+                    "trusted_builtins": sorted(
+                        target_observed_names & trusted_builtin_names
+                    ),
                     "unbound": [],
                 },
             }

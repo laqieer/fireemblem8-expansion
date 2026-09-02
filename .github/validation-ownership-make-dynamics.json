@@ -1005,16 +1005,11 @@
   ],
   "ambient_inputs": {
     "allowed_names": [
-      "ASSET_BANIM_INCBIN_CONSUMERS",
-      "ASSET_CUSTOM_SPELL_INCBIN_CONSUMERS",
       "ASSET_MANIFEST",
       "ASSET_OUTPUT_DIR",
-      "ASSET_PORTRAIT_INCBIN_CONSUMERS",
-      "ASSET_TMX_INCBIN_CONSUMERS",
       "AUTOTOOLS_BUILD_DIR",
       "AUTOTOOLS_CONFIG_MK",
       "CFILES",
-      "CJK_BUILD_DIR",
       "CODEQL_REQUIRE_FANALYZER",
       "CPP",
       "DEVKITARM",
@@ -1045,12 +1040,6 @@
       "EXPANSION_VERSION_MAJOR",
       "EXPANSION_VERSION_MINOR",
       "EXPANSION_VERSION_PATCH",
-      "FEBUILDER_CLI",
-      "FEBUILDER_COMMIT",
-      "FEBUILDER_DOTNET_SDK",
-      "FEBUILDER_EVIDENCE_COMMAND",
-      "FEBUILDER_REPOSITORY",
-      "FEHRR_ROOT",
       "GAME_LOCALIZATION_ENABLED_LOCALES",
       "GAME_LOCALIZATION_OUT_DIR",
       "GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE",
@@ -1107,7 +1096,6 @@
       "FE8_BANIM_PACKAGE_RUNTIME_TEST",
       "FE8_EXPANSION_CUSTOM_SPELL_TEST",
       "FE8_EXPANSION_ITEMTEST",
-      "FE8_ITEM_ID_CAP",
       "LZ_FLAGS",
       "MODERN_BUILD_COMMIT",
       "MODERN_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT",
@@ -1143,54 +1131,9 @@
     ],
     "scoped_variables": [
       {
-        "name": "%",
-        "authority": "automatic-variable",
-        "value": "<automatic-variable:%>"
-      },
-      {
-        "name": "%D",
-        "authority": "automatic-variable",
-        "value": "<automatic-variable:%D>"
-      },
-      {
-        "name": "%F",
-        "authority": "automatic-variable",
-        "value": "<automatic-variable:%F>"
-      },
-      {
         "name": "*",
         "authority": "automatic-variable",
         "value": "<automatic-variable:*>"
-      },
-      {
-        "name": "*D",
-        "authority": "automatic-variable",
-        "value": "<automatic-variable:*D>"
-      },
-      {
-        "name": "*F",
-        "authority": "automatic-variable",
-        "value": "<automatic-variable:*F>"
-      },
-      {
-        "name": "+",
-        "authority": "automatic-variable",
-        "value": "<automatic-variable:+>"
-      },
-      {
-        "name": "+D",
-        "authority": "automatic-variable",
-        "value": "<automatic-variable:+D>"
-      },
-      {
-        "name": "+F",
-        "authority": "automatic-variable",
-        "value": "<automatic-variable:+F>"
-      },
-      {
-        "name": "0",
-        "authority": "call-argument",
-        "value": "<call-argument:0>"
       },
       {
         "name": "1",
@@ -1213,59 +1156,9 @@
         "value": "<call-argument:4>"
       },
       {
-        "name": "5",
-        "authority": "call-argument",
-        "value": "<call-argument:5>"
-      },
-      {
-        "name": "6",
-        "authority": "call-argument",
-        "value": "<call-argument:6>"
-      },
-      {
-        "name": "7",
-        "authority": "call-argument",
-        "value": "<call-argument:7>"
-      },
-      {
-        "name": "8",
-        "authority": "call-argument",
-        "value": "<call-argument:8>"
-      },
-      {
-        "name": "9",
-        "authority": "call-argument",
-        "value": "<call-argument:9>"
-      },
-      {
         "name": "<",
         "authority": "automatic-variable",
         "value": "<automatic-variable:<>"
-      },
-      {
-        "name": "<D",
-        "authority": "automatic-variable",
-        "value": "<automatic-variable:<D>"
-      },
-      {
-        "name": "<F",
-        "authority": "automatic-variable",
-        "value": "<automatic-variable:<F>"
-      },
-      {
-        "name": "?",
-        "authority": "automatic-variable",
-        "value": "<automatic-variable:?>"
-      },
-      {
-        "name": "?D",
-        "authority": "automatic-variable",
-        "value": "<automatic-variable:?D>"
-      },
-      {
-        "name": "?F",
-        "authority": "automatic-variable",
-        "value": "<automatic-variable:?F>"
       },
       {
         "name": "@",
@@ -1276,11 +1169,6 @@
         "name": "@D",
         "authority": "automatic-variable",
         "value": "<automatic-variable:@D>"
-      },
-      {
-        "name": "@F",
-        "authority": "automatic-variable",
-        "value": "<automatic-variable:@F>"
       },
       {
         "name": "GENERATED_DATA_LINKED_SYMBOL_PREFIX_characters",
@@ -1303,24 +1191,9 @@
         "value": "<automatic-variable:^>"
       },
       {
-        "name": "^D",
-        "authority": "automatic-variable",
-        "value": "<automatic-variable:^D>"
-      },
-      {
-        "name": "^F",
-        "authority": "automatic-variable",
-        "value": "<automatic-variable:^F>"
-      },
-      {
         "name": "t",
         "authority": "foreach-iteration",
         "value": "<scoped-variable:t>"
-      },
-      {
-        "name": "|",
-        "authority": "automatic-variable",
-        "value": "<automatic-variable:|>"
       }
     ],
     "escaped_literals": [
@@ -1369,11 +1242,21 @@
       "ASSET_OUTPUT_DIR",
       "ASSET_PROFILE_KEY",
       "ASSET_PROFILE_ROOT",
+      "AUTOTOOLS_BUILD_DIR",
+      "AUTOTOOLS_CONFIG_MK",
       "BANIM_OBJECT",
-      "CJK_BUILD_DIR",
+      "CFILES",
+      "CODEQL_REQUIRE_FANALYZER",
+      "CPP",
+      "DEVKITARM",
       "EXPANSION_CUSTOM_SPELL_EFFECTS",
       "EXPANSION_ENABLED_LOCALES",
       "EXPANSION_HQ_MIXER",
+      "EXPANSION_STARTER_CONTENT",
+      "FE8_BANIM_PACKAGE_RUNTIME_TEST",
+      "FE8_EXPANSION_CUSTOM_SPELL_TEST",
+      "FE8_EXPANSION_ITEMTEST",
+      "FE8_ITEM_ID_CAP",
       "GBAGFX",
       "GENERATED_DATA_AUTOPLAYSTRATEGIES_C",
       "GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTERBUNDLE_SOURCE",
@@ -1406,19 +1289,25 @@
       "GENERATED_DATA_SHARED_PY_SOURCES",
       "GENERATED_DATA_TERRAINSTATS_C",
       "GENERATED_DATA_WEAPONTRIANGLE_C",
+      "HOST_CC",
+      "LZ_FLAGS",
       "MAP_LAYOUT_SUBDIR",
       "MODERN_ABI",
       "MODERN_ALL_ASM_SOURCES",
       "MODERN_ALL_C_SOURCES",
       "MODERN_ALL_DATA_C_SOURCES",
       "MODERN_ALL_OBJECTS",
+      "MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY",
       "MODERN_BGM_REGISTRY_C",
       "MODERN_BGM_REGISTRY_JSON",
       "MODERN_BGM_REGISTRY_SCRIPT",
+      "MODERN_BUILD_COMMIT",
       "MODERN_BUILD_METADATA_JSON",
       "MODERN_BUILD_ROOT",
       "MODERN_CLEAN_IWRAM",
       "MODERN_CLEAN_LDSCRIPT",
+      "MODERN_COHORT_ASM_SOURCES",
+      "MODERN_COHORT_SOURCES",
       "MODERN_COMPILE_SETTINGS",
       "MODERN_CONFIG",
       "MODERN_DEBUGTOOLS_SRAM_FIXTURE",
@@ -1428,6 +1317,7 @@
       "MODERN_ELF_FE6SIO",
       "MODERN_ELF_LINK_SETTINGS",
       "MODERN_ELF_OBJECTS_LST",
+      "MODERN_GAME_LOCALIZATION_CATALOG_LOCALES",
       "MODERN_INTERNAL_AUTOPLAY_STRATEGY_ROUTER_ABSENT",
       "MODERN_LINKER_CHECK_ACCELERATED_FIDELITY",
       "MODERN_LOCALE_FIXTURE_DEPS",
@@ -1441,23 +1331,25 @@
       "MODERN_MGFEMBP_LDS",
       "MODERN_MGFEMBP_PAYLOAD",
       "MODERN_MGFEMBP_S_SRCS",
+      "MODERN_NEWLIB_LIB",
+      "MODERN_PREPROC",
       "MODERN_RELINK_SCRIPT",
       "MODERN_RELOCS_ELF",
       "MODERN_ROM",
+      "MODERN_ROM_SIZE",
+      "MODERN_SCANINC",
+      "MODERN_TEXT_SHIFT",
+      "MODERN_TOOLCHAIN_ROOT",
       "MODERN_UI_PRESENTATION_MANIFEST_C",
-      "OS"
+      "OS",
+      "PREFIX",
+      "PYTHON",
+      "SHIFT",
+      "SHIFT2",
+      "TOOLCHAIN",
+      "data_dep"
     ],
     "symbolic_recipe_names": [
-      "ASSET_BANIM_INCBIN_CONSUMERS",
-      "ASSET_CUSTOM_SPELL_INCBIN_CONSUMERS",
-      "ASSET_PORTRAIT_INCBIN_CONSUMERS",
-      "ASSET_TMX_INCBIN_CONSUMERS",
-      "AUTOTOOLS_BUILD_DIR",
-      "AUTOTOOLS_CONFIG_MK",
-      "CFILES",
-      "CODEQL_REQUIRE_FANALYZER",
-      "CPP",
-      "DEVKITARM",
       "EU_LOCALIZATION_ROM",
       "EXPANSION_AOE_REFERENCE",
       "EXPANSION_AUTOPLAY_PLANNER",
@@ -1478,63 +1370,33 @@
       "EXPANSION_ROM_REVISION",
       "EXPANSION_ROM_TITLE",
       "EXPANSION_SAVE_COMPAT_EPOCH",
-      "EXPANSION_STARTER_CONTENT",
       "EXPANSION_VERSION_MAJOR",
       "EXPANSION_VERSION_MINOR",
       "EXPANSION_VERSION_PATCH",
-      "FE8_BANIM_PACKAGE_RUNTIME_TEST",
-      "FE8_EXPANSION_CUSTOM_SPELL_TEST",
-      "FE8_EXPANSION_ITEMTEST",
-      "FE8_ITEM_ID_CAP",
-      "FEBUILDER_CLI",
-      "FEBUILDER_COMMIT",
-      "FEBUILDER_DOTNET_SDK",
-      "FEBUILDER_EVIDENCE_COMMAND",
-      "FEBUILDER_REPOSITORY",
-      "FEHRR_ROOT",
       "GAME_LOCALIZATION_ENABLED_LOCALES",
       "GAME_LOCALIZATION_OUT_DIR",
       "GENERATED_DATA_AUTOPLAYSTRATEGIES_CHAPTEROBJECTIVES_SOURCE",
       "GENERATED_DATA_AUTOPLAYSTRATEGIES_INVENTORY",
       "GENERATED_DATA_AUTOPLAYSTRATEGIES_REFERENCE_PROFILES",
       "GENERATED_DATA_CHAPTEROBJECTIVES_INVENTORY",
-      "HOST_CC",
       "LOCALIZED_UI_GRAPHICS_FE8CN_ROM",
       "LOCALIZED_UI_GRAPHICS_FE8J_ROOT",
-      "LZ_FLAGS",
-      "MODERN_BANIM_PRESENTATION_RUNTIME_PROBE_POLICY",
       "MODERN_BINUTILS_DIR",
       "MODERN_BUDGET_REPORT",
-      "MODERN_BUILD_COMMIT",
       "MODERN_CC",
-      "MODERN_COHORT_ASM_SOURCES",
-      "MODERN_COHORT_SOURCES",
-      "MODERN_GAME_LOCALIZATION_CATALOG_LOCALES",
       "MODERN_INTERNAL_TEST_DEFINES",
       "MODERN_LD",
       "MODERN_LOCALIZATION_BUDGET_REPORT",
-      "MODERN_NEWLIB_LIB",
       "MODERN_NM",
       "MODERN_OBJCOPY",
       "MODERN_OBJDUMP",
-      "MODERN_PREPROC",
       "MODERN_PREPROC_FLAGS",
       "MODERN_READELF",
-      "MODERN_ROM_SIZE",
-      "MODERN_SCANINC",
       "MODERN_SHIFT_AMOUNT",
-      "MODERN_TEXT_SHIFT",
-      "MODERN_TOOLCHAIN_ROOT",
       "PATH",
-      "PREFIX",
       "PREPROC_FLAGS",
-      "PYTHON",
       "PYTHON3",
-      "RELEASE_TARGET_SHA",
-      "SHIFT",
-      "SHIFT2",
-      "TOOLCHAIN",
-      "data_dep"
+      "RELEASE_TARGET_SHA"
     ],
     "explicit": [
       {
@@ -1575,5 +1437,5 @@
     "value_policy": "finite-exact-or-tracked-fallback",
     "target_policy": "defined-pattern-or-tracked-tree"
   },
-  "seal": "55226891bfc781f0749c19d0bc668599d8314b7218aee81c6b3ed620b483bfd1"
+  "seal": "ec89314259ff24f102d884e6604d08964fa9a429bfd481910bd25af01bf89a5c"
 }
