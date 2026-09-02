@@ -344,6 +344,22 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
             ),
         ),
         (
+            "short-cluster-readonly-remount",
+            ("/usr/bin/mount -ro remount /mnt/supervisor",),
+        ),
+        (
+            "short-attached-options-remount-readonly",
+            ("/usr/bin/mount -oremount,ro /mnt/supervisor",),
+        ),
+        (
+            "split-readonly-short-then-options-remount",
+            ("/usr/bin/mount -r -o remount /mnt/supervisor",),
+        ),
+        (
+            "split-options-remount-then-readonly-short",
+            ("/usr/bin/mount -o remount -r /mnt/supervisor",),
+        ),
+        (
             "long-options-read-only",
             (
                 "/usr/bin/mount --options remount,nosuid,nodev,noexec "
@@ -3818,6 +3834,136 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             with self.subTest(variant=label):
                 self.assertTrue(workflow_has_supervisor_parent_readonly_remount(changed))
                 self.assertTrue(publisher_boundary_errors(changed))
+
+    def test_mount_short_option_cluster_runtime_matches_canonical_remount_parsing(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="mount-short-cluster-runtime-",
+            dir=artifact_root,
+        ) as temporary:
+            target = Path(temporary)
+            remount_forms = {
+                "cluster-ro-remount": ["/usr/bin/mount", "-f", "-v", "-ro", "remount", str(target)],
+                "split-r-o-remount": ["/usr/bin/mount", "-f", "-v", "-r", "-o", "remount", str(target)],
+                "attached-o-remount-ro": ["/usr/bin/mount", "-f", "-v", "-oremount,ro", str(target)],
+            }
+            nonremount_forms = {
+                "cluster-or-remount": ["/usr/bin/mount", "-f", "-v", "-or", "remount", str(target)],
+                "cluster-orw-remount": ["/usr/bin/mount", "-f", "-v", "-orw", "remount", str(target)],
+            }
+            expected_remount = f"mount: (null) mounted on {target}.\n"
+            expected_source = f"mount: remount mounted on {target}.\n"
+
+            for label, argv in remount_forms.items():
+                with self.subTest(case=label):
+                    completed = subprocess.run(
+                        argv,
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(completed.stdout, expected_remount)
+                    self.assertEqual(completed.stderr, "")
+
+            for label, argv in nonremount_forms.items():
+                with self.subTest(case=label):
+                    completed = subprocess.run(
+                        argv,
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(completed.stdout, expected_source)
+                    self.assertEqual(completed.stderr, "")
+
+    def test_mount_short_option_cluster_parser_tracks_effective_remount_readonly_state(self):
+        cases = (
+            ("cluster-ro-remount", "/usr/bin/mount -ro remount /mnt/supervisor", True),
+            ("cluster-fnv-ro-remount", "/usr/bin/mount -fnv -ro remount /mnt/supervisor", True),
+            ("attached-o-remount-ro", "/usr/bin/mount -oremount,ro /mnt/supervisor", True),
+            ("split-r-o-remount", "/usr/bin/mount -r -o remount /mnt/supervisor", True),
+            ("split-o-r-remount", "/usr/bin/mount -o remount -r /mnt/supervisor", True),
+            ("rw-option-list-overrides-readonly", "/usr/bin/mount -o rw,remount /mnt/supervisor", False),
+            ("short-rw-cluster-overrides-readonly", "/usr/bin/mount -rw -o remount /mnt/supervisor", False),
+            ("split-r-w-overrides-readonly", "/usr/bin/mount -r -w -o remount /mnt/supervisor", False),
+            ("split-w-r-restores-readonly", "/usr/bin/mount -w -r -o remount /mnt/supervisor", True),
+            ("cluster-or-consumes-r-as-option-arg", "/usr/bin/mount -or remount /mnt/supervisor", False),
+            ("cluster-orw-consumes-rw-as-option-arg", "/usr/bin/mount -orw remount /mnt/supervisor", False),
+            ("missing-mountpoint-after-cluster-fails-closed", "/usr/bin/mount -ro /mnt/supervisor", True),
+            ("unknown-short-cluster-fails-closed", "/usr/bin/mount -rz remount /mnt/supervisor", True),
+        )
+
+        for label, command_text, expected in cases:
+            with self.subTest(case=label):
+                tokens = publisher_shell_contract._parse_shell_tokens(
+                    command_text,
+                    label=label,
+                )
+                self.assertEqual(
+                    publisher_shell_contract._mount_command_targets_supervisor_parent(
+                        tokens,
+                        allow_reviewed_nonliteral_hidden=False,
+                    ),
+                    expected,
+                )
+
+    def test_mount_short_option_clusters_are_rejected_in_wrapper_and_substitution_contexts(self):
+        self.assertFalse(workflow_has_supervisor_parent_readonly_remount(self.text))
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="mount-short-cluster-shared-",
+            dir=artifact_root,
+        ) as temporary:
+            target = Path(temporary)
+            cases = (
+                (
+                    "if-wrapper-short-cluster",
+                    f'if /usr/bin/mount -f -v -ro remount "{target}" >/dev/null; then printf RUNTIME_IF_CLUSTER; fi\n',
+                    "RUNTIME_IF_CLUSTER",
+                    'root=/mnt\nif /usr/bin/mount -ro remount "$root/supervisor"; then :; fi\n',
+                ),
+                (
+                    "assignment-substitution-short-cluster",
+                    f'ignored="$("/usr/bin/mount" -f -v -ro remount "{target}")"\n'
+                    'printf "%s" "$ignored"\n',
+                    f"mount: (null) mounted on {target}.",
+                    'root=/mnt\nignored=$(/usr/bin/mount -ro remount "$root/supervisor")\n',
+                ),
+            )
+
+            for label, runtime_script, expected_stdout, semantic_script in cases:
+                with self.subTest(case=label):
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "--noprofile",
+                            "--norc",
+                            "-eu",
+                            "-o",
+                            "pipefail",
+                            "-c",
+                            runtime_script,
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(completed.stdout, expected_stdout)
+                    self.assertEqual(completed.stderr, "")
+                    self.assertTrue(
+                        publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                            semantic_script,
+                            label=label,
+                        )
+                    )
 
     def test_publisher_run_scalar_matches_reference_yaml_bytes(self):
         step_block = named_patch_release_step_block(

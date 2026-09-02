@@ -109,6 +109,10 @@ _FLOCK_ZERO_ARG_OPTIONS = frozenset(
     {"-F", "--no-fork", "-n", "--nonblock", "-o", "--close", "-s", "--shared", "--verbose", "-u", "--unlock", "-x", "--exclusive"}
 )
 _FLOCK_OPTIONS_WITH_ARGS = frozenset({"-E", "--conflict-exit-code", "-w", "--timeout"})
+_MOUNT_SHORT_ZERO_ARG_OPTIONS = frozenset(
+    {"a", "c", "f", "F", "h", "i", "l", "n", "r", "v", "V", "w", "B", "M", "R"}
+)
+_MOUNT_SHORT_OPTIONS_WITH_ARGS = frozenset({"L", "N", "O", "T", "U", "t"})
 _SUBSTITUTION_SCAN_MAX_DEPTH = 8
 _SUBSTITUTION_SCAN_MAX_BODY_CHARS = 16384
 _SUBSTITUTION_SCAN_MAX_COUNT = 128
@@ -1857,6 +1861,122 @@ def _authorized_hidden_readonly_mount_indices(
     return frozenset({loop_starts[0] + 4})
 
 
+def _apply_mount_option_text(
+    option_token: _ShellToken,
+    *,
+    read_only_state: bool | None,
+    remount_like: bool,
+) -> tuple[bool | None, bool, bool]:
+    options_nonliteral = _token_has_shell_syntax(option_token)
+    for option in option_token.text.split(","):
+        normalized = option.strip().replace("\\", "")
+        if normalized.startswith("remount"):
+            remount_like = True
+        elif normalized == "ro":
+            read_only_state = True
+        elif normalized == "rw":
+            read_only_state = False
+    return read_only_state, remount_like, options_nonliteral
+
+
+def _parse_mount_short_option_token(
+    tokens: tuple[_ShellToken, ...],
+    *,
+    start_index: int,
+    read_only_state: bool | None,
+    remount_like: bool,
+    options_nonliteral: bool,
+) -> tuple[int, bool | None, bool, bool] | None:
+    token = tokens[start_index]
+    token_text = token.text
+    if not token_text.startswith("-") or token_text.startswith("--") or token_text == "-":
+        return None
+
+    cluster = token_text[1:]
+    if not cluster:
+        return None
+
+    index = 0
+    while index < len(cluster):
+        option = cluster[index]
+        if option == "o":
+            if index + 1 < len(cluster):
+                option_token = _ShellToken(
+                    text=cluster[index + 1 :],
+                    has_shell_syntax=_token_has_shell_syntax(token),
+                )
+                read_only_state, remount_like, option_nonliteral = _apply_mount_option_text(
+                    option_token,
+                    read_only_state=read_only_state,
+                    remount_like=remount_like,
+                )
+                return (
+                    start_index + 1,
+                    read_only_state,
+                    remount_like,
+                    options_nonliteral or option_nonliteral,
+                )
+            if start_index + 1 >= len(tokens):
+                return None
+            read_only_state, remount_like, option_nonliteral = _apply_mount_option_text(
+                tokens[start_index + 1],
+                read_only_state=read_only_state,
+                remount_like=remount_like,
+            )
+            return (
+                start_index + 2,
+                read_only_state,
+                remount_like,
+                options_nonliteral or option_nonliteral,
+            )
+        if option == "r":
+            read_only_state = True
+            index += 1
+            continue
+        if option == "w":
+            read_only_state = False
+            index += 1
+            continue
+        if option == "m":
+            if index + 1 < len(cluster):
+                return start_index + 1, read_only_state, remount_like, options_nonliteral
+            index += 1
+            continue
+        if option in _MOUNT_SHORT_OPTIONS_WITH_ARGS:
+            if index + 1 < len(cluster):
+                return start_index + 1, read_only_state, remount_like, options_nonliteral
+            if start_index + 1 >= len(tokens):
+                return None
+            return start_index + 2, read_only_state, remount_like, options_nonliteral
+        if option in _MOUNT_SHORT_ZERO_ARG_OPTIONS:
+            index += 1
+            continue
+        return None
+    return start_index + 1, read_only_state, remount_like, options_nonliteral
+
+
+def _token_could_be_mount_short_option(token_text: str) -> bool:
+    if not token_text.startswith("-") or token_text.startswith("--") or token_text == "-":
+        return False
+
+    cluster = token_text[1:]
+    if not cluster:
+        return False
+
+    index = 0
+    while index < len(cluster):
+        option = cluster[index]
+        if option == "o" or option in _MOUNT_SHORT_OPTIONS_WITH_ARGS:
+            return True
+        if option == "m":
+            return True
+        if option in _MOUNT_SHORT_ZERO_ARG_OPTIONS:
+            index += 1
+            continue
+        return False
+    return True
+
+
 def _mount_command_targets_supervisor_parent(
     command: tuple[_ShellToken, ...],
     *,
@@ -1870,56 +1990,58 @@ def _mount_command_targets_supervisor_parent(
     executable = executable_token.text
     executable_literal = executable == "/usr/bin/mount"
     executable_nonliteral = _token_has_shell_syntax(executable_token)
-    read_only_like = False
+    read_only_state: bool | None = None
     remount_like = False
     options_nonliteral = False
     positionals: list[_ShellToken] = []
     unknown_flag = False
+    malformed_short_flag = False
     index = 1
 
     while index < len(tokens):
         token = tokens[index]
         token_text = token.text
         if token_text in {"-r", "--read-only"}:
-            read_only_like = True
+            read_only_state = True
+            index += 1
+            continue
+        if token_text in {"-w", "--rw", "--read-write"}:
+            read_only_state = False
             index += 1
             continue
         if token_text in {"-o", "--options"}:
             if index + 1 >= len(tokens):
                 return True
-            option_text = tokens[index + 1]
-            if _token_has_shell_syntax(option_text):
-                options_nonliteral = True
-            for option in option_text.text.split(","):
-                normalized = option.strip().replace("\\", "")
-                if normalized.startswith("remount"):
-                    remount_like = True
-                if normalized == "ro":
-                    read_only_like = True
+            read_only_state, remount_like, option_nonliteral = _apply_mount_option_text(
+                tokens[index + 1],
+                read_only_state=read_only_state,
+                remount_like=remount_like,
+            )
+            options_nonliteral = options_nonliteral or option_nonliteral
             index += 2
             continue
         if token_text.startswith("--options="):
-            option_text = token_text.split("=", 1)[1]
-            if _token_has_shell_syntax(token):
-                options_nonliteral = True
-            for option in option_text.split(","):
-                normalized = option.strip().replace("\\", "")
-                if normalized.startswith("remount"):
-                    remount_like = True
-                if normalized == "ro":
-                    read_only_like = True
+            read_only_state, remount_like, option_nonliteral = _apply_mount_option_text(
+                _ShellToken(
+                    text=token_text.split("=", 1)[1],
+                    has_shell_syntax=_token_has_shell_syntax(token),
+                ),
+                read_only_state=read_only_state,
+                remount_like=remount_like,
+            )
+            options_nonliteral = options_nonliteral or option_nonliteral
             index += 1
             continue
         if token_text.startswith("-o") and token_text != "-o":
-            option_text = token_text[2:]
-            if _token_has_shell_syntax(token):
-                options_nonliteral = True
-            for option in option_text.split(","):
-                normalized = option.strip().replace("\\", "")
-                if normalized.startswith("remount"):
-                    remount_like = True
-                if normalized == "ro":
-                    read_only_like = True
+            read_only_state, remount_like, option_nonliteral = _apply_mount_option_text(
+                _ShellToken(
+                    text=token_text[2:],
+                    has_shell_syntax=_token_has_shell_syntax(token),
+                ),
+                read_only_state=read_only_state,
+                remount_like=remount_like,
+            )
+            options_nonliteral = options_nonliteral or option_nonliteral
             index += 1
             continue
         if token_text in {
@@ -1944,12 +2066,29 @@ def _mount_command_targets_supervisor_parent(
         if token_text == "--":
             positionals.extend(tokens[index + 1 :])
             break
+        if token_text.startswith("-") and not token_text.startswith("--") and token_text != "-":
+            parsed = _parse_mount_short_option_token(
+                tokens,
+                start_index=index,
+                read_only_state=read_only_state,
+                remount_like=remount_like,
+                options_nonliteral=options_nonliteral,
+            )
+            if parsed is None:
+                malformed_short_flag = True
+                unknown_flag = True
+                index += 1
+                continue
+            index, read_only_state, remount_like, options_nonliteral = parsed
+            continue
         if token_text.startswith("-"):
             unknown_flag = True
             index += 1
             continue
         positionals.append(token)
         index += 1
+
+    read_only_like = read_only_state is True
 
     nonliteral_positionals = any(_token_has_shell_syntax(token) for token in positionals)
     mount_surface_uses_nonliteral = (
@@ -1963,6 +2102,9 @@ def _mount_command_targets_supervisor_parent(
             "--options",
             "-r",
             "--read-only",
+            "-w",
+            "--rw",
+            "--read-write",
             "--bind",
             "--make-private",
             "--make-rprivate",
@@ -1975,7 +2117,7 @@ def _mount_command_targets_supervisor_parent(
             "--rbind",
         }
         or token.text.startswith("--options=")
-        or (token.text.startswith("-o") and token.text != "-o")
+        or _token_could_be_mount_short_option(token.text)
         for token in tokens[1:]
     )
     looks_like_mount_surface = (
@@ -1984,6 +2126,12 @@ def _mount_command_targets_supervisor_parent(
         or any(token.text == "/usr/bin/mount" for token in tokens)
         or (executable_nonliteral and has_mount_flag)
     )
+    if looks_like_mount_surface and malformed_short_flag:
+        return True
+    if looks_like_mount_surface and not positionals and (
+        read_only_state is not None or remount_like or options_nonliteral
+    ):
+        return True
     if looks_like_mount_surface and mount_surface_uses_nonliteral:
         if _token_texts(tokens) in APPROVED_SUPERVISOR_COMMAND_TOKENS:
             pass
