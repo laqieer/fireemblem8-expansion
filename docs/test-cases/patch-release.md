@@ -245,13 +245,14 @@ archival-lane behavior changes.
   process teardown, decoded recursive `/dev` target parsing and deepest-first
   unmount order, structured `env -S` shell-c evasions through inline
   `else`/brace/case/loop forms, `setsid`-wrapped and common outer-wrapper
-  (`nohup`/`taskset`/`ionice`/`flock`) `env`/BusyBox command slots,
-  inline-function fail-closed behavior, literal-argument negative controls,
-  socket/daemon/cgroup-escape adversaries, two-file handoff rejection
-  controls, unpredictable private path, cleanup-before-upload, late artifact
-  revalidation, null/no-replay candidate output adversaries, the old
-  Bash-FD-255/memfd exit-125 reproducer, inherited pipe/memfd/socket closure
-  in the child launcher, and profile/verifier requirements.
+  (`nohup`/`taskset`/`ionice`/`flock`) `env`/BusyBox command slots, regular
+  flock lockfile and command-string forms, inline-function fail-closed
+  behavior, literal-argument negative controls, socket/daemon/cgroup-escape
+  adversaries, two-file handoff rejection controls, unpredictable private
+  path, cleanup-before-upload, late artifact revalidation, null/no-replay
+  candidate output adversaries, the old Bash-FD-255/memfd exit-125
+  reproducer, inherited pipe/memfd/socket closure in the child launcher, and
+  profile/verifier requirements.
 
 ### Cleanup and limitations
 

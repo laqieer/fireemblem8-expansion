@@ -856,6 +856,15 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
             ),
         ),
         (
+            "flock-relative-lockfile-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'flock -n lockfile "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
             "nohup-variable-busybox-env-split-string-wrapper",
             (
                 "ROOT=/mnt",
@@ -903,6 +912,24 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
                 "busybox_cmd=/bin/busybox",
                 "ENV_APPLET=env",
                 'flock -n /dev/null "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "flock-absolute-lockfile-variable-busybox-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "busybox_cmd=/bin/busybox",
+                "ENV_APPLET=env",
+                'flock -n /var/lock/ci-patch.lock "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "flock-lockfile-command-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                'flock -n lockfile -c "$cmd"',
             ),
         ),
         (
@@ -4187,6 +4214,8 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             dir=artifact_root,
         ) as temporary:
             sandbox = Path(temporary)
+            lock_file = sandbox / "lock"
+            lock_file.write_text("", encoding="ascii")
             busybox = sandbox / "busybox"
             busybox.write_text(
                 "#!/bin/sh\n"
@@ -4244,11 +4273,11 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     "flock-variable-env",
                     'cmd="printf RUNTIME_FLOCK_ENV"\n'
                     "env_cmd=/bin/env\n"
-                    'flock -n /dev/null "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                    f'flock -n "{lock_file}" "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
                     "RUNTIME_FLOCK_ENV",
                     prefix
                     + "env_cmd=/bin/env\n"
-                    + 'flock -n /dev/null "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                    + f'flock -n "{lock_file}" "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
                 ),
                 (
                     "nohup-variable-busybox-env",
@@ -4303,12 +4332,19 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     'cmd="printf RUNTIME_FLOCK_BUSYBOX_ENV"\n'
                     f'busybox_cmd="{busybox}"\n'
                     "ENV_APPLET=env\n"
-                    'flock -n /dev/null "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                    f'flock -n "{lock_file}" "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
                     "RUNTIME_FLOCK_BUSYBOX_ENV",
                     prefix
                     + f"busybox_cmd={busybox}\n"
                     + "ENV_APPLET=env\n"
-                    + 'flock -n /dev/null "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                    + f'flock -n "{lock_file}" "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "flock-nonliteral-command-string",
+                    'cmd="printf RUNTIME_FLOCK_COMMAND_STRING"\n'
+                    f'flock -n "{lock_file}" -c "$cmd"\n',
+                    "RUNTIME_FLOCK_COMMAND_STRING",
+                    prefix + f'flock -n "{lock_file}" -c "$cmd"\n',
                 ),
             )
 
@@ -4391,6 +4427,12 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     "/bin/env -S",
                     f'env_cmd="{env_cmd}"\n'
                     f'flock -n "{lock_file}" /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                ),
+                (
+                    "flock-literal-command-string",
+                    f'flock -n "{lock_file}" -c "printf SAFE_FLOCK_COMMAND_STRING"\n',
+                    "SAFE_FLOCK_COMMAND_STRING",
+                    f'flock -n "{lock_file}" -c "printf SAFE_FLOCK_COMMAND_STRING"\n',
                 ),
             )
 

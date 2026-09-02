@@ -105,12 +105,23 @@ _NICE_OLD_STYLE_RE = re.compile(r"-[0-9+-]+")
 _NICE_SHORT_ADJUSTMENT_RE = re.compile(r"-n[0-9+-]+")
 _OBVIOUS_WRAPPER_OPERAND_RE = re.compile(r"(?:0x[0-9A-Fa-f]+|[0-9]+(?:-[0-9]+)?(?:,[0-9]+(?:-[0-9]+)?)*)")
 _WRAPPER_BASENAMES = frozenset({"command", "nice", "setsid", "sudo", "timeout"})
+_FLOCK_ZERO_ARG_OPTIONS = frozenset(
+    {"-F", "--no-fork", "-n", "--nonblock", "-o", "--close", "-s", "--shared", "--verbose", "-u", "--unlock", "-x", "--exclusive"}
+)
+_FLOCK_OPTIONS_WITH_ARGS = frozenset({"-E", "--conflict-exit-code", "-w", "--timeout"})
 
 
 @dataclass(frozen=True)
 class _ShellToken:
     text: str
     has_shell_syntax: bool
+
+
+@dataclass(frozen=True)
+class _FlockCommandTarget:
+    mode: str
+    argv_index: int | None = None
+    command_text: str | None = None
 
 
 def reviewed_patch_release_run_sha256(script: str) -> str:
@@ -707,6 +718,145 @@ def _nonliteral_token_starts_busybox_env_surface(
     return suspicious or next_index is not None
 
 
+def _parse_flock_short_option_token(
+    token: str,
+    *,
+    has_next_token: bool,
+) -> tuple[str, bool]:
+    if not token.startswith("-") or token.startswith("--") or token == "-":
+        return "not-short-option", False
+    cluster = token[1:]
+    if not cluster:
+        return "invalid", False
+
+    index = 0
+    while index < len(cluster):
+        option = cluster[index]
+        if option in {"F", "n", "o", "s", "u", "x"}:
+            index += 1
+            continue
+        if option in {"E", "w"}:
+            if index == len(cluster) - 1:
+                return "next-argument", has_next_token
+            return "attached-argument", False
+        if option == "c":
+            if index == len(cluster) - 1:
+                return "command-argument", has_next_token
+            return "command-attached", False
+        return "invalid", False
+    return "zero-argument", False
+
+
+def _flock_command_string_is_forbidden(command_text: str) -> bool:
+    if not command_text:
+        return True
+    label = "flock command string"
+    try:
+        semantic_pairs = _shell_semantic_command_pairs(command_text, label=label)
+    except ValueError:
+        return True
+    for _command_index, nested_command_text, command_tokens in semantic_pairs:
+        if _shell_c_invocation_is_forbidden(command_tokens):
+            return True
+        if _mount_command_targets_supervisor_parent(
+            command_tokens,
+            allow_reviewed_nonliteral_hidden=False,
+        ):
+            return True
+        if _command_references_supervisor(command_tokens, nested_command_text) and not _is_reviewed_supervisor_command(
+            command_tokens
+        ):
+            return True
+    return False
+
+
+def _parse_flock_command_target(
+    tokens: tuple[_ShellToken, ...],
+    *,
+    start_index: int,
+) -> _FlockCommandTarget | None:
+    index = start_index + 1
+    while index < len(tokens):
+        token = tokens[index]
+        current = token.text
+        if current == "--":
+            index += 1
+            break
+        if current in _FLOCK_ZERO_ARG_OPTIONS:
+            index += 1
+            continue
+        if current in _FLOCK_OPTIONS_WITH_ARGS:
+            if index + 1 >= len(tokens):
+                return None
+            index += 2
+            continue
+        if current.startswith("--timeout=") or current.startswith("--conflict-exit-code="):
+            index += 1
+            continue
+        option_kind, has_next_argument = _parse_flock_short_option_token(
+            current,
+            has_next_token=index + 1 < len(tokens),
+        )
+        if option_kind == "zero-argument" or option_kind == "attached-argument":
+            index += 1
+            continue
+        if option_kind == "next-argument":
+            if not has_next_argument:
+                return None
+            index += 2
+            continue
+        if option_kind != "not-short-option":
+            return None
+        break
+
+    if index >= len(tokens):
+        return None
+
+    index += 1
+    if index >= len(tokens):
+        return _FlockCommandTarget(mode="no-command")
+
+    current = tokens[index].text
+    if current == "--":
+        index += 1
+        if index >= len(tokens):
+            return None
+        return _FlockCommandTarget(mode="argv", argv_index=index)
+    if current in {"-c", "--command"}:
+        if index + 1 >= len(tokens) or index + 2 != len(tokens):
+            return None
+        return _FlockCommandTarget(
+            mode="command-string",
+            command_text=tokens[index + 1].text,
+        )
+    if current.startswith("--command="):
+        if index + 1 != len(tokens):
+            return None
+        return _FlockCommandTarget(
+            mode="command-string",
+            command_text=current.split("=", 1)[1],
+        )
+    option_kind, _has_next_argument = _parse_flock_short_option_token(
+        current,
+        has_next_token=index + 1 < len(tokens),
+    )
+    if option_kind == "command-attached":
+        if index + 1 != len(tokens):
+            return None
+        return _FlockCommandTarget(
+            mode="command-string",
+            command_text=current[2:],
+        )
+    if option_kind == "command-argument":
+        if index + 1 >= len(tokens) or index + 2 != len(tokens):
+            return None
+        return _FlockCommandTarget(
+            mode="command-string",
+            command_text=tokens[index + 1].text,
+        )
+    return _FlockCommandTarget(mode="argv", argv_index=index)
+
+
 def _unmodeled_literal_prefix_hides_nonliteral_command_surface(
     tokens: tuple[_ShellToken, ...],
     *,
@@ -724,6 +874,18 @@ def _unmodeled_literal_prefix_hides_nonliteral_command_surface(
         if _is_env_executable_token(token) or _is_busybox_executable_token(token):
             return False
         basename = _literal_token_basename(token)
+        if basename == "flock":
+            flock_target = _parse_flock_command_target(tokens, start_index=index)
+            if flock_target is None:
+                return True
+            if flock_target.mode == "command-string":
+                return _flock_command_string_is_forbidden(
+                    flock_target.command_text or ""
+                )
+            if flock_target.mode == "argv":
+                index = flock_target.argv_index or len(tokens)
+                continue
+            return False
         if basename in _WRAPPER_BASENAMES:
             next_index = _next_wrapper_command_index(tokens, start_index=index)
             if next_index is None:
@@ -1178,6 +1340,18 @@ def _command_has_forbidden_nonliteral_executable(
             index = next_index
             continue
         basename = _literal_token_basename(token)
+        if basename == "flock":
+            flock_target = _parse_flock_command_target(tokens, start_index=index)
+            if flock_target is None:
+                return True
+            if flock_target.mode == "command-string":
+                return _flock_command_string_is_forbidden(
+                    flock_target.command_text or ""
+                )
+            if flock_target.mode == "argv":
+                index = flock_target.argv_index or len(tokens)
+                continue
+            return False
         if basename in _WRAPPER_BASENAMES:
             next_index = _next_wrapper_command_index(tokens, start_index=index)
             if next_index is None:
