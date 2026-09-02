@@ -1772,103 +1772,51 @@ class TrustedGitHubGateTests(unittest.TestCase):
         )
 
     def test_external_receipt_scope_freshness_and_atomic_replay(self):
-        payload = reporter.normalized_json(review_report())
-        receipt = signed_receipt(payload)
-        now = datetime(2026, 8, 31, 3, 15, tzinfo=timezone.utc)
-        replay_path = self.replay_receipt_path(self.replay)
-        verified, envelope = trusted_review_gate._verify_signed_receipt_bytes(
-            receipt,
-            repository="laqieer/fireemblem8-expansion",
-            pull_request=SYNTHETIC_PULL_REQUEST,
-            base_sha=BASE,
-            candidate_sha=CANDIDATE,
-            trusted_key_id=KEY_ID,
-            trusted_key_epoch=KEY_EPOCH,
-            trusted_key=KEY,
-            current_time=now,
-            replay_store=self.replay,
-            consume_nonce=True,
-        )
-        self.assertEqual(verified, payload)
-        self.assertEqual(envelope["base_sha"], BASE)
-        self.assertEqual(replay_path.read_bytes(), receipt)
-        verified_again, envelope_again = trusted_review_gate._verify_signed_receipt_bytes(
-            receipt,
-            repository="laqieer/fireemblem8-expansion",
-            pull_request=SYNTHETIC_PULL_REQUEST,
-            base_sha=BASE,
-            candidate_sha=CANDIDATE,
-            trusted_key_id=KEY_ID,
-            trusted_key_epoch=KEY_EPOCH,
-            trusted_key=KEY,
-            current_time=now,
-            replay_store=self.replay,
-            consume_nonce=True,
-        )
-        self.assertEqual(verified_again, payload)
-        self.assertEqual(envelope_again, envelope)
-        preserved_payload, _ = (
-            trusted_review_gate._verify_signed_receipt_bytes(
-                receipt,
-                repository="laqieer/fireemblem8-expansion",
-                pull_request=SYNTHETIC_PULL_REQUEST,
-                base_sha=BASE,
-                candidate_sha=CANDIDATE,
-                trusted_key_id=KEY_ID,
-                trusted_key_epoch=KEY_EPOCH,
-                trusted_key=KEY,
-                current_time=now + timedelta(days=1),
-                replay_store=self.replay,
-                consume_nonce=False,
-                require_current_time=False,
-                require_preserved=True,
-            )
-        )
-        self.assertEqual(preserved_payload, payload)
-        resigned = signed_receipt(
-            payload, nonce="different-nonce-0002"
-        )
-        with self.assertRaisesRegex(
-            reporter.PilotDataError, "re-signed"
-        ):
-            trusted_review_gate._verify_signed_receipt_bytes(
-                resigned,
-                repository="laqieer/fireemblem8-expansion",
-                pull_request=SYNTHETIC_PULL_REQUEST,
-                base_sha=BASE,
-                candidate_sha=CANDIDATE,
-                trusted_key_id=KEY_ID,
-                trusted_key_epoch=KEY_EPOCH,
-                trusted_key=KEY,
-                current_time=now,
-                replay_store=self.replay,
-                consume_nonce=True,
-            )
+        payload = reporter.normalized_json(review_report()); receipt = signed_receipt(payload)
+        now = datetime(2026, 8, 31, 3, 15, tzinfo=timezone.utc); replay_path = self.replay_receipt_path(self.replay)
+        shared = {"repository": "laqieer/fireemblem8-expansion", "pull_request": SYNTHETIC_PULL_REQUEST, "base_sha": BASE, "candidate_sha": CANDIDATE, "trusted_key_id": KEY_ID, "trusted_key_epoch": KEY_EPOCH, "trusted_key": KEY, "current_time": now}
 
-        for label, overrides in (
-            ("base", {"base_sha": "f" * 40}),
-            ("head", {"candidate_sha": "f" * 40}),
-            ("epoch", {"trusted_key_epoch": 8}),
-        ):
-            arguments = {
-                "repository": "laqieer/fireemblem8-expansion",
-                "pull_request": SYNTHETIC_PULL_REQUEST,
-                "base_sha": BASE,
-                "candidate_sha": CANDIDATE,
-                "trusted_key_id": KEY_ID,
-                "trusted_key_epoch": KEY_EPOCH,
-                "trusted_key": KEY,
-                "current_time": now,
-                "replay_store": None,
-                "consume_nonce": False,
-            }
-            arguments.update(overrides)
-            with self.subTest(label=label), self.assertRaisesRegex(
-                reporter.PilotDataError, "outside trusted scope"
-            ):
-                trusted_review_gate._verify_signed_receipt_bytes(
-                    receipt, **arguments
-                )
+        def verify(blob=receipt, **overrides):
+            arguments = {**shared, "replay_store": self.replay, "consume_nonce": False, **overrides}
+            return trusted_review_gate._verify_signed_receipt_bytes(blob, **arguments)
+
+        def sized(target):
+            baseline = len(signed_receipt(b"", nonce="n" * 16)) - 16
+            for nonce_len in range(16, 129):
+                encoded = target - baseline - nonce_len
+                if encoded >= 0 and encoded % 4 == 0:
+                    candidate = signed_receipt(b"x" * (encoded // 4 * 3), nonce="n" * nonce_len)
+                    if len(candidate) == target: return candidate
+            self.fail(f"no valid receipt for {target}")
+
+        def fresh(name):
+            root = self.temporary_repo(name); self.addCleanup(shutil.rmtree, root); return root, self.replay_receipt_path(root)
+
+        verified, envelope = verify(consume_nonce=True); self.assertEqual(verified, payload); self.assertEqual(envelope["base_sha"], BASE); self.assertEqual(replay_path.read_bytes(), receipt)
+        verified_again, envelope_again = verify(consume_nonce=True); self.assertEqual((verified_again, envelope_again), (payload, envelope))
+        preserved_payload, _ = verify(current_time=now + timedelta(days=1), require_current_time=False, require_preserved=True); self.assertEqual(preserved_payload, payload)
+        with self.assertRaisesRegex(reporter.PilotDataError, "re-signed"): verify(signed_receipt(payload, nonce="different-nonce-0002"), consume_nonce=True)
+
+        for label, overrides in (("base", {"base_sha": "f" * 40}), ("head", {"candidate_sha": "f" * 40}), ("epoch", {"trusted_key_epoch": 8})):
+            with self.subTest(label=label), self.assertRaisesRegex(reporter.PilotDataError, "outside trusted scope"): verify(replay_store=None, **overrides)
+
+        limit = trusted_review_gate.MAX_AUTHENTICATED_RECEIPT_BYTES; at_limit = sized(limit); self.assertEqual(len(at_limit), limit)
+        cap_store, cap_path = fresh("receipt-cap"); verify(at_limit, replay_store=cap_store, consume_nonce=True); self.assertEqual(cap_path.read_bytes(), at_limit)
+        oversize = {limit + 1: sized(limit + 1), 1_198_104: sized(1_198_104)}
+        for size, blob in oversize.items():
+            store, path = fresh(f"receipt-oversize-{size}")
+            with self.subTest(size=size), self.assertRaisesRegex(reporter.PilotDataError, "maximum size"): verify(blob, replay_store=store, consume_nonce=True)
+            self.assertFalse(path.exists()); verify(at_limit, replay_store=store, consume_nonce=True); self.assertEqual(path.read_bytes(), at_limit)
+
+        store, path = fresh("receipt-preserved-oversize"); path.write_bytes(oversize[1_198_104]); os.chmod(path, 0o600)
+        with self.assertRaisesRegex(reporter.PilotDataError, "preserved original pre-review is unavailable"):
+            trusted_review_gate.preserved_receipt_bytes(store, repository="laqieer/fireemblem8-expansion", pull_request=SYNTHETIC_PULL_REQUEST, base_sha=BASE, original_pre_review_head=CANDIDATE, key_id=KEY_ID, key_epoch=KEY_EPOCH)
+        directory_fd = trusted_review_gate._open_replay_store_fd(store)
+        try:
+            with self.assertRaisesRegex(reporter.PilotDataError, "expected-bypass"):
+                trusted_review_gate._read_replay_receipt_bytes(directory_fd, name=path.name, scope_id=path.name.removeprefix("original-"), expected_bytes=oversize[1_198_104], allow_missing=False, allow_temp_link=False, not_found_message="missing", invalid_message="expected-bypass")
+        finally:
+            os.close(directory_fd)
 
     def test_persist_original_receipt_is_atomic_and_idempotent(self):
         payload = b"atomic-replay-receipt\n"

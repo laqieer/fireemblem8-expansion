@@ -344,6 +344,10 @@ def persist_original_receipt(
     _expect_bound_modules()
     if not isinstance(receipt_bytes, bytes):
         raise reporter.PilotDataError("receipt must be immutable bytes")
+    if len(receipt_bytes) > MAX_AUTHENTICATED_RECEIPT_BYTES:
+        raise reporter.PilotDataError(
+            "authenticated pre-review receipt exceeds maximum size"
+        )
     scope_id = _receipt_scope_id(
         repository,
         pull_request,
@@ -656,6 +660,10 @@ def _verify_signed_receipt_bytes(
     _expect_bound_modules()
     if not isinstance(receipt_bytes, bytes):
         raise reporter.PilotDataError("receipt must be immutable bytes")
+    if len(receipt_bytes) > MAX_AUTHENTICATED_RECEIPT_BYTES:
+        raise reporter.PilotDataError(
+            "authenticated pre-review receipt exceeds maximum size"
+        )
     try:
         text = receipt_bytes.decode("utf-8")
     except UnicodeDecodeError as error:
@@ -1069,10 +1077,6 @@ def _read_replay_receipt_bytes(
     invalid_message: str,
 ) -> bytes | None:
     descriptor = -1
-    maximum_size = max(
-        MAX_AUTHENTICATED_RECEIPT_BYTES,
-        0 if expected_bytes is None else len(expected_bytes),
-    )
     try:
         try:
             pre_open = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
@@ -1091,7 +1095,10 @@ def _read_replay_receipt_bytes(
             raise reporter.PilotDataError(not_found_message) from error
         except OSError as error:
             raise reporter.PilotDataError(invalid_message) from error
-        if not _same_inode(pre_open, opened) or opened.st_size > maximum_size:
+        if (
+            not _same_inode(pre_open, opened)
+            or opened.st_size > MAX_AUTHENTICATED_RECEIPT_BYTES
+        ):
             raise reporter.PilotDataError(invalid_message)
         _validate_replay_file_topology(
             directory_fd,
