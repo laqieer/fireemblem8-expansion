@@ -949,7 +949,10 @@ class BaselineFixtureTests(unittest.TestCase):
             capture_output=True,
         )
         self.assertEqual(wrong_root.returncode, 2)
-        self.assertIn(b"exact Git top level", wrong_root.stderr)
+        self.assertRegex(
+            wrong_root.stderr.decode("utf-8"),
+            r"(exact Git top level|repository \.git entry)",
+        )
 
         wrong_decisions = subprocess.run(
             [

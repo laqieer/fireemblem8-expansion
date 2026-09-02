@@ -1443,7 +1443,9 @@ game behavior needs a compensating change.
    interruption-snapshot `content_base64` bytes in coordinator telemetry,
    prior handoff history, and reporter replay rows; canonical records,
    including a zero-byte snapshot with `content_base64: ""`, pass and aliased
-   rows reject. Signature fields remain nonempty.
+   rows reject. Signature fields remain nonempty. Replace `.git/info/attributes`
+   with a FIFO and confirm both repository-root validators reject it by
+   no-follow `lstat` before any Git command can block on it.
 4. Exercise the repeated-parent/stale, wrong-parent, unrelated-branch, dirty,
    incomplete, missing-evidence, missing-trailer, out-of-scope, line-budget,
    lifetime, and RSS fixtures. Confirm script-only diffs derive zero ROM, RAM,
@@ -1511,6 +1513,8 @@ game behavior needs a compensating change.
    prove both authority reads and atomic-push preflight exit under an explicit
    wall-clock timeout, kill the whole process group, and stop after one
    bounded attempt rather than spinning retries or leaving an orphan helper.
+   Apply the same bounded timeout/process-group cleanup to trusted-parent and
+   bootstrap checker execution plus receipt re-verification.
    Then perform a real post-snapshot remote push to the delivery branch and
    confirm terminal remote reconciliation marks coverage incomplete before
    trusted push while reporter aggregation preserves the bundle rejection.
@@ -1540,7 +1544,9 @@ game behavior needs a compensating change.
    same nonce's second call. An after-sign push invalidates the decision; local
    receipt-age checking provides no eligibility. Mutating scope, graph, handoffs/successors,
    metrics, PR/ruleset data, runs, watchers, or coverage invalidates the
-   external asymmetric attestation.
+   external asymmetric attestation. Live authority planning must revalidate
+   receipt freshness at the planner's authoritative current time; `issued_at`
+   rewind remains historical replay only.
    Manually publish a second forged protected bind commit whose stored live
    base OID was signed after the base branch was rewritten behind the frozen
    base and confirm history reads, reporter verification, and live eligibility
@@ -1574,7 +1580,8 @@ game behavior needs a compensating change.
    while explicit live revalidation with the original repository root still
    enforces current authority ancestry and live Git facts. A structurally
    stale row must retain typed stale rejection state and can never self-mark
-   `accepted` or `trusted_push_eligible`.
+   `accepted` or `trusted_push_eligible`. Offline verification must take its
+   trusted signer/authority anchor from a source separate from the bundle.
 12. Run
    `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`,
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`,

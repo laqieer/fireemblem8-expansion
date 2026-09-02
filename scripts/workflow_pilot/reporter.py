@@ -10,6 +10,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -639,6 +640,42 @@ def _github_repository_from_remote(remote: str) -> str | None:
         if match is not None:
             return match.group(1)
     return None
+def _git_dir(repository_root: Path) -> Path:
+    entry = repository_root / ".git"
+    try:
+        metadata = entry.lstat()
+    except OSError as error:
+        raise PilotDataError(f"cannot inspect repository .git entry: {error}") from error
+    if stat.S_ISDIR(metadata.st_mode):
+        return entry
+    if not stat.S_ISREG(metadata.st_mode):
+        raise PilotDataError("repository .git entry is not permitted")
+    try:
+        raw = entry.read_text(encoding="utf-8")
+    except OSError as error:
+        raise PilotDataError(f"cannot read repository .git file: {error}") from error
+    prefix = "gitdir:"
+    if not raw.startswith(prefix):
+        raise PilotDataError("repository .git file is malformed")
+    git_dir = Path(raw[len(prefix):].strip())
+    if not git_dir.is_absolute():
+        git_dir = repository_root / git_dir
+    try:
+        git_dir = git_dir.resolve(strict=True)
+    except OSError as error:
+        raise PilotDataError(f"repository gitdir is unavailable: {error}") from error
+    if not git_dir.is_dir():
+        raise PilotDataError("repository gitdir is not a directory")
+    return git_dir
+def _reject_git_metadata_path(path: Path, label: str) -> None:
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        return
+    except OSError as error:
+        raise PilotDataError(f"cannot inspect repository {label}: {error}") from error
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_size:
+        raise PilotDataError(f"repository {label} is not permitted")
 
 
 def validate_repository_root(repository_root: Path) -> Path:
@@ -650,6 +687,14 @@ def validate_repository_root(repository_root: Path) -> Path:
         ) from error
     if not resolved.is_dir():
         raise PilotDataError(f"repository root {resolved} is not a directory")
+    git_dir = _git_dir(resolved)
+    for relative, label in (
+        ("info/grafts", "graft file"),
+        ("info/attributes", "local attributes file"),
+        ("objects/info/alternates", "alternate object store"),
+        ("objects/info/http-alternates", "HTTP alternate object store"),
+    ):
+        _reject_git_metadata_path(git_dir / relative, label)
     top_level = Path(
         run_git(resolved, "rev-parse", "--show-toplevel")
         .decode("utf-8")
@@ -659,28 +704,6 @@ def validate_repository_root(repository_root: Path) -> Path:
         raise PilotDataError(
             f"repository root must be the exact Git top level {top_level}"
         )
-    for relative, label in (
-        ("info/grafts", "graft file"),
-        ("info/attributes", "local attributes file"),
-        ("objects/info/alternates", "alternate object store"),
-        ("objects/info/http-alternates", "HTTP alternate object store"),
-    ):
-        raw_path = (
-            run_git(resolved, "rev-parse", "--git-path", relative)
-            .decode("utf-8")
-            .strip()
-        )
-        metadata_path = Path(raw_path)
-        if not metadata_path.is_absolute():
-            metadata_path = resolved / metadata_path
-        try:
-            has_content = metadata_path.is_file() and metadata_path.stat().st_size > 0
-        except OSError as error:
-            raise PilotDataError(
-                f"cannot inspect repository {label}: {error}"
-            ) from error
-        if has_content:
-            raise PilotDataError(f"repository {label} is not permitted")
     replace_refs = run_git(
         resolved,
         "for-each-ref",
@@ -1385,7 +1408,7 @@ def _validate_fixture_root(fixture: dict[str, Any]) -> None:
         "dependency_edges",
     )
     if schema_version == HANDOFF_FIXTURE_SCHEMA_VERSION:
-        required += ("implementation_handoffs",)
+        required += ("implementation_handoffs", "implementation_handoff_trust")
     expect_keys(
         fixture,
         "fixture",
@@ -1431,6 +1454,10 @@ def _validate_fixture_root(fixture: dict[str, Any]) -> None:
             fixture["implementation_handoffs"],
             "fixture.implementation_handoffs",
         )
+        expect_list(
+            fixture["implementation_handoff_trust"],
+            "fixture.implementation_handoff_trust",
+        )
 
 
 def validate_implementation_handoffs(
@@ -1448,12 +1475,37 @@ def validate_implementation_handoffs(
     bundles: dict[str, dict[str, Any]] = {}
     handoffs: dict[str, dict[str, Any]] = {}
     issue_timelines: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    trusted_handoffs = {}
+    for index, raw in enumerate(
+        expect_list(
+            fixture["implementation_handoff_trust"],
+            "fixture.implementation_handoff_trust",
+        )
+    ):
+        label = f"implementation_handoff_trust[{index}]"
+        trusted = expect_object(raw, label)
+        expect_keys(trusted, label, ("input_seal", "authority_digest", "signer"))
+        input_seal = trusted["input_seal"]
+        if not isinstance(input_seal, str) or SHA256_RE.fullmatch(input_seal) is None:
+            raise PilotDataError(f"{label}.input_seal must be a lowercase SHA-256")
+        if input_seal in trusted_handoffs:
+            raise PilotDataError(f"duplicate implementation handoff trust {input_seal!r}")
+        trusted_handoffs[input_seal] = {
+            "authority_digest": trusted["authority_digest"],
+            "signer": trusted["signer"],
+        }
     for index, raw in enumerate(fixture["implementation_handoffs"]):
         label = f"implementation_handoffs[{index}]"
+        input_seal = raw.get("input_seal")
+        if input_seal not in trusted_handoffs:
+            raise PilotDataError(
+                f"{label} lacks a trusted offline authority anchor"
+            )
         try:
             bundle = agent_handoff.verify_reporter_record(
                 raw,
                 revalidate_git=False,
+                trusted_authority=trusted_handoffs[input_seal],
             )
         except agent_handoff.HandoffDataError as error:
             raise PilotDataError(f"{label}: {error}") from error
@@ -1674,6 +1726,10 @@ def validate_implementation_handoffs(
                 "rejected",
             }
             previous_end = record["closed_at"]
+    if set(trusted_handoffs) != set(bundles):
+        raise PilotDataError(
+            "implementation_handoff_trust must match bundle input seals exactly"
+        )
     return {"bundles": bundles, "handoffs": handoffs}
 
 

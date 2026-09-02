@@ -145,6 +145,9 @@ HISTORY_CARRIER_MAX_BYTES = 1024 * 1024
 REMOTE_GIT_TIMEOUT_SECONDS = 30.0
 REMOTE_GIT_TIMEOUT_CODE = "remote-git-timeout"
 REMOTE_GIT_PREFLIGHT_TIMEOUT_CODE = "remote-git-preflight-timeout"
+ALLOWED_CHECK_TIMEOUT_SECONDS = 30.0
+ALLOWED_CHECK_TIMEOUT_CODE = "allowed-check-timeout"
+ALLOWED_CHECK_REVERIFY_TIMEOUT_CODE = "allowed-check-reverify-timeout"
 RSA_SHA256_DIGEST_INFO_PREFIX = bytes.fromhex(
     "3031300d060960864801650304020105000420"
 )
@@ -200,39 +203,57 @@ def _kill_transport_process_group(
         return
     with contextlib.suppress(OSError, ProcessLookupError):
         process.kill()
-def _run_bounded_git_transport(
-    repository_root: Path,
-    *arguments: str,
+def _run_bounded_process(
+    *,
+    argv: list[str] | tuple[str, ...],
+    cwd: Path,
+    env: dict[str, str],
+    stdin: bytes | None,
+    timeout_seconds: float,
     timeout_code: str,
+    label: str,
+    execute_error_label: str,
 ) -> subprocess.CompletedProcess[bytes]:
     try:
         process = subprocess.Popen(
-            reporter.git_command(repository_root, *arguments),
-            cwd=repository_root,
-            env=reporter.git_environment(offline=False),
-            stdin=subprocess.DEVNULL,
+            argv,
+            cwd=cwd,
+            env=env,
+            stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,
         )
     except OSError as error:
-        raise HandoffDataError(f"cannot execute Git: {error}") from error
+        raise HandoffDataError(f"cannot execute {execute_error_label}: {error}") from error
     try:
-        stdout, stderr = process.communicate(
-            timeout=REMOTE_GIT_TIMEOUT_SECONDS
-        )
+        stdout, stderr = process.communicate(stdin, timeout=timeout_seconds)
     except subprocess.TimeoutExpired as error:
         _kill_transport_process_group(process)
         process.communicate()
         raise HandoffDataError(
-            f"{timeout_code}: Git {' '.join(arguments)} exceeded "
-            f"{REMOTE_GIT_TIMEOUT_SECONDS:g}s"
+            f"{timeout_code}: {label} exceeded {timeout_seconds:g}s"
         ) from error
     return subprocess.CompletedProcess(
         args=process.args,
         returncode=process.returncode,
         stdout=stdout,
         stderr=stderr,
+    )
+def _run_bounded_git_transport(
+    repository_root: Path,
+    *arguments: str,
+    timeout_code: str,
+) -> subprocess.CompletedProcess[bytes]:
+    return _run_bounded_process(
+        argv=reporter.git_command(repository_root, *arguments),
+        cwd=repository_root,
+        env=reporter.git_environment(offline=False),
+        stdin=None,
+        timeout_seconds=REMOTE_GIT_TIMEOUT_SECONDS,
+        timeout_code=timeout_code,
+        label=f"Git {' '.join(arguments)}",
+        execute_error_label="Git",
     )
 def run_git_online(repository_root: Path, *arguments: str) -> bytes:
     completed = _run_bounded_git_transport(
@@ -1087,6 +1108,26 @@ def _decode_canonical_base64(
     if base64.b64encode(decoded).decode("ascii") != text:
         raise HandoffDataError(f"{label} is not canonical base64")
     return decoded
+def reporter_trusted_authority(authority: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "authority_digest": hashlib.sha256(normalized_json(authority)).hexdigest(),
+        "signer": copy.deepcopy(authority["signer"]),
+    }
+def _parse_reporter_trusted_authority(
+    raw: Any,
+    label: str,
+) -> dict[str, Any]:
+    trusted = copy.deepcopy(expect_object(raw, label))
+    expect_keys(trusted, label, ("authority_digest", "signer"))
+    if (
+        not isinstance(trusted["authority_digest"], str)
+        or reporter.SHA256_RE.fullmatch(trusted["authority_digest"]) is None
+    ):
+        raise HandoffDataError(f"{label}.authority_digest must be a SHA-256")
+    return {
+        "authority_digest": trusted["authority_digest"],
+        "signer": _parse_signer_public(trusted["signer"], f"{label}.signer"),
+    }
 def verify_external_signature(
     signer: dict[str, Any],
     payload: bytes,
@@ -1740,19 +1781,16 @@ def execute_allowed_check(
         coordinator_installation,
     )
     started_at = datetime.now(timezone.utc).replace(microsecond=0)
-    try:
-        completed = subprocess.run(
-            argv,
-            cwd=repository_root,
-            env=reporter.git_environment(offline=True),
-            check=False,
-            capture_output=True,
-            input=stdin,
-        )
-    except OSError as error:
-        raise HandoffDataError(
-            f"cannot execute allowed check {check_id!r}: {error}"
-        ) from error
+    completed = _run_bounded_process(
+        argv=argv,
+        cwd=repository_root,
+        env=reporter.git_environment(offline=True),
+        stdin=stdin,
+        timeout_seconds=ALLOWED_CHECK_TIMEOUT_SECONDS,
+        timeout_code=ALLOWED_CHECK_TIMEOUT_CODE,
+        label=f"allowed check {check_id!r}",
+        execute_error_label=f"allowed check {check_id!r}",
+    )
     completed_at = datetime.now(timezone.utc).replace(microsecond=0)
     receipt = {
         "id": receipt_id,
@@ -1910,19 +1948,16 @@ def _verify_check_receipt(
         or receipt["worktree_identity"] != worktree_identity(repository_root)
     ):
         errors.add("invalid-check-receipt")
-    try:
-        completed = subprocess.run(
-            expected_argv,
-            cwd=repository_root,
-            env=reporter.git_environment(offline=True),
-            check=False,
-            capture_output=True,
-            input=stdin,
-        )
-    except OSError as error:
-        raise HandoffDataError(
-            f"cannot verify allowed check {check['id']!r}: {error}"
-        ) from error
+    completed = _run_bounded_process(
+        argv=expected_argv,
+        cwd=repository_root,
+        env=reporter.git_environment(offline=True),
+        stdin=stdin,
+        timeout_seconds=ALLOWED_CHECK_TIMEOUT_SECONDS,
+        timeout_code=ALLOWED_CHECK_REVERIFY_TIMEOUT_CODE,
+        label=f"allowed check {check['id']!r} verification",
+        execute_error_label=f"allowed check {check['id']!r} verification",
+    )
     if (
         receipt["exit_code"] != completed.returncode
         or receipt["output_sha256"]
@@ -3169,6 +3204,7 @@ def plan_history_authority(
             copy.deepcopy(expect_object(handoff_result, "handoff result")),
             expect_string(handoff_id, "handoff_id"),
             coordinator_installation=coordinator_installation,
+            current_time=live_current_time,
         )
         if issue is not None and issue != closed["issue"]:
             raise HandoffDataError("history authority advance target issue does not match the canonical handoff issue")
@@ -3861,6 +3897,7 @@ def make_history_receipt(
     *,
     coordinator_installation: Path | None = None,
     canonical_result: dict[str, Any] | None = None,
+    current_time: datetime | None = None,
 ) -> dict[str, Any]:
     prior = validate_prior_handoffs(document["prior_handoffs"])
     source = next(
@@ -3876,9 +3913,13 @@ def make_history_receipt(
             copy.deepcopy(document),
             Path(source["allowed_worktree"]),
             coordinator_installation=coordinator_installation,
-            current_time=parse_time(
-                document["coordinator_receipt"]["issued_at"],
-                "coordinator_receipt.issued_at",
+            current_time=(
+                parse_time(
+                    document["coordinator_receipt"]["issued_at"],
+                    "coordinator_receipt.issued_at",
+                )
+                if current_time is None
+                else current_time
             ),
         )
     else:
@@ -5160,6 +5201,7 @@ def _verify_handoff_document_result(
     *,
     revalidate_git: bool,
     repository_root: Path | None = None,
+    trusted_authority: dict[str, Any] | None = None,
     current_authority: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     expect_keys(
@@ -5345,6 +5387,18 @@ def _verify_handoff_document_result(
         original_authority["signer"],
         "handoff verification original signer",
     )
+    if trusted_authority is not None:
+        trusted = _parse_reporter_trusted_authority(
+            trusted_authority,
+            "handoff reporter trusted authority",
+        )
+        if trusted["authority_digest"] != hashlib.sha256(
+            normalized_json(original_authority)
+        ).hexdigest():
+            raise HandoffDataError(
+                "handoff reporter trusted authority does not match its record"
+            )
+        original_signer = trusted["signer"]
     verify_external_signature(
         original_signer,
         coordinator_attestation_payload(document),
@@ -5503,6 +5557,9 @@ def _verify_history_event_carrier(
         result,
         revalidate_git=True,
         repository_root=repository_root,
+        trusted_authority=reporter_trusted_authority(
+            document["history_authority"]
+        ),
         current_authority=current_authority,
     )
     return make_history_receipt(
@@ -5530,15 +5587,26 @@ def reporter_record(
         "result": copy.deepcopy(result),
         "result_attestation": copy.deepcopy(result_attestation),
     }
-    verify_reporter_record(record, revalidate_git=False)
+    verify_reporter_record(
+        record,
+        revalidate_git=False,
+        trusted_authority=reporter_trusted_authority(
+            document["history_authority"]
+        ),
+    )
     return record
 def verify_reporter_record(
     raw_record: Any,
     *,
     revalidate_git: bool,
     repository_root: Path | None = None,
+    trusted_authority: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     record = copy.deepcopy(expect_object(raw_record, "handoff reporter record"))
+    if not revalidate_git and trusted_authority is None:
+        raise HandoffDataError(
+            "handoff reporter offline verification requires trusted authority"
+        )
     expect_keys(
         record,
         "handoff reporter record",
@@ -5638,6 +5706,18 @@ def verify_reporter_record(
         document["history_authority"]["signer"],
         "handoff reporter original signer",
     )
+    if trusted_authority is not None:
+        trusted = _parse_reporter_trusted_authority(
+            trusted_authority,
+            "handoff reporter trusted authority",
+        )
+        if trusted["authority_digest"] != hashlib.sha256(
+            normalized_json(document["history_authority"])
+        ).hexdigest():
+            raise HandoffDataError(
+                "handoff reporter trusted authority does not match its record"
+            )
+        original_signer = trusted["signer"]
     if (
         result_attestation["signer_key_id"] != original_signer["key_id"]
         or result_attestation["operation_nonce"] != operation["nonce"]
@@ -5662,6 +5742,7 @@ def verify_reporter_record(
         result,
         revalidate_git=revalidate_git,
         repository_root=repository_root,
+        trusted_authority=trusted_authority,
     )
     return record
 def _repository_from_origin(repository_root: Path) -> str:

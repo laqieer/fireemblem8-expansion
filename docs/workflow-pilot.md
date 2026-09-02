@@ -797,12 +797,16 @@ receipt seal. Validation re-executes that exact
 allowlisted command and compares its result. Unknown contracts or a caller
 `command` field fail schema validation; passed prose/evidence cannot rescue
 literal `false`, a nonzero safe check, or a
-stale/wrong-command/SHA/worktree receipt. The checker's exact Git argv pins
+stale/wrong-command/SHA/worktree receipt. Checker execution and receipt
+re-verification run in their own process group with a bounded timeout, so a
+stalled helper tree is killed before it can orphan. The checker's exact Git argv pins
 `core.whitespace=blank-at-eol,blank-at-eof,space-before-tab`, attributes/color/
 quoting/diff policy, `--no-ext-diff`, `--no-textconv`, and `--text` under the
 minimal Git environment. It parses raw added lines and candidate EOF bytes
 itself, so root/nested/macro/negative tracked `whitespace` attributes cannot
-override the policy; benign unrelated attributes remain valid. A nonempty
+override the policy; benign unrelated attributes remain valid. Before any Git
+command, relevant metadata paths are inspected with no-follow `lstat`; only
+absent or empty regular files are permitted. A nonempty
 local `.git/info/attributes` rejects. Repository-local
 `core.whitespace=-trailing-space`, diff drivers/textconv, aliases, hostile
 global/system files, or ambient `GIT_EXTERNAL_DIFF` therefore cannot change
@@ -1060,7 +1064,9 @@ verification checks the finalize signature, document/result seals, structural
 row facts, and bundle-global semantics without consulting the old worktree.
 When a caller supplies the original repository root for live revalidation, the
 same verifier additionally proves current authority/anchor ancestry plus the
-live Git-derived handoff facts. Neither mode restores current trusted-push
+live Git-derived handoff facts. Offline verification consumes a separate
+trusted authority anchor rather than trusting the bundle's self-declared
+signer. Neither mode restores current trusted-push
 eligibility from a stale receipt, and structurally stale rows cannot self-mark
 `accepted` or claim `trusted_push_eligible`. A hand-authored aggregate still
 rejects.

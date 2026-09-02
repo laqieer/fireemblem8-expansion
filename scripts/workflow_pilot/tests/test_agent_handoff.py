@@ -17,7 +17,7 @@ from unittest import mock
 
 from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 
-from scripts.workflow_pilot import agent_handoff, reporter
+from scripts.workflow_pilot import agent_handoff, raw_diff_check, reporter
 from scripts.workflow_pilot.tests import test_reporter
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -274,6 +274,14 @@ def validated_record(repository_root, document):
         document,
         agent_handoff.validate_document(document, repository_root),
     )
+def verify_reporter_record_offline(record):
+    return agent_handoff.verify_reporter_record(
+        record,
+        revalidate_git=False,
+        trusted_authority=agent_handoff.reporter_trusted_authority(
+            record["document"]["history_authority"]
+        ),
+    )
 def installation_root_path(repository_root):
     return COORDINATOR_INSTALLATIONS[str(repository_root)]
 def installation_manifest(repository_root):
@@ -407,6 +415,17 @@ def wait_for_pid_exit(pid_path, timeout=2.0):
             return
         time.sleep(0.05)
     raise AssertionError(f"transport child {pid_path} did not exit in time")
+def hanging_check_spec(pid_path):
+    return (
+        ["/usr/bin/python3", "-I", "-"],
+        (
+            "import pathlib,subprocess\n"
+            "child=subprocess.Popen(['/bin/sh','-c','sleep 30'])\n"
+            f"pathlib.Path({str(pid_path)!r}).write_text(str(child.pid),encoding='utf-8')\n"
+            "child.wait()\n"
+        ).encode("utf-8"),
+        {"mode": "external-bootstrap", "sha256": "a" * 64},
+    )
 def publication_attestation(
     repository_root,
     authority_object_id,
@@ -420,6 +439,7 @@ def publication_attestation(
     history_receipt=None,
     pr_observation=None,
     binding_expectation=None,
+    observed_at=None,
 ):
     if coordinator_database_id is None:
         coordinator_database_id = primary_coordinator_database_id(
@@ -429,6 +449,8 @@ def publication_attestation(
         operation = (
             "bootstrap" if authority_object_id is None else "advance"
         )
+    if observed_at is None:
+        observed_at = datetime.now(timezone.utc).replace(microsecond=0)
     record = {
         "source": "external-coordinator-service",
         "repository": "example/workflow",
@@ -456,10 +478,7 @@ def publication_attestation(
             else None
         ),
         "binding_expectation": binding_expectation,
-        "observed_at": datetime.now(timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z"),
+        "observed_at": observed_at.isoformat().replace("+00:00", "Z"),
         "coordinator_database_id": coordinator_database_id,
         "ruleset_response": ruleset_response(
             issue,
@@ -568,6 +587,7 @@ def authority_publication(
     history_receipt=None,
     pr_observation=None,
     current_base_oid=None,
+    observed_at=None,
 ):
     coordinator_database_id = (
         None
@@ -596,6 +616,7 @@ def authority_publication(
         history_carrier=history_carrier, history_receipt=history_receipt,
         pr_observation=pr_observation,
         binding_expectation=binding_expectation,
+        observed_at=observed_at,
     )
 def sign_coordinator_document(document, repository_root):
     document["coordinator_receipt"].pop("signature", None)
@@ -825,8 +846,18 @@ def plan_advance_authority(
     issue=None,
     pull_request=None,
     handoff_id="issue-178-round-1",
+    current_time=None,
 ):
-    history = agent_handoff.make_history_receipt(document, result, handoff_id)
+    if current_time is None:
+        current_time = datetime.fromisoformat(
+            document["coordinator_receipt"]["issued_at"].replace("Z", "+00:00")
+        )
+    history = agent_handoff.make_history_receipt(
+        document,
+        result,
+        handoff_id,
+        current_time=current_time,
+    )
     history_carrier = agent_handoff.make_history_carrier(
         document,
         result,
@@ -846,6 +877,7 @@ def plan_advance_authority(
         handoff_document=document,
         handoff_result=result,
         handoff_id=handoff_id,
+        current_time=current_time,
         publication_attestation=authority_publication(
             repository_root,
             current,
@@ -853,6 +885,7 @@ def plan_advance_authority(
             operation="advance",
             history_carrier=history_carrier,
             history_receipt=history,
+            observed_at=current_time,
         ),
     )
 def advance_history_authority(repository_root, *, issue=178):
@@ -1226,6 +1259,15 @@ def reporter_fixture_with_handoffs(*bundles):
         "lifecycle_as_of"
     ]
     fixture["implementation_handoffs"] = list(bundles)
+    fixture["implementation_handoff_trust"] = [
+        {
+            "input_seal": bundle["input_seal"],
+            **agent_handoff.reporter_trusted_authority(
+                bundle["document"]["history_authority"]
+            ),
+        }
+        for bundle in bundles
+    ]
     return fixture
 
 @contextmanager
@@ -2894,9 +2936,9 @@ class ExactHandoffTests(unittest.TestCase):
             set_history_authority(root, 0, None, issue=179)
             issue179 = handoff_document(root, parent, result, issue=179, handoff_id="issue-179-round-1"); issue179_report = agent_handoff.validate_document(issue179, root)
             with self.assertRaisesRegex(agent_handoff.HandoffDataError, "canonical handoff issue"):
-                agent_handoff.plan_history_authority(root, "example/workflow", 178, None, operation="advance", expected_object_id=valid["history_authority"]["object_id"], expected_sequence=valid["history_authority"]["sequence"], handoff_document=issue179, handoff_result=issue179_report, handoff_id="issue-179-round-1")
+                agent_handoff.plan_history_authority(root, "example/workflow", 178, None, operation="advance", expected_object_id=valid["history_authority"]["object_id"], expected_sequence=valid["history_authority"]["sequence"], handoff_document=issue179, handoff_result=issue179_report, handoff_id="issue-179-round-1", current_time=datetime.fromisoformat(issue179["coordinator_receipt"]["issued_at"].replace("Z", "+00:00")))
             with self.assertRaisesRegex(agent_handoff.HandoffDataError, "canonical handoff pull request"):
-                agent_handoff.plan_history_authority(root, "example/workflow", 178, 200, operation="advance", expected_object_id=valid["history_authority"]["object_id"], expected_sequence=valid["history_authority"]["sequence"], handoff_document=valid, handoff_result=valid_report, handoff_id="issue-178-round-1")
+                agent_handoff.plan_history_authority(root, "example/workflow", 178, 200, operation="advance", expected_object_id=valid["history_authority"]["object_id"], expected_sequence=valid["history_authority"]["sequence"], handoff_document=valid, handoff_result=valid_report, handoff_id="issue-178-round-1", current_time=datetime.fromisoformat(valid["coordinator_receipt"]["issued_at"].replace("Z", "+00:00")))
     def test_parent_post_merge_run_is_sha_status_and_conclusion_bound(self):
         with handoff_repository() as (root, _base, parent, result):
             wrong_sha = handoff_document(root, parent, result)
@@ -3299,6 +3341,29 @@ class ExactHandoffTests(unittest.TestCase):
                     parent_sha=result,
                     candidate_sha=failing_result,
                 )
+            local_attributes.write_text("", encoding="utf-8")
+            self.assertEqual(raw_diff_check.exact_repository_root(str(root)), root)
+            self.assertEqual(agent_handoff.validate_repository_root(root), root)
+            local_attributes.unlink()
+            os.mkfifo(local_attributes)
+            with mock.patch(
+                "scripts.workflow_pilot.raw_diff_check.run_git",
+                side_effect=AssertionError("raw diff Git must not run"),
+            ):
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "local Git attributes are not permitted",
+                ):
+                    raw_diff_check.exact_repository_root(str(root))
+            with mock.patch(
+                "scripts.workflow_pilot.reporter.run_git",
+                side_effect=AssertionError("reporter Git must not run"),
+            ):
+                with self.assertRaisesRegex(
+                    agent_handoff.HandoffDataError,
+                    "local attributes file is not permitted",
+                ):
+                    agent_handoff.validate_repository_root(root)
     def test_tracked_whitespace_attributes_cannot_disable_raw_check(self):
         cases = (
             (
@@ -4271,6 +4336,12 @@ class ExactHandoffTests(unittest.TestCase):
                     handoff_document=document,
                     handoff_result=valid_result,
                     handoff_id="issue-178-round-1",
+                    current_time=datetime.fromisoformat(
+                        document["coordinator_receipt"]["issued_at"].replace(
+                            "Z",
+                            "+00:00",
+                        )
+                    ),
                 )
     def test_signed_fields_require_canonical_base64_text(self):
         with handoff_repository() as (root, _base, parent, result):
@@ -4297,10 +4368,7 @@ class ExactHandoffTests(unittest.TestCase):
                 agent_handoff.HandoffDataError,
                 "canonical base64",
             ):
-                agent_handoff.verify_reporter_record(
-                    record,
-                    revalidate_git=False,
-                )
+                verify_reporter_record_offline(record)
             _, _, current, _, _ = protected_root_authority(root, parent, result)
             publish_bound_authority(root, current)
             bound = agent_handoff.read_history_authority(
@@ -4462,10 +4530,7 @@ class ExactHandoffTests(unittest.TestCase):
                 agent_handoff.HandoffDataError,
                 "canonical base64",
             ):
-                agent_handoff.verify_reporter_record(
-                    forged_record,
-                    revalidate_git=False,
-                )
+                verify_reporter_record_offline(forged_record)
             with self.assertRaisesRegex(
                 reporter.PilotDataError,
                 "canonical base64",
@@ -4633,6 +4698,77 @@ class ExactHandoffTests(unittest.TestCase):
             "invalid-coordinator-attestation",
             future["summary"]["rejection_codes"],
         )
+    def test_plan_history_authority_uses_live_current_time_for_receipts(self):
+        with handoff_repository() as (root, _base, parent, result):
+            fresh = handoff_document(root, parent, result)
+            fresh_report = agent_handoff.validate_document(fresh, root)
+            _current, fresh_history, fresh_plan = plan_advance_authority(
+                root,
+                fresh,
+                fresh_report,
+            )
+            self.assertEqual(
+                fresh_plan["record"]["head_seal"],
+                fresh_history["seal"],
+            )
+        with handoff_repository() as (root, _base, parent, result):
+            stale = handoff_document(root, parent, result)
+            shift_handoff_times(stale, -600)
+            refresh_coordinator_receipt(stale, root)
+            issued_at = datetime.fromisoformat(
+                stale["handoffs"][0]["states"][-1]["at"].replace("Z", "+00:00")
+            ) + timedelta(seconds=1)
+            set_coordinator_receipt_time(stale, iso_utc(issued_at))
+            resign_coordinator_receipt(stale, root)
+            accepted = agent_handoff.validate_document(
+                stale,
+                root,
+                current_time=issued_at,
+            )
+            current = agent_handoff.read_history_authority(
+                root,
+                "example/workflow",
+                178,
+                None,
+            )
+            history = agent_handoff.make_history_receipt(
+                stale,
+                accepted,
+                "issue-178-round-1",
+                current_time=issued_at,
+            )
+            publication = authority_publication(
+                root,
+                current,
+                issue=178,
+                operation="advance",
+                history_carrier=agent_handoff.make_history_carrier(
+                    stale,
+                    accepted,
+                    "issue-178-round-1",
+                ),
+                history_receipt=history,
+            )
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "result does not match canonical validation output|no closed result to seal",
+            ):
+                agent_handoff.plan_history_authority(
+                    root,
+                    "example/workflow",
+                    178,
+                    None,
+                    operation="advance",
+                    expected_object_id=current["object_id"],
+                    expected_sequence=current["sequence"],
+                    handoff_document=stale,
+                    handoff_result=accepted,
+                    handoff_id="issue-178-round-1",
+                    publication_attestation=publication,
+                    current_time=datetime.now(timezone.utc).replace(
+                        microsecond=0
+                    ),
+                )
     def test_coordinator_receipt_default_live_now_preserves_fractional_precision(self):
         with handoff_repository() as (root, _base, parent, result):
             document = handoff_document(root, parent, result)
@@ -5133,10 +5269,7 @@ class ExactHandoffTests(unittest.TestCase):
                     200,
                 )
             reporter.validate_fixture(fixture)
-            agent_handoff.verify_reporter_record(
-                bundle,
-                revalidate_git=False,
-            )
+            verify_reporter_record_offline(bundle)
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
                 "stale for authority state",
@@ -6271,6 +6404,68 @@ class ExactHandoffTests(unittest.TestCase):
                         invocations[0],
                     )
                     wait_for_pid_exit(pid_path)
+    def test_allowed_check_subprocess_timeouts_are_bounded(self):
+        with handoff_repository() as (root, _base, parent, result):
+            pid_path = root.parent / "hanging-check.pid"
+            with mock.patch.object(
+                agent_handoff,
+                "_allowed_check_execution",
+                return_value=hanging_check_spec(pid_path),
+            ), mock.patch.object(
+                agent_handoff,
+                "ALLOWED_CHECK_TIMEOUT_SECONDS",
+                0.2,
+            ):
+                with self.assertRaisesRegex(
+                    agent_handoff.HandoffDataError,
+                    "allowed-check-timeout: allowed check 'focused-module' exceeded 0.2s",
+                ):
+                    agent_handoff.execute_allowed_check(
+                        receipt_id="hanging-check",
+                        check_id="focused-module",
+                        contract="git-diff-check",
+                        repository_root=root,
+                        parent_sha=parent,
+                        candidate_sha=result,
+                    )
+            wait_for_pid_exit(pid_path)
+            verify_pid_path = root.parent / "hanging-check-verify.pid"
+            receipt = {
+                "id": "hanging-check",
+                "check_id": "focused-module",
+                "contract": "git-diff-check",
+                "argv": ["/usr/bin/python3", "-I", "-"],
+                "checker_trust": {"mode": "external-bootstrap", "sha256": "a" * 64},
+                "parent_sha": parent,
+                "candidate_sha": result,
+                "worktree_identity": agent_handoff.worktree_identity(root),
+                "started_at": "2026-01-01T00:00:00Z",
+                "completed_at": "2026-01-01T00:00:01Z",
+                "exit_code": 0,
+                "output_sha256": "0" * 64,
+            }
+            receipt["seal"] = agent_handoff.seal_check_receipt(receipt)
+            with mock.patch.object(
+                agent_handoff,
+                "_allowed_check_execution",
+                return_value=hanging_check_spec(verify_pid_path),
+            ), mock.patch.object(
+                agent_handoff,
+                "ALLOWED_CHECK_TIMEOUT_SECONDS",
+                0.2,
+            ):
+                with self.assertRaisesRegex(
+                    agent_handoff.HandoffDataError,
+                    "allowed-check-reverify-timeout: allowed check 'focused-module' verification exceeded 0.2s",
+                ):
+                    agent_handoff._verify_check_receipt(
+                        receipt,
+                        check={"id": "focused-module", "contract": "git-diff-check"},
+                        repository_root=root,
+                        parent_sha=parent,
+                        candidate_sha=result,
+                    )
+            wait_for_pid_exit(verify_pid_path)
     def test_actor_ids_and_coordinator_claims_fail_closed(self):
         with handoff_repository() as (root, _base, parent, result):
             missing = handoff_document(root, parent, result)
@@ -6536,14 +6731,8 @@ class ExactHandoffTests(unittest.TestCase):
                 result=report,
                 handoff_id=current["id"],
             )
-            agent_handoff.verify_reporter_record(
-                interrupted_record,
-                revalidate_git=False,
-            )
-            agent_handoff.verify_reporter_record(
-                replacement_record,
-                revalidate_git=False,
-            )
+            verify_reporter_record_offline(interrupted_record)
+            verify_reporter_record_offline(replacement_record)
     def test_linker_and_unclassified_inputs_require_resource_receipts(self):
         with handoff_repository() as (root, _base, _parent, result):
             linker = root / "ldscript.txt"
@@ -6686,10 +6875,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 handoff_document(root, parent, result),
             )
             fixture = reporter_fixture_with_handoffs(record)
-        agent_handoff.verify_reporter_record(
-            record,
-            revalidate_git=False,
-        )
+        verify_reporter_record_offline(record)
         offline = reporter.validate_fixture(fixture)
         self.assertEqual(
             offline["implementation_handoffs"]["issue-178-round-1"][
@@ -6705,6 +6891,39 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 record,
                 revalidate_git=True,
             )
+        forged_fixture = reporter_fixture_with_handoffs(record)
+        forged_signer = signer_public_with_key_id(
+            {
+                **copy.deepcopy(
+                    forged_fixture["implementation_handoffs"][0]["document"][
+                        "history_authority"
+                    ]["signer"]
+                ),
+                "service_identity": "self-authored-attacker",
+            }
+        )
+        forged_bundle = forged_fixture["implementation_handoffs"][0]
+        forged_bundle["document"]["history_authority"]["signer"] = forged_signer
+        forged_bundle["result_attestation"]["signer_key_id"] = forged_signer[
+            "key_id"
+        ]
+        forged_bundle["input_seal"] = hashlib.sha256(
+            agent_handoff.INPUT_SEAL_DOMAIN
+            + agent_handoff.normalized_json(forged_bundle["document"])
+        ).hexdigest()
+        forged_bundle["result"]["input_seal"] = forged_bundle["input_seal"]
+        forged_fixture["implementation_handoff_trust"][0]["input_seal"] = forged_bundle[
+            "input_seal"
+        ]
+        forged_bundle["result"]["result_seal"] = agent_handoff.seal_handoff_result(
+            forged_bundle["result"]
+        )
+        forged_bundle["result_seal"] = forged_bundle["result"]["result_seal"]
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "trusted authority does not match its record",
+        ):
+            reporter.validate_fixture(forged_fixture)
     def test_forged_signed_stale_record_cannot_claim_offline_acceptance(self):
         with handoff_repository() as (root, _base, parent, result):
             document = handoff_document(root, parent, result)
@@ -6861,14 +7080,8 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 result=second_result_report,
                 handoff_id=handoff["id"],
             )
-            agent_handoff.verify_reporter_record(
-                first_record,
-                revalidate_git=False,
-            )
-            agent_handoff.verify_reporter_record(
-                second_record,
-                revalidate_git=False,
-            )
+            verify_reporter_record_offline(first_record)
+            verify_reporter_record_offline(second_record)
             fixture = reporter_fixture_with_handoffs(
                 first_record,
                 second_record,
@@ -6961,10 +7174,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             git(remote, "update-ref", current["ref"], alternate_authority)
             git(remote, "update-ref", current["anchor_ref"], alternate_anchor)
             hook.chmod(0o700)
-            agent_handoff.verify_reporter_record(
-                first_record,
-                revalidate_git=False,
-            )
+            verify_reporter_record_offline(first_record)
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
                 "not in current protected head",
@@ -7304,10 +7514,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 honest_document,
                 honest_result,
             )
-            agent_handoff.verify_reporter_record(
-                honest_record,
-                revalidate_git=False,
-            )
+            verify_reporter_record_offline(honest_record)
         with handoff_repository() as (root, _base, parent, result):
             def make_tampered_record(*, row_mutator=None, result_mutator=None):
                 document = handoff_document(root, parent, result)
@@ -7372,9 +7579,8 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                         agent_handoff.HandoffDataError,
                         "result handoffs do not verify",
                     ):
-                        agent_handoff.verify_reporter_record(
-                            make_tampered_record(row_mutator=row_mutator),
-                            revalidate_git=False,
+                        verify_reporter_record_offline(
+                            make_tampered_record(row_mutator=row_mutator)
                         )
             for label, result_mutator in (
                 ("head", lambda result: result["git_authority"].__setitem__("head_sha", "0" * 40)),
@@ -7401,13 +7607,16 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                             agent_handoff.HandoffDataError,
                             "Git authority does not verify",
                         ):
-                            agent_handoff.verify_reporter_record(
-                                copy.deepcopy(record),
-                                revalidate_git=revalidate_git,
-                                repository_root=(
-                                    root if revalidate_git else None
-                                ),
-                            )
+                            if revalidate_git:
+                                agent_handoff.verify_reporter_record(
+                                    copy.deepcopy(record),
+                                    revalidate_git=True,
+                                    repository_root=root,
+                                )
+                            else:
+                                verify_reporter_record_offline(
+                                    copy.deepcopy(record)
+                                )
                     with self.assertRaisesRegex(
                         reporter.PilotDataError,
                         "Git authority does not verify",
@@ -7556,8 +7765,27 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
     def test_handoff_reporter_schema_rejects_unknown_or_incoherent_records(self):
         fixture = test_reporter.minimal_fixture()
         fixture["schema_version"] = reporter.HANDOFF_FIXTURE_SCHEMA_VERSION
+        fixture["implementation_handoff_trust"] = [
+            {
+                "input_seal": "0" * 64,
+                "authority_digest": "0" * 64,
+                "signer": {
+                    "algorithm": "rsa-pkcs1v15-sha256",
+                    "key_id": "8a399f822f63ec53ae2836ec34a58ba45c42cf65c12b81f6e396cb45e6a14e0b",
+                    "modulus_hex": "9cbc4efc3a06c82efb1de30cc14853b67b1c7c281cf72711c0f236364641f41c2157c4b9cf2dabe0279dbcdc06bc313090abceed54bd6ad6a2cd1a4a945e7b97a307de7cbf54ac08138d77196eed0d9f2e1d350eda2345f9140fe7eae5d0252a5205402aa72d5a1da8955cad1f31dea7ae3f6e4f47dd7f3e562e62d8f5be174fb2e016435a1d80c403147d05bbffb6355a2f76e0c9e5d7e1200fef6a4adbb13b93a14a7b7d63df84a9d9f502dc8ae9e6cf286856e339b748929a1ec318bedd3186828e7323ec9a10f211039d4abd6819dd6aff6e09470acae182d9e1ed8aed239410e1c134481050f1a63366b2d9653d17381ad5ed70c3f12a684cc8a41042df",
+                    "exponent": 65537,
+                    "service_identity": "test-external-coordinator-signer",
+                    "isolation_attestation": {
+                        "kind": "external-isolated-service",
+                        "private_key_in_implementation_namespace": False,
+                        "signing_api": "single-use-terminal-attestation",
+                    },
+                },
+            }
+        ]
         fixture["implementation_handoffs"] = [
             {
+                "input_seal": "0" * 64,
                 "id": "bad",
                 "owner_id": "owner-a",
                 "assigned_at": "2026-01-01T01:00:00Z",

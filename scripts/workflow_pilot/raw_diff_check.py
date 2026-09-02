@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -79,29 +81,46 @@ def run_git(repository_root: Path, *arguments: str) -> bytes:
             + (f": {detail}" if detail else "")
         )
     return completed.stdout
+def _git_dir(repository_root: Path) -> Path:
+        entry = repository_root / ".git"
+        metadata = entry.lstat()
+        if stat.S_ISDIR(metadata.st_mode):
+            return entry
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ValueError("repository .git entry is not permitted")
+        raw = entry.read_text(encoding="utf-8")
+        if not raw.startswith("gitdir:"):
+            raise ValueError("repository .git file is malformed")
+        git_dir = Path(raw[len("gitdir:"):].strip())
+        if not git_dir.is_absolute():
+            git_dir = repository_root / git_dir
+        git_dir = git_dir.resolve(strict=True)
+        if not git_dir.is_dir():
+            raise ValueError("repository gitdir is not a directory")
+        return git_dir
+def _reject_local_attributes(repository_root: Path) -> None:
+        attributes = _git_dir(repository_root) / "info" / "attributes"
+        try:
+            metadata = attributes.lstat()
+        except FileNotFoundError:
+            return
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size:
+            raise ValueError("local Git attributes are not permitted")
 
 
 def exact_repository_root(value: str) -> Path:
-    root = Path(value).resolve(strict=True)
-    if not root.is_dir():
-        raise ValueError("repository root is not a directory")
-    top = Path(
-        run_git(root, "rev-parse", "--show-toplevel")
-        .decode("utf-8")
-        .strip()
-    ).resolve()
-    if root != top:
-        raise ValueError(f"repository root must be exact Git top level {top}")
-    local_attributes = Path(
-        run_git(root, "rev-parse", "--git-path", "info/attributes")
-        .decode("utf-8")
-        .strip()
-    )
-    if not local_attributes.is_absolute():
-        local_attributes = root / local_attributes
-    if local_attributes.is_file() and local_attributes.stat().st_size:
-        raise ValueError("local Git attributes are not permitted")
-    return root
+        root = Path(value).resolve(strict=True)
+        if not root.is_dir():
+            raise ValueError("repository root is not a directory")
+        _reject_local_attributes(root)
+        top = Path(
+            run_git(root, "rev-parse", "--show-toplevel")
+            .decode("utf-8")
+            .strip()
+        ).resolve()
+        if root != top:
+            raise ValueError(f"repository root must be exact Git top level {top}")
+        return root
 
 
 def validate_sha(value: str, label: str) -> str:
