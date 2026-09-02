@@ -93,6 +93,9 @@ _UPLOAD_WITH = (
     ("path", "${{ runner.temp }}/patch-artifact"),
     ("retention-days", "30"),
 )
+_SUPERVISOR_PARENT_REMOUNT_OPTIONS = frozenset(
+    {"remount", "ro", "nosuid", "nodev", "noexec"}
+)
 _EXPECTED_BUILD_SHA_EXPRESSION = (
     "${{ (needs.event-classifier.result == 'success' && "
     "needs.event-classifier.outputs.expected_head) || "
@@ -940,6 +943,18 @@ _PRIVATE_STEP_ENV = (
     ("PYTHONPATH", "''"),
     ("SHELLOPTS", "''"),
 )
+
+
+def _is_supervisor_parent_readonly_remount_command(command):
+    if len(command) != 4:
+        return False
+    executable, flag, option_text, target = command
+    if executable != "/usr/bin/mount" or flag != "-o" or target != "/mnt/supervisor":
+        return False
+    options = option_text.split(",")
+    return len(options) == 5 and frozenset(options) == _SUPERVISOR_PARENT_REMOUNT_OPTIONS
+
+
 _EXPECTED_STEP_ROLES = {
     "event-identity": (
         ("setup", "Validate trusted event identities"),
@@ -1877,6 +1892,10 @@ def _parse_step(block, job_name, index):
             not in " ".join(token for command in values["run"] for token in command)
             or "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d"
             not in " ".join(token for command in values["run"] for token in command)
+            or any(
+                _is_supervisor_parent_readonly_remount_command(command)
+                for command in values["run"]
+            )
             or "< /dev/null > /dev/null 2>&1 &"
             not in " ".join(token for command in values["run"] for token in command)
             or "GITHUB_STEP_SUMMARY-"

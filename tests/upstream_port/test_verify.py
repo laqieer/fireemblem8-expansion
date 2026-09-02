@@ -1691,6 +1691,26 @@ class VerifyCliCwdTests(unittest.TestCase):
                 ),
                 (
                         "patch-release",
+                        "late-supervisor-parent-remount",
+                        "        /usr/bin/mount -t tmpfs \\\n"
+                        "          -o nosuid,mode=0755,size=4m builder-dev /dev",
+                        "        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec "
+                        "/mnt/supervisor\n"
+                        "        /usr/bin/mount -t tmpfs \\\n"
+                        "          -o nosuid,mode=0755,size=4m builder-dev /dev",
+                ),
+                (
+                        "patch-release",
+                        "reordered-supervisor-parent-remount",
+                        "        /usr/bin/mount -t tmpfs \\\n"
+                        "          -o nosuid,mode=0755,size=4m builder-dev /dev",
+                        "        /usr/bin/mount -o nodev,ro,noexec,nosuid "
+                        "/mnt/supervisor\n"
+                        "        /usr/bin/mount -t tmpfs \\\n"
+                        "          -o nosuid,mode=0755,size=4m builder-dev /dev",
+                ),
+                (
+                        "patch-release",
                         "action",
                         verify_mod._UPLOAD_USES,
                         "actions/upload-artifact@" + "0" * 40,

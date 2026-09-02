@@ -1948,86 +1948,86 @@ jobs:
           builder-tmp /tmp
         list_dev_mount_targets() {
           /usr/bin/python3 -I -S - <<'PY'
-          import json
-          import subprocess
-          import sys
+        import json
+        import subprocess
+        import sys
 
-          MAX_BYTES = 1048576
-
-
-          def fail(message):
-              print(message, file=sys.stderr)
-              raise SystemExit(125)
+        MAX_BYTES = 1048576
 
 
-          def reject_duplicates(pairs):
-              result = {}
-              for key, value in pairs:
-                  if key in result:
-                      fail("duplicate findmnt JSON key")
-                  result[key] = value
-              return result
+        def fail(message):
+            print(message, file=sys.stderr)
+            raise SystemExit(125)
 
 
-          completed = subprocess.run(
-              ["/usr/bin/findmnt", "--json", "--submounts", "--output", "TARGET", "/dev"],
-              check=False,
-              capture_output=True,
-          )
-          if completed.returncode != 0:
-              fail("findmnt failed")
-          if completed.stderr:
-              fail("findmnt wrote stderr")
-          if len(completed.stdout) > MAX_BYTES:
-              fail("findmnt JSON exceeds bounds")
-          try:
-              payload = json.loads(
-                  completed.stdout.decode("utf-8"),
-                  object_pairs_hook=reject_duplicates,
-              )
-          except (UnicodeDecodeError, json.JSONDecodeError) as error:
-              fail(f"invalid findmnt JSON: {error}")
-          if set(payload) != {"filesystems"}:
-              fail("unexpected findmnt root keys")
-          filesystems = payload["filesystems"]
-          if not isinstance(filesystems, list) or len(filesystems) != 1:
-              fail("unexpected findmnt filesystem count")
+        def reject_duplicates(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    fail("duplicate findmnt JSON key")
+                result[key] = value
+            return result
 
 
-          seen = set()
-          targets = []
+        completed = subprocess.run(
+            ["/usr/bin/findmnt", "--json", "--submounts", "--output", "TARGET", "/dev"],
+            check=False,
+            capture_output=True,
+        )
+        if completed.returncode != 0:
+            fail("findmnt failed")
+        if completed.stderr:
+            fail("findmnt wrote stderr")
+        if len(completed.stdout) > MAX_BYTES:
+            fail("findmnt JSON exceeds bounds")
+        try:
+            payload = json.loads(
+                completed.stdout.decode("utf-8"),
+                object_pairs_hook=reject_duplicates,
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            fail(f"invalid findmnt JSON: {error}")
+        if set(payload) != {"filesystems"}:
+            fail("unexpected findmnt root keys")
+        filesystems = payload["filesystems"]
+        if not isinstance(filesystems, list) or len(filesystems) != 1:
+            fail("unexpected findmnt filesystem count")
 
 
-          def visit(node):
-              if not isinstance(node, dict):
-                  fail("findmnt node is not an object")
-              extra = set(node) - {"children", "target"}
-              if extra:
-                  fail("unexpected findmnt node keys")
-              target = node.get("target")
-              if not isinstance(target, str) or not target:
-                  fail("findmnt target is invalid")
-              if "\0" in target:
-                  fail("findmnt target contains NUL")
-              if target != "/dev" and not target.startswith("/dev/"):
-                  fail("findmnt target escapes /dev")
-              if target in seen:
-                  fail("findmnt target repeats")
-              seen.add(target)
-              targets.append(target)
-              children = node.get("children", [])
-              if not isinstance(children, list):
-                  fail("findmnt children must be a list")
-              for child in children:
-                  visit(child)
+        seen = set()
+        targets = []
 
 
-          visit(filesystems[0])
-          if not targets or targets[0] != "/dev":
-              fail("findmnt root target is not /dev")
-          sys.stdout.buffer.write(
-              b"".join(target.encode("utf-8") + b"\0" for target in targets)
-          )
+        def visit(node):
+            if not isinstance(node, dict):
+                fail("findmnt node is not an object")
+            extra = set(node) - {"children", "target"}
+            if extra:
+                fail("unexpected findmnt node keys")
+            target = node.get("target")
+            if not isinstance(target, str) or not target:
+                fail("findmnt target is invalid")
+            if "\0" in target:
+                fail("findmnt target contains NUL")
+            if target != "/dev" and not target.startswith("/dev/"):
+                fail("findmnt target escapes /dev")
+            if target in seen:
+                fail("findmnt target repeats")
+            seen.add(target)
+            targets.append(target)
+            children = node.get("children", [])
+            if not isinstance(children, list):
+                fail("findmnt children must be a list")
+            for child in children:
+                visit(child)
+
+
+        visit(filesystems[0])
+        if not targets or targets[0] != "/dev":
+            fail("findmnt root target is not /dev")
+        sys.stdout.buffer.write(
+            b"".join(target.encode("utf-8") + b"\0" for target in targets)
+        )
         PY
         }
         create_supervisor_transport_file() {
@@ -2121,101 +2121,101 @@ jobs:
         /usr/bin/mount -o remount,ro,nosuid,nodev,noexec,hidepid=2 /proc
         list_writable_mount_records() {
           /usr/bin/python3 -I -S - <<'PY'
-          import json
-          import subprocess
-          import sys
+        import json
+        import subprocess
+        import sys
 
-          MAX_BYTES = 1048576
-          MAX_FILESYSTEMS = 512
-
-
-          def fail(message):
-              print(message, file=sys.stderr)
-              raise SystemExit(125)
+        MAX_BYTES = 1048576
+        MAX_FILESYSTEMS = 512
 
 
-          def reject_duplicates(pairs):
-              result = {}
-              for key, value in pairs:
-                  if key in result:
-                      fail("duplicate writable mount JSON key")
-                  result[key] = value
-              return result
+        def fail(message):
+            print(message, file=sys.stderr)
+            raise SystemExit(125)
 
 
-          def validate_text(value, *, field):
-              if not isinstance(value, str) or not value:
-                  fail(f"findmnt {field} is invalid")
-              if "\0" in value:
-                  fail(f"findmnt {field} contains NUL")
-              if any(ord(character) < 0x20 or ord(character) == 0x7F for character in value):
-                  fail(f"findmnt {field} contains control character")
-              return value
+        def reject_duplicates(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    fail("duplicate writable mount JSON key")
+                result[key] = value
+            return result
 
 
-          def validate_options(value):
-              options = validate_text(value, field="options")
-              tokens = options.split(",")
-              if not tokens or any(not token for token in tokens):
-                  fail("findmnt option tokens are invalid")
-              for token in tokens:
-                  if token.strip() != token:
-                      fail("findmnt option tokens are invalid")
-                  if any(ord(character) <= 0x20 or ord(character) == 0x7F for character in token):
-                      fail("findmnt option tokens are invalid")
-              return options
+        def validate_text(value, *, field):
+            if not isinstance(value, str) or not value:
+                fail(f"findmnt {field} is invalid")
+            if "\0" in value:
+                fail(f"findmnt {field} contains NUL")
+            if any(ord(character) < 0x20 or ord(character) == 0x7F for character in value):
+                fail(f"findmnt {field} contains control character")
+            return value
 
 
-          completed = subprocess.run(
-              ["/usr/bin/findmnt", "--json", "--list", "--uniq", "--output", "TARGET,OPTIONS", "-R", "/"],
-              check=False,
-              capture_output=True,
-          )
-          if completed.returncode != 0:
-              fail("findmnt writable mount audit failed")
-          if completed.stderr:
-              fail("findmnt writable mount audit wrote stderr")
-          if len(completed.stdout) > MAX_BYTES:
-              fail("writable mount audit JSON exceeds bounds")
-          try:
-              payload = json.loads(
-                  completed.stdout.decode("utf-8"),
-                  object_pairs_hook=reject_duplicates,
-              )
-          except (UnicodeDecodeError, json.JSONDecodeError) as error:
-              fail(f"invalid writable mount audit JSON: {error}")
-          if set(payload) != {"filesystems"}:
-              fail("unexpected writable mount audit root keys")
-          filesystems = payload["filesystems"]
-          if not isinstance(filesystems, list) or not filesystems:
-              fail("unexpected writable mount audit mount count")
-          if len(filesystems) > MAX_FILESYSTEMS:
-              fail("writable mount audit mount count exceeds bounds")
+        def validate_options(value):
+            options = validate_text(value, field="options")
+            tokens = options.split(",")
+            if not tokens or any(not token for token in tokens):
+                fail("findmnt option tokens are invalid")
+            for token in tokens:
+                if token.strip() != token:
+                    fail("findmnt option tokens are invalid")
+                if any(ord(character) <= 0x20 or ord(character) == 0x7F for character in token):
+                    fail("findmnt option tokens are invalid")
+            return options
 
-          seen = set()
-          records = []
-          for filesystem in filesystems:
-              if not isinstance(filesystem, dict):
-                  fail("writable mount audit row is not an object")
-              extra = set(filesystem) - {"options", "target"}
-              if extra:
-                  fail("unexpected writable mount audit row keys")
-              target = validate_text(filesystem.get("target"), field="target")
-              if not target.startswith("/"):
-                  fail("findmnt target is not absolute")
-              if target in seen:
-                  fail("findmnt target repeats after --uniq")
-              seen.add(target)
-              options = validate_options(filesystem.get("options"))
-              records.append((target, options))
 
-          sys.stdout.buffer.write(
-              b"".join(
-                  item.encode("utf-8") + b"\0"
-                  for target, options in records
-                  for item in (target, options)
-              )
-          )
+        completed = subprocess.run(
+            ["/usr/bin/findmnt", "--json", "--list", "--uniq", "--output", "TARGET,OPTIONS", "-R", "/"],
+            check=False,
+            capture_output=True,
+        )
+        if completed.returncode != 0:
+            fail("findmnt writable mount audit failed")
+        if completed.stderr:
+            fail("findmnt writable mount audit wrote stderr")
+        if len(completed.stdout) > MAX_BYTES:
+            fail("writable mount audit JSON exceeds bounds")
+        try:
+            payload = json.loads(
+                completed.stdout.decode("utf-8"),
+                object_pairs_hook=reject_duplicates,
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            fail(f"invalid writable mount audit JSON: {error}")
+        if set(payload) != {"filesystems"}:
+            fail("unexpected writable mount audit root keys")
+        filesystems = payload["filesystems"]
+        if not isinstance(filesystems, list) or not filesystems:
+            fail("unexpected writable mount audit mount count")
+        if len(filesystems) > MAX_FILESYSTEMS:
+            fail("writable mount audit mount count exceeds bounds")
+
+        seen = set()
+        records = []
+        for filesystem in filesystems:
+            if not isinstance(filesystem, dict):
+                fail("writable mount audit row is not an object")
+            extra = set(filesystem) - {"options", "target"}
+            if extra:
+                fail("unexpected writable mount audit row keys")
+            target = validate_text(filesystem.get("target"), field="target")
+            if not target.startswith("/"):
+                fail("findmnt target is not absolute")
+            if target in seen:
+                fail("findmnt target repeats after --uniq")
+            seen.add(target)
+            options = validate_options(filesystem.get("options"))
+            records.append((target, options))
+
+        sys.stdout.buffer.write(
+            b"".join(
+                item.encode("utf-8") + b"\0"
+                for target, options in records
+                for item in (target, options)
+            )
+        )
         PY
         }
         create_runtime_transport_file() {

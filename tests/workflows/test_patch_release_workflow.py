@@ -27,6 +27,8 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
 PATCH_RELEASE_CASE = ROOT / "docs" / "test-cases" / "patch-release.md"
 PATCH_RELEASE_OVERVIEW = ROOT / "docs" / "patch_release.md"
+PATCH_RELEASE_REGISTRY = ROOT / "docs" / "test-cases" / "registry.json"
+MERGED_MASTER_771 = "771d38c5a531f2d63b269220727b02aa820cc3d4"
 ARTIFACT_FILENAMES = (
     "README.txt",
     "fireemblem8-expansion-all-locales-all-features-aapcs.bps",
@@ -36,6 +38,9 @@ AUDITED_PATCH_TOOL_FILES = (
     "scripts/modernize/patch_release.py",
     "scripts/modernize/bps_patch.py",
     "scripts/modernize/verify_rom_header.py",
+)
+SUPERVISOR_PARENT_REMOUNT_OPTIONS = frozenset(
+    {"remount", "ro", "nosuid", "nodev", "noexec"}
 )
 
 
@@ -126,6 +131,28 @@ def named_step_run_script(workflow: str, name: str) -> str:
     )
 
 
+def _is_supervisor_parent_readonly_remount_command(command: list[str]) -> bool:
+    if len(command) != 4:
+        return False
+    executable, flag, option_text, target = command
+    if (
+        executable != "/usr/bin/mount"
+        or flag != "-o"
+        or target != "/mnt/supervisor"
+    ):
+        return False
+    options = option_text.split(",")
+    return len(options) == 5 and frozenset(options) == SUPERVISOR_PARENT_REMOUNT_OPTIONS
+
+
+def workflow_has_supervisor_parent_readonly_remount(workflow: str) -> bool:
+    return any(
+        _is_supervisor_parent_readonly_remount_command(command)
+        for step in parse_patch_release_run_commands(workflow)
+        for command in step
+    )
+
+
 def dev_mount_target_parser_source(workflow: str) -> str:
     steps = patch_release_step_blocks(workflow)
     matches = [
@@ -186,6 +213,42 @@ def writable_mount_record_parser_source(workflow: str) -> str:
     if match is None:
         raise AssertionError("publisher must embed exactly one writable mount parser")
     return textwrap.dedent(match.group("body")) + "\n"
+
+
+def raw_dev_mount_target_parser_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Build candidate in isolated namespace and stage public inputs",
+    )
+    match = re.search(
+        r"(?ms)^list_dev_mount_targets\(\) \{\n"
+        r"  /usr/bin/python3 -I -S - <<'PY'\n"
+        r"(?P<body>.*?)\n"
+        r"PY\n"
+        r"\}",
+        script,
+    )
+    if match is None:
+        raise AssertionError("publisher must expose an exact raw /dev mount parser")
+    return match.group("body") + "\n"
+
+
+def raw_writable_mount_record_parser_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Build candidate in isolated namespace and stage public inputs",
+    )
+    match = re.search(
+        r"(?ms)^list_writable_mount_records\(\) \{\n"
+        r"  /usr/bin/python3 -I -S - <<'PY'\n"
+        r"(?P<body>.*?)\n"
+        r"PY\n"
+        r"\}",
+        script,
+    )
+    if match is None:
+        raise AssertionError("publisher must expose an exact raw writable mount parser")
+    return match.group("body") + "\n"
 
 
 def writable_mount_transport_section_source(workflow: str) -> str:
@@ -311,6 +374,8 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "actions/download-artifact@" in workflow
     ):
         errors.append("complete ROM artifact transfer is possible")
+    if workflow_has_supervisor_parent_readonly_remount(workflow):
+        errors.append("supervisor parent remount differs")
     required = (
         "Verify exact candidate and stage trusted producer",
         "Install trusted isolated-build dependencies",
@@ -915,11 +980,10 @@ def run_findmnt_uniq_namespace_semantic_probe(
     )
 
 
-SUPERVISOR_PARENT_REMOUNT_PROBE_SCRIPT = """\
+EXTRACTED_SUPERVISOR_NAMESPACE_HARNESS = """\
 set -euo pipefail
-root="$1"
+section_path="$1"
 fake_cgroup="$2"
-mode="$3"
 cleanup() {
   local status=0
   if mountpoint -q /mnt/supervisor/cgroup; then
@@ -955,31 +1019,38 @@ test "$(/usr/bin/stat -c %a "$path")" = 600
 test "$(/usr/bin/stat -c %h "$path")" = 1
 /bin/rm -f -- "$path"
 test ! -e "$path"
-if [ "$mode" = remount-parent-ro ]; then
-  mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor
-fi
-echo PASS
+list_dev_mount_targets() {
+  printf '%s\\0' /dev
+}
+source "$section_path"
 cleanup
 trap - EXIT
 """
 
 
-def run_supervisor_parent_remount_probe(
+def run_extracted_supervisor_parent_probe(
     root: Path,
-    fake_cgroup: Path,
-    *,
-    include_parent_remount: bool,
+    workflow: str,
 ) -> subprocess.CompletedProcess[str]:
     root.mkdir(parents=True, exist_ok=True)
+    fake_cgroup = root / "fake-cgroup"
     fake_cgroup.mkdir(parents=True, exist_ok=True)
     for name in ("cgroup.procs", "cgroup.kill"):
         (fake_cgroup / name).write_text("", encoding="utf-8")
-    mode = "remount-parent-ro" if include_parent_remount else "keep-parent-rw"
+    section = dev_mount_transport_section_source(workflow)
+    end_marker = (
+        "/usr/bin/mount -t tmpfs \\\n"
+        "  -o nosuid,mode=0755,size=4m builder-dev /dev"
+    )
+    if end_marker not in section:
+        raise AssertionError("exact workflow probe must end at the /dev overmount")
+    section = section.replace(end_marker, "printf 'PASS\\n'\n", 1)
+    section_path = root / "section.sh"
+    section_path.write_text(section, encoding="utf-8")
     return run_rootless_mount_namespace(
-        SUPERVISOR_PARENT_REMOUNT_PROBE_SCRIPT,
-        str(root),
+        EXTRACTED_SUPERVISOR_NAMESPACE_HARNESS,
+        str(section_path),
         str(fake_cgroup),
-        mode,
     )
 
 
@@ -2141,6 +2212,24 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "candidate build failed: exit=%d",
             1,
         )
+        late_supervisor_parent_remount = self.text.replace(
+            "        /usr/bin/mount -t tmpfs \\\n"
+            "          -o nosuid,mode=0755,size=4m builder-dev /dev",
+            "        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec "
+            "/mnt/supervisor\n"
+            "        /usr/bin/mount -t tmpfs \\\n"
+            "          -o nosuid,mode=0755,size=4m builder-dev /dev",
+            1,
+        )
+        reordered_supervisor_parent_remount = self.text.replace(
+            "        /usr/bin/mount -t tmpfs \\\n"
+            "          -o nosuid,mode=0755,size=4m builder-dev /dev",
+            "        /usr/bin/mount -o nodev,ro,noexec,nosuid,remount "
+            "/mnt/supervisor\n"
+            "        /usr/bin/mount -t tmpfs \\\n"
+            "          -o nosuid,mode=0755,size=4m builder-dev /dev",
+            1,
+        )
         cleanup_stage_free_text = self.text.replace(
             "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d",
             "candidate build cleanup failed",
@@ -2417,6 +2506,11 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             ("ambient-dependency-python", ambient_dependency_python),
             ("unverified-builder-state", unverified_builder_state),
             ("launch-stage-free-text", launch_stage_free_text),
+            ("late-supervisor-parent-remount", late_supervisor_parent_remount),
+            (
+                "reordered-supervisor-parent-remount",
+                reordered_supervisor_parent_remount,
+            ),
             ("cleanup-stage-free-text", cleanup_stage_free_text),
             ("allowed-unexpected-handoff", allowed_unexpected_handoff),
             ("disabled-late-revalidation", disabled_late_revalidation),
@@ -2427,11 +2521,8 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 self.assertNotEqual(changed, self.text)
                 self.assertTrue(publisher_boundary_errors(changed))
 
-    def test_supervisor_parent_remount_after_cgroup_bind_fails_namespace_probe(self):
-        self.assertNotIn(
-            "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor",
-            self.patch_job,
-        )
+    def test_extracted_supervisor_transport_probe_fails_on_master_and_passes_current_workflow(self):
+        self.assertFalse(workflow_has_supervisor_parent_readonly_remount(self.text))
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
@@ -2440,17 +2531,26 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         ) as temporary:
             sandbox = Path(temporary)
             require_findmnt_uniq_namespace_capability(sandbox / "preflight")
-            success = run_supervisor_parent_remount_probe(
+            success = run_extracted_supervisor_parent_probe(
                 sandbox / "success",
-                sandbox / "fake-cgroup-success",
-                include_parent_remount=False,
+                self.text,
             )
             self.assertEqual(success.returncode, 0, _bounded_process_diagnostic(success))
             self.assertEqual(success.stdout.strip(), "PASS")
-            failure = run_supervisor_parent_remount_probe(
+            failed_workflow = subprocess.check_output(
+                [
+                    "git",
+                    "--no-pager",
+                    "show",
+                    f"{MERGED_MASTER_771}:.github/workflows/build.yml",
+                ],
+                cwd=ROOT,
+                text=True,
+            )
+            self.assertTrue(workflow_has_supervisor_parent_readonly_remount(failed_workflow))
+            failure = run_extracted_supervisor_parent_probe(
                 sandbox / "failure",
-                sandbox / "fake-cgroup-failure",
-                include_parent_remount=True,
+                failed_workflow,
             )
             self.assertNotEqual(failure.returncode, 0)
             self.assertIn("/mnt/supervisor", failure.stderr)
@@ -3135,6 +3235,16 @@ exit 37
             compact,
         )
 
+    def test_patch_release_docs_use_runtime_diagnostic_stage_enum(self):
+        overview = " ".join(PATCH_RELEASE_OVERVIEW.read_text(encoding="utf-8").split())
+        case = " ".join(PATCH_RELEASE_CASE.read_text(encoding="utf-8").split())
+        registry = json.loads(PATCH_RELEASE_REGISTRY.read_text(encoding="utf-8"))
+        entry = next(item for item in registry["cases"] if item["id"] == "TC-CI-PATCH-049-002")
+        expected_result = " ".join(entry["expected_result"].split())
+        for text in (overview, case, expected_result):
+            self.assertIn("launch, isolated, or cleanup", text)
+            self.assertNotIn("isolated-build", text)
+
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)
         self.assertIn("--fail", download)
@@ -3386,6 +3496,16 @@ exit 37
                             0,
                             completed.stderr,
                         )
+
+        for label, source in (
+            ("dev-mount-target-parser", raw_dev_mount_target_parser_source(self.text)),
+            (
+                "writable-mount-record-parser",
+                raw_writable_mount_record_parser_source(self.text),
+            ),
+        ):
+            with self.subTest(language="embedded-python-heredoc", parser=label):
+                ast.parse(source)
                 if "/usr/bin/python3" in command and "-c" in command:
                     python_index = command.index("/usr/bin/python3")
                     command_flag = command.index("-c", python_index)
