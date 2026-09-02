@@ -91,6 +91,9 @@ _ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
 _BUSYBOX_BASENAME = "busybox"
 _ENV_BASENAME = "env"
 _SHELL_INTERPRETER_BASENAMES = frozenset({"bash", "sh", "dash"})
+_SHELL_STRUCTURE_TOKENS = frozenset(
+    {"case", "do", "done", "elif", "else", "esac", "fi", "for", "if", "in", "{", "}"}
+)
 _ENV_ZERO_ARG_OPTIONS = frozenset({"-i", "--ignore-environment"})
 _ENV_OPTIONS_WITH_ARGS = frozenset({"-C", "--chdir", "-u", "--unset"})
 _LITERAL_RUN_HEADER_RE = re.compile(
@@ -98,6 +101,7 @@ _LITERAL_RUN_HEADER_RE = re.compile(
 )
 _NICE_OLD_STYLE_RE = re.compile(r"-[0-9+-]+")
 _NICE_SHORT_ADJUSTMENT_RE = re.compile(r"-n[0-9+-]+")
+_WRAPPER_BASENAMES = frozenset({"command", "nice", "sudo", "timeout"})
 
 
 @dataclass(frozen=True)
@@ -402,6 +406,18 @@ def validate_patch_release_parser_heredocs(script: str, *, label: str) -> None:
             ) from error
 
 
+def _strip_patch_release_parser_heredoc_bodies(script: str) -> str:
+    return _PATCH_RELEASE_PARSER_HEREDOC_RE.sub(
+        lambda match: (
+            f"{match.group('name')}() {{\n"
+            f"{PATCH_RELEASE_PARSER_HEREDOC_INTRODUCER}\n"
+            "PY\n"
+            "}\n"
+        ),
+        script,
+    )
+
+
 def _raw_token_has_glob_bracket(text: str, *, start_index: int) -> bool:
     quote: str | None = None
     index = start_index + 1
@@ -594,6 +610,38 @@ def _strip_command_prefixes(command: tuple[_ShellToken, ...]) -> tuple[_ShellTok
     return tuple(tokens)
 
 
+def _is_case_pattern_token(token: _ShellToken) -> bool:
+    if not token.text.endswith(")"):
+        return False
+    prefix = token.text[:-1]
+    return (
+        token.text == "*)"
+        or prefix.startswith("/")
+        or prefix.startswith("*")
+        or "|" in prefix
+        or " " in prefix
+    )
+
+
+def _semantic_surface_tokens(command: tuple[_ShellToken, ...]) -> tuple[_ShellToken, ...]:
+    tokens = _strip_command_prefixes(command)
+    if not tokens:
+        return ()
+    if len(tokens) >= 2 and tokens[0].text.endswith("()") and tokens[1].text == "{":
+        return ()
+    if tokens[0].text in _SHELL_STRUCTURE_TOKENS:
+        return ()
+    if tokens[0].text == ")" or tokens[0].text.endswith("))"):
+        return ()
+    if _is_case_pattern_token(tokens[0]):
+        tokens = tokens[1:]
+        if not tokens:
+            return ()
+    if tokens[0].text in _SHELL_STRUCTURE_TOKENS:
+        return ()
+    return tokens
+
+
 def _reject_env_split_string_option(token: str) -> bool:
     if token == "--split-string" or token.startswith("--split-string="):
         return True
@@ -625,6 +673,53 @@ def _parse_env_short_option_token(token: str, *, has_next_token: bool) -> tuple[
     return False, False
 
 
+def _parse_env_execution_segment(
+    tokens: tuple[_ShellToken, ...],
+    *,
+    start_index: int,
+) -> tuple[int | None, bool]:
+    index = start_index
+    while index < len(tokens):
+        current_token = tokens[index]
+        current = current_token.text
+        if current == "--":
+            index += 1
+            break
+        if _ASSIGNMENT_RE.fullmatch(current):
+            index += 1
+            continue
+        if _token_has_shell_syntax(current_token):
+            return None, True
+        if current in _ENV_ZERO_ARG_OPTIONS:
+            index += 1
+            continue
+        if _reject_env_split_string_option(current):
+            return None, True
+        if current in _ENV_OPTIONS_WITH_ARGS:
+            if index + 1 >= len(tokens):
+                return None, True
+            index += 2
+            continue
+        if current.startswith("--chdir=") or current.startswith("--unset="):
+            index += 1
+            continue
+        if current.startswith("--"):
+            return None, True
+        ambiguous, consumes_arg = _parse_env_short_option_token(
+            current,
+            has_next_token=index + 1 < len(tokens),
+        )
+        if ambiguous:
+            return None, True
+        if consumes_arg:
+            index += 2
+            continue
+        if current.startswith("-"):
+            return None, True
+        return index, False
+    return None, False
+
+
 def _next_timeout_command_index(
     tokens: tuple[_ShellToken, ...],
     *,
@@ -646,6 +741,11 @@ def _next_timeout_command_index(
             if index + 1 >= len(tokens):
                 return None
             index += 2
+            continue
+        if (current.startswith("-k") and current != "-k") or (
+            current.startswith("-s") and current != "-s"
+        ):
+            index += 1
             continue
         if current.startswith("--kill-after=") or current.startswith("--signal="):
             index += 1
@@ -795,115 +895,94 @@ def _next_wrapper_command_index(
     return None
 
 
-def _executable_slot_indices(tokens: tuple[_ShellToken, ...]) -> tuple[int, ...]:
-    if not tokens:
-        return ()
-
-    slots: list[int] = []
-    seen: set[int] = set()
-    index = 0
-
-    while index < len(tokens) and index not in seen:
-        slots.append(index)
-        seen.add(index)
-        next_index = _next_wrapper_command_index(tokens, start_index=index)
-        if next_index is None:
-            break
-        index = next_index
-
-    return tuple(slots)
-
-
-def _env_wrapper_followed_by_ambiguous_surface(
+def _command_has_forbidden_nonliteral_executable(
     tokens: tuple[_ShellToken, ...],
-    *,
-    start_index: int,
 ) -> bool:
-    index = start_index
+    index = 0
     while index < len(tokens):
-        current_token = tokens[index]
-        current = current_token.text
-        if current == "--":
-            return False
-        if _ASSIGNMENT_RE.fullmatch(current):
-            index += 1
-            continue
-        if _token_has_shell_syntax(current_token):
+        token = tokens[index]
+        if _token_has_shell_syntax(token):
             return True
-        if current in _ENV_ZERO_ARG_OPTIONS:
-            index += 1
-            continue
-        if _reject_env_split_string_option(current):
-            return True
-        if current in _ENV_OPTIONS_WITH_ARGS:
+        if _is_busybox_executable_token(token):
             if index + 1 >= len(tokens):
                 return True
-            index += 2
+            applet = tokens[index + 1]
+            if _token_has_shell_syntax(applet):
+                return True
+            if _is_env_executable_token(applet):
+                next_index, suspicious = _parse_env_execution_segment(
+                    tokens,
+                    start_index=index + 2,
+                )
+                if suspicious:
+                    return True
+                if next_index is None:
+                    return False
+                index = next_index
+                continue
+            return False
+        if _is_env_executable_token(token):
+            next_index, suspicious = _parse_env_execution_segment(
+                tokens,
+                start_index=index + 1,
+            )
+            if suspicious:
+                return True
+            if next_index is None:
+                return False
+            index = next_index
             continue
-        if current.startswith("--chdir=") or current.startswith("--unset="):
-            index += 1
+        basename = _literal_token_basename(token)
+        if basename in _WRAPPER_BASENAMES:
+            next_index = _next_wrapper_command_index(tokens, start_index=index)
+            if next_index is None:
+                return True
+            index = next_index
             continue
-        if current.startswith("--"):
-            return True
-        ambiguous, consumes_arg = _parse_env_short_option_token(
-            current,
-            has_next_token=index + 1 < len(tokens),
-        )
-        if ambiguous:
-            return True
-        if consumes_arg:
-            index += 2
-            continue
-        if current.startswith("-"):
-            return True
         return False
     return False
 
 
 def _command_has_ambiguous_env_shell_surface(tokens: tuple[_ShellToken, ...]) -> bool:
-    for index in _executable_slot_indices(tokens):
-        token = tokens[index]
+    for index, token in enumerate(tokens):
         if _is_env_executable_token(token):
-            if _env_wrapper_followed_by_ambiguous_surface(
+            _next_index, suspicious = _parse_env_execution_segment(
                 tokens,
                 start_index=index + 1,
-            ):
+            )
+            if suspicious:
                 return True
             continue
-        if _is_busybox_executable_token(token):
-            if index + 1 >= len(tokens):
-                continue
-            applet = tokens[index + 1]
-            if _token_has_shell_syntax(applet):
-                if _env_wrapper_followed_by_ambiguous_surface(
-                    tokens,
-                    start_index=index + 2,
-                ):
-                    return True
-                continue
-            if _is_env_executable_token(applet) and _env_wrapper_followed_by_ambiguous_surface(
-                tokens,
-                start_index=index + 2,
-            ):
-                return True
+        if not _is_busybox_executable_token(token):
             continue
-        if _token_has_shell_syntax(token):
-            if _env_wrapper_followed_by_ambiguous_surface(
-                tokens,
-                start_index=index + 1,
-            ):
-                return True
-            if index + 1 >= len(tokens):
-                continue
-            applet = tokens[index + 1]
-            if (
-                _token_has_shell_syntax(applet) or _is_env_executable_token(applet)
-            ) and _env_wrapper_followed_by_ambiguous_surface(
-                tokens,
-                start_index=index + 2,
-            ):
-                return True
+        if index + 1 >= len(tokens):
+            continue
+        applet = tokens[index + 1]
+        if not (_token_has_shell_syntax(applet) or _is_env_executable_token(applet)):
+            continue
+        _next_index, suspicious = _parse_env_execution_segment(
+            tokens,
+            start_index=index + 2,
+        )
+        if suspicious:
+            return True
     return False
+
+
+def _shell_semantic_command_pairs(
+    script: str,
+    *,
+    label: str,
+) -> tuple[tuple[int, str, tuple[_ShellToken, ...]], ...]:
+    pairs = []
+    semantic_script = _strip_patch_release_parser_heredoc_bodies(script)
+    for command_index, command_text in enumerate(
+        split_bash_simple_command_strings(semantic_script, label=label)
+    ):
+        tokens = _semantic_surface_tokens(_parse_shell_tokens(command_text, label=label))
+        if tokens:
+            pairs.append((command_index, command_text, tokens))
+    return tuple(pairs)
 
 
 def _shell_c_invocation_is_forbidden(command: tuple[_ShellToken, ...]) -> bool:
@@ -911,10 +990,15 @@ def _shell_c_invocation_is_forbidden(command: tuple[_ShellToken, ...]) -> bool:
     if not tokens:
         return False
 
+    if _command_has_forbidden_nonliteral_executable(tokens):
+        return True
+
     if _command_has_ambiguous_env_shell_surface(tokens):
         return True
 
     for index, token in enumerate(tokens):
+        token = tokens[index]
+
         if token.text == "-c":
             payload_index = index + 1
         elif (
@@ -1163,17 +1247,15 @@ def has_forbidden_supervisor_parent_readonly_mount(
     *,
     label: str,
 ) -> bool:
-    allowed_hidden_indices = _authorized_hidden_readonly_mount_indices(
-        script,
-        label=label,
-    )
-    for command_index, command_text in enumerate(
-        split_bash_simple_command_strings(script, label=label)
-    ):
-        try:
-            command_tokens = _parse_shell_tokens(command_text, label=label)
-        except ValueError:
-            return True
+    try:
+        semantic_pairs = _shell_semantic_command_pairs(script, label=label)
+        allowed_hidden_indices = _authorized_hidden_readonly_mount_indices(
+            script,
+            label=label,
+        )
+    except ValueError:
+        return True
+    for command_index, command_text, command_tokens in semantic_pairs:
         if _shell_c_invocation_is_forbidden(command_tokens):
             return True
         if _mount_command_targets_supervisor_parent(

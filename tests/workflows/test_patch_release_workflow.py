@@ -3767,6 +3767,105 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     )
                 )
 
+    def test_exact_reviewer_timeout_env_split_string_repros_execute_and_detector_rejects_them(
+        self,
+    ):
+        prefix = (
+            'ROOT=/mnt\n'
+            'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+        )
+        cases = (
+            (
+                "timeout-attached-kill-wrapper",
+                'cmd="printf RUNTIME_TIMEOUT_ATTACHED_KILL"\n'
+                'timeout -k1 5 /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+                "RUNTIME_TIMEOUT_ATTACHED_KILL",
+                prefix + 'timeout -k1 5 /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            ),
+            (
+                "variable-timeout-wrapper",
+                'cmd="printf RUNTIME_TIMEOUT_VARIABLE"\n'
+                'wrapper=/usr/bin/timeout\n'
+                '"$wrapper" 5 /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+                "RUNTIME_TIMEOUT_VARIABLE",
+                prefix
+                + 'wrapper=/usr/bin/timeout\n'
+                + '"$wrapper" 5 /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            ),
+            (
+                "globbed-timeout-wrapper",
+                'cmd="printf RUNTIME_TIMEOUT_GLOBBED"\n'
+                '/usr/bin/timeou? 5 /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+                "RUNTIME_TIMEOUT_GLOBBED",
+                prefix + '/usr/bin/timeou? 5 /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            ),
+        )
+
+        for label, runtime_script, expected_stdout, semantic_script in cases:
+            with self.subTest(case=label):
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "--noprofile",
+                        "--norc",
+                        "-eu",
+                        "-o",
+                        "pipefail",
+                        "-c",
+                        runtime_script,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, expected_stdout)
+                self.assertEqual(completed.stderr, "")
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        semantic_script,
+                        label=label,
+                    )
+                )
+
+    def test_timeout_env_split_string_wrapper_variants_fail_closed(self):
+        prefix = (
+            'ROOT=/mnt\n'
+            'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+        )
+        rejected = {
+            "timeout-attached-signal-wrapper": 'timeout -sTERM 5 /bin/env --split-string "/bin/bash -c \\"$cmd\\""\n',
+            "timeout-long-option-wrapper": (
+                "timeout --foreground --preserve-status --kill-after=1 "
+                '--signal=TERM 5 command -- /bin/env \'--split-string=/bin/bash -c "$cmd"\'\n'
+            ),
+            "nested-timeout-command-env-wrapper": (
+                'nice -n 5 timeout --foreground 5 command -- /bin/env -S "/bin/bash -c \\"$cmd\\""\n'
+            ),
+            "timeout-unknown-option-wrapper": 'timeout --bogus 5 /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            "nice-unknown-option-wrapper": 'nice --bogus /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            "sudo-unknown-option-wrapper": 'sudo --bogus /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            "command-unknown-option-wrapper": 'command --bogus /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            "variable-nice-wrapper": 'wrapper=/usr/bin/nice\n"$wrapper" -n 5 /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            "globbed-nice-wrapper": '/usr/bin/ni?e -n 5 /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            "variable-sudo-wrapper": 'wrapper=/usr/bin/sudo\n"$wrapper" -u root /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            "globbed-sudo-wrapper": '/usr/bin/sud? -u root /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            "variable-command-wrapper": 'wrapper=command\n"$wrapper" -- /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            "globbed-command-wrapper": 'comman? -- /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+        }
+
+        self.assertFalse(workflow_has_supervisor_parent_readonly_remount(self.text))
+
+        for label, command in rejected.items():
+            with self.subTest(case=label):
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        prefix + command,
+                        label=label,
+                    )
+                )
+
     def test_unquoted_glob_brace_and_tilde_shell_surfaces_fail_closed_while_quoted_literals_stay_distinct(
         self,
     ):
