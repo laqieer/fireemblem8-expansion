@@ -98,8 +98,36 @@ _UPLOAD_WITH = (
 _SUPERVISOR_PARENT_REMOUNT_OPTIONS = frozenset(
     {"remount", "ro", "nosuid", "nodev", "noexec"}
 )
+_APPROVED_NONLITERAL_READONLY_MOUNT_COMMANDS = {
+    ("/usr/bin/mount", "-o", "remount,ro,nosuid,nodev,noexec", "$hidden"),
+}
+_APPROVED_SUPERVISOR_COMMAND_TOKENS = {
+    ("/usr/bin/mkdir", "-m", "0700", "/mnt/supervisor"),
+    (
+        "/usr/bin/mount",
+        "-t",
+        "tmpfs",
+        "-o",
+        "nosuid,nodev,noexec,mode=0700,size=1m",
+        "builder-supervisor",
+        "/mnt/supervisor",
+    ),
+    ("/usr/bin/mkdir", "-m", "0700", "/mnt/supervisor/cgroup"),
+    ("/usr/bin/mount", "--bind", "$cgroup_path", "/mnt/supervisor/cgroup"),
+    (
+        "/usr/bin/mount",
+        "-o",
+        "remount,bind,ro,nosuid,nodev,noexec",
+        "/mnt/supervisor/cgroup",
+    ),
+    ('test', '$(/usr/bin/stat -c %u /mnt/supervisor)', '=', '0'),
+    ('test', '$(/usr/bin/stat -c %a /mnt/supervisor)', '=', '700'),
+    ('supervisor_cgroup=/mnt/supervisor/cgroup',),
+}
 _SIMPLE_COMMAND_PREFIXES = frozenset({"if", "then", "do", "elif", "while", "until", "!"})
 _CONTROL_OPERATORS = frozenset({";", "&&", "||", "|", "&"})
+_DISALLOWED_MOUNT_WRAPPERS = frozenset({"env", "command", "eval"})
+_ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
 _PATCH_RELEASE_PARSER_HEREDOC_NAMES = (
     "list_dev_mount_targets",
     "list_writable_mount_records",
@@ -958,77 +986,60 @@ def _is_supervisor_parent_readonly_remount_command(command):
     tokens = list(command)
     while tokens and tokens[0] in _SIMPLE_COMMAND_PREFIXES:
         tokens.pop(0)
-    while tokens and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", tokens[0]):
+    while tokens and _ASSIGNMENT_RE.fullmatch(tokens[0]):
         tokens.pop(0)
     if not tokens:
         return False
-    if tokens[0] != "/usr/bin/mount":
-        return "/usr/bin/mount" in tokens[1:]
-
-    read_only = False
-    remount = False
+    executable = tokens[0]
+    executable_literal = executable == "/usr/bin/mount"
     read_only_like = False
     remount_like = False
+    options_nonliteral = False
     positionals = []
     index = 1
+    unknown_flag = False
     while index < len(tokens):
         token = tokens[index]
         if token in {"-r", "--read-only"}:
-            read_only = True
             read_only_like = True
             index += 1
             continue
         if token in {"-o", "--options"}:
             if index + 1 >= len(tokens):
-                return remount_like or read_only_like
-            option_text = tokens[index + 1]
-            if any(marker in option_text for marker in ("$", "`", "$(", "${")):
                 return True
+            option_text = tokens[index + 1]
+            if _token_has_shell_syntax(option_text):
+                options_nonliteral = True
             for option in option_text.split(","):
-                cleaned = option.strip()
-                normalized = cleaned.replace("\\", "")
+                normalized = option.strip().replace("\\", "")
                 if normalized.startswith("remount"):
                     remount_like = True
-                if cleaned == "remount":
-                    remount = True
                 if normalized == "ro":
                     read_only_like = True
-                if cleaned == "ro":
-                    read_only = True
             index += 2
             continue
         if token.startswith("--options="):
             option_text = token.split("=", 1)[1]
-            if any(marker in option_text for marker in ("$", "`", "$(", "${")):
-                return True
+            if _token_has_shell_syntax(option_text):
+                options_nonliteral = True
             for option in option_text.split(","):
-                cleaned = option.strip()
-                normalized = cleaned.replace("\\", "")
+                normalized = option.strip().replace("\\", "")
                 if normalized.startswith("remount"):
                     remount_like = True
-                if cleaned == "remount":
-                    remount = True
                 if normalized == "ro":
                     read_only_like = True
-                if cleaned == "ro":
-                    read_only = True
             index += 1
             continue
         if token.startswith("-o") and token != "-o":
             option_text = token[2:]
-            if any(marker in option_text for marker in ("$", "`", "$(", "${")):
-                return True
+            if _token_has_shell_syntax(option_text):
+                options_nonliteral = True
             for option in option_text.split(","):
-                cleaned = option.strip()
-                normalized = cleaned.replace("\\", "")
+                normalized = option.strip().replace("\\", "")
                 if normalized.startswith("remount"):
                     remount_like = True
-                if cleaned == "remount":
-                    remount = True
                 if normalized == "ro":
                     read_only_like = True
-                if cleaned == "ro":
-                    read_only = True
             index += 1
             continue
         if token in {
@@ -1047,33 +1058,41 @@ def _is_supervisor_parent_readonly_remount_command(command):
             continue
         if token in {"-t", "--types"}:
             if index + 1 >= len(tokens):
-                return remount_like or read_only_like
+                return True
             index += 2
             continue
         if token == "--":
             positionals.extend(tokens[index + 1 :])
             break
         if token.startswith("-"):
-            return remount or read_only
+            unknown_flag = True
+            index += 1
+            continue
         positionals.append(token)
         index += 1
 
-    target = None
-    if positionals:
-        final = positionals[-1]
-        if (
-            final.startswith("/")
-            and not any(marker in final for marker in ("$", "`", "$(", "${"))
-        ):
-            target = posixpath.normpath(final)
-    if target == "/mnt/supervisor":
-        if remount_like and read_only_like:
-            return True
-        if (remount_like or read_only_like) and len(positionals) != 1:
-            return True
+    if not (remount_like and read_only_like):
         return False
-    if target is None and (remount_like or read_only_like):
-        return not positionals or any("supervisor" in token.lower() for token in positionals)
+
+    if tuple(tokens) in _APPROVED_NONLITERAL_READONLY_MOUNT_COMMANDS:
+        return False
+
+    if executable in _DISALLOWED_MOUNT_WRAPPERS:
+        return True
+    if not executable_literal:
+        return True
+    if options_nonliteral or unknown_flag:
+        return True
+    if not positionals:
+        return True
+
+    target = _canonical_literal_path(positionals[-1])
+    if target == "/mnt/supervisor":
+        return True
+    if target is None:
+        return True
+    if len(positionals) != 1:
+        return True
     return False
 
 
@@ -1686,7 +1705,8 @@ def _bash_line_state(line, state):
             elif character == "\\":
                 if index == len(line) - 1:
                     return state, True
-                index += 1
+                index += 2
+                continue
         elif state == "single":
             if character == "'":
                 state = "normal"
@@ -1697,7 +1717,8 @@ def _bash_line_state(line, state):
                 if index == len(line) - 1:
                     return state, True
                 if line[index + 1] in '$`"\\':
-                    index += 1
+                    index += 2
+                    continue
         index += 1
     return state, False
 
@@ -1782,6 +1803,86 @@ def _split_bash_simple_command_strings(script, step_label):
         if command:
             commands.append(command)
     return tuple(commands)
+
+
+def _canonical_literal_path(token):
+    if (
+        not token
+        or not token.startswith("/")
+        or any(marker in token for marker in ("$", "`", "$(", "${", "<(", ">("))
+    ):
+        return None
+    return posixpath.normpath(token)
+
+
+def _token_has_shell_syntax(token):
+    return any(marker in token for marker in ("$", "`", "$(", "${", "<(", ">("))
+
+
+def _command_references_supervisor(tokens, command_text):
+    if "/mnt/supervisor" in command_text:
+        return True
+    for token in tokens:
+        path = _canonical_literal_path(token)
+        if path == "/mnt/supervisor" or (
+            path is not None and path.startswith("/mnt/supervisor/")
+        ):
+            return True
+        if token.startswith("path=$(/usr/bin/mktemp /mnt/supervisor/"):
+            return True
+    return False
+
+
+def _is_reviewed_supervisor_command(tokens):
+    token_tuple = tuple(tokens)
+    return token_tuple in _APPROVED_SUPERVISOR_COMMAND_TOKENS or (
+        len(tokens) == 1
+        and tokens[0].startswith("path=$(/usr/bin/mktemp /mnt/supervisor/")
+    )
+
+
+def _command_has_remount_readonly_text(command_text):
+    return "remount" in command_text and (
+        ",ro" in command_text
+        or "--read-only" in command_text
+        or re.search(r"(^|[ \t])-r($|[ \t])", command_text) is not None
+    )
+
+
+def _canonical_literal_path(token):
+    if (
+        not token
+        or not token.startswith("/")
+        or any(marker in token for marker in ("$", "`", "$(", "${", "<(", ">("))
+    ):
+        return None
+    return posixpath.normpath(token)
+
+
+def _token_has_shell_syntax(token):
+    return any(marker in token for marker in ("$", "`", "$(", "${", "<(", ">("))
+
+
+def _command_references_supervisor(tokens, command_text):
+    if "/mnt/supervisor" in command_text:
+        return True
+    for token in tokens:
+        path = _canonical_literal_path(token)
+        if path == "/mnt/supervisor" or (
+            path is not None and path.startswith("/mnt/supervisor/")
+        ):
+            return True
+        if token.startswith("path=$(/usr/bin/mktemp /mnt/supervisor/"):
+            return True
+    return False
+
+
+def _is_reviewed_supervisor_command(tokens):
+    token_tuple = tuple(tokens)
+    return token_tuple in _APPROVED_SUPERVISOR_COMMAND_TOKENS or (
+        len(tokens) == 1
+        and tokens[0].startswith("path=$(/usr/bin/mktemp /mnt/supervisor/")
+    )
 
 
 def _parse_bash_run_script_commands(script, step_label):
@@ -2206,8 +2307,21 @@ def _parse_step(block, job_name, index):
                 builder_shell,
                 step_label,
             ):
-                if _is_supervisor_parent_readonly_remount_command(
-                    tuple(shlex.split(command_text))
+                command_tokens = tuple(shlex.split(command_text))
+                if _is_supervisor_parent_readonly_remount_command(command_tokens):
+                    raise ValueError(f"{step_label} isolated candidate build differs")
+                if _command_references_supervisor(command_tokens, command_text) and not _is_reviewed_supervisor_command(
+                    command_tokens
+                ):
+                    raise ValueError(f"{step_label} isolated candidate build differs")
+                if (
+                    _command_has_remount_readonly_text(command_text)
+                    and command_tokens not in _APPROVED_NONLITERAL_READONLY_MOUNT_COMMANDS
+                    and (
+                        (command_tokens and command_tokens[0] in _DISALLOWED_MOUNT_WRAPPERS)
+                        or any(_token_has_shell_syntax(token) for token in command_tokens)
+                        or any("/usr/bin/mount" in token for token in command_tokens[1:])
+                    )
                 ):
                     raise ValueError(f"{step_label} isolated candidate build differs")
         if index == 4 and (
