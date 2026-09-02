@@ -4162,6 +4162,27 @@ def _parse_reporter_result_handoffs(raw_handoffs: Any) -> list[dict[str, Any]]:
         parsed.append(handoff)
     expect_unique(handoff_ids, "handoff reporter result handoff IDs")
     return parsed
+def _offline_structural_reporter_rejection_codes(
+    reported_handoff: dict[str, Any],
+) -> set[str]:
+    codes = set()
+    if reported_handoff["stale_response"]:
+        codes.add("stale-result")
+    return codes
+def _offline_structural_reporter_outcome(
+    document_handoff: dict[str, Any],
+    reported_handoff: dict[str, Any],
+) -> str:
+    if document_handoff["interruption"] is not None:
+        return "interrupted"
+    if document_handoff["_state_names"] in IN_PROGRESS_STATE_PREFIXES:
+        return "in_progress"
+    if (
+        reported_handoff["rejection_codes"]
+        or _offline_structural_reporter_rejection_codes(reported_handoff)
+    ):
+        return "rejected"
+    return "accepted"
 def _sealed_handoff_events(authority: dict[str, Any]) -> dict[str, dict[str, Any]]:
     events = {event["handoff_id"]: event for event in authority["history_events"]}
     if authority["event"]["kind"] == "handoff":
@@ -4710,6 +4731,20 @@ def derive_reporter_result_summary(
         document,
         document_handoffs,
     )
+    document_handoffs_by_id = {
+        handoff["id"]: handoff for handoff in document_handoffs
+    }
+    structural_row_rejections = {
+        handoff["id"]: _offline_structural_reporter_rejection_codes(handoff)
+        for handoff in reported_handoffs
+    }
+    canonical_row_outcomes = {
+        handoff["id"]: _offline_structural_reporter_outcome(
+            document_handoffs_by_id[handoff["id"]],
+            handoff,
+        )
+        for handoff in reported_handoffs
+    }
     watcher_results = []
     watcher_counts = Counter(watcher["run_id"] for watcher in watchers)
     if any(count > 1 for count in watcher_counts.values()):
@@ -4752,11 +4787,18 @@ def derive_reporter_result_summary(
         elif run["conclusion"] != "success":
             global_rejections.add("authoritative-run-failed")
     local_rejections = {
-        code for handoff in reported_handoffs for code in handoff["rejection_codes"]
+        code
+        for handoff in reported_handoffs
+        for code in (
+            set(handoff["rejection_codes"])
+            | structural_row_rejections[handoff["id"]]
+        )
     }
     rejection_codes = sorted(local_rejections | global_rejections)
     completed = [
-        handoff for handoff in reported_handoffs if handoff["outcome"] == "accepted"
+        handoff
+        for handoff in reported_handoffs
+        if canonical_row_outcomes[handoff["id"]] == "accepted"
     ]
     trusted_push_eligible = (
         len(completed) == len(reported_handoffs) == 1
@@ -4777,10 +4819,12 @@ def derive_reporter_result_summary(
         "delivery_eligible": delivery_eligible,
         "accepted_handoffs": len(completed),
         "rejected_handoffs": sum(
-            handoff["outcome"] == "rejected" for handoff in reported_handoffs
+            canonical_row_outcomes[handoff["id"]] == "rejected"
+            for handoff in reported_handoffs
         ),
         "interrupted_handoffs": sum(
-            handoff["outcome"] == "interrupted" for handoff in reported_handoffs
+            canonical_row_outcomes[handoff["id"]] == "interrupted"
+            for handoff in reported_handoffs
         ),
         "stale_responses": sum(
             handoff["stale_response"] for handoff in reported_handoffs
@@ -4958,12 +5002,14 @@ def _verify_structural_reporter_handoffs(
             raise HandoffDataError(
                 "handoff verification result handoffs do not verify"
             )
+        derived_rejections = _offline_structural_reporter_rejection_codes(row)
         if (
             row["owner_id"] != handoff["_owner"]["identity"]
             or row["issue"] != handoff["issue"]
             or row["pull_request"] != handoff["pull_request"]
             or row["assigned_at"] != handoff["_states"][0]["at"]
             or row["state"] != handoff["_state_names"][-1]
+            or not derived_rejections <= set(row["rejection_codes"])
         ):
             raise HandoffDataError(
                 "handoff verification result handoffs do not verify"
@@ -5012,12 +5058,11 @@ def _verify_structural_reporter_handoffs(
             raise HandoffDataError(
                 "handoff verification result handoffs do not verify"
             )
-        expected_outcome = None
-        if handoff["interruption"] is not None:
-            expected_outcome = "interrupted"
-        elif handoff["_state_names"] in IN_PROGRESS_STATE_PREFIXES:
-            expected_outcome = "in_progress"
-        if expected_outcome is not None and row["outcome"] != expected_outcome:
+        expected_outcome = _offline_structural_reporter_outcome(
+            handoff,
+            row,
+        )
+        if row["outcome"] != expected_outcome:
             raise HandoffDataError(
                 "handoff verification result handoffs do not verify"
             )

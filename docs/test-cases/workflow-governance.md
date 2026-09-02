@@ -1567,7 +1567,9 @@ game behavior needs a compensating change.
    rows normalize to `bundle_rejected` instead of accepted delivery. Confirm
    offline or relocated verification succeeds from the sealed record alone,
    while explicit live revalidation with the original repository root still
-   enforces current authority ancestry and live Git facts.
+   enforces current authority ancestry and live Git facts. A structurally
+   stale row must retain typed stale rejection state and can never self-mark
+   `accepted` or `trusted_push_eligible`.
 12. Run
    `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`,
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`,
@@ -1664,6 +1666,8 @@ unchanged. Historical version 2 accepts no hand-authored aggregate: offline or
 relocated verification replays the sealed record structure without consulting
 the old worktree HEAD, while explicit live revalidation with the original
 repository root still verifies current protected ancestry and live Git facts.
+Stale-response is itself one of those offline structural rejection facts, so a
+stored accepted/trusted summary cannot override it.
 ### Negative control
 
 Each stale/repeated SHA, non-direct or wrong parent, wrong branch/worktree,

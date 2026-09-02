@@ -1057,7 +1057,9 @@ row facts, and bundle-global semantics without consulting the old worktree.
 When a caller supplies the original repository root for live revalidation, the
 same verifier additionally proves current authority/anchor ancestry plus the
 live Git-derived handoff facts. Neither mode restores current trusted-push
-eligibility from a stale receipt, and a hand-authored aggregate still rejects.
+eligibility from a stale receipt, and structurally stale rows cannot self-mark
+`accepted` or claim `trusted_push_eligible`. A hand-authored aggregate still
+rejects.
 
 Runtime lifetime telemetry remains owner-supplied evidence, not a rounding
 hint. The validator rejects any non-whole-second owner lifetime delta before

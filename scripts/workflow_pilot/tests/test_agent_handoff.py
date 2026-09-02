@@ -6487,7 +6487,13 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             record,
             revalidate_git=False,
         )
-        reporter.validate_fixture(fixture)
+        offline = reporter.validate_fixture(fixture)
+        self.assertEqual(
+            offline["implementation_handoffs"]["issue-178-round-1"][
+                "reported_outcome"
+            ],
+            "accepted",
+        )
         with self.assertRaisesRegex(
             agent_handoff.HandoffDataError,
             "requires repository_root",
@@ -6496,6 +6502,77 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 record,
                 revalidate_git=True,
             )
+    def test_forged_signed_stale_record_cannot_claim_offline_acceptance(self):
+        with handoff_repository() as (root, _base, parent, result):
+            document = handoff_document(root, parent, result)
+            document["handoffs"][0]["result"]["sha"] = parent
+            shift_handoff_times(document, -600)
+            refresh_coordinator_receipt(document, root)
+            stale_result = agent_handoff.validate_document(document, root)
+            self.assertTrue(stale_result["handoffs"][0]["stale_response"])
+            self.assertEqual(stale_result["handoffs"][0]["outcome"], "rejected")
+            stale_record = reporter_record(root, document, stale_result)
+            self.assertEqual(
+                reporter.validate_fixture(
+                    reporter_fixture_with_handoffs(stale_record)
+                )["implementation_handoffs"]["issue-178-round-1"][
+                    "reported_outcome"
+                ],
+                "rejected",
+            )
+            forged_document = handoff_document(root, parent, result)
+            forged_document["handoffs"][0]["result"]["sha"] = parent
+            shift_handoff_times(forged_document, -1200)
+            refresh_coordinator_receipt(forged_document, root)
+            forged_result = agent_handoff.validate_document(
+                forged_document,
+                root,
+            )
+            forged_result["handoffs"][0]["outcome"] = "accepted"
+            forged_result["handoffs"][0]["rejection_codes"] = []
+            forged_result["summary"].update(
+                {
+                    "trusted_push_eligible": True,
+                    "accepted_handoffs": 1,
+                    "rejected_handoffs": 0,
+                    "stale_responses": 1,
+                    "rejection_codes": [],
+                }
+            )
+            forged_result["result_seal"] = agent_handoff.seal_handoff_result(
+                forged_result
+            )
+            forged_record = {
+                "source_handoff_ids": sorted(
+                    item["id"] for item in forged_document["handoffs"]
+                ),
+                "document": copy.deepcopy(forged_document),
+                "input_seal": forged_result["input_seal"],
+                "git_seal": forged_result["git_seal"],
+                "result_seal": forged_result["result_seal"],
+                "result": forged_result,
+                "result_attestation": finalize_result_attestation(
+                    root,
+                    forged_document,
+                    forged_result,
+                ),
+            }
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "result handoffs do not verify|result summary does not verify",
+            ):
+                agent_handoff.reporter_record(
+                    forged_document,
+                    forged_result,
+                    forged_record["result_attestation"],
+                )
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "result handoffs do not verify|result summary does not verify",
+            ):
+                reporter.validate_fixture(
+                    reporter_fixture_with_handoffs(forged_record)
+                )
     def test_historical_successors_aggregate_and_require_current_ancestry(self):
         with handoff_repository() as (root, _base, parent, first_result):
             first_document = handoff_document(root, parent, first_result)
