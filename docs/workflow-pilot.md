@@ -754,7 +754,11 @@ worktree to public configuration and the external bootstrap validator. Its
 explicit separately typed non-user bypasses, frozen delivery/base branches,
 expected ruleset identities, and public signer material only. Same-UID
 HMAC secrets, candidate-authored digests, and permission modes do not establish
-trust. Missing external asymmetric attestation fails closed.
+trust. Authority reads reject any fetched authority chain whose signer
+identity/public material digest, ruleset ID, full bypass actor set, or frozen
+delivery repository/branch identity drift from that verified installation
+before any fetched publication signature or ruleset response can self-attest
+the substitute history. Missing external asymmetric attestation fails closed.
 
 `assignment_sent`, `assignment_received`, `progressing`, `committed`, and
 `handed_off` are distinct, unique, strictly ordered states. A result is
@@ -978,7 +982,12 @@ normalized action list must equal the complete union of source events, so an
 omitted push, comment, review request, or CI dispatch rejects. If any source
 is unavailable or incomplete, each implementation process needs a sealed
 credentialless, network-denied launcher interval covering its entire
-lifecycle. The external service owns a monotonic consume sequence/anchor and
+lifecycle. Every transport Git subprocess that reads or preflights protected
+authority (`ls-remote`, object fetches, and atomic push dry-runs) runs inside
+the same closed Git environment with an explicit wall-clock timeout; timeout
+kills the whole process group and returns a typed handoff error instead of
+retrying unboundedly or orphaning transport helpers. The external service owns
+a monotonic consume sequence/anchor and
 spent-nonce store. One atomic operation terminates that process, collects every
 source through the consume instant, decides, marks the nonce spent, and returns
 the signed decision. The same nonce's second call rejects before authority
@@ -1055,10 +1064,12 @@ accepted. The aggregate output therefore reports
 accepted/bundle-rejected/rejected/interrupted/in-progress counts plus the
 union of rejection codes, stale responses, maximum owner lifetime/RSS,
 coordination turns, and recovery minutes exclusively from verified results.
-Bundle/global rejection codes derived from sealed runs/watchers remain present
-even when the affected handoff already has its own local rejection outcome, so
-aggregate failure reporting never loses watcher or authoritative-run defects
-and never double-counts the same handoff as both rejected and bundle-rejected.
+Bundle/global rejection codes derived from sealed runs, watchers, and remote
+coverage stay present even when the affected handoff already has its own local
+rejection outcome, so aggregate failure reporting never loses duplicate
+watcher, watcher-owner-mismatch, remote-coverage, or authoritative-run defects
+and never double-counts the same handoff as both rejected and
+bundle-rejected.
 `verify_reporter_record()` re-derives the signed per-handoff rows, summary,
 and bundle-global rejection semantics from the sealed document/result payload
 instead of trusting mutable row or summary fields. Line usage remains Git-derived. Protocol changes

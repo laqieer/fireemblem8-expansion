@@ -1470,7 +1470,12 @@ game behavior needs a compensating change.
    plans and servers without atomic capability reject without partial state.
    Model the 2026 ruleset response with `actor_type: User`, equal frozen
    `actor_id`/`database_id`, and `bypass_mode: always`; reject a
-   `RepositoryRole` masquerading as the user.
+   `RepositoryRole` masquerading as the user. Before trusting fetched
+   authority/anchor refs, replace both refs with a self-consistent forged
+   genesis whose signer identity, ruleset ID, or non-user bypass actor set
+   drift from the external installation and confirm the reader rejects that
+   history before any fetched publication signature or ruleset response can
+   self-attest it.
    Manually publish a forged protected bind commit that stores an old signed PR
    observation beside a newer signed publication attestation and confirm
    history reads, reporter verification, and live eligibility all reject the
@@ -1492,10 +1497,14 @@ game behavior needs a compensating change.
    `history_carrier_digest`, and confirm readback still rejects because the
    original handoff signatures and recomputed `make_history_receipt()` no
    longer verify.
-6. Reconcile a direct watcher timeout with an authoritative successful
+6. Repoint the protected authority remote through a stalling transport and
+   prove both authority reads and atomic-push preflight exit under an explicit
+   wall-clock timeout, kill the whole process group, and stop after one
+   bounded attempt rather than spinning retries or leaving an orphan helper.
+7. Reconcile a direct watcher timeout with an authoritative successful
    `github-actions-api` run. Then use an authoritative failed run plus a
    watcher process error and confirm delivery remains failed.
-7. Exercise the SIGKILL/OOM fixture. Confirm kernel evidence names signal 9,
+8. Exercise the SIGKILL/OOM fixture. Confirm kernel evidence names signal 9,
    the interrupted check remains incomplete, and protected authority stores
    content bytes plus path/mode/hash/status and the complete original
    assignment contract. Clean the old worktree and commit the restored
@@ -1504,7 +1513,7 @@ game behavior needs a compensating change.
    sent/received, and sent/received/progressing prefixes report `in_progress`
    without trusted/delivery eligibility. Equal, predated, and multiple
    replacement assignments reject.
-8. Exercise coordinator-sealed availability. Reject future, stale, or
+9. Exercise coordinator-sealed availability. Reject future, stale, or
    post-assignment observations, expired coverage, and either enabled stop
    trigger. Accept only a fresh observation made before assignment and valid
    through the validation/lifecycle cutoff and unattended interval. Validate a
@@ -1525,7 +1534,7 @@ game behavior needs a compensating change.
    all reject the rewritten-base record. Also publish wrong
    `handoff_sequence`/`head_seal` bind variants and confirm copied or stale
    carried handoff identity cannot substitute for the last sealed handoff.
-9. Parse the typed delivery graph. Confirm a merged parent makes child
+10. Parse the typed delivery graph. Confirm a merged parent makes child
    implementation ready while its exact-master Build is in progress and
    remote completion is pending; an unmerged parent blocks the child; a
    healthy pending watcher never appears in todo dependencies; terminal
@@ -1536,16 +1545,19 @@ game behavior needs a compensating change.
    handoff to one exact child relationship/task and bind the parent Build task
    to one authoritative run SHA/status/conclusion. Reject issue `999`, blocked
    or done status relabels, and missing/duplicate relationships/tasks.
-10. Exercise reporter fixture schema version 2 with sequential root and
+11. Exercise reporter fixture schema version 2 with sequential root and
    review-successor bundles. Confirm original asymmetric attestation plus
    authority/anchor ancestry and the external one-time finalize signature over
    canonical source, result, outcomes, summary, and verified metrics,
-   accepted/rejected,
+   accepted/bundle-rejected/rejected,
    stale-response, lifetime, RSS, coordination-turn, and recovery-minute
    metrics without requiring old HEAD. Change RSS/outcomes/summary, recompute
    every unkeyed hash, and require signature failure. Reject hand-authored,
-   double-finalized, tampered, and nonancestor rows.
-11. Run
+   double-finalized, tampered, and nonancestor rows. Confirm duplicate
+   watchers, watcher-owner mismatches, and rejected remote-coverage envelopes
+   surface as bundle-global rejection codes while otherwise accepted handoff
+   rows normalize to `bundle_rejected` instead of accepted delivery.
+12. Run
    `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`,
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`,
    and `python3 scripts/check_docs.py --check`.
@@ -1582,11 +1594,14 @@ binding separately records the live current base OID and requires the frozen
 base to remain its ancestor. Authority and anchor branches advance in one
 atomic direct-parent push under an exact signed live ruleset response. A
 stable read requires equal authority/anchor OIDs around fetch and at the final
-eligibility check; rollback, replay, ABA, stale state, stale current-base
-observations, mixed signed observations/publications, non-descendant rewritten
-base, and unverified protection reject. The reader recomputes the stored PR
-binding digest and publication binding expectation from the stored binding plus
-frozen delivery/current-base fields before accepting the bind event, and it
+eligibility check, plus an exact match between the fetched authority chain and
+the verified external installation for signer identity/public material digest,
+ruleset ID, bypass actors, and frozen delivery identities; rollback, replay,
+ABA, stale state, stale current-base observations, mixed signed observations/
+publications, non-descendant rewritten base, and unverified protection reject.
+The reader recomputes the stored PR binding digest and publication binding
+expectation from the stored binding plus frozen delivery/current-base fields
+before accepting the bind event, and it
 requires the stored bind head plus attested bind head to match the immediately
 prior sealed handoff candidate carried by the current
 `handoff_sequence`/`head_seal`. It also derives
@@ -1596,6 +1611,9 @@ instead of trusting copied observation fields. The
 coordinator receipt's event-source union detects omitted
 push/comment/review/dispatch events. Incomplete GitHub
 coverage succeeds only with a credentialless network-denied process interval.
+Timed-out authority `ls-remote`, fetch, and atomic-preflight Git transport
+commands exit through the bounded lifecycle budget, kill their process group,
+and surface typed timeout failures instead of retrying indefinitely.
 
 The typed dependency graph reports `child-implement` ready as soon as
 `parent-merge` is done, independently of a healthy running master watcher and
@@ -1617,9 +1635,11 @@ accepted/bundle-rejected/rejected/interrupted/in-progress counts together
 with rejection codes, stale responses, maximum owner lifetime and RSS,
 coordination turns, and recovery cost only from coordinator telemetry.
 `verify_reporter_record()` replays canonical handoff rows before trusting the
-finalize signature. When a bundle-level watcher or authoritative-run defect
-accompanies a locally rejected handoff, the reporter retains both the local
-and bundle/global rejection codes without double-counting the outcome class. Git derives line usage, parsed
+finalize signature. When a bundle-level watcher, remote-coverage, or
+authoritative-run defect accompanies a locally rejected handoff, the reporter
+retains both the local and bundle/global rejection codes without
+double-counting the outcome class, and an otherwise accepted row becomes
+`bundle_rejected` instead of accepted delivery. Git derives line usage, parsed
 schema derives protocol changes, and only exact proven host-only paths derive
 zero ROM/RAM; all other tracked inputs require closed dependency-bound
 build/map/resource evidence. Its
@@ -1649,15 +1669,17 @@ IDs, omitted remote events, incomplete source coverage, claim tampering,
 future/stale availability, stale live receipt timestamps, mismatched receipt
 repository IDs, local HMAC/self-attestation, post-coverage events,
 allowed-scope/run/watcher mutation, unrelated ruleset IDs, wrong patterns,
-unexpected or role-typed user bypasses, invented/closed/merged PR observations,
-replayed consume nonce, after-sign pushes, rehashed result metrics, split/non-atomic
+unexpected or role-typed user bypasses, signer/ruleset/non-user-bypass
+installation drift, invented/closed/merged PR observations, replayed consume
+nonce, after-sign pushes, rehashed result metrics, split/non-atomic
 publication, overlapping review successors, lost recovery bytes, zero-impact
 linker claims, nonancestor history, and unverified protection reject
 independently. A missing/reset canonical authority or anchor branch, hostile
-Git config or local attributes,
-incomplete-prefix rejection, and equal/predated/multiple OOM replacement also
-fail their dedicated controls. Mid-read movement retries, repeated movement
-fails `authority-moved`, and movement after the read but before eligibility
+Git config or local attributes, unbounded stalled transport retries, or an
+orphaned transport helper, incomplete-prefix rejection, and equal/predated/
+multiple OOM replacement also fail their dedicated controls. Mid-read
+movement retries, repeated movement fails `authority-moved`, and movement
+after the read but before eligibility
 invalidates the sealed dual-ref observation. Parentless checker bootstrap,
 authority rollback/replay/ABA, PR rebinding, swapped stored bind digests,
 replayed publication binding expectations, out-of-band bind heads, copied

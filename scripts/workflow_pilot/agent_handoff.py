@@ -7,9 +7,11 @@ import argparse
 import base64
 import binascii
 import copy
+import contextlib
 import hashlib
 import os
 import re
+import signal
 import stat
 import subprocess
 import sys
@@ -140,6 +142,9 @@ PROVEN_HOST_ONLY_PREFIXES = (
 TRUSTED_INSTALLATION_MAX_BYTES = 1024 * 1024
 TRUSTED_INSTALLATION_READ_BYTES = TRUSTED_INSTALLATION_MAX_BYTES + 1
 HISTORY_CARRIER_MAX_BYTES = 1024 * 1024
+REMOTE_GIT_TIMEOUT_SECONDS = 30.0
+REMOTE_GIT_TIMEOUT_CODE = "remote-git-timeout"
+REMOTE_GIT_PREFLIGHT_TIMEOUT_CODE = "remote-git-preflight-timeout"
 RSA_SHA256_DIGEST_INFO_PREFIX = bytes.fromhex(
     "3031300d060960864801650304020105000420"
 )
@@ -184,17 +189,54 @@ def expect_unique(values: Iterable[Any], label: str) -> None:
     _raise_pilot_error(reporter.expect_unique, values, label)
 def run_git(repository_root: Path, *arguments: str) -> bytes:
     return _raise_pilot_error(reporter.run_git, repository_root, *arguments)
-def run_git_online(repository_root: Path, *arguments: str) -> bytes:
+def _kill_transport_process_group(
+    process: subprocess.Popen[bytes],
+) -> None:
+    with contextlib.suppress(OSError, ProcessLookupError):
+        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        return
+    with contextlib.suppress(OSError, ProcessLookupError):
+        process.kill()
+def _run_bounded_git_transport(
+    repository_root: Path,
+    *arguments: str,
+    timeout_code: str,
+) -> subprocess.CompletedProcess[bytes]:
     try:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             reporter.git_command(repository_root, *arguments),
             cwd=repository_root,
             env=reporter.git_environment(offline=False),
-            check=False,
-            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
         )
     except OSError as error:
         raise HandoffDataError(f"cannot execute Git: {error}") from error
+    try:
+        stdout, stderr = process.communicate(
+            timeout=REMOTE_GIT_TIMEOUT_SECONDS
+        )
+    except subprocess.TimeoutExpired as error:
+        _kill_transport_process_group(process)
+        process.communicate()
+        raise HandoffDataError(
+            f"{timeout_code}: Git {' '.join(arguments)} exceeded "
+            f"{REMOTE_GIT_TIMEOUT_SECONDS:g}s"
+        ) from error
+    return subprocess.CompletedProcess(
+        args=process.args,
+        returncode=process.returncode,
+        stdout=stdout,
+        stderr=stderr,
+    )
+def run_git_online(repository_root: Path, *arguments: str) -> bytes:
+    completed = _run_bounded_git_transport(
+        repository_root,
+        *arguments,
+        timeout_code=REMOTE_GIT_TIMEOUT_CODE,
+    )
     if completed.returncode == 0:
         return completed.stdout
     detail = completed.stderr.decode("utf-8", errors="replace").strip()
@@ -643,25 +685,15 @@ def require_atomic_push_capability(
         raise HandoffDataError(
             "authority publication requires exactly two atomic ref updates"
         )
-    try:
-        completed = subprocess.run(
-            reporter.git_command(
-                repository_root,
-                "push",
-                "--atomic",
-                "--dry-run",
-                "origin",
-                *(f"{object_id}:{reference}" for object_id, reference in updates),
-            ),
-            cwd=repository_root,
-            env=reporter.git_environment(offline=False),
-            check=False,
-            capture_output=True,
-        )
-    except OSError as error:
-        raise HandoffDataError(
-            f"cannot preflight atomic authority publication: {error}"
-        ) from error
+    completed = _run_bounded_git_transport(
+        repository_root,
+        "push",
+        "--atomic",
+        "--dry-run",
+        "origin",
+        *(f"{object_id}:{reference}" for object_id, reference in updates),
+        timeout_code=REMOTE_GIT_PREFLIGHT_TIMEOUT_CODE,
+    )
     if completed.returncode != 0:
         detail = completed.stderr.decode("utf-8", errors="replace").strip()
         raise HandoffDataError(
@@ -698,6 +730,172 @@ def user_bypass_actor(database_id: int) -> dict[str, Any]:
         "database_id": database_id,
         "bypass_mode": "always",
     }
+NON_USER_BYPASS_ACTOR_TYPES = frozenset(
+    {
+        "DeployKey",
+        "Integration",
+        "OrganizationAdmin",
+        "RepositoryRole",
+    }
+)
+def _parse_ruleset_bypass_actor(
+    raw: Any,
+    label: str,
+) -> dict[str, Any]:
+    bypass = expect_object(raw, label)
+    actor_type = expect_string(bypass.get("actor_type"), f"{label}.actor_type")
+    if actor_type == "User":
+        expect_keys(
+            bypass,
+            label,
+            ("actor_type", "actor_id", "database_id", "bypass_mode"),
+        )
+        actor_id = expect_int(
+            bypass["actor_id"],
+            f"{label}.actor_id",
+            1,
+        )
+        database_id = expect_int(
+            bypass["database_id"],
+            f"{label}.database_id",
+            1,
+        )
+        if bypass["bypass_mode"] != "always":
+            raise HandoffDataError(
+                f"{label}.bypass_mode must be always"
+            )
+        if actor_id != database_id:
+            raise HandoffDataError("GitHub User bypass actor IDs do not match")
+        return user_bypass_actor(database_id)
+    expect_keys(
+        bypass,
+        label,
+        ("actor_type", "actor_id", "bypass_mode"),
+    )
+    if actor_type not in NON_USER_BYPASS_ACTOR_TYPES:
+        raise HandoffDataError(
+            f"{label}.actor_type is not an explicit non-user type"
+        )
+    actor_id = expect_int(
+        bypass["actor_id"],
+        f"{label}.actor_id",
+        1,
+    )
+    if bypass["bypass_mode"] != "always":
+        raise HandoffDataError(
+            f"{label}.bypass_mode must be always"
+        )
+    return {
+        "actor_type": actor_type,
+        "actor_id": actor_id,
+        "bypass_mode": "always",
+    }
+def _parse_ruleset_bypass_actors(
+    raw_actors: Any,
+    label: str,
+) -> list[dict[str, Any]]:
+    actors = [
+        _parse_ruleset_bypass_actor(raw_actor, f"{label}[{index}]")
+        for index, raw_actor in enumerate(expect_list(raw_actors, label))
+    ]
+    expect_unique(
+        ((item["actor_type"], item["actor_id"]) for item in actors),
+        label,
+    )
+    return actors
+def _normalized_json_set(
+    values: Iterable[dict[str, Any]],
+) -> list[bytes]:
+    return sorted(normalized_json(value) for value in values)
+def _expected_installation_authorized_bypass_actors(
+    installation: dict[str, Any],
+) -> list[dict[str, Any]]:
+    return [
+        *(
+            user_bypass_actor(actor["database_id"])
+            for actor in installation["_authorized"]
+        ),
+        *copy.deepcopy(installation["_authorized_non_user_bypass"]),
+    ]
+def _require_authority_matches_installation(
+    authority: dict[str, Any],
+    installation: dict[str, Any],
+    *,
+    label: str,
+) -> None:
+    if (
+        _parse_signer_public(authority["signer"], f"{label}.signer")
+        != installation["_signer"]
+    ):
+        raise HandoffDataError(
+            f"{label} signer does not match coordinator installation"
+        )
+    if (
+        expect_int(authority["ruleset_id"], f"{label}.ruleset_id", 1)
+        != installation["authority_protection"]["ruleset_id"]
+    ):
+        raise HandoffDataError(
+            f"{label} ruleset_id does not match coordinator installation"
+        )
+    authorized_bypass_actors = _parse_ruleset_bypass_actors(
+        authority["authorized_bypass_actors"],
+        f"{label}.authorized_bypass_actors",
+    )
+    if _normalized_json_set(
+        authorized_bypass_actors
+    ) != _normalized_json_set(
+        _expected_installation_authorized_bypass_actors(installation)
+    ):
+        raise HandoffDataError(
+            f"{label} bypass actors do not match coordinator installation"
+        )
+    delivery = expect_object(
+        authority["delivery_expectation"],
+        f"{label}.delivery_expectation",
+    )
+    expect_keys(
+        delivery,
+        f"{label}.delivery_expectation",
+        (
+            "repository_id",
+            "repository_full_name",
+            "immediate_base_branch",
+            "immediate_base_oid",
+            "delivery_branch",
+            "head_repository_full_name",
+        ),
+    )
+    if (
+        expect_int(
+            delivery["repository_id"],
+            f"{label}.delivery_expectation.repository_id",
+            1,
+        )
+        != installation["repository_database_id"]
+        or expect_string(
+            delivery["repository_full_name"],
+            f"{label}.delivery_expectation.repository_full_name",
+        )
+        != installation["repository"]
+        or expect_string(
+            delivery["immediate_base_branch"],
+            f"{label}.delivery_expectation.immediate_base_branch",
+        )
+        != installation["delivery"]["immediate_base_branch"]
+        or expect_string(
+            delivery["delivery_branch"],
+            f"{label}.delivery_expectation.delivery_branch",
+        )
+        != installation["delivery"]["delivery_branch"]
+        or expect_string(
+            delivery["head_repository_full_name"],
+            f"{label}.delivery_expectation.head_repository_full_name",
+        )
+        != installation["delivery"]["head_repository_full_name"]
+    ):
+        raise HandoffDataError(
+            f"{label} delivery expectation does not match coordinator installation"
+        )
 def _parse_signer_public(raw: Any, label: str) -> dict[str, Any]:
     signer = expect_object(raw, label)
     expect_keys(
@@ -1185,12 +1383,7 @@ def load_coordinator_installation(
             label,
             ("actor_type", "actor_id", "bypass_mode"),
         )
-        if bypass["actor_type"] not in {
-            "Integration",
-            "OrganizationAdmin",
-            "DeployKey",
-            "RepositoryRole",
-        }:
+        if bypass["actor_type"] not in NON_USER_BYPASS_ACTOR_TYPES:
             raise HandoffDataError(
                 f"{label}.actor_type is not an explicit non-user type"
             )
@@ -2586,6 +2779,11 @@ def read_history_authority(
         object_id,
         repository,
         issue,
+        label=f"history authority object {object_id}",
+    )
+    _require_authority_matches_installation(
+        authority_summary,
+        installation,
         label=f"history authority object {object_id}",
     )
     if authority_summary["sequence"] not in anchor_previous_by_sequence:
@@ -4192,6 +4390,154 @@ def _verified_reporter_git_authority(
             for index, (raw, handoff) in enumerate(zip(raw_handoffs, handoffs))
         ],
     }
+def _reporter_remote_coverage_rejections(
+    document: dict[str, Any],
+    document_handoffs: list[dict[str, Any]],
+) -> set[str]:
+    receipt = expect_object(
+        document["coordinator_receipt"],
+        "handoff reporter record.document.coordinator_receipt",
+    )
+    operation = expect_object(
+        receipt["operation"],
+        "handoff reporter record.document.coordinator_receipt.operation",
+    )
+    coverage = expect_object(
+        receipt["remote_coverage"],
+        "handoff reporter record.document.coordinator_receipt.remote_coverage",
+    )
+    coverage_start = parse_time(
+        coverage["interval_start"],
+        "handoff reporter remote_coverage.interval_start",
+    )
+    coverage_end = parse_time(
+        coverage["interval_end"],
+        "handoff reporter remote_coverage.interval_end",
+    )
+    eligibility_instant = parse_time(
+        operation["eligibility_instant"],
+        "handoff reporter operation.eligibility_instant",
+    )
+    rejections = set()
+    if coverage_end != eligibility_instant:
+        rejections.add("remote-coverage-incomplete")
+    assignment_start = min(
+        parse_time(
+            handoff["_states"][0]["at"],
+            f"handoff reporter handoff {handoff['id']} assignment_sent",
+        )
+        for handoff in document_handoffs
+    )
+    if coverage_start > assignment_start:
+        rejections.add("remote-coverage-incomplete")
+    for index, raw_action in enumerate(
+        expect_list(
+            coverage["observed_actions"],
+            "handoff reporter record.document.coordinator_receipt."
+            "remote_coverage.observed_actions",
+        )
+    ):
+        action = _parse_remote_action(
+            raw_action,
+            "handoff reporter record.document.coordinator_receipt."
+            f"remote_coverage.observed_actions[{index}]",
+        )
+        occurred_at = parse_time(
+            action["occurred_at"],
+            f"handoff reporter remote action {action['id']}.occurred_at",
+        )
+        if occurred_at < coverage_start or occurred_at > coverage_end:
+            rejections.add("remote-coverage-incomplete")
+            break
+    incomplete_sources = any(
+        not expect_bool(
+            source["available"],
+            "handoff reporter remote coverage source available",
+        )
+        or not expect_bool(
+            source["complete"],
+            "handoff reporter remote coverage source complete",
+        )
+        for source in expect_list(
+            coverage["sources"],
+            "handoff reporter record.document.coordinator_receipt."
+            "remote_coverage.sources",
+        )
+    )
+    if not incomplete_sources:
+        return rejections
+    processes = {}
+    for index, raw_process in enumerate(
+        expect_list(
+            coverage["implementation_processes"],
+            "handoff reporter record.document.coordinator_receipt."
+            "remote_coverage.implementation_processes",
+        )
+    ):
+        label = (
+            "handoff reporter record.document.coordinator_receipt."
+            f"remote_coverage.implementation_processes[{index}]"
+        )
+        process = expect_object(raw_process, label)
+        expect_keys(
+            process,
+            label,
+            (
+                "handoff_id",
+                "started_at",
+                "ended_at",
+                "credentials_available",
+                "network_mode",
+                "source",
+            ),
+        )
+        handoff_id = expect_string(process["handoff_id"], f"{label}.handoff_id")
+        parse_time(process["started_at"], f"{label}.started_at")
+        parse_time(process["ended_at"], f"{label}.ended_at")
+        expect_bool(
+            process["credentials_available"],
+            f"{label}.credentials_available",
+        )
+        expect_enum(
+            process["network_mode"],
+            {"allowed", "denied"},
+            f"{label}.network_mode",
+        )
+        if process["source"] != "coordinator-launcher":
+            raise HandoffDataError(f"{label}.source must be coordinator-launcher")
+        if handoff_id in processes:
+            raise HandoffDataError(
+                f"{label}.handoff_id duplicates an implementation process"
+            )
+        processes[handoff_id] = process
+    for handoff in document_handoffs:
+        process = processes.get(handoff["id"])
+        if process is None:
+            rejections.add("remote-coverage-incomplete")
+            break
+        if (
+            process["credentials_available"]
+            or process["network_mode"] != "denied"
+            or parse_time(
+                process["started_at"],
+                f"handoff reporter process {handoff['id']}.started_at",
+            )
+            > parse_time(
+                handoff["_states"][0]["at"],
+                f"handoff reporter handoff {handoff['id']} assignment_sent",
+            )
+            or parse_time(
+                process["ended_at"],
+                f"handoff reporter process {handoff['id']}.ended_at",
+            )
+            < parse_time(
+                handoff["_states"][-1]["at"],
+                f"handoff reporter handoff {handoff['id']} last_state",
+            )
+        ):
+            rejections.add("remote-coverage-incomplete")
+            break
+    return rejections
 def derive_reporter_result_summary(
     document: dict[str, Any],
     result: dict[str, Any],
@@ -4227,7 +4573,10 @@ def derive_reporter_result_summary(
     delivery_graph = evaluate_delivery_graph(copy.deepcopy(document["delivery_graph"]))
     runs = _parse_runs(copy.deepcopy(document["workflow_runs"]))
     watchers = _parse_watchers(copy.deepcopy(document["watchers"]))
-    global_rejections = set()
+    global_rejections = _reporter_remote_coverage_rejections(
+        document,
+        document_handoffs,
+    )
     watcher_results = []
     watcher_counts = Counter(watcher["run_id"] for watcher in watchers)
     if any(count > 1 for count in watcher_counts.values()):
@@ -5653,51 +6002,18 @@ def parse_publication_attestation(
             "bypass_actors",
         ),
     )
-    bypass_actors = []
-    for index, raw_bypass in enumerate(
-        expect_list(
-            ruleset["bypass_actors"],
-            f"{label}.ruleset_response.bypass_actors",
-        )
-    ):
-        bypass_label = f"{label}.ruleset_response.bypass_actors[{index}]"
-        bypass = expect_object(raw_bypass, bypass_label)
-        expect_keys(
-            bypass,
-            bypass_label,
-            (
-                "actor_type",
-                "actor_id",
-                "database_id",
-                "bypass_mode",
-            )
-            if bypass.get("actor_type") == "User"
-            else ("actor_type", "actor_id", "bypass_mode"),
-        )
-        actor_id = expect_int(
-            bypass["actor_id"],
-            f"{bypass_label}.actor_id",
-            1,
-        )
-        if bypass["bypass_mode"] != "always":
-            raise HandoffDataError(
-                "authority publication has unexpected bypass mode"
-            )
-        if bypass["actor_type"] == "User":
-            database_id = expect_int(
-                bypass["database_id"],
-                f"{bypass_label}.database_id",
-                1,
-            )
-            if actor_id != database_id:
-                raise HandoffDataError(
-                    "GitHub User bypass actor IDs do not match"
-                )
-        elif bypass not in authorized_bypass_actors:
+    bypass_actors = _parse_ruleset_bypass_actors(
+        ruleset["bypass_actors"],
+        f"{label}.ruleset_response.bypass_actors",
+    )
+    for bypass in bypass_actors:
+        if (
+            bypass["actor_type"] != "User"
+            and bypass not in authorized_bypass_actors
+        ):
             raise HandoffDataError(
                 "authority publication has an unauthorized typed bypass"
             )
-        bypass_actors.append(bypass)
     include_refs = expect_list(
         ruleset["include_refs"],
         f"{label}.ruleset_response.include_refs",
@@ -6058,62 +6374,18 @@ def _parse_coordinator_receipt(
         raise HandoffDataError(
             "unrelated or ineffective authority ruleset response"
         )
-    bypass_actors = []
-    for index, raw_bypass in enumerate(
-        expect_list(
-            ruleset["bypass_actors"],
-            "coordinator_receipt.authority_protection."
-            "response.bypass_actors",
-        )
-    ):
-        label = (
-            "coordinator_receipt.authority_protection."
-            f"response.bypass_actors[{index}]"
-        )
-        bypass = expect_object(raw_bypass, label)
-        expect_keys(
-            bypass,
-            label,
-            (
-                "actor_type",
-                "actor_id",
-                "database_id",
-                "bypass_mode",
-            )
-            if bypass.get("actor_type") == "User"
-            else ("actor_type", "actor_id", "bypass_mode"),
-        )
-        actor_id = expect_int(
-            bypass["actor_id"],
-            f"{label}.actor_id",
-            1,
-        )
-        if bypass["bypass_mode"] != "always":
-            raise HandoffDataError(
-                "authority ruleset has an unexpected bypass mode"
-            )
-        if bypass["actor_type"] == "User":
-            database_id = expect_int(
-                bypass["database_id"],
-                f"{label}.database_id",
-                1,
-            )
-            if actor_id != database_id:
-                raise HandoffDataError(
-                    "GitHub User bypass actor IDs do not match"
-                )
-        elif bypass not in canonical_authority["authorized_bypass_actors"]:
+    bypass_actors = _parse_ruleset_bypass_actors(
+        ruleset["bypass_actors"],
+        "coordinator_receipt.authority_protection.response.bypass_actors",
+    )
+    for bypass in bypass_actors:
+        if (
+            bypass["actor_type"] != "User"
+            and bypass not in canonical_authority["authorized_bypass_actors"]
+        ):
             raise HandoffDataError(
                 "authority ruleset has an unauthorized typed bypass"
             )
-        bypass_actors.append(bypass)
-    expect_unique(
-        (
-            (item["actor_type"], item["actor_id"])
-            for item in bypass_actors
-        ),
-        "authority ruleset bypass actors",
-    )
     if sorted(
         normalized_json(item) for item in bypass_actors
     ) != sorted(
@@ -7773,8 +8045,7 @@ def validate_document(
             or coordinator_receipt["coverage_end"]
             != coordinator_receipt["eligibility_instant"]
         ):
-            for handoff in handoffs:
-                reject("remote-coverage-incomplete", handoff["id"])
+            reject("remote-coverage-incomplete")
     duplicate_handoff_ids = set()
     resolved_actors = coordinator_receipt["actors"]
     for handoff in handoffs:
@@ -8028,7 +8299,7 @@ def validate_document(
                     f"handoff {handoff_id}.last_state",
                 )
             ):
-                reject("remote-coverage-incomplete", handoff_id)
+                reject("remote-coverage-incomplete")
         try:
             assigned_worktree = Path(handoff["allowed_worktree"])
             allowed_worktree = assigned_worktree.resolve(strict=True)
@@ -8401,7 +8672,7 @@ def validate_document(
             occurred_at < coordinator_receipt["coverage_start"]
             or occurred_at > coordinator_receipt["coverage_end"]
         ):
-            reject("remote-coverage-incomplete", handoff["id"])
+            reject("remote-coverage-incomplete")
         if (
             _actors_match(action["_actor"], handoff["_owner"])
             and action["action"] in PROHIBITED_REMOTE_ACTIONS

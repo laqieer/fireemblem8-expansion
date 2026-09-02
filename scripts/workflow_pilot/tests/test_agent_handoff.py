@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -283,13 +284,33 @@ def installation_manifest(repository_root):
     )
 def installation_authorized_coordinators(repository_root):
     return copy.deepcopy(AUTHORIZED_COORDINATORS[str(repository_root)])
+def installation_authorized_non_user_bypass_actors(repository_root):
+    return copy.deepcopy(
+        installation_manifest(repository_root)[
+            "authorized_non_user_bypass_actors"
+        ]
+    )
 def primary_coordinator_database_id(repository_root):
     return installation_authorized_coordinators(repository_root)[0]["database_id"]
+def signer_public_with_key_id(signer_public):
+    signed = {
+        key: value for key, value in signer_public.items() if key != "key_id"
+    }
+    refreshed = copy.deepcopy(signer_public)
+    refreshed["key_id"] = hashlib.sha256(
+        agent_handoff.COORDINATOR_RECEIPT_SEAL_DOMAIN
+        + agent_handoff.normalized_json(signed)
+    ).hexdigest()
+    return refreshed
 def ruleset_response(issue=178, repository_root=None):
     if repository_root is None:
         authorized = [{"login": "coordinator", "database_id": 9001}]
+        non_user_bypass = []
     else:
         authorized = installation_authorized_coordinators(repository_root)
+        non_user_bypass = installation_authorized_non_user_bypass_actors(
+            repository_root
+        )
     return {
         "id": 77,
         "enforcement": "active",
@@ -310,8 +331,52 @@ def ruleset_response(issue=178, repository_root=None):
                 "bypass_mode": "always",
             }
             for actor in authorized
-        ],
+        ]
+        + copy.deepcopy(non_user_bypass),
     }
+def install_stalling_transport(repository_root):
+    stall_script = repository_root.parent / "stalling-ssh.sh"
+    invocation_log = repository_root.parent / "stalling-ssh.log"
+    child_pid_path = repository_root.parent / "stalling-ssh-child.pid"
+    stall_script.write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' \"$*\" >> '{invocation_log}'\n"
+        "(sleep 30) &\n"
+        "child=$!\n"
+        f"printf '%s' \"$child\" > '{child_pid_path}'\n"
+        "wait \"$child\"\n",
+        encoding="utf-8",
+    )
+    stall_script.chmod(0o700)
+    git(repository_root, "config", "ssh.variant", "simple")
+    git(
+        repository_root,
+        "config",
+        "core.sshCommand",
+        str(stall_script),
+    )
+    git(
+        repository_root,
+        "remote",
+        "set-url",
+        "origin",
+        "ssh://workflow-pilot.invalid/authority.git",
+    )
+    return invocation_log, child_pid_path
+def wait_for_pid_exit(pid_path, timeout=2.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            raw_pid = pid_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return
+        if not raw_pid:
+            time.sleep(0.05)
+            continue
+        if not Path(f"/proc/{raw_pid}").exists():
+            return
+        time.sleep(0.05)
+    raise AssertionError(f"transport child {pid_path} did not exit in time")
 def publication_attestation(
     repository_root,
     authority_object_id,
@@ -1038,6 +1103,7 @@ def handoff_repository(
     issue=178,
     branch=None,
     authorized_coordinators=None,
+    authorized_non_user_bypass_actors=None,
 ):
     with tempfile.TemporaryDirectory(
         prefix="agent-handoff-",
@@ -1049,6 +1115,8 @@ def handoff_repository(
             authorized_coordinators = [
                 {"login": "coordinator", "database_id": 9001}
             ]
+        if authorized_non_user_bypass_actors is None:
+            authorized_non_user_bypass_actors = []
         test_root = Path(temporary)
         remote_root = test_root / "authority.git"
         owner_root = test_root / "owner"
@@ -1136,16 +1204,7 @@ def handoff_repository(
                 "signing_api": "single-use-terminal-attestation",
             },
         }
-        signer_public["key_id"] = hashlib.sha256(
-            agent_handoff.COORDINATOR_RECEIPT_SEAL_DOMAIN
-            + agent_handoff.normalized_json(
-                {
-                    key: value
-                    for key, value in signer_public.items()
-                    if key != "key_id"
-                }
-            )
-        ).hexdigest()
+        signer_public = signer_public_with_key_id(signer_public)
         SIGNER_SERVICES[str(repository_root)] = signer_service
         SIGNER_CONSUME_STATES[str(repository_root)] = {
             "store_id": "test-external-monotonic-store",
@@ -1172,7 +1231,9 @@ def handoff_repository(
                         "database_id": 9000,
                     },
                     "authorized_coordinators": authorized_coordinators,
-                    "authorized_non_user_bypass_actors": [],
+                    "authorized_non_user_bypass_actors": (
+                        authorized_non_user_bypass_actors
+                    ),
                     "authority_protection": {
                         "mode": "bare-remote-config",
                         "ruleset_id": 77,
@@ -2289,6 +2350,26 @@ class ExactHandoffTests(unittest.TestCase):
                 for index, value in enumerate(node):
                     walk(value, f"{path}[{index}]")
         walk(schema, "$")
+    def test_schema_v2_restricts_non_user_bypass_actor_types(self):
+        schema = load_handoff_schema()
+        validator = validator_for_schema(
+            schema_ref(schema, "#/$defs/typedBypassActor")
+        )
+        validator.validate(
+            {
+                "actor_type": "Integration",
+                "actor_id": 1,
+                "bypass_mode": "always",
+            }
+        )
+        with self.assertRaises(ValidationError):
+            validator.validate(
+                {
+                    "actor_type": "MachineElf",
+                    "actor_id": 1,
+                    "bypass_mode": "always",
+                }
+            )
     def test_schema_v2_validates_real_document_and_prior_history(self):
         schema = load_handoff_schema()
         document_validator = validator_for_schema(schema)
@@ -5296,10 +5377,288 @@ class ExactHandoffTests(unittest.TestCase):
             ][0]["credentials_available"] = True
             sign_coordinator_document(incomplete, root)
             report = agent_handoff.validate_document(incomplete, root)
+            self.assertEqual(report["handoffs"][0]["outcome"], "accepted")
+            self.assertFalse(report["summary"]["trusted_push_eligible"])
             self.assertIn(
                 "remote-coverage-incomplete",
                 report["summary"]["rejection_codes"],
             )
+    def test_history_authority_requires_exact_installation_anchoring(self):
+        authorized_non_user = [
+            {
+                "actor_type": "Integration",
+                "actor_id": 7002,
+                "bypass_mode": "always",
+            }
+        ]
+        with handoff_repository(
+            authorized_non_user_bypass_actors=authorized_non_user
+        ) as (root, _base, _parent, _result):
+            current = agent_handoff.read_history_authority(
+                root,
+                "example/workflow",
+                178,
+                None,
+            )
+            self.assertEqual(
+                [
+                    item
+                    for item in current["authorized_bypass_actors"]
+                    if item["actor_type"] != "User"
+                ],
+                authorized_non_user,
+            )
+            owner = AUTHORITY_OWNERS[str(root)]
+            remote = Path(git(root, "remote", "get-url", "origin"))
+            transaction_hook = remote / "hooks" / "reference-transaction"
+            def publish_forged(*, signer=None, ruleset_id=None, bypass_actors=None):
+                record = {
+                    "schema_version": 2,
+                    "repository": "example/workflow",
+                    "issue": 178,
+                    "sequence": 0,
+                    "handoff_sequence": 0,
+                    "head_seal": None,
+                    "pr_binding": None,
+                    "signer": (
+                        copy.deepcopy(current["signer"])
+                        if signer is None
+                        else copy.deepcopy(signer)
+                    ),
+                    "ruleset_id": (
+                        current["ruleset_id"]
+                        if ruleset_id is None
+                        else ruleset_id
+                    ),
+                    "authorized_bypass_actors": (
+                        copy.deepcopy(current["authorized_bypass_actors"])
+                        if bypass_actors is None
+                        else copy.deepcopy(bypass_actors)
+                    ),
+                    "delivery_expectation": copy.deepcopy(
+                        current["delivery_expectation"]
+                    ),
+                    "publication_attestation": publication_attestation(
+                        root,
+                        None,
+                        None,
+                        issue=178,
+                        operation="bootstrap",
+                    ),
+                    "event": {
+                        "kind": "genesis",
+                        "handoff_seal": None,
+                        "handoff_id": None,
+                        "handoff_kind": None,
+                        "lifecycle_state": None,
+                        "candidate_sha": None,
+                        "closed_at": None,
+                        "operation_nonce": None,
+                        "consume_store_id": None,
+                        "consume_sequence": None,
+                        "consume_anchor": None,
+                        "assignment": None,
+                        "interruption_snapshot": None,
+                        "history_receipt": None,
+                        "history_carrier": None,
+                    },
+                    "previous_object_id": None,
+                }
+                record["publication_attestation"]["ruleset_response"][
+                    "id"
+                ] = record["ruleset_id"]
+                record["publication_attestation"]["ruleset_response"][
+                    "bypass_actors"
+                ] = copy.deepcopy(record["authorized_bypass_actors"])
+                record["publication_attestation"]["signature"] = external_sign(
+                    root,
+                    agent_handoff.signed_record_payload(
+                        agent_handoff.PUBLICATION_ATTESTATION_DOMAIN,
+                        record["publication_attestation"],
+                    ),
+                )
+                forged_authority = owner_create_record_commit(
+                    owner,
+                    record,
+                    "authority.json",
+                    message=b"forged authority\n",
+                )
+                forged_anchor = owner_create_record_commit(
+                    owner,
+                    {
+                        "schema_version": 1,
+                        "repository": "example/workflow",
+                        "issue": 178,
+                        "sequence": 0,
+                        "authority_object_id": forged_authority,
+                        "previous_object_id": None,
+                    },
+                    "anchor.json",
+                    message=b"forged anchor\n",
+                )
+                transaction_hook.chmod(0o600)
+                try:
+                    git(
+                        remote,
+                        "fetch",
+                        str(owner),
+                        forged_authority,
+                        forged_anchor,
+                    )
+                    git(remote, "update-ref", current["ref"], forged_authority)
+                    git(
+                        remote,
+                        "update-ref",
+                        current["anchor_ref"],
+                        forged_anchor,
+                    )
+                finally:
+                    transaction_hook.chmod(0o700)
+            def restore_current():
+                transaction_hook.chmod(0o600)
+                try:
+                    git(remote, "update-ref", current["ref"], current["object_id"])
+                    git(
+                        remote,
+                        "update-ref",
+                        current["anchor_ref"],
+                        current["anchor_object_id"],
+                    )
+                finally:
+                    transaction_hook.chmod(0o700)
+            cases = (
+                (
+                    "signer",
+                    signer_public_with_key_id(
+                        {
+                            **copy.deepcopy(current["signer"]),
+                            "service_identity": "attacker-signer",
+                        }
+                    ),
+                    None,
+                    None,
+                    "signer does not match coordinator installation",
+                ),
+                (
+                    "ruleset",
+                    None,
+                    current["ruleset_id"] + 1,
+                    None,
+                    "ruleset_id does not match coordinator installation",
+                ),
+                (
+                    "missing-non-user",
+                    None,
+                    None,
+                    [
+                        item
+                        for item in current["authorized_bypass_actors"]
+                        if item["actor_type"] == "User"
+                    ],
+                    "bypass actors do not match coordinator installation",
+                ),
+                (
+                    "extra-non-user",
+                    None,
+                    None,
+                    [
+                        *copy.deepcopy(current["authorized_bypass_actors"]),
+                        {
+                            "actor_type": "DeployKey",
+                            "actor_id": 8008,
+                            "bypass_mode": "always",
+                        },
+                    ],
+                    "bypass actors do not match coordinator installation",
+                ),
+            )
+            for name, signer, ruleset_id, bypass_actors, pattern in cases:
+                with self.subTest(case=name):
+                    publish_forged(
+                        signer=signer,
+                        ruleset_id=ruleset_id,
+                        bypass_actors=bypass_actors,
+                    )
+                    try:
+                        with self.assertRaisesRegex(
+                            agent_handoff.HandoffDataError,
+                            pattern,
+                        ):
+                            agent_handoff.read_history_authority(
+                                root,
+                                "example/workflow",
+                                178,
+                                None,
+                            )
+                    finally:
+                        restore_current()
+    def test_remote_git_transport_timeouts_are_bounded(self):
+        def invoke_authority_read(root):
+            return agent_handoff.read_history_authority(
+                root,
+                "example/workflow",
+                178,
+                None,
+            )
+        def invoke_atomic_preflight(root):
+            return agent_handoff.require_atomic_push_capability(
+                root,
+                [
+                    (
+                        git(root, "rev-parse", "HEAD"),
+                        agent_handoff.history_authority_ref(178, None),
+                    ),
+                    (
+                        git(root, "rev-parse", "HEAD^"),
+                        agent_handoff.history_anchor_ref(178),
+                    ),
+                ],
+            )
+        cases = (
+            (
+                "authority-read",
+                invoke_authority_read,
+                "remote-git-timeout: Git ls-remote --refs origin",
+            ),
+            (
+                "atomic-preflight",
+                invoke_atomic_preflight,
+                "remote-git-preflight-timeout: Git push --atomic --dry-run origin",
+            ),
+        )
+        for name, callback, pattern in cases:
+            with self.subTest(case=name):
+                with handoff_repository() as (root, _base, _parent, _result):
+                    log_path, pid_path = install_stalling_transport(root)
+                    started = time.monotonic()
+                    with mock.patch.object(
+                        agent_handoff,
+                        "REMOTE_GIT_TIMEOUT_SECONDS",
+                        0.2,
+                    ):
+                        with self.assertRaisesRegex(
+                            agent_handoff.HandoffDataError,
+                            pattern,
+                        ):
+                            callback(root)
+                    self.assertLess(time.monotonic() - started, 2.0)
+                    invocations = [
+                        line
+                        for line in log_path.read_text(
+                            encoding="utf-8"
+                        ).splitlines()
+                        if line
+                    ]
+                    self.assertEqual(len(invocations), 1)
+                    self.assertIn(
+                        (
+                            "git-upload-pack"
+                            if name == "authority-read"
+                            else "git-receive-pack"
+                        ),
+                        invocations[0],
+                    )
+                    wait_for_pid_exit(pid_path)
     def test_actor_ids_and_coordinator_claims_fail_closed(self):
         with handoff_repository() as (root, _base, parent, result):
             missing = handoff_document(root, parent, result)
@@ -6100,11 +6459,11 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                     "issue-178-incomplete-coverage",
                     "owner-4",
                     104,
-                    "rejected",
+                    "bundle_rejected",
                     {
                         "accepted": 1,
-                        "bundle_rejected": 0,
-                        "rejected": 1,
+                        "bundle_rejected": 1,
+                        "rejected": 0,
                         "interrupted": 0,
                         "in_progress": 0,
                         "stale_responses": 0,
