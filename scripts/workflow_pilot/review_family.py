@@ -2560,24 +2560,37 @@ def _repository_authority(
         raise reporter.PilotDataError(
             "authoritative PR commit history does not end at the exact remote head"
         )
-    reporter.run_git(
-        root, "merge-base", "--is-ancestor", contract["base_sha"], head
-    )
-    reporter.run_git(
-        root,
-        "merge-base",
-        "--is-ancestor",
-        contract["original_pre_review_head"],
-        head,
-    )
-    for review in evidence["remote_reviews"]:
+    try:
+        reporter.run_git(root, "merge-base", "--is-ancestor", contract["base_sha"], head)
+    except reporter.PilotDataError as error:
+        raise reporter.PilotDataError(
+            "current candidate is not descended from the authoritative base"
+        ) from error
+    try:
         reporter.run_git(
             root,
             "merge-base",
             "--is-ancestor",
-            review["candidate_sha"],
+            contract["original_pre_review_head"],
             head,
         )
+    except reporter.PilotDataError as error:
+        raise reporter.PilotDataError(
+            "current candidate is not descended from the original pre-review head"
+        ) from error
+    for review in evidence["remote_reviews"]:
+        try:
+            reporter.run_git(
+                root,
+                "merge-base",
+                "--is-ancestor",
+                review["candidate_sha"],
+                head,
+            )
+        except reporter.PilotDataError as error:
+            raise reporter.PilotDataError(
+                f"review head {review['candidate_sha']} is not preserved in current candidate ancestry"
+            ) from error
     remote = reporter.run_git(
         root, "config", "--get", "remote.origin.url"
     ).decode("utf-8").strip()
@@ -2754,15 +2767,15 @@ def _resolve_authoritative_trigger(
         raise reporter.PilotDataError(
             "authoritative trigger decision does not match the exact contract base"
         )
-    if trigger["candidate_sha"] != authority["head"]:
-        raise reporter.PilotDataError(
-            "authoritative trigger decision does not match the exact candidate head"
-        )
     if trigger["original_pre_review_head"] != contract["original_pre_review_head"]:
         raise reporter.PilotDataError(
             "authoritative trigger decision does not bind the exact initial reviewed head"
         )
     if trigger["authority_kind"] == "base-record":
+        if trigger["candidate_sha"] != authority["head"]:
+            raise reporter.PilotDataError(
+                "authoritative trigger decision does not match the exact candidate head"
+            )
         actual_blob_oid = reporter.run_git(
             authority["root"],
             "rev-parse",
@@ -2772,10 +2785,31 @@ def _resolve_authoritative_trigger(
             raise reporter.PilotDataError(
                 "authoritative trigger decision does not bind the exact base blob"
             )
-    elif trigger["comment_id"] is None or trigger["comment_created_at"] is None:
-        raise reporter.PilotDataError(
-            "external authoritative trigger does not bind one exact trusted comment"
-        )
+    else:
+        if trigger["comment_id"] is None or trigger["comment_created_at"] is None:
+            raise reporter.PilotDataError(
+                "external authoritative trigger does not bind one exact trusted comment"
+            )
+        if trigger["candidate_sha"] != authority["head"]:
+            commit_shas = evidence["pull_request"]["commit_shas"]
+            if commit_shas is None:
+                raise reporter.PilotDataError(
+                    "authoritative PR commit history is required when the preregistered remote head differs from the current candidate head"
+                )
+            if trigger["candidate_sha"] not in commit_shas or authority["head"] not in commit_shas:
+                raise reporter.PilotDataError(
+                    "authoritative PR commit history does not preserve the preregistered remote head and current candidate head"
+                )
+            if commit_shas.index(trigger["candidate_sha"]) >= commit_shas.index(authority["head"]):
+                raise reporter.PilotDataError(
+                    "preregistered remote head does not precede the current candidate head in authoritative PR history"
+                )
+            if not reporter.is_ancestor(
+                trigger["candidate_sha"], authority["head"], authority["commits"]
+            ):
+                raise reporter.PilotDataError(
+                    "preregistered remote head is not the non-rewritten ancestor of the current candidate head"
+                )
     if trigger["trigger"] != contract["trigger"]:
         raise reporter.PilotDataError(
             "candidate trigger does not match the authoritative decision record"

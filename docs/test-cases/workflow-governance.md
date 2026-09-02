@@ -1517,7 +1517,10 @@ game behavior needs a compensating change.
    immutable trusted coordinator comment with prefix
    `workflow-review-family-decision:v1 ` before the first remote review, and
    bind its canonical JSON to the exact repository ID/name, PR, base, initial
-   head, preregistered current head, and normalized decision entry. The
+   head, preregistered initial remote head, and normalized decision entry.
+   Later descendant remote heads may reuse that immutable preregistration only
+   while current PR commit history and Git ancestry preserve it as a
+   non-rewritten ancestor. The
    top-level PR comment query must carry `createdAt` and `updatedAt`, and those
    timestamps must be strict RFC 3339 UTC strings with byte-identical values.
 5. Confirm a synthetic exact base without the trusted checker or decision
@@ -1592,6 +1595,9 @@ game behavior needs a compensating change.
    the candidate contract, reject `family-authority-drift`, and keep the
    trusted family authoritative even when the candidate's sibling assertions
    remain internally consistent.
+   Ignore deleted-user `author: null` reviews before body/comment parsing, and
+   let `author: null` thread roots fail by omission rather than satisfying
+   authoritative coverage.
    Apply that same immutable top-level-comment contract to
    `workflow-review-family-disposition:v2`: exact trusted coordinator actor,
    canonical closed JSON body, strict RFC 3339 UTC `createdAt`/`updatedAt`,

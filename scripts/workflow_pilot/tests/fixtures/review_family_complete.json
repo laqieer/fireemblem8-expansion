@@ -77,13 +77,13 @@
       "siblings": [
         {
           "member": "actions",
-          "result": "affected-fixed",
-          "assertion_id": "registry:sibling:action:actions:affected-fixed:v2"
+          "result": "verified-unaffected",
+          "assertion_id": "registry:sibling:action:actions:verified-unaffected:v2"
         },
         {
           "member": "items",
-          "result": "verified-unaffected",
-          "assertion_id": "registry:sibling:action:items:verified-unaffected:v2"
+          "result": "affected-fixed",
+          "assertion_id": "registry:sibling:action:items:affected-fixed:v2"
         },
         {
           "member": "targets",
@@ -162,8 +162,8 @@
       "siblings": [
         {
           "member": "producers",
-          "result": "affected-fixed",
-          "assertion_id": "registry:sibling:wire:producers:affected-fixed:v2"
+          "result": "verified-unaffected",
+          "assertion_id": "registry:sibling:wire:producers:verified-unaffected:v2"
         },
         {
           "member": "consumers",
@@ -182,8 +182,8 @@
         },
         {
           "member": "stale-bindings",
-          "result": "verified-unaffected",
-          "assertion_id": "registry:sibling:wire:stale-bindings:verified-unaffected:v2"
+          "result": "affected-fixed",
+          "assertion_id": "registry:sibling:wire:stale-bindings:affected-fixed:v2"
         }
       ]
     }

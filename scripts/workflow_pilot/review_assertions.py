@@ -1309,8 +1309,50 @@ def load_base_checker(base_root: Path):
     )
 
 
+def member_subject(
+    root: Path,
+    checker_input: dict[str, Any],
+    binding: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        resolved = root.resolve()
+        origin = Path(checker_input["origin_root"]).resolve()
+        head = Path(checker_input["head_root"]).resolve()
+    except OSError as error:
+        raise AssertionFailure("member subject root is unavailable") from error
+    if resolved == origin:
+        return {
+            "sha": binding["finding_origin_sha"],
+            "tree": binding["finding_origin_tree"],
+            "round": binding["finding_review_round"],
+        }
+    if resolved == head:
+        return {
+            "sha": binding["head_sha"],
+            "tree": binding["head_tree"],
+            "round": checker_input["review_round"],
+        }
+    raise AssertionFailure("member subject root is not an authoritative origin/head")
+
+
+def subject_changes(
+    checker_input: dict[str, Any], subject_sha: str, base_root: Path
+) -> list[dict[str, Any]]:
+    if subject_sha == checker_input["candidate_sha"]:
+        return copy.deepcopy(checker_input["changes"])
+    if subject_sha == checker_input["original_pre_review_head"]:
+        return copy.deepcopy(checker_input["original_changes"])
+    _, _, review_family_module = load_base_gate_modules(base_root)
+    return review_family_module.derive_change_records(
+        Path(checker_input["repository_root"]),
+        checker_input["base_sha"],
+        subject_sha,
+    )
+
+
 def evaluate_action_member(
     member: str,
+    root: Path,
     *,
     base_root: Path,
     checker_input: dict[str, Any],
@@ -1318,18 +1360,13 @@ def evaluate_action_member(
 ) -> dict[str, Any]:
     checker = load_base_checker(base_root)
     runtime = checker_cli_runtime(checker_input)
-    if member == "actions":
-        sequence = checker.validate_review_action_contract(
-            repository=checker_input["repository"],
-            actions=copy.deepcopy(checker_input["original_pre_review"]["actions"]),
-        )
-        return {"sequence": sequence, "checker_cli": runtime}
+    subject = member_subject(root, checker_input, binding)
     if member == "items":
         derived = checker.bind_member_request(
             {
                 "round_findings": copy.deepcopy(checker_input["round_findings"]),
-                "candidate_sha": checker_input["candidate_sha"],
-                "candidate_tree": checker_input["candidate_tree"],
+                "candidate_sha": subject["sha"],
+                "candidate_tree": subject["tree"],
             },
             {
                 "family": "action",
@@ -1341,25 +1378,26 @@ def evaluate_action_member(
         )
         if derived != binding:
             raise AssertionFailure("member-item authority binding is incomplete")
-        return {
-            "binding_sha256": hashlib.sha256(normalized_json(derived)).hexdigest(),
-            "checker_cli": runtime,
-        }
-    reviewed = checker.validate_review_targets(
-        copy.deepcopy(checker_input["original_pre_review"]["reviewed_files"]),
-        copy.deepcopy(checker_input["original_pre_review"]["reviewed_changes"]),
-        changed_files=sorted(
-            {
-                path
-                for change in checker_input["original_changes"]
-                for path in (change["old_path"], change["new_path"])
-                if path is not None
-            }
-        ),
-        changes=copy.deepcopy(checker_input["original_changes"]),
-    )
+        return {"binding_valid": True, "checker_cli": runtime}
+    changes = subject_changes(checker_input, subject["sha"], base_root)
+    report = copy.deepcopy(checker_input["original_pre_review"])
+    report["candidate_sha"] = subject["sha"]
+    report["reviewed_files"] = changed_files(changes)
+    report["reviewed_changes"] = copy.deepcopy(changes)
+    try:
+        checker.validate_review_report(
+            report,
+            repository=checker_input["repository"],
+            pull_request=checker_input["pull_request"],
+            base_sha=checker_input["base_sha"],
+            candidate_sha=subject["sha"],
+            changed_files=report["reviewed_files"],
+            changes=copy.deepcopy(changes),
+        )
+    except checker.CheckError as error:
+        raise AssertionFailure(str(error)) from error
     return {
-        "statuses": sorted({change["status"] for change in reviewed["reviewed_changes"]}),
+        ("review_actions_valid" if member == "actions" else "review_targets_valid"): True,
         "checker_cli": runtime,
     }
 
@@ -1590,9 +1628,10 @@ def evaluate_generated_drift_checks(root: Path, *, base_root: Path) -> dict[str,
 
 
 def evaluate_lifecycle_entries(
-    checker_input: dict[str, Any], binding: dict[str, Any], base_root: Path
+    root: Path, checker_input: dict[str, Any], binding: dict[str, Any], base_root: Path
 ) -> dict[str, Any]:
     _, _, review_family_module = load_base_gate_modules(base_root)
+    subject = member_subject(root, checker_input, binding)
     start = parse_utc_time(
         checker_input["review_context"]["submitted_at"],
         "member checker input.review_context.submitted_at",
@@ -1600,28 +1639,19 @@ def evaluate_lifecycle_entries(
     finding_ids = [binding["finding_id"]]
     reviews = [
         progress_review(
-            1, checker_input["candidate_sha"], format_utc_time(start), "changes-requested", finding_ids
-        ),
-        progress_review(
-            2,
-            checker_input["candidate_sha"],
-            format_utc_time(start + timedelta(minutes=1)),
+            round_number,
+            subject["sha"],
+            format_utc_time(start + timedelta(minutes=round_number - 1)),
             "changes-requested",
             finding_ids,
-        ),
-        progress_review(
-            3,
-            checker_input["candidate_sha"],
-            format_utc_time(start + timedelta(minutes=2)),
-            "changes-requested",
-            finding_ids,
-        ),
+        )
+        for round_number in range(1, subject["round"] + 2)
     ]
     handoffs, pending, consumed = review_family_module.progress_rounds(
         {
             "architecture_dispositions": [],
             "remote_reviews": reviews,
-            "candidate": {"sha": checker_input["candidate_sha"]},
+            "candidate": {"sha": subject["sha"]},
         },
         progress_sweeps(binding),
         set(),
@@ -1777,17 +1807,21 @@ def evaluate_lifecycle_terminals(
 
 
 def evaluate_resource_enabled(
-    checker_input: dict[str, Any], base_root: Path
+    root: Path, checker_input: dict[str, Any], base_root: Path
 ) -> dict[str, Any]:
     gate_module, _, _ = load_base_gate_modules(base_root)
-    trigger = authoritative_trigger(gate_module, checker_input)
-    if trigger is None or not trigger["pre_review_required"]:
+    trigger, _ = gate_module._parse_trigger_decision_records(
+        load_json_file(root, ".github/workflow-pilot-decisions.json"),
+        pull_request=checker_input["pull_request"],
+        label="member resource decision record",
+    )
+    if trigger is None or trigger["trigger"] != checker_input["review_contract"]["trigger"] or not trigger["pre_review_required"]:
         raise AssertionFailure(
             "authoritative decision record does not contain one exact high-risk review-family entry"
         )
     return {
-        "risk_boundaries": trigger["risk_boundaries"],
-        "threshold_triggers": trigger["threshold_triggers"],
+        "risk_boundaries": trigger["trigger"]["risk_boundaries"],
+        "threshold_triggers": trigger["trigger"]["threshold_triggers"],
     }
 
 
@@ -1952,16 +1986,20 @@ def evaluate_wire_replay(
 
 
 def evaluate_wire_stale_bindings(
-    checker_input: dict[str, Any], base_root: Path
+    root: Path, checker_input: dict[str, Any], binding: dict[str, Any], base_root: Path
 ) -> dict[str, Any]:
     checker = load_base_checker(base_root)
-    positive = checker.validate_review_context_binding(
-        review_round=checker_input["review_round"],
-        review_context=copy.deepcopy(checker_input["review_context"]),
-        all_remote_reviews=copy.deepcopy(checker_input["all_remote_reviews"]),
-        candidate_sha=checker_input["candidate_sha"],
-        remote_finding_ids=copy.deepcopy(checker_input["remote_finding_ids"]),
-    )
+    subject = member_subject(root, checker_input, binding)
+    try:
+        positive = checker.validate_review_context_binding(
+            review_round=checker_input["review_round"],
+            review_context=copy.deepcopy(checker_input["review_context"]),
+            all_remote_reviews=copy.deepcopy(checker_input["all_remote_reviews"]),
+            candidate_sha=subject["sha"],
+            remote_finding_ids=copy.deepcopy(checker_input["remote_finding_ids"]),
+        )
+    except checker.CheckError as error:
+        raise AssertionFailure(str(error)) from error
     stale_head = copy.deepcopy(checker_input["review_context"])
     stale_head["candidate_sha"] = checker_input["original_pre_review_head"]
     try:
@@ -2013,6 +2051,7 @@ def evaluate_member_dispatch(
     if family == "action":
         return evaluate_action_member(
             member,
+            root,
             base_root=base_root,
             checker_input=checker_input,
             binding=binding,
@@ -2030,7 +2069,7 @@ def evaluate_member_dispatch(
     if (family, member) == ("generated", "drift-checks"):
         return evaluate_generated_drift_checks(root, base_root=base_root)
     if (family, member) == ("lifecycle", "entries"):
-        return evaluate_lifecycle_entries(checker_input, binding, base_root)
+        return evaluate_lifecycle_entries(root, checker_input, binding, base_root)
     if (family, member) == ("lifecycle", "preservation"):
         return evaluate_lifecycle_preservation(checker_input, base_root)
     if (family, member) == ("lifecycle", "resets"):
@@ -2038,7 +2077,7 @@ def evaluate_member_dispatch(
     if (family, member) == ("lifecycle", "terminals"):
         return evaluate_lifecycle_terminals(checker_input, base_root)
     if (family, member) == ("resource", "enabled"):
-        return evaluate_resource_enabled(checker_input, base_root)
+        return evaluate_resource_enabled(root, checker_input, base_root)
     if (family, member) == ("resource", "disabled"):
         return evaluate_resource_disabled(checker_input, base_root)
     if (family, member) == ("wire", "producers"):
@@ -2050,7 +2089,7 @@ def evaluate_member_dispatch(
     if (family, member) == ("wire", "replay"):
         return evaluate_wire_replay(checker_input, base_root)
     if (family, member) == ("wire", "stale-bindings"):
-        return evaluate_wire_stale_bindings(checker_input, base_root)
+        return evaluate_wire_stale_bindings(root, checker_input, binding, base_root)
     raise AssertionFailure("member evaluator is not registered")
 
 

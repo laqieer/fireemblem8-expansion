@@ -278,15 +278,15 @@ class ReviewFamilyContractTests(unittest.TestCase):
 
         contract, evidence = fixture()
         contract["family_sweeps"][0]["siblings"][1]["result"] = (
-            "affected-fixed"
+            "verified-unaffected"
         )
         self.assert_rejected(contract, evidence, "member-specific")
 
         contract, _ = fixture()
-        second = contract["family_sweeps"][0]["siblings"][1]
+        second = contract["family_sweeps"][0]["siblings"][0]
         second["result"] = "affected-fixed"
         second["assertion_id"] = (
-            "registry:sibling:action:items:affected-fixed:v2"
+            "registry:sibling:action:actions:affected-fixed:v2"
         )
         validated = review_family.validate_contract(contract)
         self.assertEqual(

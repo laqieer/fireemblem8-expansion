@@ -601,8 +601,11 @@ When the exact base decision file has no record for the current PR, the
 trusted coordinator must preregister one immutable GitHub PR comment with the
 standalone prefix `workflow-review-family-decision:v1 ` before the first remote
 review. Its canonical closed JSON binds the exact repository ID/name, PR
-number, base SHA, original first-reviewed head, preregistered current head,
-and the full normalized decision entry. The comment author must equal the
+number, base SHA, original first-reviewed head, preregistered initial remote
+head, and the full normalized decision entry. Later descendant remote heads
+may reuse that immutable preregistration only while current PR commit history
+and Git ancestry preserve that preregistered head as a non-rewritten
+ancestor. The comment author must equal the
 current trusted authenticated GraphQL actor exactly, the top-level
 `pullRequest.comments` selection must carry both `createdAt` and `updatedAt`,
 those timestamps must be exact RFC 3339 UTC strings with byte-identical values,
@@ -700,8 +703,10 @@ hold, and downstream assertion binding continues to use the trusted classified
 family rather than a candidate rewrite. Every accepted finding sweep must still
 include at least one `affected-fixed` sibling. Unrelated PR comments,
 including deleted-user `author: null` comments, are ignored before actor
-parsing; only prefixed authority/disposition comments require an authenticated
-author and fail closed on null or malformed actors. The same immutable
+parsing. Deleted-user `author: null` reviews are ignored before body/comment
+parsing, and threads with `author: null` never satisfy authoritative coverage;
+only prefixed authority/disposition comments require an authenticated author
+and fail closed on null or malformed actors. The same immutable
 top-level-comment contract applies to `workflow-review-family-disposition:v2`:
 exact trusted coordinator actor, canonical closed JSON body, strict RFC 3339
 UTC `createdAt`/`updatedAt`, and byte-identical timestamps so chronology binds

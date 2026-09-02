@@ -991,6 +991,37 @@ class TrustedGitHubGateTests(unittest.TestCase):
         with self.assertRaisesRegex(reporter.PilotDataError, "must be an object"):
             self.collect_exact_live_evidence(payload)
 
+    def test_null_review_authors_are_ignored_without_satisfying_copilot(self):
+        payload = self.exact_graphql_payload(with_finding=True)
+        deleted = copy.deepcopy(payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0])
+        deleted["id"] = "REMOTE_DELETED_001"
+        deleted["databaseId"] = 7001
+        deleted["author"] = None
+        deleted["comments"]["nodes"][0]["author"] = None
+        payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"] = [
+            deleted,
+            payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0],
+        ]
+        evidence = json.loads(self.collect_exact_live_evidence(payload, kind="complete"))
+        self.assertEqual([review["node_id"] for review in evidence["remote_reviews"]], ["REMOTE_REVIEW_LIVE_001"])
+        payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"] = [deleted]
+        payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"] = []
+        payload["data"]["repository"]["pullRequest"]["comments"]["nodes"] = []
+        report = review_family.build_report(
+            self.contract(base=self.base_sha, candidate=self.candidate_sha),
+            json.loads(self.collect_exact_live_evidence(payload)),
+            self.repo,
+            self.candidate_sha,
+        )
+        self.assertFalse(report["gates"]["current_candidate_reviewed"])
+        self.assertTrue(report["gates"]["remote_copilot_review_required"])
+
+    def test_null_thread_author_cannot_satisfy_authoritative_finding_coverage(self):
+        payload = self.exact_graphql_payload(with_finding=True)
+        payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"][0]["comments"]["nodes"][0]["author"] = None
+        with self.assertRaisesRegex(reporter.PilotDataError, "has no review thread"):
+            self.collect_exact_live_evidence(payload, kind="complete")
+
     def test_disposition_comments_require_unedited_canonical_exact_trusted_shape(self):
         payload = self.exact_graphql_payload()
         comment = authoritative_disposition_comment(
@@ -2117,7 +2148,6 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 authoritative_decision_comment(
                     base_sha=base,
                     head_sha=original_head,
-                    candidate_sha=candidate,
                     decision=decision,
                 )
             ]
@@ -2160,6 +2190,47 @@ class TrustedGitHubGateTests(unittest.TestCase):
             self.assertTrue(result["gates"]["current_candidate_reviewed"])
             self.assertEqual(result["identity"]["original_pre_review_head"], original_head)
             self.assertFalse(result["bootstrap"]["mode"] == "introduction")
+        finally:
+            shutil.rmtree(repo)
+
+    def test_external_preregistration_rejects_force_pushed_away_remote_head(self):
+        repo, base, original_head = self.build_decision_repo()
+        try:
+            decision = self.decision_entry(risks=("lifecycle", "protocol"), triggers=("changed-files", "risk-boundary"))
+            git(repo, "checkout", "-q", base)
+            self.write_decision_record(repo, decision)
+            (Path(repo) / "changed.txt").write_text("force-pushed\n", encoding="utf-8")
+            self.commit_all_at(repo, "force-pushed replacement", "2026-08-31T03:06:00Z")
+            replacement = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
+            payload = self.exact_graphql_payload()
+            payload["data"]["repository"]["pullRequest"]["baseRefOid"] = base
+            payload["data"]["repository"]["pullRequest"]["headRefOid"] = replacement
+            payload["data"]["repository"]["pullRequest"]["createdAt"] = "2026-08-31T03:08:00Z"
+            payload["data"]["repository"]["pullRequest"]["commits"]["nodes"] = [{"commit": {"id": "COMMIT_REPLACEMENT", "oid": replacement, "pushedDate": None, "committedDate": git(repo, "show", "-s", "--format=%cI", replacement).stdout.decode().strip().replace("+00:00", "Z")}}]
+            payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["commit"]["oid"] = replacement
+            payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["submittedAt"] = "2026-08-31T03:15:00Z"
+            payload["data"]["repository"]["pullRequest"]["comments"]["nodes"] = [authoritative_decision_comment(base_sha=base, head_sha=original_head, decision=decision)]
+            contract = self.contract(base=base, candidate=replacement)
+            contract["original_pre_review_head"] = original_head
+            contract["trust_mode"] = "base-pinned"
+            contract["trigger"] = {"risk_boundaries": ["lifecycle", "protocol"], "threshold_triggers": ["changed-files", "risk-boundary"]}
+            receipt = signed_receipt(reporter.normalized_json(review_report(base, original_head, ["changed.txt"], review_family.derive_change_records(repo, base, original_head))), base=base, candidate=original_head, nonce="external-preregistration-force-push-0001")
+            with self.assertRaisesRegex(reporter.PilotDataError, "original pre-review head|preregistered remote head|commit history"):
+                trusted_review_gate._run_trusted_gate(
+                    raw_contract=contract,
+                    repository_root=repo,
+                    expected_candidate=replacement,
+                    expected_remote_head=replacement,
+                    expected_base=base,
+                    review_receipt_bytes=receipt,
+                    replay_store=self.replay,
+                    trusted_key_id=KEY_ID,
+                    trusted_key_epoch=KEY_EPOCH,
+                    trusted_key=KEY,
+                    current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc),
+                    adapter=StaticAdapter(payload),
+                    clock=lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc),
+                )
         finally:
             shutil.rmtree(repo)
 
@@ -2216,7 +2287,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 candidate=remote_head,
                 nonce="external-preregistration-prepush-0001",
             )
-            with self.assertRaisesRegex(reporter.PilotDataError, "authoritative remote head"):
+            with self.assertRaisesRegex(reporter.PilotDataError, "candidate decision record|preregistered remote head"):
                 trusted_review_gate._run_trusted_gate(
                     raw_contract=contract,
                     repository_root=repo,
@@ -2261,7 +2332,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
             ("wrong-repo", {"repository": "other/repository"}, "exact repository"),
             ("wrong-base", {"base_sha": "f" * 40}, "exact base"),
             ("wrong-original-head", {"original_pre_review_head": "f" * 40}, "initial reviewed head"),
-            ("wrong-head", {"candidate_sha": "f" * 40}, "authoritative remote head"),
+            ("wrong-head", {"candidate_sha": "f" * 40}, "preregistered remote head|commit history"),
             ("duplicate", "duplicate", "not unique"),
         )
         for case_name, override, pattern in cases:

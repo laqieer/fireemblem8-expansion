@@ -1759,10 +1759,6 @@ def _parse_external_trigger_comment(
         )
         if original_head != contract["original_pre_review_head"]:
             raise reporter.PilotDataError(f"{label} decision preregistration lost the initial reviewed head")
-        if preregistered_head != current_candidate_sha:
-            raise reporter.PilotDataError(
-                f"{label} decision preregistration does not bind the exact authoritative remote head"
-            )
         decision = _normalize_trigger_decision_record(
             reporter.expect_object(
                 payload["decision"], f"{label} decision preregistration.decision"
@@ -1785,7 +1781,7 @@ def _parse_external_trigger_comment(
                 "pull_request": contract["pull_request"],
                 "base_sha": contract["base_sha"],
                 "original_pre_review_head": contract["original_pre_review_head"],
-                "candidate_sha": current_candidate_sha,
+                "candidate_sha": preregistered_head,
                 "risk_boundaries": decision["trigger"]["risk_boundaries"],
                 "threshold_triggers": decision["trigger"]["threshold_triggers"],
                 "pre_review_required": review_family.trigger_requires_pre_review(
@@ -1955,14 +1951,24 @@ def run_base_pinned_checker(
         raise reporter.PilotDataError(
             "base checker requires a clean candidate worktree"
         )
-    reporter.run_git(root, "merge-base", "--is-ancestor", base_sha, candidate_sha)
-    reporter.run_git(
-        root,
-        "merge-base",
-        "--is-ancestor",
-        contract["original_pre_review_head"],
-        current_head,
-    )
+    try:
+        reporter.run_git(root, "merge-base", "--is-ancestor", base_sha, candidate_sha)
+    except reporter.PilotDataError as error:
+        raise reporter.PilotDataError(
+            "base checker candidate is not descended from the authoritative base"
+        ) from error
+    try:
+        reporter.run_git(
+            root,
+            "merge-base",
+            "--is-ancestor",
+            contract["original_pre_review_head"],
+            current_head,
+        )
+    except reporter.PilotDataError as error:
+        raise reporter.PilotDataError(
+            "base checker current head is not descended from the original pre-review head"
+        ) from error
     base_tree = _git_text(root, "rev-parse", f"{base_sha}^{{tree}}")
     candidate_tree = _git_text(root, "rev-parse", f"{candidate_sha}^{{tree}}")
     checker_blob = _git_text(root, "rev-parse", f"{base_sha}:{BASE_CHECKER_PATH}")
@@ -2856,6 +2862,8 @@ def collect_live_evidence_bytes(
                 "comments",
             ),
         )
+        if review["author"] is None:
+            continue
         review_actor = _graphql_actor(review["author"], f"{label}.author")
         is_authoritative_copilot = review_family.is_authoritative_copilot_actor(
             review_actor
@@ -3033,6 +3041,8 @@ def collect_live_evidence_bytes(
             f"{label}.comments[0]",
             ("id", "createdAt", "author", "pullRequestReview"),
         )
+        if first["author"] is None:
+            continue
         thread_review = reporter.expect_object(
             first["pullRequestReview"],
             f"{label}.comments[0].pullRequestReview",

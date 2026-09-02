@@ -407,17 +407,24 @@ class ReviewBaseCheckerTests(unittest.TestCase):
 
     @classmethod
     def _set_resource_enabled_health(cls, healthy):
-        cls._replace_once(
-            "scripts/workflow_pilot/trusted_review_gate.py",
-            "    if authoritative is None:\n",
-            "    if True:\n",
-        )
+        path = cls.repo / ".github/workflow-pilot-decisions.json"
+        decisions = json.loads(path.read_text(encoding="utf-8"))
+        decisions["pull_requests"] = [
+            entry
+            for entry in decisions["pull_requests"]
+            if entry["pull_request"] != PULL_REQUEST
+        ]
         if healthy:
-            cls._replace_once(
-                "scripts/workflow_pilot/trusted_review_gate.py",
-                "    if True:\n",
-                "    if authoritative is None:\n",
+            decisions["pull_requests"].append(
+                next(
+                    entry
+                    for entry in json.loads(
+                        synthetic_decision_record_snapshot().decode("ascii")
+                    )["pull_requests"]
+                    if entry["pull_request"] == PULL_REQUEST
+                )
             )
+        path.write_bytes(reporter.normalized_json(decisions))
 
     @classmethod
     def _set_wire_producers_health(cls, healthy):
@@ -1763,23 +1770,47 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
         )
 
-    def test_action_sequence_verified_unaffected_runs_live_validator(self):
+    def test_lifecycle_entries_affected_fixed_uses_review_progression(self):
         data = self.build_input(
             review_round=2,
             assertion_requests=[
                 {
                     "assertion_id": (
-                        "registry:sibling:action:actions:verified-unaffected:v2"
+                        "registry:sibling:lifecycle:entries:affected-fixed:v2"
                     ),
-                    "finding_id": "FINDING-ACTION-1",
+                    "finding_id": "FINDING-LIFECYCLE-1",
                 }
             ],
         )
-        self.assert_held(
-            data,
-            assertion_id="registry:sibling:action:actions:verified-unaffected:v2",
-            finding_id="FINDING-ACTION-1",
-            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+        data["all_remote_reviews"][0]["finding_ids"] = ["FINDING-LIFECYCLE-1"]
+        data["remote_findings"] = [
+            {
+                "node_id": "FINDING-LIFECYCLE-1",
+                "review_id": "REMOTE_REVIEW_1",
+                "candidate_sha": self.head1,
+                "created_at": "2026-09-01T00:01:30Z",
+                "author_actor_id": COPILOT_ACTOR_ID,
+                "family": "lifecycle",
+            }
+        ]
+        data["review_context"]["finding_ids"] = []
+        data["remote_finding_ids"] = []
+        data["captured_github_payload"] = self.captured_github_payload(
+            data["candidate_sha"], data["all_remote_reviews"], data["remote_findings"]
+        )
+        data["review_contract"]["family_sweeps"] = self.configured_family_sweeps(
+            data["original_pre_review"]["findings"],
+            data["remote_findings"],
+            data["assertion_requests"],
+        )
+        member = self.execute(data)["results"][0]
+        self.assertEqual(
+            (member["status"], member["output"]["program_case"]),
+            ("pass", "member/lifecycle/entries/affected-fixed"),
+        )
+        self.assertEqual(
+            (member["output"]["origin_status"], member["output"]["head_status"]),
+            ("fail", "pass"),
         )
 
     def test_action_member_passes_when_checker_authority_matches_base(self):
@@ -1799,7 +1830,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             assertion_requests=[
                 {
                     "assertion_id": (
-                        "registry:sibling:action:actions:verified-unaffected:v2"
+                        "registry:sibling:action:items:affected-fixed:v2"
                     ),
                     "finding_id": "LOCAL-ACTION-1",
                 }
@@ -1849,8 +1880,42 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         self.assertEqual(result["results"][0]["status"], "pass")
         self.assertEqual(
             result["results"][0]["output"]["program_case"],
-            "member/action/actions/verified-unaffected",
+            "member/action/items/affected-fixed",
         )
+        self.assertEqual(
+            (
+                result["results"][0]["output"]["origin_status"],
+                result["results"][0]["output"]["head_status"],
+            ),
+            ("fail", "pass"),
+        )
+
+    def test_resource_enabled_affected_fixed_reads_subject_decision_record(self):
+        self._restore_baseline()
+        self._set_resource_enabled_health(False)
+        (self.repo / "changed.txt").write_text("resource origin\n", encoding="utf-8")
+        origin = self._commit("resource-origin")
+        origin_tree = git_text(self.repo, "rev-parse", f"{origin}^{{tree}}")
+        self._restore_baseline()
+        (self.repo / "changed.txt").write_text("resource head\n", encoding="utf-8")
+        head = self._commit("resource-head")
+        head_tree = git_text(self.repo, "rev-parse", f"{head}^{{tree}}")
+        data = self.build_input(review_round=2, candidate_sha=head, candidate_tree=head_tree, assertion_requests=[{"assertion_id": "registry:sibling:resource:enabled:affected-fixed:v2", "finding_id": "FINDING-RESOURCE-1"}])
+        shutil.rmtree(data["origin_root"])
+        self.materialize_input_root(origin, Path(data["origin_root"]))
+        data["all_remote_reviews"][0]["candidate_sha"] = origin
+        data["all_remote_reviews"][0]["finding_ids"] = ["FINDING-RESOURCE-1"]
+        data["remote_findings"] = [{"node_id": "FINDING-RESOURCE-1", "review_id": "REMOTE_REVIEW_1", "candidate_sha": origin, "created_at": "2026-09-01T00:01:30Z", "author_actor_id": COPILOT_ACTOR_ID, "family": "resource"}]
+        data["finding_origin_sha"] = origin
+        data["finding_origin_tree"] = origin_tree
+        data["assertion_input_artifacts"] = self.assertion_artifacts(origin, head)
+        data["review_context"]["finding_ids"] = []
+        data["remote_finding_ids"] = []
+        data["captured_github_payload"] = self.captured_github_payload(head, data["all_remote_reviews"], data["remote_findings"])
+        data["review_contract"]["family_sweeps"] = self.configured_family_sweeps(data["original_pre_review"]["findings"], data["remote_findings"], data["assertion_requests"])
+        member = self.execute(data)["results"][0]
+        self.assertEqual((member["status"], member["output"]["program_case"]), ("pass", "member/resource/enabled/affected-fixed"))
+        self.assertEqual((member["output"]["origin_status"], member["output"]["head_status"]), ("fail", "pass"))
 
     def test_member_binding_special_case_does_not_spoof_real_finding_id(self):
         spoof_head, spoof_tree = self._make_action_binding_special_case_head()
@@ -2023,36 +2088,36 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             dependency_paths=["scripts/workflow_pilot/review_family.py"],
         )
 
-    def test_round_two_remote_finding_executes_real_remediation_round(self):
-        data = self.build_input(review_round=2)
-        self.assertEqual(data["original_pre_review"]["candidate_sha"], self.head1)
-        result = self.execute(data)
-        self.assertEqual(result["registry_version"], 1)
-        self.assertEqual(len(result["results"]), 2)
-        member = next(
-            item
-            for item in result["results"]
-            if item["authority_binding"]["finding_id"] == "FINDING-ACTION-1"
+    def test_wire_stale_bindings_affected_fixed_uses_current_review_binding(self):
+        self._restore_baseline()
+        (self.repo / "changed.txt").write_text("wire stale origin\n", encoding="utf-8")
+        origin = self._commit("wire-stale-origin")
+        self._restore_baseline()
+        (self.repo / "changed.txt").write_text("wire stale head\n", encoding="utf-8")
+        head = self._commit("wire-stale-head")
+        head_tree = git_text(self.repo, "rev-parse", f"{head}^{{tree}}")
+        data, _binding = self.wire_member_input(
+            candidate_sha=head,
+            candidate_tree=head_tree,
+            assertion_id="registry:sibling:wire:stale-bindings:affected-fixed:v2",
         )
-        self.assertEqual(member["status"], "hold")
-        self.assertEqual(member["authority_binding"]["finding_family"], "action")
-        self.assertEqual(member["authority_binding"]["finding_member"], "items")
+        shutil.rmtree(data["origin_root"])
+        self.materialize_input_root(origin, Path(data["origin_root"]))
+        data["all_remote_reviews"][0]["candidate_sha"] = origin
+        data["remote_findings"][0]["candidate_sha"] = origin
+        data["finding_origin_sha"] = origin
+        data["finding_origin_tree"] = git_text(self.repo, "rev-parse", f"{origin}^{{tree}}")
+        data["assertion_input_artifacts"] = self.assertion_artifacts(origin, head)
+        data["captured_github_payload"] = self.captured_github_payload(head, data["all_remote_reviews"], data["remote_findings"])
+        data["review_contract"]["family_sweeps"] = self.configured_family_sweeps(data["original_pre_review"]["findings"], data["remote_findings"], data["assertion_requests"])
+        member = self.execute(data)["results"][0]
         self.assertEqual(
-            member["authority_binding"]["finding_review_id"], "REMOTE_REVIEW_1"
+            (member["status"], member["output"]["program_case"]),
+            ("pass", "member/wire/stale-bindings/affected-fixed"),
         )
-        self.assertEqual(member["authority_binding"]["finding_review_round"], 1)
-        self.assertEqual(member["authority_binding"]["finding_head_sha"], self.head1)
-        self.assertEqual(member["authority_binding"]["finding_head_tree"], self.head1_tree)
         self.assertEqual(
-            member["authority_binding"]["finding_origin_sha"], self.head1
-        )
-        self.assertEqual(
-            member["authority_binding"]["finding_origin_tree"], self.head1_tree
-        )
-        self.assertEqual(member["authority_binding"]["head_sha"], self.head2)
-        self.assertEqual(member["authority_binding"]["head_tree"], self.head2_tree)
-        self.assertEqual(
-            member["output"]["hold_reason"], "authority-dependency-changed"
+            (member["output"]["origin_status"], member["output"]["head_status"]),
+            ("fail", "pass"),
         )
 
 
