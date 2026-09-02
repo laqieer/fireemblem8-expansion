@@ -32,6 +32,7 @@ PATCH_RELEASE_CASE = ROOT / "docs" / "test-cases" / "patch-release.md"
 PATCH_RELEASE_OVERVIEW = ROOT / "docs" / "patch_release.md"
 PATCH_RELEASE_REGISTRY = ROOT / "docs" / "test-cases" / "registry.json"
 MERGED_MASTER_771 = "771d38c5a531f2d63b269220727b02aa820cc3d4"
+FAILING_MASTER_8D81 = "8d81c30b298ef6265ba9c5335c3ca8c8f94e60e6"
 ARTIFACT_FILENAMES = (
     "README.txt",
     "fireemblem8-expansion-all-locales-all-features-aapcs.bps",
@@ -2148,6 +2149,53 @@ trap - EXIT
 """
 
 
+SUPERVISOR_WRITABLE_MOUNT_NAMESPACE_HARNESS = """\
+set -euo pipefail
+section_path="$1"
+cleanup() {
+  local status=0
+  if mountpoint -q /mnt/supervisor; then
+    umount /mnt/supervisor || status=1
+  fi
+  if mountpoint -q /mnt; then
+    umount /mnt || status=1
+  fi
+  return "$status"
+}
+trap cleanup EXIT
+mount -t tmpfs -o nosuid,nodev,noexec,mode=0755,size=16m probe-work /mnt
+mkdir -m 0700 /mnt/supervisor
+mount -t tmpfs -o nosuid,nodev,noexec,mode=0700,size=1m \
+  probe-supervisor /mnt/supervisor
+source "$section_path"
+cleanup
+trap - EXIT
+"""
+
+
+def run_extracted_supervisor_writable_mount_probe(
+    root: Path,
+    workflow: str,
+) -> subprocess.CompletedProcess[str]:
+    root.mkdir(parents=True, exist_ok=True)
+    section = writable_mount_transport_section_source(workflow)
+    findmnt_scope = '"TARGET,OPTIONS", "-R", "/"],'
+    replacement_count = section.count(findmnt_scope)
+    section = section.replace(
+        findmnt_scope,
+        '"TARGET,OPTIONS", "-R", "/mnt/supervisor"],',
+        1,
+    )
+    if replacement_count != 1:
+        raise AssertionError("exact workflow probe must contain one writable mount scope")
+    section_path = root / "section.sh"
+    section_path.write_text(section, encoding="utf-8")
+    return run_rootless_mount_namespace(
+        SUPERVISOR_WRITABLE_MOUNT_NAMESPACE_HARNESS,
+        str(section_path),
+    )
+
+
 def run_extracted_supervisor_parent_probe(
     root: Path,
     workflow: str,
@@ -3197,6 +3245,8 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     "rw,nosuid,nodev",
                     "/mnt/source",
                     "rw,nosuid,nodev",
+                    "/mnt/supervisor",
+                    "rw,nosuid,nodev,noexec,mode=700",
                     "/mnt/handoff",
                     "rw,nosuid,nodev",
                     "/mnt/tmp",
@@ -3225,6 +3275,48 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 "unexpected writable mount: /mnt/name with space",
                 completed.stderr,
             )
+
+    def test_supervisor_rw_mount_audit_fails_on_exact_master_and_passes_current_workflow(
+        self,
+    ):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="supervisor-writable-mount-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            require_findmnt_uniq_namespace_capability(sandbox / "preflight")
+            failed_workflow = subprocess.check_output(
+                [
+                    "git",
+                    "--no-pager",
+                    "show",
+                    f"{FAILING_MASTER_8D81}:.github/workflows/build.yml",
+                ],
+                cwd=ROOT,
+                text=True,
+            )
+            failure = run_extracted_supervisor_writable_mount_probe(
+                sandbox / "failure",
+                failed_workflow,
+            )
+            self.assertEqual(failure.returncode, 1)
+            self.assertIn(
+                "unexpected writable mount: /mnt/supervisor",
+                failure.stderr,
+            )
+            success = run_extracted_supervisor_writable_mount_probe(
+                sandbox / "success",
+                self.text,
+            )
+            self.assertEqual(
+                success.returncode,
+                0,
+                _bounded_process_diagnostic(success),
+            )
+            self.assertEqual(success.stdout, "")
+            self.assertEqual(success.stderr, "")
 
     def test_private_base_lifetime_is_fixed_and_candidate_free(self):
         self.assertEqual(publisher_boundary_errors(self.text), [])
@@ -6738,12 +6830,17 @@ exit 37
             text,
         )
         self.assertIn(
-            "Only `/dev/shm`, `/mnt/handoff`, `/mnt/home`, `/mnt/source`, `/mnt/tmp`, and",
-            text,
+            "Only `/dev/shm`, `/mnt/handoff`, `/mnt/home`, `/mnt/source`, "
+            "`/mnt/supervisor`,",
+            compact,
         )
         self.assertIn(
-            "`/tmp` may carry an exact `rw` option token",
-            text,
+            "`/mnt/tmp`, and `/tmp` may carry an exact `rw` option token",
+            compact,
+        )
+        self.assertIn(
+            "`/mnt/supervisor` is the sole mount-level `rw` exception that candidate",
+            compact,
         )
         self.assertIn(
             "util-linux documents `--uniq` as \"effectively skipping over-mounted\nmount points\"",

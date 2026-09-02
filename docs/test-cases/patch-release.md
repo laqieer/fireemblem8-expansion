@@ -73,9 +73,13 @@ temp file, and audits every effective writable mount in the isolated
 namespace. util-linux documents `--uniq` as "effectively skipping over-mounted
 mount points", so the audit sees the topmost visible layer for each target
 rather than failing on legitimate duplicate rows from hidden lower mounts.
-Only `/dev/shm`, `/mnt/handoff`, `/mnt/home`, `/mnt/source`, `/mnt/tmp`, and
-`/tmp` may carry an exact `rw` option token; spaces and backslashes in decoded
-target paths are handled losslessly, while control-character targets,
+Only `/dev/shm`, `/mnt/handoff`, `/mnt/home`, `/mnt/source`,
+`/mnt/supervisor`, `/mnt/tmp`, and `/tmp` may carry an exact `rw` option token.
+`/mnt/supervisor` is the sole mount-level `rw` exception that candidate code
+cannot read, write, execute, or traverse: mode-`0700` root ownership and
+candidate negative access probes preserve the boundary without the invalid
+late parent remount over its read-only cgroup child. Spaces and backslashes in
+decoded target paths are handled losslessly, while control-character targets,
 malformed option-token grammar, duplicate or extra JSON rows, raw escaped or
 whitespace-delimited mount-target transport, and any unexpected writable
 effective mount fail closed. Hidden lower layers remain irrelevant unless the
@@ -207,21 +211,29 @@ records, then audits every effective writable mount. util-linux documents
 `--uniq` as "effectively skipping over-mounted mount points", so legitimate
 duplicate target rows from hidden lower layers do not fail the audit and do
 not hide the topmost visible mount. Only `/dev/shm`, `/mnt/handoff`,
-`/mnt/home`, `/mnt/source`, `/mnt/tmp`, and `/tmp` may expose an exact `rw`
-option token. Decoded targets with spaces or backslashes remain lossless;
-control-character targets, malformed or ambiguous option-token grammar,
-duplicate or extra JSON rows, raw escaped or whitespace-delimited mount-target
-transport, parser failure, unchecked process substitution, and any unexpected
-writable effective mount fail closed. Hidden lower layers remain irrelevant
-unless the wrapper or candidate can expose them, and this publisher never
-grants that capability.
+`/mnt/home`, `/mnt/source`, `/mnt/supervisor`, `/mnt/tmp`, and `/tmp` may
+expose an exact `rw` option token. The root-owned mode-`0700`
+`/mnt/supervisor` is the sole mount-level `rw` exception that candidate code
+cannot read, write, execute, or traverse; this avoids the invalid late parent
+remount over its read-only cgroup child without granting candidate access.
+Decoded targets with spaces or backslashes remain lossless; control-character
+targets, malformed or ambiguous option-token grammar, duplicate or extra JSON
+rows, raw escaped or whitespace-delimited mount-target transport, parser
+failure, unchecked process substitution, and any unexpected writable
+effective mount fail closed. Hidden lower layers remain irrelevant unless the
+wrapper or candidate can expose them, and this publisher never grants that
+capability.
 
 ### Negative control
 
 A valid synthetic three-file artifact with the matching synthetic base
 round-trips successfully; it proves the rejection tests are not
-success-shaped. The default bare `make` path remains 16 MiB/default-off and
-does not receive a base secret, patch artifact, or publish step.
+success-shaped. For issue #177's publisher regression, exact failing master
+`8d81c30b298ef6265ba9c5335c3ca8c8f94e60e6` rejects the root-only writable
+`/mnt/supervisor` during the effective-mount audit, while the fixed workflow
+accepts that path and still rejects every candidate access probe. The default
+bare `make` path remains 16 MiB/default-off and does not receive a base secret,
+patch artifact, or publish step.
 
 ### Interactions and save compatibility
 
@@ -243,7 +255,9 @@ archival-lane behavior changes.
   exact-after isolated tool, no-ROM-transfer boundary, dedicated builder UID
   and namespaces, read-only host/private-filesystem probes, exact cgroup-v2 and
   process teardown, decoded recursive `/dev` target parsing and deepest-first
-  unmount order, recursive command/process-substitution inspection for
+  unmount order, the exact failing-master/current-workflow rootless namespace
+  regression for the root-only writable supervisor mount, recursive
+  command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions
   through inline `else`/brace/case/loop forms, `setsid`-wrapped and common
   outer-wrapper (`nohup`/`taskset`/`ionice`/`flock`) `env`/BusyBox command
