@@ -11,12 +11,10 @@ ledger.
 The immutable baseline fixture is
 [`scripts/workflow_pilot/tests/fixtures/baseline.json`](../scripts/workflow_pilot/tests/fixtures/baseline.json).
 Its inclusive UTC window is:
-
 ```text
 start = 2026-08-20T00:00:00Z
 end   = 2026-08-30T11:17:08Z
 ```
-
 The end is the timestamp of Discussion #174's original baseline measurement,
 not the later issue creation or this implementation commit. A timestamp equal
 to either boundary is inside the window. The fixture is expected input, not a
@@ -75,7 +73,6 @@ guessing.
 ## Public seam
 
 Run the stdlib-only reporter from the repository root:
-
 ```bash
 python3 -m scripts.workflow_pilot.reporter \
   --repository-root . \
@@ -83,7 +80,6 @@ python3 -m scripts.workflow_pilot.reporter \
   --decisions .github/workflow-pilot-decisions.json \
   --expected scripts/workflow_pilot/tests/fixtures/baseline_expected.json
 ```
-
 Successful output is canonical ASCII JSON: recursively sorted keys, compact
 separators, and one trailing newline. Running over identical immutable inputs
 is byte-identical. `baseline_expected.json` contains only immutable expected
@@ -435,14 +431,12 @@ that `HEAD` still equals `EXPECTED_BUILD_SHA`. This hydration is environment
 setup, not a 29th local semantic gate; local
 `scripts.upstream_port verify` remains network-independent.
 The deterministic read-only owner handoff is:
-
 ```bash
 /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py anchor-refs \
   --repository-root . \
   --fixture scripts/workflow_pilot/tests/fixtures/baseline.json \
   --decisions .github/workflow-pilot-decisions.json
 ```
-
 These remote refs are operational Git reachability, not committed provenance,
 a SHA ledger, an anchor commit, or an object snapshot. The command only prints
 derived mappings; it never creates or pushes refs.
@@ -710,13 +704,11 @@ the final candidate/master gates, game code, or any build profile.
 
 Validate a temporary immutable handoff document against its one allowed real
 worktree:
-
 ```bash
 python3 -m scripts.workflow_pilot.agent_handoff \
   --fixture build/test-artifacts/agent-handoff.json \
   --worktree /absolute/path/to/the/exact/worktree
 ```
-
 The document is per-assignment input and evidence, not a live ledger or a
 manually synchronized Git snapshot. The coordinator may preserve it with
 delivery evidence, while Git remains authoritative for the checkout root,
@@ -876,7 +868,6 @@ branch advances, copied anchors/seals/sequences, and rewritten bases fail
 even when each record is individually valid.
 
 Bootstrap, advance, and PR binding plans are deterministic and read-only:
-
 ```bash
 python3 -m scripts.workflow_pilot.agent_handoff \
   --authority-operation bootstrap \
@@ -887,7 +878,7 @@ python3 -m scripts.workflow_pilot.agent_handoff \
 python3 -m scripts.workflow_pilot.agent_handoff \
   --authority-operation advance \
   --fixture <handoff-document-json> --handoff-id <closed-handoff-id> \
-  --worktree . --repository laqieer/fireemblem8-expansion --issue 178 \
+  --worktree . --repository laqieer/fireemblem8-expansion \
   --expected-object-id <remote-head> --expected-sequence <n> \
   --publication-attestation <signed-json> \
   --coordinator-installation <external-path>
@@ -901,7 +892,6 @@ python3 -m scripts.workflow_pilot.agent_handoff \
   --publication-attestation <signed-json> \
   --coordinator-installation <external-path>
 ```
-
 The output names normalized authority and anchor records, both expected remote
 objects, the single-use operation nonce, authorized numeric actors, and one
 atomic push template. It never emits separate or force-capable commands,
@@ -1074,14 +1064,12 @@ its seal. This adds no mutable decision record and does not alter version 1
 expected paths, values, or seals.
 Run a version 2 operational fixture without the version 1-only `--expected`
 argument:
-
 ```bash
 python3 -m scripts.workflow_pilot.reporter \
   --repository-root . \
   --fixture build/test-artifacts/workflow-pilot-operational.json \
   --decisions .github/workflow-pilot-decisions.json
 ```
-
 Conversely, omitting `--expected` from a version 1 baseline run fails, so the
 new mode cannot bypass the frozen baseline comparison or executable lifecycle
 proof.

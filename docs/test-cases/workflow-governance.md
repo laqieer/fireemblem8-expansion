@@ -874,7 +874,6 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    test "$base_ref" = "$candidate_branch"
    test "$base_sha" = "$candidate_sha"
    ```
-
    Never use `git commit --allow-empty`, an empty commit, or a merge commit.
    The tracked probe is deterministic for the candidate SHA and the direct
    parent assertion proves the head is a strict nonempty descendant.
@@ -894,7 +893,6 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
      "repos/$repo/actions/runs/$opened_run_id/jobs" -f per_page=100 \
      > "$evidence_dir/opened-jobs.json"
    ```
-
    - **Parsed live opened-run job set:** {`event-identity`, `event-router`,
      `event-classifier`, `host-tests`, `build`, `extended-host-tests`, `legacy`,
      `patch-release`, `summary`}.
@@ -920,7 +918,6 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
      > "$evidence_dir/title-jobs.json"
    gh pr checks "$pr" --required > "$evidence_dir/title-required-checks.txt"
    ```
-
    - **Parsed live title-edit job/check set:** {`event-identity`,
      `event-router`, `metadata-classifier`, `host-tests`, `build`,
      `extended-host-tests`, `legacy`, `patch-release`, `summary`}.
@@ -961,7 +958,6 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
      > "$evidence_dir/restore-jobs.json"
    gh pr checks "$pr" --required > "$evidence_dir/restore-required-checks.txt"
    ```
-
    - **Parsed live title-restore job/check set:** {`event-identity`,
      `event-router`, `metadata-classifier`, `host-tests`, `build`,
      `extended-host-tests`, `legacy`, `patch-release`, `summary`}.
@@ -1149,7 +1145,6 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    assert not failed_restore_result.eligible
    PY
    ```
-
    The title-only and restore runs alone prove the missing-full negative; the
    copied failed summary proves the failed-full negative without inventing a
    success-shaped fallback.
@@ -1159,7 +1154,6 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    ```bash
    exit 0
    ```
-
    Cleanup restores the original title if necessary, closes without merging,
    deletes the exact remote ref only through a SHA compare-and-swap lease,
    removes the exact isolated worktree/local ref only when their head/ref match

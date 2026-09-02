@@ -19,7 +19,6 @@ from jsonschema import Draft202012Validator, FormatChecker, ValidationError
 from scripts.workflow_pilot import agent_handoff, reporter
 from scripts.workflow_pilot.tests import test_reporter
 
-
 ROOT = Path(__file__).resolve().parents[3]
 TEST_ARTIFACTS = ROOT / "build" / "test-artifacts"
 TEST_ARTIFACTS.mkdir(parents=True, exist_ok=True)
@@ -527,28 +526,24 @@ def owner_create_record_commit(
             "GIT_COMMITTER_DATE": "2026-08-31T00:00:00Z",
         },
     )
-
 def plan_advance_authority(
     repository_root,
     document,
     result,
     *,
-    issue=178,
+    issue=None,
+    pull_request=None,
     handoff_id="issue-178-round-1",
-    current_time=None,
 ):
-    current = agent_handoff.read_history_authority(
-        repository_root,
-        "example/workflow",
-        issue,
-        None,
-    )
     history = agent_handoff.make_history_receipt(document, result, handoff_id)
+    issue = history["issue"] if issue is None else issue
+    pull_request = history["pull_request"] if pull_request is None else pull_request
+    current = agent_handoff.read_history_authority(repository_root, "example/workflow", issue, pull_request)
     return current, history, agent_handoff.plan_history_authority(
         repository_root,
         "example/workflow",
         issue,
-        None,
+        pull_request,
         operation="advance",
         expected_object_id=current["object_id"],
         expected_sequence=current["sequence"],
@@ -564,24 +559,23 @@ def plan_advance_authority(
             new_head_seal=history["seal"],
             history_receipt=history,
         ),
-        current_time=current_time,
     )
-
 def set_history_authority(
     repository_root,
     sequence,
     head_seal=None,
     *,
-    issue=178,
+    issue=None,
     pull_request=None,
     document=None,
     result=None,
     handoff_id="issue-178-round-1",
 ):
-    owner_root = AUTHORITY_OWNERS[str(repository_root)]
-    reference = agent_handoff.history_authority_ref(issue, pull_request)
-    anchor_reference = agent_handoff.history_anchor_ref(issue)
     if sequence == 0:
+        issue = 178 if issue is None else issue
+        owner_root = AUTHORITY_OWNERS[str(repository_root)]
+        reference = agent_handoff.history_authority_ref(issue, pull_request)
+        anchor_reference = agent_handoff.history_anchor_ref(issue)
         publication = publication_attestation(
             repository_root,
             None,
@@ -597,63 +591,34 @@ def set_history_authority(
             operation="bootstrap",
             publication_attestation=publication,
         )
-        if plan != agent_handoff.plan_history_authority(
-            repository_root,
-            "example/workflow",
-            issue,
-            None,
-            operation="bootstrap",
-            publication_attestation=publication,
-        ):
-            raise AssertionError("bootstrap plan is not deterministic")
         parent = None
     else:
-        current = agent_handoff.read_history_authority(
-            repository_root,
-            "example/workflow",
-            issue,
-            None,
-        )
         if document is not None and result is not None:
-            history = agent_handoff.make_history_receipt(document, result, handoff_id)
-            publication = publication_attestation(
+            owner_root = AUTHORITY_OWNERS[str(repository_root)]
+            current, history_receipt, plan = plan_advance_authority(
                 repository_root,
-                current["object_id"],
-                current["anchor_object_id"],
+                document,
+                result,
                 issue=issue,
-                operation="advance",
-                new_head_seal=history["seal"],
-                history_receipt=history,
-            )
-            plan = agent_handoff.plan_history_authority(
-                repository_root,
-                "example/workflow",
-                issue,
-                None,
-                operation="advance",
-                expected_object_id=current["object_id"],
-                expected_sequence=current["sequence"],
-                handoff_document=document,
-                handoff_result=result,
+                pull_request=pull_request,
                 handoff_id=handoff_id,
-                publication_attestation=publication,
             )
-            if plan != agent_handoff.plan_history_authority(
-                repository_root,
-                "example/workflow",
-                issue,
-                None,
-                operation="advance",
-                expected_object_id=current["object_id"],
-                expected_sequence=current["sequence"],
-                handoff_document=document,
-                handoff_result=result,
-                handoff_id=handoff_id,
-                publication_attestation=publication,
-            ):
-                raise AssertionError("advance plan is not deterministic")
+            issue = history_receipt["issue"]
+            pull_request = history_receipt["pull_request"]
+            reference = agent_handoff.history_authority_ref(issue, pull_request)
+            anchor_reference = agent_handoff.history_anchor_ref(issue)
             parent = current["object_id"]
         else:
+            issue = 178 if issue is None else issue
+            owner_root = AUTHORITY_OWNERS[str(repository_root)]
+            reference = agent_handoff.history_authority_ref(issue, pull_request)
+            anchor_reference = agent_handoff.history_anchor_ref(issue)
+            current = agent_handoff.read_history_authority(
+                repository_root,
+                "example/workflow",
+                issue,
+                None,
+            )
             history_receipt = {
                 "sequence": current["handoff_sequence"] + 1,
                 "previous_seal": current["head_seal"]
@@ -1854,7 +1819,6 @@ def add_run(document, result_sha, conclusion="success", process_result="success"
         document,
         Path(document["handoffs"][0]["allowed_worktree"]),
     )
-
 class DeliveryDependencyGraphTests(unittest.TestCase):
     def test_parent_merge_unblocks_child_before_parent_remote_completion(self):
         report = agent_handoff.evaluate_delivery_graph(delivery_graph())
@@ -2022,7 +1986,6 @@ class DeliveryDependencyGraphTests(unittest.TestCase):
             "missing-parent-post-merge-gate",
             invalid_report["rejection_codes"],
         )
-
 class AuthorityReadRaceTests(unittest.TestCase):
     def test_stable_and_advance_before_read_boundaries(self):
         with handoff_repository() as (root, _base, _parent, _result):
@@ -2114,7 +2077,6 @@ class AuthorityReadRaceTests(unittest.TestCase):
                     authority_hook=advance_at_eligibility,
                 )
             self.assertTrue(advanced)
-
 class ExactHandoffTests(unittest.TestCase):
     def test_schema_v2_closes_candidate_reported_authority(self):
         schema = load_handoff_schema()
@@ -2516,6 +2478,13 @@ class ExactHandoffTests(unittest.TestCase):
                 "unknown delivery task",
             ):
                 agent_handoff.validate_document(missing_task, root)
+            valid = handoff_document(root, parent, result); valid_report = agent_handoff.validate_document(valid, root)
+            set_history_authority(root, 0, None, issue=179)
+            issue179 = handoff_document(root, parent, result, issue=179, handoff_id="issue-179-round-1"); issue179_report = agent_handoff.validate_document(issue179, root)
+            with self.assertRaisesRegex(agent_handoff.HandoffDataError, "canonical handoff issue"):
+                agent_handoff.plan_history_authority(root, "example/workflow", 178, None, operation="advance", expected_object_id=valid["history_authority"]["object_id"], expected_sequence=valid["history_authority"]["sequence"], handoff_document=issue179, handoff_result=issue179_report, handoff_id="issue-179-round-1")
+            with self.assertRaisesRegex(agent_handoff.HandoffDataError, "canonical handoff pull request"):
+                agent_handoff.plan_history_authority(root, "example/workflow", 178, 200, operation="advance", expected_object_id=valid["history_authority"]["object_id"], expected_sequence=valid["history_authority"]["sequence"], handoff_document=valid, handoff_result=valid_report, handoff_id="issue-178-round-1")
     def test_parent_post_merge_run_is_sha_status_and_conclusion_bound(self):
         with handoff_repository() as (root, _base, parent, result):
             wrong_sha = handoff_document(root, parent, result)
@@ -2600,12 +2569,11 @@ class ExactHandoffTests(unittest.TestCase):
             self.assertEqual(accepted.returncode, 0, accepted.stderr.decode())
             accepted_result = json.loads(accepted.stdout)
             self.assertTrue(accepted_result["summary"]["trusted_push_eligible"])
-            self.assertEqual(
-                accepted.stdout,
-                agent_handoff.normalized_json(accepted_result),
-            )
-            with self.assertRaises(TypeError):
-                agent_handoff.plan_history_authority(root, "example/workflow", 178, None, operation="advance", history_receipt={})
+            self.assertEqual(accepted.stdout, agent_handoff.normalized_json(accepted_result))
+            set_history_authority(root, 0, None, issue=179)
+            fixture_path.write_text(json.dumps(handoff_document(root, parent, result, issue=179, handoff_id="issue-179-round-1")), encoding="utf-8")
+            mismatch = subprocess.run(command + ["--authority-operation", "advance", "--repository", "example/workflow", "--handoff-id", "issue-179-round-1", "--issue", "178"], cwd=ROOT, check=False, capture_output=True)
+            self.assertIn(b"advance planning derives issue and pull request from the fixture", mismatch.stderr)
             document["handoffs"][0]["result"]["sha"] = parent
             fixture_path.write_text(json.dumps(document), encoding="utf-8")
             rejected = subprocess.run(
@@ -5600,7 +5568,6 @@ class ExactHandoffTests(unittest.TestCase):
                 "must exactly cover",
             ):
                 agent_handoff.validate_document(document, root)
-
 class ReporterHandoffExtensionTests(unittest.TestCase):
     def test_historical_successors_aggregate_and_require_current_ancestry(self):
         with handoff_repository() as (root, _base, parent, first_result):
@@ -6390,7 +6357,6 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             "is missing fields",
         ):
             reporter.validate_fixture(fixture)
-
 
 if __name__ == "__main__":
     unittest.main()

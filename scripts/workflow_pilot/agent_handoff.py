@@ -20,7 +20,6 @@ from typing import Any, Iterable
 
 from scripts.workflow_pilot import reporter
 
-
 SCHEMA_VERSION = 2
 COPILOT_TRAILER = (
     "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
@@ -2516,7 +2515,7 @@ def read_history_authority(
 def plan_history_authority(
     repository_root: Path,
     repository: str,
-    issue: int,
+    issue: int | None,
     pull_request: int | None,
     *,
     operation: str,
@@ -2545,6 +2544,34 @@ def plan_history_authority(
         )
     if _repository_from_origin(repository_root) != repository:
         raise HandoffDataError("history authority plan repository mismatch")
+    new_head_seal = history_receipt = expected_binding = None
+    if operation == "advance":
+        if (
+            handoff_document is None
+            or handoff_result is None
+            or handoff_id is None
+            or pull_request_observation is not None
+        ):
+            raise HandoffDataError(
+                "history authority advance requires handoff document, "
+                "canonical result, selected handoff ID, and no PR observation"
+            )
+        closed = make_history_receipt(
+            copy.deepcopy(expect_object(handoff_document, "handoff document")),
+            copy.deepcopy(expect_object(handoff_result, "handoff result")),
+            expect_string(handoff_id, "handoff_id"),
+            coordinator_installation=coordinator_installation,
+        )
+        if issue is not None and issue != closed["issue"]:
+            raise HandoffDataError("history authority advance target issue does not match the canonical handoff issue")
+        if pull_request not in {None, closed["pull_request"]}:
+            raise HandoffDataError("history authority advance target pull request does not match the canonical handoff pull request")
+        issue = closed["issue"]; pull_request = closed["pull_request"]
+        history_receipt = copy.deepcopy(closed); new_head_seal = closed["seal"]
+    elif issue is None:
+        raise HandoffDataError(
+            "history authority bootstrap and bind require an explicit issue"
+        )
     reference = history_authority_ref(issue, pull_request)
     anchor_reference = history_anchor_ref(issue)
     remote_object = _remote_ref_oid(
@@ -2569,9 +2596,6 @@ def plan_history_authority(
             (remote_anchor or preflight_object, anchor_reference),
         ],
     )
-    new_head_seal = None
-    history_receipt = None
-    expected_binding = None
     if operation == "bootstrap":
         if remote_object is not None or remote_anchor is not None:
             raise HandoffDataError(
@@ -2672,7 +2696,7 @@ def plan_history_authority(
             repository_root,
             repository,
             issue,
-            None,
+            None if operation == "bind" else pull_request,
             coordinator_installation=coordinator_installation,
         )
         if (
@@ -2685,23 +2709,6 @@ def plan_history_authority(
                 "history authority compare-and-swap expectation is stale"
             )
         if operation == "advance":
-            if (
-                handoff_document is None
-                or handoff_result is None
-                or handoff_id is None
-                or pull_request_observation is not None
-            ):
-                raise HandoffDataError(
-                    "history authority advance requires handoff document, "
-                    "canonical result, selected handoff ID, and no PR observation"
-                )
-            closed = make_history_receipt(
-                copy.deepcopy(expect_object(handoff_document, "handoff document")),
-                copy.deepcopy(expect_object(handoff_result, "handoff result")),
-                expect_string(handoff_id, "handoff_id"),
-            )
-            history_receipt = copy.deepcopy(closed)
-            new_head_seal = closed["seal"]
             if (
                 closed["sequence"] != current["handoff_sequence"] + 1
                 or closed["previous_seal"]
@@ -3301,6 +3308,8 @@ def make_history_receipt(
     document: dict[str, Any],
     result: dict[str, Any],
     handoff_id: str,
+    *,
+    coordinator_installation: Path | None = None,
 ) -> dict[str, Any]:
     prior = validate_prior_handoffs(document["prior_handoffs"])
     source = next(
@@ -3314,6 +3323,7 @@ def make_history_receipt(
     canonical_result = validate_document(
         copy.deepcopy(document),
         Path(source["allowed_worktree"]),
+        coordinator_installation=coordinator_installation,
         current_time=parse_time(
             document["coordinator_receipt"]["issued_at"],
             "coordinator_receipt.issued_at",
@@ -8267,13 +8277,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         if args.authority_operation is not None:
-            if args.worktree is None or args.repository is None or args.issue is None:
+            if args.worktree is None or args.repository is None:
                 raise HandoffDataError(
-                    "authority planning requires worktree/repository/issue"
+                    "authority planning requires worktree and repository"
                 )
-            handoff_document = None
-            handoff_result = None
+            handoff_document = handoff_result = None
             if args.authority_operation == "advance":
+                if args.issue is not None or args.pull_request is not None:
+                    raise HandoffDataError("advance planning derives issue and pull request from the fixture")
                 if args.fixture is None or args.handoff_id is None:
                     raise HandoffDataError(
                         "advance planning requires --fixture and --handoff-id"
@@ -8283,6 +8294,10 @@ def main(argv: list[str] | None = None) -> int:
                     copy.deepcopy(expect_object(handoff_document, "handoff document")),
                     args.worktree,
                     coordinator_installation=args.coordinator_installation,
+                )
+            elif args.issue is None:
+                raise HandoffDataError(
+                    "bootstrap and bind planning require --issue"
                 )
             elif args.fixture is not None or args.handoff_id is not None:
                 raise HandoffDataError(
@@ -8328,7 +8343,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.authority_operation is not None:
         return 0
     return 0 if result["summary"]["trusted_push_eligible"] else 2
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
