@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import http.server
 import io
+import itertools
 import json
 import os
 import re
@@ -42,6 +43,17 @@ AUDITED_PATCH_TOOL_FILES = (
 SUPERVISOR_PARENT_REMOUNT_OPTIONS = frozenset(
     {"remount", "ro", "nosuid", "nodev", "noexec"}
 )
+SUPERVISOR_PARENT_REMOUNT_SEQUENCE = (
+    "remount",
+    "ro",
+    "nosuid",
+    "nodev",
+    "noexec",
+)
+SUPERVISOR_PARENT_REMOUNT_INSERTION_MARKER = (
+    "        /usr/bin/mount -t tmpfs \\\n"
+    "          -o nosuid,mode=0755,size=4m builder-dev /dev"
+)
 
 
 def parse_patch_release_run_commands(workflow: str) -> list[list[list[str]]]:
@@ -73,27 +85,23 @@ def parse_patch_release_run_commands(workflow: str) -> list[list[list[str]]]:
                 continue
             value = match.group("value")
             if value == "|":
-                physical = [
-                    following[8:]
-                    for following in step[index + 1:]
-                    if following.startswith("        ")
-                ]
-                run = []
-                continued = ""
-                for line in physical:
-                    logical = continued + line.strip()
-                    if logical.endswith("\\"):
-                        continued = logical[:-1] + " "
-                        continue
-                    run.append(logical)
-                    continued = ""
-                if continued:
-                    raise AssertionError("publisher run block has dangling continuation")
+                script = (
+                    "\n".join(
+                        following[8:]
+                        for following in step[index + 1:]
+                        if following.startswith("        ")
+                    )
+                    + "\n"
+                )
+                run = _parse_bash_run_script_commands(
+                    script,
+                    label="publisher run block",
+                )
             else:
-                run = [value]
+                run = [shlex.split(value)]
             break
         if run is not None:
-            commands.append([shlex.split(line) for line in run if line])
+            commands.append(run)
     return commands
 
 
@@ -131,16 +139,42 @@ def named_step_run_script(workflow: str, name: str) -> str:
     )
 
 
+def _parse_bash_run_script_commands(script: str, *, label: str) -> list[list[str]]:
+    commands: list[list[str]] = []
+    continued: list[str] = []
+    for line in script.splitlines():
+        if not continued and (not line.strip() or line.lstrip().startswith("#")):
+            continue
+        fragment = line[:-1] if line.endswith("\\") else line
+        continued.append(fragment)
+        if line.endswith("\\"):
+            continue
+        logical = "".join(continued)
+        continued = []
+        if not logical.strip() or logical.lstrip().startswith("#"):
+            continue
+        tokens = shlex.split(logical)
+        if not tokens:
+            raise AssertionError(f"{label} command is empty")
+        commands.append(tokens)
+    if continued:
+        raise AssertionError(f"{label} has dangling continuation")
+    return commands
+
+
 def _is_supervisor_parent_readonly_remount_command(command: list[str]) -> bool:
-    if len(command) != 4:
+    if len(command) < 4:
         return False
-    executable, flag, option_text, target = command
+    executable, flag = command[:2]
+    option_fragments = command[2:-1]
+    target = command[-1]
     if (
         executable != "/usr/bin/mount"
         or flag != "-o"
         or target != "/mnt/supervisor"
     ):
         return False
+    option_text = "".join(option_fragments)
     options = option_text.split(",")
     return len(options) == 5 and frozenset(options) == SUPERVISOR_PARENT_REMOUNT_OPTIONS
 
@@ -153,28 +187,71 @@ def workflow_has_supervisor_parent_readonly_remount(workflow: str) -> bool:
     )
 
 
-def dev_mount_target_parser_source(workflow: str) -> str:
-    steps = patch_release_step_blocks(workflow)
-    matches = [
-        step
-        for step in steps
-        if "    - name: Build candidate in isolated namespace and stage public inputs\n"
-        in step
-    ]
-    if len(matches) != 1:
-        raise AssertionError("publisher must define exactly one isolated builder step")
-    script = matches[0]
-    match = re.search(
-        r"(?ms)^\s*list_dev_mount_targets\(\) \{\n"
-        r"\s*/usr/bin/python3 -I -S - <<'PY'\n"
-        r"(?P<body>.*?)\n"
-        r"\s*PY\n"
-        r"\s*\}",
-        script,
+def render_supervisor_parent_remount_mutation(
+    workflow: str,
+    *,
+    lines: tuple[str, ...],
+) -> str:
+    rendered = "".join(f"        {line}\n" for line in lines)
+    return workflow.replace(
+        SUPERVISOR_PARENT_REMOUNT_INSERTION_MARKER,
+        rendered + SUPERVISOR_PARENT_REMOUNT_INSERTION_MARKER,
+        1,
     )
-    if match is None:
-        raise AssertionError("publisher must embed exactly one decoded /dev mount parser")
-    return textwrap.dedent(match.group("body")) + "\n"
+
+
+def generate_supervisor_parent_remount_mutations(workflow: str):
+    for ordering in itertools.permutations(SUPERVISOR_PARENT_REMOUNT_SEQUENCE):
+        option_text = ",".join(ordering)
+        yield (
+            "ordering:" + option_text,
+            render_supervisor_parent_remount_mutation(
+                workflow,
+                lines=(f"/usr/bin/mount -o {option_text} /mnt/supervisor",),
+            ),
+        )
+
+    pieces: list[str] = []
+    for index, token in enumerate(SUPERVISOR_PARENT_REMOUNT_SEQUENCE):
+        pieces.append(token)
+        if index + 1 < len(SUPERVISOR_PARENT_REMOUNT_SEQUENCE):
+            pieces.append(",")
+
+    def render_split(boundaries: tuple[int, ...], indent: int) -> tuple[str, ...]:
+        lines: list[str] = []
+        current = ["/usr/bin/mount -o "]
+        for index, piece in enumerate(pieces):
+            current.append(piece)
+            if index + 1 in boundaries:
+                lines.append("".join(current) + "\\")
+                current = [" " * indent]
+        current.append(" /mnt/supervisor")
+        lines.append("".join(current))
+        return tuple(lines)
+
+    for boundary in range(1, len(pieces)):
+        for indent in (0, 2, 8):
+            yield (
+                f"split:{boundary}:indent:{indent}",
+                render_supervisor_parent_remount_mutation(
+                    workflow,
+                    lines=render_split((boundary,), indent),
+                ),
+            )
+
+    all_boundaries = tuple(range(1, len(pieces)))
+    for indent in (0, 2, 8):
+        yield (
+            f"multisplit:indent:{indent}",
+            render_supervisor_parent_remount_mutation(
+                workflow,
+                lines=render_split(all_boundaries, indent),
+            ),
+        )
+
+
+def dev_mount_target_parser_source(workflow: str) -> str:
+    return textwrap.dedent(raw_dev_mount_target_parser_source(workflow))
 
 
 def dev_mount_transport_section_source(workflow: str) -> str:
@@ -192,27 +269,7 @@ def dev_mount_transport_section_source(workflow: str) -> str:
 
 
 def writable_mount_record_parser_source(workflow: str) -> str:
-    steps = patch_release_step_blocks(workflow)
-    matches = [
-        step
-        for step in steps
-        if "    - name: Build candidate in isolated namespace and stage public inputs\n"
-        in step
-    ]
-    if len(matches) != 1:
-        raise AssertionError("publisher must define exactly one isolated builder step")
-    script = matches[0]
-    match = re.search(
-        r"(?ms)^\s*list_writable_mount_records\(\) \{\n"
-        r"\s*/usr/bin/python3 -I -S - <<'PY'\n"
-        r"(?P<body>.*?)\n"
-        r"\s*PY\n"
-        r"\s*\}",
-        script,
-    )
-    if match is None:
-        raise AssertionError("publisher must embed exactly one writable mount parser")
-    return textwrap.dedent(match.group("body")) + "\n"
+    return textwrap.dedent(raw_writable_mount_record_parser_source(workflow))
 
 
 def raw_dev_mount_target_parser_source(workflow: str) -> str:
@@ -1052,6 +1109,33 @@ def run_extracted_supervisor_parent_probe(
         str(section_path),
         str(fake_cgroup),
     )
+
+
+def patch_release_python_c_snippets(workflow: str) -> list[tuple[int, int, str]]:
+    snippets: list[tuple[int, int, str]] = []
+    for step_index, commands in enumerate(parse_patch_release_run_commands(workflow)):
+        for command_index, command in enumerate(commands):
+            if "/usr/bin/python3" not in command:
+                continue
+            python_index = command.index("/usr/bin/python3")
+            if python_index + 4 >= len(command):
+                continue
+            if command[python_index + 1 : python_index + 4] != ["-I", "-S", "-c"]:
+                continue
+            snippets.append((step_index, command_index, command[python_index + 4]))
+    return snippets
+
+
+def assert_patch_release_python_c_snippets_compile(testcase: unittest.TestCase, workflow: str) -> None:
+    snippets = patch_release_python_c_snippets(workflow)
+    testcase.assertEqual(len(snippets), 4)
+    for step_index, command_index, source in snippets:
+        with testcase.subTest(
+            step=step_index,
+            command=command_index,
+            language="python",
+        ):
+            compile(source, "<patch-release-workflow>", "exec")
 
 
 class PatchReleaseWorkflowTests(unittest.TestCase):
@@ -2556,6 +2640,13 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             self.assertIn("/mnt/supervisor", failure.stderr)
             self.assertIn("bad option", failure.stderr)
 
+    def test_supervisor_parent_remount_variants_are_rejected_bash_equivalently(self):
+        self.assertFalse(workflow_has_supervisor_parent_readonly_remount(self.text))
+        for label, changed in generate_supervisor_parent_remount_mutations(self.text):
+            with self.subTest(variant=label):
+                self.assertTrue(workflow_has_supervisor_parent_readonly_remount(changed))
+                self.assertTrue(publisher_boundary_errors(changed))
+
     def test_exact_candidate_patch_tool_imports_are_closed(self):
         allowed_import_roots = {
             "__future__",
@@ -3496,6 +3587,7 @@ exit 37
                             0,
                             completed.stderr,
                         )
+        assert_patch_release_python_c_snippets_compile(self, self.text)
 
         for label, source in (
             ("dev-mount-target-parser", raw_dev_mount_target_parser_source(self.text)),
@@ -3506,19 +3598,18 @@ exit 37
         ):
             with self.subTest(language="embedded-python-heredoc", parser=label):
                 ast.parse(source)
-                if "/usr/bin/python3" in command and "-c" in command:
-                    python_index = command.index("/usr/bin/python3")
-                    command_flag = command.index("-c", python_index)
-                    with self.subTest(
-                        step=step_index,
-                        command=command_index,
-                        language="python",
-                    ):
-                        compile(
-                            command[command_flag + 1],
-                            "<patch-release-workflow>",
-                            "exec",
-                        )
+
+    def test_each_patch_release_python_c_snippet_is_checked(self):
+        snippets = patch_release_python_c_snippets(self.text)
+        self.assertEqual(len(snippets), 4)
+        assert_patch_release_python_c_snippets_compile(self, self.text)
+        for index, (step_index, command_index, _source) in enumerate(snippets):
+            with self.subTest(step=step_index, command=command_index):
+                mutated = list(snippets)
+                mutated[index] = (step_index, command_index, "if (")
+                with self.assertRaises(SyntaxError):
+                    for _, _, source in mutated:
+                        compile(source, "<patch-release-workflow>", "exec")
 
         isolated_step = next(
             step

@@ -10,10 +10,12 @@ from unittest import mock
 
 from scripts.upstream_port import cli, verify as verify_mod
 from tests.workflows import test_build_ci_topology as topology_tests
+from tests.workflows import test_patch_release_workflow as patch_workflow_tests
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 BUILD_WORKFLOW_PATH = os.path.join(REPO_ROOT, ".github", "workflows", "build.yml")
 UPSTREAM_PORTING_PATH = os.path.join(REPO_ROOT, "docs", "upstream-porting.md")
+BROKEN_PUBLISHER_INDENTATION_SHA = "77aae9df769aa87f2fd9bed13b767ff8e7dd171a"
 
 # Issues #7/#17 remediation: the documentation step is a genuine required
 # workflow gate, but it is the sole correctness step deliberately excluded
@@ -1159,6 +1161,37 @@ class VerifyCliCwdTests(unittest.TestCase):
                 except ValueError:
                     continue
                 self.assertNotEqual(changed_structure, structure)
+
+    def test_patch_release_supervisor_parent_remount_variants_reject_structure_parse(self):
+        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
+            original = handle.read()
+        verify_mod._parse_workflow_structure_text(original)
+        for label, changed in patch_workflow_tests.generate_supervisor_parent_remount_mutations(
+            original
+        ):
+            with self.subTest(variant=label):
+                with self.assertRaises(ValueError):
+                    verify_mod._parse_workflow_structure_text(changed)
+
+    def test_historical_patch_release_parser_indentation_is_rejected(self):
+        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
+            original = handle.read()
+        verify_mod._parse_workflow_structure_text(original)
+        broken = subprocess.check_output(
+            [
+                "git",
+                "--no-pager",
+                "show",
+                f"{BROKEN_PUBLISHER_INDENTATION_SHA}:.github/workflows/build.yml",
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "patch-release parser script differs",
+        ):
+            verify_mod._parse_workflow_structure_text(broken)
 
     def test_every_combined_worker_requires_the_fail_closed_classifier_edge(self):
         with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:

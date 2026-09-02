@@ -18,6 +18,7 @@ directly to reproduce it locally; see docs/upstream-porting.md.
 
 from __future__ import annotations
 
+import ast
 import os
 import re
 import shlex
@@ -96,6 +97,11 @@ _UPLOAD_WITH = (
 _SUPERVISOR_PARENT_REMOUNT_OPTIONS = frozenset(
     {"remount", "ro", "nosuid", "nodev", "noexec"}
 )
+_PATCH_RELEASE_PARSER_HEREDOC_NAMES = (
+    "list_dev_mount_targets",
+    "list_writable_mount_records",
+)
+_PATCH_RELEASE_PARSER_HEREDOC_INTRODUCER = "  /usr/bin/python3 -I -S - <<'PY'"
 _EXPECTED_BUILD_SHA_EXPRESSION = (
     "${{ (needs.event-classifier.result == 'success' && "
     "needs.event-classifier.outputs.expected_head) || "
@@ -946,11 +952,14 @@ _PRIVATE_STEP_ENV = (
 
 
 def _is_supervisor_parent_readonly_remount_command(command):
-    if len(command) != 4:
+    if len(command) < 4:
         return False
-    executable, flag, option_text, target = command
+    executable, flag = command[:2]
+    option_fragments = command[2:-1]
+    target = command[-1]
     if executable != "/usr/bin/mount" or flag != "-o" or target != "/mnt/supervisor":
         return False
+    option_text = "".join(option_fragments)
     options = option_text.split(",")
     return len(options) == 5 and frozenset(options) == _SUPERVISOR_PARENT_REMOUNT_OPTIONS
 
@@ -1518,22 +1527,10 @@ def _parse_run_value(lines, start, end, value, step_label):
     if value and value != "|":
         commands = (tuple(shlex.split(value)),)
     elif value == "|":
-        parsed = []
-        continued = ""
-        for line in lines[start:end]:
-            if not line.strip() or line.lstrip().startswith("#"):
-                continue
-            if len(line) - len(line.lstrip(" ")) < 8:
-                raise ValueError(f"{step_label} run block has invalid indentation")
-            text = continued + line.strip()
-            if text.endswith("\\"):
-                continued = text[:-1] + " "
-                continue
-            parsed.append(tuple(shlex.split(text)))
-            continued = ""
-        if continued:
-            raise ValueError(f"{step_label} run block has dangling continuation")
-        commands = tuple(parsed)
+        commands = _parse_bash_run_script_commands(
+            _literal_run_script(lines, start, end, value, step_label),
+            step_label,
+        )
     else:
         raise ValueError(f"{step_label} run field is empty")
     if not commands or any(not command for command in commands):
@@ -1543,13 +1540,65 @@ def _parse_run_value(lines, start, end, value, step_label):
 
 def _literal_run_script(lines, start, end, value, step_label):
     if value != "|":
-        raise ValueError(f"{step_label} metadata adapter must use a literal run block")
+        raise ValueError(f"{step_label} must use a literal run block")
     script = []
     for line in lines[start:end]:
         if line and not line.startswith("        "):
             break
         script.append(line[8:])
     return "\n".join(script) + "\n"
+
+
+def _parse_bash_run_script_commands(script, step_label):
+    parsed = []
+    continued = []
+    for line in script.splitlines():
+        if not continued and (not line.strip() or line.lstrip().startswith("#")):
+            continue
+        fragment = line[:-1] if line.endswith("\\") else line
+        continued.append(fragment)
+        if line.endswith("\\"):
+            continue
+        logical = "".join(continued)
+        continued = []
+        if not logical.strip() or logical.lstrip().startswith("#"):
+            continue
+        command = tuple(shlex.split(logical))
+        if not command:
+            raise ValueError(f"{step_label} run command is empty")
+        parsed.append(command)
+    if continued:
+        raise ValueError(f"{step_label} run block has dangling continuation")
+    if not parsed:
+        raise ValueError(f"{step_label} run command is empty")
+    return tuple(parsed)
+
+
+def _validate_patch_release_parser_heredocs(script, step_label):
+    pattern = re.compile(
+        r"(?ms)^(?P<name>list_dev_mount_targets|list_writable_mount_records)\(\) \{\n"
+        r"  /usr/bin/python3 -I -S - <<'PY'\n"
+        r"(?P<body>.*?)\n"
+        r"PY\n"
+        r"\}",
+    )
+    matches = list(pattern.finditer(script))
+    if script.count(_PATCH_RELEASE_PARSER_HEREDOC_INTRODUCER) != len(
+        _PATCH_RELEASE_PARSER_HEREDOC_NAMES
+    ):
+        raise ValueError(f"{step_label} patch-release parser heredoc count differs")
+    if len(matches) != len(_PATCH_RELEASE_PARSER_HEREDOC_NAMES):
+        raise ValueError(f"{step_label} patch-release parser heredoc structure differs")
+    names = tuple(match.group("name") for match in matches)
+    if names != _PATCH_RELEASE_PARSER_HEREDOC_NAMES:
+        raise ValueError(f"{step_label} patch-release parser function association differs")
+    for match in matches:
+        try:
+            ast.parse(match.group("body") + "\n")
+        except SyntaxError as error:
+            raise ValueError(
+                f"{step_label} patch-release parser Python body is invalid"
+            ) from error
 
 
 def _parse_step(block, job_name, index):
@@ -1922,6 +1971,13 @@ def _parse_step(block, job_name, index):
             )
         ):
             raise ValueError(f"{step_label} isolated candidate build differs")
+        if index == 3:
+            if literal_run_script is None:
+                raise ValueError(f"{step_label} patch-release parser script differs")
+            try:
+                _validate_patch_release_parser_heredocs(literal_run_script, step_label)
+            except ValueError as error:
+                raise ValueError(f"{step_label} patch-release parser script differs") from error
         if index == 4 and (
             values["id"] != "private-base"
             or values["shell"]
