@@ -91,7 +91,8 @@ The candidate cannot read, write, execute, or traverse that parent and cannot
 receive an FD for it. After candidate exit, the wrapper reads the exact
 read-only cgroup child there and exports the ROM only when the wrapper PID is
 the sole member; the host continues to use the actual cgroup path for kill and
-removal.
+removal. Trusted wrapper failures emit only fixed launch, isolated-build, or
+cleanup stage codes with numeric exits, never candidate-controlled output.
 
 Before candidate code starts, its PID-1 wrapper redirects inherited standard
 input/output/error permanently to private `/dev/null`. A trusted isolated

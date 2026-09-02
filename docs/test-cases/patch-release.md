@@ -182,7 +182,9 @@ the Actions log through proc FDs, `/dev/stdout`, console/kmsg, `tee`, xtrace,
 helpers, or forks. ROM-sized output is discarded and never replayed; arbitrary
 output volume cannot fail an otherwise successful build. No output sink exists.
 Fixed trusted text and a numeric exit classification preserve build failure
-without exposing candidate bytes.
+without exposing candidate bytes. When the trusted wrapper fails before,
+during, or after the isolated build, it emits only fixed launch, isolated, or
+cleanup stage codes with numeric exits.
 The wrapper binds the exact owned cgroup read-only under root-only mode-`0700`
 `/mnt/supervisor` before masking `/sys`. The candidate cannot read, write,
 execute, or traverse that parent, while the exact cgroup child remains

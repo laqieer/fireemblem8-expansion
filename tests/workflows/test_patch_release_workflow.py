@@ -157,7 +157,6 @@ def dev_mount_transport_section_source(workflow: str) -> str:
     )
     start = script.index("create_supervisor_transport_file() {")
     end_marker = (
-        "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor\n"
         "/usr/bin/mount -t tmpfs \\\n"
         "  -o nosuid,mode=0755,size=4m builder-dev /dev"
     )
@@ -480,8 +479,6 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         not in isolated_step
         or 'mount_target="${writable_mount_records[index]}"' not in isolated_step
         or 'mount_options="${writable_mount_records[index + 1]}"' not in isolated_step
-        or "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"
-        not in isolated_step
         or "/usr/bin/findmnt -Rrno TARGET /dev" in isolated_step
         or "/usr/bin/findmnt --raw" in isolated_step
         or "< <(list_dev_mount_targets)" in isolated_step
@@ -514,7 +511,12 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or 'test -z "${BASH_XTRACEFD-}"' not in isolated_step
         or 'test ! -e /dev/console' not in isolated_step
         or 'test ! -e /dev/kmsg' not in isolated_step
-        or "candidate build failed: exit=%d" not in isolated_step
+        or "candidate build failed: stage=launch detail=%s exit=%d"
+        not in isolated_step
+        or "candidate build failed: stage=isolated exit=%d"
+        not in isolated_step
+        or "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d"
+        not in isolated_step
         or "candidate build status: success" not in isolated_step
         or "/usr/bin/mount --make-rprivate /" not in isolated_step
         or "/usr/bin/mount -o remount,bind,ro /" not in isolated_step
@@ -913,6 +915,74 @@ def run_findmnt_uniq_namespace_semantic_probe(
     )
 
 
+SUPERVISOR_PARENT_REMOUNT_PROBE_SCRIPT = """\
+set -euo pipefail
+root="$1"
+fake_cgroup="$2"
+mode="$3"
+cleanup() {
+  local status=0
+  if mountpoint -q /mnt/supervisor/cgroup; then
+    umount /mnt/supervisor/cgroup || status=1
+  fi
+  if mountpoint -q /mnt/supervisor; then
+    umount /mnt/supervisor || status=1
+  fi
+  if mountpoint -q /mnt; then
+    umount /mnt || status=1
+  fi
+  return "$status"
+}
+trap cleanup EXIT
+mount -t tmpfs -o nosuid,nodev,noexec,mode=0755,size=16m probe-work /mnt
+mkdir -m 0700 /mnt/supervisor
+mount -t tmpfs -o nosuid,nodev,noexec,mode=0700,size=1m probe-supervisor /mnt/supervisor
+mkdir -m 0700 /mnt/supervisor/cgroup
+mount --bind "$fake_cgroup" /mnt/supervisor/cgroup
+mount -o remount,bind,ro,nosuid,nodev,noexec /mnt/supervisor/cgroup
+options="$(findmnt -n -o OPTIONS --target /mnt/supervisor/cgroup)"
+for option in ro nosuid nodev noexec; do
+  case ",$options," in
+    *,"$option",*) ;;
+    *) exit 125 ;;
+  esac
+done
+path="$(mktemp "/mnt/supervisor/test.XXXXXXXXXX")"
+test -f "$path"
+test ! -L "$path"
+test "$(/usr/bin/stat -c %u "$path")" = 0
+test "$(/usr/bin/stat -c %a "$path")" = 600
+test "$(/usr/bin/stat -c %h "$path")" = 1
+/bin/rm -f -- "$path"
+test ! -e "$path"
+if [ "$mode" = remount-parent-ro ]; then
+  mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor
+fi
+echo PASS
+cleanup
+trap - EXIT
+"""
+
+
+def run_supervisor_parent_remount_probe(
+    root: Path,
+    fake_cgroup: Path,
+    *,
+    include_parent_remount: bool,
+) -> subprocess.CompletedProcess[str]:
+    root.mkdir(parents=True, exist_ok=True)
+    fake_cgroup.mkdir(parents=True, exist_ok=True)
+    for name in ("cgroup.procs", "cgroup.kill"):
+        (fake_cgroup / name).write_text("", encoding="utf-8")
+    mode = "remount-parent-ro" if include_parent_remount else "keep-parent-rw"
+    return run_rootless_mount_namespace(
+        SUPERVISOR_PARENT_REMOUNT_PROBE_SCRIPT,
+        str(root),
+        str(fake_cgroup),
+        mode,
+    )
+
+
 class PatchReleaseWorkflowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -1061,10 +1131,6 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "builder-supervisor /mnt/supervisor",
             self.patch_job,
         )
-        self.assertIn(
-            "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor",
-            self.patch_job,
-        )
         supervisor_bind = self.patch_job.index(
             '/usr/bin/mount --bind "$cgroup_path" /mnt/supervisor/cgroup'
         )
@@ -1107,7 +1173,15 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertNotIn("candidate-output.log", self.patch_job)
         self.assertIn("ulimit -f 131072", self.patch_job)
         self.assertIn("size=6g builder-source /mnt/source", self.patch_job)
-        self.assertIn("candidate build failed: exit=%d", self.patch_job)
+        self.assertIn(
+            "candidate build failed: stage=launch detail=%s exit=%d",
+            self.patch_job,
+        )
+        self.assertIn("candidate build failed: stage=isolated exit=%d", self.patch_job)
+        self.assertIn(
+            "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d",
+            self.patch_job,
+        )
         self.assertIn("candidate build status: success", self.patch_job)
         stop = self.patch_job.index(
             'test -z "$(builder_cgroup_pids)"',
@@ -1223,7 +1297,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     b"/dev/name with space",
                 ],
             )
-            self.assertEqual(trace.read_text(encoding="ascii"), "OVERMOUNT\n")
+            self.assertFalse(trace.exists())
             self.assertEqual(list(supervisor_root.iterdir()), [])
 
     def test_device_mount_transport_propagates_producer_failure_before_unmount_or_overmount(self):
@@ -2062,6 +2136,16 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             '            "GITHUB_WORKSPACE": "/mnt/source",',
             1,
         )
+        launch_stage_free_text = self.text.replace(
+            "candidate build failed: stage=launch detail=%s exit=%d",
+            "candidate build failed: exit=%d",
+            1,
+        )
+        cleanup_stage_free_text = self.text.replace(
+            "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d",
+            "candidate build cleanup failed",
+            1,
+        )
         writable_host_root = self.text.replace(
             "/usr/bin/mount -o remount,bind,ro /",
             "/usr/bin/mount -o remount,bind,rw /",
@@ -2227,12 +2311,6 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "          true",
             1,
         )
-        writable_supervisor_parent_during_candidate = self.text.replace(
-            "        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor\n"
-            "        /usr/bin/mount -t tmpfs \\",
-            "        /usr/bin/mount -t tmpfs \\",
-            1,
-        )
         forward_dev_teardown = self.text.replace(
             "for ((index=${#dev_mounts[@]} - 1; "
             "index >= 0; index--)); do",
@@ -2335,13 +2413,11 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             ("missing-dev-transport-symlink-guard", missing_dev_transport_symlink_guard),
             ("missing-dev-transport-link-guard", missing_dev_transport_link_guard),
             ("missing-dev-transport-cleanup", missing_dev_transport_cleanup),
-            (
-                "writable-supervisor-parent-during-candidate",
-                writable_supervisor_parent_during_candidate,
-            ),
             ("forward-dev-teardown", forward_dev_teardown),
             ("ambient-dependency-python", ambient_dependency_python),
             ("unverified-builder-state", unverified_builder_state),
+            ("launch-stage-free-text", launch_stage_free_text),
+            ("cleanup-stage-free-text", cleanup_stage_free_text),
             ("allowed-unexpected-handoff", allowed_unexpected_handoff),
             ("disabled-late-revalidation", disabled_late_revalidation),
             ("candidate-patch-artifact-mutation", candidate_patch_artifact_mutation),
@@ -2350,6 +2426,35 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertNotEqual(changed, self.text)
                 self.assertTrue(publisher_boundary_errors(changed))
+
+    def test_supervisor_parent_remount_after_cgroup_bind_fails_namespace_probe(self):
+        self.assertNotIn(
+            "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor",
+            self.patch_job,
+        )
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="supervisor-parent-remount-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            require_findmnt_uniq_namespace_capability(sandbox / "preflight")
+            success = run_supervisor_parent_remount_probe(
+                sandbox / "success",
+                sandbox / "fake-cgroup-success",
+                include_parent_remount=False,
+            )
+            self.assertEqual(success.returncode, 0, _bounded_process_diagnostic(success))
+            self.assertEqual(success.stdout.strip(), "PASS")
+            failure = run_supervisor_parent_remount_probe(
+                sandbox / "failure",
+                sandbox / "fake-cgroup-failure",
+                include_parent_remount=True,
+            )
+            self.assertNotEqual(failure.returncode, 0)
+            self.assertIn("/mnt/supervisor", failure.stderr)
+            self.assertIn("bad option", failure.stderr)
 
     def test_exact_candidate_patch_tool_imports_are_closed(self):
         allowed_import_roots = {
@@ -2714,7 +2819,10 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 visible = (
                     "candidate build status: success"
                     if completed.returncode == 0
-                    else f"candidate build failed: exit={completed.returncode}"
+                    else (
+                        "candidate build failed: stage=isolated "
+                        f"exit={completed.returncode}"
+                    )
                 )
                 self.assertNotIn(marker, visible)
                 self.assertFalse(

@@ -1800,6 +1800,13 @@ jobs:
           cgroup_cleanup="$?"
           remove_builder_state
           state_cleanup="$?"
+          if [ "$process_cleanup" -ne 0 ] || \
+             [ "$cgroup_cleanup" -ne 0 ] || \
+             [ "$state_cleanup" -ne 0 ]; then
+            printf 'candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d\n' \
+              "$process_cleanup" "$cgroup_cleanup" "$state_cleanup" \
+              "$status" >&2
+          fi
           if [ "$status" -ne 0 ]; then
             exit "$status"
           fi
@@ -2096,7 +2103,6 @@ jobs:
         remove_supervisor_transport_file "$remaining_dev_mounts_file"
         test "${#remaining_dev_mounts[@]}" -eq 1
         test "${remaining_dev_mounts[0]}" = /dev
-        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor
         /usr/bin/mount -t tmpfs \
           -o nosuid,mode=0755,size=4m builder-dev /dev
         /usr/bin/mknod -m 0666 /dev/null c 1 3
@@ -2517,18 +2523,41 @@ jobs:
           "$host_uid" "$host_gid" \
           < /dev/null > /dev/null 2>&1 &
         builder_supervisor_pid="$!"
+        builder_launch_detail=pgid-ready
+        set +e
         builder_pgid="$(/usr/bin/ps -o pgid= -p "$builder_supervisor_pid" \
           | /usr/bin/tr -d ' ')"
-        [[ "$builder_pgid" =~ ^[1-9][0-9]*$ ]]
-        test "$builder_pgid" = "$builder_supervisor_pid"
-        test "$builder_pgid" != "$shell_pgid"
+        builder_pgid_status="$?"
+        set -e
+        if [ "$builder_pgid_status" -ne 0 ]; then
+          builder_launch_detail=pgid-query
+        elif ! [[ "$builder_pgid" =~ ^[1-9][0-9]*$ ]]; then
+          builder_launch_detail=pgid-format
+        elif [ "$builder_pgid" != "$builder_supervisor_pid" ]; then
+          builder_launch_detail=pgid-mismatch
+        elif [ "$builder_pgid" = "$shell_pgid" ]; then
+          builder_launch_detail=pgid-parent
+        fi
+        if [ "$builder_launch_detail" != pgid-ready ]; then
+          set +e
+          wait "$builder_supervisor_pid"
+          builder_status="$?"
+          set -e
+          builder_supervisor_pid=""
+          if [ "$builder_status" -eq 0 ]; then
+            builder_status=125
+          fi
+          printf 'candidate build failed: stage=launch detail=%s exit=%d\n' \
+            "$builder_launch_detail" "$builder_status" >&2
+          exit "$builder_status"
+        fi
         set +e
         wait "$builder_supervisor_pid"
         builder_status="$?"
         set -e
         builder_supervisor_pid=""
         if [ "$builder_status" -ne 0 ]; then
-          printf 'candidate build failed: exit=%d\n' \
+          printf 'candidate build failed: stage=isolated exit=%d\n' \
             "$builder_status" >&2
           exit "$builder_status"
         fi
