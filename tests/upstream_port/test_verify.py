@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 from scripts.upstream_port import cli, verify as verify_mod
+from tests.workflows import test_build_ci_topology as topology_tests
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 BUILD_WORKFLOW_PATH = os.path.join(REPO_ROOT, ".github", "workflows", "build.yml")
@@ -316,9 +317,13 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
         self.assertTrue(_parse_workflow_gate_commands_text(workflow))
         adversarial = workflow.replace(
             "    - name: Run workflow-pilot reporter regression suite (issue #176)\n"
+            "      if: ${{ needs.event-classifier.result == 'failure' || "
+            "needs.event-classifier.outputs.classification == 'full' }}\n"
             "      env:\n"
             "        BASH_ENV: ''\n",
             "    - name: Run workflow-pilot reporter regression suite (issue #176)\n"
+            "      if: ${{ needs.event-classifier.result == 'failure' || "
+            "needs.event-classifier.outputs.classification == 'full' }}\n"
             "      env:\n"
             + ("        a\n" * 50000)
             + "        BASH_ENV: ''\n",
@@ -367,7 +372,7 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
                     with self.assertRaisesRegex(
                         ValueError,
                         "unsupported direct mapping|unsupported direct fields|"
-                        "must contain exactly",
+                        "must contain exactly|duplicate direct fields",
                     ):
                         _parse_workflow_gate_commands_text(changed)
 
@@ -972,11 +977,15 @@ class VerifyCliCwdTests(unittest.TestCase):
 
             upstream_step = (
                 "    - name: Run upstream-port tooling test suite\n"
+                "      if: ${{ needs.event-classifier.result == 'failure' || "
+                "needs.event-classifier.outputs.classification == 'full' }}\n"
                 "      run: python3 -m unittest discover "
                 "-s tests/upstream_port -v\n"
             )
             workflow_step = (
                 "    - name: Run workflow contract test suite\n"
+                "      if: ${{ needs.event-classifier.result == 'failure' || "
+                "needs.event-classifier.outputs.classification == 'full' }}\n"
                 '      run: python3 -m unittest discover -s tests/workflows '
                 '-p "test_*.py" -v\n'
             )
@@ -1164,13 +1173,18 @@ class VerifyCliCwdTests(unittest.TestCase):
         with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
             original = handle.read()
         for job_name in verify_mod._COMBINED_JOBS:
+            expected_if = (
+                verify_mod._HOST_BUILD_CONDITION
+                if job_name in verify_mod._METADATA_ADAPTER_JOBS
+                else verify_mod._WORKER_CONDITION
+            )
             for old, new in (
                 (
                     "    needs: [event-identity, event-classifier]",
                     "    needs: [event-classifier]",
                 ),
                 (
-                    f"    if: {verify_mod._WORKER_CONDITION}",
+                    f"    if: {expected_if}",
                     "    if: ${{ needs.event-classifier.outputs."
                     "run_expensive == 'true' }}",
                 ),
@@ -1235,7 +1249,207 @@ class VerifyCliCwdTests(unittest.TestCase):
                         handle.write(changed)
                     with self.assertRaisesRegex(
                         ValueError,
-                        "duplicate step names",
+                        "duplicate step names|must contain exactly",
+                    ):
+                        verify_mod.run_gates(target_root, dry_run=True)
+
+    def test_metadata_adapter_parsed_contract_rejects_extra_shell_and_python_behavior(self):
+        artifact_root = os.path.join(REPO_ROOT, "build", "test-artifacts")
+        os.makedirs(artifact_root, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="verify-metadata-adapter-",
+            dir=artifact_root,
+        ) as temporary:
+            target_root = self.clone_target(temporary)
+            workflow_path = os.path.join(
+                target_root,
+                ".github",
+                "workflows",
+                "build.yml",
+            )
+            with open(workflow_path, "r", encoding="utf-8") as handle:
+                original = handle.read()
+            mutations = {
+                "extra-python-command": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    '        PY\n',
+                    '        PY\n        /usr/bin/python3 -c "pass"\n',
+                ),
+                "extra-touch-command": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    '        fi\n        /usr/bin/python3 -I - <<\'PY\'\n',
+                    '        fi\n        /usr/bin/touch "$GITHUB_EVENT_PATH"\n'
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                ),
+                "extra-python-import": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        import sys\n",
+                    "        import sys\n        import socket\n",
+                ),
+                "extra-python-dead-branch": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        payload = load_event_payload()\n",
+                    "        payload = load_event_payload()\n"
+                    "        if False:\n"
+                    "            json.dumps({})\n",
+                ),
+                "raw-trailing-space-drift": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        fi\n",
+                    "        fi   \n",
+                ),
+                "raw-comment-drift": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        import sys\n",
+                    "        import sys\n        # lexical drift\n",
+                ),
+                "unquoted-heredoc-introducer": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<PY\n",
+                ),
+                "double-quoted-heredoc-introducer": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    '        /usr/bin/python3 -I - <<"PY"\n',
+                ),
+                "escaped-heredoc-introducer": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<\\PY\n",
+                ),
+                "dash-heredoc-introducer": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<-'PY'\n",
+                ),
+                "backslash-space": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    '        if [ "$CLASSIFIER_RESULT" != "success" ] || \\\n',
+                    '        if [ "$CLASSIFIER_RESULT" != "success" ] || \\ \n',
+                ),
+                "backslash-tab": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    '           [ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \\\n',
+                    '           [ "$FALLBACK_IDENTITY_RESULT" != "success" ] || \\\t\n',
+                ),
+                "backslash-trailing-spaces": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    '           [ "$GITHUB_EVENT_NAME" != "pull_request" ] || \\\n',
+                    '           [ "$GITHUB_EVENT_NAME" != "pull_request" ] || \\  \n',
+                ),
+                "uniform-python-heredoc-indent": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    topology_tests._step_blocks(
+                        topology_tests._job_blocks(original)["host-tests"]
+                    )[0],
+                    topology_tests._indent_metadata_adapter_heredoc_in_step(
+                        topology_tests._step_blocks(
+                            topology_tests._job_blocks(original)["host-tests"]
+                        )[0]
+                    ),
+                ),
+                "nbsp": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<'PY'\u00a0\n",
+                ),
+                "em-space": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<'PY'\u2003\n",
+                ),
+                "en-space": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<'PY'\u2002\n",
+                ),
+                "thin-space": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<'PY'\u2009\n",
+                ),
+                "ideographic-space": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<'PY'\u3000\n",
+                ),
+                "zero-width-space": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<'PY'\u200b\n",
+                ),
+                "bom": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "\ufeff        /usr/bin/python3 -I - <<'PY'\n",
+                ),
+                "line-separator": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<'PY'\u2028\n",
+                ),
+                "paragraph-separator": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<'PY'\u2029\n",
+                ),
+                "carriage-return": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        /usr/bin/python3 -I - <<'PY'\n",
+                    "        /usr/bin/python3 -I - <<'PY'\r\n",
+                ),
+                "ascii-tab": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        import sys\n",
+                    "\t        import sys\n",
+                ),
+                "ascii-escape": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        import sys\n",
+                    "        import sys\x1b\n",
+                ),
+                "ascii-nul": self.replace_in_job(
+                    original,
+                    "host-tests",
+                    "        import sys\n",
+                    "        import sys\x00\n",
+                ),
+            }
+            for name, changed in mutations.items():
+                with self.subTest(mutation=name):
+                    self.assert_only_job_changed(original, changed, "host-tests")
+                    with open(workflow_path, "w", encoding="utf-8") as handle:
+                        handle.write(changed)
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "metadata adapter script differs|workflow has content after the jobs mapping",
                     ):
                         verify_mod.run_gates(target_root, dry_run=True)
 

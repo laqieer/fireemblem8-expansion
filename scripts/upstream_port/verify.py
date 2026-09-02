@@ -25,6 +25,11 @@ import subprocess
 from dataclasses import dataclass
 from typing import List
 
+from scripts.workflow_pilot import (
+    metadata_adapter_contract,
+    summary_continuity_contract,
+)
+
 # A leading NAME=VALUE token in a gate command is an inline environment
 # assignment (POSIX shell semantics), mirrored verbatim from build.yml so
 # the gate list stays an argv-identical copy of the workflow. It is applied
@@ -36,6 +41,7 @@ _SOURCE_ROOT = os.path.realpath(
 )
 _BUILD_WORKFLOW_RELATIVE = os.path.join(".github", "workflows", "build.yml")
 _COMBINED_JOBS = ("host-tests", "build", "extended-host-tests", "legacy")
+_METADATA_ADAPTER_JOBS = ("host-tests", "build")
 _EVENT_IDENTITY_JOB = "event-identity"
 _EVENT_ROUTER_JOB = "event-router"
 _EVENT_CLASSIFIER_JOB = "event-classifier"
@@ -93,6 +99,14 @@ _EXPECTED_BUILD_SHA_EXPRESSION = (
     "(needs.event-classifier.result == 'failure' && "
     "needs.event-identity.outputs.fallback_sha) || '' }}"
 )
+_FULL_WORKER_STEP_CONDITION = (
+    "${{ needs.event-classifier.result == 'failure' || "
+    "needs.event-classifier.outputs.classification == 'full' }}"
+)
+_METADATA_ADAPTER_STEP_CONDITION = (
+    "${{ needs.event-classifier.result == 'success' && "
+    "needs.event-classifier.outputs.classification == 'metadata-only' }}"
+)
 _CLASSIFIER_REF_EXPRESSION = (
     "${{ needs.event-identity.outputs.classifier_ref }}"
 )
@@ -101,6 +115,58 @@ _CLASSIFIER_EXPECTED_SHA_EXPRESSION = (
 )
 _WORKER_CONDITION = (
     "${{ always() && ((needs.event-classifier.result == 'success' && "
+    "needs.event-identity.result == 'success' && "
+    "needs.event-classifier.outputs.classification == 'full' && "
+    "needs.event-classifier.outputs.head_valid == 'true' && "
+    "needs.event-classifier.outputs.run_expensive == 'true' && "
+    "((github.event_name == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_kind == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "needs.event-classifier.outputs.expected_head && "
+    "needs.event-classifier.outputs.expected_head == "
+    "github.event.pull_request.head.sha && "
+    "github.event.pull_request.head.sha != '' && "
+    "(needs.event-classifier.outputs.identity_valid == 'true' || "
+    "needs.event-classifier.outputs.full_fallback == 'true')) || "
+    "(github.event_name == 'push' && "
+    "needs.event-identity.outputs.fallback_kind == 'push' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "needs.event-classifier.outputs.expected_head && "
+    "needs.event-identity.outputs.fallback_sha == github.sha && "
+    "needs.event-classifier.outputs.identity_valid == 'true' && "
+    "needs.event-classifier.outputs.expected_head == github.event.after && "
+    "needs.event-classifier.outputs.expected_base == '' && "
+    "github.event.after != ''))) || "
+    "(needs.event-classifier.result == 'failure' && "
+    "needs.event-identity.result == 'success' && "
+    "((github.event_name == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_kind == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "github.event.pull_request.head.sha) || "
+    "(github.event_name == 'push' && "
+    "needs.event-identity.outputs.fallback_kind == 'push' && "
+    "needs.event-identity.outputs.fallback_sha == github.event.after && "
+    "needs.event-identity.outputs.fallback_sha == github.sha)))) }}"
+)
+_HOST_BUILD_CONDITION = (
+    "${{ always() && ((needs.event-classifier.result == 'success' && "
+    "needs.event-identity.result == 'success' && "
+    "needs.event-classifier.outputs.classification == 'metadata-only' && "
+    "needs.event-classifier.outputs.head_valid == 'true' && "
+    "needs.event-classifier.outputs.identity_valid == 'true' && "
+    "needs.event-classifier.outputs.full_fallback == 'false' && "
+    "needs.event-classifier.outputs.run_expensive == 'false' && "
+    "github.event_name == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_kind == 'pull_request' && "
+    "needs.event-identity.outputs.fallback_sha == "
+    "needs.event-classifier.outputs.expected_head && "
+    "needs.event-classifier.outputs.expected_head == "
+    "github.event.pull_request.head.sha && "
+    "needs.event-classifier.outputs.expected_base == "
+    "github.event.pull_request.base.sha && "
+    "github.event.pull_request.head.sha != '' && "
+    "github.event.pull_request.base.sha != '') || "
+    "(needs.event-classifier.result == 'success' && "
     "needs.event-identity.result == 'success' && "
     "needs.event-classifier.outputs.classification == 'full' && "
     "needs.event-classifier.outputs.head_valid == 'true' && "
@@ -146,11 +212,6 @@ _DYNAMIC_JOB_NAMES = {
         "${{ needs.event-router.result == 'success' && "
         "needs.event-router.outputs.classification == 'metadata-only' && "
         "'metadata-classifier' || 'event-classifier' }}"
-    ),
-    "summary": (
-        "${{ needs.event-classifier.result == 'success' && "
-        "needs.event-classifier.outputs.classification == 'metadata-only' "
-        "&& 'metadata-summary' || 'summary' }}"
     ),
 }
 _IDENTITY_COMMANDS = (
@@ -719,36 +780,70 @@ _EXPECTED_JOB_ENV = {
     "patch-release": (
         ("PATCH_COMMIT", "${{ needs.event-identity.outputs.fallback_sha }}"),
     ),
-    "summary": (
-        ("BUILD_RESULT", "${{ needs.build.result }}"),
-        ("CLASSIFICATION", "${{ needs.event-classifier.outputs.classification }}"),
-        (
-            "CLASSIFIED_BASE_SHA",
-            "${{ needs.event-classifier.outputs.expected_base }}",
-        ),
-        (
-            "CLASSIFIED_BUILD_SHA",
-            "${{ needs.event-classifier.outputs.expected_head }}",
-        ),
-        ("CLASSIFIER_RESULT", "${{ needs.event-classifier.result }}"),
-        ("EXTENDED_HOST_TESTS_RESULT", "${{ needs.extended-host-tests.result }}"),
-        ("FALLBACK_IDENTITY_RESULT", "${{ needs.event-identity.result }}"),
-        ("FALLBACK_KIND", "${{ needs.event-identity.outputs.fallback_kind }}"),
-        ("FALLBACK_SHA", "${{ needs.event-identity.outputs.fallback_sha }}"),
-        ("FULL_FALLBACK", "${{ needs.event-classifier.outputs.full_fallback }}"),
-        ("HEAD_VALID", "${{ needs.event-classifier.outputs.head_valid }}"),
-        ("HOST_TESTS_RESULT", "${{ needs.host-tests.result }}"),
-        ("IDENTITY_VALID", "${{ needs.event-classifier.outputs.identity_valid }}"),
-        ("LEGACY_RESULT", "${{ needs.legacy.result }}"),
-        ("PATCH_RELEASE_RESULT", "${{ needs.patch-release.result }}"),
-        ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
-        ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
-        ("PUSH_SHA", "${{ github.event.after }}"),
-        ("RAW_PUSH_SHA", "${{ github.sha }}"),
-        ("RUN_EXPENSIVE", "${{ needs.event-classifier.outputs.run_expensive }}"),
+    "summary": tuple(
+        sorted(
+            (
+                ("BUILD_RESULT", "${{ needs.build.result }}"),
+                ("CLASSIFICATION", "${{ needs.event-classifier.outputs.classification }}"),
+                (
+                    "CLASSIFIED_BASE_SHA",
+                    "${{ needs.event-classifier.outputs.expected_base }}",
+                ),
+                (
+                    "CLASSIFIED_BUILD_SHA",
+                    "${{ needs.event-classifier.outputs.expected_head }}",
+                ),
+                ("CLASSIFIER_RESULT", "${{ needs.event-classifier.result }}"),
+                ("EXTENDED_HOST_TESTS_RESULT", "${{ needs.extended-host-tests.result }}"),
+                ("FALLBACK_IDENTITY_RESULT", "${{ needs.event-identity.result }}"),
+                ("FALLBACK_KIND", "${{ needs.event-identity.outputs.fallback_kind }}"),
+                ("FALLBACK_SHA", "${{ needs.event-identity.outputs.fallback_sha }}"),
+                ("FULL_FALLBACK", "${{ needs.event-classifier.outputs.full_fallback }}"),
+                ("GITHUB_API_URL", "${{ github.api_url }}"),
+                ("GITHUB_REPOSITORY", "${{ github.repository }}"),
+                ("GITHUB_TOKEN", "${{ github.token }}"),
+                ("HEAD_VALID", "${{ needs.event-classifier.outputs.head_valid }}"),
+                ("HOST_TESTS_RESULT", "${{ needs.host-tests.result }}"),
+                ("IDENTITY_VALID", "${{ needs.event-classifier.outputs.identity_valid }}"),
+                ("LEGACY_RESULT", "${{ needs.legacy.result }}"),
+                ("PATCH_RELEASE_RESULT", "${{ needs.patch-release.result }}"),
+                ("PR_BASE_SHA", "${{ github.event.pull_request.base.sha }}"),
+                ("PR_HEAD_SHA", "${{ github.event.pull_request.head.sha }}"),
+                ("PR_NUMBER", "${{ github.event.number }}"),
+                ("PUSH_SHA", "${{ github.event.after }}"),
+                ("RAW_PUSH_SHA", "${{ github.sha }}"),
+                ("RUN_ATTEMPT", "${{ github.run_attempt }}"),
+                ("RUN_EXPENSIVE", "${{ needs.event-classifier.outputs.run_expensive }}"),
+                ("RUN_ID", "${{ github.run_id }}"),
+                ("RUN_NUMBER", "${{ github.run_number }}"),
+            )
+        )
     ),
 }
+_METADATA_ADAPTER_STEP_NAME = "Attest metadata-only branch-protection continuity"
+_SUMMARY_STEP_NAME = "Render fail-closed combined Build summary"
+_METADATA_ADAPTER_ENV = tuple(
+    sorted(
+        (
+            ("BASH_ENV", "''"),
+            ("CLASSIFICATION", "${{ needs.event-classifier.outputs.classification }}"),
+            ("CLASSIFIED_BASE_SHA", "${{ needs.event-classifier.outputs.expected_base }}"),
+            ("CLASSIFIED_BUILD_SHA", "${{ needs.event-classifier.outputs.expected_head }}"),
+            ("CLASSIFIER_RESULT", "${{ needs.event-classifier.result }}"),
+            ("ENV", "''"),
+            ("FALLBACK_IDENTITY_RESULT", "${{ needs.event-identity.result }}"),
+            ("FALLBACK_KIND", "${{ needs.event-identity.outputs.fallback_kind }}"),
+            ("FALLBACK_SHA", "${{ needs.event-identity.outputs.fallback_sha }}"),
+            ("FULL_FALLBACK", "${{ needs.event-classifier.outputs.full_fallback }}"),
+            ("HEAD_VALID", "${{ needs.event-classifier.outputs.head_valid }}"),
+            ("IDENTITY_VALID", "${{ needs.event-classifier.outputs.identity_valid }}"),
+            ("PATH", "/usr/bin:/bin"),
+            ("RUN_EXPENSIVE", "${{ needs.event-classifier.outputs.run_expensive }}"),
+        )
+    )
+)
 _NON_GATE_STEP_NAMES = {
+    _METADATA_ADAPTER_STEP_NAME,
     "Verify checked-out revision",
     "Hydrate workflow-pilot Git authority",
     "Validate ownership with exact PR-base verifier",
@@ -776,6 +871,32 @@ _VALIDATION_OWNERSHIP_CHECK_STEP_NAME = (
 _VALIDATION_OWNERSHIP_BASE_STEP_NAME = (
     "Validate ownership with exact PR-base verifier"
 )
+_FULL_MODE_ONLY_JOB_STEPS = {
+    ("host-tests", "Verify checked-out revision"),
+    ("host-tests", "Hydrate workflow-pilot Git authority"),
+    ("host-tests", "Install host-only dependencies (no arm-none-eabi toolchain)"),
+    ("host-tests", "Run gba-playtest host test suite"),
+    ("host-tests", "Run upstream-port tooling test suite"),
+    ("host-tests", "Run workflow contract test suite"),
+    ("host-tests", _WORKFLOW_PILOT_TEST_STEP_NAME),
+    ("host-tests", _WORKFLOW_PILOT_BASELINE_STEP_NAME),
+    ("host-tests", _VALIDATION_OWNERSHIP_BASE_STEP_NAME),
+    ("host-tests", _VALIDATION_OWNERSHIP_TEST_STEP_NAME),
+    ("host-tests", _VALIDATION_OWNERSHIP_CHECK_STEP_NAME),
+    ("host-tests", "Run localization host test suite (issue #18)"),
+    ("host-tests", "Run full-game localization width contract (issue #18)"),
+    ("build", "Verify checked-out revision"),
+    ("build", "Check tracked artifacts"),
+    ("build", _DOCS_GOVERNANCE_STEP_NAME),
+    ("build", "Install dependencies"),
+    ("build", "Build tools"),
+    ("build", "Run CodeQL alert regression suite (issue #84)"),
+    ("build", "Check default build lane and quickstart legacy glue (issue #15)"),
+    ("build", "Check generated-data tables for drift"),
+    ("build", "Build and verify modern target ROMs and linker"),
+    ("build", "Boundary/serialization item-ID-expansion + content runtime gate (cap 0xCE)"),
+    ("build", "Build and verify all-locales/all-features map menu (issues #49/#168)"),
+}
 _SCRUBBED_PILOT_ENV = (
     "BASH_ENV: ''",
     "ENV: ''",
@@ -865,6 +986,7 @@ _EXPECTED_STEP_ROLES = {
         ("setup", "Verify authoritative Build event mode"),
     ),
     "host-tests": (
+        ("setup", _METADATA_ADAPTER_STEP_NAME),
         ("setup", None),
         ("setup", "Verify checked-out revision"),
         ("setup", "Hydrate workflow-pilot Git authority"),
@@ -881,6 +1003,7 @@ _EXPECTED_STEP_ROLES = {
         ("gate", "Run full-game localization width contract (issue #18)"),
     ),
     "build": (
+        ("setup", _METADATA_ADAPTER_STEP_NAME),
         ("setup", None),
         ("setup", "Verify checked-out revision"),
         ("gate", "Check tracked artifacts"),
@@ -1153,9 +1276,9 @@ def _parse_workflow_context(text):
                     )
                 entries[key] = match.group(2).strip()
             permissions = tuple(sorted(entries.items()))
-            if permissions != (("contents", "read"),):
+            if permissions != (("actions", "read"), ("contents", "read")):
                 raise ValueError(
-                    "workflow permissions must be exactly contents: read"
+                    "workflow permissions must be exactly actions: read and contents: read"
                 )
             values[name] = permissions
         else:
@@ -1293,6 +1416,8 @@ def _parse_job_context(job_name, body):
             expected = (
                 job_name
                 if job_name in {"event-identity", "event-router"}
+                else "summary"
+                if job_name == "summary"
                 else _DYNAMIC_JOB_NAMES[job_name]
             )
             if value != expected or nested:
@@ -1300,7 +1425,7 @@ def _parse_job_context(job_name, body):
             values[name] = value
         elif name == "if":
             expected = (
-                _WORKER_CONDITION
+                (_HOST_BUILD_CONDITION if job_name in _METADATA_ADAPTER_JOBS else _WORKER_CONDITION)
                 if job_name in _COMBINED_JOBS
                 else {
                     "event-router": (
@@ -1436,8 +1561,19 @@ def _parse_run_value(lines, start, end, value, step_label):
     return commands
 
 
+def _literal_run_script(lines, start, end, value, step_label):
+    if value != "|":
+        raise ValueError(f"{step_label} metadata adapter must use a literal run block")
+    script = []
+    for line in lines[start:end]:
+        if line and not line.startswith("        "):
+            break
+        script.append(line[8:])
+    return "\n".join(script) + "\n"
+
+
 def _parse_step(block, job_name, index):
-    lines = block.splitlines()
+    lines = block.split("\n")
     first_index = next(
         (
             line_index
@@ -1488,6 +1624,7 @@ def _parse_step(block, job_name, index):
         )
 
     values = {}
+    literal_run_script = None
     for field_index, (name, raw_value, line_index) in enumerate(direct):
         end = (
             direct[field_index + 1][2]
@@ -1515,6 +1652,14 @@ def _parse_step(block, job_name, index):
                 value,
                 step_label,
             )
+            if value == "|":
+                literal_run_script = _literal_run_script(
+                    lines,
+                    line_index + 1,
+                    end,
+                    value,
+                    step_label,
+                )
         else:
             scalar = value.strip()
             if name == "uses":
@@ -1902,59 +2047,102 @@ def _parse_step(block, job_name, index):
             raise ValueError(f"{step_label} summary mapping differs")
         role = "summary"
     elif name is None:
+        expected_index = 1 if job_name in _METADATA_ADAPTER_JOBS else 0
+        expected_fields = (
+            {"uses", "if", "with"}
+            if job_name in _METADATA_ADAPTER_JOBS
+            else {"uses", "with"}
+        )
         if (
-            set(values) != {"uses", "with"}
+            set(values) != expected_fields
             or values["uses"] != _CHECKOUT_USES
             or values["with"] != _CHECKOUT_WITH
-            or index != 0
+            or index != expected_index
+            or (
+                job_name in _METADATA_ADAPTER_JOBS
+                and values["if"] != _FULL_WORKER_STEP_CONDITION
+            )
         ):
             raise ValueError(
                 f"{step_label} is an unreviewed unnamed step"
             )
         role = "setup"
     else:
-        expected_fields = (
-            {"name", "env", "run"}
-            if name
-            in {
-                _WORKFLOW_PILOT_TEST_STEP_NAME,
-                _WORKFLOW_PILOT_BASELINE_STEP_NAME,
-                _VALIDATION_OWNERSHIP_TEST_STEP_NAME,
-                _VALIDATION_OWNERSHIP_CHECK_STEP_NAME,
-                _VALIDATION_OWNERSHIP_BASE_STEP_NAME,
-                "Hydrate workflow-pilot Git authority",
-            }
-            else {"name", "run"}
-        )
-        if set(values) != expected_fields:
-            raise ValueError(
-                f"{step_label} must contain exactly "
-                f"{', '.join(sorted(expected_fields))}"
-            )
-        expected_environment = (
-            _BASE_VERIFIER_ENV
-            if name == _VALIDATION_OWNERSHIP_BASE_STEP_NAME
-            else _VALIDATION_OWNERSHIP_ENV
-            if name
-            in {
-                _VALIDATION_OWNERSHIP_TEST_STEP_NAME,
-                _VALIDATION_OWNERSHIP_CHECK_STEP_NAME,
-            }
-            else _SCRUBBED_PILOT_ENV
-        )
-        if "env" in values and values["env"] != tuple(
-            sorted(
-                tuple(
-                    entry.split(": ", 1)
-                    if ": " in entry
-                    else (entry[:-1], "")
+        if name == _METADATA_ADAPTER_STEP_NAME:
+            if set(values) != {"name", "if", "env", "run"}:
+                raise ValueError(
+                    f"{step_label} must contain exactly env, if, name, run"
                 )
-                for entry in expected_environment
+            if values["if"] != _METADATA_ADAPTER_STEP_CONDITION:
+                raise ValueError(f"{step_label} metadata adapter if differs")
+            if values["env"] != _METADATA_ADAPTER_ENV:
+                raise ValueError(f"{step_label} metadata adapter env differs")
+            if literal_run_script is None:
+                raise ValueError(f"{step_label} metadata adapter script differs")
+            try:
+                metadata_adapter_contract.validate_metadata_adapter_script(
+                    literal_run_script
+                )
+            except ValueError as error:
+                raise ValueError(f"{step_label} metadata adapter script differs") from error
+        elif job_name == "summary" and name == _SUMMARY_STEP_NAME:
+            if set(values) != {"name", "run"}:
+                raise ValueError(f"{step_label} must contain exactly name, run")
+            if literal_run_script is None:
+                raise ValueError(f"{step_label} summary script differs")
+            try:
+                summary_continuity_contract.validate_summary_continuity_script(
+                    literal_run_script
+                )
+            except ValueError as error:
+                raise ValueError(f"{step_label} summary script differs") from error
+        else:
+            expected_fields = (
+                {"name", "env", "run"}
+                if name
+                in {
+                    _WORKFLOW_PILOT_TEST_STEP_NAME,
+                    _WORKFLOW_PILOT_BASELINE_STEP_NAME,
+                    _VALIDATION_OWNERSHIP_TEST_STEP_NAME,
+                    _VALIDATION_OWNERSHIP_CHECK_STEP_NAME,
+                    _VALIDATION_OWNERSHIP_BASE_STEP_NAME,
+                    "Hydrate workflow-pilot Git authority",
+                }
+                else {"name", "run"}
             )
-        ):
-            raise ValueError(
-                f"{step_label} changes its reviewed scrubbed environment"
+            if (job_name, name) in _FULL_MODE_ONLY_JOB_STEPS:
+                expected_fields.add("if")
+            if set(values) != expected_fields:
+                raise ValueError(
+                    f"{step_label} must contain exactly "
+                    f"{', '.join(sorted(expected_fields))}"
+                )
+            if (job_name, name) in _FULL_MODE_ONLY_JOB_STEPS and values["if"] != _FULL_WORKER_STEP_CONDITION:
+                raise ValueError(f"{step_label} full-mode if differs")
+            expected_environment = (
+                _BASE_VERIFIER_ENV
+                if name == _VALIDATION_OWNERSHIP_BASE_STEP_NAME
+                else _VALIDATION_OWNERSHIP_ENV
+                if name
+                in {
+                    _VALIDATION_OWNERSHIP_TEST_STEP_NAME,
+                    _VALIDATION_OWNERSHIP_CHECK_STEP_NAME,
+                }
+                else _SCRUBBED_PILOT_ENV
             )
+            if "env" in values and values["env"] != tuple(
+                sorted(
+                    tuple(
+                        entry.split(": ", 1)
+                        if ": " in entry
+                        else (entry[:-1], "")
+                    )
+                    for entry in expected_environment
+                )
+            ):
+                raise ValueError(
+                    f"{step_label} changes its reviewed scrubbed environment"
+                )
         if name in _NON_GATE_STEP_NAMES:
             role = "setup"
         elif name == _DOCS_GOVERNANCE_STEP_NAME:
@@ -2088,7 +2276,7 @@ def _read_workflow_gate_contract(repository_root):
             )
         if os.path.getsize(path) > 1024 * 1024:
             raise ValueError(f"Build workflow {path!r} exceeds 1 MiB")
-        with open(path, "r", encoding="utf-8") as handle:
+        with open(path, "r", encoding="utf-8", newline="") as handle:
             text = handle.read()
     except (OSError, UnicodeError) as error:
         raise ValueError(f"cannot read target Build workflow {path!r}: {error}") from error

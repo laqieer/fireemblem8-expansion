@@ -1022,8 +1022,7 @@ class TesterCaseRegistryTests(unittest.TestCase):
                             "test_candidate_evidence -v",
                             "python3 -m unittest discover -s "
                             "tests/workflows -p 'test_*.py' -v",
-                            "python3 -m unittest "
-                            "tests.upstream_port.test_verify -v",
+                            "python3 -m unittest tests.upstream_port.test_verify -v",
                             "python3 -m unittest "
                             "scripts.docs_check_tests."
                             "test_development_workflow_skill -v",

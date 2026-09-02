@@ -287,10 +287,11 @@ successful exit, no output sink exists, and only fixed trusted status text plus
 a numeric exit classification reaches the workflow log. Other writable roots
 and regular files retain tmpfs/ulimit bounds.
 Before `/sys` masking, the exact owned cgroup must be bound read-only under
-root-only mode-`0700` `/mnt/supervisor`. The candidate must not traverse it or
-inherit an FD; the wrapper must use that surviving view to require itself as
-the sole post-build member while host kill/removal retains the actual cgroup
-path.
+root-only mode-`0700` `/mnt/supervisor`. The candidate must not read, write,
+execute, or traverse that parent or inherit an FD; the exact cgroup child must
+remain read-only, and the wrapper must use that surviving view to require
+itself as the sole post-build member while host kill/removal retains the actual
+cgroup path.
 The larger `build` ceiling covers observed shared-runner compile variance
 without removing or weakening a gate. The delivery coordinator still uses
 `timeout 90m gh run watch <run-id> --interval 30 --exit-status`; because that

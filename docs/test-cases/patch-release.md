@@ -57,7 +57,30 @@ BPS checksums, reconstructed 32 MiB target digest, and embedded all-locales/
 all-features metadata; it writes no ROM. `bps_patch apply` succeeds only when
 the BPS source/target/patch CRCs match and writes the selected separate output
 path. The source target builds the same named release/AAPCS profile and
-round-trips the local artifact.
+round-trips the local artifact. The trusted publisher that produced that
+artifact decodes recursive `/dev` mount targets from structured `findmnt
+--json --submounts --output TARGET /dev` output, writes those NUL-delimited
+targets into checked root-owned regular temp files under `/mnt/supervisor`,
+unmounts exact descendant paths deepest-first, removes the temp files, and
+verifies that only `/dev` remains before recreating the private device tree.
+The root-owned mode-`0700` `/mnt/supervisor` parent denies candidate read,
+write, execute, and traversal; its exact cgroup child remains read-only and is
+rechecked before ROM handoff.
+Before candidate code starts, the trusted wrapper also decodes structured
+`findmnt --json --list --uniq --output TARGET,OPTIONS -R /` output, writes
+checked NUL-framed mount target/option records through a root-owned regular
+temp file, and audits every effective writable mount in the isolated
+namespace. util-linux documents `--uniq` as "effectively skipping over-mounted
+mount points", so the audit sees the topmost visible layer for each target
+rather than failing on legitimate duplicate rows from hidden lower mounts.
+Only `/dev/shm`, `/mnt/handoff`, `/mnt/home`, `/mnt/source`, `/mnt/tmp`, and
+`/tmp` may carry an exact `rw` option token; spaces and backslashes in decoded
+target paths are handled losslessly, while control-character targets,
+malformed option-token grammar, duplicate or extra JSON rows, raw escaped or
+whitespace-delimited mount-target transport, and any unexpected writable
+effective mount fail closed. Hidden lower layers remain irrelevant unless the
+wrapper or candidate can expose them; this publisher denies that by keeping
+the candidate unprivileged and never granting mount or unmount capability.
 
 ### Negative control
 
@@ -161,9 +184,31 @@ output volume cannot fail an otherwise successful build. No output sink exists.
 Fixed trusted text and a numeric exit classification preserve build failure
 without exposing candidate bytes.
 The wrapper binds the exact owned cgroup read-only under root-only mode-`0700`
-`/mnt/supervisor` before masking `/sys`. Candidate access is denied; the
-post-build check remains readable and rejects any member beyond the wrapper PID
-before ROM handoff.
+`/mnt/supervisor` before masking `/sys`. The candidate cannot read, write,
+execute, or traverse that parent, while the exact cgroup child remains
+read-only; the post-build check remains readable and rejects any member beyond
+the wrapper PID before ROM handoff. Decoded recursive `/dev` mount targets are
+emitted through NUL-delimited trusted JSON parsing, staged through checked
+root-owned regular temp files under `/mnt/supervisor`, unmounted deepest-first,
+and rechecked so only `/dev` remains before the private device tree is
+recreated. Retained descendants, raw escaped or whitespace-delimited
+mount-target transport, paths outside `/dev`, malformed JSON, duplicate
+targets, NUL-bearing targets, and unsafe transport files are rejected.
+After the private device tree is recreated and before candidate code starts,
+the trusted wrapper decodes structured `findmnt --json --list --uniq --output
+TARGET,OPTIONS -R /` output into checked NUL-framed mount target/option
+records, then audits every effective writable mount. util-linux documents
+`--uniq` as "effectively skipping over-mounted mount points", so legitimate
+duplicate target rows from hidden lower layers do not fail the audit and do
+not hide the topmost visible mount. Only `/dev/shm`, `/mnt/handoff`,
+`/mnt/home`, `/mnt/source`, `/mnt/tmp`, and `/tmp` may expose an exact `rw`
+option token. Decoded targets with spaces or backslashes remain lossless;
+control-character targets, malformed or ambiguous option-token grammar,
+duplicate or extra JSON rows, raw escaped or whitespace-delimited mount-target
+transport, parser failure, unchecked process substitution, and any unexpected
+writable effective mount fail closed. Hidden lower layers remain irrelevant
+unless the wrapper or candidate can expose them, and this publisher never
+grants that capability.
 
 ### Negative control
 
@@ -191,7 +236,8 @@ archival-lane behavior changes.
   secret scope, no-PR publication, candidate-before-download ordering,
   exact-after isolated tool, no-ROM-transfer boundary, dedicated builder UID
   and namespaces, read-only host/private-filesystem probes, exact cgroup-v2 and
-  process teardown, socket/daemon/cgroup-escape adversaries, two-file handoff
+  process teardown, decoded recursive `/dev` target parsing and deepest-first
+  unmount order, socket/daemon/cgroup-escape adversaries, two-file handoff
   rejection controls, unpredictable private path, cleanup-before-upload, late
   artifact revalidation, null/no-replay candidate output adversaries, the old
   Bash-FD-255/memfd exit-125 reproducer, inherited pipe/memfd/socket closure in

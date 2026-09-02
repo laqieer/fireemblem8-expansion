@@ -16,6 +16,10 @@ EXPECTED_SHA = (
     "(needs.event-classifier.result == 'failure' && "
     "needs.event-identity.outputs.fallback_sha) || '' }}"
 )
+FULL_MODE_STEP_IF = (
+    "${{ needs.event-classifier.result == 'failure' || "
+    "needs.event-classifier.outputs.classification == 'full' }}"
+)
 MERGE_SHA_FALLBACK = (
     "github.event_name == 'pull_request' && "
     "github.event.pull_request.head.sha || github.sha"
@@ -54,7 +58,12 @@ def _contract_errors(text):
             continue
         verification = (
             '    - name: Verify checked-out revision\n'
-            '      run: |\n'
+            + (
+                f"      if: {FULL_MODE_STEP_IF}\n"
+                if name in {"host-tests", "build"}
+                else ""
+            )
+            + '      run: |\n'
             '        ACTUAL_SHA="$(git rev-parse HEAD)"\n'
             "        printf 'checkout.sha=%s\\n' \"$ACTUAL_SHA\"\n"
             '        test "$ACTUAL_SHA" = "$EXPECTED_BUILD_SHA"'
