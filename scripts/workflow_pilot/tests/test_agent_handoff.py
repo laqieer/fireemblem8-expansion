@@ -579,6 +579,86 @@ def sign_coordinator_document(document, repository_root):
     ):
         operation.pop(field, None)
     consume_sign(repository_root, document)
+def reseal_history_authority_observation(authority):
+    observation = authority["observation"]
+    payload = {
+        field: observation[field]
+        for field in (
+            "remote",
+            "ref",
+            "object_id",
+            "anchor_ref",
+            "anchor_object_id",
+            "attempt",
+        )
+    }
+    observation["token"] = hashlib.sha256(
+        agent_handoff.HISTORY_OBSERVATION_SEAL_DOMAIN
+        + agent_handoff.normalized_json(payload)
+    ).hexdigest()
+def reseal_handoff_result(document, result):
+    resealed = copy.deepcopy(result)
+    resealed["input_seal"] = hashlib.sha256(
+        agent_handoff.INPUT_SEAL_DOMAIN
+        + agent_handoff.normalized_json(document)
+    ).hexdigest()
+    resealed["result_seal"] = agent_handoff.seal_handoff_result(resealed)
+    return resealed
+def publish_self_consistent_history_carrier(
+    repository_root,
+    current,
+    plan,
+    document,
+    result,
+):
+    handoff_id = document["handoffs"][0]["id"]
+    history_receipt = agent_handoff.make_history_receipt(
+        document,
+        result,
+        handoff_id,
+        canonical_result=result,
+    )
+    history_carrier = agent_handoff.make_history_carrier(
+        document,
+        result,
+        handoff_id,
+    )
+    plan["record"]["head_seal"] = history_receipt["seal"]
+    plan["record"]["event"].update(
+        handoff_seal=history_receipt["seal"],
+        handoff_id=history_receipt["handoff_id"],
+        handoff_kind=history_receipt["handoff_kind"],
+        lifecycle_state=history_receipt["lifecycle_state"],
+        candidate_sha=history_receipt["candidate_sha"],
+        closed_at=history_receipt["closed_at"],
+        operation_nonce=history_receipt["operation_nonce"],
+        consume_store_id=history_receipt["consume_store_id"],
+        consume_sequence=history_receipt["consume_sequence"],
+        consume_anchor=history_receipt["consume_anchor"],
+        assignment=copy.deepcopy(history_receipt["assignment"]),
+        interruption_snapshot=copy.deepcopy(
+            history_receipt["interruption_snapshot"]
+        ),
+        history_receipt=copy.deepcopy(history_receipt),
+        history_carrier=copy.deepcopy(history_carrier),
+    )
+    plan["record"]["publication_attestation"] = authority_publication(
+        repository_root,
+        current,
+        operation="advance",
+        history_carrier=history_carrier,
+        history_receipt=history_receipt,
+    )
+    publish_authority_plan(
+        repository_root,
+        AUTHORITY_OWNERS[str(repository_root)],
+        plan,
+        current["object_id"],
+        issue=document["handoffs"][0]["issue"],
+        pull_request=document["handoffs"][0]["pull_request"],
+        read_back=False,
+    )
+    return history_receipt, history_carrier
 def rename_handoff(document, handoff_id, *, owner=None):
     handoff = document["handoffs"][0]
     handoff["id"] = handoff_id
@@ -4531,6 +4611,88 @@ class ExactHandoffTests(unittest.TestCase):
                     history["issue"],
                     history["pull_request"],
                 )
+    def test_historical_handoff_rejects_self_consistent_public_authority_mutations(self):
+        wrong_ref = agent_handoff.history_authority_ref(179, None)
+        wrong_anchor_ref = agent_handoff.history_anchor_ref(179)
+
+        def mutate_ref(authority):
+            authority["ref"] = wrong_ref
+            authority["observation"]["ref"] = wrong_ref
+            reseal_history_authority_observation(authority)
+
+        def mutate_object_id(authority):
+            authority["object_id"] = "0" * 40
+            authority["observation"]["object_id"] = authority["object_id"]
+            reseal_history_authority_observation(authority)
+
+        def mutate_anchor_ref(authority):
+            authority["anchor_ref"] = wrong_anchor_ref
+            authority["observation"]["anchor_ref"] = wrong_anchor_ref
+            reseal_history_authority_observation(authority)
+
+        def mutate_anchor_object_id(authority):
+            authority["anchor_object_id"] = "1" * 40
+            authority["observation"]["anchor_object_id"] = authority[
+                "anchor_object_id"
+            ]
+            reseal_history_authority_observation(authority)
+
+        def mutate_history_events(authority):
+            authority["history_events"] = [copy.deepcopy(authority["event"])]
+
+        def mutate_observation(authority):
+            authority["observation"]["attempt"] = 99
+            reseal_history_authority_observation(authority)
+
+        def mutate_repository(authority):
+            authority["repository"] = "example/attacker"
+
+        for name, mutate in (
+            ("ref", mutate_ref),
+            ("object_id", mutate_object_id),
+            ("anchor_ref", mutate_anchor_ref),
+            ("anchor_object_id", mutate_anchor_object_id),
+            ("history_events", mutate_history_events),
+            ("observation", mutate_observation),
+            ("repository", mutate_repository),
+        ):
+            with self.subTest(field=name):
+                with handoff_repository() as (
+                    root,
+                    _base,
+                    parent,
+                    result,
+                ):
+                    document = handoff_document(root, parent, result)
+                    report = agent_handoff.validate_document(document, root)
+                    current, _history, plan = plan_advance_authority(
+                        root,
+                        document,
+                        report,
+                    )
+                    mutated_document = copy.deepcopy(document)
+                    mutate(mutated_document["history_authority"])
+                    sign_coordinator_document(mutated_document, root)
+                    with self.assertRaises(agent_handoff.HandoffDataError):
+                        agent_handoff.validate_document(mutated_document, root)
+                    mutated_result = reseal_handoff_result(
+                        mutated_document,
+                        report,
+                    )
+                    publish_self_consistent_history_carrier(
+                        root,
+                        current,
+                        plan,
+                        mutated_document,
+                        mutated_result,
+                    )
+                    with self.assertRaises(agent_handoff.HandoffDataError):
+                        agent_handoff.read_history_authority(
+                            root,
+                            "example/workflow",
+                            178,
+                            None,
+                        )
     def test_historical_bind_rejects_stale_signed_authority_observation_and_blocks_successor(self):
         with handoff_repository() as (root, _base, parent, result):
             stale_observation = pull_request_observation(
