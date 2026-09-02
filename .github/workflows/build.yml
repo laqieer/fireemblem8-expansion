@@ -1682,7 +1682,9 @@ jobs:
         builder_cgroup_owned=0
         builder_pgid=""
         builder_supervisor_pid=""
+        builder_passwd_probe_state=""
         builder_root_owned=0
+        builder_uid_occupancy_state=""
         builder_user_created=0
         wheelhouse_owned=0
         shell_pgid="$(/usr/bin/ps -o pgid= -p "$$" 2>/dev/null \
@@ -1690,17 +1692,28 @@ jobs:
         builder_passwd_entry_exists() {
           /usr/bin/getent passwd "$1" > /dev/null 2>&1
         }
-        builder_passwd_entry_absent() {
+        probe_builder_passwd_entry() {
           local status
           if builder_passwd_entry_exists "$1"; then
-            return 1
+            builder_passwd_probe_state=present
+            return 0
           else
             status="$?"
             case "$status" in
-              2) return 0 ;;
-              *) return "$status" ;;
+              2)
+                builder_passwd_probe_state=absent
+                return 0
+                ;;
+              *)
+                builder_passwd_probe_state=error
+                return "$status"
+                ;;
             esac
           fi
+        }
+        builder_passwd_entry_absent() {
+          probe_builder_passwd_entry "$1" || return "$?"
+          test "$builder_passwd_probe_state" = absent
         }
         builder_group_pids() {
           local output
@@ -1732,10 +1745,22 @@ jobs:
           output="$(builder_group_pids "$1")" || return 1
           test -z "$output"
         }
-        builder_uid_is_empty() {
+        probe_builder_uid_occupancy() {
           local output
-          output="$(builder_uid_pids "$1")" || return 1
-          test -z "$output"
+          if output="$(builder_uid_pids "$1")"; then
+            if [ -z "$output" ]; then
+              builder_uid_occupancy_state=free
+            else
+              builder_uid_occupancy_state=occupied
+            fi
+            return 0
+          fi
+          builder_uid_occupancy_state=error
+          return "$?"
+        }
+        builder_uid_is_empty() {
+          probe_builder_uid_occupancy "$1" || return "$?"
+          test "$builder_uid_occupancy_state" = free
         }
         builder_cgroup_is_empty() {
           local output
@@ -1895,9 +1920,12 @@ jobs:
         /bin/cp -a -- "$PATCH_WHEELHOUSE/." "$BUILDER_ROOT/wheelhouse/"
         builder_uid=60000
         while [ "$builder_uid" -ge 50000 ]; do
-          if builder_passwd_entry_absent "$builder_uid" && \
-             builder_uid_is_empty "$builder_uid"; then
-            break
+          probe_builder_passwd_entry "$builder_uid"
+          if [ "$builder_passwd_probe_state" = absent ]; then
+            probe_builder_uid_occupancy "$builder_uid"
+            if [ "$builder_uid_occupancy_state" = free ]; then
+              break
+            fi
           fi
           builder_uid="$((builder_uid - 1))"
         done

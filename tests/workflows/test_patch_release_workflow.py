@@ -1510,6 +1510,13 @@ def builder_passwd_helpers_source(workflow: str) -> str:
     return section[start:end]
 
 
+def builder_uid_selection_helpers_source(workflow: str) -> str:
+    section = builder_cleanup_functions_source(workflow)
+    start = section.index("builder_passwd_entry_exists() {")
+    end = section.index("builder_cgroup_is_empty() {", start)
+    return section[start:end]
+
+
 def builder_user_selection_source(workflow: str) -> str:
     script = named_step_run_script(
         workflow,
@@ -3920,20 +3927,39 @@ exit 37
             'builder_passwd_entry_exists() {\n'
             '  /usr/bin/getent passwd "$1" > /dev/null 2>&1\n'
             '}\n'
-            'builder_passwd_entry_absent() {\n'
+            'probe_builder_passwd_entry() {\n'
             '  local status\n'
             '  if builder_passwd_entry_exists "$1"; then\n'
-            '    return 1\n'
+            '    builder_passwd_probe_state=present\n'
+            '    return 0\n'
             '  else\n'
             '    status="$?"\n'
             '    case "$status" in\n'
-            '      2) return 0 ;;\n'
-            '      *) return "$status" ;;\n'
+            '      2)\n'
+            '        builder_passwd_probe_state=absent\n'
+            '        return 0\n'
+            '        ;;\n'
+            '      *)\n'
+            '        builder_passwd_probe_state=error\n'
+            '        return "$status"\n'
+            '        ;;\n'
             '    esac\n'
             '  fi\n'
+            '}\n'
+            'builder_passwd_entry_absent() {\n'
+            '  probe_builder_passwd_entry "$1" || return "$?"\n'
+            '  test "$builder_passwd_probe_state" = absent\n'
             '}\n',
             'builder_passwd_entry_exists() {\n'
             '  [ "$1" = "$builder_user" ]\n'
+            '}\n'
+            'probe_builder_passwd_entry() {\n'
+            '  if builder_passwd_entry_exists "$1"; then\n'
+            '    builder_passwd_probe_state=present\n'
+            '  else\n'
+            '    builder_passwd_probe_state=absent\n'
+            '  fi\n'
+            '  return 0\n'
             '}\n'
             'builder_passwd_entry_absent() {\n'
             '  [ "$1" != "$builder_user" ] || [ "$builder_user_created" = 0 ]\n'
@@ -4114,28 +4140,53 @@ exit 37
                 else:
                     self.assertEqual(completed.stdout, "")
 
-        broken_helpers = helpers.replace(
-            '  if builder_passwd_entry_exists "$1"; then\n'
-            '    return 1\n'
-            '  else\n'
-            '    status="$?"\n'
-            '    case "$status" in\n'
-            '      2) return 0 ;;\n'
-            '      *) return "$status" ;;\n'
-            '    esac\n'
-            '  fi\n',
+        broken_probe_body = (
             '  builder_passwd_entry_exists "$1"\n'
             '  status="$?"\n'
             '  case "$status" in\n'
             '    0) return 1 ;;\n'
             '    2) return 0 ;;\n'
             '    *) return "$status" ;;\n'
-            '  esac\n',
+            '  esac\n'
+        )
+        broken_helpers = helpers.replace(
+            '  if builder_passwd_entry_exists "$1"; then\n'
+            '    builder_passwd_probe_state=present\n'
+            '    return 0\n'
+            '  else\n'
+            '    status="$?"\n'
+            '    case "$status" in\n'
+            '      2)\n'
+            '        builder_passwd_probe_state=absent\n'
+            '        return 0\n'
+            '        ;;\n'
+            '      *)\n'
+            '        builder_passwd_probe_state=error\n'
+            '        return "$status"\n'
+            '        ;;\n'
+            '    esac\n'
+            '  fi\n',
+            broken_probe_body,
             1,
         )
-        broken_real_helpers = broken_helpers.replace(
-            'fake_getent "$1" > /dev/null 2>&1',
-            '/usr/bin/getent passwd "$1" > /dev/null 2>&1',
+        broken_real_helpers = original_helpers.replace(
+            '  if builder_passwd_entry_exists "$1"; then\n'
+            '    builder_passwd_probe_state=present\n'
+            '    return 0\n'
+            '  else\n'
+            '    status="$?"\n'
+            '    case "$status" in\n'
+            '      2)\n'
+            '        builder_passwd_probe_state=absent\n'
+            '        return 0\n'
+            '        ;;\n'
+            '      *)\n'
+            '        builder_passwd_probe_state=error\n'
+            '        return "$status"\n'
+            '        ;;\n'
+            '    esac\n'
+            '  fi\n',
+            broken_probe_body,
             1,
         )
         broken_run_script = named_step_run_script(
@@ -4167,12 +4218,13 @@ exit 37
             capture_output=True,
             text=True,
         )
-        self.assertEqual(broken_runtime.returncode, 2)
+        self.assertNotEqual(broken_runtime.returncode, 0)
         self.assertEqual(broken_runtime.stdout, "")
         self.assertEqual(broken_runtime.stderr, "")
 
-    def test_builder_user_selection_path_continues_for_absent_passwd_lookup(self):
-        helpers = builder_passwd_helpers_source(self.text).replace(
+    def test_builder_user_selection_path_uses_tri_state_occupancy_under_bash_e(self):
+        original_helpers = builder_uid_selection_helpers_source(self.text)
+        helpers = original_helpers.replace(
             '/usr/bin/getent passwd "$1" > /dev/null 2>&1',
             'fake_getent "$1" > /dev/null 2>&1',
             1,
@@ -4190,85 +4242,163 @@ exit 37
             workspace.mkdir()
             wheelhouse.mkdir()
 
-            harness = (
-                "set -e\n"
-                "fake_getent() {\n"
-                "  case \"$1\" in\n"
-                "    ci-patch-builder|60000) return 2 ;;\n"
-                "    *) return 1 ;;\n"
-                "  esac\n"
-                "}\n"
-                "builder_uid_is_empty() {\n"
-                "  return 0\n"
-                "}\n"
-                + helpers
-                + f'builder_user="ci-patch-builder"\n'
-                + f'BUILDER_ROOT="{sandbox / "builder-root"}"\n'
-                + f'PATCH_WHEELHOUSE="{wheelhouse}"\n'
-                + f'GITHUB_WORKSPACE_PATH="{workspace}"\n'
-                + selection
-                + "\nprintf 'CREATION_SENTINEL:%s\\n' \"$builder_uid\"\n"
-            )
-            completed = subprocess.run(
-                ["/bin/bash", "-c", harness],
-                cwd=ROOT,
-                check=False,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            self.assertEqual(completed.stdout, "CREATION_SENTINEL:60000\n")
-            self.assertEqual(completed.stderr, "")
-
-            broken_helpers = helpers.replace(
-                '  if builder_passwd_entry_exists "$1"; then\n'
-                '    return 1\n'
-                '  else\n'
-                '    status="$?"\n'
-                '    case "$status" in\n'
-                '      2) return 0 ;;\n'
-                '      *) return "$status" ;;\n'
-                '    esac\n'
-                '  fi\n',
-                '  builder_passwd_entry_exists "$1"\n'
-                '  status="$?"\n'
-                '  case "$status" in\n'
-                '    0) return 1 ;;\n'
-                '    2) return 0 ;;\n'
-                '    *) return "$status" ;;\n'
-                '  esac\n',
-                1,
-            )
-            broken = subprocess.run(
-                [
-                    "/bin/bash",
-                    "-c",
+            def run_selection(
+                *,
+                getent_cases: tuple[str, ...],
+                uid_pids_cases: tuple[str, ...] = (),
+                selection_script: str = selection,
+                builder_root_name: str = "builder-root",
+            ) -> subprocess.CompletedProcess[str]:
+                harness = (
                     "set -e\n"
                     "fake_getent() {\n"
                     "  case \"$1\" in\n"
-                    "    ci-patch-builder|60000) return 2 ;;\n"
-                    "    *) return 1 ;;\n"
-                    "  esac\n"
-                    "}\n"
-                    "builder_uid_is_empty() {\n"
-                    "  return 0\n"
-                    "}\n"
-                    + broken_helpers
+                    + "".join(f"    {line}\n" for line in getent_cases)
+                    + "    *) return 125 ;;\n"
+                    + "  esac\n"
+                    + "}\n"
+                    + helpers
+                    + "builder_uid_pids() {\n"
+                    + "  case \"$1\" in\n"
+                    + "".join(f"    {line}\n" for line in uid_pids_cases)
+                    + "    *) return 0 ;;\n"
+                    + "  esac\n"
+                    + "}\n"
                     + f'builder_user="ci-patch-builder"\n'
-                    + f'BUILDER_ROOT="{sandbox / "broken-builder-root"}"\n'
+                    + f'BUILDER_ROOT="{sandbox / builder_root_name}"\n'
                     + f'PATCH_WHEELHOUSE="{wheelhouse}"\n'
                     + f'GITHUB_WORKSPACE_PATH="{workspace}"\n'
-                    + selection
-                    + "\nprintf 'CREATION_SENTINEL:%s\\n' \"$builder_uid\"\n",
-                ],
-                cwd=ROOT,
-                check=False,
-                capture_output=True,
-                text=True,
+                    + selection_script
+                    + "\nprintf 'CREATION_SENTINEL:%s\\n' \"$builder_uid\"\n"
+                )
+                return subprocess.run(
+                    ["/bin/bash", "-c", harness],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+
+            for error_status in (1, 125, 143):
+                with self.subTest(name_lookup_error=error_status):
+                    completed = run_selection(
+                        getent_cases=(
+                            f'ci-patch-builder) return {error_status} ;;',
+                            "60000|59999) return 2 ;;",
+                        ),
+                        builder_root_name=f"name-error-{error_status}",
+                    )
+                    self.assertEqual(completed.returncode, error_status)
+                    self.assertEqual(completed.stdout, "")
+                    self.assertEqual(completed.stderr, "")
+
+                with self.subTest(numeric_lookup_error=error_status):
+                    completed = run_selection(
+                        getent_cases=(
+                            "ci-patch-builder) return 2 ;;",
+                            f'60000) return {error_status} ;;',
+                            "59999) return 2 ;;",
+                        ),
+                        builder_root_name=f"numeric-error-{error_status}",
+                    )
+                    self.assertEqual(completed.returncode, error_status)
+                    self.assertEqual(completed.stdout, "")
+                    self.assertEqual(completed.stderr, "")
+
+            with self.subTest(passwd_occupied_continues=True):
+                completed = run_selection(
+                    getent_cases=(
+                        "ci-patch-builder) return 2 ;;",
+                        "60000) return 0 ;;",
+                        "59999) return 2 ;;",
+                    ),
+                    builder_root_name="passwd-occupied",
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, "CREATION_SENTINEL:59999\n")
+                self.assertEqual(completed.stderr, "")
+
+            with self.subTest(uid_occupied_continues=True):
+                completed = run_selection(
+                    getent_cases=(
+                        "ci-patch-builder) return 2 ;;",
+                        "60000|59999) return 2 ;;",
+                    ),
+                    uid_pids_cases=(
+                        '60000) printf "4242\\n"; return 0 ;;',
+                        "59999) return 0 ;;",
+                    ),
+                    builder_root_name="uid-occupied",
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, "CREATION_SENTINEL:59999\n")
+                self.assertEqual(completed.stderr, "")
+
+            with self.subTest(both_absent_selects=True):
+                completed = run_selection(
+                    getent_cases=(
+                        "ci-patch-builder|60000) return 2 ;;",
+                    ),
+                    builder_root_name="both-absent",
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, "CREATION_SENTINEL:60000\n")
+                self.assertEqual(completed.stderr, "")
+
+            with self.subTest(exhaustion_rejects=True):
+                short_selection = selection.replace("builder_uid=60000", "builder_uid=50001", 1)
+                completed = run_selection(
+                    getent_cases=(
+                        "ci-patch-builder) return 2 ;;",
+                        "50001|50000) return 0 ;;",
+                    ),
+                    selection_script=short_selection,
+                    builder_root_name="exhaustion",
+                )
+                self.assertEqual(completed.returncode, 1)
+                self.assertEqual(completed.stdout, "")
+                self.assertEqual(completed.stderr, "")
+
+            broken_selection = selection.replace(
+                '  probe_builder_passwd_entry "$builder_uid"\n'
+                '  if [ "$builder_passwd_probe_state" = absent ]; then\n'
+                '    probe_builder_uid_occupancy "$builder_uid"\n'
+                '    if [ "$builder_uid_occupancy_state" = free ]; then\n'
+                '      break\n'
+                '    fi\n'
+                '  fi\n',
+                '  if builder_passwd_entry_absent "$builder_uid" && \\\n'
+                '     builder_uid_is_empty "$builder_uid"; then\n'
+                '    break\n'
+                '  fi\n',
+                1,
             )
-            self.assertEqual(broken.returncode, 2)
-            self.assertEqual(broken.stdout, "")
-            self.assertEqual(broken.stderr, "")
+            self.assertNotEqual(broken_selection, selection)
+            broken_run_script = named_step_run_script(
+                self.text,
+                "Build candidate in isolated namespace and stage public inputs",
+            ).replace(selection, broken_selection, 1)
+            with self.assertRaisesRegex(
+                ValueError,
+                "raw identity differs from the reviewed security boundary",
+            ):
+                publisher_shell_contract.assert_reviewed_patch_release_run_script_identity(
+                    broken_run_script,
+                    label="publisher isolated candidate build run script",
+                )
+            with self.subTest(broken_and_mutation_masks_numeric_error=True):
+                broken = run_selection(
+                    getent_cases=(
+                        "ci-patch-builder) return 2 ;;",
+                        "60000) return 1 ;;",
+                        "59999) return 2 ;;",
+                    ),
+                    selection_script=broken_selection,
+                    builder_root_name="broken-and-mutation",
+                )
+                self.assertEqual(broken.returncode, 0, broken.stderr)
+                self.assertEqual(broken.stdout, "CREATION_SENTINEL:59999\n")
+                self.assertEqual(broken.stderr, "")
 
     def test_launch_validation_failure_kills_live_child_without_waiting(self):
         section = builder_cleanup_functions_source(self.text)
