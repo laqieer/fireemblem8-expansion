@@ -1760,7 +1760,9 @@ def _parse_external_trigger_comment(
         if original_head != contract["original_pre_review_head"]:
             raise reporter.PilotDataError(f"{label} decision preregistration lost the initial reviewed head")
         if preregistered_head != current_candidate_sha:
-            raise reporter.PilotDataError(f"{label} decision preregistration lost the current candidate head")
+            raise reporter.PilotDataError(
+                f"{label} decision preregistration does not bind the exact authoritative remote head"
+            )
         decision = _normalize_trigger_decision_record(
             reporter.expect_object(
                 payload["decision"], f"{label} decision preregistration.decision"
@@ -2783,6 +2785,7 @@ def collect_live_evidence_bytes(
 
     # pushedDate is nullable metadata and is never reconstructed into head
     # authority. The authoritative head is headRefOid above.
+    commit_shas = []
     for index, raw_node in enumerate(
         _expect_page_complete(pr["commits"], "GitHub pull-request commits")
     ):
@@ -2796,6 +2799,7 @@ def collect_live_evidence_bytes(
             ("id", "oid", "pushedDate", "committedDate"),
         )
         commit_sha = reporter.expect_sha(commit["oid"], f"{label}.commit.oid")
+        commit_shas.append(commit_sha)
         committed_at = reporter.parse_time(
             commit["committedDate"], f"{label}.commit.committedDate"
         )
@@ -2956,7 +2960,7 @@ def collect_live_evidence_bytes(
             repository_id=repository_id,
             repository_name=repository_name,
             contract=contract,
-            current_candidate_sha=expected_candidate,
+            current_candidate_sha=expected_remote_head,
             first_remote_review_at=(
                 remote_reviews[0]["_submitted"] if remote_reviews else None
             ),
@@ -2965,7 +2969,7 @@ def collect_live_evidence_bytes(
         if external_trigger is not None:
             candidate_record, _candidate_blob_oid = _load_candidate_trigger_record(
                 root,
-                candidate_sha=expected_candidate,
+                candidate_sha=expected_remote_head,
                 pull_request=contract["pull_request"],
             )
             if candidate_record != external_trigger["_record"]:
@@ -3174,6 +3178,7 @@ def collect_live_evidence_bytes(
             "base_sha": base,
             "head_sha": head,
             "author_actor_id": author["id"],
+            "commit_shas": commit_shas,
         },
         authoritative_trigger=resolved_authoritative_trigger,
         actors=actors,

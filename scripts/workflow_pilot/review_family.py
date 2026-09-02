@@ -2419,10 +2419,23 @@ def validate_evidence(raw_evidence: Any) -> dict[str, Any]:
             "head_sha",
             "author_actor_id",
         ),
+        optional=("commit_shas",),
     )
     created_at, created = _expect_time(
         pull_request["created_at"], "evidence.pull_request.created_at"
     )
+    commit_shas = pull_request.get("commit_shas")
+    if commit_shas is not None:
+        commit_shas = reporter.expect_list(
+            commit_shas, "evidence.pull_request.commit_shas"
+        )
+        if not commit_shas:
+            raise reporter.PilotDataError(
+                "evidence.pull_request.commit_shas must not be empty"
+            )
+        for index, sha in enumerate(commit_shas):
+            reporter.expect_sha(sha, f"evidence.pull_request.commit_shas[{index}]")
+        reporter.expect_unique(commit_shas, "evidence.pull_request.commit_shas")
     result_source_path = _validate_path(
         evidence["result_source_path"], "evidence.result_source_path"
     )
@@ -2475,6 +2488,7 @@ def validate_evidence(raw_evidence: Any) -> dict[str, Any]:
                 pull_request["author_actor_id"],
                 "evidence.pull_request.author_actor_id",
             ),
+            "commit_shas": None if commit_shas is None else list(commit_shas),
         },
         "authoritative_trigger": _validate_authoritative_trigger(
             evidence["authoritative_trigger"]
@@ -2538,6 +2552,14 @@ def _repository_authority(
         raise reporter.PilotDataError(
             "evidence base does not equal exact contract/authoritative PR base"
         )
+    commit_shas = evidence["pull_request"]["commit_shas"]
+    if commit_shas is not None and (
+        evidence["pull_request"]["head_sha"] not in commit_shas
+        or commit_shas[-1] != evidence["pull_request"]["head_sha"]
+    ):
+        raise reporter.PilotDataError(
+            "authoritative PR commit history does not end at the exact remote head"
+        )
     reporter.run_git(
         root, "merge-base", "--is-ancestor", contract["base_sha"], head
     )
@@ -2567,6 +2589,7 @@ def _repository_authority(
         contract["base_sha"],
         contract["original_pre_review_head"],
         head,
+        *((commit_shas or ())),
         *(review["candidate_sha"] for review in evidence["pre_reviews"]),
         *(review["candidate_sha"] for review in evidence["remote_reviews"]),
         *(
@@ -2628,6 +2651,34 @@ def _repository_authority(
         "changes": changes,
         "original_changes": original_changes,
     }
+
+
+def _validate_initial_remote_head_binding(
+    evidence: dict[str, Any], authority: dict[str, Any]
+) -> None:
+    if not evidence["pre_reviews"] or not evidence["remote_reviews"]:
+        return
+    original_head = evidence["pre_reviews"][0]["candidate_sha"]
+    first_remote_head = evidence["remote_reviews"][0]["candidate_sha"]
+    if original_head == first_remote_head:
+        return
+    commit_shas = evidence["pull_request"]["commit_shas"]
+    if commit_shas is None:
+        raise reporter.PilotDataError(
+            "authoritative PR commit history is required when the original pre-review head differs from the first remote review head"
+        )
+    if original_head not in commit_shas or first_remote_head not in commit_shas:
+        raise reporter.PilotDataError(
+            "authoritative PR commit history does not preserve the original pre-review head and first remote review head"
+        )
+    if commit_shas.index(original_head) >= commit_shas.index(first_remote_head):
+        raise reporter.PilotDataError(
+            "original pre-review head does not precede the first remote review head in authoritative PR history"
+        )
+    if not reporter.is_ancestor(original_head, first_remote_head, authority["commits"]):
+        raise reporter.PilotDataError(
+            "original pre-review head is not the non-rewritten ancestor of the first remote review head"
+        )
 
 
 def _global_identity_check(evidence: dict[str, Any]) -> None:
@@ -2828,10 +2879,7 @@ def _validate_roles_and_causality(
             raise reporter.PilotDataError(
                 "pre-review receipt was backdated or re-signed after remote review"
             )
-        if pre["candidate_sha"] != first_remote["candidate_sha"]:
-            raise reporter.PilotDataError(
-                "pre-review is not bound to first remote candidate"
-            )
+        _validate_initial_remote_head_binding(evidence, authority)
     for review in [*evidence["pre_reviews"], *evidence["remote_reviews"]]:
         observed = review.get("_started", review.get("_submitted"))
         commit_time = authority["commits"][review["candidate_sha"]]["committed_at"]

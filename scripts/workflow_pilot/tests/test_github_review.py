@@ -2086,7 +2086,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
             shutil.rmtree(duplicate_repo)
 
     def test_external_preregistration_authorizes_future_pr_when_base_lacks_record(self):
-        repo, base, candidate = self.build_decision_repo()
+        repo, base, original_head = self.build_decision_repo()
         try:
             decision = decision_record_entry(
                 risks=("lifecycle", "protocol"),
@@ -2098,24 +2098,31 @@ class TrustedGitHubGateTests(unittest.TestCase):
             ))
             self.commit_all_at(repo, "candidate gains decision entry", "2026-08-31T03:06:00Z")
             candidate = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
+            original_commit_time = git(
+                repo, "show", "-s", "--format=%cI", original_head
+            ).stdout.decode().strip().replace("+00:00", "Z")
             payload = self.exact_graphql_payload()
             payload["data"]["repository"]["pullRequest"]["baseRefOid"] = base
             payload["data"]["repository"]["pullRequest"]["headRefOid"] = candidate
             payload["data"]["repository"]["pullRequest"]["createdAt"] = "2026-08-31T03:08:00Z"
-            payload["data"]["repository"]["pullRequest"]["commits"]["nodes"][0]["commit"]["oid"] = candidate
-            payload["data"]["repository"]["pullRequest"]["commits"]["nodes"][0]["commit"]["committedDate"] = git(
-                repo, "show", "-s", "--format=%cI", candidate
-            ).stdout.decode().strip().replace("+00:00", "Z")
+            payload["data"]["repository"]["pullRequest"]["commits"]["nodes"] = [
+                {"commit": {"id": "COMMIT_ORIGINAL_HEAD", "oid": original_head, "pushedDate": None, "committedDate": original_commit_time}},
+                {"commit": {"id": "COMMIT_CURRENT_HEAD", "oid": candidate, "pushedDate": None, "committedDate": git(
+                    repo, "show", "-s", "--format=%cI", candidate
+                ).stdout.decode().strip().replace("+00:00", "Z")}},
+            ]
             payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["commit"]["oid"] = candidate
             payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["submittedAt"] = "2026-08-31T03:15:00Z"
             payload["data"]["repository"]["pullRequest"]["comments"]["nodes"] = [
                 authoritative_decision_comment(
                     base_sha=base,
-                    head_sha=candidate,
+                    head_sha=original_head,
+                    candidate_sha=candidate,
                     decision=decision,
                 )
             ]
             contract = self.contract(base=base, candidate=candidate)
+            contract["original_pre_review_head"] = original_head
             contract["trust_mode"] = "base-pinned"
             contract["trigger"] = {
                 "risk_boundaries": ["lifecycle", "protocol"],
@@ -2125,13 +2132,13 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 reporter.normalized_json(
                     review_report(
                         base,
-                        candidate,
-                        ["changed.txt", trusted_review_gate.DECISION_RECORD_PATH],
-                        review_family.derive_change_records(repo, base, candidate),
+                        original_head,
+                        ["changed.txt"],
+                        review_family.derive_change_records(repo, base, original_head),
                     )
                 ),
                 base=base,
-                candidate=candidate,
+                candidate=original_head,
                 nonce="external-preregistration-0001",
             )
             result = trusted_review_gate._run_trusted_gate(
@@ -2151,7 +2158,80 @@ class TrustedGitHubGateTests(unittest.TestCase):
             )
             self.assertTrue(result["trigger"]["authoritative"])
             self.assertTrue(result["gates"]["current_candidate_reviewed"])
+            self.assertEqual(result["identity"]["original_pre_review_head"], original_head)
             self.assertFalse(result["bootstrap"]["mode"] == "introduction")
+        finally:
+            shutil.rmtree(repo)
+
+    def test_external_preregistration_cannot_authorize_local_descendant_before_push(self):
+        repo, base, remote_head = self.build_decision_repo()
+        try:
+            decision = decision_record_entry(
+                risks=("lifecycle", "protocol"),
+                triggers=("changed-files", "risk-boundary"),
+            )
+            self.write_decision_record(repo, self.decision_entry(
+                risks=("lifecycle", "protocol"),
+                triggers=("changed-files", "risk-boundary"),
+            ))
+            self.commit_all_at(repo, "local descendant gains decision entry", "2026-08-31T03:06:00Z")
+            local_candidate = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
+            remote_commit_time = git(
+                repo, "show", "-s", "--format=%cI", remote_head
+            ).stdout.decode().strip().replace("+00:00", "Z")
+            payload = self.exact_graphql_payload()
+            payload["data"]["repository"]["pullRequest"]["baseRefOid"] = base
+            payload["data"]["repository"]["pullRequest"]["headRefOid"] = remote_head
+            payload["data"]["repository"]["pullRequest"]["createdAt"] = "2026-08-31T03:08:00Z"
+            payload["data"]["repository"]["pullRequest"]["commits"]["nodes"] = [
+                {"commit": {"id": "COMMIT_REMOTE_HEAD", "oid": remote_head, "pushedDate": None, "committedDate": remote_commit_time}}
+            ]
+            payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["commit"]["oid"] = remote_head
+            payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["submittedAt"] = "2026-08-31T03:15:00Z"
+            payload["data"]["repository"]["pullRequest"]["comments"]["nodes"] = [
+                authoritative_decision_comment(
+                    base_sha=base,
+                    head_sha=remote_head,
+                    candidate_sha=local_candidate,
+                    decision=decision,
+                )
+            ]
+            contract = self.contract(base=base, candidate=local_candidate)
+            contract["original_pre_review_head"] = remote_head
+            contract["trust_mode"] = "base-pinned"
+            contract["trigger"] = {
+                "risk_boundaries": ["lifecycle", "protocol"],
+                "threshold_triggers": ["changed-files", "risk-boundary"],
+            }
+            receipt = signed_receipt(
+                reporter.normalized_json(
+                    review_report(
+                        base,
+                        remote_head,
+                        ["changed.txt"],
+                        review_family.derive_change_records(repo, base, remote_head),
+                    )
+                ),
+                base=base,
+                candidate=remote_head,
+                nonce="external-preregistration-prepush-0001",
+            )
+            with self.assertRaisesRegex(reporter.PilotDataError, "authoritative remote head"):
+                trusted_review_gate._run_trusted_gate(
+                    raw_contract=contract,
+                    repository_root=repo,
+                    expected_candidate=local_candidate,
+                    expected_remote_head=remote_head,
+                    expected_base=base,
+                    review_receipt_bytes=receipt,
+                    replay_store=self.replay,
+                    trusted_key_id=KEY_ID,
+                    trusted_key_epoch=KEY_EPOCH,
+                    trusted_key=KEY,
+                    current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc),
+                    adapter=StaticAdapter(payload),
+                    clock=lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc),
+                )
         finally:
             shutil.rmtree(repo)
 
@@ -2181,7 +2261,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
             ("wrong-repo", {"repository": "other/repository"}, "exact repository"),
             ("wrong-base", {"base_sha": "f" * 40}, "exact base"),
             ("wrong-original-head", {"original_pre_review_head": "f" * 40}, "initial reviewed head"),
-            ("wrong-head", {"candidate_sha": "f" * 40}, "current candidate head"),
+            ("wrong-head", {"candidate_sha": "f" * 40}, "authoritative remote head"),
             ("duplicate", "duplicate", "not unique"),
         )
         for case_name, override, pattern in cases:

@@ -186,6 +186,27 @@ class ReviewFamilyContractTests(unittest.TestCase):
         contract, evidence = fixture("default")
         self.assert_rejected(contract, evidence, "actual Git HEAD", "f" * 40)
 
+    def test_initial_pre_review_head_may_precede_first_remote_head_with_bounded_history(self):
+        a, b, c = "a" * 40, "b" * 40, "c" * 40
+        authority = {"commits": {a: {"parents": []}, b: {"parents": [a]}, c: {"parents": []}}}
+
+        def check(remote_head, history):
+            review_family._validate_initial_remote_head_binding(
+                {"pre_reviews": [{"candidate_sha": a}], "remote_reviews": [{"candidate_sha": remote_head}], "pull_request": {"commit_shas": history}},
+                authority,
+            )
+
+        check(a, None)
+        check(b, [a, b])
+        for remote_head, history, pattern in (
+            (b, None, "commit history is required"),
+            (b, [b], "does not preserve"),
+            (b, [b, a], "does not precede"),
+            (c, [a, c], "non-rewritten ancestor"),
+        ):
+            with self.subTest(remote_head=remote_head, history=history), self.assertRaisesRegex(reporter.PilotDataError, pattern):
+                check(remote_head, history)
+
     def test_candidate_result_ids_cannot_select_executable_evidence(self):
         contract, evidence = fixture("default")
         contract["behavior_rows"][0]["assertions"]["positive"] = (
