@@ -1747,6 +1747,7 @@ jobs:
         }
         probe_builder_uid_occupancy() {
           local output
+          local status
           if output="$(builder_uid_pids "$1")"; then
             if [ -z "$output" ]; then
               builder_uid_occupancy_state=free
@@ -1754,9 +1755,11 @@ jobs:
               builder_uid_occupancy_state=occupied
             fi
             return 0
+          else
+            status="$?"
           fi
           builder_uid_occupancy_state=error
-          return "$?"
+          return "$status"
         }
         builder_uid_is_empty() {
           probe_builder_uid_occupancy "$1" || return "$?"

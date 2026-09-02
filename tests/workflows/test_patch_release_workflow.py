@@ -1517,6 +1517,13 @@ def builder_uid_selection_helpers_source(workflow: str) -> str:
     return section[start:end]
 
 
+def builder_uid_occupancy_helpers_source(workflow: str) -> str:
+    section = builder_cleanup_functions_source(workflow)
+    start = section.index("builder_uid_pids() {")
+    end = section.index("builder_cgroup_is_empty() {", start)
+    return section[start:end]
+
+
 def builder_user_selection_source(workflow: str) -> str:
     script = named_step_run_script(
         workflow,
@@ -4220,6 +4227,106 @@ exit 37
         )
         self.assertNotEqual(broken_runtime.returncode, 0)
         self.assertEqual(broken_runtime.stdout, "")
+        self.assertEqual(broken_runtime.stderr, "")
+
+    def test_probe_builder_uid_occupancy_preserves_lookup_status_under_bash_e(self):
+        original_helpers = builder_uid_occupancy_helpers_source(self.text)
+        helpers = original_helpers
+        status_cases = (
+            ("", "0", 0, True, "free"),
+            ("4242", "0", 0, True, "occupied"),
+            ("", "1", 1, False, "error"),
+            ("", "125", 125, False, "error"),
+            ("", "143", 143, False, "error"),
+        )
+        for output, fake_status, expected_status, expect_sentinel, expected_state in status_cases:
+            with self.subTest(fake_status=fake_status, expected_state=expected_state):
+                harness = (
+                    "set -e\n"
+                    + helpers
+                    + "builder_uid_pids() {\n"
+                    + '  status="${FAKE_UID_PIDS_STATUS}"\n'
+                    + '  if [ "$status" -ne 0 ]; then\n'
+                    + '    return "$status"\n'
+                    + "  fi\n"
+                    + '  printf "%s" "${FAKE_UID_PIDS_OUTPUT-}"\n'
+                    + "}\n"
+                    + f'FAKE_UID_PIDS_STATUS="{fake_status}"\n'
+                    + f'FAKE_UID_PIDS_OUTPUT={output!r}\n'
+                    + 'probe_builder_uid_occupancy "60000"\n'
+                    + "printf 'STATE:%s\\n' \"$builder_uid_occupancy_state\"\n"
+                    + "printf 'SENTINEL\\n'\n"
+                )
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", harness],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, expected_status)
+                self.assertEqual(completed.stderr, "")
+                if expect_sentinel:
+                    self.assertEqual(
+                        completed.stdout,
+                        f"STATE:{expected_state}\nSENTINEL\n",
+                    )
+                else:
+                    self.assertEqual(completed.stdout, "")
+
+        broken_probe_helpers = original_helpers.replace(
+            '  else\n'
+            '    status="$?"\n'
+            '  fi\n'
+            '  builder_uid_occupancy_state=error\n'
+            '  return "$status"\n',
+            '  fi\n'
+            '  builder_uid_occupancy_state=error\n'
+            '  status="$?"\n'
+            '  return "$status"\n',
+            1,
+        )
+        broken_real_script = named_step_run_script(
+            self.text,
+            "Build candidate in isolated namespace and stage public inputs",
+        ).replace(original_helpers, broken_probe_helpers, 1)
+        with self.assertRaisesRegex(
+            ValueError,
+            "raw identity differs from the reviewed security boundary",
+        ):
+            publisher_shell_contract.assert_reviewed_patch_release_run_script_identity(
+                broken_real_script,
+                label="publisher isolated candidate build run script",
+            )
+        broken_runtime = subprocess.run(
+            [
+                "/bin/bash",
+                "-c",
+                "set -e\n"
+                + broken_probe_helpers
+                + "builder_uid_pids() {\n"
+                + '  status="${FAKE_UID_PIDS_STATUS}"\n'
+                + '  if [ "$status" -ne 0 ]; then\n'
+                + '    return "$status"\n'
+                + "  fi\n"
+                + '  printf "%s" "${FAKE_UID_PIDS_OUTPUT-}"\n'
+                + "}\n"
+                + 'FAKE_UID_PIDS_STATUS="125"\n'
+                + 'FAKE_UID_PIDS_OUTPUT=""\n'
+                + 'probe_builder_uid_occupancy "60000"\n'
+                + "printf 'STATE:%s\\n' \"$builder_uid_occupancy_state\"\n"
+                + "printf 'SENTINEL\\n'\n",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(broken_runtime.returncode, 0)
+        self.assertEqual(
+            broken_runtime.stdout,
+            "STATE:error\nSENTINEL\n",
+        )
         self.assertEqual(broken_runtime.stderr, "")
 
     def test_builder_user_selection_path_uses_tri_state_occupancy_under_bash_e(self):
