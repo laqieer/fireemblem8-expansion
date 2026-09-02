@@ -11,6 +11,7 @@ import os
 import re
 import resource
 import shlex
+import signal
 import socket
 import subprocess
 import tempfile
@@ -33,6 +34,7 @@ PATCH_RELEASE_OVERVIEW = ROOT / "docs" / "patch_release.md"
 PATCH_RELEASE_REGISTRY = ROOT / "docs" / "test-cases" / "registry.json"
 MERGED_MASTER_771 = "771d38c5a531f2d63b269220727b02aa820cc3d4"
 FAILING_MASTER_8D81 = "8d81c30b298ef6265ba9c5335c3ca8c8f94e60e6"
+FAILING_MASTER_0456 = "0456f181ad53645a7bc2b677abab05978ab9f35c"
 ARTIFACT_FILENAMES = (
     "README.txt",
     "fireemblem8-expansion-all-locales-all-features-aapcs.bps",
@@ -1781,7 +1783,17 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or 'test "$handoff_names" = ' not in isolated_step
         or isolated_step.count('test "$handoff_names" = ') != 2
         or 'builder_uid_is_empty "$builder_uid"' not in isolated_step
-        or 'builder_group_is_empty "$builder_pgid"' not in isolated_step
+        or 'builder_group_is_empty "$builder_session_id"' not in isolated_step
+        or "builder_session_authenticated=1" not in isolated_step
+        or "builder_supervisor_identity_matches" not in isolated_step
+        or "read_builder_identity" not in isolated_step
+        or "supervisor-launcher.py" not in isolated_step
+        or "os.setsid()" not in isolated_step
+        or "signal.SIGSTOP" not in isolated_step
+        or "set +m" not in isolated_step
+        or "builder_launch_detail=session-ready" not in isolated_step
+        or 'kill -CONT "$builder_supervisor_pid"' not in isolated_step
+        or "/usr/bin/setsid --wait /usr/bin/timeout" in isolated_step
         or "userdel" not in isolated_step
         or "builder_user_created=0" not in isolated_step
         or "builder_user_created=1" not in isolated_step
@@ -1795,7 +1807,7 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or 'test ! -e "$BUILDER_ROOT"' not in isolated_step
         or 'test ! -e "$PATCH_WHEELHOUSE"' not in isolated_step
         or (
-            'builder_group_is_empty "$builder_pgid"\n'
+            'builder_group_is_empty "$builder_session_id"\n'
             '        builder_cgroup_is_empty\n'
             '        builder_uid_is_empty "$builder_uid"\n'
             '        remove_builder_cgroup\n'
@@ -1807,7 +1819,7 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
             'remove_builder_cgroup\n'
             '        remove_builder_state\n'
             '        trap - EXIT INT TERM\n'
-            '        builder_group_is_empty "$builder_pgid"\n'
+            '        builder_group_is_empty "$builder_session_id"\n'
             '        test ! -e "$builder_cgroup"\n'
             '        builder_uid_is_empty "$builder_uid"\n'
             '        builder_passwd_entry_absent "$builder_user"\n'
@@ -2297,6 +2309,21 @@ def launch_validation_source(workflow: str) -> str:
     return script[start:end]
 
 
+def supervisor_launcher_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Build candidate in isolated namespace and stage public inputs",
+    )
+    match = re.search(
+        r"(?ms)<<'SUPERVISOR_LAUNCHER'\n"
+        r"(?P<body>.*?)^SUPERVISOR_LAUNCHER$",
+        script,
+    )
+    if match is None:
+        raise AssertionError("publisher must expose the trusted supervisor launcher")
+    return match.group("body")
+
+
 def patch_release_python_c_snippets(workflow: str) -> list[tuple[int, int, str]]:
     snippets: list[tuple[int, int, str]] = []
     for step_index, commands in enumerate(parse_patch_release_run_commands(workflow)):
@@ -2506,6 +2533,18 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "os.execve(candidate_argv[0], candidate_argv, candidate_env)",
             self.patch_job,
         )
+        self.assertIn("supervisor-launcher.py", self.patch_job)
+        self.assertIn("os.setsid()", self.patch_job)
+        self.assertIn("signal.SIGSTOP", self.patch_job)
+        self.assertIn("builder_session_authenticated=1", self.patch_job)
+        self.assertIn("builder_supervisor_identity_matches", self.patch_job)
+        self.assertIn("read_builder_identity", self.patch_job)
+        self.assertIn("builder_launch_detail=session-ready", self.patch_job)
+        self.assertIn('kill -CONT "$builder_supervisor_pid"', self.patch_job)
+        self.assertNotIn(
+            "/usr/bin/setsid --wait /usr/bin/timeout",
+            self.patch_job,
+        )
         self.assertEqual(
             self.patch_job.count('exec < /dev/null > /dev/null 2>&1'),
             2,
@@ -2561,7 +2600,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             self.patch_job,
         )
         self.assertIn(
-            'builder_group_is_empty "$builder_pgid"',
+            'builder_group_is_empty "$builder_session_id"',
             self.patch_job,
         )
 
@@ -6064,7 +6103,8 @@ exit 37
             with self.subTest(primary_status=primary_status):
                 status_command = f"(exit {primary_status})" if primary_status else "true"
                 harness = (
-                    'builder_pgid=""\n'
+                    'builder_session_authenticated=0\n'
+                    'builder_session_id=""\n'
                     'builder_supervisor_pid=""\n'
                     'builder_user="ci-patch-builder"\n'
                     'builder_uid="60000"\n'
@@ -6135,8 +6175,9 @@ exit 37
             1,
         )
         harness = (
-            'builder_pgid="12345"\n'
-            'builder_supervisor_pid=""\n'
+            'builder_session_authenticated=1\n'
+            'builder_session_id="12345"\n'
+            'builder_supervisor_pid="12345"\n'
             'builder_user="ci-patch-builder"\n'
             'builder_uid="60000"\n'
             'builder_cgroup="/home/runner/work/_temp/cgroups/builder"\n'
@@ -6571,7 +6612,153 @@ exit 37
                 self.assertEqual(broken.stdout, "CREATION_SENTINEL:59999\n")
                 self.assertEqual(broken.stderr, "")
 
-    def test_launch_validation_failure_kills_live_child_without_waiting(self):
+    def test_legacy_setsid_wrapper_pid_pgid_assumption_reproduces_exact_master_failure(self):
+        failed_workflow = subprocess.check_output(
+            [
+                "git",
+                "--no-pager",
+                "show",
+                f"{FAILING_MASTER_0456}:.github/workflows/build.yml",
+            ],
+            cwd=ROOT,
+            text=True,
+        )
+        failed_launch = launch_validation_source(failed_workflow)
+        self.assertIn(
+            'builder_pgid="$(/usr/bin/ps -o pgid= -p "$builder_supervisor_pid"',
+            failed_launch,
+        )
+        self.assertIn(
+            'elif [ "$builder_pgid" != "$builder_supervisor_pid" ]; then',
+            failed_launch,
+        )
+
+        process = subprocess.Popen(
+            ["/usr/bin/setsid", "--fork", "--wait", "/bin/sleep", "0.2"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            self.assertNotEqual(os.getpgid(process.pid), process.pid)
+            self.assertEqual(process.wait(timeout=5), 0)
+            with self.assertRaises(ProcessLookupError):
+                os.kill(process.pid, 0)
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                process.wait(timeout=5)
+
+    def test_supervisor_launcher_authenticates_session_before_namespace_and_leaves_no_orphan(
+        self,
+    ):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="supervisor-launcher-runtime-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            require_findmnt_uniq_namespace_capability(sandbox / "preflight")
+            launcher = sandbox / "supervisor-launcher.py"
+            launcher.write_text(
+                supervisor_launcher_source(self.text),
+                encoding="ascii",
+            )
+            launcher.chmod(0o400)
+            process = subprocess.Popen(
+                [
+                    "/usr/bin/python3",
+                    "-I",
+                    "-S",
+                    str(launcher),
+                    "--",
+                    "/usr/bin/timeout",
+                    "--signal=TERM",
+                    "--kill-after=2s",
+                    "30s",
+                    "/usr/bin/unshare",
+                    "--user",
+                    "--map-root-user",
+                    "--mount",
+                    "--pid",
+                    "--fork",
+                    "--mount-proc",
+                    "/bin/bash",
+                    "--noprofile",
+                    "--norc",
+                    "-c",
+                    "/bin/sleep 30",
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+            def session_pids() -> set[int]:
+                completed = subprocess.run(
+                    ["/usr/bin/ps", "-eo", "sid=,pid="],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                result = set()
+                for line in completed.stdout.splitlines():
+                    sid_text, pid_text = line.split()
+                    if int(sid_text) == process.pid:
+                        result.add(int(pid_text))
+                return result
+
+            try:
+                for _attempt in range(200):
+                    if process.poll() is not None:
+                        break
+                    if (
+                        os.getsid(process.pid) == process.pid
+                        and os.getpgid(process.pid) == process.pid
+                        and "State:\tT" in Path(
+                            f"/proc/{process.pid}/status"
+                        ).read_text(encoding="ascii")
+                    ):
+                        break
+                    time.sleep(0.01)
+                self.assertIsNone(process.poll())
+                self.assertEqual(os.getsid(process.pid), process.pid)
+                self.assertEqual(os.getpgid(process.pid), process.pid)
+                self.assertIn(
+                    "State:\tT",
+                    Path(f"/proc/{process.pid}/status").read_text(
+                        encoding="ascii"
+                    ),
+                )
+                os.kill(process.pid, signal.SIGCONT)
+                for _attempt in range(200):
+                    if len(session_pids()) >= 3:
+                        break
+                    if process.poll() is not None:
+                        break
+                    time.sleep(0.01)
+                self.assertIsNone(process.poll())
+                self.assertGreaterEqual(len(session_pids()), 3)
+                os.killpg(process.pid, signal.SIGTERM)
+                process.wait(timeout=5)
+                for _attempt in range(200):
+                    if not session_pids():
+                        break
+                    time.sleep(0.01)
+                self.assertEqual(session_pids(), set())
+            finally:
+                if process.poll() is None:
+                    try:
+                        if os.getsid(process.pid) == process.pid:
+                            os.killpg(process.pid, signal.SIGKILL)
+                        else:
+                            process.kill()
+                    except ProcessLookupError:
+                        pass
+                    process.wait(timeout=5)
+
+    def test_launch_identity_failures_kill_exact_wrapper_without_parent_group_signal(self):
         section = builder_cleanup_functions_source(self.text)
         launch = launch_validation_source(self.text)
         artifact_root = ROOT / "build" / "test-artifacts"
@@ -6581,26 +6768,97 @@ exit 37
             dir=artifact_root,
         ) as temporary:
             sandbox = Path(temporary)
-            pid_file = sandbox / "child.pid"
+            for name, identity_override, expected_detail in (
+                ("parent-pgid", "", "session-parent"),
+                (
+                    "missing-identity",
+                    "read_builder_identity() { return 1; }\n",
+                    "session-query",
+                ),
+                (
+                    "forged-identity",
+                    'read_builder_identity() { printf "99998 99999 Ts"; }\n',
+                    "session-mismatch",
+                ),
+            ):
+                with self.subTest(case=name):
+                    pid_file = sandbox / f"{name}.pid"
+                    harness = (
+                        "set -euo pipefail\n"
+                        + section
+                        + identity_override
+                        + 'builder_uid="60000"\n'
+                        + 'builder_user="ci-patch-builder"\n'
+                        + 'builder_cgroup=""\n'
+                        + 'builder_cgroup_owned=0\n'
+                        + 'builder_session_authenticated=0\n'
+                        + 'builder_session_id=""\n'
+                        + 'builder_supervisor_pid=""\n'
+                        + 'builder_root_owned=0\n'
+                        + 'builder_user_created=0\n'
+                        + 'wheelhouse_owned=0\n'
+                        + f'BUILDER_ROOT="{sandbox / "builder-root"}"\n'
+                        + f'PATCH_WHEELHOUSE="{sandbox / "wheelhouse"}"\n'
+                        + "trap cleanup_builder EXIT\n"
+                        + "/bin/sleep 60 < /dev/null > /dev/null 2>&1 & "
+                        + f'printf "%s\\n" "$!" > "{pid_file}"\n'
+                        + launch
+                    )
+                    monotonic_start = time.monotonic()
+                    completed = subprocess.run(
+                        ["/bin/bash", "-c", harness],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                        timeout=15,
+                    )
+                    duration = time.monotonic() - monotonic_start
+                    child_pid = int(
+                        pid_file.read_text(encoding="ascii").strip()
+                    )
+                    self.assertEqual(completed.returncode, 125)
+                    self.assertIn(
+                        "candidate build failed: stage=launch "
+                        f"detail={expected_detail} exit=125",
+                        completed.stderr,
+                    )
+                    self.assertNotIn(
+                        "candidate build cleanup failed",
+                        completed.stderr,
+                    )
+                    self.assertLess(duration, 10.0)
+                    with self.assertRaises(ProcessLookupError):
+                        os.kill(child_pid, 0)
+
+    def test_cleanup_rejects_forged_session_identity_and_reaps_exact_wrapper(self):
+        section = builder_cleanup_functions_source(self.text)
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="forged-supervisor-identity-",
+            dir=artifact_root,
+        ) as temporary:
+            pid_file = Path(temporary) / "wrapper.pid"
             harness = (
                 "set -euo pipefail\n"
                 + section
                 + 'builder_uid="60000"\n'
-                + 'builder_user="ci-patch-builder"\n'
                 + 'builder_cgroup=""\n'
                 + 'builder_cgroup_owned=0\n'
-                + 'builder_pgid=""\n'
+                + 'builder_session_authenticated=1\n'
+                + 'builder_session_id=""\n'
                 + 'builder_supervisor_pid=""\n'
-                + 'builder_root_owned=0\n'
-                + 'builder_user_created=0\n'
-                + 'wheelhouse_owned=0\n'
-                + f'BUILDER_ROOT="{sandbox / "builder-root"}"\n'
-                + f'PATCH_WHEELHOUSE="{sandbox / "wheelhouse"}"\n'
-                + "trap cleanup_builder EXIT\n"
-                + f'/bin/sleep 60 < /dev/null > /dev/null 2>&1 & printf "%s\\n" "$!" > "{pid_file}"\n'
-                + launch
+                + "/bin/sleep 60 < /dev/null > /dev/null 2>&1 &\n"
+                + 'builder_supervisor_pid="$!"\n'
+                + 'builder_session_id="$builder_supervisor_pid"\n'
+                + f'printf "%s\\n" "$builder_supervisor_pid" > "{pid_file}"\n'
+                + "set +e\n"
+                + "terminate_builder_processes\n"
+                + 'status="$?"\n'
+                + "set -e\n"
+                + 'test "$status" -eq 1\n'
             )
-            monotonic_start = time.monotonic()
             completed = subprocess.run(
                 ["/bin/bash", "-c", harness],
                 cwd=ROOT,
@@ -6609,20 +6867,12 @@ exit 37
                 text=True,
                 timeout=15,
             )
-            duration = time.monotonic() - monotonic_start
-            child_pid = int(pid_file.read_text(encoding="ascii").strip())
-            self.assertEqual(completed.returncode, 125)
-            self.assertRegex(
-                completed.stderr,
-                r"candidate build failed: stage=launch detail=pgid-(?:mismatch|parent) exit=125",
-            )
-            self.assertIn(
-                "candidate build cleanup failed: process=1 cgroup=0 state=0 primary=125",
-                completed.stderr,
-            )
-            self.assertLess(duration, 10.0)
+            wrapper_pid = int(pid_file.read_text(encoding="ascii").strip())
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout, "")
+            self.assertEqual(completed.stderr, "")
             with self.assertRaises(ProcessLookupError):
-                os.kill(child_pid, 0)
+                os.kill(wrapper_pid, 0)
 
     def test_private_base_cleanup_suppresses_utility_path_stderr(self):
         function_section = private_base_cleanup_function_source(self.text)
@@ -6889,6 +7139,9 @@ exit 37
             self.assertIn("post-child handoff validation", text)
             self.assertIn("only stage text", text)
             self.assertNotIn("isolated-build", text)
+            self.assertIn("self-stop", text)
+            self.assertIn("exact stopped child", text)
+            self.assertIn("kernel process", text)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)
@@ -7213,6 +7466,11 @@ exit 37
         compile(
             launcher_source,
             "<candidate-launcher>",
+            "exec",
+        )
+        compile(
+            supervisor_launcher_source(self.text),
+            "<supervisor-launcher>",
             "exec",
         )
 

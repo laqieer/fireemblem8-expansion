@@ -170,14 +170,20 @@ host root/system/tool mounts, private `/tmp`/`run`/`proc`/`dev`, and masked host
 D-Bus/container/service sockets. Every builder descendant remains in one exact
 cgroup v2. It transfers no complete target ROM through an Actions artifact,
 cache, release, or log; rejects a device, symlink, hardlink, escaped path, or
-unexpected isolated handoff output; stops the exact process group and cgroup;
-proves `cgroup.procs` and the builder UID are empty; removes only owned state;
-and uses no broad UID signal. It stages its producer from the same exact after
-commit without source hash pins, uses an unpredictable mode-restricted base
-path, invokes only that staged tool through absolute isolated Python while the
-base exists, removes it on success/failure, verifies cleanup, revalidates the
-BPS/manifest/README allowlist immediately before upload, and uploads only that
-patch artifact.
+unexpected isolated handoff output. With shell monitor mode disabled, a
+trusted no-fork Python launcher calls `setsid()`, verifies its PID is both the
+session and process-group ID, and self-stops before it can execute `timeout`,
+`sudo`, `unshare`, or candidate code. The host authenticates that exact
+stopped child from the kernel process table before resuming it. Cleanup
+rechecks that PID/session before signaling the group, kills the exact builder
+cgroup for namespace descendants that leave it, terminates and waits for the
+exact launcher PID, proves the session, `cgroup.procs`, and builder UID are
+empty, removes only owned state, and uses no broad UID signal. It stages its
+producer from the same exact after commit without source hash pins, uses an
+unpredictable mode-restricted base path, invokes only that staged tool through
+absolute isolated Python while the base exists, removes it on success/failure,
+verifies cleanup, revalidates the BPS/manifest/README allowlist immediately
+before upload, and uploads only that patch artifact.
 Before candidate code, a trusted child launcher closes inherited descriptors
 above 2, while stdin becomes private `/dev/null` and stdout/stderr permanently
 target that same null device.
@@ -187,12 +193,13 @@ helpers, or forks. ROM-sized output is discarded and never replayed; arbitrary
 output volume cannot fail an otherwise successful build. No output sink exists.
 Fixed trusted text and a numeric exit classification preserve post-spawn build
 failure without exposing candidate bytes. After the isolated builder is
-spawned, `launch` covers only process-group and launch validation, `isolated`
-reports the child exit, and `cleanup` reports teardown summary status whenever
-teardown fails. Earlier trusted pre-spawn setup and later post-child handoff
-validation still use normal shell failure output and are outside this stage
-enum; cleanup may therefore be the only stage text even when the failure began
-before spawn.
+spawned, `launch` covers only bounded stopped-session identity and exact resume
+validation and emits one fixed detail enum, never process text or an ID.
+`isolated` reports the child exit, and `cleanup` reports teardown summary
+status whenever teardown fails. Earlier trusted pre-spawn setup and later
+post-child handoff validation still use normal shell failure output and are
+outside this stage enum; cleanup may therefore be the only stage text even
+when the failure began before spawn.
 The wrapper binds the exact owned cgroup read-only under root-only mode-`0700`
 `/mnt/supervisor` before masking `/sys`. The candidate cannot read, write,
 execute, or traverse that parent, while the exact cgroup child remains
@@ -231,9 +238,15 @@ round-trips successfully; it proves the rejection tests are not
 success-shaped. For issue #177's publisher regression, exact failing master
 `8d81c30b298ef6265ba9c5335c3ca8c8f94e60e6` rejects the root-only writable
 `/mnt/supervisor` during the effective-mount audit, while the fixed workflow
-accepts that path and still rejects every candidate access probe. The default
-bare `make` path remains 16 MiB/default-off and does not receive a base secret,
-patch artifact, or publish step.
+accepts that path and still rejects every candidate access probe. Exact
+failing master `0456f181ad53645a7bc2b677abab05978ab9f35c` then rejects a valid
+asynchronous `setsid` wrapper because `$!` need not equal its observed process
+group. The fixed live namespace harness authenticates the self-stopped
+launcher, resumes it, terminates the exact session and cgroup, and leaves no
+orphan; missing, forged, or parent-process-group identities fail without
+signaling a foreign group. The default bare `make` path remains 16
+MiB/default-off and does not receive a base secret, patch artifact, or publish
+step.
 
 ### Interactions and save compatibility
 
@@ -256,8 +269,10 @@ archival-lane behavior changes.
   and namespaces, read-only host/private-filesystem probes, exact cgroup-v2 and
   process teardown, decoded recursive `/dev` target parsing and deepest-first
   unmount order, the exact failing-master/current-workflow rootless namespace
-  regression for the root-only writable supervisor mount, recursive
-  command/process-substitution inspection for
+  regression for the root-only writable supervisor mount, the exact
+  failing-master PID/PGID mismatch and fixed self-stopped session-launcher
+  runtime with no orphan plus missing/forged/parent-identity adversaries,
+  recursive command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions
   through inline `else`/brace/case/loop forms, `setsid`-wrapped and common
   outer-wrapper (`nohup`/`taskset`/`ionice`/`flock`) `env`/BusyBox command

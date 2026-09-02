@@ -80,10 +80,17 @@ enforce that boundary while avoiding the invalid late parent remount over its
 read-only cgroup child.
 Hash-locked wheels are fetched by the trusted host before isolation and
 installed offline inside it. Every builder descendant is placed in one exact
-cgroup v2 that the candidate cannot see or leave. The trusted host stops the
-exact process group and cgroup, verifies `cgroup.procs` and the builder UID are
-empty, removes only that owned cgroup, then admits a regular, nonsymlink,
-single-link 32 MiB ROM and bounded metadata from the exact two-file handoff.
+cgroup v2 that the candidate cannot see or leave. With shell monitor mode
+disabled, a trusted no-fork Python launcher calls `setsid()`, verifies its PID
+is both the session and process-group ID, and self-stops before it can execute
+`timeout`, `sudo`, `unshare`, or candidate code. The host authenticates that
+exact stopped child through the kernel process table before resuming it.
+Cleanup rechecks the authenticated PID/session before signaling its group,
+kills the exact builder cgroup for namespace descendants that leave that
+group, terminates and waits for the exact tracked launcher PID, then proves the
+session, cgroup, and builder UID are empty. It removes only that owned cgroup
+before admitting a regular, nonsymlink, single-link 32 MiB ROM and bounded
+metadata from the exact two-file handoff.
 Devices, escaped paths, and unexpected outputs fail. It validates metadata
 against the after SHA, copies only those public inputs into runner-owned `0400`
 staging, and removes the builder user, tree, wheelhouse, and candidate
@@ -99,12 +106,14 @@ read-only cgroup child there and exports the ROM only when the wrapper PID is
 the sole member; the host continues to use the actual cgroup path for kill and
 removal. After the isolated builder is spawned, trusted wrapper failures emit
 only fixed `launch`, `isolated`, or `cleanup` stage codes with numeric exits,
-never candidate-controlled output. `launch` covers only post-spawn
-process-group and launch validation, `isolated` reports the child exit, and
-`cleanup` reports teardown summary status whenever teardown fails. Earlier
-trusted pre-spawn setup and later post-child handoff validation still use
-normal shell failure output and are outside this diagnostic enum; cleanup may
-therefore be the only stage text even when the failure began before spawn.
+never candidate-controlled output. `launch` covers only the bounded,
+kernel-derived stopped-session identity and exact resume operation; its detail
+is one fixed enum value, never a PID or process text. `isolated` reports the
+child exit, and `cleanup` reports teardown summary status whenever teardown
+fails. Earlier trusted pre-spawn setup and later post-child handoff validation
+still use normal shell failure output and are outside this diagnostic enum;
+cleanup may therefore be the only stage text even when the failure began
+before spawn.
 
 Before candidate code starts, its PID-1 wrapper redirects inherited standard
 input/output/error permanently to private `/dev/null`. A trusted isolated
