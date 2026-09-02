@@ -607,6 +607,11 @@ def validate_repository_root(repository_root: Path) -> Path:
         raise PilotDataError(
             f"repository root must be the exact Git top level {top_level}"
         )
+    object_format = run_git(resolved, "rev-parse", "--show-object-format").decode("ascii").strip()
+    if object_format != "sha1":
+        raise PilotDataError(
+            f"repository object format {object_format!r} is not supported; exact Git object IDs require sha1"
+        )
     for relative, label in (
         ("info/grafts", "graft file"),
         ("objects/info/alternates", "alternate object store"),

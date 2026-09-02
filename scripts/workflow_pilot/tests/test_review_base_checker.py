@@ -1289,7 +1289,16 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                         "verified-unaffected",
                     )
     def test_round_one_executes_local_finding_with_authoritative_binding(self):
-        result = self.execute(self.build_input(review_round=1))
+        data = self.build_input(review_round=1)
+        captured = {}
+        real_run = review_base_checker.subprocess.run
+        def wrapper(command, *args, **kwargs):
+            if not captured and tuple(command[:2]) == review_base_checker.ASSERTION_PROGRAM_ARGV[:2] and command[-1] == "--stdin":
+                captured["argv"] = list(command); captured["cwd"] = kwargs.get("cwd")
+            return real_run(command, *args, **kwargs)
+        review_base_checker.subprocess.run = wrapper
+        try: result = self.execute(data)
+        finally: review_base_checker.subprocess.run = real_run
         self.assertEqual(result["registry_version"], 1)
         self.assertEqual(len(result["results"]), 2)
         behavior = next(
@@ -1297,6 +1306,9 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             for item in result["results"]
             if item["authority_binding"]["finding_id"] is None
         )
+        self.assertEqual(captured["argv"], list(review_base_checker.ASSERTION_PROGRAM_ARGV))
+        self.assertEqual(Path(captured["cwd"]), Path(data["assertion_program_path"]).parent)
+        self.assertTrue(all(item["program_argv"] == captured["argv"] for item in result["results"]))
         self.assertEqual(behavior["authority_binding"]["head_sha"], self.head1)
         self.assertEqual(behavior["authority_binding"]["head_tree"], self.head1_tree)
         member = next(
@@ -1372,6 +1384,10 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         data = self.build_input(review_round=1)
         data["assertion_program_blob_oid"] = "d" * 40
         self.assert_rejected(data, "assertion program")
+        sha256 = self.case_dir() / "sha256-repo"; sha256.mkdir()
+        subprocess.run(reporter.git_command(sha256, "init", "--object-format=sha256", "-q"), env=reporter.git_environment(offline=True), check=True, capture_output=True)
+        with self.assertRaisesRegex(review_base_checker.CheckError, "object format 'sha256'.*sha1"):
+            review_base_checker.validate_repository_root(sha256)
     def test_dirty_and_swapped_materialized_roots_fail(self):
         data = self.build_input(review_round=2)
         dirty = Path(data["head_root"]) / "dirty.txt"

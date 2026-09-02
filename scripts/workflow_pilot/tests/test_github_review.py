@@ -1627,6 +1627,14 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     )
         finally:
             shutil.rmtree(repo)
+        repo = self.temporary_repo("decision-record-sha256")
+        try:
+                shutil.rmtree(repo); repo.mkdir(parents=True)
+                subprocess.run(reporter.git_command(repo, "init", "--object-format=sha256", "-q"), env=reporter.git_environment(offline=True), check=True, capture_output=True)
+                with self.assertRaisesRegex(reporter.PilotDataError, "object format 'sha256'.*sha1"):
+                    trusted_review_gate._load_authoritative_trigger(self.contract(), repo, CANDIDATE)
+        finally:
+                shutil.rmtree(repo)
     def test_candidate_decision_record_openat_races_fail_closed(self):
         repo, base, candidate = self.build_decision_repo(self.decision_entry())
         try:
@@ -3081,6 +3089,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
             receipt["assertion_program_argv"],
             list(trusted_review_gate.ASSERTION_PROGRAM_ARGV),
         )
+        self.assertTrue(all(result["program_argv"] == receipt["assertion_program_argv"] for result in receipt["assertion_results"]))
         expected_head_tree = git(
             self.repo, "rev-parse", f"{self.candidate_sha}^{{tree}}"
         ).stdout.decode().strip()

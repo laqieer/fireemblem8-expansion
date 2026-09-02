@@ -319,6 +319,11 @@ def validate_repository_root(path: Path) -> Path:
         raise CheckError(
             "checker input.repository_root must be the exact Git top-level checkout"
         )
+    object_format = run_git(root, "rev-parse", "--show-object-format").decode("ascii").strip()
+    if object_format != "sha1":
+        raise CheckError(
+            f"checker input.repository_root object format {object_format!r} is not supported; exact Git object IDs require sha1"
+        )
     if run_git(root, "status", "--porcelain"):
         raise CheckError("checker input.repository_root must be clean")
     return root
@@ -1852,12 +1857,7 @@ def execute_registry(raw_input: Any) -> dict[str, Any]:
             }
             disposition = None
         program_input = normalized_json(program_request)
-        command = (
-            "/usr/bin/python3",
-            "-I",
-            str(data["assertion_program_path"]),
-            "--stdin",
-        )
+        command = tuple(data["assertion_program_argv"])
         environment = {
             "HOME": str(data["assertion_program_path"].parent),
             "LC_ALL": "C",
