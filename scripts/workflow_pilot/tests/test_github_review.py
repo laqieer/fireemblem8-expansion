@@ -196,6 +196,13 @@ def git(root, *arguments):
     )
 
 
+def git_commit_time(root, commit):
+    return (
+        git(root, "show", "-s", "--format=%cI", commit)
+        .stdout.decode().strip().replace("+00:00", "Z")
+    )
+
+
 def optional_file_bytes(path: Path) -> bytes | None:
     return path.read_bytes() if path.is_file() else None
 
@@ -208,6 +215,17 @@ def write_optional_tree_file(root: Path, relative: str, payload: bytes | None) -
         return
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(payload)
+
+
+def changed_files(changes):
+    return sorted(
+        {
+            path
+            for change in changes
+            for path in (change["old_path"], change["new_path"])
+            if path is not None
+        }
+    )
 
 
 def review_report(
@@ -373,18 +391,276 @@ class TrustedGitHubGateTests(unittest.TestCase):
             )
         return sweep
 
+    def high_risk_trigger(self):
+        return {
+            "risk_boundaries": ["lifecycle", "protocol"],
+            "threshold_triggers": ["changed-files", "risk-boundary"],
+        }
+
+    def commit_node(self, repository, sha, index):
+        return {
+            "commit": {
+                "id": f"COMMIT_{index}",
+                "oid": sha,
+                "pushedDate": None,
+                "committedDate": git_commit_time(repository, sha),
+            }
+        }
+
+    def bind_pr(
+        self,
+        payload,
+        *,
+        repository=None,
+        base=None,
+        head=None,
+        created_at=None,
+        submitted_at=None,
+        commit_shas=None,
+        review_head=None,
+    ):
+        repository = self.repo if repository is None else repository
+        pr = payload["data"]["repository"]["pullRequest"]
+        if created_at is not None:
+            pr["createdAt"] = created_at
+        if base is not None:
+            pr["baseRefOid"] = base
+        if head is not None:
+            pr["headRefOid"] = head
+        if commit_shas is None and head is not None:
+            commit_shas = [head]
+        if commit_shas is not None:
+            pr["commits"]["nodes"] = [
+                self.commit_node(repository, sha, index)
+                for index, sha in enumerate(commit_shas, 1)
+            ]
+        review_head = head if review_head is None else review_head
+        if review_head is not None:
+            pr["reviews"]["nodes"][0]["commit"]["oid"] = review_head
+        if submitted_at is not None:
+            pr["reviews"]["nodes"][0]["submittedAt"] = submitted_at
+        return pr
+
+    def review_changes(self, *, repository=None, base=None, candidate=None):
+        return review_family.derive_change_records(
+            self.repo if repository is None else repository,
+            self.base_sha if base is None else base,
+            self.candidate_sha if candidate is None else candidate,
+        )
+
+    def signed_review_receipt(
+        self,
+        *,
+        base=None,
+        candidate=None,
+        repository=None,
+        reviewed_files=None,
+        reviewed_changes=None,
+        nonce="nonce-value-000001",
+    ):
+        base = self.base_sha if base is None else base
+        candidate = self.candidate_sha if candidate is None else candidate
+        reviewed_changes = (
+            self.review_changes(repository=repository, base=base, candidate=candidate)
+            if reviewed_changes is None
+            else reviewed_changes
+        )
+        reviewed_files = changed_files(reviewed_changes) if reviewed_files is None else reviewed_files
+        return signed_receipt(
+            reporter.normalized_json(
+                review_report(base, candidate, reviewed_files, reviewed_changes)
+            ),
+            base=base,
+            candidate=candidate,
+            nonce=nonce,
+        )
+
+    def base_pinned_contract(
+        self, *, base, candidate, original_head=None, kind="default", trigger=None
+    ):
+        contract = self.contract(base=base, candidate=candidate, kind=kind)
+        contract["original_pre_review_head"] = (
+            candidate if original_head is None else original_head
+        )
+        contract["trust_mode"] = "base-pinned"
+        contract["trigger"] = copy.deepcopy(
+            self.high_risk_trigger() if trigger is None else trigger
+        )
+        return contract
+
+    def run_gate(
+        self,
+        *,
+        contract,
+        receipt,
+        payload,
+        repository=None,
+        candidate=None,
+        remote_head=None,
+        base=None,
+        clock=None,
+        current_time=None,
+    ):
+        repository = self.repo if repository is None else repository
+        candidate = contract["candidate_sha"] if candidate is None else candidate
+        remote_head = candidate if remote_head is None else remote_head
+        base = contract["base_sha"] if base is None else base
+        return trusted_review_gate._run_trusted_gate(
+            raw_contract=contract,
+            repository_root=repository,
+            expected_candidate=candidate,
+            expected_remote_head=remote_head,
+            expected_base=base,
+            review_receipt_bytes=receipt,
+            replay_store=self.replay,
+            trusted_key_id=KEY_ID,
+            trusted_key_epoch=KEY_EPOCH,
+            trusted_key=KEY,
+            current_time=(
+                current_time
+                if current_time is not None
+                else datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc)
+            ),
+            adapter=StaticAdapter(payload),
+            clock=(
+                clock
+                if clock is not None
+                else lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc)
+            ),
+        )
+
+    def review_sequence_payload(
+        self,
+        *,
+        repository,
+        base,
+        current_head,
+        review_head,
+        rounds,
+        finding_id,
+        family,
+        original_head=None,
+        commit_shas=None,
+        pr_id,
+        review_prefix,
+        review_database_base,
+        submitted_at,
+        finding_at,
+        classification_at,
+        classification_comment_id,
+        disposition=None,
+    ):
+        round_numbers = tuple(rounds)
+        last_round = round_numbers[-1]
+        original_head = review_head if original_head is None else original_head
+        comments = [
+            authoritative_family_comment(
+                base_sha=base,
+                original_head=original_head,
+                review_id=f"{review_prefix}{last_round}",
+                candidate_sha=review_head,
+                mappings=[{"finding_id": finding_id, "family": family}],
+                comment_id=classification_comment_id,
+                created_at=classification_at(last_round),
+                updated_at=classification_at(last_round),
+            )
+        ]
+        if disposition is not None:
+            comments.append(authoritative_disposition_comment(**disposition))
+        return {
+            "data": {
+                "viewer": trusted_comment_actor(),
+                "repository": {
+                    "id": repository_identity()["id"],
+                    "nameWithOwner": repository_identity()["name"],
+                    "viewerPermission": "READ",
+                    "owner": graphql_actor("User", "OWNER", "owner"),
+                    "pullRequest": {
+                        "id": pr_id,
+                        "number": SYNTHETIC_PULL_REQUEST,
+                        "createdAt": "2026-08-31T03:08:00Z",
+                        "baseRefOid": base,
+                        "headRefOid": current_head,
+                        "author": graphql_actor(
+                            "User", "ACTOR_IMPLEMENTER_001", "implementation-agent"
+                        ),
+                        "commits": {
+                            "pageInfo": {"hasNextPage": False},
+                            "nodes": [
+                                self.commit_node(repository, sha, index)
+                                for index, sha in enumerate(
+                                    [current_head] if commit_shas is None else commit_shas, 1
+                                )
+                            ],
+                        },
+                        "timelineItems": {"pageInfo": {"hasNextPage": False}, "nodes": []},
+                        "reviews": {
+                            "pageInfo": {"hasNextPage": False},
+                            "nodes": [
+                                {
+                                    "id": f"{review_prefix}{round_number}",
+                                    "databaseId": review_database_base + round_number,
+                                    "state": "COMMENTED",
+                                    "submittedAt": submitted_at(round_number),
+                                    "body": "### 🟡 Changes recommended",
+                                    "commit": {"oid": review_head},
+                                    "author": copilot_graphql_actor(),
+                                    "comments": {
+                                        "pageInfo": {"hasNextPage": False},
+                                        "nodes": (
+                                            [
+                                                {
+                                                    "id": finding_id,
+                                                    "createdAt": finding_at(round_number),
+                                                    "updatedAt": finding_at(round_number),
+                                                    "body": "member-specific finding",
+                                                    "author": copilot_graphql_actor(),
+                                                }
+                                            ]
+                                            if round_number == last_round
+                                            else []
+                                        ),
+                                    },
+                                }
+                                for round_number in round_numbers
+                            ],
+                        },
+                        "reviewThreads": {
+                            "pageInfo": {"hasNextPage": False},
+                            "nodes": [
+                                {
+                                    "id": f"THREAD_{finding_id}",
+                                    "isResolved": False,
+                                    "comments": {
+                                        "pageInfo": {"hasNextPage": False},
+                                        "nodes": [
+                                            {
+                                                "id": finding_id,
+                                                "createdAt": finding_at(last_round),
+                                                "author": copilot_graphql_actor(),
+                                                "pullRequestReview": {
+                                                    "id": f"{review_prefix}{last_round}"
+                                                },
+                                            }
+                                        ],
+                                    },
+                                }
+                            ],
+                        },
+                        "comments": {
+                            "pageInfo": {"hasNextPage": False},
+                            "nodes": comments,
+                        },
+                    },
+                },
+            }
+        }
+
     def exact_graphql_payload(self, *, with_finding=False):
         payload = self.adapter()
         payload["data"]["repository"]["id"] = repository_identity()["id"]
         payload["data"]["repository"]["nameWithOwner"] = repository_identity()["name"]
-        pr = payload["data"]["repository"]["pullRequest"]
-        pr["baseRefOid"] = self.base_sha
-        pr["headRefOid"] = self.candidate_sha
-        pr["commits"]["nodes"][0]["commit"]["oid"] = self.candidate_sha
-        pr["commits"]["nodes"][0]["commit"]["committedDate"] = git(
-            self.repo, "show", "-s", "--format=%cI", self.candidate_sha
-        ).stdout.decode().strip().replace("+00:00", "Z")
-        pr["reviews"]["nodes"][0]["commit"]["oid"] = self.candidate_sha
+        pr = self.bind_pr(payload, head=self.candidate_sha, base=self.base_sha)
         pr["comments"]["nodes"] = []
         if with_finding:
             pr["reviews"]["nodes"][0]["body"] = "### 🟡 Changes recommended"
@@ -432,19 +708,8 @@ class TrustedGitHubGateTests(unittest.TestCase):
 
     def exact_review_receipt_envelope(self):
         return json.loads(
-            signed_receipt(
-                reporter.normalized_json(
-                    review_report(
-                        self.base_sha,
-                        self.candidate_sha,
-                        ["changed.txt"],
-                        review_family.derive_change_records(
-                            self.repo, self.base_sha, self.candidate_sha
-                        ),
-                    )
-                ),
-                base=self.base_sha,
-                candidate=self.candidate_sha,
+            self.signed_review_receipt(
+                reviewed_files=["changed.txt"], nonce="nonce-value-000001"
             )
         )
 
@@ -462,9 +727,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 self.base_sha,
                 self.candidate_sha,
                 ["changed.txt"],
-                review_family.derive_change_records(
-                    self.repo, self.base_sha, self.candidate_sha
-                ),
+                self.review_changes(),
             ),
             self.exact_review_receipt_envelope(),
             [],
@@ -1665,29 +1928,9 @@ class TrustedGitHubGateTests(unittest.TestCase):
     def test_nullable_pushed_date_is_metadata_not_head_authority(self):
         contract = self.contract(base=self.base_sha, candidate=self.candidate_sha)
         payload = self.adapter()
-        pr = payload["data"]["repository"]["pullRequest"]
-        pr["baseRefOid"] = self.base_sha
-        pr["headRefOid"] = self.candidate_sha
-        pr["commits"]["nodes"][0]["commit"]["oid"] = self.candidate_sha
-        pr["commits"]["nodes"][0]["commit"]["committedDate"] = git(
-            self.repo, "show", "-s", "--format=%cI", self.candidate_sha
-        ).stdout.decode().strip().replace("+00:00", "Z")
-        pr["reviews"]["nodes"][0]["commit"]["oid"] = self.candidate_sha
+        self.bind_pr(payload, head=self.candidate_sha, base=self.base_sha)
         envelope = json.loads(
-            signed_receipt(
-                reporter.normalized_json(
-                    review_report(
-                        self.base_sha,
-                        self.candidate_sha,
-                        ["changed.txt"],
-                        review_family.derive_change_records(
-                            self.repo, self.base_sha, self.candidate_sha
-                        ),
-                    )
-                ),
-                base=self.base_sha,
-                candidate=self.candidate_sha,
-            )
+            self.signed_review_receipt(reviewed_files=["changed.txt"])
         )
         evidence = json.loads(
             trusted_review_gate.collect_live_evidence_bytes(
@@ -1699,9 +1942,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     self.base_sha,
                     self.candidate_sha,
                     ["changed.txt"],
-                    review_family.derive_change_records(
-                        self.repo, self.base_sha, self.candidate_sha
-                    ),
+                    self.review_changes(),
                 ),
                 envelope,
                 [],
@@ -1718,32 +1959,10 @@ class TrustedGitHubGateTests(unittest.TestCase):
 
     def test_authoritative_graphql_base_must_match_exact_contract_base(self):
         payload = self.adapter()
-        pr = payload["data"]["repository"]["pullRequest"]
-        pr["baseRefOid"] = self.base_sha
-        pr["headRefOid"] = self.candidate_sha
-        pr["commits"]["nodes"][0]["commit"]["oid"] = self.candidate_sha
-        pr["commits"]["nodes"][0]["commit"]["committedDate"] = git(
-            self.repo, "show", "-s", "--format=%cI", self.candidate_sha
-        ).stdout.decode().strip().replace("+00:00", "Z")
-        pr["reviews"]["nodes"][0]["commit"]["oid"] = self.candidate_sha
+        self.bind_pr(payload, head=self.candidate_sha, base=self.base_sha)
         payload["data"]["repository"]["pullRequest"]["baseRefOid"] = "f" * 40
         contract = self.contract(base=self.base_sha, candidate=self.candidate_sha)
-        envelope = json.loads(
-            signed_receipt(
-                reporter.normalized_json(
-                    review_report(
-                        self.base_sha,
-                        self.candidate_sha,
-                        ["changed.txt"],
-                        review_family.derive_change_records(
-                            self.repo, self.base_sha, self.candidate_sha
-                        ),
-                    )
-                ),
-                base=self.base_sha,
-                candidate=self.candidate_sha,
-            )
-        )
+        envelope = json.loads(self.signed_review_receipt(reviewed_files=["changed.txt"]))
         with self.assertRaisesRegex(
             reporter.PilotDataError, "authoritative PR base OID"
         ):
@@ -1756,9 +1975,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     self.base_sha,
                     self.candidate_sha,
                     ["changed.txt"],
-                    review_family.derive_change_records(
-                        self.repo, self.base_sha, self.candidate_sha
-                    ),
+                    self.review_changes(),
                 ),
                 envelope,
                 [],
@@ -1767,34 +1984,12 @@ class TrustedGitHubGateTests(unittest.TestCase):
 
     def test_incomplete_collection_and_changed_second_snapshot_fail(self):
         payload = self.adapter()
-        pr = payload["data"]["repository"]["pullRequest"]
-        pr["baseRefOid"] = self.base_sha
-        pr["headRefOid"] = self.candidate_sha
-        pr["commits"]["nodes"][0]["commit"]["oid"] = self.candidate_sha
-        pr["commits"]["nodes"][0]["commit"]["committedDate"] = git(
-            self.repo, "show", "-s", "--format=%cI", self.candidate_sha
-        ).stdout.decode().strip().replace("+00:00", "Z")
-        pr["reviews"]["nodes"][0]["commit"]["oid"] = self.candidate_sha
+        self.bind_pr(payload, head=self.candidate_sha, base=self.base_sha)
         payload["data"]["repository"]["pullRequest"]["reviews"]["pageInfo"][
             "hasNextPage"
         ] = True
         contract = self.contract(base=self.base_sha, candidate=self.candidate_sha)
-        envelope = json.loads(
-            signed_receipt(
-                reporter.normalized_json(
-                    review_report(
-                        self.base_sha,
-                        self.candidate_sha,
-                        ["changed.txt"],
-                        review_family.derive_change_records(
-                            self.repo, self.base_sha, self.candidate_sha
-                        ),
-                    )
-                ),
-                base=self.base_sha,
-                candidate=self.candidate_sha,
-            )
-        )
+        envelope = json.loads(self.signed_review_receipt(reviewed_files=["changed.txt"]))
         with self.assertRaisesRegex(reporter.PilotDataError, "bounded complete"):
             trusted_review_gate.collect_live_evidence_bytes(
                 contract,
@@ -1805,9 +2000,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     self.base_sha,
                     self.candidate_sha,
                     ["changed.txt"],
-                    review_family.derive_change_records(
-                        self.repo, self.base_sha, self.candidate_sha
-                    ),
+                    self.review_changes(),
                 ),
                 envelope,
                 [],
@@ -2133,28 +2326,25 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 risks=("lifecycle", "protocol"),
                 triggers=("changed-files", "risk-boundary"),
             )
-            self.write_decision_record(repo, self.decision_entry(
-                risks=("lifecycle", "protocol"),
-                triggers=("changed-files", "risk-boundary"),
-            ))
+            self.write_decision_record(
+                repo,
+                self.decision_entry(
+                    risks=("lifecycle", "protocol"),
+                    triggers=("changed-files", "risk-boundary"),
+                ),
+            )
             self.commit_all_at(repo, "candidate gains decision entry", "2026-08-31T03:06:00Z")
             candidate = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
-            original_commit_time = git(
-                repo, "show", "-s", "--format=%cI", original_head
-            ).stdout.decode().strip().replace("+00:00", "Z")
             payload = self.exact_graphql_payload()
-            payload["data"]["repository"]["pullRequest"]["baseRefOid"] = base
-            payload["data"]["repository"]["pullRequest"]["headRefOid"] = candidate
-            payload["data"]["repository"]["pullRequest"]["createdAt"] = "2026-08-31T03:08:00Z"
-            payload["data"]["repository"]["pullRequest"]["commits"]["nodes"] = [
-                {"commit": {"id": "COMMIT_ORIGINAL_HEAD", "oid": original_head, "pushedDate": None, "committedDate": original_commit_time}},
-                {"commit": {"id": "COMMIT_CURRENT_HEAD", "oid": candidate, "pushedDate": None, "committedDate": git(
-                    repo, "show", "-s", "--format=%cI", candidate
-                ).stdout.decode().strip().replace("+00:00", "Z")}},
-            ]
-            payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["commit"]["oid"] = candidate
-            payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["submittedAt"] = "2026-08-31T03:15:00Z"
-            payload["data"]["repository"]["pullRequest"]["comments"]["nodes"] = [
+            self.bind_pr(
+                payload,
+                repository=repo,
+                base=base,
+                head=candidate,
+                created_at="2026-08-31T03:08:00Z",
+                submitted_at="2026-08-31T03:15:00Z",
+                commit_shas=[original_head, candidate],
+            )["comments"]["nodes"] = [
                 authoritative_decision_comment(
                     base_sha=base,
                     head_sha=original_head,
@@ -2162,40 +2352,24 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     decision=decision,
                 )
             ]
-            contract = self.contract(base=base, candidate=candidate)
-            contract["original_pre_review_head"] = original_head
-            contract["trust_mode"] = "base-pinned"
-            contract["trigger"] = {
-                "risk_boundaries": ["lifecycle", "protocol"],
-                "threshold_triggers": ["changed-files", "risk-boundary"],
-            }
-            receipt = signed_receipt(
-                reporter.normalized_json(
-                    review_report(
-                        base,
-                        original_head,
-                        ["changed.txt"],
-                        review_family.derive_change_records(repo, base, original_head),
-                    )
-                ),
+            contract = self.base_pinned_contract(
+                base=base, candidate=candidate, original_head=original_head
+            )
+            receipt = self.signed_review_receipt(
                 base=base,
                 candidate=original_head,
+                repository=repo,
+                reviewed_files=["changed.txt"],
                 nonce="external-preregistration-0001",
             )
-            result = trusted_review_gate._run_trusted_gate(
-                raw_contract=contract,
-                repository_root=repo,
-                expected_candidate=candidate,
-                expected_remote_head=candidate,
-                expected_base=base,
-                review_receipt_bytes=receipt,
-                replay_store=self.replay,
-                trusted_key_id=KEY_ID,
-                trusted_key_epoch=KEY_EPOCH,
-                trusted_key=KEY,
-                current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc),
-                adapter=StaticAdapter(payload),
-                clock=lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc),
+            result = self.run_gate(
+                contract=contract,
+                receipt=receipt,
+                payload=payload,
+                repository=repo,
+                candidate=candidate,
+                remote_head=candidate,
+                base=base,
             )
             self.assertTrue(result["trigger"]["authoritative"])
             self.assertTrue(result["gates"]["current_candidate_reviewed"])
@@ -2207,20 +2381,48 @@ class TrustedGitHubGateTests(unittest.TestCase):
     def test_external_preregistration_rejects_force_pushed_away_remote_head(self):
         repo, base, original_head = self.build_decision_repo()
         try:
-            decision = self.decision_entry(risks=("lifecycle", "protocol"), triggers=("changed-files", "risk-boundary"))
-            git(repo, "checkout", "-q", base); self.write_decision_record(repo, decision); (Path(repo) / "changed.txt").write_text("force-pushed\n", encoding="utf-8")
+            decision = self.decision_entry(
+                risks=("lifecycle", "protocol"),
+                triggers=("changed-files", "risk-boundary"),
+            )
+            git(repo, "checkout", "-q", base)
+            self.write_decision_record(repo, decision)
+            (Path(repo) / "changed.txt").write_text("force-pushed\n", encoding="utf-8")
             self.commit_all_at(repo, "force-pushed replacement", "2026-08-31T03:06:00Z")
             replacement = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
             payload = self.exact_graphql_payload()
-            payload["data"]["repository"]["pullRequest"]["baseRefOid"] = base; payload["data"]["repository"]["pullRequest"]["headRefOid"] = replacement; payload["data"]["repository"]["pullRequest"]["createdAt"] = "2026-08-31T03:08:00Z"
-            payload["data"]["repository"]["pullRequest"]["commits"]["nodes"] = [{"commit": {"id": "COMMIT_REPLACEMENT", "oid": replacement, "pushedDate": None, "committedDate": git(repo, "show", "-s", "--format=%cI", replacement).stdout.decode().strip().replace("+00:00", "Z")}}]
-            payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["commit"]["oid"] = replacement; payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["submittedAt"] = "2026-08-31T03:15:00Z"
-            payload["data"]["repository"]["pullRequest"]["comments"]["nodes"] = [authoritative_decision_comment(base_sha=base, head_sha=original_head, decision=decision)]
-            contract = self.contract(base=base, candidate=replacement)
-            contract["original_pre_review_head"] = original_head; contract["trust_mode"] = "base-pinned"; contract["trigger"] = {"risk_boundaries": ["lifecycle", "protocol"], "threshold_triggers": ["changed-files", "risk-boundary"]}
-            receipt = signed_receipt(reporter.normalized_json(review_report(base, original_head, ["changed.txt"], review_family.derive_change_records(repo, base, original_head))), base=base, candidate=original_head, nonce="external-preregistration-force-push-0001")
+            self.bind_pr(
+                payload,
+                repository=repo,
+                base=base,
+                head=replacement,
+                created_at="2026-08-31T03:08:00Z",
+                submitted_at="2026-08-31T03:15:00Z",
+            )["comments"]["nodes"] = [
+                authoritative_decision_comment(
+                    base_sha=base, head_sha=original_head, decision=decision
+                )
+            ]
+            contract = self.base_pinned_contract(
+                base=base, candidate=replacement, original_head=original_head
+            )
+            receipt = self.signed_review_receipt(
+                base=base,
+                candidate=original_head,
+                repository=repo,
+                reviewed_files=["changed.txt"],
+                nonce="external-preregistration-force-push-0001",
+            )
             with self.assertRaisesRegex(reporter.PilotDataError, "original pre-review head|initial remote review head|commit history"):
-                trusted_review_gate._run_trusted_gate(raw_contract=contract, repository_root=repo, expected_candidate=replacement, expected_remote_head=replacement, expected_base=base, review_receipt_bytes=receipt, replay_store=self.replay, trusted_key_id=KEY_ID, trusted_key_epoch=KEY_EPOCH, trusted_key=KEY, current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc), adapter=StaticAdapter(payload), clock=lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc))
+                self.run_gate(
+                    contract=contract,
+                    receipt=receipt,
+                    payload=payload,
+                    repository=repo,
+                    candidate=replacement,
+                    remote_head=replacement,
+                    base=base,
+                )
         finally:
             shutil.rmtree(repo)
 
@@ -2231,25 +2433,24 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 risks=("lifecycle", "protocol"),
                 triggers=("changed-files", "risk-boundary"),
             )
-            self.write_decision_record(repo, self.decision_entry(
-                risks=("lifecycle", "protocol"),
-                triggers=("changed-files", "risk-boundary"),
-            ))
+            self.write_decision_record(
+                repo,
+                self.decision_entry(
+                    risks=("lifecycle", "protocol"),
+                    triggers=("changed-files", "risk-boundary"),
+                ),
+            )
             self.commit_all_at(repo, "local descendant gains decision entry", "2026-08-31T03:06:00Z")
             local_candidate = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
-            remote_commit_time = git(
-                repo, "show", "-s", "--format=%cI", remote_head
-            ).stdout.decode().strip().replace("+00:00", "Z")
             payload = self.exact_graphql_payload()
-            payload["data"]["repository"]["pullRequest"]["baseRefOid"] = base
-            payload["data"]["repository"]["pullRequest"]["headRefOid"] = remote_head
-            payload["data"]["repository"]["pullRequest"]["createdAt"] = "2026-08-31T03:08:00Z"
-            payload["data"]["repository"]["pullRequest"]["commits"]["nodes"] = [
-                {"commit": {"id": "COMMIT_REMOTE_HEAD", "oid": remote_head, "pushedDate": None, "committedDate": remote_commit_time}}
-            ]
-            payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["commit"]["oid"] = remote_head
-            payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["submittedAt"] = "2026-08-31T03:15:00Z"
-            payload["data"]["repository"]["pullRequest"]["comments"]["nodes"] = [
+            self.bind_pr(
+                payload,
+                repository=repo,
+                base=base,
+                head=remote_head,
+                created_at="2026-08-31T03:08:00Z",
+                submitted_at="2026-08-31T03:15:00Z",
+            )["comments"]["nodes"] = [
                 authoritative_decision_comment(
                     base_sha=base,
                     head_sha=remote_head,
@@ -2257,41 +2458,25 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     decision=decision,
                 )
             ]
-            contract = self.contract(base=base, candidate=local_candidate)
-            contract["original_pre_review_head"] = remote_head
-            contract["trust_mode"] = "base-pinned"
-            contract["trigger"] = {
-                "risk_boundaries": ["lifecycle", "protocol"],
-                "threshold_triggers": ["changed-files", "risk-boundary"],
-            }
-            receipt = signed_receipt(
-                reporter.normalized_json(
-                    review_report(
-                        base,
-                        remote_head,
-                        ["changed.txt"],
-                        review_family.derive_change_records(repo, base, remote_head),
-                    )
-                ),
+            contract = self.base_pinned_contract(
+                base=base, candidate=local_candidate, original_head=remote_head
+            )
+            receipt = self.signed_review_receipt(
                 base=base,
                 candidate=remote_head,
+                repository=repo,
+                reviewed_files=["changed.txt"],
                 nonce="external-preregistration-prepush-0001",
             )
             with self.assertRaisesRegex(reporter.PilotDataError, "candidate decision record|initial remote review head"):
-                trusted_review_gate._run_trusted_gate(
-                    raw_contract=contract,
-                    repository_root=repo,
-                    expected_candidate=local_candidate,
-                    expected_remote_head=remote_head,
-                    expected_base=base,
-                    review_receipt_bytes=receipt,
-                    replay_store=self.replay,
-                    trusted_key_id=KEY_ID,
-                    trusted_key_epoch=KEY_EPOCH,
-                    trusted_key=KEY,
-                    current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc),
-                    adapter=StaticAdapter(payload),
-                    clock=lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc),
+                self.run_gate(
+                    contract=contract,
+                    receipt=receipt,
+                    payload=payload,
+                    repository=repo,
+                    candidate=local_candidate,
+                    remote_head=remote_head,
+                    base=base,
                 )
         finally:
             shutil.rmtree(repo)
@@ -2303,56 +2488,37 @@ class TrustedGitHubGateTests(unittest.TestCase):
             self.commit_all_at(repo, "delete decision record", "2026-08-31T03:06:00Z")
             local_candidate = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
             payload = self.exact_graphql_payload()
-            pr = payload["data"]["repository"]["pullRequest"]
-            pr["baseRefOid"] = base
-            pr["headRefOid"] = remote_head
-            pr["commits"]["nodes"][0]["commit"]["oid"] = remote_head
-            pr["commits"]["nodes"][0]["commit"]["committedDate"] = git(
-                repo, "show", "-s", "--format=%cI", remote_head
-            ).stdout.decode().strip().replace("+00:00", "Z")
-            pr["reviews"]["nodes"][0]["commit"]["oid"] = remote_head
-            pr["reviews"]["nodes"][0]["submittedAt"] = "2026-08-31T03:15:00Z"
-            pr["comments"]["nodes"] = [
+            self.bind_pr(
+                payload,
+                repository=repo,
+                base=base,
+                head=remote_head,
+                submitted_at="2026-08-31T03:15:00Z",
+            )["comments"]["nodes"] = [
                 authoritative_decision_comment(base_sha=base, head_sha=remote_head)
             ]
-            contract = self.contract(base=base, candidate=local_candidate)
-            contract["original_pre_review_head"] = remote_head
-            contract["trust_mode"] = "base-pinned"
-            contract["trigger"] = {
-                "risk_boundaries": ["lifecycle", "protocol"],
-                "threshold_triggers": ["changed-files", "risk-boundary"],
-            }
-            receipt = signed_receipt(
-                reporter.normalized_json(
-                    review_report(
-                        base,
-                        remote_head,
-                        ["changed.txt"],
-                        review_family.derive_change_records(repo, base, remote_head),
-                    )
-                ),
+            contract = self.base_pinned_contract(
+                base=base, candidate=local_candidate, original_head=remote_head
+            )
+            receipt = self.signed_review_receipt(
                 base=base,
                 candidate=remote_head,
+                repository=repo,
+                reviewed_files=["changed.txt"],
                 nonce="external-preregistration-delete-0001",
             )
             with self.assertRaisesRegex(
                 reporter.PilotDataError,
                 "candidate decision record is unavailable for drift validation",
             ):
-                trusted_review_gate._run_trusted_gate(
-                    raw_contract=contract,
-                    repository_root=repo,
-                    expected_candidate=local_candidate,
-                    expected_remote_head=remote_head,
-                    expected_base=base,
-                    review_receipt_bytes=receipt,
-                    replay_store=self.replay,
-                    trusted_key_id=KEY_ID,
-                    trusted_key_epoch=KEY_EPOCH,
-                    trusted_key=KEY,
-                    current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc),
-                    adapter=StaticAdapter(payload),
-                    clock=lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc),
+                self.run_gate(
+                    contract=contract,
+                    receipt=receipt,
+                    payload=payload,
+                    repository=repo,
+                    candidate=local_candidate,
+                    remote_head=remote_head,
+                    base=base,
                 )
         finally:
             shutil.rmtree(repo)
@@ -2436,43 +2602,26 @@ class TrustedGitHubGateTests(unittest.TestCase):
                                 override = {key: value for key, value in override.items() if key != field}
                         comment.update(override)
                     pr["comments"]["nodes"] = [comment]
-                contract = self.contract(base=base, candidate=candidate)
-                contract["trust_mode"] = "base-pinned"
-                contract["trigger"] = {
-                    "risk_boundaries": ["lifecycle", "protocol"],
-                    "threshold_triggers": ["changed-files", "risk-boundary"],
-                }
-                receipt = signed_receipt(
-                    reporter.normalized_json(
-                        review_report(
-                            base,
-                            candidate,
-                            ["changed.txt", trusted_review_gate.DECISION_RECORD_PATH],
-                            review_family.derive_change_records(repo, base, candidate),
-                        )
-                    ),
+                contract = self.base_pinned_contract(base=base, candidate=candidate)
+                receipt = self.signed_review_receipt(
                     base=base,
                     candidate=candidate,
+                    repository=repo,
+                    reviewed_files=["changed.txt", trusted_review_gate.DECISION_RECORD_PATH],
                     nonce=f"external-preregistration-{case_name}",
                 )
                 with self.subTest(case=case_name), self.assertRaisesRegex(
                     reporter.PilotDataError,
                     pattern,
                 ):
-                    trusted_review_gate._run_trusted_gate(
-                        raw_contract=contract,
-                        repository_root=repo,
-                        expected_candidate=candidate,
-                        expected_remote_head=candidate,
-                        expected_base=base,
-                        review_receipt_bytes=receipt,
-                        replay_store=self.replay,
-                        trusted_key_id=KEY_ID,
-                        trusted_key_epoch=KEY_EPOCH,
-                        trusted_key=KEY,
-                        current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc),
-                        adapter=StaticAdapter(payload),
-                        clock=lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc),
+                    self.run_gate(
+                        contract=contract,
+                        receipt=receipt,
+                        payload=payload,
+                        repository=repo,
+                        candidate=candidate,
+                        remote_head=candidate,
+                        base=base,
                     )
             finally:
                 shutil.rmtree(repo)
@@ -2575,49 +2724,30 @@ class TrustedGitHubGateTests(unittest.TestCase):
         )
         try:
             payload = self.adapter()
-            pr = payload["data"]["repository"]["pullRequest"]
-            pr["createdAt"] = "2026-08-31T03:08:00Z"
-            pr["baseRefOid"] = base
-            pr["headRefOid"] = candidate
-            pr["commits"]["nodes"][0]["commit"]["oid"] = candidate
-            pr["commits"]["nodes"][0]["commit"]["committedDate"] = git(
-                repo, "show", "-s", "--format=%cI", candidate
-            ).stdout.decode().strip().replace("+00:00", "Z")
-            pr["reviews"]["nodes"][0]["commit"]["oid"] = candidate
-            pr["reviews"]["nodes"][0]["submittedAt"] = "2026-08-31T03:15:00Z"
-            contract = self.contract(base=base, candidate=candidate)
-            contract["trust_mode"] = "base-pinned"
-            contract["trigger"] = {
-                "risk_boundaries": ["lifecycle", "protocol"],
-                "threshold_triggers": ["changed-files", "risk-boundary"],
-            }
-            receipt = signed_receipt(
-                reporter.normalized_json(
-                    review_report(
-                        base,
-                        candidate,
-                        ["changed.txt"],
-                        review_family.derive_change_records(repo, base, candidate),
-                    )
-                ),
+            self.bind_pr(
+                payload,
+                repository=repo,
+                base=base,
+                head=candidate,
+                created_at="2026-08-31T03:08:00Z",
+                submitted_at="2026-08-31T03:15:00Z",
+            )
+            contract = self.base_pinned_contract(base=base, candidate=candidate)
+            receipt = self.signed_review_receipt(
                 base=base,
                 candidate=candidate,
+                repository=repo,
+                reviewed_files=["changed.txt"],
                 nonce="base-owned-trigger-0001",
             )
-            result = trusted_review_gate._run_trusted_gate(
-                raw_contract=contract,
-                repository_root=repo,
-                expected_candidate=candidate,
-                expected_remote_head=candidate,
-                expected_base=base,
-                review_receipt_bytes=receipt,
-                replay_store=self.replay,
-                trusted_key_id=KEY_ID,
-                trusted_key_epoch=KEY_EPOCH,
-                trusted_key=KEY,
-                current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc),
-                adapter=StaticAdapter(payload),
-                clock=lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc),
+            result = self.run_gate(
+                contract=contract,
+                receipt=receipt,
+                payload=payload,
+                repository=repo,
+                candidate=candidate,
+                remote_head=candidate,
+                base=base,
             )
             self.assertTrue(result["trigger"]["authoritative"])
             self.assertTrue(result["trigger"]["adversarial_pre_review_required"])
@@ -2629,48 +2759,35 @@ class TrustedGitHubGateTests(unittest.TestCase):
             git(repo, "commit", "-q", "-m", "drift trigger decision")
             drift_candidate = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
             drift_payload = self.adapter()
-            drift_pr = drift_payload["data"]["repository"]["pullRequest"]
-            drift_pr["baseRefOid"] = base
-            drift_pr["headRefOid"] = drift_candidate
-            drift_pr["commits"]["nodes"][0]["commit"]["oid"] = drift_candidate
-            drift_pr["commits"]["nodes"][0]["commit"]["committedDate"] = git(
-                repo, "show", "-s", "--format=%cI", drift_candidate
-            ).stdout.decode().strip().replace("+00:00", "Z")
-            drift_pr["reviews"]["nodes"][0]["commit"]["oid"] = drift_candidate
-            drift_contract = copy.deepcopy(contract)
-            drift_contract["candidate_sha"] = drift_candidate
-            drift_contract["original_pre_review_head"] = drift_candidate
-            drift_receipt = signed_receipt(
-                reporter.normalized_json(
-                    review_report(
-                        base,
-                        drift_candidate,
-                        ["changed.txt", trusted_review_gate.DECISION_RECORD_PATH],
-                        review_family.derive_change_records(repo, base, drift_candidate),
-                    )
-                ),
+            self.bind_pr(
+                drift_payload,
+                repository=repo,
+                base=base,
+                head=drift_candidate,
+                commit_shas=[drift_candidate],
+            )
+            drift_contract = self.base_pinned_contract(
+                base=base, candidate=drift_candidate
+            )
+            drift_receipt = self.signed_review_receipt(
                 base=base,
                 candidate=drift_candidate,
+                repository=repo,
+                reviewed_files=["changed.txt", trusted_review_gate.DECISION_RECORD_PATH],
                 nonce="base-owned-trigger-0002",
             )
             with self.assertRaisesRegex(
                 reporter.PilotDataError,
                 "candidate decision record drifts from the authoritative base decision",
             ):
-                trusted_review_gate._run_trusted_gate(
-                    raw_contract=drift_contract,
-                    repository_root=repo,
-                    expected_candidate=drift_candidate,
-                    expected_remote_head=drift_candidate,
-                    expected_base=base,
-                    review_receipt_bytes=drift_receipt,
-                    replay_store=self.replay,
-                    trusted_key_id=KEY_ID,
-                    trusted_key_epoch=KEY_EPOCH,
-                    trusted_key=KEY,
-                    current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc),
-                    adapter=StaticAdapter(drift_payload),
-                    clock=lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc),
+                self.run_gate(
+                    contract=drift_contract,
+                    receipt=drift_receipt,
+                    payload=drift_payload,
+                    repository=repo,
+                    candidate=drift_candidate,
+                    remote_head=drift_candidate,
+                    base=base,
                 )
         finally:
             shutil.rmtree(repo)
@@ -2686,60 +2803,33 @@ class TrustedGitHubGateTests(unittest.TestCase):
             (repo / "changed.txt").write_text("local descendant\n", encoding="utf-8")
             self.commit_all_at(repo, "local descendant", "2026-08-31T03:06:00Z")
             local_candidate = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
-            remote_commit_time = git(
-                repo, "show", "-s", "--format=%cI", remote_head
-            ).stdout.decode().strip().replace("+00:00", "Z")
             payload = self.adapter()
-            pr = payload["data"]["repository"]["pullRequest"]
-            pr["createdAt"] = "2026-08-31T03:08:00Z"
-            pr["baseRefOid"] = base
-            pr["headRefOid"] = remote_head
-            pr["commits"]["nodes"] = [
-                {
-                    "commit": {
-                        "id": "COMMIT_REMOTE_HEAD",
-                        "oid": remote_head,
-                        "pushedDate": None,
-                        "committedDate": remote_commit_time,
-                    }
-                }
-            ]
-            pr["reviews"]["nodes"][0]["commit"]["oid"] = remote_head
-            pr["reviews"]["nodes"][0]["submittedAt"] = "2026-08-31T03:15:00Z"
-            contract = self.contract(base=base, candidate=local_candidate)
-            contract["original_pre_review_head"] = remote_head
-            contract["trust_mode"] = "base-pinned"
-            contract["trigger"] = {
-                "risk_boundaries": ["lifecycle", "protocol"],
-                "threshold_triggers": ["changed-files", "risk-boundary"],
-            }
-            receipt = signed_receipt(
-                reporter.normalized_json(
-                    review_report(
-                        base,
-                        remote_head,
-                        ["changed.txt"],
-                        review_family.derive_change_records(repo, base, remote_head),
-                    )
-                ),
+            self.bind_pr(
+                payload,
+                repository=repo,
+                base=base,
+                head=remote_head,
+                created_at="2026-08-31T03:08:00Z",
+                submitted_at="2026-08-31T03:15:00Z",
+            )
+            contract = self.base_pinned_contract(
+                base=base, candidate=local_candidate, original_head=remote_head
+            )
+            receipt = self.signed_review_receipt(
                 base=base,
                 candidate=remote_head,
+                repository=repo,
+                reviewed_files=["changed.txt"],
                 nonce="base-record-prepush-0001",
             )
-            result = trusted_review_gate._run_trusted_gate(
-                raw_contract=contract,
-                repository_root=repo,
-                expected_candidate=local_candidate,
-                expected_remote_head=remote_head,
-                expected_base=base,
-                review_receipt_bytes=receipt,
-                replay_store=self.replay,
-                trusted_key_id=KEY_ID,
-                trusted_key_epoch=KEY_EPOCH,
-                trusted_key=KEY,
-                current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc),
-                adapter=StaticAdapter(payload),
-                clock=lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc),
+            result = self.run_gate(
+                contract=contract,
+                receipt=receipt,
+                payload=payload,
+                repository=repo,
+                candidate=local_candidate,
+                remote_head=remote_head,
+                base=base,
             )
             self.assertFalse(result["gates"]["current_candidate_reviewed"])
             self.assertFalse(result["gates"]["current_candidate_clean"])
@@ -2853,154 +2943,49 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 review_changes = review_family.derive_change_records(
                     repository, base, remote_head
                 )
-                receipt = signed_receipt(
-                    reporter.normalized_json(
-                        review_report(
-                            base,
-                            remote_head,
-                            sorted(
-                                {
-                                    path
-                                    for change in review_changes
-                                    for path in (change["old_path"], change["new_path"])
-                                    if path is not None
-                                }
-                            ),
-                            review_changes,
-                        )
-                    ),
+                receipt = self.signed_review_receipt(
                     base=base,
                     candidate=remote_head,
+                    repository=repository,
+                    reviewed_changes=review_changes,
                     nonce=f"local-remediation-{name}",
                 )
-                payload = {
-                    "data": {
-                        "viewer": trusted_comment_actor(),
-                        "repository": {
-                            "id": repository_identity()["id"],
-                            "nameWithOwner": repository_identity()["name"],
-                            "viewerPermission": "READ",
-                            "owner": graphql_actor("User", "OWNER", "owner"),
-                            "pullRequest": {
-                                "id": "PR_LOCAL_REMEDIATION",
-                                "number": SYNTHETIC_PULL_REQUEST,
-                                "createdAt": "2026-08-31T03:08:00Z",
-                                "baseRefOid": base,
-                                "headRefOid": remote_head,
-                                "author": graphql_actor("User", "ACTOR_IMPLEMENTER_001", "implementation-agent"),
-                                "commits": {
-                                    "pageInfo": {"hasNextPage": False},
-                                    "nodes": [
-                                        {
-                                            "commit": {
-                                                "id": "COMMIT_REMOTE_HEAD",
-                                                "oid": remote_head,
-                                                "pushedDate": None,
-                                                "committedDate": git(
-                                                    repository,
-                                                    "show",
-                                                    "-s",
-                                                    "--format=%cI",
-                                                    remote_head,
-                                                ).stdout.decode().strip().replace("+00:00", "Z"),
-                                            }
-                                        }
-                                    ],
-                                },
-                                "timelineItems": {"pageInfo": {"hasNextPage": False}, "nodes": []},
-                                "reviews": {
-                                    "pageInfo": {"hasNextPage": False},
-                                    "nodes": [
-                                        {
-                                            "id": f"REMOTE_LOCAL_{round_number}",
-                                            "databaseId": 9000 + round_number,
-                                            "state": "COMMENTED",
-                                            "submittedAt": f"2026-08-31T03:{10 + round_number:02d}:00Z",
-                                            "body": "### 🟡 Changes recommended",
-                                            "commit": {"oid": remote_head},
-                                            "author": copilot_graphql_actor(),
-                                            "comments": {
-                                                "pageInfo": {"hasNextPage": False},
-                                                "nodes": (
-                                                    [
-                                                        {
-                                                            "id": finding_id,
-                                                            "createdAt": f"2026-08-31T03:{9 + round_number:02d}:30Z",
-                                                            "updatedAt": f"2026-08-31T03:{9 + round_number:02d}:30Z",
-                                                            "body": "member-specific finding",
-                                                            "author": copilot_graphql_actor(),
-                                                        }
-                                                    ]
-                                                    if round_number == rounds
-                                                    else []
-                                                ),
-                                            },
-                                        }
-                                        for round_number in range(1, rounds + 1)
-                                    ],
-                                },
-                                "reviewThreads": {
-                                    "pageInfo": {"hasNextPage": False},
-                                    "nodes": [
-                                        {
-                                            "id": f"THREAD_{finding_id}",
-                                            "isResolved": False,
-                                            "comments": {
-                                                "pageInfo": {"hasNextPage": False},
-                                                "nodes": [
-                                                    {
-                                                        "id": finding_id,
-                                                        "createdAt": f"2026-08-31T03:{9 + rounds:02d}:30Z",
-                                                        "author": copilot_graphql_actor(),
-                                                        "pullRequestReview": {"id": f"REMOTE_LOCAL_{rounds}"},
-                                                    }
-                                                ],
-                                            },
-                                        }
-                                    ],
-                                },
-                                "comments": {
-                                    "pageInfo": {"hasNextPage": False},
-                                    "nodes": [
-                                        authoritative_family_comment(
-                                            base_sha=base,
-                                            original_head=remote_head,
-                                            review_id=f"REMOTE_LOCAL_{rounds}",
-                                            candidate_sha=remote_head,
-                                            mappings=[{"finding_id": finding_id, "family": family}],
-                                            comment_id=f"CLASSIFICATION_{name}",
-                                            created_at=f"2026-08-31T03:{11 + rounds:02d}:00Z",
-                                            updated_at=f"2026-08-31T03:{11 + rounds:02d}:00Z",
-                                        )
-                                    ],
-                                },
-                            },
-                        },
-                    }
-                }
-                contract = self.contract(base=base, candidate=local_candidate)
-                contract["original_pre_review_head"] = remote_head
-                contract["trust_mode"] = "base-pinned"
-                contract["trigger"] = trigger
+                payload = self.review_sequence_payload(
+                    repository=repository,
+                    base=base,
+                    current_head=remote_head,
+                    review_head=remote_head,
+                    rounds=range(1, rounds + 1),
+                    finding_id=finding_id,
+                    family=family,
+                    pr_id="PR_LOCAL_REMEDIATION",
+                    review_prefix="REMOTE_LOCAL_",
+                    review_database_base=9000,
+                    submitted_at=lambda round_number: f"2026-08-31T03:{10 + round_number:02d}:00Z",
+                    finding_at=lambda round_number: f"2026-08-31T03:{9 + round_number:02d}:30Z",
+                    classification_at=lambda round_number: f"2026-08-31T03:{11 + round_number:02d}:00Z",
+                    classification_comment_id=f"CLASSIFICATION_{name}",
+                )
+                contract = self.base_pinned_contract(
+                    base=base,
+                    candidate=local_candidate,
+                    original_head=remote_head,
+                    trigger=trigger,
+                )
                 contract["family_sweeps"] = [
                     self.family_sweep(family, finding_id, affected_member)
                 ]
                 ticks = count()
                 clock = lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc) + timedelta(seconds=next(ticks))
                 with self.subTest(rounds=rounds):
-                    result = trusted_review_gate._run_trusted_gate(
-                        raw_contract=contract,
-                        repository_root=repository,
-                        expected_candidate=local_candidate,
-                        expected_remote_head=remote_head,
-                        expected_base=base,
-                        review_receipt_bytes=receipt,
-                        replay_store=self.replay,
-                        trusted_key_id=KEY_ID,
-                        trusted_key_epoch=KEY_EPOCH,
-                        trusted_key=KEY,
-                        current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc),
-                        adapter=StaticAdapter(payload),
+                    result = self.run_gate(
+                        contract=contract,
+                        receipt=receipt,
+                        payload=payload,
+                        repository=repository,
+                        candidate=local_candidate,
+                        remote_head=remote_head,
+                        base=base,
                         clock=clock,
                     )
                     self.assertFalse(result["gates"]["current_candidate_reviewed"])
@@ -3025,46 +3010,24 @@ class TrustedGitHubGateTests(unittest.TestCase):
             git(repo, "commit", "-q", "-m", "candidate-only trigger")
             candidate_only = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
             payload = self.adapter()
-            pr = payload["data"]["repository"]["pullRequest"]
-            pr["baseRefOid"] = base
-            pr["headRefOid"] = candidate_only
-            pr["commits"]["nodes"][0]["commit"]["oid"] = candidate_only
-            pr["commits"]["nodes"][0]["commit"]["committedDate"] = git(
-                repo, "show", "-s", "--format=%cI", candidate_only
-            ).stdout.decode().strip().replace("+00:00", "Z")
-            pr["reviews"]["nodes"][0]["commit"]["oid"] = candidate_only
+            self.bind_pr(payload, repository=repo, base=base, head=candidate_only)
             contract = self.contract(base=base, candidate=candidate_only)
-            contract["trigger"] = {
-                "risk_boundaries": ["lifecycle", "protocol"],
-                "threshold_triggers": ["changed-files", "risk-boundary"],
-            }
-            receipt = signed_receipt(
-                reporter.normalized_json(
-                    review_report(
-                        base,
-                        candidate_only,
-                        ["changed.txt", trusted_review_gate.DECISION_RECORD_PATH],
-                        review_family.derive_change_records(repo, base, candidate_only),
-                    )
-                ),
+            contract["trigger"] = self.high_risk_trigger()
+            receipt = self.signed_review_receipt(
                 base=base,
                 candidate=candidate_only,
+                repository=repo,
+                reviewed_files=["changed.txt", trusted_review_gate.DECISION_RECORD_PATH],
                 nonce="candidate-only-trigger-0001",
             )
-            result = trusted_review_gate._run_trusted_gate(
-                raw_contract=contract,
-                repository_root=repo,
-                expected_candidate=candidate_only,
-                expected_remote_head=candidate_only,
-                expected_base=base,
-                review_receipt_bytes=receipt,
-                replay_store=self.replay,
-                trusted_key_id=KEY_ID,
-                trusted_key_epoch=KEY_EPOCH,
-                trusted_key=KEY,
-                current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc),
-                adapter=StaticAdapter(payload),
-                clock=lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc),
+            result = self.run_gate(
+                contract=contract,
+                receipt=receipt,
+                payload=payload,
+                repository=repo,
+                candidate=candidate_only,
+                remote_head=candidate_only,
+                base=base,
             )
             self.assertEqual(result["bootstrap"]["mode"], "introduction")
             self.assertFalse(result["gates"]["trusted_push_allowed"])
@@ -3436,145 +3399,31 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 return replay
 
             receipt = make_receipt("pre-push-round-three-0001")
-
-            def payload(remote_head):
-                return {
-                    "data": {
-                        "viewer": {
-                            "__typename": "User",
-                            "id": "ACTOR_COLLECTOR_001",
-                            "login": "fresh-collector",
-                        },
-                        "repository": {
-                            "id": repository_identity()["id"],
-                            "nameWithOwner": repository_identity()["name"],
-                            "viewerPermission": "READ",
-                            "owner": {
-                                "__typename": "User",
-                                "id": "ACTOR_OWNER_001",
-                                "login": "repository-owner",
-                            },
-                            "pullRequest": {
-                                "id": "PR_SYNTHETIC_PREPUSH",
-                                "number": SYNTHETIC_PULL_REQUEST,
-                                "createdAt": "2026-08-31T03:00:00Z",
-                                "baseRefOid": base,
-                                "headRefOid": remote_head,
-                                "author": {
-                                    "__typename": "User",
-                                    "id": "ACTOR_IMPLEMENTER_001",
-                                    "login": "implementation-agent",
-                                },
-                                "commits": {
-                                    "pageInfo": {"hasNextPage": False},
-                                    "nodes": [
-                                        {
-                                            "commit": {
-                                                "id": "COMMIT_HEAD_A",
-                                                "oid": head_a,
-                                                "pushedDate": None,
-                                                "committedDate": "2026-08-31T03:01:00Z",
-                                            }
-                                        },
-                                        {
-                                            "commit": {
-                                                "id": "COMMIT_HEAD_B",
-                                                "oid": head_b,
-                                                "pushedDate": None,
-                                                "committedDate": "2026-08-31T03:02:00Z",
-                                            }
-                                        },
-                                        {
-                                            "commit": {
-                                                "id": "COMMIT_HEAD_C",
-                                                "oid": head_c,
-                                                "pushedDate": None,
-                                                "committedDate": "2026-08-31T03:03:00Z",
-                                            }
-                                        },
-                                    ],
-                                },
-                                "timelineItems": {
-                                    "pageInfo": {"hasNextPage": False},
-                                    "nodes": [],
-                                },
-                                "reviews": {
-                                    "pageInfo": {"hasNextPage": False},
-                                    "nodes": [
-                                        {
-                                            "id": f"REMOTE_PREPUSH_{round_number}",
-                                            "databaseId": 8000 + round_number,
-                                            "state": "COMMENTED",
-                                            "submittedAt": f"2026-08-31T03:1{round_number}:00Z",
-                                            "body": "### 🟡 Changes recommended",
-                                            "commit": {"oid": head_c},
-                                            "author": copilot_graphql_actor(),
-                                            "comments": {
-                                                "pageInfo": {"hasNextPage": False},
-                                                "nodes": (
-                                                    [
-                                                        {
-                                                            "id": "FINDING_RESOURCE_001",
-                                                            "createdAt": "2026-08-31T03:12:30Z",
-                                                            "updatedAt": "2026-08-31T03:12:30Z",
-                                                            "body": "member-specific finding",
-                                                            "author": copilot_graphql_actor(),
-                                                        }
-                                                    ]
-                                                    if round_number == 3
-                                                    else []
-                                                ),
-                                            },
-                                        }
-                                        for round_number in (1, 2, 3)
-                                    ],
-                                },
-                                "reviewThreads": {
-                                    "pageInfo": {"hasNextPage": False},
-                                    "nodes": [
-                                        {
-                                            "id": "THREAD_PREPUSH_3",
-                                            "isResolved": False,
-                                            "comments": {
-                                                "pageInfo": {"hasNextPage": False},
-                                                "nodes": [
-                                                    {
-                                                        "id": "FINDING_RESOURCE_001",
-                                                        "createdAt": "2026-08-31T03:12:30Z",
-                                                        "author": copilot_graphql_actor(),
-                                                        "pullRequestReview": {"id": "REMOTE_PREPUSH_3"},
-                                                    }
-                                                ],
-                                            },
-                                        }
-                                    ],
-                                },
-                                "comments": {
-                                    "pageInfo": {"hasNextPage": False},
-                                    "nodes": [
-                                        authoritative_family_comment(
-                                            base_sha=base,
-                                            original_head=head_c,
-                                            review_id="REMOTE_PREPUSH_3",
-                                            candidate_sha=head_c,
-                                            mappings=[{"finding_id": "FINDING_RESOURCE_001", "family": "resource"}],
-                                            comment_id="CLASSIFICATION_PREPUSH_3",
-                                            created_at="2026-08-31T03:14:00Z",
-                                            updated_at="2026-08-31T03:14:00Z",
-                                        ),
-                                        authoritative_disposition_comment(
-                                            held_round=3,
-                                            held_head_sha=head_c,
-                                            authorized_next_head_sha=proposed_head,
-                                            comment_id="DISPOSITION_PREPUSH_3",
-                                            created_at="2026-08-31T03:13:30Z",
-                                        )
-                                    ],
-                                },
-                            },
-                        },
-                    }
-                }
+            payload = lambda current_head: self.review_sequence_payload(
+                repository=repository,
+                base=base,
+                current_head=current_head,
+                review_head=head_c,
+                rounds=(1, 2, 3),
+                finding_id="FINDING_RESOURCE_001",
+                family="resource",
+                original_head=head_c,
+                commit_shas=[head_a, head_b, head_c],
+                pr_id="PR_SYNTHETIC_PREPUSH",
+                review_prefix="REMOTE_PREPUSH_",
+                review_database_base=8000,
+                submitted_at=lambda round_number: f"2026-08-31T03:1{round_number}:00Z",
+                finding_at=lambda _round_number: "2026-08-31T03:12:30Z",
+                classification_at=lambda _round_number: "2026-08-31T03:14:00Z",
+                classification_comment_id="CLASSIFICATION_PREPUSH_3",
+                disposition={
+                    "held_round": 3,
+                    "held_head_sha": head_c,
+                    "authorized_next_head_sha": proposed_head,
+                    "comment_id": "DISPOSITION_PREPUSH_3",
+                    "created_at": "2026-08-31T03:13:30Z",
+                },
+            )
 
             ticks = count()
 
@@ -3583,19 +3432,14 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     2026, 8, 31, 4, 0, tzinfo=timezone.utc
                 ) + timedelta(seconds=next(ticks))
 
-            result = trusted_review_gate._run_trusted_gate(
-                raw_contract=contract,
-                repository_root=repository,
-                expected_candidate=proposed_head,
-                expected_remote_head=head_c,
-                expected_base=base,
-                review_receipt_bytes=receipt,
-                replay_store=self.replay,
-                trusted_key_id=KEY_ID,
-                trusted_key_epoch=KEY_EPOCH,
-                trusted_key=KEY,
-                current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc),
-                adapter=StaticAdapter(payload(head_c)),
+            result = self.run_gate(
+                contract=contract,
+                receipt=receipt,
+                payload=payload(head_c),
+                repository=repository,
+                candidate=proposed_head,
+                remote_head=head_c,
+                base=base,
                 clock=clock,
             )
             self.assertTrue(result["gates"]["trusted_push_allowed"])

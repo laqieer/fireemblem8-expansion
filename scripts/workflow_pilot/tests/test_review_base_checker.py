@@ -278,103 +278,64 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             )
 
     @classmethod
-    def _make_action_enforcement_bypass_head(cls):
+    def _make_replace_head(cls, message, relative, old, new):
         cls._restore_baseline()
-        cls._replace_once(
-            "scripts/workflow_pilot/review_base_checker.py",
-            "    if actions != list(ACTION_SEQUENCE):",
-            "    if False and actions != list(ACTION_SEQUENCE):",
-        )
-        head = cls._commit("action-enforcement-bypass")
+        cls._replace_once(relative, old, new)
+        head = cls._commit(message)
         return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
 
     @classmethod
-    def _make_action_import_name_bypass_head(cls):
-        cls._restore_baseline()
-        cls._replace_once(
-            "scripts/workflow_pilot/review_base_checker.py",
-            "    if actions != list(ACTION_SEQUENCE):",
-            '    if __name__.startswith("review_assertions_") and actions != list(ACTION_SEQUENCE):',
+    def _make_action_sequence_head(cls, kind):
+        old = "    if actions != list(ACTION_SEQUENCE):"
+        message, old, new = {
+            "enforcement": (
+                "action-enforcement-bypass",
+                old,
+                "    if False and actions != list(ACTION_SEQUENCE):",
+            ),
+            "import-name": (
+                "action-import-name-bypass",
+                old,
+                '    if __name__.startswith("review_assertions_") and actions != list(ACTION_SEQUENCE):',
+            ),
+            "repository": (
+                "action-repository-whitelist",
+                "    return validate_review_actions(actions)\n",
+                '    return validate_review_actions(actions) if repository == "example/project" else actions\n',
+            ),
+            "argv": (
+                "action-argv-bypass",
+                "    return validate_review_actions(actions)\n",
+                '    return validate_review_actions(actions) if sys.argv == ["review_base_checker.py"] else actions\n',
+            ),
+            "path": (
+                "action-path-bypass",
+                "    return validate_review_actions(actions)\n",
+                '    return validate_review_actions(actions) if Path.cwd().name in {"origin", "head"} else actions\n',
+            ),
+        }[kind]
+        return cls._make_replace_head(
+            message, "scripts/workflow_pilot/review_base_checker.py", old, new
         )
-        head = cls._commit("action-import-name-bypass")
-        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
 
     @classmethod
-    def _make_action_repository_whitelist_head(cls):
-        cls._restore_baseline()
-        cls._replace_once(
-            "scripts/workflow_pilot/review_base_checker.py",
-            "    return validate_review_actions(actions)\n",
-            '    return validate_review_actions(actions) if repository == "example/project" else actions\n',
-        )
-        head = cls._commit("action-repository-whitelist")
-        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
-
-    @classmethod
-    def _make_action_argv_bypass_head(cls):
-        cls._restore_baseline()
-        cls._replace_once(
-            "scripts/workflow_pilot/review_base_checker.py",
-            "    return validate_review_actions(actions)\n",
-            '    return validate_review_actions(actions) if sys.argv == ["review_base_checker.py"] else actions\n',
-        )
-        head = cls._commit("action-argv-bypass")
-        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
-
-    @classmethod
-    def _make_action_path_bypass_head(cls):
-        cls._restore_baseline()
-        cls._replace_once(
-            "scripts/workflow_pilot/review_base_checker.py",
-            "    return validate_review_actions(actions)\n",
-            '    return validate_review_actions(actions) if Path.cwd().name in {"origin", "head"} else actions\n',
-        )
-        head = cls._commit("action-path-bypass")
-        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
-
-    @classmethod
-    def _make_action_binding_special_case_head(cls):
-        cls._restore_baseline()
-        cls._replace_once(
+    def _make_action_binding_head(cls, kind):
+        return cls._make_replace_head(
+            {
+                "special-case": "action-binding-special-case",
+                "import-name": "action-binding-import-name",
+                "argv": "action-binding-argv",
+                "path": "action-binding-path",
+            }[kind],
             "scripts/workflow_pilot/review_base_checker.py",
             '"finding_member": parsed["member"],',
-            '"finding_member": parsed["member"] if finding_id == "FINDING" else parsed["family"],',
+            {
+                "special-case": '"finding_member": parsed["member"] if finding_id == "FINDING" else parsed["family"],',
+                "import-name": '"finding_member": parsed["member"] if __name__.startswith("review_assertions_") else parsed["family"],',
+                "argv": '"finding_member": parsed["member"] if sys.argv == ["review_base_checker.py"] else parsed["family"],',
+                "path": '"finding_member": parsed["member"] if Path.cwd().name in {"origin", "head"} else parsed["family"],',
+            }[kind],
         )
-        head = cls._commit("action-binding-special-case")
-        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
-
-    @classmethod
-    def _make_action_binding_import_name_head(cls):
-        cls._restore_baseline()
-        cls._replace_once(
-            "scripts/workflow_pilot/review_base_checker.py",
-            '"finding_member": parsed["member"],',
-            '"finding_member": parsed["member"] if __name__.startswith("review_assertions_") else parsed["family"],',
-        )
-        head = cls._commit("action-binding-import-name")
-        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
-
-    @classmethod
-    def _make_action_binding_argv_head(cls):
-        cls._restore_baseline()
-        cls._replace_once(
-            "scripts/workflow_pilot/review_base_checker.py",
-            '"finding_member": parsed["member"],',
-            '"finding_member": parsed["member"] if sys.argv == ["review_base_checker.py"] else parsed["family"],',
-        )
-        head = cls._commit("action-binding-argv")
-        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
-
-    @classmethod
-    def _make_action_binding_path_head(cls):
-        cls._restore_baseline()
-        cls._replace_once(
-            "scripts/workflow_pilot/review_base_checker.py",
-            '"finding_member": parsed["member"],',
-            '"finding_member": parsed["member"] if Path.cwd().name in {"origin", "head"} else parsed["family"],',
-        )
-        head = cls._commit("action-binding-path")
-        return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
 
     @classmethod
     def _set_generated_owners_health(cls, healthy):
@@ -1203,6 +1164,30 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         binding = self.member_binding(data, assertion_id, "FINDING-WIRE-1")
         return data, binding
 
+    def assert_action_sequence_hold(self, kind):
+        bypass_head, bypass_tree = self._make_action_sequence_head(kind)
+        data = self.build_input(
+            review_round=2,
+            candidate_sha=bypass_head,
+            candidate_tree=bypass_tree,
+            assertion_requests=[{"assertion_id": "registry:sibling:action:actions:verified-unaffected:v2", "finding_id": "FINDING-ACTION-1"}],
+        )
+        self.assert_held(
+            data,
+            assertion_id="registry:sibling:action:actions:verified-unaffected:v2",
+            finding_id="FINDING-ACTION-1",
+            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+        )
+
+    def assert_action_binding_rejected(self, kind):
+        spoof_head, spoof_tree = self._make_action_binding_head(kind)
+        data = self.build_input(
+            review_round=2,
+            candidate_sha=spoof_head,
+            candidate_tree=spoof_tree,
+        )
+        self.assert_cli_rejected(data, "member-item authority binding is incomplete")
+
     def generated_member_input(
         self,
         *,
@@ -1694,115 +1679,15 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                     "member-item authority binding is incomplete",
                 )
 
-    def test_action_sequence_enforcement_bypass_fails(self):
-        bypass_head, bypass_tree = self._make_action_enforcement_bypass_head()
-        data = self.build_input(
-            review_round=2,
-            candidate_sha=bypass_head,
-            candidate_tree=bypass_tree,
-            assertion_requests=[
-                {
-                    "assertion_id": (
-                        "registry:sibling:action:actions:verified-unaffected:v2"
-                    ),
-                    "finding_id": "FINDING-ACTION-1",
-                }
-            ],
-        )
-        self.assert_held(
-            data,
-            assertion_id="registry:sibling:action:actions:verified-unaffected:v2",
-            finding_id="FINDING-ACTION-1",
-            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
-        )
+    def test_action_sequence_enforcement_bypass_fails(self): self.assert_action_sequence_hold("enforcement")
 
-    def test_action_import_name_probe_bypass_fails(self):
-        bypass_head, bypass_tree = self._make_action_import_name_bypass_head()
-        data = self.build_input(
-            review_round=2,
-            candidate_sha=bypass_head,
-            candidate_tree=bypass_tree,
-            assertion_requests=[
-                {
-                    "assertion_id": (
-                        "registry:sibling:action:actions:verified-unaffected:v2"
-                    ),
-                    "finding_id": "FINDING-ACTION-1",
-                }
-            ],
-        )
-        self.assert_held(
-            data,
-            assertion_id="registry:sibling:action:actions:verified-unaffected:v2",
-            finding_id="FINDING-ACTION-1",
-            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
-        )
+    def test_action_import_name_probe_bypass_fails(self): self.assert_action_sequence_hold("import-name")
 
-    def test_action_repository_whitelist_bypass_fails(self):
-        bypass_head, bypass_tree = self._make_action_repository_whitelist_head()
-        data = self.build_input(
-            review_round=2,
-            candidate_sha=bypass_head,
-            candidate_tree=bypass_tree,
-            assertion_requests=[
-                {
-                    "assertion_id": (
-                        "registry:sibling:action:actions:verified-unaffected:v2"
-                    ),
-                    "finding_id": "FINDING-ACTION-1",
-                }
-            ],
-        )
-        self.assert_held(
-            data,
-            assertion_id="registry:sibling:action:actions:verified-unaffected:v2",
-            finding_id="FINDING-ACTION-1",
-            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
-        )
+    def test_action_repository_whitelist_bypass_fails(self): self.assert_action_sequence_hold("repository")
 
-    def test_action_argv_probe_bypass_fails(self):
-        bypass_head, bypass_tree = self._make_action_argv_bypass_head()
-        data = self.build_input(
-            review_round=2,
-            candidate_sha=bypass_head,
-            candidate_tree=bypass_tree,
-            assertion_requests=[
-                {
-                    "assertion_id": (
-                        "registry:sibling:action:actions:verified-unaffected:v2"
-                    ),
-                    "finding_id": "FINDING-ACTION-1",
-                }
-            ],
-        )
-        self.assert_held(
-            data,
-            assertion_id="registry:sibling:action:actions:verified-unaffected:v2",
-            finding_id="FINDING-ACTION-1",
-            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
-        )
+    def test_action_argv_probe_bypass_fails(self): self.assert_action_sequence_hold("argv")
 
-    def test_action_path_probe_bypass_fails(self):
-        bypass_head, bypass_tree = self._make_action_path_bypass_head()
-        data = self.build_input(
-            review_round=2,
-            candidate_sha=bypass_head,
-            candidate_tree=bypass_tree,
-            assertion_requests=[
-                {
-                    "assertion_id": (
-                        "registry:sibling:action:actions:verified-unaffected:v2"
-                    ),
-                    "finding_id": "FINDING-ACTION-1",
-                }
-            ],
-        )
-        self.assert_held(
-            data,
-            assertion_id="registry:sibling:action:actions:verified-unaffected:v2",
-            finding_id="FINDING-ACTION-1",
-            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
-        )
+    def test_action_path_probe_bypass_fails(self): self.assert_action_sequence_hold("path")
 
     def test_lifecycle_entries_affected_fixed_uses_review_progression(self):
         self._restore_baseline()
@@ -1865,53 +1750,13 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         self.assertEqual((member["status"], member["output"]["program_case"]), ("pass", "member/resource/enabled/affected-fixed"))
         self.assertEqual((member["output"]["origin_status"], member["output"]["head_status"]), ("fail", "pass"))
 
-    def test_member_binding_special_case_does_not_spoof_real_finding_id(self):
-        spoof_head, spoof_tree = self._make_action_binding_special_case_head()
-        data = self.build_input(
-            review_round=2,
-            candidate_sha=spoof_head,
-            candidate_tree=spoof_tree,
-        )
-        self.assert_cli_rejected(
-            data,
-            "member-item authority binding is incomplete",
-        )
+    def test_member_binding_special_case_does_not_spoof_real_finding_id(self): self.assert_action_binding_rejected("special-case")
 
-    def test_member_binding_import_name_whitelist_fails(self):
-        spoof_head, spoof_tree = self._make_action_binding_import_name_head()
-        data = self.build_input(
-            review_round=2,
-            candidate_sha=spoof_head,
-            candidate_tree=spoof_tree,
-        )
-        self.assert_cli_rejected(
-            data,
-            "member-item authority binding is incomplete",
-        )
+    def test_member_binding_import_name_whitelist_fails(self): self.assert_action_binding_rejected("import-name")
 
-    def test_member_binding_argv_whitelist_fails(self):
-        spoof_head, spoof_tree = self._make_action_binding_argv_head()
-        data = self.build_input(
-            review_round=2,
-            candidate_sha=spoof_head,
-            candidate_tree=spoof_tree,
-        )
-        self.assert_cli_rejected(
-            data,
-            "member-item authority binding is incomplete",
-        )
+    def test_member_binding_argv_whitelist_fails(self): self.assert_action_binding_rejected("argv")
 
-    def test_member_binding_path_whitelist_fails(self):
-        spoof_head, spoof_tree = self._make_action_binding_path_head()
-        data = self.build_input(
-            review_round=2,
-            candidate_sha=spoof_head,
-            candidate_tree=spoof_tree,
-        )
-        self.assert_cli_rejected(
-            data,
-            "member-item authority binding is incomplete",
-        )
+    def test_member_binding_path_whitelist_fails(self): self.assert_action_binding_rejected("path")
 
     def test_whitespace_and_order_refactor_preserves_member_fix(self):
         refactor_head, refactor_tree = self._make_item_refactor_head()
