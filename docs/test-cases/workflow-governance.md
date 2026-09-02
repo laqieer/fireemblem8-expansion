@@ -1440,8 +1440,9 @@ game behavior needs a compensating change.
    RSA `s + n` representatives whose byte width still fits; both must reject
    before verification can accept them. Apply the same alias mutation to
    interruption-snapshot `content_base64` bytes in coordinator telemetry,
-   prior handoff history, and reporter replay rows; canonical records pass and
-   aliased rows reject.
+   prior handoff history, and reporter replay rows; canonical records,
+   including a zero-byte snapshot with `content_base64: ""`, pass and aliased
+   rows reject. Signature fields remain nonempty.
 4. Exercise the repeated-parent/stale, wrong-parent, unrelated-branch, dirty,
    incomplete, missing-evidence, missing-trailer, out-of-scope, line-budget,
    lifetime, and RSS fixtures. Confirm script-only diffs derive zero ROM, RAM,

@@ -4473,6 +4473,50 @@ class ExactHandoffTests(unittest.TestCase):
                 reporter.validate_fixture(
                     reporter_fixture_with_handoffs(forged_record)
                 )
+        with handoff_repository() as (root, _base, _parent, result):
+            empty_snapshot = interrupted_handoff_document(
+                root,
+                result,
+                content=b"",
+            )
+            empty_file = empty_snapshot["coordinator_receipt"][
+                "runtime_telemetry"
+            ][0]["interruption_snapshot"]["files"][0]
+            self.assertEqual(empty_file["content_base64"], "")
+            self.assertEqual(
+                empty_file["sha256"],
+                hashlib.sha256(b"").hexdigest(),
+            )
+            empty_report = agent_handoff.validate_document(
+                empty_snapshot,
+                root,
+            )
+            self.assertEqual(
+                empty_report["handoffs"][0]["outcome"],
+                "interrupted",
+            )
+            empty_history = agent_handoff.make_history_receipt(
+                empty_snapshot,
+                empty_report,
+                "issue-178-round-1",
+            )
+            agent_handoff.validate_prior_handoffs([empty_history])
+            empty_record = reporter_record(root, empty_snapshot, empty_report)
+            self.assertEqual(
+                reporter.validate_fixture(
+                    reporter_fixture_with_handoffs(empty_record)
+                )["implementation_handoffs"]["issue-178-round-1"][
+                    "reported_outcome"
+                ],
+                "interrupted",
+            )
+            empty_signature = handoff_document(root, result, result)
+            empty_signature["coordinator_receipt"]["signature"] = ""
+            report = agent_handoff.validate_document(empty_signature, root)
+            self.assertIn(
+                "invalid-coordinator-attestation",
+                report["summary"]["rejection_codes"],
+            )
     def test_verify_external_signature_rejects_same_width_representatives_ge_modulus(self):
         with handoff_repository() as (root, _base, _parent, _result):
             signer, payload, signature_text, alias_text = (

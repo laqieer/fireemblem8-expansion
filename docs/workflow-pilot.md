@@ -751,6 +751,8 @@ rejects any same-width representative greater than or equal to the public
 modulus before exponentiation. The same canonical base64 rule also applies to
 sealed interruption-snapshot `content_base64` bytes anywhere they are replayed
 through coordinator telemetry, prior handoff history, or reporter records.
+Those snapshot bytes may be canonically empty (`""`) for a zero-byte file;
+signature fields remain nonempty.
 
 `--coordinator-installation` (or
 `WORKFLOW_PILOT_COORDINATOR_INSTALLATION`) points outside the candidate

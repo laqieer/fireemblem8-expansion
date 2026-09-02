@@ -1073,8 +1073,13 @@ def _parse_signer_public(raw: Any, label: str) -> dict[str, Any]:
     if key_id != expected_key_id:
         raise HandoffDataError(f"{label}.key_id does not match public material")
     return signer
-def _decode_canonical_base64(value: Any, label: str) -> bytes:
-    text = expect_string(value, label)
+def _decode_canonical_base64(
+    value: Any,
+    label: str,
+    *,
+    allow_empty: bool = False,
+) -> bytes:
+    text = expect_string(value, label, allow_empty=allow_empty)
     try:
         decoded = base64.b64decode(text, validate=True)
     except (binascii.Error, ValueError) as error:
@@ -3803,6 +3808,7 @@ def validate_prior_handoffs(raw_history: Any) -> list[dict[str, Any]]:
                 content = _decode_canonical_base64(
                     file_record["content_base64"],
                     f"{file_label}.content_base64",
+                    allow_empty=True,
                 )
                 if file_record["sha256"] != hashlib.sha256(content).hexdigest():
                     raise HandoffDataError(
@@ -4118,6 +4124,7 @@ def _parse_reporter_result_handoffs(raw_handoffs: Any) -> list[dict[str, Any]]:
                 content = _decode_canonical_base64(
                     file_record["content_base64"],
                     f"{file_label}.content_base64",
+                    allow_empty=True,
                 )
                 if file_record["sha256"] != hashlib.sha256(content).hexdigest():
                     raise HandoffDataError(
@@ -7369,6 +7376,7 @@ def _parse_coordinator_receipt(
                 content = _decode_canonical_base64(
                     file_record["content_base64"],
                     f"{file_label}.content_base64",
+                    allow_empty=True,
                 )
                 if file_record["sha256"] != hashlib.sha256(content).hexdigest():
                     raise HandoffDataError(
