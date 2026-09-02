@@ -1447,7 +1447,7 @@ def validate_implementation_handoffs(
     )
     bundles: dict[str, dict[str, Any]] = {}
     handoffs: dict[str, dict[str, Any]] = {}
-    issue_owner_ids = []
+    issue_timelines: dict[int, list[dict[str, Any]]] = defaultdict(list)
     for index, raw in enumerate(fixture["implementation_handoffs"]):
         label = f"implementation_handoffs[{index}]"
         try:
@@ -1470,6 +1470,9 @@ def validate_implementation_handoffs(
                 f"duplicate implementation handoff bundle {identity!r}"
             )
         bundles[identity] = bundle
+        document_handoffs = {
+            item["id"]: item for item in bundle["document"]["handoffs"]
+        }
         for handoff_index, handoff in enumerate(bundle["result"]["handoffs"]):
             handoff_label = f"{label}.result.handoffs[{handoff_index}]"
             expect_keys(
@@ -1503,11 +1506,7 @@ def validate_implementation_handoffs(
                 raise PilotDataError(
                     f"duplicate implementation handoff {handoff_id!r}"
                 )
-            owner_id = expect_string(
-                handoff["owner_id"],
-                f"{handoff_label}.owner_id",
-            )
-            issue_owner_ids.append((handoff["issue"], owner_id))
+            expect_string(handoff["owner_id"], f"{handoff_label}.owner_id")
             assigned_at = parse_time(
                 handoff["assigned_at"],
                 f"{handoff_label}.assigned_at",
@@ -1609,8 +1608,36 @@ def validate_implementation_handoffs(
                 if outcome == "accepted" and not bundle_trusted_push_eligible
                 else outcome
             )
+            issue_timelines.setdefault(handoff["issue"], []).append(
+                {
+                    "id": handoff_id,
+                    "assigned_at": assigned_at,
+                    "closed_at": closed_at or lifecycle_as_of,
+                    "replaces_handoff_id": document_handoffs[handoff_id][
+                        "replaces_handoff_id"
+                    ],
+                    "reported_outcome": handoff["reported_outcome"],
+                }
+            )
             handoffs[handoff_id] = handoff
-    expect_unique(issue_owner_ids, "implementation handoff issue owner IDs")
+    for records in issue_timelines.values():
+        records.sort(key=lambda item: (item["assigned_at"], item["id"]))
+        has_bound_root = False
+        previous_end = None
+        for record in records:
+            if previous_end is not None and record["assigned_at"] <= previous_end:
+                raise PilotDataError(
+                    f"implementation handoff {record['id']!r} overlaps another same-issue handoff"
+                )
+            if record["replaces_handoff_id"] is None and has_bound_root:
+                raise PilotDataError(
+                    f"implementation handoff {record['id']!r} is an unrelated same-issue root"
+                )
+            has_bound_root = has_bound_root or record["reported_outcome"] not in {
+                "bundle_rejected",
+                "rejected",
+            }
+            previous_end = record["closed_at"]
     return {"bundles": bundles, "handoffs": handoffs}
 
 

@@ -280,6 +280,13 @@ def reporter_record(repository_root, document, result):
         finalize_result_attestation(repository_root, document, result),
     )
 
+def validated_record(repository_root, document):
+    return reporter_record(
+        repository_root,
+        document,
+        agent_handoff.validate_document(document, repository_root),
+    )
+
 def installation_root_path(repository_root):
     return COORDINATOR_INSTALLATIONS[str(repository_root)]
 
@@ -288,12 +295,6 @@ def installation_manifest(repository_root):
         (installation_root_path(repository_root) / "installation.json").read_text(
             encoding="utf-8"
         )
-    )
-
-def write_installation_manifest(repository_root, manifest):
-    (installation_root_path(repository_root) / "installation.json").write_text(
-        json.dumps(manifest),
-        encoding="utf-8",
     )
 
 def installation_authorized_coordinators(repository_root):
@@ -496,6 +497,18 @@ def sign_coordinator_document(document, repository_root):
     ):
         operation.pop(field, None)
     consume_sign(repository_root, document)
+
+def rename_handoff(document, handoff_id, *, owner=None):
+    handoff = document["handoffs"][0]
+    handoff["id"] = handoff_id
+    if owner is not None:
+        handoff["owner_id"], handoff["owner_database_id"] = owner
+    document["delivery_graph"]["relationships"][0]["handoff_id"] = handoff_id
+    next(
+        task
+        for task in document["delivery_graph"]["tasks"]
+        if task["phase"] == "implementation"
+    )["handoff_id"] = handoff_id
 
 def owner_write_blob_ref(owner_root, reference, payload):
     object_id = git_with_input(
@@ -5696,42 +5709,20 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 )
     def test_version_two_fixture_reports_sealed_handoff_metrics(self):
         with handoff_repository() as (root, _base, parent, result):
-            accepted_document = handoff_document(root, parent, result)
-            accepted_result = agent_handoff.validate_document(
-                accepted_document,
+            accepted = validated_record(
                 root,
-            )
-            accepted = reporter_record(
-                root,
-                accepted_document,
-                accepted_result,
+                handoff_document(root, parent, result),
             )
             stale_document = handoff_document(root, parent, result)
-            stale_handoff = stale_document["handoffs"][0]
-            stale_handoff["id"] = "issue-178-stale"
-            stale_handoff["owner_id"] = "owner-2"
-            stale_handoff["owner_database_id"] = 102
-            stale_relationship = stale_document["delivery_graph"][
-                "relationships"
-            ][0]
-            stale_relationship["handoff_id"] = stale_handoff["id"]
-            stale_task = next(
-                task
-                for task in stale_document["delivery_graph"]["tasks"]
-                if task["phase"] == "implementation"
+            rename_handoff(
+                stale_document,
+                "issue-178-stale",
+                owner=("owner-2", 102),
             )
-            stale_task["handoff_id"] = stale_handoff["id"]
-            stale_handoff["result"]["sha"] = parent
+            stale_document["handoffs"][0]["result"]["sha"] = parent
+            shift_handoff_times(stale_document, -600)
             refresh_coordinator_receipt(stale_document, root)
-            stale_result = agent_handoff.validate_document(
-                stale_document,
-                root,
-            )
-            stale = reporter_record(
-                root,
-                stale_document,
-                stale_result,
-            )
+            stale = validated_record(root, stale_document)
             fixture = reporter_fixture_with_handoffs(accepted, stale)
             decisions = test_reporter.minimal_decisions()
             with test_reporter.git_authority(fixture) as (
@@ -5801,8 +5792,8 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
         expected_lifetime = max(
             item["lifetime_seconds"]
             for item in (
-                accepted_result["handoffs"][0],
-                stale_result["handoffs"][0],
+                accepted["result"]["handoffs"][0],
+                stale["result"]["handoffs"][0],
             )
         )
         self.assertEqual(
@@ -5820,7 +5811,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 "coordination_turns": 4,
                 "recovery_minutes": 0,
                 "rejection_codes": sorted(
-                    stale_result["summary"]["rejection_codes"]
+                    stale["result"]["summary"]["rejection_codes"]
                 ),
             },
         )
@@ -5851,29 +5842,11 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             reporter.validate_fixture(rehashed)
     def test_reporter_counts_bundle_rejections_without_losing_failure_codes(self):
         with handoff_repository() as (root, _base, parent, result):
-            accepted_document = handoff_document(root, parent, result)
-            accepted_result = agent_handoff.validate_document(
-                accepted_document,
+            accepted_record = validated_record(
                 root,
+                handoff_document(root, parent, result),
             )
-            accepted_record = reporter_record(
-                root,
-                accepted_document,
-                accepted_result,
-            )
-            def relabel_handoff(document, handoff_id, owner_id, owner_database_id):
-                handoff = document["handoffs"][0]
-                handoff["id"] = handoff_id
-                handoff["owner_id"] = owner_id
-                handoff["owner_database_id"] = owner_database_id
-                document["delivery_graph"]["relationships"][0][
-                    "handoff_id"
-                ] = handoff_id
-                next(
-                    task
-                    for task in document["delivery_graph"]["tasks"]
-                    if task["phase"] == "implementation"
-                )["handoff_id"] = handoff_id
+            set_history_authority(root, 0, None, issue=179)
             def duplicate_watcher(document):
                 add_run(document, result)
                 duplicate = copy.deepcopy(document["watchers"][0])
@@ -5969,13 +5942,15 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 mutate,
             ) in cases.items():
                 with self.subTest(code=code):
-                    document = handoff_document(root, parent, result)
-                    relabel_handoff(
-                        document,
-                        handoff_id,
-                        owner_id,
-                        owner_database_id,
+                    document = handoff_document(
+                        root,
+                        parent,
+                        result,
+                        issue=179,
+                        handoff_id=handoff_id,
                     )
+                    document["handoffs"][0]["owner_id"] = owner_id
+                    document["handoffs"][0]["owner_database_id"] = owner_database_id
                     mutate(document)
                     result_report = agent_handoff.validate_document(
                         document,
@@ -6170,29 +6145,17 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                         reporter.validate_fixture(
                             reporter_fixture_with_handoffs(record)
                         )
-    def test_reporter_owner_uniqueness_is_scoped_to_each_issue(self):
+    def test_reporter_same_owner_retry_after_rejected_root_is_allowed(self):
         with handoff_repository() as (root178, _base178, parent178, result178):
-            accepted178 = handoff_document(root178, parent178, result178)
-            accepted178_record = reporter_record(
+            rejected178 = handoff_document(root178, parent178, result178)
+            rename_handoff(rejected178, "issue-178-rejected-root")
+            shift_handoff_times(rejected178, -600)
+            rejected178["handoffs"][0]["result"] = None
+            refresh_coordinator_receipt(rejected178, root178)
+            rejected178_record = validated_record(root178, rejected178)
+            accepted178_record = validated_record(
                 root178,
-                accepted178,
-                agent_handoff.validate_document(accepted178, root178),
-            )
-            duplicate178 = handoff_document(root178, parent178, result178)
-            duplicate178["handoffs"][0]["id"] = "issue-178-round-2"
-            duplicate178["delivery_graph"]["relationships"][0][
-                "handoff_id"
-            ] = "issue-178-round-2"
-            next(
-                task
-                for task in duplicate178["delivery_graph"]["tasks"]
-                if task["phase"] == "implementation"
-            )["handoff_id"] = "issue-178-round-2"
-            refresh_coordinator_receipt(duplicate178, root178)
-            duplicate178_record = reporter_record(
-                root178,
-                duplicate178,
-                agent_handoff.validate_document(duplicate178, root178),
+                handoff_document(root178, parent178, result178),
             )
             set_history_authority(root178, 0, None, issue=179)
             accepted179 = handoff_document(
@@ -6202,29 +6165,72 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 issue=179,
                 handoff_id="issue-179-round-1",
             )
-            accepted179_record = reporter_record(
-                root178,
-                accepted179,
-                agent_handoff.validate_document(accepted179, root178),
-            )
+            accepted179_record = validated_record(root178, accepted179)
             valid = reporter.validate_fixture(
                 reporter_fixture_with_handoffs(
+                    rejected178_record,
                     accepted178_record,
                     accepted179_record,
                 )
             )
             self.assertEqual(
                 sorted(valid["implementation_handoffs"]),
-                ["issue-178-round-1", "issue-179-round-1"],
+                [
+                    "issue-178-rejected-root",
+                    "issue-178-round-1",
+                    "issue-179-round-1",
+                ],
             )
+
+    def test_reporter_same_issue_duplicates_overlap_and_conflicting_roots_reject(self):
+        with handoff_repository() as (root, _base, parent, result):
+            accepted_record = validated_record(
+                root,
+                handoff_document(root, parent, result),
+            )
+            duplicate = handoff_document(root, parent, result)
+            duplicate["handoffs"][0]["result"] = None
+            refresh_coordinator_receipt(duplicate, root)
             with self.assertRaisesRegex(
                 reporter.PilotDataError,
-                "implementation handoff issue owner IDs contains duplicates",
+                "duplicate implementation handoff 'issue-178-round-1'",
             ):
                 reporter.validate_fixture(
                     reporter_fixture_with_handoffs(
-                        accepted178_record,
-                        duplicate178_record,
+                        accepted_record,
+                        validated_record(root, duplicate),
+                    )
+                )
+            overlap = handoff_document(root, parent, result)
+            rename_handoff(overlap, "issue-178-overlap")
+            overlap["handoffs"][0]["result"] = None
+            refresh_coordinator_receipt(overlap, root)
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "overlaps another same-issue handoff",
+            ):
+                reporter.validate_fixture(
+                    reporter_fixture_with_handoffs(
+                        accepted_record,
+                        validated_record(root, overlap),
+                    )
+                )
+            conflicting = handoff_document(root, parent, result)
+            rename_handoff(
+                conflicting,
+                "issue-178-conflicting-root",
+                owner=("owner-2", 102),
+            )
+            shift_handoff_times(conflicting, -600)
+            refresh_coordinator_receipt(conflicting, root)
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "unrelated same-issue root",
+            ):
+                reporter.validate_fixture(
+                    reporter_fixture_with_handoffs(
+                        accepted_record,
+                        validated_record(root, conflicting),
                     )
                 )
     def test_handoff_fixtures_derive_lifecycle_cutoff_and_reject_future_assignments(self):
