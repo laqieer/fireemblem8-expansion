@@ -207,7 +207,7 @@ def authoritative_current_time(
     label: str,
 ) -> datetime:
     if value is None:
-        return datetime.now(timezone.utc).replace(microsecond=0)
+        return datetime.now(timezone.utc)
     if (
         not isinstance(value, datetime)
         or value.tzinfo is None
@@ -321,6 +321,100 @@ def publication_observation_digest(
     if binding is None:
         return None
     return hashlib.sha256(normalized_json(binding)).hexdigest()
+def publication_history_receipt_digest(
+    history_receipt: dict[str, Any] | None = None,
+    *,
+    handoff_event: dict[str, Any] | None = None,
+) -> str | None:
+    if history_receipt is None and handoff_event is None:
+        return None
+    if history_receipt is not None and handoff_event is not None:
+        raise HandoffDataError(
+            "publication history digest source is ambiguous"
+        )
+    if handoff_event is None:
+        handoff_event = {
+            "kind": "handoff",
+            "handoff_seal": history_receipt["seal"],
+            "handoff_id": history_receipt["handoff_id"],
+            "handoff_kind": history_receipt["handoff_kind"],
+            "lifecycle_state": history_receipt["lifecycle_state"],
+            "candidate_sha": history_receipt["candidate_sha"],
+            "closed_at": history_receipt["closed_at"],
+            "operation_nonce": history_receipt["operation_nonce"],
+            "consume_store_id": history_receipt["consume_store_id"],
+            "consume_sequence": history_receipt["consume_sequence"],
+            "consume_anchor": history_receipt["consume_anchor"],
+            "assignment": copy.deepcopy(history_receipt["assignment"]),
+            "interruption_snapshot": copy.deepcopy(
+                history_receipt["interruption_snapshot"]
+            ),
+        }
+    elif handoff_event["kind"] != "handoff":
+        raise HandoffDataError(
+            "publication history digest only applies to handoff events"
+        )
+    return hashlib.sha256(
+        normalized_json(
+            {
+                key: copy.deepcopy(handoff_event[key])
+                if key in {"assignment", "interruption_snapshot"}
+                else handoff_event[key]
+                for key in (
+                    "kind",
+                    "handoff_seal",
+                    "handoff_id",
+                    "handoff_kind",
+                    "lifecycle_state",
+                    "candidate_sha",
+                    "closed_at",
+                    "operation_nonce",
+                    "consume_store_id",
+                    "consume_sequence",
+                    "consume_anchor",
+                    "assignment",
+                    "interruption_snapshot",
+                )
+            }
+        )
+    ).hexdigest()
+def require_publication_attestation_binding(
+    publication: dict[str, Any],
+    *,
+    operation: str,
+    new_head_seal: str | None,
+    history_receipt: dict[str, Any] | None = None,
+    handoff_event: dict[str, Any] | None = None,
+    pull_request_observation: dict[str, Any] | None = None,
+    binding_expectation: dict[str, Any] | None = None,
+    label: str,
+) -> None:
+    has_handoff_binding = (
+        history_receipt is not None or handoff_event is not None
+    )
+    if operation == "advance":
+        if not has_handoff_binding:
+            raise HandoffDataError(
+                f"{label} advance requires a handoff receipt binding"
+            )
+    elif has_handoff_binding:
+        raise HandoffDataError(
+            f"{label} non-handoff publication cannot bind a handoff receipt"
+        )
+    expected = {
+        "operation": operation,
+        "new_head_seal": new_head_seal,
+        "history_receipt_digest": publication_history_receipt_digest(
+            history_receipt,
+            handoff_event=handoff_event,
+        ),
+        "pull_request_observation_digest": publication_observation_digest(
+            pull_request_observation
+        ),
+        "binding_expectation": binding_expectation,
+    }
+    if any(publication[field] != value for field, value in expected.items()):
+        raise HandoffDataError(label)
 def validate_historical_pr_binding_target(
     current_authority: dict[str, Any],
     prior_authority: dict[str, Any],
@@ -2024,43 +2118,31 @@ def _read_history_authority_commit(
             raise HandoffDataError(
                 f"history authority object {object_id} replays genesis"
             )
-    expected_publication_operation = {
-        "genesis": "bootstrap",
-        "handoff": "advance",
-        "pr_binding": "bind",
-    }[event_kind]
-    expected_pr_digest = publication_observation_digest(
-        binding if event_kind == "pr_binding" else None
-    )
-    if event_kind == "pr_binding":
-        expected_binding_expectation = publication_binding_expectation(
-            delivery_expectation=delivery,
-            pull_request=binding["pull_request"],
-            head_branch=binding["head_branch"],
-            head_oid=binding["head_oid"],
-            coordinator_database_id=binding["coordinator_database_id"],
-            current_base_oid=binding["base_oid"],
-        )
-    else:
-        expected_binding_expectation = None
-    if (
-        publication["operation"] != expected_publication_operation
-        or (
-            event_kind == "handoff"
-            and publication["new_head_seal"] != authority["head_seal"]
-        )
-        or (
-            event_kind != "handoff"
-            and publication["new_head_seal"] is not None
-        )
-        or publication["pull_request_observation_digest"] != expected_pr_digest
-        or publication["binding_expectation"]
-        != expected_binding_expectation
-    ):
-        raise HandoffDataError(
+    require_publication_attestation_binding(
+        publication,
+        operation={
+            "genesis": "bootstrap",
+            "handoff": "advance",
+            "pr_binding": "bind",
+        }[event_kind],
+        new_head_seal=authority["head_seal"] if event_kind == "handoff" else None,
+        handoff_event=event if event_kind == "handoff" else None,
+        pull_request_observation=(
+            binding if event_kind == "pr_binding" else None
+        ),
+        binding_expectation=(
+            publication_binding_expectation_for_observation(
+                delivery,
+                binding,
+            )
+            if event_kind == "pr_binding"
+            else None
+        ),
+        label=(
             f"history authority object {object_id} publication does not "
             "bind its event"
-        )
+        ),
+    )
     return authority, parents
 def _read_history_anchor_commit(
     repository_root: Path,
@@ -2947,30 +3029,15 @@ def plan_history_authority(
         live=True,
         current_time=live_current_time,
     )
-    expected_history_digest = (
-        hashlib.sha256(normalized_json(history_receipt)).hexdigest()
-        if history_receipt is not None
-        else None
+    require_publication_attestation_binding(
+        parsed_publication,
+        operation=operation,
+        new_head_seal=new_head_seal,
+        history_receipt=history_receipt,
+        pull_request_observation=pull_request_observation,
+        binding_expectation=expected_binding,
+        label="authority publication attestation does not bind the plan",
     )
-    expected_pr_digest = (
-        hashlib.sha256(
-            normalized_json(pull_request_observation)
-        ).hexdigest()
-        if pull_request_observation is not None
-        else None
-    )
-    if (
-        parsed_publication["operation"] != operation
-        or parsed_publication["new_head_seal"] != new_head_seal
-        or parsed_publication["history_receipt_digest"]
-        != expected_history_digest
-        or parsed_publication["pull_request_observation_digest"]
-        != expected_pr_digest
-        or parsed_publication["binding_expectation"] != expected_binding
-    ):
-        raise HandoffDataError(
-            "authority publication attestation does not bind the plan"
-        )
     record["publication_attestation"] = parsed_publication
     return {
         "operation": operation,

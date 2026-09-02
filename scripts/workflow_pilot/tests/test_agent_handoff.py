@@ -345,12 +345,8 @@ def publication_attestation(
         ).hexdigest(),
         "operation": operation,
         "new_head_seal": new_head_seal,
-        "history_receipt_digest": (
-            hashlib.sha256(
-                agent_handoff.normalized_json(history_receipt)
-            ).hexdigest()
-            if history_receipt is not None
-            else None
+        "history_receipt_digest": agent_handoff.publication_history_receipt_digest(
+            history_receipt
         ),
         "pull_request_observation_digest": (
             hashlib.sha256(
@@ -462,6 +458,43 @@ def frozen_binding_expectation(
         coordinator_database_id=coordinator_database_id,
         current_base_oid=current_base_oid,
     )
+def authority_publication(
+    repository_root,
+    current,
+    *,
+    issue=178,
+    operation,
+    history_receipt=None,
+    pr_observation=None,
+    current_base_oid=None,
+):
+    coordinator_database_id = (
+        None
+        if pr_observation is None
+        else pr_observation["coordinator_database_id"]
+    )
+    binding_expectation = (
+        None
+        if pr_observation is None
+        else frozen_binding_expectation(
+            current,
+            pr_observation["pull_request"],
+            current_base_oid=(
+                pr_observation["base_oid"]
+                if current_base_oid is None
+                else current_base_oid
+            ),
+            coordinator_database_id=coordinator_database_id,
+    )
+    )
+    return publication_attestation(
+        repository_root, current["object_id"], current["anchor_object_id"],
+        issue=issue, coordinator_database_id=coordinator_database_id,
+        operation=operation,
+        new_head_seal=None if history_receipt is None else history_receipt["seal"],
+        history_receipt=history_receipt, pr_observation=pr_observation,
+        binding_expectation=binding_expectation,
+    )
 def sign_coordinator_document(document, repository_root):
     document["coordinator_receipt"].pop("signature", None)
     operation = document["coordinator_receipt"]["operation"]
@@ -485,6 +518,32 @@ def rename_handoff(document, handoff_id, *, owner=None):
         for task in document["delivery_graph"]["tasks"]
         if task["phase"] == "implementation"
     )["handoff_id"] = handoff_id
+def configure_review_successor(
+    document,
+    history,
+    *,
+    handoff_id,
+    owner=("owner-2", 102),
+    pull_request=200,
+):
+    document["prior_handoffs"] = [history]
+    handoff = document["handoffs"][0]
+    handoff.update(
+        id=handoff_id,
+        owner_id=owner[0],
+        owner_database_id=owner[1],
+        pull_request=pull_request,
+        handoff_kind="review_successor",
+        replaces_handoff_id=history["handoff_id"],
+    )
+    document["delivery_graph"]["relationships"][0]["handoff_id"] = handoff_id
+    task = next(
+        item
+        for item in document["delivery_graph"]["tasks"]
+        if item["phase"] == "implementation"
+    )
+    task["handoff_id"], task["pull_request"] = handoff_id, pull_request
+    return handoff
 def owner_write_blob_ref(owner_root, reference, payload):
     object_id = git_with_input(
         owner_root,
@@ -526,6 +585,56 @@ def owner_create_record_commit(
             "GIT_COMMITTER_DATE": "2026-08-31T00:00:00Z",
         },
     )
+def publish_authority_plan(
+    repository_root,
+    owner_root,
+    plan,
+    parent,
+    *,
+    issue,
+    pull_request,
+    read_back=True,
+):
+    object_id = owner_create_record_commit(
+        owner_root, plan["record"], "authority.json", parent
+    )
+    anchor_record = copy.deepcopy(plan["anchor_record_template"])
+    anchor_record["authority_object_id"] = object_id
+    anchor_object_id = owner_create_record_commit(
+        owner_root, anchor_record, "anchor.json", plan["expected_anchor_object_id"]
+    )
+    git(
+        owner_root,
+        "push",
+        "-q",
+        "--atomic",
+        "origin",
+        f"{object_id}:{plan['ref']}",
+        f"{anchor_object_id}:{plan['anchor_ref']}",
+    )
+    if not read_back:
+        return object_id, anchor_object_id
+    return agent_handoff.read_history_authority(
+        repository_root, "example/workflow", issue, pull_request
+    )
+def protected_root_authority(
+    repository_root,
+    parent,
+    result,
+    *,
+    with_history=False,
+    with_bundle=False,
+):
+    document = handoff_document(repository_root, parent, result)
+    report = agent_handoff.validate_document(document, repository_root)
+    bundle = reporter_record(repository_root, document, report) if with_bundle else None
+    history = (
+        agent_handoff.make_history_receipt(document, report, "issue-178-round-1")
+        if with_history else None
+    )
+    set_history_authority(repository_root, 1, document=document, result=report)
+    current = agent_handoff.read_history_authority(repository_root, "example/workflow", 178, None)
+    return document, report, current, history, bundle
 def plan_advance_authority(
     repository_root,
     document,
@@ -550,13 +659,11 @@ def plan_advance_authority(
         handoff_document=document,
         handoff_result=result,
         handoff_id=handoff_id,
-        publication_attestation=publication_attestation(
+        publication_attestation=authority_publication(
             repository_root,
-            current["object_id"],
-            current["anchor_object_id"],
+            current,
             issue=issue,
             operation="advance",
-            new_head_seal=history["seal"],
             history_receipt=history,
         ),
     )
@@ -657,13 +764,11 @@ def set_history_authority(
                 "ruleset_id": current["ruleset_id"],
                 "authorized_bypass_actors": current["authorized_bypass_actors"],
                 "delivery_expectation": current["delivery_expectation"],
-                "publication_attestation": publication_attestation(
+                "publication_attestation": authority_publication(
                     repository_root,
-                    current["object_id"],
-                    current["anchor_object_id"],
+                    current,
                     issue=issue,
                     operation="advance",
-                    new_head_seal=head_seal,
                     history_receipt=history_receipt,
                 ),
                 "event": {
@@ -701,34 +806,15 @@ def set_history_authority(
     planned_sequence = plan["record"]["sequence"]
     if planned_sequence != sequence:
         raise AssertionError("authority test sequence mismatch")
-    object_id = owner_create_record_commit(
-        owner_root,
-        plan["record"],
-        "authority.json",
-        parent,
-    )
-    anchor_record = copy.deepcopy(plan["anchor_record_template"])
-    anchor_record["authority_object_id"] = object_id
-    anchor_object_id = owner_create_record_commit(
-        owner_root,
-        anchor_record,
-        "anchor.json",
-        plan["expected_anchor_object_id"],
-    )
-    git(
-        owner_root,
-        "push",
-        "-q",
-        "--atomic",
-        "origin",
-        f"{object_id}:{reference}",
-        f"{anchor_object_id}:{anchor_reference}",
-    )
-    return agent_handoff.read_history_authority(
+    plan["ref"] = reference
+    plan["anchor_ref"] = anchor_reference
+    return publish_authority_plan(
         repository_root,
-        "example/workflow",
-        issue,
-        pull_request,
+        owner_root,
+        plan,
+        parent,
+        issue=issue,
+        pull_request=pull_request,
     )
 def bind_history_authority(
     repository_root,
@@ -754,22 +840,12 @@ def bind_history_authority(
         head_branch=head_branch,
         coordinator_database_id=coordinator_database_id,
     )
-    publication = publication_attestation(
+    publication = authority_publication(
         repository_root,
-        current["object_id"],
-        current["anchor_object_id"],
+        current,
         issue=issue,
-        coordinator_database_id=pr_observation["coordinator_database_id"],
         operation="bind",
         pr_observation=pr_observation,
-        binding_expectation=frozen_binding_expectation(
-            current,
-            pull_request,
-            current_base_oid=pr_observation["base_oid"],
-            coordinator_database_id=pr_observation[
-                "coordinator_database_id"
-            ],
-        ),
     )
     plan = agent_handoff.plan_history_authority(
         repository_root,
@@ -782,34 +858,13 @@ def bind_history_authority(
         pull_request_observation=pr_observation,
         publication_attestation=publication,
     )
-    object_id = owner_create_record_commit(
-        owner_root,
-        plan["record"],
-        "authority.json",
-        current["object_id"],
-    )
-    anchor_record = copy.deepcopy(plan["anchor_record_template"])
-    anchor_record["authority_object_id"] = object_id
-    anchor_object_id = owner_create_record_commit(
-        owner_root,
-        anchor_record,
-        "anchor.json",
-        current["anchor_object_id"],
-    )
-    git(
-        owner_root,
-        "push",
-        "-q",
-        "--atomic",
-        "origin",
-        f"{object_id}:{plan['ref']}",
-        f"{anchor_object_id}:{plan['anchor_ref']}",
-    )
-    return agent_handoff.read_history_authority(
+    return publish_authority_plan(
         repository_root,
-        "example/workflow",
-        issue,
-        pull_request,
+        owner_root,
+        plan,
+        current["object_id"],
+        issue=issue,
+        pull_request=pull_request,
     )
 def publish_bound_history_authority(
     repository_root,
@@ -889,6 +944,24 @@ def publish_bound_history_authority(
         f"{anchor_object_id}:{current['anchor_ref']}",
     )
     return object_id, anchor_object_id
+def publish_bound_authority(
+    repository_root,
+    current,
+    *,
+    observation=None,
+    publication=None,
+    current_base_oid=None,
+    **overrides,
+):
+    if observation is None:
+        observation = pull_request_observation(repository_root, current)
+    if publication is None:
+        publication = authority_publication(
+            repository_root, current, operation="bind",
+            pr_observation=observation, current_base_oid=current_base_oid,
+        )
+    publish_bound_history_authority(repository_root, current, observation, publication, **overrides)
+    return observation, publication
 def handoff_lifecycle_as_of(*bundles):
     latest = max(
         datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
@@ -1526,6 +1599,20 @@ def refresh_coordinator_receipt(document, repository_root, **kwargs):
         **kwargs,
     )
     sign_coordinator_document(document, repository_root)
+def set_coordinator_receipt_time(document, stamp):
+    receipt = document["coordinator_receipt"]
+    receipt["issued_at"] = stamp
+    for field in ("collected_through", "eligibility_instant"):
+        receipt["operation"][field] = stamp
+    receipt["authority_protection"]["observed_at"] = stamp
+    receipt["remote_coverage"]["interval_end"] = stamp
+    for source in receipt["remote_coverage"]["sources"]:
+        source["observed_at"] = stamp
+def resign_coordinator_receipt(document, repository_root):
+    document["coordinator_receipt"]["signature"] = external_sign(
+        repository_root,
+        agent_handoff.coordinator_attestation_payload(document),
+    )
 def delivery_graph(
     *,
     child_issue=178,
@@ -3146,11 +3233,21 @@ class ExactHandoffTests(unittest.TestCase):
                 "duplicate-watcher": duplicate_watcher,
                 "missing-or-duplicate-watcher": missing_watcher,
             }.items():
+                validation_time = datetime.fromisoformat(
+                    document["coordinator_receipt"]["issued_at"].replace(
+                        "Z",
+                        "+00:00",
+                    )
+                )
                 with self.subTest(watcher_code=code), self.assertRaisesRegex(
                     agent_handoff.HandoffDataError,
                     "no closed result to seal",
                 ):
-                    report = agent_handoff.validate_document(document, root)
+                    report = agent_handoff.validate_document(
+                        document,
+                        root,
+                        current_time=validation_time,
+                    )
                     self.assertIn(code, report["summary"]["rejection_codes"])
                     agent_handoff.make_history_receipt(
                         document,
@@ -3158,7 +3255,11 @@ class ExactHandoffTests(unittest.TestCase):
                         "issue-178-round-1",
                     )
                 current = document["history_authority"]
-                report = agent_handoff.validate_document(document, root)
+                report = agent_handoff.validate_document(
+                    document,
+                    root,
+                    current_time=validation_time,
+                )
                 with self.assertRaisesRegex(agent_handoff.HandoffDataError, "canonical validation output|no closed result to seal"):
                     agent_handoff.plan_history_authority(root, "example/workflow", 178, None, operation="advance", expected_object_id=current["object_id"], expected_sequence=current["sequence"], handoff_document=document, handoff_result=report, handoff_id="issue-178-round-1")
                 with self.assertRaisesRegex(agent_handoff.HandoffDataError, "canonical validation output|no closed result to seal"):
@@ -3397,12 +3498,10 @@ class ExactHandoffTests(unittest.TestCase):
                 base_result,
                 "issue-178-round-1",
             )
-            unrelated = publication_attestation(
+            unrelated = authority_publication(
                 root,
-                current["object_id"],
-                current["anchor_object_id"],
+                current,
                 operation="advance",
-                new_head_seal=base_history["seal"],
                 history_receipt=base_history,
             )
             unrelated["ruleset_response"]["id"] = 78
@@ -3820,20 +3919,7 @@ class ExactHandoffTests(unittest.TestCase):
                 )
     def test_pr_binding_requires_exact_signed_api_response(self):
         with handoff_repository() as (root, _base, parent, result):
-            document = handoff_document(root, parent, result)
-            report = agent_handoff.validate_document(document, root)
-            set_history_authority(
-                root,
-                1,
-                document=document,
-                result=report,
-            )
-            current = agent_handoff.read_history_authority(
-                root,
-                "example/workflow",
-                178,
-                None,
-            )
+            _, _, current, _, _ = protected_root_authority(root, parent, result)
             for field, value, message in (
                 ("repository_id", 999, "repository mismatch"),
                 ("repository_full_name", "fork/repo", "repository mismatch"),
@@ -3855,17 +3941,7 @@ class ExactHandoffTests(unittest.TestCase):
                             observation,
                         ),
                     )
-                    publication = publication_attestation(
-                        root,
-                        current["object_id"],
-                        current["anchor_object_id"],
-                        operation="bind",
-                        pr_observation=observation,
-                        binding_expectation=frozen_binding_expectation(
-                            current,
-                            current_base_oid=observation["base_oid"],
-                        ),
-                    )
+                    publication = authority_publication(root, current, operation="bind", pr_observation=observation)
                     with self.assertRaisesRegex(
                         agent_handoff.HandoffDataError,
                         message,
@@ -3883,18 +3959,7 @@ class ExactHandoffTests(unittest.TestCase):
                         )
             invented = pull_request_observation(root, current)
             invented["pull_request"] = 201
-            publication = publication_attestation(
-                root,
-                current["object_id"],
-                current["anchor_object_id"],
-                operation="bind",
-                pr_observation=invented,
-                binding_expectation=frozen_binding_expectation(
-                    current,
-                    201,
-                    current_base_oid=invented["base_oid"],
-                ),
-            )
+            publication = authority_publication(root, current, operation="bind", pr_observation=invented)
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
                 "does not verify|wrong pull request",
@@ -3913,16 +3978,11 @@ class ExactHandoffTests(unittest.TestCase):
     def test_coordinator_receipt_requires_current_validation_time(self):
         with handoff_repository() as (root, _base, parent, result):
             document = handoff_document(root, parent, result)
-            issued_at = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(milliseconds=500)
-            stamp = iso_utc(issued_at)
-            document["coordinator_receipt"]["issued_at"] = stamp
-            document["coordinator_receipt"]["operation"]["collected_through"] = stamp
-            document["coordinator_receipt"]["operation"]["eligibility_instant"] = stamp
-            document["coordinator_receipt"]["authority_protection"]["observed_at"] = stamp
-            document["coordinator_receipt"]["remote_coverage"]["interval_end"] = stamp
-            for source in document["coordinator_receipt"]["remote_coverage"]["sources"]:
-                source["observed_at"] = stamp
-            sign_coordinator_document(document, root)
+            issued_at = datetime.now(timezone.utc).replace(
+                microsecond=0
+            ) - timedelta(milliseconds=500)
+            set_coordinator_receipt_time(document, iso_utc(issued_at))
+            resign_coordinator_receipt(document, root)
             accepted = agent_handoff.validate_document(
                 document,
                 root,
@@ -3949,6 +4009,65 @@ class ExactHandoffTests(unittest.TestCase):
             "invalid-coordinator-attestation",
             future["summary"]["rejection_codes"],
         )
+    def test_coordinator_receipt_default_live_now_preserves_fractional_precision(self):
+        with handoff_repository() as (root, _base, parent, result):
+            document = handoff_document(root, parent, result)
+            live_now = datetime.fromisoformat(
+                document["coordinator_receipt"]["issued_at"].replace(
+                    "Z",
+                    "+00:00",
+                )
+            ).replace(microsecond=800000)
+            class FixedNow(datetime):
+                @classmethod
+                def now(cls, tz=None):
+                    if tz is None:
+                        return live_now.replace(tzinfo=None)
+                    return live_now.astimezone(tz)
+            def validate_offset(offset):
+                candidate = copy.deepcopy(document)
+                set_coordinator_receipt_time(
+                    candidate,
+                    iso_utc(live_now + offset),
+                )
+                resign_coordinator_receipt(candidate, root)
+                with mock.patch.object(agent_handoff, "datetime", FixedNow):
+                    return candidate, agent_handoff.validate_document(
+                        candidate,
+                        root,
+                    )
+            accepted_doc, accepted = validate_offset(
+                timedelta(microseconds=-300000)
+            )
+            history = agent_handoff.make_history_receipt(
+                accepted_doc,
+                accepted,
+                "issue-178-round-1",
+            )
+            _future_doc, future = validate_offset(
+                timedelta(microseconds=100000)
+            )
+            _boundary_doc, boundary = validate_offset(
+                timedelta(
+                    seconds=-agent_handoff.LIVE_ATTESTATION_MAX_AGE_SECONDS
+                )
+            )
+            _stale_doc, stale = validate_offset(
+                timedelta(
+                    seconds=-agent_handoff.LIVE_ATTESTATION_MAX_AGE_SECONDS,
+                    microseconds=-1,
+                )
+            )
+        self.assertTrue(accepted["summary"]["trusted_push_eligible"])
+        self.assertEqual(history["input_seal"], accepted["input_seal"])
+        self.assertFalse(future["summary"]["trusted_push_eligible"])
+        self.assertTrue(boundary["summary"]["trusted_push_eligible"])
+        self.assertFalse(stale["summary"]["trusted_push_eligible"])
+        for report in (future, stale):
+            self.assertIn(
+                "invalid-coordinator-attestation",
+                report["summary"]["rejection_codes"],
+            )
     def test_coordinator_receipt_repository_ids_must_match_authority(self):
         with handoff_repository() as (root, _base, parent, result):
             document = handoff_document(root, parent, result)
@@ -3965,14 +4084,7 @@ class ExactHandoffTests(unittest.TestCase):
         )
     def test_pr_binding_accepts_fast_forwarded_base_with_live_observation(self):
         with handoff_repository() as (root, _base, parent, result):
-            document = handoff_document(root, parent, result)
-            report = agent_handoff.validate_document(document, root)
-            set_history_authority(
-                root,
-                1,
-                document=document,
-                result=report,
-            )
+            _, _, current, _, _ = protected_root_authority(root, parent, result)
             git(root, "switch", "-q", "master")
             readme = root / "README.md"
             readme.write_text("base\nparent\nfast-forward\n", encoding="utf-8")
@@ -3980,24 +4092,8 @@ class ExactHandoffTests(unittest.TestCase):
             git(root, "commit", "-q", "-m", "test: fast-forward base")
             current_base_oid = git(root, "rev-parse", "HEAD")
             git(root, "switch", "-q", "agent/issue-178")
-            current = agent_handoff.read_history_authority(
-                root,
-                "example/workflow",
-                178,
-                None,
-            )
             observation = pull_request_observation(root, current)
-            publication = publication_attestation(
-                root,
-                current["object_id"],
-                current["anchor_object_id"],
-                operation="bind",
-                pr_observation=observation,
-                binding_expectation=frozen_binding_expectation(
-                    current,
-                    current_base_oid=observation["base_oid"],
-                ),
-            )
+            publication = authority_publication(root, current, operation="bind", pr_observation=observation)
             observed_at = datetime.fromisoformat(
                 observation["observed_at"].replace("Z", "+00:00")
             )
@@ -4031,32 +4127,9 @@ class ExactHandoffTests(unittest.TestCase):
         )
     def test_pr_binding_rejects_stale_or_rewritten_current_base(self):
         with handoff_repository() as (root, base, parent, result):
-            document = handoff_document(root, parent, result)
-            report = agent_handoff.validate_document(document, root)
-            set_history_authority(
-                root,
-                1,
-                document=document,
-                result=report,
-            )
-            current = agent_handoff.read_history_authority(
-                root,
-                "example/workflow",
-                178,
-                None,
-            )
+            _, _, current, _, _ = protected_root_authority(root, parent, result)
             stale_observation = pull_request_observation(root, current)
-            stale_publication = publication_attestation(
-                root,
-                current["object_id"],
-                current["anchor_object_id"],
-                operation="bind",
-                pr_observation=stale_observation,
-                binding_expectation=frozen_binding_expectation(
-                    current,
-                    current_base_oid=stale_observation["base_oid"],
-                ),
-            )
+            stale_publication = authority_publication(root, current, operation="bind", pr_observation=stale_observation)
             git(root, "switch", "-q", "master")
             readme = root / "README.md"
             readme.write_text(
@@ -4083,17 +4156,7 @@ class ExactHandoffTests(unittest.TestCase):
                 )
             git(root, "update-ref", "refs/heads/master", base)
             rewritten_observation = pull_request_observation(root, current)
-            rewritten_publication = publication_attestation(
-                root,
-                current["object_id"],
-                current["anchor_object_id"],
-                operation="bind",
-                pr_observation=rewritten_observation,
-                binding_expectation=frozen_binding_expectation(
-                    current,
-                    current_base_oid=rewritten_observation["base_oid"],
-                ),
-            )
+            rewritten_publication = authority_publication(root, current, operation="bind", pr_observation=rewritten_observation)
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
                 "not descended from the frozen delivery base",
@@ -4111,14 +4174,7 @@ class ExactHandoffTests(unittest.TestCase):
                 )
     def test_historical_bind_accepts_committed_fast_forwarded_base(self):
         with handoff_repository() as (root, _base, parent, result):
-            document = handoff_document(root, parent, result)
-            report = agent_handoff.validate_document(document, root)
-            set_history_authority(
-                root,
-                1,
-                document=document,
-                result=report,
-            )
+            _, _, current, _, _ = protected_root_authority(root, parent, result)
             git(root, "switch", "-q", "master")
             readme = root / "README.md"
             readme.write_text("base\nparent\nfast-forwarded-bound-base\n", encoding="utf-8")
@@ -4126,30 +4182,7 @@ class ExactHandoffTests(unittest.TestCase):
             git(root, "commit", "-q", "-m", "test: fast-forward committed base")
             current_base_oid = git(root, "rev-parse", "HEAD")
             git(root, "switch", "-q", "agent/issue-178")
-            current = agent_handoff.read_history_authority(
-                root,
-                "example/workflow",
-                178,
-                None,
-            )
-            observation = pull_request_observation(root, current)
-            publication = publication_attestation(
-                root,
-                current["object_id"],
-                current["anchor_object_id"],
-                operation="bind",
-                pr_observation=observation,
-                binding_expectation=frozen_binding_expectation(
-                    current,
-                    current_base_oid=current_base_oid,
-                ),
-            )
-            publish_bound_history_authority(
-                root,
-                current,
-                observation,
-                publication,
-            )
+            publish_bound_authority(root, current, current_base_oid=current_base_oid)
             bound = agent_handoff.read_history_authority(
                 root,
                 "example/workflow",
@@ -4173,6 +4206,65 @@ class ExactHandoffTests(unittest.TestCase):
                 bound["pr_binding"],
             ),
         )
+    def test_historical_handoff_requires_exact_publication_receipt_digest(self):
+        for name, digest in (("missing", None), ("wrong", "f" * 64)):
+            with self.subTest(digest=name):
+                with handoff_repository() as (
+                    root,
+                    _base,
+                    parent,
+                    result,
+                ):
+                    document = handoff_document(root, parent, result)
+                    report = agent_handoff.validate_document(document, root)
+                    current, history, plan = plan_advance_authority(
+                        root,
+                        document,
+                        report,
+                    )
+                    publication = copy.deepcopy(
+                        plan["record"]["publication_attestation"]
+                    )
+                    publication["history_receipt_digest"] = digest
+                    publication["signature"] = external_sign(
+                        root,
+                        agent_handoff.signed_record_payload(
+                            agent_handoff.PUBLICATION_ATTESTATION_DOMAIN,
+                            publication,
+                        ),
+                    )
+                    plan["record"]["publication_attestation"] = publication
+                    publish_authority_plan(
+                        root,
+                        AUTHORITY_OWNERS[str(root)],
+                        plan,
+                        current["object_id"],
+                        issue=history["issue"],
+                        pull_request=history["pull_request"],
+                        read_back=False,
+                    )
+                    successor = copy.deepcopy(document)
+                    configure_review_successor(
+                        successor,
+                        history,
+                        handoff_id=f"issue-178-review-successor-{name}",
+                        pull_request=None,
+                    )
+                    with self.assertRaisesRegex(
+                        agent_handoff.HandoffDataError,
+                        "publication does not bind its event",
+                    ):
+                        agent_handoff.read_history_authority(
+                            root,
+                            "example/workflow",
+                            history["issue"],
+                            history["pull_request"],
+                        )
+                    with self.assertRaisesRegex(
+                        agent_handoff.HandoffDataError,
+                        "publication does not bind its event",
+                    ):
+                        agent_handoff.validate_document(successor, root)
     def test_historical_bind_rejects_stale_signed_authority_observation_and_blocks_successor(self):
         with handoff_repository() as (root, _base, parent, result):
             stale_observation = pull_request_observation(
@@ -4184,37 +4276,10 @@ class ExactHandoffTests(unittest.TestCase):
                     None,
                 ),
             )
-            document = handoff_document(root, parent, result)
-            report = agent_handoff.validate_document(document, root)
-            bundle = reporter_record(root, document, report)
-            history = agent_handoff.make_history_receipt(
-                document,
-                report,
-                "issue-178-round-1",
+            document, report, current, history, bundle = protected_root_authority(
+                root, parent, result, with_history=True, with_bundle=True
             )
-            set_history_authority(
-                root,
-                1,
-                document=document,
-                result=report,
-            )
-            current = agent_handoff.read_history_authority(
-                root,
-                "example/workflow",
-                178,
-                None,
-            )
-            publication = publication_attestation(
-                root,
-                current["object_id"],
-                current["anchor_object_id"],
-                operation="bind",
-                pr_observation=stale_observation,
-                binding_expectation=frozen_binding_expectation(
-                    current,
-                    current_base_oid=stale_observation["base_oid"],
-                ),
-            )
+            publication = authority_publication(root, current, operation="bind", pr_observation=stale_observation)
             publish_bound_history_authority(
                 root,
                 current,
@@ -4223,23 +4288,13 @@ class ExactHandoffTests(unittest.TestCase):
             )
             fixture = reporter_fixture_with_handoffs(bundle)
             successor = copy.deepcopy(document)
-            successor["prior_handoffs"] = [history]
-            handoff = successor["handoffs"][0]
-            handoff["id"] = "issue-178-review-successor-stale-authority"
-            handoff["owner_id"] = "owner-2"
-            handoff["owner_database_id"] = 102
-            handoff["pull_request"] = 200
-            handoff["handoff_kind"] = "review_successor"
-            handoff["replaces_handoff_id"] = "issue-178-round-1"
-            relationship = successor["delivery_graph"]["relationships"][0]
-            relationship["handoff_id"] = handoff["id"]
-            task = next(
-                item
-                for item in successor["delivery_graph"]["tasks"]
-                if item["phase"] == "implementation"
+            configure_review_successor(
+                successor,
+                history,
+                handoff_id=(
+                    "issue-178-review-successor-stale-authority"
+                ),
             )
-            task["handoff_id"] = handoff["id"]
-            task["pull_request"] = 200
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
                 "stale for authority state",
@@ -4262,21 +4317,7 @@ class ExactHandoffTests(unittest.TestCase):
                 agent_handoff.validate_document(successor, root)
     def test_historical_bind_rejects_out_of_band_head_advance_without_new_handoff(self):
         with handoff_repository() as (root, _base, parent, result):
-            document = handoff_document(root, parent, result)
-            report = agent_handoff.validate_document(document, root)
-            bundle = reporter_record(root, document, report)
-            set_history_authority(
-                root,
-                1,
-                document=document,
-                result=report,
-            )
-            current = agent_handoff.read_history_authority(
-                root,
-                "example/workflow",
-                178,
-                None,
-            )
+            document, report, current, _history, bundle = protected_root_authority(root, parent, result, with_bundle=True)
             change = root / "scripts" / "workflow_pilot" / "change.py"
             change.write_text("HANDOFF = 'out-of-band'\n", encoding="utf-8")
             git(root, "add", "scripts/workflow_pilot/change.py")
@@ -4290,24 +4331,7 @@ class ExactHandoffTests(unittest.TestCase):
             )
             advanced_head = git(root, "rev-parse", "HEAD")
             self.assertNotEqual(advanced_head, result)
-            observation = pull_request_observation(root, current)
-            publication = publication_attestation(
-                root,
-                current["object_id"],
-                current["anchor_object_id"],
-                operation="bind",
-                pr_observation=observation,
-                binding_expectation=frozen_binding_expectation(
-                    current,
-                    current_base_oid=observation["base_oid"],
-                ),
-            )
-            publish_bound_history_authority(
-                root,
-                current,
-                observation,
-                publication,
-            )
+            publish_bound_authority(root, current)
             fixture = reporter_fixture_with_handoffs(bundle)
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
@@ -4332,39 +4356,8 @@ class ExactHandoffTests(unittest.TestCase):
         for name, overrides in cases:
             with self.subTest(name=name):
                 with handoff_repository() as (root, _base, parent, result):
-                    document = handoff_document(root, parent, result)
-                    report = agent_handoff.validate_document(document, root)
-                    set_history_authority(
-                        root,
-                        1,
-                        document=document,
-                        result=report,
-                    )
-                    current = agent_handoff.read_history_authority(
-                        root,
-                        "example/workflow",
-                        178,
-                        None,
-                    )
-                    observation = pull_request_observation(root, current)
-                    publication = publication_attestation(
-                        root,
-                        current["object_id"],
-                        current["anchor_object_id"],
-                        operation="bind",
-                        pr_observation=observation,
-                        binding_expectation=frozen_binding_expectation(
-                            current,
-                            current_base_oid=observation["base_oid"],
-                        ),
-                    )
-                    publish_bound_history_authority(
-                        root,
-                        current,
-                        observation,
-                        publication,
-                        **overrides,
-                    )
+                    _, _, current, _, _ = protected_root_authority(root, parent, result)
+                    publish_bound_authority(root, current, **overrides)
                     with self.assertRaisesRegex(
                         agent_handoff.HandoffDataError,
                         "lacks a carried sealed handoff|does not extend its immediately prior sealed handoff",
@@ -4377,21 +4370,7 @@ class ExactHandoffTests(unittest.TestCase):
                         )
     def test_historical_bind_mixed_signed_observation_rejects_read_reporter_and_eligibility(self):
         with handoff_repository() as (root, _base, parent, result):
-            document = handoff_document(root, parent, result)
-            report = agent_handoff.validate_document(document, root)
-            bundle = reporter_record(root, document, report)
-            set_history_authority(
-                root,
-                1,
-                document=document,
-                result=report,
-            )
-            current = agent_handoff.read_history_authority(
-                root,
-                "example/workflow",
-                178,
-                None,
-            )
+            document, report, current, _history, bundle = protected_root_authority(root, parent, result, with_bundle=True)
             old_observation = pull_request_observation(root, current)
             git(root, "switch", "-q", "master")
             readme = root / "README.md"
@@ -4401,16 +4380,9 @@ class ExactHandoffTests(unittest.TestCase):
             current_base_oid = git(root, "rev-parse", "HEAD")
             git(root, "switch", "-q", "agent/issue-178")
             new_observation = pull_request_observation(root, current)
-            publication = publication_attestation(
-                root,
-                current["object_id"],
-                current["anchor_object_id"],
-                operation="bind",
-                pr_observation=new_observation,
-                binding_expectation=frozen_binding_expectation(
-                    current,
-                    current_base_oid=current_base_oid,
-                ),
+            publication = authority_publication(
+                root, current, operation="bind",
+                pr_observation=new_observation, current_base_oid=current_base_oid
             )
             publish_bound_history_authority(
                 root,
@@ -4441,42 +4413,11 @@ class ExactHandoffTests(unittest.TestCase):
                 reporter.validate_fixture(fixture)
     def test_historical_bind_rewritten_base_rejects_read_reporter_and_eligibility(self):
         with handoff_repository() as (root, base, parent, result):
-            document = handoff_document(root, parent, result)
-            report = agent_handoff.validate_document(document, root)
-            bundle = reporter_record(root, document, report)
-            set_history_authority(
-                root,
-                1,
-                document=document,
-                result=report,
-            )
+            document, report, current, _history, bundle = protected_root_authority(root, parent, result, with_bundle=True)
             git(root, "switch", "-q", "master")
             git(root, "update-ref", "refs/heads/master", base)
             git(root, "switch", "-q", "agent/issue-178")
-            current = agent_handoff.read_history_authority(
-                root,
-                "example/workflow",
-                178,
-                None,
-            )
-            rewritten_observation = pull_request_observation(root, current)
-            publication = publication_attestation(
-                root,
-                current["object_id"],
-                current["anchor_object_id"],
-                operation="bind",
-                pr_observation=rewritten_observation,
-                binding_expectation=frozen_binding_expectation(
-                    current,
-                    current_base_oid=rewritten_observation["base_oid"],
-                ),
-            )
-            publish_bound_history_authority(
-                root,
-                current,
-                rewritten_observation,
-                publication,
-            )
+            publish_bound_authority(root, current)
             fixture = reporter_fixture_with_handoffs(bundle)
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
