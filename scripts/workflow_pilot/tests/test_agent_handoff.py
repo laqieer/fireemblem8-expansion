@@ -527,14 +527,56 @@ def owner_create_record_commit(
             "GIT_COMMITTER_DATE": "2026-08-31T00:00:00Z",
         },
     )
+
+def plan_advance_authority(
+    repository_root,
+    document,
+    result,
+    *,
+    issue=178,
+    handoff_id="issue-178-round-1",
+    current_time=None,
+):
+    current = agent_handoff.read_history_authority(
+        repository_root,
+        "example/workflow",
+        issue,
+        None,
+    )
+    history = agent_handoff.make_history_receipt(document, result, handoff_id)
+    return current, history, agent_handoff.plan_history_authority(
+        repository_root,
+        "example/workflow",
+        issue,
+        None,
+        operation="advance",
+        expected_object_id=current["object_id"],
+        expected_sequence=current["sequence"],
+        handoff_document=document,
+        handoff_result=result,
+        handoff_id=handoff_id,
+        publication_attestation=publication_attestation(
+            repository_root,
+            current["object_id"],
+            current["anchor_object_id"],
+            issue=issue,
+            operation="advance",
+            new_head_seal=history["seal"],
+            history_receipt=history,
+        ),
+        current_time=current_time,
+    )
+
 def set_history_authority(
     repository_root,
     sequence,
-    head_seal,
+    head_seal=None,
     *,
     issue=178,
     pull_request=None,
-    history_receipt=None,
+    document=None,
+    result=None,
+    handoff_id="issue-178-round-1",
 ):
     owner_root = AUTHORITY_OWNERS[str(repository_root)]
     reference = agent_handoff.history_authority_ref(issue, pull_request)
@@ -572,7 +614,46 @@ def set_history_authority(
             issue,
             None,
         )
-        if history_receipt is None:
+        if document is not None and result is not None:
+            history = agent_handoff.make_history_receipt(document, result, handoff_id)
+            publication = publication_attestation(
+                repository_root,
+                current["object_id"],
+                current["anchor_object_id"],
+                issue=issue,
+                operation="advance",
+                new_head_seal=history["seal"],
+                history_receipt=history,
+            )
+            plan = agent_handoff.plan_history_authority(
+                repository_root,
+                "example/workflow",
+                issue,
+                None,
+                operation="advance",
+                expected_object_id=current["object_id"],
+                expected_sequence=current["sequence"],
+                handoff_document=document,
+                handoff_result=result,
+                handoff_id=handoff_id,
+                publication_attestation=publication,
+            )
+            if plan != agent_handoff.plan_history_authority(
+                repository_root,
+                "example/workflow",
+                issue,
+                None,
+                operation="advance",
+                expected_object_id=current["object_id"],
+                expected_sequence=current["sequence"],
+                handoff_document=document,
+                handoff_result=result,
+                handoff_id=handoff_id,
+                publication_attestation=publication,
+            ):
+                raise AssertionError("advance plan is not deterministic")
+            parent = current["object_id"]
+        else:
             history_receipt = {
                 "sequence": current["handoff_sequence"] + 1,
                 "previous_seal": current["head_seal"]
@@ -599,41 +680,59 @@ def set_history_authority(
                 agent_handoff.seal_history_receipt(history_receipt)
             )
             head_seal = history_receipt["seal"]
-        publication = publication_attestation(
-            repository_root,
-            current["object_id"],
-            current["anchor_object_id"],
-            issue=issue,
-            operation="advance",
-            new_head_seal=head_seal,
-            history_receipt=history_receipt,
-        )
-        plan = agent_handoff.plan_history_authority(
-            repository_root,
-            "example/workflow",
-            issue,
-            None,
-            operation="advance",
-            expected_object_id=current["object_id"],
-            expected_sequence=current["sequence"],
-            new_head_seal=head_seal,
-            history_receipt=history_receipt,
-            publication_attestation=publication,
-        )
-        if plan != agent_handoff.plan_history_authority(
-            repository_root,
-            "example/workflow",
-            issue,
-            pull_request,
-            operation="advance",
-            expected_object_id=current["object_id"],
-            expected_sequence=current["sequence"],
-            new_head_seal=head_seal,
-            history_receipt=history_receipt,
-            publication_attestation=publication,
-        ):
-            raise AssertionError("advance plan is not deterministic")
-        parent = current["object_id"]
+            record = {
+                "schema_version": 2,
+                "repository": "example/workflow",
+                "issue": issue,
+                "sequence": current["sequence"] + 1,
+                "handoff_sequence": current["handoff_sequence"] + 1,
+                "head_seal": head_seal,
+                "pr_binding": current["pr_binding"],
+                "signer": current["signer"],
+                "ruleset_id": current["ruleset_id"],
+                "authorized_bypass_actors": current["authorized_bypass_actors"],
+                "delivery_expectation": current["delivery_expectation"],
+                "publication_attestation": publication_attestation(
+                    repository_root,
+                    current["object_id"],
+                    current["anchor_object_id"],
+                    issue=issue,
+                    operation="advance",
+                    new_head_seal=head_seal,
+                    history_receipt=history_receipt,
+                ),
+                "event": {
+                    "kind": "handoff",
+                    "handoff_seal": head_seal,
+                    "handoff_id": history_receipt["handoff_id"],
+                    "handoff_kind": history_receipt["handoff_kind"],
+                    "lifecycle_state": history_receipt["lifecycle_state"],
+                    "candidate_sha": history_receipt["candidate_sha"],
+                    "closed_at": history_receipt["closed_at"],
+                    "operation_nonce": history_receipt["operation_nonce"],
+                    "consume_store_id": history_receipt["consume_store_id"],
+                    "consume_sequence": history_receipt["consume_sequence"],
+                    "consume_anchor": history_receipt["consume_anchor"],
+                    "assignment": history_receipt["assignment"],
+                    "interruption_snapshot": history_receipt["interruption_snapshot"],
+                },
+                "previous_object_id": current["object_id"],
+            }
+            plan = {
+                "record": record,
+                "ref": reference,
+                "anchor_ref": anchor_reference,
+                "expected_anchor_object_id": current["anchor_object_id"],
+                "anchor_record_template": {
+                    "schema_version": 1,
+                    "repository": "example/workflow",
+                    "issue": issue,
+                    "sequence": current["sequence"] + 1,
+                    "authority_object_id": "<new-authority-commit>",
+                    "previous_object_id": current["anchor_object_id"],
+                },
+            }
+            parent = current["object_id"]
     planned_sequence = plan["record"]["sequence"]
     if planned_sequence != sequence:
         raise AssertionError("authority test sequence mismatch")
@@ -2505,6 +2604,8 @@ class ExactHandoffTests(unittest.TestCase):
                 accepted.stdout,
                 agent_handoff.normalized_json(accepted_result),
             )
+            with self.assertRaises(TypeError):
+                agent_handoff.plan_history_authority(root, "example/workflow", 178, None, operation="advance", history_receipt={})
             document["handoffs"][0]["result"]["sha"] = parent
             fixture_path.write_text(json.dumps(document), encoding="utf-8")
             rejected = subprocess.run(
@@ -2518,6 +2619,13 @@ class ExactHandoffTests(unittest.TestCase):
                 "stale-result",
                 json.loads(rejected.stdout)["summary"]["rejection_codes"],
             )
+            unsupported = subprocess.run(
+                command + ["--history-receipt", str(fixture_path)],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+            )
+            self.assertIn(b"unrecognized arguments: --history-receipt", unsupported.stderr)
     def test_stale_wrong_parent_and_unrelated_branch_reject(self):
         with handoff_repository() as (root, base, parent, result):
             cases = {}
@@ -2970,6 +3078,10 @@ class ExactHandoffTests(unittest.TestCase):
             exact_report = agent_handoff.validate_document(exact, root)
             self.assertTrue(exact_report["summary"]["trusted_push_eligible"])
             self.assertEqual(exact_report["handoffs"][0]["lifetime_seconds"], 1)
+            self.assertEqual(
+                agent_handoff.make_history_receipt(exact, exact_report, "issue-178-round-1")["closed_at"],
+                exact_report["handoffs"][0]["closed_at"],
+            )
             fractional_cases = {
                 "fractional-span": (
                     datetime.now(timezone.utc).replace(microsecond=100000)
@@ -3077,6 +3189,12 @@ class ExactHandoffTests(unittest.TestCase):
                         report,
                         "issue-178-round-1",
                     )
+                current = document["history_authority"]
+                report = agent_handoff.validate_document(document, root)
+                with self.assertRaisesRegex(agent_handoff.HandoffDataError, "canonical validation output|no closed result to seal"):
+                    agent_handoff.plan_history_authority(root, "example/workflow", 178, None, operation="advance", expected_object_id=current["object_id"], expected_sequence=current["sequence"], handoff_document=document, handoff_result=report, handoff_id="issue-178-round-1")
+                with self.assertRaisesRegex(agent_handoff.HandoffDataError, "canonical validation output|no closed result to seal"):
+                    set_history_authority(root, 1, document=document, result=report)
     def test_implementation_owner_remote_actions_reject(self):
         with handoff_repository() as (root, _base, parent, result):
             identities = (
@@ -3116,39 +3234,14 @@ class ExactHandoffTests(unittest.TestCase):
             shift_handoff_times(first, -60)
             refresh_coordinator_receipt(first, root)
             first_report = agent_handoff.validate_document(first, root)
-            first_receipt = agent_handoff.make_history_receipt(
-                first,
-                first_report,
-                "issue-178-round-1",
-            )
-            genesis = first["history_authority"]
-            publication = publication_attestation(
-                root,
-                genesis["object_id"],
-                genesis["anchor_object_id"],
-                operation="advance",
-                new_head_seal=first_receipt["seal"],
-                history_receipt=first_receipt,
-            )
-            plan = agent_handoff.plan_history_authority(
-                root,
-                "example/workflow",
-                178,
-                None,
-                operation="advance",
-                expected_object_id=genesis["object_id"],
-                expected_sequence=0,
-                new_head_seal=first_receipt["seal"],
-                history_receipt=first_receipt,
-                publication_attestation=publication,
-            )
+            genesis, first_receipt, plan = plan_advance_authority(root, first, first_report)
             self.assertIn("git push --atomic", plan["atomic_push"])
             self.assertNotIn("--force", plan["atomic_push"])
             set_history_authority(
                 root,
                 1,
-                first_receipt["seal"],
-                history_receipt=first_receipt,
+                document=first,
+                result=first_report,
             )
             bound = bind_history_authority(root)
             self.assertEqual(
@@ -3364,8 +3457,9 @@ class ExactHandoffTests(unittest.TestCase):
                     operation="advance",
                     expected_object_id=current["object_id"],
                     expected_sequence=current["sequence"],
-                    new_head_seal=base_history["seal"],
-                    history_receipt=base_history,
+                    handoff_document=base_document,
+                    handoff_result=base_result,
+                    handoff_id="issue-178-round-1",
                     publication_attestation=unrelated,
                 )
     def test_trusted_installation_members_stay_external_and_race_free(self):
@@ -3562,16 +3656,12 @@ class ExactHandoffTests(unittest.TestCase):
                 "coordinator-actor-unauthorized",
                 unauthorized_report["summary"]["rejection_codes"],
             )
-            backup_history = agent_handoff.make_history_receipt(
-                backup,
-                backup_report,
-                backup["handoffs"][0]["id"],
-            )
             set_history_authority(
                 root,
                 1,
-                backup_history["seal"],
-                history_receipt=backup_history,
+                document=backup,
+                result=backup_report,
+                handoff_id=backup["handoffs"][0]["id"],
             )
             for name, mutate in {
                 "missing": lambda response: response["bypass_actors"].pop(),
@@ -3608,31 +3698,7 @@ class ExactHandoffTests(unittest.TestCase):
         with handoff_repository() as (root, _base, parent, result):
             document = handoff_document(root, parent, result)
             report = agent_handoff.validate_document(document, root)
-            history = agent_handoff.make_history_receipt(
-                document,
-                report,
-                "issue-178-round-1",
-            )
-            current = document["history_authority"]
-            plan = agent_handoff.plan_history_authority(
-                root,
-                "example/workflow",
-                178,
-                None,
-                operation="advance",
-                expected_object_id=current["object_id"],
-                expected_sequence=0,
-                new_head_seal=history["seal"],
-                history_receipt=history,
-                publication_attestation=publication_attestation(
-                    root,
-                    current["object_id"],
-                    current["anchor_object_id"],
-                    operation="advance",
-                    new_head_seal=history["seal"],
-                    history_receipt=history,
-                ),
-            )
+            current, history, plan = plan_advance_authority(root, document, report)
             owner = AUTHORITY_OWNERS[str(root)]
             def commits(message):
                 authority_id = owner_create_record_commit(
@@ -3706,6 +3772,8 @@ class ExactHandoffTests(unittest.TestCase):
                 178,
                 None,
             )
+            document = handoff_document(root, _parent, _result)
+            report = agent_handoff.validate_document(document, root)
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
                 "does not support the required atomic",
@@ -3718,13 +3786,9 @@ class ExactHandoffTests(unittest.TestCase):
                     operation="advance",
                     expected_object_id=current["object_id"],
                     expected_sequence=current["sequence"],
-                    new_head_seal="1" * 64,
-                    history_receipt={"seal": "1" * 64},
-                    publication_attestation=publication_attestation(
-                        root,
-                        current["object_id"],
-                        current["anchor_object_id"],
-                    ),
+                    handoff_document=document,
+                    handoff_result=report,
+                    handoff_id="issue-178-round-1",
                 )
     def test_external_attestation_binds_every_eligibility_input(self):
         with handoff_repository() as (root, _base, parent, result):
@@ -3753,6 +3817,8 @@ class ExactHandoffTests(unittest.TestCase):
                         "invalid-coordinator-attestation",
                         report["summary"]["rejection_codes"],
                     )
+                    with self.assertRaisesRegex(agent_handoff.HandoffDataError, "no closed result to seal"):
+                        agent_handoff.make_history_receipt(changed, report, "issue-178-round-1")
             absent = copy.deepcopy(document)
             del absent["coordinator_receipt"]["signature"]
             with self.assertRaisesRegex(
@@ -3761,11 +3827,12 @@ class ExactHandoffTests(unittest.TestCase):
             ):
                 agent_handoff.validate_document(absent, root)
             current = document["history_authority"]
-            valid_result = agent_handoff.validate_document(document, root)
-            history = agent_handoff.make_history_receipt(
+            valid_result = agent_handoff.validate_document(
                 document,
-                valid_result,
-                "issue-178-round-1",
+                root,
+                current_time=datetime.fromisoformat(
+                    document["coordinator_receipt"]["issued_at"].replace("Z", "+00:00")
+                ),
             )
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
@@ -3779,23 +3846,19 @@ class ExactHandoffTests(unittest.TestCase):
                     operation="advance",
                     expected_object_id=current["object_id"],
                     expected_sequence=current["sequence"],
-                    new_head_seal=history["seal"],
-                    history_receipt=history,
+                    handoff_document=document,
+                    handoff_result=valid_result,
+                    handoff_id="issue-178-round-1",
                 )
     def test_pr_binding_requires_exact_signed_api_response(self):
         with handoff_repository() as (root, _base, parent, result):
             document = handoff_document(root, parent, result)
             report = agent_handoff.validate_document(document, root)
-            history = agent_handoff.make_history_receipt(
-                document,
-                report,
-                "issue-178-round-1",
-            )
             set_history_authority(
                 root,
                 1,
-                history["seal"],
-                history_receipt=history,
+                document=document,
+                result=report,
             )
             current = agent_handoff.read_history_authority(
                 root,
@@ -3936,16 +3999,11 @@ class ExactHandoffTests(unittest.TestCase):
         with handoff_repository() as (root, _base, parent, result):
             document = handoff_document(root, parent, result)
             report = agent_handoff.validate_document(document, root)
-            history = agent_handoff.make_history_receipt(
-                document,
-                report,
-                "issue-178-round-1",
-            )
             set_history_authority(
                 root,
                 1,
-                history["seal"],
-                history_receipt=history,
+                document=document,
+                result=report,
             )
             git(root, "switch", "-q", "master")
             readme = root / "README.md"
@@ -4007,16 +4065,11 @@ class ExactHandoffTests(unittest.TestCase):
         with handoff_repository() as (root, base, parent, result):
             document = handoff_document(root, parent, result)
             report = agent_handoff.validate_document(document, root)
-            history = agent_handoff.make_history_receipt(
-                document,
-                report,
-                "issue-178-round-1",
-            )
             set_history_authority(
                 root,
                 1,
-                history["seal"],
-                history_receipt=history,
+                document=document,
+                result=report,
             )
             current = agent_handoff.read_history_authority(
                 root,
@@ -4092,16 +4145,11 @@ class ExactHandoffTests(unittest.TestCase):
         with handoff_repository() as (root, _base, parent, result):
             document = handoff_document(root, parent, result)
             report = agent_handoff.validate_document(document, root)
-            history = agent_handoff.make_history_receipt(
-                document,
-                report,
-                "issue-178-round-1",
-            )
             set_history_authority(
                 root,
                 1,
-                history["seal"],
-                history_receipt=history,
+                document=document,
+                result=report,
             )
             git(root, "switch", "-q", "master")
             readme = root / "README.md"
@@ -4179,8 +4227,8 @@ class ExactHandoffTests(unittest.TestCase):
             set_history_authority(
                 root,
                 1,
-                history["seal"],
-                history_receipt=history,
+                document=document,
+                result=report,
             )
             current = agent_handoff.read_history_authority(
                 root,
@@ -4249,16 +4297,11 @@ class ExactHandoffTests(unittest.TestCase):
             document = handoff_document(root, parent, result)
             report = agent_handoff.validate_document(document, root)
             bundle = reporter_record(root, document, report)
-            history = agent_handoff.make_history_receipt(
-                document,
-                report,
-                "issue-178-round-1",
-            )
             set_history_authority(
                 root,
                 1,
-                history["seal"],
-                history_receipt=history,
+                document=document,
+                result=report,
             )
             current = agent_handoff.read_history_authority(
                 root,
@@ -4323,16 +4366,11 @@ class ExactHandoffTests(unittest.TestCase):
                 with handoff_repository() as (root, _base, parent, result):
                     document = handoff_document(root, parent, result)
                     report = agent_handoff.validate_document(document, root)
-                    history = agent_handoff.make_history_receipt(
-                        document,
-                        report,
-                        "issue-178-round-1",
-                    )
                     set_history_authority(
                         root,
                         1,
-                        history["seal"],
-                        history_receipt=history,
+                        document=document,
+                        result=report,
                     )
                     current = agent_handoff.read_history_authority(
                         root,
@@ -4374,16 +4412,11 @@ class ExactHandoffTests(unittest.TestCase):
             document = handoff_document(root, parent, result)
             report = agent_handoff.validate_document(document, root)
             bundle = reporter_record(root, document, report)
-            history = agent_handoff.make_history_receipt(
-                document,
-                report,
-                "issue-178-round-1",
-            )
             set_history_authority(
                 root,
                 1,
-                history["seal"],
-                history_receipt=history,
+                document=document,
+                result=report,
             )
             current = agent_handoff.read_history_authority(
                 root,
@@ -4443,16 +4476,11 @@ class ExactHandoffTests(unittest.TestCase):
             document = handoff_document(root, parent, result)
             report = agent_handoff.validate_document(document, root)
             bundle = reporter_record(root, document, report)
-            history = agent_handoff.make_history_receipt(
-                document,
-                report,
-                "issue-178-round-1",
-            )
             set_history_authority(
                 root,
                 1,
-                history["seal"],
-                history_receipt=history,
+                document=document,
+                result=report,
             )
             git(root, "switch", "-q", "master")
             git(root, "update-ref", "refs/heads/master", base)
@@ -4544,6 +4572,10 @@ class ExactHandoffTests(unittest.TestCase):
             self.assertFalse(pending_report["summary"]["trusted_push_eligible"])
             with self.assertRaisesRegex(agent_handoff.HandoffDataError, "no closed result to seal"):
                 agent_handoff.make_history_receipt(pending, pending_report, "issue-178-round-1")
+            with self.assertRaisesRegex(agent_handoff.HandoffDataError, "no closed result to seal"):
+                agent_handoff.plan_history_authority(root, "example/workflow", 178, None, operation="advance", expected_object_id=first["history_authority"]["object_id"], expected_sequence=first["history_authority"]["sequence"], handoff_document=pending, handoff_result=pending_report, handoff_id="issue-178-round-1")
+            with self.assertRaisesRegex(agent_handoff.HandoffDataError, "no closed result to seal"):
+                set_history_authority(root, 1, document=pending, result=pending_report)
             first_history = agent_handoff.make_history_receipt(
                         first,
                         first_report,
@@ -4552,8 +4584,8 @@ class ExactHandoffTests(unittest.TestCase):
             set_history_authority(
                         root,
                         1,
-                        first_history["seal"],
-                        history_receipt=first_history,
+                        document=first,
+                        result=first_report,
             )
             change = root / "scripts" / "workflow_pilot" / "change.py"
             change.write_text("REVIEW_FIX = True\n", encoding="utf-8")
@@ -5339,8 +5371,8 @@ class ExactHandoffTests(unittest.TestCase):
             set_history_authority(
                 root,
                 1,
-                history["seal"],
-                history_receipt=history,
+                document=interrupted,
+                result=interrupted_report,
             )
             protected = agent_handoff.read_history_authority(
                 root,
@@ -5422,8 +5454,9 @@ class ExactHandoffTests(unittest.TestCase):
             set_history_authority(
                 root,
                 2,
-                replacement_history["seal"],
-                history_receipt=replacement_history,
+                document=replacement,
+                result=report,
+                handoff_id=current["id"],
             )
             agent_handoff.verify_reporter_record(
                 interrupted_record,
@@ -5597,8 +5630,8 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             set_history_authority(
                 root,
                 1,
-                first_history["seal"],
-                history_receipt=first_history,
+                document=first_document,
+                result=first_result_report,
             )
             change = root / "scripts" / "workflow_pilot" / "change.py"
             change.write_text("HISTORICAL_REVIEW = True\n", encoding="utf-8")
@@ -5650,8 +5683,9 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             set_history_authority(
                 root,
                 2,
-                second_history["seal"],
-                history_receipt=second_history,
+                document=second_document,
+                result=second_result_report,
+                handoff_id=handoff["id"],
             )
             agent_handoff.verify_reporter_record(
                 first_record,

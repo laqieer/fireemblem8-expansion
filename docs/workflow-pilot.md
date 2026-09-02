@@ -886,11 +886,9 @@ python3 -m scripts.workflow_pilot.agent_handoff \
 
 python3 -m scripts.workflow_pilot.agent_handoff \
   --authority-operation advance \
-  --worktree . --repository laqieer/fireemblem8-expansion \
-  --issue 178 \
+  --fixture <handoff-document-json> --handoff-id <closed-handoff-id> \
+  --worktree . --repository laqieer/fireemblem8-expansion --issue 178 \
   --expected-object-id <remote-head> --expected-sequence <n> \
-  --new-head-seal <closed-handoff-seal> \
-  --history-receipt <closed-handoff-json> \
   --publication-attestation <signed-json> \
   --coordinator-installation <external-path>
 

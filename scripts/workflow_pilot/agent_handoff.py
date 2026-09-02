@@ -2522,8 +2522,9 @@ def plan_history_authority(
     operation: str,
     expected_object_id: str | None = None,
     expected_sequence: int | None = None,
-    new_head_seal: str | None = None,
-    history_receipt: dict[str, Any] | None = None,
+    handoff_document: dict[str, Any] | None = None,
+    handoff_result: dict[str, Any] | None = None,
+    handoff_id: str | None = None,
     pull_request_observation: dict[str, Any] | None = None,
     publication_attestation: dict[str, Any] | None = None,
     coordinator_installation: Path | None = None,
@@ -2568,6 +2569,8 @@ def plan_history_authority(
             (remote_anchor or preflight_object, anchor_reference),
         ],
     )
+    new_head_seal = None
+    history_receipt = None
     expected_binding = None
     if operation == "bootstrap":
         if remote_object is not None or remote_anchor is not None:
@@ -2584,7 +2587,9 @@ def plan_history_authority(
             for value in (
                 expected_object_id,
                 expected_sequence,
-                new_head_seal,
+                handoff_document,
+                handoff_result,
+                handoff_id,
                 pull_request_observation,
             )
         ):
@@ -2681,31 +2686,24 @@ def plan_history_authority(
             )
         if operation == "advance":
             if (
-                not isinstance(new_head_seal, str)
-                or reporter.SHA256_RE.fullmatch(new_head_seal) is None
-                or any(
-                    value is not None
-                    for value in (
-                        pull_request_observation,
-                    )
-                )
+                handoff_document is None
+                or handoff_result is None
+                or handoff_id is None
+                or pull_request_observation is not None
             ):
                 raise HandoffDataError(
-                    "history authority advance requires only a lowercase "
-                    "handoff seal"
+                    "history authority advance requires handoff document, "
+                    "canonical result, selected handoff ID, and no PR observation"
                 )
-            if history_receipt is None:
-                raise HandoffDataError(
-                    "history authority advance requires the sealed handoff "
-                    "receipt"
-                )
-            closed = copy.deepcopy(
-                expect_object(history_receipt, "history advance receipt")
+            closed = make_history_receipt(
+                copy.deepcopy(expect_object(handoff_document, "handoff document")),
+                copy.deepcopy(expect_object(handoff_result, "handoff result")),
+                expect_string(handoff_id, "handoff_id"),
             )
+            history_receipt = copy.deepcopy(closed)
+            new_head_seal = closed["seal"]
             if (
-                closed.get("seal") != seal_history_receipt(closed)
-                or closed["seal"] != new_head_seal
-                or closed["sequence"] != current["handoff_sequence"] + 1
+                closed["sequence"] != current["handoff_sequence"] + 1
                 or closed["previous_seal"]
                 != (current["head_seal"] or ZERO_SEAL)
             ):
@@ -8260,8 +8258,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--pull-request", type=int)
     parser.add_argument("--expected-object-id")
     parser.add_argument("--expected-sequence", type=int)
-    parser.add_argument("--new-head-seal")
-    parser.add_argument("--history-receipt", type=Path)
+    parser.add_argument("--handoff-id")
     parser.add_argument("--pull-request-observation", type=Path)
     parser.add_argument("--publication-attestation", type=Path)
     parser.add_argument("--coordinator-installation", type=Path)
@@ -8270,15 +8267,26 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         if args.authority_operation is not None:
-            if (
-                args.worktree is None
-                or args.repository is None
-                or args.issue is None
-                or args.fixture is not None
-            ):
+            if args.worktree is None or args.repository is None or args.issue is None:
                 raise HandoffDataError(
-                    "authority planning requires worktree/repository/issue "
-                    "and no fixture"
+                    "authority planning requires worktree/repository/issue"
+                )
+            handoff_document = None
+            handoff_result = None
+            if args.authority_operation == "advance":
+                if args.fixture is None or args.handoff_id is None:
+                    raise HandoffDataError(
+                        "advance planning requires --fixture and --handoff-id"
+                    )
+                handoff_document = load_json(args.fixture)
+                handoff_result = validate_document(
+                    copy.deepcopy(expect_object(handoff_document, "handoff document")),
+                    args.worktree,
+                    coordinator_installation=args.coordinator_installation,
+                )
+            elif args.fixture is not None or args.handoff_id is not None:
+                raise HandoffDataError(
+                    "bootstrap and bind planning do not accept handoff fixture inputs"
                 )
             result = plan_history_authority(
                 args.worktree,
@@ -8288,12 +8296,9 @@ def main(argv: list[str] | None = None) -> int:
                 operation=args.authority_operation,
                 expected_object_id=args.expected_object_id,
                 expected_sequence=args.expected_sequence,
-                new_head_seal=args.new_head_seal,
-                history_receipt=(
-                    load_json(args.history_receipt)
-                    if args.history_receipt is not None
-                    else None
-                ),
+                handoff_document=handoff_document,
+                handoff_result=handoff_result,
+                handoff_id=args.handoff_id,
                 pull_request_observation=(
                     load_json(args.pull_request_observation)
                     if args.pull_request_observation is not None
