@@ -2315,7 +2315,7 @@ class AuthorityReadRaceTests(unittest.TestCase):
             self.assertTrue(moved)
             self.assertEqual(authority["sequence"], 1)
             self.assertRegex(authority["head_seal"], r"^[0-9a-f]{64}$")
-            self.assertEqual(authority["observation"]["attempt"], 2)
+            self.assertEqual(authority["observation"]["attempt"], 1)
     def test_repeated_remote_movement_exhausts_bounded_read(self):
         with handoff_repository() as (root, _base, _parent, _result):
             sequence = 0
@@ -4641,7 +4641,7 @@ class ExactHandoffTests(unittest.TestCase):
             authority["history_events"] = [copy.deepcopy(authority["event"])]
 
         def mutate_observation(authority):
-            authority["observation"]["attempt"] = 99
+            authority["observation"]["attempt"] = 2
             reseal_history_authority_observation(authority)
 
         def mutate_repository(authority):
@@ -4653,7 +4653,7 @@ class ExactHandoffTests(unittest.TestCase):
             ("anchor_ref", mutate_anchor_ref),
             ("anchor_object_id", mutate_anchor_object_id),
             ("history_events", mutate_history_events),
-            ("observation", mutate_observation),
+            ("observation-attempt-token", mutate_observation),
             ("repository", mutate_repository),
         ):
             with self.subTest(field=name):
@@ -4665,6 +4665,12 @@ class ExactHandoffTests(unittest.TestCase):
                 ):
                     document = handoff_document(root, parent, result)
                     report = agent_handoff.validate_document(document, root)
+                    self.assertEqual(
+                        document["history_authority"]["observation"][
+                            "attempt"
+                        ],
+                        1,
+                    )
                     current, _history, plan = plan_advance_authority(
                         root,
                         document,

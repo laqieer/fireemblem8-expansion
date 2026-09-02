@@ -506,90 +506,37 @@ def _public_authority_record(
     public["event"] = _public_history_event(public["event"])
     return public
 def _canonical_history_observation(
-    raw: Any,
-    *,
     reference: str,
     object_id: str,
     anchor_reference: str,
     anchor_object_id: str,
-    label: str,
 ) -> dict[str, Any]:
-    observation = copy.deepcopy(expect_object(raw, label))
-    expect_keys(
-        observation,
-        label,
-        (
-            "remote",
-            "ref",
-            "object_id",
-            "anchor_ref",
-            "anchor_object_id",
-            "attempt",
-            "token",
-        ),
+    expect_string(reference, "history authority observation.ref")
+    object_id = expect_sha(
+        object_id,
+        "history authority observation.object_id",
     )
-    if observation["remote"] != "origin":
-        raise HandoffDataError(f"{label}.remote must be origin")
-    if (
-        expect_string(observation["ref"], f"{label}.ref")
-        != reference
-    ):
-        raise HandoffDataError(
-            f"{label}.ref does not match the canonical Git ref"
-        )
-    if (
-        expect_sha(observation["object_id"], f"{label}.object_id")
-        != object_id
-    ):
-        raise HandoffDataError(
-            f"{label}.object_id does not match the canonical Git ref"
-        )
-    if (
-        expect_string(observation["anchor_ref"], f"{label}.anchor_ref")
-        != anchor_reference
-    ):
-        raise HandoffDataError(
-            f"{label}.anchor_ref does not match the canonical Git ref"
-        )
-    if (
-        expect_sha(
-            observation["anchor_object_id"],
-            f"{label}.anchor_object_id",
-        )
-        != anchor_object_id
-    ):
-        raise HandoffDataError(
-            f"{label}.anchor_object_id does not match the canonical Git ref"
-        )
-    attempt = expect_int(observation["attempt"], f"{label}.attempt", 1)
-    if attempt > AUTHORITY_READ_ATTEMPTS:
-        raise HandoffDataError(
-            "history authority observation attempt exceeds bound"
-        )
-    token = observation["token"]
-    if (
-        not isinstance(token, str)
-        or reporter.SHA256_RE.fullmatch(token) is None
-        or token
-        != _history_observation(
-            reference,
-            object_id,
-            anchor_reference,
-            anchor_object_id,
-            attempt,
-        )["token"]
-    ):
-        raise HandoffDataError(
-            "history authority observation token does not verify"
-        )
-    return observation
+    expect_string(
+        anchor_reference,
+        "history authority observation.anchor_ref",
+    )
+    anchor_object_id = expect_sha(
+        anchor_object_id,
+        "history authority observation.anchor_object_id",
+    )
+    return _history_observation(
+        reference,
+        object_id,
+        anchor_reference,
+        anchor_object_id,
+        1,
+    )
 def _canonical_public_history_authority(
     authority: dict[str, Any],
     *,
     object_id: str,
     anchor_object_id: str,
     history_events: Any,
-    observation: Any,
     event_history_receipt: dict[str, Any] | None,
     label: str,
 ) -> dict[str, Any]:
@@ -607,6 +554,11 @@ def _canonical_public_history_authority(
         )
     reference = history_authority_ref(issue, pull_request)
     anchor_reference = history_anchor_ref(issue)
+    object_id = expect_sha(object_id, f"{label}.object_id")
+    anchor_object_id = expect_sha(
+        anchor_object_id,
+        f"{label}.anchor_object_id",
+    )
     canonical_history_events = copy.deepcopy(
         expect_list(history_events, f"{label}.history_events")
     )
@@ -631,19 +583,14 @@ def _canonical_public_history_authority(
         )
     return {
         "ref": reference,
-        "object_id": expect_sha(object_id, f"{label}.object_id"),
+        "object_id": object_id,
         "anchor_ref": anchor_reference,
-        "anchor_object_id": expect_sha(
-            anchor_object_id,
-            f"{label}.anchor_object_id",
-        ),
+        "anchor_object_id": anchor_object_id,
         "observation": _canonical_history_observation(
-            observation,
-            reference=reference,
-            object_id=object_id,
-            anchor_reference=anchor_reference,
-            anchor_object_id=anchor_object_id,
-            label=f"{label}.observation",
+            reference,
+            object_id,
+            anchor_reference,
+            anchor_object_id,
         ),
         "history_events": canonical_history_events,
         **_public_authority_record(authority),
@@ -3115,7 +3062,6 @@ def read_history_authority(
         object_id=object_id,
         anchor_object_id=anchor_object_id,
         history_events=verified_history_events,
-        observation=observation,
         event_history_receipt=(
             verified_history_events[-1]["history_receipt"]
             if authority["event"]["kind"] == "handoff"
@@ -5018,7 +4964,6 @@ def _verify_handoff_document_result(
         object_id=original_object_id,
         anchor_object_id=original_anchor_object_id,
         history_events=canonical_history_events,
-        observation=original_authority["observation"],
         event_history_receipt=event_history_receipt,
         label="handoff verification original authority",
     )
