@@ -2375,7 +2375,7 @@ jobs:
           case ",$mount_options," in
             *,rw,*)
               case "$mount_target" in
-                /dev/shm|/mnt/handoff|/mnt/home|/mnt/source|/mnt/tmp|/tmp) ;;
+                /dev/shm|/mnt/handoff|/mnt/home|/mnt/source|/mnt/supervisor|/mnt/tmp|/tmp) ;;
                 *) echo "unexpected writable mount: $mount_target" >&2; exit 1 ;;
               esac
               ;;

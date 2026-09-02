@@ -56,9 +56,11 @@ UID and built inside mount, PID, network, IPC, and UTS namespaces with no
 network, capabilities, secrets, `BASH_ENV`, or `GITHUB_ENV`. Mount propagation
 is private and all recursively visible host root/system/tool mounts, including
 `/usr/share` and `/opt`, must be read-only. Only exact private source, home,
-temporary, and handoff mounts are writable. Private tmpfs `/tmp`, `/run`,
-`/dev`, and `/dev/shm` plus private `/proc` hide host D-Bus activation/service,
-Docker, containerd, systemd, snap, and other UNIX sockets and runtime paths.
+temporary, and handoff mounts are writable by candidate code. The root-only
+supervisor mount remains inaccessible to the candidate. Private tmpfs `/tmp`,
+`/run`, `/dev`, and `/dev/shm` plus private `/proc` hide host D-Bus
+activation/service, Docker, containerd, systemd, snap, and other UNIX sockets
+and runtime paths.
 The trusted PID-1 wrapper is loaded into Bash `-c` memory before
 `/home/runner` is masked, so no open script descriptor pins the host mount.
 The private `/dev` is mounted over the host path without trying to unmount the
@@ -71,7 +73,11 @@ and runner-specific child mounts without touching the root-owned mode-`0700`
 supervisor parent. The candidate's writable-mount audit also consumes only
 decoded structured JSON target records through checked NUL-delimited
 transport, so raw escaped or whitespace-delimited mount text can never be
-mistaken for an unapproved path.
+mistaken for an unapproved path. `/mnt/supervisor` is the sole mount-level
+`rw` exception that candidate code cannot read, write, execute, or traverse;
+its mode-`0700` root ownership and the candidate's negative access probes
+enforce that boundary while avoiding the invalid late parent remount over its
+read-only cgroup child.
 Hash-locked wheels are fetched by the trusted host before isolation and
 installed offline inside it. Every builder descendant is placed in one exact
 cgroup v2 that the candidate cannot see or leave. The trusted host stops the
