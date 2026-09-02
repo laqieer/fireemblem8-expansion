@@ -1887,9 +1887,13 @@ def _parse_step(block, job_name, index):
             not in " ".join(token for command in values["run"] for token in command)
             or "GITHUB_STEP_SUMMARY-"
             not in " ".join(token for command in values["run"] for token in command)
-            or ("test", "-z", "$(builder_cgroup_pids)")
+            or ("builder_cgroup_is_empty",)
             not in values["run"]
-            or ("test", "-z", "$(builder_group_pids $builder_pgid)")
+            or ("builder_group_is_empty", "$builder_pgid")
+            not in values["run"]
+            or ("builder_uid_is_empty", "$builder_uid")
+            not in values["run"]
+            or ("builder_passwd_entry_absent", "$builder_user")
             not in values["run"]
             or "builder_user_created=0"
             not in {token for command in values["run"] for token in command}

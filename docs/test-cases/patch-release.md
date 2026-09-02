@@ -184,9 +184,11 @@ output volume cannot fail an otherwise successful build. No output sink exists.
 Fixed trusted text and a numeric exit classification preserve post-spawn build
 failure without exposing candidate bytes. After the isolated builder is
 spawned, `launch` covers only process-group and launch validation, `isolated`
-reports the child exit, and `cleanup` reports teardown summary status. Earlier
-trusted pre-spawn setup still uses normal shell failure output and is outside
-this stage enum.
+reports the child exit, and `cleanup` reports teardown summary status whenever
+teardown fails. Earlier trusted pre-spawn setup and later post-child handoff
+validation still use normal shell failure output and are outside this stage
+enum; cleanup may therefore be the only stage text even when the failure began
+before spawn.
 The wrapper binds the exact owned cgroup read-only under root-only mode-`0700`
 `/mnt/supervisor` before masking `/sys`. The candidate cannot read, write,
 execute, or traverse that parent, while the exact cgroup child remains

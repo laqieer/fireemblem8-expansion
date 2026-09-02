@@ -95,8 +95,10 @@ removal. After the isolated builder is spawned, trusted wrapper failures emit
 only fixed `launch`, `isolated`, or `cleanup` stage codes with numeric exits,
 never candidate-controlled output. `launch` covers only post-spawn
 process-group and launch validation, `isolated` reports the child exit, and
-`cleanup` reports teardown summary status. Earlier trusted pre-spawn setup
-still uses normal shell failure output and is outside this diagnostic enum.
+`cleanup` reports teardown summary status whenever teardown fails. Earlier
+trusted pre-spawn setup and later post-child handoff validation still use
+normal shell failure output and are outside this diagnostic enum; cleanup may
+therefore be the only stage text even when the failure began before spawn.
 
 Before candidate code starts, its PID-1 wrapper redirects inherited standard
 input/output/error permanently to private `/dev/null`. A trusted isolated
@@ -113,7 +115,8 @@ Candidate output is never replayed, logged, or uploaded, and arbitrary output
 volume cannot fail an otherwise successful build. No output sink exists. The
 trusted host reports only fixed success/failure text and a numeric exit
 classification for those post-spawn `launch`/`isolated`/`cleanup` outcomes; it
-does not claim path-free diagnostics for earlier trusted setup.
+does not claim path-free diagnostics for earlier trusted setup or later
+post-child handoff validation.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

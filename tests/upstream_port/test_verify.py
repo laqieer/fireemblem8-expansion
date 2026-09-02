@@ -1208,7 +1208,7 @@ class VerifyCliCwdTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             ValueError,
-            "patch-release parser script differs",
+            "patch-release parser script differs|isolated candidate build differs",
         ):
             verify_mod._parse_workflow_structure_text(broken)
 
@@ -1756,7 +1756,7 @@ class VerifyCliCwdTests(unittest.TestCase):
                         "reordered-supervisor-parent-remount",
                         "        /usr/bin/mount -t tmpfs \\\n"
                         "          -o nosuid,mode=0755,size=4m builder-dev /dev",
-                        "        /usr/bin/mount -o nodev,ro,noexec,nosuid "
+                        "        /usr/bin/mount -o nodev,ro,noexec,nosuid,remount "
                         "/mnt/supervisor\n"
                         "        /usr/bin/mount -t tmpfs \\\n"
                         "          -o nosuid,mode=0755,size=4m builder-dev /dev",

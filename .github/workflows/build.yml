@@ -1685,20 +1685,60 @@ jobs:
         builder_root_owned=0
         builder_user_created=0
         wheelhouse_owned=0
-        shell_pgid="$(/usr/bin/ps -o pgid= -p "$$" | /usr/bin/tr -d ' ')"
+        shell_pgid="$(/usr/bin/ps -o pgid= -p "$$" 2>/dev/null \
+          | /usr/bin/tr -d ' ' 2>/dev/null)"
+        builder_passwd_entry_exists() {
+          /usr/bin/getent passwd "$1" > /dev/null 2>&1
+        }
+        builder_passwd_entry_absent() {
+          local status
+          builder_passwd_entry_exists "$1"
+          status="$?"
+          case "$status" in
+            0) return 1 ;;
+            2) return 0 ;;
+            *) return "$status" ;;
+          esac
+        }
         builder_group_pids() {
-          /usr/bin/ps -eo pgid=,pid= \
-            | /usr/bin/awk -v pgid="$1" '$1 == pgid {print $2}'
+          local output
+          output="$(
+            /usr/bin/ps -eo pgid=,pid= 2>/dev/null \
+              | /usr/bin/awk -v pgid="$1" '$1 == pgid {print $2}' 2>/dev/null
+          )" || return 1
+          printf '%s' "$output"
         }
         builder_uid_pids() {
-          /usr/bin/ps -eo uid=,pid= \
-            | /usr/bin/awk -v uid="$1" '$1 == uid {print $2}'
+          local output
+          output="$(
+            /usr/bin/ps -eo uid=,pid= 2>/dev/null \
+              | /usr/bin/awk -v uid="$1" '$1 == uid {print $2}' 2>/dev/null
+          )" || return 1
+          printf '%s' "$output"
         }
         builder_cgroup_pids() {
+          local output
           if [ "$builder_cgroup_owned" = 1 ] && \
              [ -r "$builder_cgroup/cgroup.procs" ]; then
-            /bin/cat "$builder_cgroup/cgroup.procs"
+            output="$(/bin/cat "$builder_cgroup/cgroup.procs" 2>/dev/null)" \
+              || return 1
+            printf '%s' "$output"
           fi
+        }
+        builder_group_is_empty() {
+          local output
+          output="$(builder_group_pids "$1")" || return 1
+          test -z "$output"
+        }
+        builder_uid_is_empty() {
+          local output
+          output="$(builder_uid_pids "$1")" || return 1
+          test -z "$output"
+        }
+        builder_cgroup_is_empty() {
+          local output
+          output="$(builder_cgroup_pids)" || return 1
+          test -z "$output"
         }
         terminate_builder_processes() {
           cleanup_failed=0
@@ -1706,44 +1746,60 @@ jobs:
             if [ "$builder_pgid" = "$shell_pgid" ]; then
               cleanup_failed=1
             else
-              remaining_group="$(builder_group_pids "$builder_pgid")"
+              remaining_group=""
+              remaining_group="$(builder_group_pids "$builder_pgid")" \
+                || cleanup_failed=1
               if [ -n "$remaining_group" ]; then
                 /usr/bin/sudo /bin/kill -TERM -- "-$builder_pgid" \
-                  2>/dev/null || true
+                  > /dev/null 2>&1 || true
                 /bin/sleep 1
-                remaining_group="$(builder_group_pids "$builder_pgid")"
+                remaining_group=""
+                remaining_group="$(builder_group_pids "$builder_pgid")" \
+                  || cleanup_failed=1
               fi
               if [ -n "$remaining_group" ]; then
                 /usr/bin/sudo /bin/kill -KILL -- "-$builder_pgid" \
-                  2>/dev/null || true
+                  > /dev/null 2>&1 || true
                 /bin/sleep 1
               fi
-              test -z "$(builder_group_pids "$builder_pgid")" \
-                || cleanup_failed=1
+              builder_group_is_empty "$builder_pgid" || cleanup_failed=1
             fi
           fi
           if [ "$builder_cgroup_owned" = 1 ]; then
-            if [ -n "$(builder_cgroup_pids)" ]; then
+            if ! builder_cgroup_is_empty; then
               printf '1\n' \
                 | /usr/bin/sudo /usr/bin/tee \
                   "$builder_cgroup/cgroup.kill" > /dev/null 2>&1
               for attempt in $(/usr/bin/seq 1 50); do
-                if [ -z "$(builder_cgroup_pids)" ]; then
+                if builder_cgroup_is_empty; then
                   break
                 fi
                 /bin/sleep 0.1
               done
             fi
-            test -z "$(builder_cgroup_pids)" || cleanup_failed=1
+            builder_cgroup_is_empty || cleanup_failed=1
           fi
-          test -z "$(builder_uid_pids "$builder_uid")" \
-            || cleanup_failed=1
+          if [ -n "$builder_supervisor_pid" ]; then
+            /bin/kill -TERM "$builder_supervisor_pid" > /dev/null 2>&1 \
+              || true
+            for attempt in $(/usr/bin/seq 1 20); do
+              if ! /bin/kill -0 "$builder_supervisor_pid" > /dev/null 2>&1; then
+                break
+              fi
+              /bin/sleep 0.1
+            done
+            if /bin/kill -0 "$builder_supervisor_pid" > /dev/null 2>&1; then
+              /bin/kill -KILL "$builder_supervisor_pid" > /dev/null 2>&1 \
+                || true
+            fi
+          fi
+          builder_uid_is_empty "$builder_uid" || cleanup_failed=1
           return "$cleanup_failed"
         }
         remove_builder_cgroup() {
           cleanup_failed=0
           if [ "$builder_cgroup_owned" = 1 ]; then
-            test -z "$(builder_cgroup_pids)" || cleanup_failed=1
+            builder_cgroup_is_empty || cleanup_failed=1
             if [ "$cleanup_failed" = 0 ] && \
                /usr/bin/sudo /usr/bin/rmdir -- "$builder_cgroup" \
                  > /dev/null 2>&1; then
@@ -1758,7 +1814,7 @@ jobs:
         remove_builder_state() {
           cleanup_failed=0
           if [ "$builder_user_created" = 1 ]; then
-            if /usr/bin/getent passwd "$builder_user" > /dev/null; then
+            if builder_passwd_entry_exists "$builder_user"; then
               if /usr/bin/sudo /usr/sbin/userdel "$builder_user" \
                 > /dev/null 2>&1; then
                 builder_user_created=0
@@ -1784,8 +1840,7 @@ jobs:
               cleanup_failed=1
             fi
           fi
-          test -z "$(/usr/bin/getent passwd "$builder_user" || true)" \
-            || cleanup_failed=1
+          builder_passwd_entry_absent "$builder_user" || cleanup_failed=1
           test ! -e "$BUILDER_ROOT" || cleanup_failed=1
           test ! -e "$PATCH_WHEELHOUSE" || cleanup_failed=1
           return "$cleanup_failed"
@@ -1797,7 +1852,8 @@ jobs:
           terminate_builder_processes
           process_cleanup="$?"
           if [ -n "$builder_supervisor_pid" ]; then
-            wait "$builder_supervisor_pid" 2>/dev/null
+            wait "$builder_supervisor_pid" > /dev/null 2>&1
+            builder_supervisor_pid=""
           fi
           remove_builder_cgroup
           cgroup_cleanup="$?"
@@ -1827,7 +1883,7 @@ jobs:
         test -d "$PATCH_WHEELHOUSE"
         test ! -L "$PATCH_WHEELHOUSE"
         wheelhouse_owned=1
-        test -z "$(/usr/bin/getent passwd "$builder_user" || true)"
+        builder_passwd_entry_absent "$builder_user"
         /usr/bin/install -d -m 0700 "$BUILDER_ROOT"
         builder_root_owned=1
         /usr/bin/install -d -m 0700 \
@@ -1837,8 +1893,8 @@ jobs:
         /bin/cp -a -- "$PATCH_WHEELHOUSE/." "$BUILDER_ROOT/wheelhouse/"
         builder_uid=60000
         while [ "$builder_uid" -ge 50000 ]; do
-          if ! /usr/bin/getent passwd "$builder_uid" > /dev/null && \
-             [ -z "$(builder_uid_pids "$builder_uid")" ]; then
+          if builder_passwd_entry_absent "$builder_uid" && \
+             builder_uid_is_empty "$builder_uid"; then
             break
           fi
           builder_uid="$((builder_uid - 1))"
@@ -1851,7 +1907,7 @@ jobs:
         builder_user_created=1
         test "$(/usr/bin/id -u "$builder_user")" = "$builder_uid"
         builder_gid="$(/usr/bin/id -g "$builder_user")"
-        test -z "$(builder_uid_pids "$builder_uid")"
+        builder_uid_is_empty "$builder_uid"
         /usr/bin/tee "$BUILDER_ROOT/control/builder-isolation.sh" \
           > /dev/null <<'BUILDER_ISOLATION'
         #!/bin/bash
@@ -2509,7 +2565,7 @@ jobs:
         test -f "$builder_cgroup/cgroup.kill"
         test -f "$builder_cgroup/cgroup.procs"
         test -r "$builder_cgroup/cgroup.procs"
-        test -z "$(builder_cgroup_pids)"
+        builder_cgroup_is_empty
         host_uid="$(/usr/bin/id -u)"
         host_gid="$(/usr/bin/id -g)"
         builder_isolation_script="$(/bin/cat \
@@ -2529,7 +2585,7 @@ jobs:
         builder_launch_detail=pgid-ready
         set +e
         builder_pgid="$(/usr/bin/ps -o pgid= -p "$builder_supervisor_pid" \
-          | /usr/bin/tr -d ' ')"
+          2>/dev/null | /usr/bin/tr -d ' ' 2>/dev/null)"
         builder_pgid_status="$?"
         set -e
         if [ "$builder_pgid_status" -ne 0 ]; then
@@ -2542,14 +2598,7 @@ jobs:
           builder_launch_detail=pgid-parent
         fi
         if [ "$builder_launch_detail" != pgid-ready ]; then
-          set +e
-          wait "$builder_supervisor_pid"
-          builder_status="$?"
-          set -e
-          builder_supervisor_pid=""
-          if [ "$builder_status" -eq 0 ]; then
-            builder_status=125
-          fi
+          builder_status=125
           printf 'candidate build failed: stage=launch detail=%s exit=%d\n' \
             "$builder_launch_detail" "$builder_status" >&2
           exit "$builder_status"
@@ -2565,9 +2614,9 @@ jobs:
           exit "$builder_status"
         fi
         printf 'candidate build status: success\n'
-        test -z "$(builder_group_pids "$builder_pgid")"
-        test -z "$(builder_cgroup_pids)"
-        test -z "$(builder_uid_pids "$builder_uid")"
+        builder_group_is_empty "$builder_pgid"
+        builder_cgroup_is_empty
+        builder_uid_is_empty "$builder_uid"
         remove_builder_cgroup
         test ! -e "$builder_cgroup"
         handoff_root="$BUILDER_ROOT/handoff"
@@ -2606,10 +2655,10 @@ jobs:
         remove_builder_cgroup
         remove_builder_state
         trap - EXIT INT TERM
-        test -z "$(builder_group_pids "$builder_pgid")"
+        builder_group_is_empty "$builder_pgid"
         test ! -e "$builder_cgroup"
-        test -z "$(builder_uid_pids "$builder_uid")"
-        test -z "$(/usr/bin/getent passwd "$builder_user" || true)"
+        builder_uid_is_empty "$builder_uid"
+        builder_passwd_entry_absent "$builder_user"
         test ! -e "$BUILDER_ROOT"
         test ! -e "$PATCH_WHEELHOUSE"
         input_names="$(/usr/bin/find "$PATCH_INPUT_ROOT" -mindepth 1 \

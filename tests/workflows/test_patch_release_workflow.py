@@ -15,6 +15,7 @@ import socket
 import subprocess
 import tempfile
 import textwrap
+import time
 import threading
 import unittest
 from contextlib import redirect_stderr
@@ -1082,7 +1083,7 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or 'test -f "$builder_cgroup/cgroup.kill"' not in isolated_step
         or 'test -f "$builder_cgroup/cgroup.procs"' not in isolated_step
         or 'test -r "$builder_cgroup/cgroup.procs"' not in isolated_step
-        or 'test -z "$(builder_cgroup_pids)"' not in isolated_step
+        or "builder_cgroup_is_empty" not in isolated_step
         or 'test ! -e "$builder_cgroup"' not in isolated_step
         or 'builder_cgroup_owned=1' not in isolated_step
         or '/usr/bin/sudo /usr/bin/rmdir -- "$builder_cgroup"'
@@ -1097,8 +1098,8 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "metadata.json\\ntarget.gba" not in isolated_step
         or 'test "$handoff_names" = ' not in isolated_step
         or isolated_step.count('test "$handoff_names" = ') != 2
-        or 'test -z "$(builder_uid_pids "$builder_uid")"' not in isolated_step
-        or 'test -z "$(builder_group_pids "$builder_pgid")"' not in isolated_step
+        or 'builder_uid_is_empty "$builder_uid"' not in isolated_step
+        or 'builder_group_is_empty "$builder_pgid"' not in isolated_step
         or "userdel" not in isolated_step
         or "builder_user_created=0" not in isolated_step
         or "builder_user_created=1" not in isolated_step
@@ -1112,9 +1113,9 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or 'test ! -e "$BUILDER_ROOT"' not in isolated_step
         or 'test ! -e "$PATCH_WHEELHOUSE"' not in isolated_step
         or (
-            'test -z "$(builder_group_pids "$builder_pgid")"\n'
-            '        test -z "$(builder_cgroup_pids)"\n'
-            '        test -z "$(builder_uid_pids "$builder_uid")"\n'
+            'builder_group_is_empty "$builder_pgid"\n'
+            '        builder_cgroup_is_empty\n'
+            '        builder_uid_is_empty "$builder_uid"\n'
             '        remove_builder_cgroup\n'
             '        test ! -e "$builder_cgroup"\n'
             '        handoff_root='
@@ -1124,10 +1125,10 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
             'remove_builder_cgroup\n'
             '        remove_builder_state\n'
             '        trap - EXIT INT TERM\n'
-            '        test -z "$(builder_group_pids "$builder_pgid")"\n'
+            '        builder_group_is_empty "$builder_pgid"\n'
             '        test ! -e "$builder_cgroup"\n'
-            '        test -z "$(builder_uid_pids "$builder_uid")"\n'
-            '        test -z "$(/usr/bin/getent passwd "$builder_user" || true)"\n'
+            '        builder_uid_is_empty "$builder_uid"\n'
+            '        builder_passwd_entry_absent "$builder_user"\n'
             '        test ! -e "$BUILDER_ROOT"\n'
             '        test ! -e "$PATCH_WHEELHOUSE"\n'
             '        input_names='
@@ -1497,7 +1498,7 @@ def builder_cleanup_functions_source(workflow: str) -> str:
         workflow,
         "Build candidate in isolated namespace and stage public inputs",
     )
-    start = script.index("terminate_builder_processes() {")
+    start = script.index('shell_pgid="$(/usr/bin/ps -o pgid= -p "$$"')
     end = script.index("trap cleanup_builder EXIT")
     return script[start:end]
 
@@ -1519,6 +1520,16 @@ def download_cleanup_function_source(workflow: str) -> str:
     )
     start = script.index("cleanup_download() {")
     end = script.index("trap cleanup_download EXIT")
+    return script[start:end]
+
+
+def launch_validation_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Build candidate in isolated namespace and stage public inputs",
+    )
+    start = script.index('builder_supervisor_pid="$!"')
+    end = script.index('set +e\nwait "$builder_supervisor_pid"', start)
     return script[start:end]
 
 
@@ -1719,7 +1730,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("/usr/bin/setpriv", self.patch_job)
         self.assertIn("--bounding-set=-all", self.patch_job)
         self.assertIn('"$builder_cgroup/cgroup.kill"', self.patch_job)
-        self.assertIn('test -z "$(builder_cgroup_pids)"', self.patch_job)
+        self.assertIn("builder_cgroup_is_empty", self.patch_job)
         self.assertIn('test ! -e "$builder_cgroup"', self.patch_job)
         self.assertNotRegex(self.patch_job, r"/bin/kill[^\n]*[\"']?\$pid")
         self.assertNotIn("close_inherited_fds", self.patch_job)
@@ -1748,6 +1759,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d",
             self.patch_job,
         )
+        self.assertIn("builder_passwd_entry_absent", self.patch_job)
         self.assertIn('"$builder_cgroup/cgroup.kill" > /dev/null 2>&1', self.patch_job)
         self.assertIn(
             '/usr/bin/sudo /usr/bin/rmdir -- "$builder_cgroup" \\\n'
@@ -1770,7 +1782,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         )
         self.assertIn("candidate build status: success", self.patch_job)
         stop = self.patch_job.index(
-            'test -z "$(builder_cgroup_pids)"',
+            "builder_cgroup_is_empty",
             self.patch_job.index('wait "$builder_supervisor_pid"'),
         )
         remove = self.patch_job.index("remove_builder_cgroup", stop)
@@ -1781,11 +1793,11 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertLess(stop, remove)
         self.assertLess(remove, stage)
         self.assertIn(
-            'test -z "$(builder_uid_pids "$builder_uid")"',
+            'builder_uid_is_empty "$builder_uid"',
             self.patch_job,
         )
         self.assertIn(
-            'test -z "$(builder_group_pids "$builder_pgid")"',
+            'builder_group_is_empty "$builder_pgid"',
             self.patch_job,
         )
 
@@ -2630,7 +2642,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         missing_pid_teardown = self.text.replace(
             isolated,
             isolated.replace(
-                'test -z "$(builder_cgroup_pids)"',
+                "builder_cgroup_is_empty",
                 "true",
             ),
             1,
@@ -3884,14 +3896,25 @@ exit 37
     def test_builder_cleanup_suppresses_utility_path_stderr(self):
         section = builder_cleanup_functions_source(self.text)
         section = section.replace(
-            'if /usr/bin/getent passwd "$builder_user" > /dev/null; then',
-            'if [ "$builder_user_created" = 1 ]; then',
-            1,
-        )
-        section = section.replace(
-            'test -z "$(/usr/bin/getent passwd "$builder_user" || true)" \\'
-            "\n            || cleanup_failed=1",
-            'test "$builder_user_created" = 0 || cleanup_failed=1',
+            'builder_passwd_entry_exists() {\n'
+            '  /usr/bin/getent passwd "$1" > /dev/null 2>&1\n'
+            '}\n'
+            'builder_passwd_entry_absent() {\n'
+            '  local status\n'
+            '  builder_passwd_entry_exists "$1"\n'
+            '  status="$?"\n'
+            '  case "$status" in\n'
+            '    0) return 1 ;;\n'
+            '    2) return 0 ;;\n'
+            '    *) return "$status" ;;\n'
+            '  esac\n'
+            '}\n',
+            'builder_passwd_entry_exists() {\n'
+            '  [ "$1" = "$builder_user" ]\n'
+            '}\n'
+            'builder_passwd_entry_absent() {\n'
+            '  [ "$1" != "$builder_user" ] || [ "$builder_user_created" = 0 ]\n'
+            '}\n',
             1,
         )
         section = section.replace(
@@ -3932,9 +3955,6 @@ exit 37
                     'wheelhouse_owned=1\n'
                     'BUILDER_ROOT="/home/runner/work/_temp/patch-builder"\n'
                     'PATCH_WHEELHOUSE="/home/runner/work/_temp/patch-wheelhouse"\n'
-                    'builder_group_pids() { return 0; }\n'
-                    'builder_uid_pids() { return 0; }\n'
-                    'builder_cgroup_pids() { return 0; }\n'
                     'cleanup_rmdir() { printf "%s\\n" "$1/path-leak" >&2; return 1; }\n'
                     'cleanup_userdel() { printf "/home/runner/%s\\n" "$1" >&2; return 1; }\n'
                     'cleanup_rm_builder() { printf "%s/path-leak\\n" "$1" >&2; return 1; }\n'
@@ -3957,9 +3977,133 @@ exit 37
                     f"primary={primary_status}",
                     completed.stderr,
                 )
+                self.assertEqual(completed.stdout, "")
                 self.assertNotIn("/home/runner/work/_temp", completed.stderr)
                 self.assertNotIn("path-leak", completed.stderr)
                 self.assertNotIn("ci-patch-builder", completed.stderr)
+
+    def test_builder_cleanup_probe_helpers_suppress_output(self):
+        section = builder_cleanup_functions_source(self.text)
+        section = section.replace(
+            "/usr/bin/ps -eo pgid=,pid= 2>/dev/null",
+            "cleanup_ps -eo pgid=,pid= 2>/dev/null",
+            1,
+        )
+        section = section.replace(
+            "/usr/bin/ps -eo uid=,pid= 2>/dev/null",
+            "cleanup_ps -eo uid=,pid= 2>/dev/null",
+            1,
+        )
+        section = section.replace(
+            "/usr/bin/awk -v pgid=\"$1\" '$1 == pgid {print $2}' 2>/dev/null",
+            "cleanup_awk -v pgid=\"$1\" '$1 == pgid {print $2}' 2>/dev/null",
+            1,
+        )
+        section = section.replace(
+            "/usr/bin/awk -v uid=\"$1\" '$1 == uid {print $2}' 2>/dev/null",
+            "cleanup_awk -v uid=\"$1\" '$1 == uid {print $2}' 2>/dev/null",
+            1,
+        )
+        section = section.replace(
+            '/bin/cat "$builder_cgroup/cgroup.procs" 2>/dev/null',
+            'cleanup_cat "$builder_cgroup/cgroup.procs" 2>/dev/null',
+            1,
+        )
+        section = section.replace(
+            '/usr/bin/getent passwd "$1" > /dev/null 2>&1',
+            'cleanup_getent passwd "$1" > /dev/null 2>&1',
+            1,
+        )
+        harness = (
+            'builder_pgid="12345"\n'
+            'builder_supervisor_pid=""\n'
+            'builder_user="ci-patch-builder"\n'
+            'builder_uid="60000"\n'
+            'builder_cgroup="/home/runner/work/_temp/cgroups/builder"\n'
+            'builder_cgroup_owned=1\n'
+            'builder_root_owned=0\n'
+            'builder_user_created=1\n'
+            'wheelhouse_owned=0\n'
+            'BUILDER_ROOT="/home/runner/work/_temp/patch-builder"\n'
+            'PATCH_WHEELHOUSE="/home/runner/work/_temp/patch-wheelhouse"\n'
+            'cleanup_ps() { printf "/home/runner/work/_temp/ps-out\\n"; printf "/home/runner/work/_temp/ps-err\\n" >&2; return 1; }\n'
+            'cleanup_awk() { printf "/home/runner/work/_temp/awk-out\\n"; printf "/home/runner/work/_temp/awk-err\\n" >&2; return 1; }\n'
+            'cleanup_cat() { printf "/home/runner/work/_temp/cat-out\\n"; printf "/home/runner/work/_temp/cat-err\\n" >&2; return 1; }\n'
+            'cleanup_getent() { printf "/home/runner/work/_temp/getent-out\\n"; printf "/home/runner/work/_temp/getent-err\\n" >&2; return 1; }\n'
+            + section
+            + 'shell_pgid="54321"\n'
+            + "set +e\n"
+            + "true\n"
+            + "cleanup_builder\n"
+        )
+        completed = subprocess.run(
+            ["/bin/bash", "-c", harness],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(completed.stdout, "")
+        self.assertIn(
+            "candidate build cleanup failed: process=1 cgroup=1 state=1 primary=0",
+            completed.stderr,
+        )
+        self.assertNotIn("/home/runner/work/_temp", completed.stderr)
+        self.assertNotIn("/home/runner/work/_temp", completed.stdout)
+
+    def test_launch_validation_failure_kills_live_child_without_waiting(self):
+        section = builder_cleanup_functions_source(self.text)
+        launch = launch_validation_source(self.text)
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="launch-validation-cleanup-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            pid_file = sandbox / "child.pid"
+            harness = (
+                "set -euo pipefail\n"
+                + section
+                + 'builder_uid="60000"\n'
+                + 'builder_user="ci-patch-builder"\n'
+                + 'builder_cgroup=""\n'
+                + 'builder_cgroup_owned=0\n'
+                + 'builder_pgid=""\n'
+                + 'builder_supervisor_pid=""\n'
+                + 'builder_root_owned=0\n'
+                + 'builder_user_created=0\n'
+                + 'wheelhouse_owned=0\n'
+                + f'BUILDER_ROOT="{sandbox / "builder-root"}"\n'
+                + f'PATCH_WHEELHOUSE="{sandbox / "wheelhouse"}"\n'
+                + "trap cleanup_builder EXIT\n"
+                + f'/bin/sleep 60 < /dev/null > /dev/null 2>&1 & printf "%s\\n" "$!" > "{pid_file}"\n'
+                + launch
+            )
+            monotonic_start = time.monotonic()
+            completed = subprocess.run(
+                ["/bin/bash", "-c", harness],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            duration = time.monotonic() - monotonic_start
+            child_pid = int(pid_file.read_text(encoding="ascii").strip())
+            self.assertEqual(completed.returncode, 125)
+            self.assertRegex(
+                completed.stderr,
+                r"candidate build failed: stage=launch detail=pgid-(?:mismatch|parent) exit=125",
+            )
+            self.assertIn(
+                "candidate build cleanup failed: process=1 cgroup=0 state=0 primary=125",
+                completed.stderr,
+            )
+            self.assertLess(duration, 10.0)
+            with self.assertRaises(ProcessLookupError):
+                os.kill(child_pid, 0)
 
     def test_private_base_cleanup_suppresses_utility_path_stderr(self):
         function_section = private_base_cleanup_function_source(self.text)
@@ -4218,6 +4362,8 @@ exit 37
             self.assertIn("isolated", text)
             self.assertIn("cleanup", text)
             self.assertIn("pre-spawn", text)
+            self.assertIn("post-child handoff validation", text)
+            self.assertIn("only stage text", text)
             self.assertNotIn("isolated-build", text)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
