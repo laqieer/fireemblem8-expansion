@@ -148,58 +148,42 @@ LIVE_ATTESTATION_MAX_AGE_SECONDS = 2
 TRUSTED_PUSH_SUMMARY_EXEMPT_REJECTIONS = frozenset(
     {"authoritative-run-failed", "authoritative-run-incomplete"}
 )
-
 class HandoffDataError(Exception):
     """The handoff document cannot produce trustworthy coordination evidence."""
-
 def _raise_pilot_error(function, *args, **kwargs):
     try:
         return function(*args, **kwargs)
     except reporter.PilotDataError as error:
         raise HandoffDataError(str(error)) from error
-
 def load_json(path: Path) -> Any:
     try:
         return _raise_pilot_error(reporter.load_json, path)
     except OSError as error:
         raise HandoffDataError(f"cannot read handoff fixture {path}: {error}") from error
-
 def normalized_json(value: Any) -> bytes:
     return reporter.normalized_json(value)
-
 def expect_object(value: Any, label: str) -> dict[str, Any]:
     return _raise_pilot_error(reporter.expect_object, value, label)
-
 def expect_list(value: Any, label: str) -> list[Any]:
     return _raise_pilot_error(reporter.expect_list, value, label)
-
 def expect_keys(value: dict[str, Any], label: str, required: Iterable[str]) -> None:
     _raise_pilot_error(reporter.expect_keys, value, label, required)
-
 def expect_string(value: Any, label: str, allow_empty: bool = False) -> str:
     return _raise_pilot_error(reporter.expect_string, value, label, allow_empty)
-
 def expect_int(value: Any, label: str, minimum: int | None = None) -> int:
     return _raise_pilot_error(reporter.expect_int, value, label, minimum)
-
 def expect_bool(value: Any, label: str) -> bool:
     return _raise_pilot_error(reporter.expect_bool, value, label)
-
 def expect_enum(value: Any, allowed: set[str], label: str) -> str:
     return _raise_pilot_error(reporter.expect_enum, value, allowed, label)
-
 def expect_sha(value: Any, label: str, nullable: bool = False) -> str | None:
     return _raise_pilot_error(reporter.expect_sha, value, label, nullable)
-
 def parse_time(value: Any, label: str, nullable: bool = False) -> datetime | None:
     return _raise_pilot_error(reporter.parse_time, value, label, nullable)
-
 def expect_unique(values: Iterable[Any], label: str) -> None:
     _raise_pilot_error(reporter.expect_unique, values, label)
-
 def run_git(repository_root: Path, *arguments: str) -> bytes:
     return _raise_pilot_error(reporter.run_git, repository_root, *arguments)
-
 def run_git_online(repository_root: Path, *arguments: str) -> bytes:
     try:
         completed = subprocess.run(
@@ -218,7 +202,6 @@ def run_git_online(repository_root: Path, *arguments: str) -> bytes:
         f"Git {' '.join(arguments)} failed"
         + (f": {detail}" if detail else "")
     )
-
 def authoritative_current_time(
     value: datetime | None,
     *,
@@ -233,7 +216,6 @@ def authoritative_current_time(
     ):
         raise HandoffDataError(f"{label} must be an aware UTC datetime")
     return value.astimezone(timezone.utc)
-
 def require_fresh_live_timestamp(
     observed_at: datetime,
     *,
@@ -246,7 +228,6 @@ def require_fresh_live_timestamp(
         > LIVE_ATTESTATION_MAX_AGE_SECONDS
     ):
         raise HandoffDataError(f"{label} is future-dated or stale")
-
 def whole_second_duration(
     start: datetime,
     end: datetime,
@@ -260,7 +241,6 @@ def whole_second_duration(
     if elapsed != elapsed.to_integral_value():
         return None
     return int(elapsed)
-
 def git_commit_is_ancestor(
     repository_root: Path,
     ancestor: str,
@@ -297,7 +277,6 @@ def git_commit_is_ancestor(
         "Git merge-base --is-ancestor failed"
         + (f": {detail}" if detail else "")
     )
-
 def publication_binding_expectation(
     *,
     delivery_expectation: dict[str, Any],
@@ -323,7 +302,6 @@ def publication_binding_expectation(
         "head_oid": head_oid,
         "coordinator_database_id": coordinator_database_id,
     }
-
 def publication_binding_expectation_for_observation(
     delivery_expectation: dict[str, Any],
     binding: dict[str, Any] | None,
@@ -338,14 +316,12 @@ def publication_binding_expectation_for_observation(
         coordinator_database_id=binding["coordinator_database_id"],
         current_base_oid=binding["base_oid"],
     )
-
 def publication_observation_digest(
     binding: dict[str, Any] | None,
 ) -> str | None:
     if binding is None:
         return None
     return hashlib.sha256(normalized_json(binding)).hexdigest()
-
 def validate_historical_pr_binding_target(
     current_authority: dict[str, Any],
     prior_authority: dict[str, Any],
@@ -391,7 +367,6 @@ def validate_historical_pr_binding_target(
         f"{label} prior sealed handoff candidate_sha",
     )
     return expected_branch, expected_candidate_sha
-
 def load_history_authority_transition_summary(
     repository_root: Path,
     object_id: str,
@@ -473,7 +448,6 @@ def load_history_authority_transition_summary(
     )
     expect_enum(event["kind"], {"genesis", "handoff", "pr_binding"}, f"{label}.event.kind")
     return authority
-
 def require_atomic_push_capability(
     repository_root: Path,
     updates: list[tuple[str, str]],
@@ -507,10 +481,8 @@ def require_atomic_push_capability(
             "origin does not support the required atomic authority push"
             + (f": {detail}" if detail else "")
         )
-
 def validate_repository_root(repository_root: Path) -> Path:
     return _raise_pilot_error(reporter.validate_repository_root, repository_root)
-
 def _parse_actor(
     login_value: Any,
     database_id_value: Any,
@@ -530,10 +502,8 @@ def _parse_actor(
         "database_id": database_id,
         "identity": f"github-id:{database_id}",
     }
-
 def _actors_match(left: dict[str, Any], right: dict[str, Any]) -> bool:
     return left["database_id"] == right["database_id"]
-
 def user_bypass_actor(database_id: int) -> dict[str, Any]:
     return {
         "actor_type": "User",
@@ -541,7 +511,6 @@ def user_bypass_actor(database_id: int) -> dict[str, Any]:
         "database_id": database_id,
         "bypass_mode": "always",
     }
-
 def _parse_signer_public(raw: Any, label: str) -> dict[str, Any]:
     signer = expect_object(raw, label)
     expect_keys(
@@ -622,7 +591,6 @@ def _parse_signer_public(raw: Any, label: str) -> dict[str, Any]:
     if key_id != expected_key_id:
         raise HandoffDataError(f"{label}.key_id does not match public material")
     return signer
-
 def verify_external_signature(
     signer: dict[str, Any],
     payload: bytes,
@@ -650,12 +618,10 @@ def verify_external_signature(
     expected = b"\x00\x01" + b"\xff" * padding_size + b"\x00" + digest_info
     if padding_size < 8 or encoded != expected:
         raise HandoffDataError(f"{label} does not verify")
-
 def signed_record_payload(domain: bytes, record: dict[str, Any]) -> bytes:
     return domain + normalized_json(
         {key: value for key, value in record.items() if key != "signature"}
     )
-
 def worktree_identity(repository_root: Path) -> str:
     repository_root = validate_repository_root(repository_root)
     payload = {
@@ -674,14 +640,12 @@ def worktree_identity(repository_root: Path) -> str:
     return hashlib.sha256(
         GIT_SEAL_DOMAIN + b"worktree\0" + normalized_json(payload)
     ).hexdigest()
-
 def _path_within(path: Path, parent: Path) -> bool:
     try:
         path.relative_to(parent)
     except ValueError:
         return False
     return True
-
 def _trusted_path_signature(metadata: os.stat_result) -> tuple[int, ...]:
     return (
         metadata.st_dev,
@@ -693,7 +657,6 @@ def _trusted_path_signature(metadata: os.stat_result) -> tuple[int, ...]:
         getattr(metadata, "st_mtime_ns", 0),
         getattr(metadata, "st_ctime_ns", 0),
     )
-
 def _require_owner_controlled(
     metadata: os.stat_result,
     *,
@@ -703,7 +666,6 @@ def _require_owner_controlled(
         raise HandoffDataError(
             f"{label} must be owner-controlled and not group/other writable"
         )
-
 def _validate_trusted_entry(
     metadata: os.stat_result,
     *,
@@ -726,7 +688,6 @@ def _validate_trusted_entry(
         raise HandoffDataError(f"{label} exceeds 1 MiB")
     if require_single_link and metadata.st_nlink != 1:
         raise HandoffDataError(f"{label} must not be hardlinked")
-
 def _open_trusted_entry(
     name: str,
     *,
@@ -774,7 +735,6 @@ def _open_trusted_entry(
         os.close(descriptor)
         raise HandoffDataError(f"{label} changed before read")
     return descriptor, opened
-
 def _read_trusted_file(
     descriptor: int,
     metadata: os.stat_result,
@@ -803,14 +763,12 @@ def _read_trusted_file(
     ):
         raise HandoffDataError(f"{label} changed while being read")
     return bytes(raw)
-
 def _parse_trusted_json(raw: bytes, label: str) -> Any:
     try:
         text = raw.decode("utf-8")
     except UnicodeError as error:
         raise HandoffDataError(f"{label} is not valid UTF-8") from error
     return _raise_pilot_error(reporter.parse_json, text, label)
-
 def _open_trusted_directory_path(
     path: Path,
     *,
@@ -846,7 +804,6 @@ def _open_trusted_directory_path(
         os.close(descriptor)
         raise
     return absolute_path, descriptor
-
 def _read_trusted_installation_member(
     installation_root: Path,
     installation_descriptor: int,
@@ -907,7 +864,6 @@ def _read_trusted_installation_member(
             os.close(file_descriptor)
     finally:
         os.close(current_descriptor)
-
 def load_coordinator_installation(
     repository_root: Path,
     installation_path: Path | None = None,
@@ -1196,7 +1152,6 @@ def _git_blob(
         blob_oid,
         run_git(repository_root, "cat-file", "blob", blob_oid),
     )
-
 def _allowed_check_execution(
     contract: str,
     repository_root: Path,
@@ -1256,12 +1211,10 @@ def _allowed_check_execution(
             },
         )
     raise HandoffDataError(f"unsupported check contract {contract!r}")
-
 def _check_output_sha256(stdout: bytes, stderr: bytes) -> str:
     return hashlib.sha256(
         b"stdout\0" + stdout + b"\0stderr\0" + stderr
     ).hexdigest()
-
 def seal_check_receipt(receipt: dict[str, Any]) -> str:
     payload = {
         key: value for key, value in receipt.items() if key != "seal"
@@ -1269,7 +1222,6 @@ def seal_check_receipt(receipt: dict[str, Any]) -> str:
     return hashlib.sha256(
         CHECK_RECEIPT_SEAL_DOMAIN + normalized_json(payload)
     ).hexdigest()
-
 def execute_allowed_check(
     *,
     receipt_id: str,
@@ -1326,7 +1278,6 @@ def execute_allowed_check(
     }
     receipt["seal"] = seal_check_receipt(receipt)
     return receipt
-
 def _parse_check_receipts(
     raw_receipts: Any,
     label: str,
@@ -1435,7 +1386,6 @@ def _parse_check_receipts(
         expect_int(receipt["exit_code"], f"{receipt_label}.exit_code", 0)
         receipts[receipt_id] = receipt
     return receipts
-
 def _verify_check_receipt(
     receipt: dict[str, Any],
     *,
@@ -1487,7 +1437,6 @@ def _verify_check_receipt(
     if completed.returncode != 0:
         errors.add("required-check-failed")
     return errors
-
 def seal_history_receipt(receipt: dict[str, Any]) -> str:
     payload = {
         key: value
@@ -1497,17 +1446,14 @@ def seal_history_receipt(receipt: dict[str, Any]) -> str:
     return hashlib.sha256(
         HISTORY_RECEIPT_SEAL_DOMAIN + normalized_json(payload)
     ).hexdigest()
-
 def history_authority_ref(issue: int, pull_request: int | None) -> str:
     expect_int(issue, "history authority issue", 1)
     if pull_request is not None:
         expect_int(pull_request, "history authority pull request", 1)
     return f"{HISTORY_REF_PREFIX}/issue-{issue}"
-
 def history_anchor_ref(issue: int) -> str:
     expect_int(issue, "history authority issue", 1)
     return f"{HISTORY_ANCHOR_REF_PREFIX}/issue-{issue}"
-
 def _remote_ref_oid(
     repository_root: Path,
     reference: str,
@@ -1538,7 +1484,6 @@ def _remote_ref_oid(
             f"remote authority {reference!r} returned malformed identity"
         )
     return object_id
-
 def _fetch_remote_authority(
     repository_root: Path,
     reference: str,
@@ -1590,7 +1535,6 @@ def _fetch_remote_authority(
         raise HandoffDataError(
             f"remote authority {reference!r} has invalid object type"
         )
-
 def _parse_authority_json(
     raw: bytes,
     label: str,
@@ -1603,7 +1547,6 @@ def _parse_authority_json(
         _raise_pilot_error(reporter.parse_json, text, label),
         label,
     )
-
 def read_remote_repository_identity(repository_root: Path) -> str:
     object_id = _remote_ref_oid(
         repository_root,
@@ -1646,7 +1589,6 @@ def read_remote_repository_identity(repository_root: Path) -> str:
         identity["repository"],
         "remote repository identity.repository",
     )
-
 def _read_history_authority_commit(
     repository_root: Path,
     object_id: str,
@@ -2121,7 +2063,6 @@ def _read_history_authority_commit(
             "bind its event"
         )
     return authority, parents
-
 def _read_history_anchor_commit(
     repository_root: Path,
     object_id: str,
@@ -2207,7 +2148,6 @@ def _read_history_anchor_commit(
                 f"history anchor object {object_id} forks its commit chain"
             )
     return anchor, parents
-
 def _history_observation(
     reference: str,
     object_id: str,
@@ -2227,7 +2167,6 @@ def _history_observation(
         HISTORY_OBSERVATION_SEAL_DOMAIN + normalized_json(payload)
     ).hexdigest()
     return payload
-
 def confirm_history_authority_observation(
     repository_root: Path,
     observation: dict[str, Any],
@@ -2306,7 +2245,6 @@ def confirm_history_authority_observation(
     )
     if current != object_id or current_anchor != anchor_object_id:
         raise HandoffDataError("authority-moved")
-
 def read_history_authority(
     repository_root: Path,
     repository: str,
@@ -2575,7 +2513,6 @@ def read_history_authority(
         ],
         **authority,
     }
-
 def plan_history_authority(
     repository_root: Path,
     repository: str,
@@ -3057,12 +2994,10 @@ def plan_history_authority(
             f"<new-anchor-commit>:{anchor_reference}"
         ),
     }
-
 def seal_git_authority(authority: dict[str, Any]) -> str:
     return hashlib.sha256(
         GIT_SEAL_DOMAIN + normalized_json(authority)
     ).hexdigest()
-
 def seal_handoff_result(result: dict[str, Any]) -> str:
     payload = {
         key: value for key, value in result.items() if key != "result_seal"
@@ -3070,7 +3005,6 @@ def seal_handoff_result(result: dict[str, Any]) -> str:
     return hashlib.sha256(
         RESULT_SEAL_DOMAIN + normalized_json(payload)
     ).hexdigest()
-
 def validate_prior_handoffs(raw_history: Any) -> list[dict[str, Any]]:
     history = []
     handoff_ids = []
@@ -3365,7 +3299,6 @@ def validate_prior_handoffs(raw_history: Any) -> list[dict[str, Any]]:
     expect_unique(candidate_shas, "prior handoff candidate SHAs")
     expect_unique(operation_nonces, "prior handoff operation nonces")
     return history
-
 def make_history_receipt(
     document: dict[str, Any],
     result: dict[str, Any],
@@ -3473,7 +3406,6 @@ def make_history_receipt(
     }
     receipt["seal"] = seal_history_receipt(receipt)
     return receipt
-
 def _parse_reporter_result_handoffs(raw_handoffs: Any) -> list[dict[str, Any]]:
     parsed = []
     handoff_ids = []
@@ -3663,13 +3595,11 @@ def _parse_reporter_result_handoffs(raw_handoffs: Any) -> list[dict[str, Any]]:
         parsed.append(handoff)
     expect_unique(handoff_ids, "handoff reporter result handoff IDs")
     return parsed
-
 def _sealed_handoff_events(authority: dict[str, Any]) -> dict[str, dict[str, Any]]:
     events = {event["handoff_id"]: event for event in authority["history_events"]}
     if authority["event"]["kind"] == "handoff":
         events[authority["event"]["handoff_id"]] = authority["event"]
     return events
-
 def _handoff_assignment_record(handoff: dict[str, Any]) -> dict[str, Any]:
     return {
         field: copy.deepcopy(handoff[field])
@@ -3694,7 +3624,6 @@ def _handoff_assignment_record(handoff: dict[str, Any]) -> dict[str, Any]:
             "max_peak_rss_bytes",
         )
     }
-
 def _historical_reporter_handoffs(
     document: dict[str, Any],
     source_root: Path,
@@ -3929,7 +3858,6 @@ def _historical_reporter_handoffs(
         row["rejection_codes"] = []
         rows.append(row)
     return rows
-
 def _verified_reporter_handoffs(
     document: dict[str, Any],
     source_root: Path,
@@ -3954,7 +3882,6 @@ def _verified_reporter_handoffs(
         original_authority,
         current_authority,
     )
-
 def _verified_reporter_git_authority(
     document: dict[str, Any],
     source_root: Path,
@@ -4029,7 +3956,6 @@ def _verified_reporter_git_authority(
             for index, (raw, handoff) in enumerate(zip(raw_handoffs, handoffs))
         ],
     }
-
 def derive_reporter_result_summary(
     document: dict[str, Any],
     result: dict[str, Any],
@@ -4159,7 +4085,6 @@ def derive_reporter_result_summary(
         "rejection_codes": rejection_codes,
     }
     return summary, sorted(global_rejections), delivery_graph, watcher_results
-
 def reporter_record(
     document: dict[str, Any],
     result: dict[str, Any],
@@ -4178,7 +4103,6 @@ def reporter_record(
     }
     verify_reporter_record(record, revalidate_git=False)
     return record
-
 def verify_reporter_record(
     raw_record: Any,
     *,
@@ -4470,7 +4394,6 @@ def verify_reporter_record(
             "handoff reporter record Git authority does not verify"
         )
     return record
-
 def _repository_from_origin(repository_root: Path) -> str:
     origin = (
         run_git(repository_root, "remote", "get-url", "origin")
@@ -4488,7 +4411,6 @@ def _repository_from_origin(repository_root: Path) -> str:
             "owner-provisioned local authority"
         )
     return repository
-
 def _validate_repository_path(value: Any, label: str, *, prefix: bool) -> str:
     path = expect_string(value, label)
     parts = Path(path.rstrip("/")).parts
@@ -4497,7 +4419,6 @@ def _validate_repository_path(value: Any, label: str, *, prefix: bool) -> str:
     if prefix and not path.endswith("/"):
         return path
     return path
-
 def _parse_states(raw_states: Any, label: str) -> tuple[list[dict[str, Any]], tuple[str, ...]]:
     states = expect_list(raw_states, f"{label}.states")
     if not states:
@@ -4520,7 +4441,6 @@ def _parse_states(raw_states: Any, label: str) -> tuple[list[dict[str, Any]], tu
     if names[0] != "assignment_sent":
         raise HandoffDataError(f"{label}.states must start with assignment_sent")
     return parsed, tuple(names)
-
 def _parse_evidence(raw_evidence: Any, label: str) -> dict[str, dict[str, Any]]:
     evidence: dict[str, dict[str, Any]] = {}
     for index, raw in enumerate(expect_list(raw_evidence, f"{label}.evidence")):
@@ -4559,7 +4479,6 @@ def _parse_evidence(raw_evidence: Any, label: str) -> dict[str, dict[str, Any]]:
         expect_string(item["detail"], f"{evidence_label}.detail")
         evidence[evidence_id] = item
     return evidence
-
 def _parse_handoff(raw: Any, index: int) -> dict[str, Any]:
     label = f"handoffs[{index}]"
     handoff = expect_object(raw, label)
@@ -4956,7 +4875,6 @@ def _parse_handoff(raw: Any, index: int) -> dict[str, Any]:
     handoff["_check_evidence_ids"] = check_evidence_ids
     handoff["_recovery_resolution"] = recovery_resolution
     return handoff
-
 def _parse_coordinators(raw_coordinators: Any) -> list[dict[str, Any]]:
     coordinators = []
     for index, raw in enumerate(expect_list(raw_coordinators, "coordinators")):
@@ -4975,7 +4893,6 @@ def _parse_coordinators(raw_coordinators: Any) -> list[dict[str, Any]]:
         )
         coordinators.append(coordinator)
     return coordinators
-
 def _parse_runs(raw_runs: Any) -> dict[int, dict[str, Any]]:
     runs = {}
     for index, raw in enumerate(expect_list(raw_runs, "workflow_runs")):
@@ -5014,7 +4931,6 @@ def _parse_runs(raw_runs: Any) -> dict[int, dict[str, Any]]:
             )
         runs[run_id] = run
     return runs
-
 def _parse_watchers(raw_watchers: Any) -> list[dict[str, Any]]:
     watchers = []
     watcher_ids = []
@@ -5053,7 +4969,6 @@ def _parse_watchers(raw_watchers: Any) -> list[dict[str, Any]]:
         watchers.append(watcher)
     expect_unique(watcher_ids, "watcher IDs")
     return watchers
-
 def _parse_remote_action(raw: Any, label: str) -> dict[str, Any]:
     action = expect_object(raw, label)
     expect_keys(
@@ -5084,12 +4999,10 @@ def _parse_remote_action(raw: Any, label: str) -> dict[str, Any]:
         f"{label}.source",
     )
     return action
-
 def _public_action(action: dict[str, Any]) -> dict[str, Any]:
     return {
         key: value for key, value in action.items() if not key.startswith("_")
     }
-
 def _public_json(value: Any) -> Any:
     if isinstance(value, dict):
         return {
@@ -5100,7 +5013,6 @@ def _public_json(value: Any) -> Any:
     if isinstance(value, list):
         return [_public_json(item) for item in value]
     return value
-
 def coordinator_attestation_payload(document: dict[str, Any]) -> bytes:
     payload = _public_json(document)
     receipt = expect_object(
@@ -5112,7 +5024,6 @@ def coordinator_attestation_payload(document: dict[str, Any]) -> bytes:
         COORDINATOR_RECEIPT_SEAL_DOMAIN
         + normalized_json(payload)
     )
-
 def result_attestation_payload(
     document: dict[str, Any],
     result: dict[str, Any],
@@ -5128,7 +5039,6 @@ def result_attestation_payload(
             "consume_anchor": operation["consume_anchor"],
         }
     )
-
 def parse_pull_request_observation(
     raw: Any,
     *,
@@ -5251,7 +5161,6 @@ def parse_pull_request_observation(
         f"{label}.signature",
     )
     return observation
-
 def parse_publication_attestation(
     raw: Any,
     *,
@@ -5494,7 +5403,6 @@ def parse_publication_attestation(
         f"{label}.signature",
     )
     return attestation
-
 def _parse_coordinator_receipt(
     raw_receipt: Any,
     *,
@@ -6425,7 +6333,6 @@ def _changed_paths_and_lines(
             )
         lines += int(additions) + int(deletions)
     return names, lines
-
 def _json_blob_at(
     repository_root: Path,
     commit_sha: str,
@@ -6438,7 +6345,6 @@ def _json_blob_at(
         blob[1],
         f"{path} at {commit_sha}",
     )
-
 def _derive_protocol_changes(
     repository_root: Path,
     parent_sha: str,
@@ -6477,13 +6383,11 @@ def _derive_protocol_changes(
             "changed handoff schema must monotonically advance protocol_version"
         )
     return candidate_version - parent_version
-
 def _resource_surfaces_changed(changed_paths: list[str]) -> bool:
     return any(
         not any(path.startswith(prefix) for prefix in PROVEN_HOST_ONLY_PREFIXES)
         for path in changed_paths
     )
-
 def _recovery_resolution_valid(
     repository_root: Path,
     handoff: dict[str, Any],
@@ -6536,13 +6440,11 @@ def _recovery_resolution_valid(
         ):
             return False
     return True
-
 def _path_is_allowed(path: str, scopes: list[str]) -> bool:
     return any(
         path.startswith(scope) if scope.endswith("/") else path == scope
         for scope in scopes
     )
-
 def _commit_message(repository_root: Path, sha: str) -> str:
     raw = run_git(repository_root, "cat-file", "commit", sha)
     try:
@@ -6553,7 +6455,6 @@ def _commit_message(repository_root: Path, sha: str) -> str:
         return reporter.canonical_commit_message(message, sha)
     except reporter.PilotDataError as error:
         raise HandoffDataError(str(error)) from error
-
 def _status_paths(status: str) -> set[str]:
     paths = set()
     for line in status.splitlines():
@@ -6563,7 +6464,6 @@ def _status_paths(status: str) -> set[str]:
                 path = path.split(" -> ", 1)[1]
             paths.add(path)
     return paths
-
 def evaluate_delivery_graph(raw: Any) -> dict[str, Any]:
     graph = expect_object(raw, "delivery_graph")
     expect_keys(
@@ -7103,7 +7003,6 @@ def evaluate_delivery_graph(raw: Any) -> dict[str, Any]:
         "parent_delivery": parent_delivery_reports,
         "rejection_codes": sorted(rejection_codes),
     }
-
 def _empty_handoff_result(handoff: dict[str, Any]) -> dict[str, Any]:
     states = handoff["_states"]
     return {
@@ -7139,7 +7038,6 @@ def _empty_handoff_result(handoff: dict[str, Any]) -> dict[str, Any]:
         "interruption_snapshot": None,
         "rejection_codes": [],
     }
-
 def validate_document(
     raw: Any,
     repository_root: Path,
@@ -8344,7 +8242,6 @@ def validate_document(
     }
     report["result_seal"] = seal_handoff_result(report)
     return report
-
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -8369,7 +8266,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--publication-attestation", type=Path)
     parser.add_argument("--coordinator-installation", type=Path)
     return parser.parse_args(argv)
-
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
