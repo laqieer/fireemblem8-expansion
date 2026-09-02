@@ -87,8 +87,9 @@ _SIMPLE_COMMAND_PREFIXES = frozenset({"if", "then", "do", "elif", "while", "unti
 _CONTROL_OPERATORS = frozenset({";", "&&", "||", "|", "&"})
 _DISALLOWED_MOUNT_WRAPPERS = frozenset({"env", "command", "eval"})
 _ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
+_BUSYBOX_BASENAME = "busybox"
+_ENV_BASENAME = "env"
 _SHELL_INTERPRETER_BASENAMES = frozenset({"bash", "sh", "dash"})
-_ENV_WRAPPERS = frozenset({"env", "/usr/bin/env"})
 _ENV_ZERO_ARG_OPTIONS = frozenset({"-i", "--ignore-environment"})
 _ENV_OPTIONS_WITH_ARGS = frozenset({"-C", "--chdir", "-u", "--unset"})
 _LITERAL_RUN_HEADER_RE = re.compile(
@@ -434,6 +435,20 @@ def _is_shell_interpreter_token(token: str) -> bool:
     )
 
 
+def _literal_token_basename(token: str) -> str | None:
+    if _token_has_shell_syntax(token) or _ASSIGNMENT_RE.fullmatch(token):
+        return None
+    return posixpath.basename(posixpath.normpath(token))
+
+
+def _is_env_executable_token(token: str) -> bool:
+    return _literal_token_basename(token) == _ENV_BASENAME
+
+
+def _is_busybox_executable_token(token: str) -> bool:
+    return _literal_token_basename(token) == _BUSYBOX_BASENAME
+
+
 def _is_shell_interpreter_reference_token(token: str) -> bool:
     if _ASSIGNMENT_RE.fullmatch(token):
         return False
@@ -452,39 +467,112 @@ def _strip_command_prefixes(command: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(tokens)
 
 
+def _reject_env_split_string_option(token: str) -> bool:
+    return (
+        token == "-S"
+        or token.startswith("-S")
+        or token == "--split-string"
+        or token.startswith("--split-string=")
+    )
+
+
+def _parse_env_short_option_token(token: str, *, has_next_token: bool) -> tuple[bool, bool]:
+    if not token.startswith("-") or token.startswith("--") or token == "-":
+        return False, False
+    cluster = token[1:]
+    if not cluster:
+        return False, False
+
+    index = 0
+    while index < len(cluster):
+        option = cluster[index]
+        if option == "S":
+            return True, False
+        if option == "i":
+            index += 1
+            continue
+        if option in {"C", "u"}:
+            if index != len(cluster) - 1:
+                return True, False
+            return False, has_next_token
+        return True, False
+    return False, False
+
+
+def _env_wrapper_followed_by_ambiguous_surface(
+    tokens: tuple[str, ...],
+    *,
+    start_index: int,
+) -> bool:
+    index = start_index
+    while index < len(tokens):
+        current = tokens[index]
+        if current == "--":
+            return False
+        if _ASSIGNMENT_RE.fullmatch(current):
+            index += 1
+            continue
+        if current in _ENV_ZERO_ARG_OPTIONS:
+            index += 1
+            continue
+        if _reject_env_split_string_option(current):
+            return True
+        if current in _ENV_OPTIONS_WITH_ARGS:
+            if index + 1 >= len(tokens):
+                return True
+            index += 2
+            continue
+        if current.startswith("--chdir=") or current.startswith("--unset="):
+            index += 1
+            continue
+        if current.startswith("--"):
+            return True
+        ambiguous, consumes_arg = _parse_env_short_option_token(
+            current,
+            has_next_token=index + 1 < len(tokens),
+        )
+        if ambiguous:
+            return True
+        if consumes_arg:
+            index += 2
+            continue
+        if current.startswith("-"):
+            return True
+        return False
+    return False
+
+
 def _command_has_ambiguous_env_shell_surface(tokens: tuple[str, ...]) -> bool:
     index = 0
     while index < len(tokens):
         token = tokens[index]
-        if token in _ENV_WRAPPERS:
-            index += 1
-            while index < len(tokens):
-                current = tokens[index]
-                if current == "--":
-                    index += 1
-                    break
-                if _ASSIGNMENT_RE.fullmatch(current):
-                    index += 1
-                    continue
-                if current in _ENV_ZERO_ARG_OPTIONS:
-                    index += 1
-                    continue
-                if current in {"-S", "--split-string"} or current.startswith(
-                    "--split-string="
+        if _is_env_executable_token(token):
+            if _env_wrapper_followed_by_ambiguous_surface(
+                tokens,
+                start_index=index + 1,
+            ):
+                return True
+        elif _is_busybox_executable_token(token):
+            if index + 1 >= len(tokens):
+                index += 1
+                continue
+            applet = tokens[index + 1]
+            if _token_has_shell_syntax(applet):
+                if index + 2 < len(tokens) and _reject_env_split_string_option(
+                    tokens[index + 2]
                 ):
                     return True
-                if current in _ENV_OPTIONS_WITH_ARGS:
-                    if index + 1 >= len(tokens):
-                        return True
-                    index += 2
-                    continue
-                if current.startswith("--chdir=") or current.startswith("--unset="):
-                    index += 1
-                    continue
-                if current.startswith("-"):
-                    return True
-                break
-            continue
+                index += 1
+                continue
+            if _is_env_executable_token(applet) and _env_wrapper_followed_by_ambiguous_surface(
+                tokens,
+                start_index=index + 2,
+            ):
+                return True
+        elif _token_has_shell_syntax(token) and index + 1 < len(tokens):
+            following = tokens[index + 1]
+            if _reject_env_split_string_option(following):
+                return True
         index += 1
     return False
 

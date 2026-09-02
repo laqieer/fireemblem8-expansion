@@ -604,15 +604,80 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
             ),
         ),
         (
+            "bin-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                '/bin/env -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "bin-env-split-string-attached-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                '/bin/env \'-S/bin/bash -c "$cmd"\'',
+            ),
+        ),
+        (
             "env-split-string-long-wrapper",
             (
                 'env --split-string "/bin/bash -c /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"',
             ),
         ),
         (
+            "bin-env-split-string-long-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                '/bin/env --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
             "env-split-string-equals-wrapper",
             (
                 'env \'--split-string=/bin/bash -c /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor\'',
+            ),
+        ),
+        (
+            "bin-env-split-string-equals-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                '/bin/env \'--split-string=/bin/bash -c "$cmd"\'',
+            ),
+        ),
+        (
+            "path-alias-env-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                '/usr/local/bin/env -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "relative-env-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                './env --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "busybox-env-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                '/bin/busybox env -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "variable-env-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                '"$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
             ),
         ),
         (
@@ -3473,6 +3538,53 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     "reference literal parser",
                 ):
                     reference_literal_run_step_script(mutated)
+
+    def test_env_split_string_runtime_executes_shell_c_and_detector_rejects_it(self):
+        cases = (
+            (
+                ["/bin/env", "-S", '/bin/bash -c "printf RUNTIME_ENV_S"'],
+                "RUNTIME_ENV_S",
+                'ROOT=/mnt\ncmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+                '/bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            ),
+            (
+                [
+                    "/bin/env",
+                    "--split-string",
+                    '/bin/bash -c "printf RUNTIME_ENV_SPLIT"',
+                ],
+                "RUNTIME_ENV_SPLIT",
+                'ROOT=/mnt\ncmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+                '/bin/env --split-string "/bin/bash -c \\"$cmd\\""\n',
+            ),
+            (
+                [
+                    "/bin/env",
+                    '--split-string=/bin/bash -c "printf RUNTIME_ENV_EQUALS"',
+                ],
+                "RUNTIME_ENV_EQUALS",
+                'ROOT=/mnt\ncmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+                '/bin/env \'--split-string=/bin/bash -c "$cmd"\'\n',
+            ),
+        )
+        for argv, expected_stdout, semantic_script in cases:
+            with self.subTest(argv=argv[1]):
+                completed = subprocess.run(
+                    argv,
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, expected_stdout)
+                self.assertEqual(completed.stderr, "")
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        semantic_script,
+                        label="runtime env split-string shell wrapper",
+                    )
+                )
 
     def test_bash_comment_backslash_does_not_hide_following_mount(self):
         mount = "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"
