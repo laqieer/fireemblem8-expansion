@@ -91,8 +91,12 @@ The candidate cannot read, write, execute, or traverse that parent and cannot
 receive an FD for it. After candidate exit, the wrapper reads the exact
 read-only cgroup child there and exports the ROM only when the wrapper PID is
 the sole member; the host continues to use the actual cgroup path for kill and
-removal. Trusted wrapper failures emit only fixed launch, isolated, or
-cleanup stage codes with numeric exits, never candidate-controlled output.
+removal. After the isolated builder is spawned, trusted wrapper failures emit
+only fixed `launch`, `isolated`, or `cleanup` stage codes with numeric exits,
+never candidate-controlled output. `launch` covers only post-spawn
+process-group and launch validation, `isolated` reports the child exit, and
+`cleanup` reports teardown summary status. Earlier trusted pre-spawn setup
+still uses normal shell failure output and is outside this diagnostic enum.
 
 Before candidate code starts, its PID-1 wrapper redirects inherited standard
 input/output/error permanently to private `/dev/null`. A trusted isolated
@@ -108,7 +112,8 @@ size, open files, processes, virtual memory, and core dumps have ulimits.
 Candidate output is never replayed, logged, or uploaded, and arbitrary output
 volume cannot fail an otherwise successful build. No output sink exists. The
 trusted host reports only fixed success/failure text and a numeric exit
-classification.
+classification for those post-spawn `launch`/`isolated`/`cleanup` outcomes; it
+does not claim path-free diagnostics for earlier trusted setup.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

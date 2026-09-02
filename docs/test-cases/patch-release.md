@@ -181,10 +181,12 @@ The candidate receives no GitHub workflow command-file paths and cannot recover
 the Actions log through proc FDs, `/dev/stdout`, console/kmsg, `tee`, xtrace,
 helpers, or forks. ROM-sized output is discarded and never replayed; arbitrary
 output volume cannot fail an otherwise successful build. No output sink exists.
-Fixed trusted text and a numeric exit classification preserve build failure
-without exposing candidate bytes. When the trusted wrapper fails before,
-during, or after the isolated build, it emits only fixed launch, isolated, or
-cleanup stage codes with numeric exits.
+Fixed trusted text and a numeric exit classification preserve post-spawn build
+failure without exposing candidate bytes. After the isolated builder is
+spawned, `launch` covers only process-group and launch validation, `isolated`
+reports the child exit, and `cleanup` reports teardown summary status. Earlier
+trusted pre-spawn setup still uses normal shell failure output and is outside
+this stage enum.
 The wrapper binds the exact owned cgroup read-only under root-only mode-`0700`
 `/mnt/supervisor` before masking `/sys`. The candidate cannot read, write,
 execute, or traverse that parent, while the exact cgroup child remains

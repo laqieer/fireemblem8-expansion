@@ -16,10 +16,24 @@ REVIEWED_PATCH_RELEASE_RUN_SHA256 = (
 REVIEWED_BUILDER_ISOLATION_SHA256 = (
     "6088db198a46f7617eef83daf2366c33055c597df1740ccb87de803ede0034ad"
 )
+REVIEWED_HIDDEN_MASK_LOOP_SHA256 = (
+    "77e81e3a773e78b4c58132c553ea3a3ef0719f802fe1164b59f60aef948235f5"
+)
+REVIEWED_HIDDEN_MASK_LOOP_COMMANDS = (
+    "for hidden in /home/runner /root /var /run /sys",
+    "do",
+    'test -d "$hidden"',
+    '/usr/bin/mount -t tmpfs     -o nosuid,nodev,noexec,mode=0755,size=1m     builder-mask "$hidden"',
+    '/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$hidden"',
+    "done",
+)
+REVIEWED_HIDDEN_MASK_LOOP_PREVIOUS_COMMAND = "unmount_if_mounted /sys"
+REVIEWED_HIDDEN_MASK_LOOP_NEXT_COMMAND = "unmount_if_mounted /tmp"
+REVIEWED_HIDDEN_MASK_LOOP_HEADER = "for hidden in /home/runner /root /var /run /sys; do\n"
 APPROVED_NONLITERAL_READONLY_MOUNT_COMMANDS = {
     ("/usr/bin/mount", "-o", "remount,ro,nosuid,nodev,noexec", "$hidden"),
 }
-APPROVED_NONLITERAL_MOUNT_COMMANDS = APPROVED_NONLITERAL_READONLY_MOUNT_COMMANDS | {
+APPROVED_NONLITERAL_MOUNT_COMMANDS = {
     ("/usr/bin/mount", "--bind", "$builder_root/handoff", "/mnt/export"),
     ("/usr/bin/mount", "--bind", "$builder_root/wheelhouse", "/mnt/wheelhouse"),
     (
@@ -222,18 +236,36 @@ def builder_isolation_shell_source(run_script: str, *, label: str) -> str:
 
 def _bash_line_state(line: str, state: str) -> tuple[str, bool]:
     index = 0
+    word_start = state == "normal"
     while index < len(line):
         character = line[index]
         if state == "normal":
-            if character == "'":
+            if character in " \t":
+                word_start = True
+            elif character == "#" and word_start:
+                break
+            elif character == "'":
                 state = "single"
+                word_start = False
             elif character == '"':
                 state = "double"
+                word_start = False
             elif character == "\\":
                 if index == len(line) - 1:
                     return state, True
                 index += 2
+                word_start = False
                 continue
+            elif character in "&|;":
+                if (
+                    character in "&|"
+                    and index + 1 < len(line)
+                    and line[index + 1] == character
+                ):
+                    index += 1
+                word_start = True
+            else:
+                word_start = False
         elif state == "single":
             if character == "'":
                 state = "normal"
@@ -400,6 +432,58 @@ def _strip_command_prefixes(command: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(tokens)
 
 
+def reviewed_hidden_mask_loop_source(script: str, *, label: str) -> str:
+    if script.count(REVIEWED_HIDDEN_MASK_LOOP_HEADER) != 1:
+        raise ValueError(f"{label} hidden-mask loop header differs")
+    start = script.index(REVIEWED_HIDDEN_MASK_LOOP_HEADER)
+    done_start = script.find("\ndone\n", start)
+    if done_start < 0:
+        raise ValueError(f"{label} hidden-mask loop terminator differs")
+    loop = script[start : done_start + len("\ndone\n")]
+    if not loop.endswith("done\n"):
+        raise ValueError(f"{label} hidden-mask loop terminator differs")
+    return loop
+
+
+def reviewed_hidden_mask_loop_sha256(script: str, *, label: str) -> str:
+    return hashlib.sha256(
+        reviewed_hidden_mask_loop_source(script, label=label).encode("utf-8")
+    ).hexdigest()
+
+
+def _authorized_hidden_readonly_mount_indices(
+    script: str,
+    *,
+    label: str,
+) -> frozenset[int]:
+    try:
+        if (
+            reviewed_hidden_mask_loop_sha256(script, label=label)
+            != REVIEWED_HIDDEN_MASK_LOOP_SHA256
+        ):
+            return frozenset()
+    except ValueError:
+        return frozenset()
+
+    commands = split_bash_simple_command_strings(script, label=label)
+    window = REVIEWED_HIDDEN_MASK_LOOP_COMMANDS
+    loop_starts = []
+    for index in range(len(commands) - len(window) + 1):
+        if commands[index : index + len(window)] != window:
+            continue
+        if index == 0 or index + len(window) >= len(commands):
+            continue
+        if commands[index - 1] != REVIEWED_HIDDEN_MASK_LOOP_PREVIOUS_COMMAND:
+            continue
+        if commands[index + len(window)] != REVIEWED_HIDDEN_MASK_LOOP_NEXT_COMMAND:
+            continue
+        loop_starts.append(index)
+
+    if len(loop_starts) != 1:
+        return frozenset()
+    return frozenset({loop_starts[0] + 4})
+
+
 def _mount_command_targets_supervisor_parent(
     command: tuple[str, ...],
     *,
@@ -525,13 +609,18 @@ def _mount_command_targets_supervisor_parent(
         or any(token == "/usr/bin/mount" for token in tokens)
         or (executable_nonliteral and has_mount_flag)
     )
-    if (
-        looks_like_mount_surface
-        and mount_surface_uses_nonliteral
-        and tokens not in APPROVED_SUPERVISOR_COMMAND_TOKENS
-        and tokens not in APPROVED_NONLITERAL_MOUNT_COMMANDS
-    ):
-        return True
+    if looks_like_mount_surface and mount_surface_uses_nonliteral:
+        if tokens in APPROVED_SUPERVISOR_COMMAND_TOKENS:
+            pass
+        elif tokens in APPROVED_NONLITERAL_MOUNT_COMMANDS:
+            pass
+        elif (
+            tokens in APPROVED_NONLITERAL_READONLY_MOUNT_COMMANDS
+            and allow_reviewed_nonliteral_hidden
+        ):
+            pass
+        else:
+            return True
 
     if not (remount_like and read_only_like):
         return False
@@ -564,14 +653,17 @@ def has_forbidden_supervisor_parent_readonly_mount(
     *,
     label: str,
 ) -> bool:
-    allow_reviewed_nonliteral_hidden = (
-        reviewed_builder_isolation_sha256(script) == REVIEWED_BUILDER_ISOLATION_SHA256
+    allowed_hidden_indices = _authorized_hidden_readonly_mount_indices(
+        script,
+        label=label,
     )
-    for command_text in split_bash_simple_command_strings(script, label=label):
+    for command_index, command_text in enumerate(
+        split_bash_simple_command_strings(script, label=label)
+    ):
         command_tokens = tuple(shlex.split(command_text))
         if _mount_command_targets_supervisor_parent(
             command_tokens,
-            allow_reviewed_nonliteral_hidden=allow_reviewed_nonliteral_hidden,
+            allow_reviewed_nonliteral_hidden=command_index in allowed_hidden_indices,
         ):
             return True
         if _command_references_supervisor(command_tokens, command_text) and not _is_reviewed_supervisor_command(

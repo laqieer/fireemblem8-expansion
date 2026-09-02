@@ -8,7 +8,6 @@ import io
 import itertools
 import json
 import os
-import posixpath
 import re
 import resource
 import shlex
@@ -21,6 +20,8 @@ import unittest
 from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
+
+import yaml
 
 from scripts.workflow_pilot import publisher_shell_contract
 from scripts.modernize import patch_release
@@ -42,12 +43,6 @@ AUDITED_PATCH_TOOL_FILES = (
     "scripts/modernize/bps_patch.py",
     "scripts/modernize/verify_rom_header.py",
 )
-SUPERVISOR_PARENT_REMOUNT_OPTIONS = frozenset(
-    {"remount", "ro", "nosuid", "nodev", "noexec"}
-)
-APPROVED_NONLITERAL_READONLY_MOUNT_COMMANDS = {
-    ("/usr/bin/mount", "-o", "remount,ro,nosuid,nodev,noexec", "$hidden"),
-}
 SUPERVISOR_PARENT_REMOUNT_SEQUENCE = (
     "remount",
     "ro",
@@ -59,33 +54,6 @@ SUPERVISOR_PARENT_REMOUNT_INSERTION_MARKER = (
     "        /usr/bin/mount -t tmpfs \\\n"
     "          -o nosuid,mode=0755,size=4m builder-dev /dev"
 )
-_SIMPLE_COMMAND_PREFIXES = frozenset({"if", "then", "do", "elif", "while", "until", "!"})
-_CONTROL_OPERATORS = frozenset({";", "&&", "||", "|", "&"})
-_DISALLOWED_MOUNT_WRAPPERS = frozenset({"env", "command", "eval"})
-_ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
-APPROVED_SUPERVISOR_COMMAND_TOKENS = {
-    ("/usr/bin/mkdir", "-m", "0700", "/mnt/supervisor"),
-    (
-        "/usr/bin/mount",
-        "-t",
-        "tmpfs",
-        "-o",
-        "nosuid,nodev,noexec,mode=0700,size=1m",
-        "builder-supervisor",
-        "/mnt/supervisor",
-    ),
-    ("/usr/bin/mkdir", "-m", "0700", "/mnt/supervisor/cgroup"),
-    ("/usr/bin/mount", "--bind", "$cgroup_path", "/mnt/supervisor/cgroup"),
-    (
-        "/usr/bin/mount",
-        "-o",
-        "remount,bind,ro,nosuid,nodev,noexec",
-        "/mnt/supervisor/cgroup",
-    ),
-    ('test', '$(/usr/bin/stat -c %u /mnt/supervisor)', '=', '0'),
-    ('test', '$(/usr/bin/stat -c %a /mnt/supervisor)', '=', '700'),
-    ('supervisor_cgroup=/mnt/supervisor/cgroup',),
-}
 
 
 def parse_patch_release_run_commands(workflow: str) -> list[list[list[str]]]:
@@ -103,10 +71,17 @@ def parse_patch_release_run_commands(workflow: str) -> list[list[list[str]]]:
             value = match.group("value")
             if value.startswith("|"):
                 script = named_step_run_script_from_block(step_block)
-                run = _parse_bash_run_script_commands(
-                    script,
-                    label="publisher run block",
-                )
+                try:
+                    run = [
+                        shlex.split(logical)
+                        for logical in publisher_shell_contract.bash_logical_lines(
+                            script,
+                            label="publisher run block",
+                        )
+                        if logical.strip() and not logical.lstrip().startswith("#")
+                    ]
+                except ValueError as error:
+                    raise AssertionError(str(error)) from error
             else:
                 run = [shlex.split(value)]
             break
@@ -159,101 +134,18 @@ def named_step_run_script(workflow: str, name: str) -> str:
     return named_step_run_script_from_block(named_patch_release_step_block(workflow, name))
 
 
-_REFERENCE_LITERAL_RUN_HEADER_RE = re.compile(
-    r"^      run:[ \t]*(?P<style>\|[1-9+-]*)(?:[ \t]*(?:#.*)?)?(?:\r?\n|\Z)$"
-)
-
-
-def _reference_literal_run_style(style: str) -> tuple[int | None, str]:
-    if not style.startswith("|"):
-        raise AssertionError("reference parser requires a literal run block")
-    indent_indicator: int | None = None
-    chomping = ""
-    for character in style[1:]:
-        if character in "+-":
-            if chomping:
-                raise AssertionError("reference literal run block indicators differ")
-            chomping = character
-        elif character in "123456789":
-            if indent_indicator is not None:
-                raise AssertionError("reference literal run block indicators differ")
-            indent_indicator = int(character)
-        else:
-            raise AssertionError("reference literal run block indicators differ")
-    return indent_indicator, chomping
-
-
-def _reference_normalized_line_parts(line: str) -> tuple[str, str]:
-    if line.endswith("\r\n"):
-        return line[:-2], "\n"
-    if line.endswith("\n"):
-        return line[:-1], "\n"
-    if line.endswith("\r"):
-        return line[:-1], "\n"
-    return line, ""
-
-
-def _reference_leading_space_count(text: str) -> int:
-    count = 0
-    while count < len(text) and text[count] == " ":
-        count += 1
-    if count < len(text) and text[count] == "\t":
-        raise AssertionError("reference parser does not permit tab indentation")
-    return count
-
-
-def reference_step_run_script(step_block: str) -> str:
-    lines = step_block.splitlines(keepends=True)
-    matches = [
-        (index, match)
-        for index, line in enumerate(lines)
-        if (match := _REFERENCE_LITERAL_RUN_HEADER_RE.match(line))
-    ]
-    if len(matches) != 1:
-        raise AssertionError("reference parser requires one direct literal run block")
-    header_index, header_match = matches[0]
-    explicit_indent, chomping = _reference_literal_run_style(
-        header_match.group("style")
-    )
-    content_lines = lines[header_index + 1 :]
-    if explicit_indent is None:
-        leading_blank_indent = 0
-        content_indent = None
-        for line in content_lines:
-            raw_line, _line_break = _reference_normalized_line_parts(line)
-            leading_spaces = _reference_leading_space_count(raw_line)
-            if raw_line[leading_spaces:] == "":
-                leading_blank_indent = max(leading_blank_indent, leading_spaces)
-                continue
-            content_indent = max(leading_blank_indent, leading_spaces)
-            break
-        if content_indent is None:
-            content_indent = leading_blank_indent
-    else:
-        content_indent = 6 + explicit_indent
-
-    chunks: list[str] = []
-    for line in content_lines:
-        raw_line, line_break = _reference_normalized_line_parts(line)
-        leading_spaces = _reference_leading_space_count(raw_line)
-        content = raw_line[leading_spaces:]
-        if content == "":
-            chunks.append(raw_line[content_indent:] if leading_spaces >= content_indent else "")
-        else:
-            if leading_spaces < content_indent:
-                raise AssertionError("reference literal run block indentation differs")
-            chunks.append(raw_line[content_indent:])
-        if line_break:
-            chunks.append("\n")
-
-    script = "".join(chunks)
-    if chomping == "-":
-        return script.rstrip("\n")
-    if chomping == "+":
-        return script
-    if not script:
-        return ""
-    return script.rstrip("\n") + "\n"
+def safe_yaml_step_run_script(step_block: str) -> str:
+    parsed = yaml.safe_load("steps:\n" + step_block)
+    if (
+        not isinstance(parsed, dict)
+        or not isinstance(parsed.get("steps"), list)
+        or len(parsed["steps"]) != 1
+        or not isinstance(parsed["steps"][0], dict)
+        or "run" not in parsed["steps"][0]
+        or not isinstance(parsed["steps"][0]["run"], str)
+    ):
+        raise AssertionError("safe YAML reference must yield one literal run string")
+    return parsed["steps"][0]["run"]
 
 
 def builder_isolation_shell_source(workflow: str) -> str:
@@ -268,292 +160,6 @@ def builder_isolation_shell_source(workflow: str) -> str:
         )
     except ValueError as error:
         raise AssertionError(str(error)) from error
-
-
-def _bash_line_state(line: str, state: str) -> tuple[str, bool]:
-    index = 0
-    while index < len(line):
-        character = line[index]
-        if state == "normal":
-            if character == "'":
-                state = "single"
-            elif character == '"':
-                state = "double"
-            elif character == "\\":
-                if index == len(line) - 1:
-                    return state, True
-                index += 2
-                continue
-        elif state == "single":
-            if character == "'":
-                state = "normal"
-        else:
-            if character == '"':
-                state = "normal"
-            elif character == "\\":
-                if index == len(line) - 1:
-                    return state, True
-                if line[index + 1] in '$`"\\':
-                    index += 2
-                    continue
-        index += 1
-    return state, False
-
-
-def _bash_logical_lines(script: str, *, label: str) -> list[str]:
-    state = "normal"
-    logical_lines: list[str] = []
-    current = ""
-    for line in script.splitlines():
-        current += line
-        state, continued = _bash_line_state(line, state)
-        if continued:
-            current = current[:-1]
-            continue
-        if state != "normal":
-            current += "\n"
-            continue
-        logical_lines.append(current)
-        current = ""
-    if current:
-        raise AssertionError(f"{label} has unterminated quoting or continuation")
-    return logical_lines
-
-
-def _split_bash_simple_command_strings(script: str, *, label: str) -> list[str]:
-    commands: list[str] = []
-    for logical in _bash_logical_lines(script, label=label):
-        current: list[str] = []
-        quote: str | None = None
-        word_start = True
-        index = 0
-        while index < len(logical):
-            character = logical[index]
-            if quote is None:
-                if character in " \t":
-                    current.append(character)
-                    word_start = True
-                elif character == "#" and word_start:
-                    break
-                elif character == "'":
-                    current.append(character)
-                    quote = "'"
-                    word_start = False
-                elif character == '"':
-                    current.append(character)
-                    quote = '"'
-                    word_start = False
-                elif character in "&|;":
-                    operator = character
-                    if (
-                        character in "&|"
-                        and index + 1 < len(logical)
-                        and logical[index + 1] == character
-                    ):
-                        operator += character
-                        index += 1
-                    if operator in _CONTROL_OPERATORS:
-                        command = "".join(current).strip()
-                        if command:
-                            commands.append(command)
-                        current = []
-                        word_start = True
-                    else:
-                        current.append(operator)
-                        word_start = False
-                else:
-                    current.append(character)
-                    word_start = False
-            elif quote == "'":
-                current.append(character)
-                if character == "'":
-                    quote = None
-            else:
-                current.append(character)
-                if character == "\\" and index + 1 < len(logical):
-                    current.append(logical[index + 1])
-                    index += 1
-                elif character == '"':
-                    quote = None
-            index += 1
-        command = "".join(current).strip()
-        if command:
-            commands.append(command)
-    return commands
-
-
-def _parse_bash_run_script_commands(script: str, *, label: str) -> list[list[str]]:
-    commands: list[list[str]] = []
-    for logical in _bash_logical_lines(script, label=label):
-        if not logical.strip() or logical.lstrip().startswith("#"):
-            continue
-        tokens = shlex.split(logical)
-        if not tokens:
-            raise AssertionError(f"{label} command is empty")
-        commands.append(tokens)
-    return commands
-
-
-def _canonical_literal_path(token: str) -> str | None:
-    if (
-        not token
-        or not token.startswith("/")
-        or any(marker in token for marker in ("$", "`", "$(", "${", "<(", ">("))
-    ):
-        return None
-    return posixpath.normpath(token)
-
-
-def _token_has_shell_syntax(token: str) -> bool:
-    return any(marker in token for marker in ("$", "`", "$(", "${", "<(", ">("))
-
-
-def _command_references_supervisor(tokens: list[str], command_text: str) -> bool:
-    if "/mnt/supervisor" in command_text:
-        return True
-    for token in tokens:
-        path = _canonical_literal_path(token)
-        if path == "/mnt/supervisor" or (
-            path is not None and path.startswith("/mnt/supervisor/")
-        ):
-            return True
-        if token.startswith("path=$(/usr/bin/mktemp /mnt/supervisor/"):
-            return True
-    return False
-
-
-def _is_reviewed_supervisor_command(tokens: list[str]) -> bool:
-    token_tuple = tuple(tokens)
-    return token_tuple in APPROVED_SUPERVISOR_COMMAND_TOKENS or (
-        len(tokens) == 1
-        and tokens[0].startswith("path=$(/usr/bin/mktemp /mnt/supervisor/")
-    )
-
-
-def _command_has_remount_readonly_text(command_text: str) -> bool:
-    return "remount" in command_text and (
-        ",ro" in command_text
-        or "--read-only" in command_text
-        or re.search(r"(^|[ \t])-r($|[ \t])", command_text) is not None
-    )
-
-
-def _mount_command_targets_supervisor_parent(command: list[str]) -> bool:
-    tokens = list(command)
-    while tokens and tokens[0] in _SIMPLE_COMMAND_PREFIXES:
-        tokens.pop(0)
-    while tokens and _ASSIGNMENT_RE.fullmatch(tokens[0]):
-        tokens.pop(0)
-    if not tokens:
-        return False
-
-    executable = tokens[0]
-    executable_literal = executable == "/usr/bin/mount"
-    executable_nonliteral = not executable_literal
-    read_only_like = False
-    remount_like = False
-    options_nonliteral = False
-    positionals: list[str] = []
-    unknown_flag = False
-    index = 1
-    while index < len(tokens):
-        token = tokens[index]
-        if token in {"-r", "--read-only"}:
-            read_only_like = True
-            index += 1
-            continue
-        if token in {"-o", "--options"}:
-            if index + 1 >= len(tokens):
-                return True
-            option_text = tokens[index + 1]
-            if _token_has_shell_syntax(option_text):
-                options_nonliteral = True
-            for option in option_text.split(","):
-                normalized = option.strip().replace("\\", "")
-                if normalized.startswith("remount"):
-                    remount_like = True
-                if normalized == "ro":
-                    read_only_like = True
-            index += 2
-            continue
-        if token.startswith("--options="):
-            option_text = token.split("=", 1)[1]
-            if _token_has_shell_syntax(option_text):
-                options_nonliteral = True
-            for option in option_text.split(","):
-                normalized = option.strip().replace("\\", "")
-                if normalized.startswith("remount"):
-                    remount_like = True
-                if normalized == "ro":
-                    read_only_like = True
-            index += 1
-            continue
-        if token.startswith("-o") and token != "-o":
-            option_text = token[2:]
-            if _token_has_shell_syntax(option_text):
-                options_nonliteral = True
-            for option in option_text.split(","):
-                normalized = option.strip().replace("\\", "")
-                if normalized.startswith("remount"):
-                    remount_like = True
-                if normalized == "ro":
-                    read_only_like = True
-            index += 1
-            continue
-        if token in {
-            "--bind",
-            "--make-private",
-            "--make-rprivate",
-            "--make-runbindable",
-            "--make-rshared",
-            "--make-rslave",
-            "--make-shared",
-            "--make-slave",
-            "--move",
-            "--rbind",
-        }:
-            index += 1
-            continue
-        if token in {"-t", "--types"}:
-            if index + 1 >= len(tokens):
-                return True
-            index += 2
-            continue
-        if token == "--":
-            positionals.extend(tokens[index + 1 :])
-            break
-        if token.startswith("-"):
-            unknown_flag = True
-            index += 1
-            continue
-        positionals.append(token)
-        index += 1
-
-    if not (remount_like and read_only_like):
-        return False
-
-    stripped = tuple(tokens)
-    if stripped in APPROVED_NONLITERAL_READONLY_MOUNT_COMMANDS:
-        return False
-
-    if executable in _DISALLOWED_MOUNT_WRAPPERS:
-        return True
-    if executable_nonliteral:
-        return True
-    if options_nonliteral or unknown_flag:
-        return True
-    if not positionals:
-        return True
-
-    target_token = positionals[-1]
-    target_path = _canonical_literal_path(target_token)
-    if target_path == "/mnt/supervisor":
-        return True
-    if target_path is None:
-        return True
-    if len(positionals) != 1:
-        return True
-    return False
 
 
 def workflow_has_supervisor_parent_readonly_remount(workflow: str) -> bool:
@@ -603,6 +209,20 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
         (
             "comment-late",
             ("/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor # late",),
+        ),
+        (
+            "comment-backslash-whitespace",
+            (
+                "true # note \\",
+                "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor",
+            ),
+        ),
+        (
+            "comment-backslash-operator",
+            (
+                "true; # note \\",
+                "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor",
+            ),
         ),
         (
             "semicolon-true",
@@ -3467,7 +3087,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "Build candidate in isolated namespace and stage public inputs",
         )
         actual_run = named_step_run_script_from_block(step_block)
-        reference_run = reference_step_run_script(step_block)
+        reference_run = safe_yaml_step_run_script(step_block)
         self.assertEqual(actual_run.encode("utf-8"), reference_run.encode("utf-8"))
         self.assertEqual(
             publisher_shell_contract.reviewed_patch_release_run_sha256(actual_run),
@@ -3494,9 +3114,112 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             publisher_shell_contract.reviewed_builder_isolation_sha256(actual_shell),
             publisher_shell_contract.REVIEWED_BUILDER_ISOLATION_SHA256,
         )
+        self.assertEqual(
+            publisher_shell_contract.reviewed_hidden_mask_loop_sha256(
+                actual_shell,
+                label="publisher builder isolation shell",
+            ),
+            publisher_shell_contract.REVIEWED_HIDDEN_MASK_LOOP_SHA256,
+        )
         publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
             actual_shell,
             label="publisher builder isolation shell",
+        )
+
+    def test_bash_comment_backslash_does_not_hide_following_mount(self):
+        mount = "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"
+        cases = {
+            "comment-after-whitespace": (
+                "echo ok # note \\\n"
+                f"{mount}\n",
+                ("echo ok", mount),
+            ),
+            "comment-after-operator": (
+                "echo ok; # note \\\n"
+                f"{mount}\n",
+                ("echo ok", mount),
+            ),
+            "hash-inside-word": (
+                f"echo foo#bar\n{mount}\n",
+                ("echo foo#bar", mount),
+            ),
+            "hash-inside-quotes": (
+                f'echo "#still-not-comment" # note \\\n{mount}\n',
+                ('echo "#still-not-comment"', mount),
+            ),
+        }
+        for label, (script, expected_commands) in cases.items():
+            with self.subTest(case=label):
+                self.assertEqual(
+                    publisher_shell_contract.split_bash_simple_command_strings(
+                        script,
+                        label=label,
+                    ),
+                    expected_commands,
+                )
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        script,
+                        label=label,
+                    )
+                )
+
+    def test_hidden_loop_scope_is_independent_of_full_shell_identity(self):
+        builder_shell = builder_isolation_shell_source(self.text)
+        harmless_outside_loop = builder_shell.replace("cd /\n", "cd /\n\n", 1)
+        self.assertNotEqual(
+            publisher_shell_contract.reviewed_builder_isolation_sha256(
+                harmless_outside_loop
+            ),
+            publisher_shell_contract.REVIEWED_BUILDER_ISOLATION_SHA256,
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "raw identity differs from the reviewed security boundary",
+        ):
+            publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
+                harmless_outside_loop,
+                label="publisher builder isolation shell",
+            )
+        self.assertEqual(
+            publisher_shell_contract.reviewed_hidden_mask_loop_sha256(
+                harmless_outside_loop,
+                label="publisher builder isolation shell",
+            ),
+            publisher_shell_contract.REVIEWED_HIDDEN_MASK_LOOP_SHA256,
+        )
+        self.assertFalse(
+            publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                harmless_outside_loop,
+                label="publisher builder isolation shell",
+            )
+        )
+
+        inserted_parent_remount = builder_shell.replace(
+            "unmount_if_mounted /sys\n",
+            "unmount_if_mounted /sys\n"
+            "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor\n",
+            1,
+        )
+        self.assertNotEqual(
+            publisher_shell_contract.reviewed_builder_isolation_sha256(
+                inserted_parent_remount
+            ),
+            publisher_shell_contract.REVIEWED_BUILDER_ISOLATION_SHA256,
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "raw identity differs from the reviewed security boundary",
+        ):
+            publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
+                inserted_parent_remount,
+                label="publisher builder isolation shell",
+            )
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                inserted_parent_remount,
+                label="publisher builder isolation shell",
+            )
         )
 
     def test_publisher_raw_identity_variants_are_rejected(self):
@@ -3512,7 +3235,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     "Build candidate in isolated namespace and stage public inputs",
                 )
                 changed_run = named_step_run_script_from_block(changed_step)
-                reference_run = reference_step_run_script(changed_step)
+                reference_run = safe_yaml_step_run_script(changed_step)
                 self.assertEqual(
                     changed_run.encode("utf-8"),
                     reference_run.encode("utf-8"),
@@ -4490,7 +4213,11 @@ exit 37
         entry = next(item for item in registry["cases"] if item["id"] == "TC-CI-PATCH-049-002")
         expected_result = " ".join(entry["expected_result"].split())
         for text in (overview, case, expected_result):
-            self.assertIn("launch, isolated, or cleanup", text)
+            self.assertIn("post-spawn", text)
+            self.assertIn("launch", text)
+            self.assertIn("isolated", text)
+            self.assertIn("cleanup", text)
+            self.assertIn("pre-spawn", text)
             self.assertNotIn("isolated-build", text)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
