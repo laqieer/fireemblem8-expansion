@@ -10,6 +10,7 @@ import copy
 import hashlib
 import hmac
 import importlib
+import importlib.abc
 import json
 import os
 import re
@@ -93,6 +94,15 @@ NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 EXTERNAL_DECISION_COMMENT_PREFIX = "workflow-review-family-decision:v1 "
 EXTERNAL_CLASSIFICATION_COMMENT_PREFIX = (
     "workflow-review-family-classification:v1 "
+)
+TRUSTED_SECRET_ENV_KEYS = (
+    "GH_HOST",
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "WORKFLOW_REVIEW_RECEIPT_KEY_ID",
+    "WORKFLOW_REVIEW_RECEIPT_KEY_EPOCH",
+    "WORKFLOW_REVIEW_RECEIPT_HMAC_KEY",
+    "WORKFLOW_REVIEW_REPLAY_STORE",
 )
 
 # Actor is not a Node in GitHub's schema. Every polymorphic Actor selection
@@ -183,6 +193,7 @@ query ReviewFamilyEvidence($owner: String!, $name: String!, $number: Int!) {
 
 reporter: Any = None
 review_family: Any = None
+trusted_environment: dict[str, str] = {}
 RFC3339_UTC_TIMESTAMP_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$"
 )
@@ -475,6 +486,62 @@ def _minimal_git(root: Path, *arguments: str) -> bytes:
     return completed.stdout
 
 
+def _capture_trusted_environment() -> None:
+    trusted_environment.clear()
+    for key in TRUSTED_SECRET_ENV_KEYS:
+        value = os.environ.pop(key, None)
+        if value is not None:
+            trusted_environment[key] = value
+
+
+def _python_source_from_git(trusted_root: Path, expected_base: str, relative: str) -> str:
+    records = [
+        record
+        for record in _minimal_git(
+            trusted_root,
+            "ls-tree",
+            "-z",
+            "--full-tree",
+            expected_base,
+            "--",
+            relative,
+        ).split(b"\0")
+        if record
+    ]
+    if len(records) != 1:
+        raise RuntimeError(f"trusted Python source is not an exact base-tree entry: {relative}")
+    metadata, raw_path = records[0].split(b"\t", 1)
+    mode, kind, blob_oid = metadata.decode("ascii").split()
+    if raw_path.decode("utf-8") != relative or mode not in {"100644", "100755"} or kind != "blob":
+        raise RuntimeError(f"trusted Python source has an unsafe tree entry: {relative}")
+    try:
+        return _minimal_git(trusted_root, "cat-file", "blob", blob_oid).decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise RuntimeError(f"trusted Python source cannot be decoded: {relative}") from error
+
+
+class _TrustedModuleLoader(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+    def __init__(self, modules: dict[str, dict[str, Any]]):
+        self.modules = modules
+    def find_spec(self, fullname, path=None, target=None):
+        record = self.modules.get(fullname)
+        if record is None:
+            return None
+        return importlib.util.spec_from_loader(
+            fullname, self, origin=record["origin"], is_package=record["is_package"]
+        )
+    def create_module(self, spec):
+        return None
+    def exec_module(self, module):
+        record = self.modules[module.__spec__.name]
+        module.__file__ = record["origin"]
+        module.__loader__ = self
+        if record["is_package"]:
+            module.__path__ = []
+        if record["source"] is not None:
+            exec(compile(record["source"], record["origin"], "exec", dont_inherit=True), module.__dict__)
+
+
 def _bind_trusted_modules(
     trusted_root: Path,
     candidate_root: Path,
@@ -485,6 +552,7 @@ def _bind_trusted_modules(
 
     trusted_root = trusted_root.resolve()
     candidate_root = candidate_root.resolve()
+    _capture_trusted_environment()
     if trusted_root == candidate_root:
         raise RuntimeError("candidate checkout cannot be the trusted installation")
     for entry in sys.path:
@@ -507,6 +575,13 @@ def _bind_trusted_modules(
     ).decode("ascii").strip()
     if head != expected_base:
         raise RuntimeError("trusted checkout is not the exact expected PR base")
+    object_format = _minimal_git(
+        trusted_root, "rev-parse", "--show-object-format"
+    ).decode("ascii").strip()
+    if object_format != "sha1":
+        raise RuntimeError(
+            f"trusted checkout object format {object_format!r} is not supported; exact Git object IDs require sha1"
+        )
     if _minimal_git(
         trusted_root,
         "status",
@@ -517,56 +592,18 @@ def _bind_trusted_modules(
         raise RuntimeError(
             "trusted base checkout has tracked, index, or untracked changes"
         )
-
     verified_paths = set()
     pending_paths = set(TRUSTED_REQUIRED_PATHS)
+    verified_sources = {}
     while pending_paths:
         relative = pending_paths.pop()
         if relative in verified_paths:
             continue
-        source_path = (trusted_root / relative).resolve()
-        if trusted_root not in source_path.parents or not source_path.is_file():
-            raise RuntimeError(f"trusted Python source is unavailable: {relative}")
-        records = [
-            record
-            for record in _minimal_git(
-                trusted_root,
-                "ls-tree",
-                "-z",
-                "--full-tree",
-                expected_base,
-                "--",
-                relative,
-            ).split(b"\0")
-            if record
-        ]
-        if len(records) != 1:
-            raise RuntimeError(
-                f"trusted Python source is not an exact base-tree entry: {relative}"
-            )
-        metadata, raw_path = records[0].split(b"\t", 1)
-        mode, kind, blob_oid = metadata.decode("ascii").split()
-        if (
-            raw_path.decode("utf-8") != relative
-            or mode not in {"100644", "100755"}
-            or kind != "blob"
-        ):
-            raise RuntimeError(
-                f"trusted Python source has an unsafe tree entry: {relative}"
-            )
-        worktree_oid = _minimal_git(
-            trusted_root,
-            "hash-object",
-            "--no-filters",
-            str(source_path),
-        ).decode("ascii").strip()
-        if worktree_oid != blob_oid:
-            raise RuntimeError(
-                f"trusted Python source differs from exact base object: {relative}"
-            )
+        source = _python_source_from_git(trusted_root, expected_base, relative)
+        verified_sources[relative] = source
         try:
-            syntax = ast.parse(source_path.read_bytes(), filename=relative)
-        except (OSError, SyntaxError) as error:
+            syntax = ast.parse(source, filename=relative)
+        except SyntaxError as error:
             raise RuntimeError(
                 f"trusted Python source cannot be parsed: {relative}"
             ) from error
@@ -609,13 +646,35 @@ def _bind_trusted_modules(
         raise RuntimeError(
             "trusted Python package was imported before object verification"
         )
-    sys.dont_write_bytecode = True
-    sys.path.insert(0, str(trusted_root))
-    reporter = importlib.import_module("scripts.workflow_pilot.reporter")
-    review_family = importlib.import_module("scripts.workflow_pilot.review_family")
+    modules = {"scripts": {"source": None, "origin": str(trusted_root / "scripts"), "is_package": True}}
+    for relative, source in verified_sources.items():
+        if relative.endswith("/__init__.py"):
+            module_name = relative[: -len("/__init__.py")].replace("/", ".")
+            is_package = True
+        elif relative.endswith(".py"):
+            module_name = relative[:-3].replace("/", ".")
+            is_package = False
+        else:
+            raise RuntimeError(f"trusted Python source has an invalid module path: {relative}")
+        modules[module_name] = {
+            "source": source,
+            "origin": str(trusted_root / relative),
+            "is_package": is_package,
+        }
+    loader = _TrustedModuleLoader(modules)
+    previous = sys.dont_write_bytecode
+    saved_meta_path = list(sys.meta_path)
+    try:
+        sys.dont_write_bytecode = True
+        sys.meta_path.insert(0, loader)
+        reporter = importlib.import_module("scripts.workflow_pilot.reporter")
+        review_family = importlib.import_module("scripts.workflow_pilot.review_family")
+    finally:
+        sys.dont_write_bytecode = previous
+        sys.meta_path[:] = saved_meta_path
     loaded_paths = {
-        Path(reporter.__file__).resolve(),
-        Path(review_family.__file__).resolve(),
+        Path(reporter.__spec__.origin),
+        Path(review_family.__spec__.origin),
     }
     if any(trusted_root not in path.parents for path in loaded_paths):
         raise RuntimeError("trusted modules did not load from trusted root")
@@ -2300,9 +2359,11 @@ class GhApiAdapter:
             raise reporter.PilotDataError("repository must use owner/name form")
         environment = {
             key: value
-            for key, value in os.environ.items()
+            for key, value in trusted_environment.items()
             if key in {"GH_HOST", "GH_TOKEN", "GITHUB_TOKEN", "HOME"}
         }
+        if "HOME" not in environment and "HOME" in os.environ:
+            environment["HOME"] = os.environ["HOME"]
         environment.update({"LC_ALL": "C", "PATH": "/usr/bin:/bin"})
         completed = subprocess.run(
             (
@@ -3607,10 +3668,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"trusted review gate error: {error}", file=sys.stderr)
         return 2
     try:
-        key_id = os.environ.get("WORKFLOW_REVIEW_RECEIPT_KEY_ID")
-        key_epoch_text = os.environ.get("WORKFLOW_REVIEW_RECEIPT_KEY_EPOCH")
-        key = os.environ.get("WORKFLOW_REVIEW_RECEIPT_HMAC_KEY")
-        replay_store = os.environ.get("WORKFLOW_REVIEW_REPLAY_STORE")
+        key_id = trusted_environment.get("WORKFLOW_REVIEW_RECEIPT_KEY_ID")
+        key_epoch_text = trusted_environment.get("WORKFLOW_REVIEW_RECEIPT_KEY_EPOCH")
+        key = trusted_environment.get("WORKFLOW_REVIEW_RECEIPT_HMAC_KEY")
+        replay_store = trusted_environment.get("WORKFLOW_REVIEW_REPLAY_STORE")
         if not key_id or not key_epoch_text or not key or not replay_store:
             raise reporter.PilotDataError(
                 "trusted gate requires external key ID, epoch, HMAC key, and "

@@ -1849,6 +1849,45 @@ class TrustedGitHubGateTests(unittest.TestCase):
         finally:
             reporter_path.write_bytes(original)
             git(self.trusted, "add", "scripts/workflow_pilot/reporter.py")
+        scripts_init = self.trusted / "scripts" / "__init__.py"; leak = self.trusted / "trusted-import-leak.txt"; saved_env = {key: os.environ.get(key) for key in ("GH_TOKEN", "WORKFLOW_REVIEW_RECEIPT_HMAC_KEY")}; saved_modules = {name: module for name, module in list(trusted_review_gate.sys.modules.items()) if name == "scripts" or name.startswith("scripts.workflow_pilot")}; saved_bound = (trusted_review_gate.reporter, trusted_review_gate.review_family); saved_secret_env = dict(trusted_review_gate.trusted_environment)
+        candidate_root = ROOT.parent / f"trusted-startup-candidate-{os.getpid()}"; candidate_root.mkdir(exist_ok=False); self.addCleanup(lambda: shutil.rmtree(candidate_root, ignore_errors=True))
+        def restore_runtime():
+            trusted_review_gate.reporter, trusted_review_gate.review_family = saved_bound; trusted_review_gate.trusted_environment.clear(); trusted_review_gate.trusted_environment.update(saved_secret_env); [trusted_review_gate.sys.modules.pop(name, None) for name in list(trusted_review_gate.sys.modules) if name == "scripts" or name.startswith("scripts.workflow_pilot")]; trusted_review_gate.sys.modules.update(saved_modules)
+        try:
+            trusted_review_gate.reporter = None; trusted_review_gate.review_family = None; [trusted_review_gate.sys.modules.pop(name, None) for name in list(saved_modules)]; os.environ["GH_TOKEN"] = "github-secret"; os.environ["WORKFLOW_REVIEW_RECEIPT_HMAC_KEY"] = "receipt-secret"; real_minimal = trusted_review_gate._minimal_git; state = {"swapped": False, "restored": False}
+            def swapping_minimal(root, *arguments):
+                if state["swapped"] and not state["restored"] and arguments[:2] == ("status", "--porcelain=v2"):
+                    if scripts_init.exists(): scripts_init.unlink()
+                    reporter_path.write_bytes(original); state["restored"] = True
+                result = real_minimal(root, *arguments)
+                if not state["swapped"] and arguments[:2] == ("cat-file", "blob"):
+                    reporter_path.write_text(f"from pathlib import Path\nPath({str(leak)!r}).write_text('executed', encoding='utf-8')\nraise RuntimeError('swapped reporter executed')\n", encoding="utf-8"); scripts_init.parent.mkdir(parents=True, exist_ok=True); scripts_init.write_text(f"from pathlib import Path\nPath({str(leak)!r}).write_text('package', encoding='utf-8')\nraise RuntimeError('swapped package executed')\n", encoding="utf-8"); state["swapped"] = True
+                return result
+            with mock.patch.object(trusted_review_gate, "__file__", str(self.trusted / trusted_review_gate.TRUSTED_GATE_PATH)), mock.patch.object(trusted_review_gate, "_minimal_git", side_effect=swapping_minimal):
+                trusted_review_gate._bind_trusted_modules(self.trusted, candidate_root, self.trusted_sha)
+            self.assertTrue(state["swapped"] and state["restored"]); self.assertFalse(leak.exists()); self.assertNotIn("GH_TOKEN", os.environ); self.assertNotIn("WORKFLOW_REVIEW_RECEIPT_HMAC_KEY", os.environ); self.assertTrue(hasattr(trusted_review_gate.reporter, "validate_repository_root")); self.assertTrue(hasattr(trusted_review_gate.review_family, "build_report"))
+        finally:
+            if scripts_init.exists(): scripts_init.unlink()
+            if leak.exists(): leak.unlink()
+            reporter_path.write_bytes(original)
+            for key, value in saved_env.items():
+                if value is None: os.environ.pop(key, None)
+                else: os.environ[key] = value
+            restore_runtime()
+        sha256 = self.temporary_repo("trusted-startup-sha256")
+        try:
+            shutil.rmtree(sha256); sha256.mkdir(parents=True)
+            subprocess.run(reporter.git_command(sha256, "init", "--object-format=sha256", "-q"), env=reporter.git_environment(offline=True), check=True, capture_output=True)
+            for relative in trusted_review_gate.TRUSTED_REQUIRED_PATHS: write_optional_tree_file(sha256, relative, optional_file_bytes(ROOT / relative))
+            subprocess.run(reporter.git_command(sha256, "add", "."), env=reporter.git_environment(offline=True), check=True, capture_output=True)
+            subprocess.run(reporter.git_command(sha256, "config", "user.email", "test@example.com"), env=reporter.git_environment(offline=True), check=True, capture_output=True)
+            subprocess.run(reporter.git_command(sha256, "config", "user.name", "Trusted Gate Temp Test"), env=reporter.git_environment(offline=True), check=True, capture_output=True)
+            subprocess.run(reporter.git_command(sha256, "commit", "-q", "-m", "sha256 trusted base"), env={**reporter.git_environment(offline=True), "GIT_AUTHOR_DATE": "2026-08-31T03:00:00Z", "GIT_COMMITTER_DATE": "2026-08-31T03:00:00Z"}, check=True, capture_output=True)
+            sha256_head = git(sha256, "rev-parse", "HEAD").stdout.decode().strip()
+            with mock.patch.object(trusted_review_gate, "__file__", str(sha256 / trusted_review_gate.TRUSTED_GATE_PATH)), self.assertRaisesRegex(RuntimeError, "object format 'sha256'.*sha1"): trusted_review_gate._bind_trusted_modules(sha256, candidate_root, sha256_head)
+        finally:
+            shutil.rmtree(sha256)
+            shutil.rmtree(candidate_root)
     def test_nullable_pushed_date_is_metadata_not_head_authority(self):
         contract = self.contract(base=self.base_sha, candidate=self.candidate_sha)
         payload = self.adapter()
