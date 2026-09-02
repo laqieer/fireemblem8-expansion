@@ -226,9 +226,13 @@ def authoritative_current_time(
 ) -> datetime:
     if value is None:
         return datetime.now(timezone.utc).replace(microsecond=0)
-    if not isinstance(value, datetime) or value.tzinfo is None:
+    if (
+        not isinstance(value, datetime)
+        or value.tzinfo is None
+        or value.utcoffset() != timezone.utc.utcoffset(None)
+    ):
         raise HandoffDataError(f"{label} must be an aware UTC datetime")
-    return value.astimezone(timezone.utc).replace(microsecond=0)
+    return value.astimezone(timezone.utc)
 
 def require_fresh_live_timestamp(
     observed_at: datetime,
@@ -3394,7 +3398,8 @@ def make_history_receipt(
     summary = canonical_result["summary"]
     outcome = None if handoff_result is None else handoff_result["outcome"]
     summary_ok = (
-        outcome in {"accepted", "interrupted"}
+        len(canonical_result["handoffs"]) == 1
+        and outcome in {"accepted", "interrupted"}
         and summary["accepted_handoffs"] == int(outcome == "accepted")
         and summary["interrupted_handoffs"] == int(outcome == "interrupted")
         and not summary["rejected_handoffs"]
@@ -4109,10 +4114,13 @@ def derive_reporter_result_summary(
     completed = [
         handoff for handoff in reported_handoffs if handoff["outcome"] == "accepted"
     ]
-    trusted_push_eligible = bool(completed) and not any(
-        code
-        for code in rejection_codes
-        if code not in TRUSTED_PUSH_SUMMARY_EXEMPT_REJECTIONS
+    trusted_push_eligible = (
+        len(completed) == len(reported_handoffs) == 1
+        and not any(
+            code
+            for code in rejection_codes
+            if code not in TRUSTED_PUSH_SUMMARY_EXEMPT_REJECTIONS
+        )
     )
     delivery_eligible = trusted_push_eligible and all(
         parent["delivery_eligible"] for parent in delivery_graph["parent_delivery"]
@@ -8248,10 +8256,16 @@ def validate_document(
     completed = [
         result for result in results.values() if result["outcome"] == "accepted"
     ]
-    trusted_push_eligible = bool(completed) and not any(
-        code
-        for code in global_rejections
-        if code not in {"authoritative-run-failed", "authoritative-run-incomplete"}
+    trusted_push_eligible = (
+        len(completed) == len(results) == 1
+        and not any(
+            code
+            for code in global_rejections
+            if code not in {
+                "authoritative-run-failed",
+                "authoritative-run-incomplete",
+            }
+        )
     )
     delivery_eligible = (
         trusted_push_eligible

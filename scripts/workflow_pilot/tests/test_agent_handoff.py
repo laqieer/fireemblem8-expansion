@@ -2155,7 +2155,12 @@ class ExactHandoffTests(unittest.TestCase):
         for stamp, microseconds in accepted.items():
             with self.subTest(stamp=stamp):
                 validator.validate(stamp)
-                self.assertEqual(reporter.parse_time(stamp, "stamp").microsecond, microseconds)
+                parsed = reporter.parse_time(stamp, "stamp")
+                self.assertEqual(parsed.microsecond, microseconds)
+                self.assertEqual(
+                    agent_handoff.authoritative_current_time(parsed, label="stamp").microsecond,
+                    microseconds,
+                )
         for stamp in (
             "2026-02-29T00:00:00Z",
             "2024-13-01T00:00:00Z",
@@ -2172,6 +2177,11 @@ class ExactHandoffTests(unittest.TestCase):
                     validator.validate(stamp)
                 with self.assertRaises(reporter.PilotDataError):
                     reporter.parse_time(stamp, "stamp")
+        with self.assertRaisesRegex(agent_handoff.HandoffDataError, "UTC"):
+            agent_handoff.authoritative_current_time(
+                datetime.fromisoformat("2026-01-01T00:00:00+01:00"),
+                label="stamp",
+            )
     def test_schema_v2_matches_runtime_structural_mutation_corpus(self):
         schema = load_handoff_schema()
         validator = validator_for_schema(schema)
@@ -3872,31 +3882,41 @@ class ExactHandoffTests(unittest.TestCase):
     def test_coordinator_receipt_requires_current_validation_time(self):
         with handoff_repository() as (root, _base, parent, result):
             document = handoff_document(root, parent, result)
-            issued_at = datetime.fromisoformat(
-                document["coordinator_receipt"]["issued_at"].replace(
-                    "Z",
-                    "+00:00",
-                )
-            )
+            issued_at = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(milliseconds=500)
+            stamp = iso_utc(issued_at)
+            document["coordinator_receipt"]["issued_at"] = stamp
+            document["coordinator_receipt"]["operation"]["collected_through"] = stamp
+            document["coordinator_receipt"]["operation"]["eligibility_instant"] = stamp
+            document["coordinator_receipt"]["authority_protection"]["observed_at"] = stamp
+            document["coordinator_receipt"]["remote_coverage"]["interval_end"] = stamp
+            for source in document["coordinator_receipt"]["remote_coverage"]["sources"]:
+                source["observed_at"] = stamp
+            sign_coordinator_document(document, root)
             accepted = agent_handoff.validate_document(
                 document,
                 root,
-                current_time=issued_at + timedelta(seconds=2),
+                current_time=issued_at + timedelta(microseconds=250000),
             )
-            stale = agent_handoff.validate_document(
+            history = agent_handoff.make_history_receipt(
+                document,
+                accepted,
+                "issue-178-round-1",
+            )
+            future = agent_handoff.validate_document(
                 document,
                 root,
-                current_time=issued_at + timedelta(seconds=3),
+                current_time=issued_at - timedelta(microseconds=1),
             )
         self.assertTrue(accepted["summary"]["trusted_push_eligible"])
+        self.assertEqual(history["input_seal"], accepted["input_seal"])
         self.assertNotIn(
             "invalid-coordinator-attestation",
             accepted["summary"]["rejection_codes"],
         )
-        self.assertFalse(stale["summary"]["trusted_push_eligible"])
+        self.assertFalse(future["summary"]["trusted_push_eligible"])
         self.assertIn(
             "invalid-coordinator-attestation",
-            stale["summary"]["rejection_codes"],
+            future["summary"]["rejection_codes"],
         )
     def test_coordinator_receipt_repository_ids_must_match_authority(self):
         with handoff_repository() as (root, _base, parent, result):
@@ -4488,6 +4508,42 @@ class ExactHandoffTests(unittest.TestCase):
             shift_handoff_times(first, -60)
             refresh_coordinator_receipt(first, root)
             first_report = agent_handoff.validate_document(first, root)
+            first_closed = datetime.fromisoformat(
+                first_report["handoffs"][0]["closed_at"].replace("Z", "+00:00")
+            )
+            pending = copy.deepcopy(first)
+            extra = copy.deepcopy(pending["handoffs"][0])
+            extra.update(
+                id="issue-178-review-successor",
+                owner_id="owner-2",
+                owner_database_id=102,
+                handoff_kind="review_successor",
+                replaces_handoff_id="issue-178-round-1",
+                assigned_parent_sha=first_result,
+                result=None,
+                evidence=[],
+                check_receipts=[],
+            )
+            extra["required_checks"][0]["receipt_id"] = None
+            extra["states"] = [
+                {"state": name, "at": iso_utc(first_closed + timedelta(seconds=index))}
+                for index, name in enumerate(("assignment_sent", "assignment_received", "progressing"), 1)
+            ]
+            pending["handoffs"].append(extra)
+            task = copy.deepcopy(next(item for item in pending["delivery_graph"]["tasks"] if item["phase"] == "implementation"))
+            task.update(id="child-review-successor", handoff_id=extra["id"], candidate_sha=first_result, status="in_progress")
+            pending["delivery_graph"]["tasks"].append(task)
+            relationship = copy.deepcopy(pending["delivery_graph"]["relationships"][0])
+            relationship["handoff_id"] = extra["id"]
+            pending["delivery_graph"]["relationships"].append(relationship)
+            dependency = copy.deepcopy(pending["delivery_graph"]["dependencies"][0])
+            dependency["task"] = task["id"]
+            pending["delivery_graph"]["dependencies"].append(dependency)
+            refresh_coordinator_receipt(pending, root)
+            pending_report = agent_handoff.validate_document(pending, root)
+            self.assertFalse(pending_report["summary"]["trusted_push_eligible"])
+            with self.assertRaisesRegex(agent_handoff.HandoffDataError, "no closed result to seal"):
+                agent_handoff.make_history_receipt(pending, pending_report, "issue-178-round-1")
             first_history = agent_handoff.make_history_receipt(
                         first,
                         first_report,
