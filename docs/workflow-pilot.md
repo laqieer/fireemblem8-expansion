@@ -41,7 +41,9 @@ The frozen source semantics are:
   `login: copilot-pull-request-reviewer[bot]`; the trusted live review gate
   separately authenticates the same actor from GraphQL only as exact
   `__typename: Bot`, `id: BOT_kgDOCnlnWA`, `login: copilot-pull-request-reviewer`.
-  Inline Copilot comments are review findings. GitHub exposes each thread's current
+  Inline Copilot comments are review findings, and each authoritative
+  historical finding record preserves the same exact REST actor tuple rather
+  than a login-only string or implied bot family. GitHub exposes each thread's current
   `isResolved`/`resolvedBy` state, but neither the review-thread GraphQL object
   nor the PR timeline supplies a historical resolution timestamp. The
   fixture therefore preserves finding identities and current resolution state
@@ -541,8 +543,9 @@ fixture event plus an old candidate SHA is insufficient when that commit tree
 lacks the exact decision entry; Git remains the only stored commit-content
 authority, and the decision record stores no copied tree, blob, or commit hash.
 Every schema version, identity, count, duration input, attempt, index, depth,
-and cost uses exact-integer validation before bounds or equality checks; JSON
-booleans are accepted only by declared boolean fields.
+cost, and authoritative REST actor database ID uses exact-integer validation
+before bounds or equality checks; JSON booleans are accepted only by declared
+boolean fields.
 
 ## Sibling-family review convergence
 

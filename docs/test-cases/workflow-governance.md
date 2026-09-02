@@ -1238,7 +1238,11 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    metrics. Confirm first-push-to-clean-review is `unavailable`, its reason is
    `historical-review-thread-events-not-collected`, `pilot_ready` is false,
    and `median_hours` is null while 34 reviews, 101 findings, and zero current
-   unresolved findings remain reportable.
+   unresolved findings remain reportable. Confirm the historical baseline
+   fixture now uses its version-2 REST actor schema so every review and
+   finding preserves the exact Copilot tuple `(type: Bot, node_id:
+   BOT_kgDOCnlnWA, id: 175728472, login:
+   copilot-pull-request-reviewer[bot])`.
 4. Inspect the focused suite's positive classification fixture for inclusive
    boundaries, cancellation, supersession, unchanged-SHA duplication, stack
    ancestry, generated-only work, bulk deletion, reverts, still-running work,
@@ -1500,7 +1504,8 @@ game behavior needs a compensating change.
    copilot-pull-request-reviewer)`. If a fixture explicitly models REST actor
    shape instead, require the exact REST tuple `(type: Bot, node_id:
    BOT_kgDOCnlnWA, id: 175728472, login:
-   copilot-pull-request-reviewer[bot])`.
+   copilot-pull-request-reviewer[bot])` on both the owning review and each
+   historical finding/comment record, with same-actor linkage fail-closed.
 5. Confirm a synthetic exact base without the trusted checker or decision
    consumer takes explicit `introduction` mode. Require false merge/push
    authority plus an external-coordinator requirement. Do not substitute a
