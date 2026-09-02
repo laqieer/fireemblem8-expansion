@@ -468,12 +468,11 @@ def _strip_command_prefixes(command: tuple[str, ...]) -> tuple[str, ...]:
 
 
 def _reject_env_split_string_option(token: str) -> bool:
-    return (
-        token == "-S"
-        or token.startswith("-S")
-        or token == "--split-string"
-        or token.startswith("--split-string=")
-    )
+    if token == "--split-string" or token.startswith("--split-string="):
+        return True
+    if not token.startswith("-") or token.startswith("--") or token == "-":
+        return False
+    return "S" in token[1:]
 
 
 def _parse_env_short_option_token(token: str, *, has_next_token: bool) -> tuple[bool, bool]:
@@ -512,6 +511,8 @@ def _env_wrapper_followed_by_ambiguous_surface(
         if _ASSIGNMENT_RE.fullmatch(current):
             index += 1
             continue
+        if _token_has_shell_syntax(current):
+            return True
         if current in _ENV_ZERO_ARG_OPTIONS:
             index += 1
             continue
@@ -569,9 +570,11 @@ def _command_has_ambiguous_env_shell_surface(tokens: tuple[str, ...]) -> bool:
                 start_index=index + 2,
             ):
                 return True
-        elif _token_has_shell_syntax(token) and index + 1 < len(tokens):
-            following = tokens[index + 1]
-            if _reject_env_split_string_option(following):
+        elif index == 0 and _token_has_shell_syntax(token):
+            if _env_wrapper_followed_by_ambiguous_surface(
+                tokens,
+                start_index=index + 1,
+            ):
                 return True
         index += 1
     return False

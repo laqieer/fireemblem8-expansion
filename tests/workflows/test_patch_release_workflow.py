@@ -681,6 +681,33 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
             ),
         ),
         (
+            "variable-env-ignore-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                '"$env_cmd" -i -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "variable-env-unset-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                '"$env_cmd" --unset HOME --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "variable-env-chdir-split-equals-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                '"$env_cmd" --chdir=/tmp \'--split-string=/bin/bash -c "$cmd"\'',
+            ),
+        ),
+        (
             "env-combined-options-wrapper",
             (
                 "root=/mnt",
@@ -3565,6 +3592,34 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 "RUNTIME_ENV_EQUALS",
                 'ROOT=/mnt\ncmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
                 '/bin/env \'--split-string=/bin/bash -c "$cmd"\'\n',
+            ),
+            (
+                ["/bin/env", "-i", "-S", '/bin/bash -c "printf RUNTIME_ENV_I_S"'],
+                "RUNTIME_ENV_I_S",
+                'ROOT=/mnt\ncmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+                '/bin/env -i -S "/bin/bash -c \\"$cmd\\""\n',
+            ),
+            (
+                [
+                    "/bin/env",
+                    "--unset",
+                    "HOME",
+                    "--split-string",
+                    '/bin/bash -c "printf RUNTIME_ENV_UNSET_SPLIT"',
+                ],
+                "RUNTIME_ENV_UNSET_SPLIT",
+                'ROOT=/mnt\ncmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+                '/bin/env --unset HOME --split-string "/bin/bash -c \\"$cmd\\""\n',
+            ),
+            (
+                [
+                    "/bin/env",
+                    "--chdir=/tmp",
+                    '--split-string=/bin/bash -c "printf RUNTIME_ENV_CHDIR_SPLIT"',
+                ],
+                "RUNTIME_ENV_CHDIR_SPLIT",
+                'ROOT=/mnt\ncmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+                '/bin/env --chdir=/tmp \'--split-string=/bin/bash -c "$cmd"\'\n',
             ),
         )
         for argv, expected_stdout, semantic_script in cases:

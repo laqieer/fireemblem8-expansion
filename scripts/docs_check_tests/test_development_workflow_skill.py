@@ -772,7 +772,8 @@ def live_title_probe_violations(text):
         "bounded-unseen-run-discovery": (
             'while [ "$attempt" -lt 60 ]',
             "sleep 5",
-            "gh api --method GET --paginate --slurp",
+            "gh api --method GET --paginate",
+            "| jq -s '.'",
             'for page in json.loads(os.environ["RUNS_JSON"])',
             'str(record["id"]) not in prior',
             'record["name"] == "Build CI"',
@@ -784,6 +785,12 @@ def live_title_probe_violations(text):
             'opened_run_id="$(discover_build_run',
             'title_run_id="$(discover_build_run',
             'restore_run_id="$(discover_build_run',
+        ),
+        "supported-gh-pagination": (
+            "--jq '.workflow_runs[].id'",
+            "| jq -s '.' > \"$evidence_dir/opened-jobs.json\"",
+            "| jq -s '.' > \"$evidence_dir/title-jobs.json\"",
+            "| jq -s '.' > \"$evidence_dir/restore-jobs.json\"",
         ),
         "fail-fast-trapped-cleanup": (
             "set -euo pipefail",
@@ -966,6 +973,8 @@ def live_title_probe_violations(text):
         violations.append("actual-evaluator-assertions")
     if re.search(r"--limit\s+1(?:\s|$)", commands):
         violations.append("bounded-unseen-run-discovery")
+    if "--slurp" in commands:
+        violations.append("unsupported-gh-api-slurp")
     if "git push origin --delete" in commands or "git branch -D" in commands:
         violations.append("cleanup-ownership-cas")
     probe_start = body_case.find("1. From the issue worktree")
