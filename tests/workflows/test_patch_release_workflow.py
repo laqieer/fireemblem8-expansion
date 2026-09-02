@@ -403,6 +403,34 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
             ('`printf /usr/bin/mount` -o remount,ro,nosuid,nodev,noexec /mnt/supervisor',),
         ),
         (
+            "assignment-command-substitution-direct",
+            (
+                "root=/mnt",
+                'ignored=$(/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$root/supervisor")',
+            ),
+        ),
+        (
+            "assignment-backtick-direct",
+            (
+                "root=/mnt",
+                'ignored=`/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$root/supervisor"`',
+            ),
+        ),
+        (
+            "input-process-substitution-direct",
+            (
+                "root=/mnt",
+                'cat <(/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$root/supervisor") >/dev/null',
+            ),
+        ),
+        (
+            "output-process-substitution-direct",
+            (
+                "root=/mnt",
+                ': >(/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$root/supervisor")',
+            ),
+        ),
+        (
             "option-var",
             (
                 "opts=remount,ro,nosuid,nodev,noexec",
@@ -4463,6 +4491,158 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                             label=label,
                         )
                     )
+
+    def test_substitution_bodies_execute_and_detector_rejects_them(self):
+        self.assertFalse(workflow_has_supervisor_parent_readonly_remount(self.text))
+        cases = (
+            (
+                "assignment-command-substitution-direct",
+                'ignored=$(/usr/bin/printf RUNTIME_ASSIGN_DIRECT)\n'
+                'printf "%s" "$ignored"\n',
+                "RUNTIME_ASSIGN_DIRECT",
+                'root=/mnt\n'
+                'ignored=$(/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$root/supervisor")\n',
+            ),
+            (
+                "assignment-command-substitution-env-shell",
+                'ignored=$(/bin/env -S "/bin/bash -c \\"printf RUNTIME_ASSIGN_ENV\\"")\n'
+                'printf "%s" "$ignored"\n',
+                "RUNTIME_ASSIGN_ENV",
+                'ignored=$(/bin/env -S "/bin/bash -c \\"/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor\\"")\n',
+            ),
+            (
+                "assignment-command-substitution-bash-shell",
+                'ignored=$(/bin/bash -c "printf RUNTIME_ASSIGN_BASH")\n'
+                'printf "%s" "$ignored"\n',
+                "RUNTIME_ASSIGN_BASH",
+                'ignored=$(/bin/bash -c "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor")\n',
+            ),
+            (
+                "nested-command-substitution-env-shell",
+                'ignored="$(/usr/bin/printf "%s" "$(/bin/env -S "/bin/bash -c \\"printf RUNTIME_NESTED_ENV\\"")")"\n'
+                'printf "%s" "$ignored"\n',
+                "RUNTIME_NESTED_ENV",
+                'ignored="$(/usr/bin/printf "%s" "$(/bin/env -S "/bin/bash -c \\"/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor\\"")")"\n',
+            ),
+            (
+                "backtick-command-substitution-bash-shell",
+                'ignored=`/bin/bash -c "printf RUNTIME_BACKTICK_BASH"`\n'
+                'printf "%s" "$ignored"\n',
+                "RUNTIME_BACKTICK_BASH",
+                'ignored=`/bin/bash -c "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"`\n',
+            ),
+            (
+                "input-process-substitution-direct",
+                'cat <(/usr/bin/printf RUNTIME_INPUT_PROCESS_DIRECT)\n',
+                "RUNTIME_INPUT_PROCESS_DIRECT",
+                'root=/mnt\n'
+                'cat <(/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$root/supervisor") >/dev/null\n',
+            ),
+            (
+                "input-process-substitution-env-shell",
+                'cat <(/bin/env -S "/bin/bash -c \\"printf RUNTIME_INPUT_PROCESS_ENV\\"")\n',
+                "RUNTIME_INPUT_PROCESS_ENV",
+                'cat <(/bin/env -S "/bin/bash -c \\"/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor\\"") >/dev/null\n',
+            ),
+            (
+                "output-process-substitution-bash-shell",
+                ': > >(/bin/bash -c "printf RUNTIME_OUTPUT_PROCESS_BASH")\n',
+                "RUNTIME_OUTPUT_PROCESS_BASH",
+                ': > >(/bin/bash -c "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor")\n',
+            ),
+        )
+
+        for label, runtime_script, expected_stdout, semantic_script in cases:
+            with self.subTest(case=label):
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "--noprofile",
+                        "--norc",
+                        "-eu",
+                        "-o",
+                        "pipefail",
+                        "-c",
+                        runtime_script,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, expected_stdout)
+                self.assertEqual(completed.stderr, "")
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        semantic_script,
+                        label=label,
+                    )
+                )
+
+    def test_quoted_and_escaped_substitution_literals_do_not_execute_or_trigger_detection(
+        self,
+    ):
+        cases = (
+            (
+                "single-quoted-command-substitution",
+                "printf '%s' '$(/usr/bin/printf SHOULD_NOT_RUN)'\n",
+                '$(/usr/bin/printf SHOULD_NOT_RUN)',
+                "printf '%s' '$(/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor)'\n",
+            ),
+            (
+                "escaped-command-substitution",
+                'printf "%s" "\\$(/usr/bin/printf SHOULD_NOT_RUN_ESCAPED)"\n',
+                '$(/usr/bin/printf SHOULD_NOT_RUN_ESCAPED)',
+                'printf "%s" "\\$(/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor)"\n',
+            ),
+            (
+                "single-quoted-backtick-substitution",
+                "printf '%s' '`/usr/bin/printf SHOULD_NOT_RUN_BACKTICK`'\n",
+                '`/usr/bin/printf SHOULD_NOT_RUN_BACKTICK`',
+                "printf '%s' '`/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor`'\n",
+            ),
+            (
+                "single-quoted-input-process-substitution",
+                "printf '%s' '<(/usr/bin/printf SHOULD_NOT_RUN_PROCESS)'\n",
+                '<(/usr/bin/printf SHOULD_NOT_RUN_PROCESS)',
+                "printf '%s' '<(/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor)'\n",
+            ),
+            (
+                "double-quoted-output-process-substitution",
+                'printf "%s" ">(/usr/bin/printf SHOULD_NOT_RUN_OUTPUT_PROCESS)"\n',
+                '>(/usr/bin/printf SHOULD_NOT_RUN_OUTPUT_PROCESS)',
+                'printf "%s" ">(/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor)"\n',
+            ),
+        )
+
+        for label, runtime_script, expected_stdout, semantic_script in cases:
+            with self.subTest(case=label):
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "--noprofile",
+                        "--norc",
+                        "-eu",
+                        "-o",
+                        "pipefail",
+                        "-c",
+                        runtime_script,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, expected_stdout)
+                self.assertEqual(completed.stderr, "")
+                self.assertFalse(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        semantic_script,
+                        label=label,
+                    )
+                )
 
     def test_structural_prefix_env_split_string_repros_execute_and_detector_rejects_them(
         self,

@@ -109,6 +109,9 @@ _FLOCK_ZERO_ARG_OPTIONS = frozenset(
     {"-F", "--no-fork", "-n", "--nonblock", "-o", "--close", "-s", "--shared", "--verbose", "-u", "--unlock", "-x", "--exclusive"}
 )
 _FLOCK_OPTIONS_WITH_ARGS = frozenset({"-E", "--conflict-exit-code", "-w", "--timeout"})
+_SUBSTITUTION_SCAN_MAX_DEPTH = 8
+_SUBSTITUTION_SCAN_MAX_BODY_CHARS = 16384
+_SUBSTITUTION_SCAN_MAX_COUNT = 128
 
 
 @dataclass(frozen=True)
@@ -571,8 +574,6 @@ def _token_has_shell_syntax(token: _ShellToken) -> bool:
 
 
 def _command_references_supervisor(tokens: Iterable[_ShellToken], command_text: str) -> bool:
-    if "/mnt/supervisor" in command_text:
-        return True
     for token in tokens:
         path = _canonical_literal_path(token)
         if path == "/mnt/supervisor" or (
@@ -589,6 +590,13 @@ def _is_reviewed_supervisor_command(tokens: tuple[_ShellToken, ...]) -> bool:
     return token_texts in APPROVED_SUPERVISOR_COMMAND_TOKENS or (
         len(token_texts) == 1
         and token_texts[0].startswith("path=$(/usr/bin/mktemp /mnt/supervisor/")
+    ) or token_texts in {
+        ("/usr/bin/stat", "-c", "%u", "/mnt/supervisor"),
+        ("/usr/bin/stat", "-c", "%a", "/mnt/supervisor"),
+    } or (
+        len(token_texts) == 2
+        and token_texts[0] == "/usr/bin/mktemp"
+        and token_texts[1].startswith("/mnt/supervisor/")
     )
 
 
@@ -750,24 +758,14 @@ def _parse_flock_short_option_token(
 def _flock_command_string_is_forbidden(command_text: str) -> bool:
     if not command_text:
         return True
-    label = "flock command string"
     try:
-        semantic_pairs = _shell_semantic_command_pairs(command_text, label=label)
+        return _shell_text_has_forbidden_surface(
+            command_text,
+            label="flock command string",
+            allowed_hidden_indices=frozenset(),
+        )
     except ValueError:
         return True
-    for _command_index, nested_command_text, command_tokens in semantic_pairs:
-        if _shell_c_invocation_is_forbidden(command_tokens):
-            return True
-        if _mount_command_targets_supervisor_parent(
-            command_tokens,
-            allow_reviewed_nonliteral_hidden=False,
-        ):
-            return True
-        if _command_references_supervisor(command_tokens, nested_command_text) and not _is_reviewed_supervisor_command(
-            command_tokens
-        ):
-            return True
-    return False
 
 
 def _parse_flock_command_target(
@@ -1449,6 +1447,364 @@ def _shell_c_invocation_is_forbidden(command: tuple[_ShellToken, ...]) -> bool:
     return False
 
 
+def _validate_substitution_scan_bounds(
+    body: str,
+    *,
+    label: str,
+    depth: int,
+    count: int,
+) -> None:
+    if depth > _SUBSTITUTION_SCAN_MAX_DEPTH:
+        raise ValueError(f"{label} substitution nesting differs")
+    if count > _SUBSTITUTION_SCAN_MAX_COUNT:
+        raise ValueError(f"{label} substitution count differs")
+    if not body or len(body) > _SUBSTITUTION_SCAN_MAX_BODY_CHARS:
+        raise ValueError(f"{label} substitution body differs")
+
+
+def _consume_backtick_substitution(
+    text: str,
+    *,
+    start_index: int,
+    label: str,
+) -> tuple[str, int]:
+    index = start_index + 1
+    while index < len(text):
+        character = text[index]
+        if character == "\\":
+            if index + 1 >= len(text):
+                raise ValueError(f"{label} backtick substitution differs")
+            index += 2
+            continue
+        if character == "`":
+            return text[start_index + 1 : index], index + 1
+        index += 1
+    raise ValueError(f"{label} backtick substitution differs")
+
+
+def _consume_parenthesized_substitution_body(
+    text: str,
+    *,
+    start_index: int,
+    initial_depth: int,
+    label: str,
+) -> tuple[str, int]:
+    depth = initial_depth
+    quote: str | None = None
+    index = start_index
+
+    while index < len(text):
+        character = text[index]
+        if quote is None:
+            if character == "'":
+                quote = "'"
+                index += 1
+                continue
+            if character == '"':
+                quote = '"'
+                index += 1
+                continue
+            if character == "\\":
+                if index + 1 >= len(text):
+                    raise ValueError(f"{label} substitution continuation differs")
+                index += 2
+                continue
+            if character == "`":
+                _body, index = _consume_backtick_substitution(
+                    text,
+                    start_index=index,
+                    label=label,
+                )
+                continue
+            if character == "(":
+                depth += 1
+            elif character == ")":
+                depth -= 1
+                if depth == 0:
+                    body_end = index - (initial_depth - 1)
+                    return text[start_index:body_end], index + 1
+                if depth < 0:
+                    raise ValueError(f"{label} substitution nesting differs")
+            index += 1
+            continue
+
+        if quote == "'":
+            if character == "'":
+                quote = None
+            index += 1
+            continue
+
+        if character == "\\":
+            if index + 1 >= len(text):
+                raise ValueError(f"{label} substitution continuation differs")
+            if text[index + 1] in '$`"\\\n':
+                index += 2
+                continue
+        elif character == '"':
+            quote = None
+            index += 1
+            continue
+        elif character == "`":
+            _body, index = _consume_backtick_substitution(
+                text,
+                start_index=index,
+                label=label,
+            )
+            continue
+        index += 1
+
+    raise ValueError(f"{label} substitution nesting differs")
+
+
+def _substitution_body_has_forbidden_surface(
+    body: str,
+    *,
+    label: str,
+    depth: int,
+) -> bool:
+    _validate_substitution_scan_bounds(body, label=label, depth=depth, count=1)
+    return _shell_text_has_forbidden_surface(
+        body,
+        label=label,
+        allowed_hidden_indices=frozenset(),
+        substitution_depth=depth,
+    )
+
+
+def _text_has_forbidden_executable_substitution_surface(
+    text: str,
+    *,
+    label: str,
+    substitution_depth: int,
+) -> bool:
+    if substitution_depth > _SUBSTITUTION_SCAN_MAX_DEPTH:
+        raise ValueError(f"{label} substitution nesting differs")
+
+    quote: str | None = None
+    index = 0
+    substitution_count = 0
+
+    while index < len(text):
+        character = text[index]
+        if quote is None:
+            if character == "'":
+                quote = "'"
+                index += 1
+                continue
+            if character == '"':
+                quote = '"'
+                index += 1
+                continue
+            if character == "\\":
+                if index + 1 >= len(text):
+                    raise ValueError(f"{label} substitution continuation differs")
+                index += 2
+                continue
+            if character == "`":
+                substitution_count += 1
+                body, index = _consume_backtick_substitution(
+                    text,
+                    start_index=index,
+                    label=label,
+                )
+                _validate_substitution_scan_bounds(
+                    body,
+                    label=label,
+                    depth=substitution_depth + 1,
+                    count=substitution_count,
+                )
+                if _substitution_body_has_forbidden_surface(
+                    body,
+                    label=label,
+                    depth=substitution_depth + 1,
+                ):
+                    return True
+                continue
+            if character == "$" and index + 1 < len(text) and text[index + 1] == "(":
+                if index + 2 < len(text) and text[index + 2] == "(":
+                    arithmetic_body, index = _consume_parenthesized_substitution_body(
+                        text,
+                        start_index=index + 3,
+                        initial_depth=2,
+                        label=label,
+                    )
+                    _validate_substitution_scan_bounds(
+                        arithmetic_body,
+                        label=label,
+                        depth=substitution_depth + 1,
+                        count=substitution_count,
+                    )
+                    if _text_has_forbidden_executable_substitution_surface(
+                        arithmetic_body,
+                        label=label,
+                        substitution_depth=substitution_depth + 1,
+                    ):
+                        return True
+                    continue
+                substitution_count += 1
+                body, index = _consume_parenthesized_substitution_body(
+                    text,
+                    start_index=index + 2,
+                    initial_depth=1,
+                    label=label,
+                )
+                _validate_substitution_scan_bounds(
+                    body,
+                    label=label,
+                    depth=substitution_depth + 1,
+                    count=substitution_count,
+                )
+                if _substitution_body_has_forbidden_surface(
+                    body,
+                    label=label,
+                    depth=substitution_depth + 1,
+                ):
+                    return True
+                continue
+            if character in "<>" and index + 1 < len(text) and text[index + 1] == "(":
+                substitution_count += 1
+                body, index = _consume_parenthesized_substitution_body(
+                    text,
+                    start_index=index + 2,
+                    initial_depth=1,
+                    label=label,
+                )
+                _validate_substitution_scan_bounds(
+                    body,
+                    label=label,
+                    depth=substitution_depth + 1,
+                    count=substitution_count,
+                )
+                if _substitution_body_has_forbidden_surface(
+                    body,
+                    label=label,
+                    depth=substitution_depth + 1,
+                ):
+                    return True
+                continue
+            index += 1
+            continue
+
+        if quote == "'":
+            if character == "'":
+                quote = None
+            index += 1
+            continue
+
+        if character == "\\":
+            if index + 1 >= len(text):
+                raise ValueError(f"{label} substitution continuation differs")
+            if text[index + 1] in '$`"\\\n':
+                index += 2
+                continue
+        elif character == '"':
+            quote = None
+            index += 1
+            continue
+        elif character == "`":
+            substitution_count += 1
+            body, index = _consume_backtick_substitution(
+                text,
+                start_index=index,
+                label=label,
+            )
+            _validate_substitution_scan_bounds(
+                body,
+                label=label,
+                depth=substitution_depth + 1,
+                count=substitution_count,
+            )
+            if _substitution_body_has_forbidden_surface(
+                body,
+                label=label,
+                depth=substitution_depth + 1,
+            ):
+                return True
+            continue
+        elif character == "$" and index + 1 < len(text) and text[index + 1] == "(":
+            if index + 2 < len(text) and text[index + 2] == "(":
+                arithmetic_body, index = _consume_parenthesized_substitution_body(
+                    text,
+                    start_index=index + 3,
+                    initial_depth=2,
+                    label=label,
+                )
+                _validate_substitution_scan_bounds(
+                    arithmetic_body,
+                    label=label,
+                    depth=substitution_depth + 1,
+                    count=substitution_count,
+                )
+                if _text_has_forbidden_executable_substitution_surface(
+                    arithmetic_body,
+                    label=label,
+                    substitution_depth=substitution_depth + 1,
+                ):
+                    return True
+                continue
+            substitution_count += 1
+            body, index = _consume_parenthesized_substitution_body(
+                text,
+                start_index=index + 2,
+                initial_depth=1,
+                label=label,
+            )
+            _validate_substitution_scan_bounds(
+                body,
+                label=label,
+                depth=substitution_depth + 1,
+                count=substitution_count,
+            )
+            if _substitution_body_has_forbidden_surface(
+                body,
+                label=label,
+                depth=substitution_depth + 1,
+            ):
+                return True
+            continue
+        index += 1
+
+    if quote is not None:
+        raise ValueError(f"{label} has unterminated substitution quoting")
+    return False
+
+
+def _shell_text_has_forbidden_surface(
+    script: str,
+    *,
+    label: str,
+    allowed_hidden_indices: frozenset[int],
+    substitution_depth: int = 0,
+) -> bool:
+    for command_index, command_text in enumerate(
+        split_bash_simple_command_strings(script, label=label)
+    ):
+        if _text_has_forbidden_executable_substitution_surface(
+            command_text,
+            label=label,
+            substitution_depth=substitution_depth,
+        ):
+            return True
+        command_tokens = _semantic_surface_tokens(
+            _parse_shell_tokens(command_text, label=label),
+            label=label,
+        )
+        if not command_tokens:
+            continue
+        if _shell_c_invocation_is_forbidden(command_tokens):
+            return True
+        if _mount_command_targets_supervisor_parent(
+            command_tokens,
+            allow_reviewed_nonliteral_hidden=command_index in allowed_hidden_indices,
+        ):
+            return True
+        if _command_references_supervisor(command_tokens, command_text) and not _is_reviewed_supervisor_command(
+            command_tokens
+        ):
+            return True
+    return False
+
+
 def reviewed_hidden_mask_loop_source(script: str, *, label: str) -> str:
     if script.count(REVIEWED_HIDDEN_MASK_LOOP_HEADER) != 1:
         raise ValueError(f"{label} hidden-mask loop header differs")
@@ -1513,7 +1869,7 @@ def _mount_command_targets_supervisor_parent(
     executable_token = tokens[0]
     executable = executable_token.text
     executable_literal = executable == "/usr/bin/mount"
-    executable_nonliteral = not executable_literal
+    executable_nonliteral = _token_has_shell_syntax(executable_token)
     read_only_like = False
     remount_like = False
     options_nonliteral = False
@@ -1673,23 +2029,15 @@ def has_forbidden_supervisor_parent_readonly_mount(
     label: str,
 ) -> bool:
     try:
-        semantic_pairs = _shell_semantic_command_pairs(script, label=label)
+        semantic_script = _strip_patch_release_parser_heredoc_bodies(script)
         allowed_hidden_indices = _authorized_hidden_readonly_mount_indices(
-            script,
+            semantic_script,
             label=label,
+        )
+        return _shell_text_has_forbidden_surface(
+            semantic_script,
+            label=label,
+            allowed_hidden_indices=allowed_hidden_indices,
         )
     except ValueError:
         return True
-    for command_index, command_text, command_tokens in semantic_pairs:
-        if _shell_c_invocation_is_forbidden(command_tokens):
-            return True
-        if _mount_command_targets_supervisor_parent(
-            command_tokens,
-            allow_reviewed_nonliteral_hidden=command_index in allowed_hidden_indices,
-        ):
-            return True
-        if _command_references_supervisor(command_tokens, command_text) and not _is_reviewed_supervisor_command(
-            command_tokens
-        ):
-            return True
-    return False
