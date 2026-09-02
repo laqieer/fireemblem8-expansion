@@ -12,10 +12,10 @@ from typing import Iterable
 
 
 REVIEWED_PATCH_RELEASE_RUN_SHA256 = (
-    "896a703f3173c77758d1b8a6c18190fe89997c749264a81a468fa6839b9bfc6a"
+    "0ff7b6cf8df3adc67ed7602fbba23f4f8f204edb066d62e529b80946c3d10c99"
 )
 REVIEWED_BUILDER_ISOLATION_SHA256 = (
-    "6088db198a46f7617eef83daf2366c33055c597df1740ccb87de803ede0034ad"
+    "3a06d37d0ec73c868cc614dc3d1cf4366684a1d542f6a9a79b0114fac6478353"
 )
 REVIEWED_HIDDEN_MASK_LOOP_SHA256 = (
     "77e81e3a773e78b4c58132c553ea3a3ef0719f802fe1164b59f60aef948235f5"
@@ -48,6 +48,7 @@ APPROVED_NONLITERAL_MOUNT_COMMANDS = {
     ),
 }
 APPROVED_SUPERVISOR_COMMAND_TOKENS = {
+    ("/mnt/supervisor",),
     ("/usr/bin/mkdir", "-m", "0700", "/mnt/supervisor"),
     (
         "/usr/bin/mount",
