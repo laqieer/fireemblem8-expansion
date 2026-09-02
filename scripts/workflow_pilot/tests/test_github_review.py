@@ -365,6 +365,21 @@ class TrustedGitHubGateTests(unittest.TestCase):
     def decision_record_path(self, root):
         return Path(root) / trusted_review_gate.DECISION_RECORD_PATH
 
+    def patched_os_open_once(self, predicate, mutate):
+        real_open = trusted_review_gate.os.open
+        fired = False
+
+        def wrapper(path, flags, mode=0o777, *, dir_fd=None):
+            nonlocal fired
+            if not fired and predicate(path, dir_fd):
+                mutate()
+                fired = True
+            if dir_fd is None:
+                return real_open(path, flags, mode)
+            return real_open(path, flags, mode, dir_fd=dir_fd)
+
+        return wrapper
+
     def temporary_repo(self, name):
         artifact_root = ROOT / "build" / "test-artifacts"
         suffix = len(list(artifact_root.glob(f"{name}-{os.getpid()}-*")))
@@ -879,16 +894,20 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 decision_path.read_text(encoding="utf-8"),
                 encoding="utf-8",
             )
-            real_open = trusted_review_gate.os.open
-
-            def swapping_open(path, flags, mode=0o777):
-                target = Path(path)
-                if target == decision_path:
-                    target.unlink()
-                    replacement.rename(target)
-                return real_open(path, flags, mode)
-
-            with mock.patch.object(trusted_review_gate.os, "open", side_effect=swapping_open):
+            with mock.patch.object(
+                trusted_review_gate.os,
+                "open",
+                side_effect=self.patched_os_open_once(
+                    lambda path, dir_fd: (
+                        dir_fd is not None
+                        and os.fspath(path) == decision_path.name
+                    ),
+                    lambda: (
+                        decision_path.unlink(),
+                        replacement.rename(decision_path),
+                    ),
+                ),
+            ):
                 with self.assertRaisesRegex(
                     reporter.PilotDataError,
                     "candidate decision record changed during no-follow access",
@@ -898,6 +917,151 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     )
         finally:
             shutil.rmtree(repo)
+
+    def test_candidate_decision_record_openat_races_fail_closed(self):
+        repo, base, candidate = self.build_decision_repo(self.decision_entry())
+        try:
+            contract = review_family.validate_contract(
+                self.contract(base=base, candidate=candidate)
+            )
+            github_dir = Path(repo) / ".github"
+            shadow_dir = Path(repo) / ".github-root-race"
+            with mock.patch.object(
+                trusted_review_gate.os,
+                "open",
+                side_effect=self.patched_os_open_once(
+                    lambda path, dir_fd: (
+                        dir_fd is None
+                        and Path(path) == Path(repo).resolve()
+                    ),
+                    lambda: (
+                        github_dir.rename(shadow_dir),
+                        github_dir.symlink_to(shadow_dir.name),
+                    ),
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    reporter.PilotDataError,
+                    "candidate decision record is unavailable for drift validation",
+                ):
+                    trusted_review_gate._load_authoritative_trigger(
+                        contract, repo, candidate
+                    )
+        finally:
+            shutil.rmtree(repo)
+
+        repo, base, candidate = self.build_decision_repo(self.decision_entry())
+        outside = Path(repo).parent / "outside-parent-race"
+        try:
+            outside.mkdir()
+            contract = review_family.validate_contract(
+                self.contract(base=base, candidate=candidate)
+            )
+            github_dir = Path(repo) / ".github"
+            with mock.patch.object(
+                trusted_review_gate.os,
+                "open",
+                side_effect=self.patched_os_open_once(
+                    lambda path, dir_fd: (
+                        dir_fd is not None and os.fspath(path) == ".github"
+                    ),
+                    lambda: (
+                        github_dir.rename(outside / ".github"),
+                        github_dir.symlink_to(outside / ".github"),
+                    ),
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    reporter.PilotDataError,
+                    "candidate decision record is unavailable for drift validation",
+                ):
+                    trusted_review_gate._load_authoritative_trigger(
+                        contract, repo, candidate
+                    )
+        finally:
+            shutil.rmtree(repo)
+            if outside.exists():
+                shutil.rmtree(outside)
+
+        repo, base, candidate = self.build_decision_repo(self.decision_entry())
+        try:
+            contract = review_family.validate_contract(
+                self.contract(base=base, candidate=candidate)
+            )
+            decision_path = self.decision_record_path(repo)
+            shadow = decision_path.with_suffix(".leaf-open-race.json")
+            shadow.write_text(
+                decision_path.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            with mock.patch.object(
+                trusted_review_gate.os,
+                "open",
+                side_effect=self.patched_os_open_once(
+                    lambda path, dir_fd: (
+                        dir_fd is not None
+                        and os.fspath(path) == decision_path.name
+                    ),
+                    lambda: (
+                        decision_path.unlink(),
+                        decision_path.symlink_to(shadow.name),
+                    ),
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    reporter.PilotDataError,
+                    "candidate decision record is unavailable for drift validation",
+                ):
+                    trusted_review_gate._load_authoritative_trigger(
+                        contract, repo, candidate
+                    )
+        finally:
+            shutil.rmtree(repo)
+
+        for case_name, use_outside in (("in-repo", False), ("outside", True)):
+            repo, base, candidate = self.build_decision_repo(self.decision_entry())
+            outside = Path(repo).parent / f"outside-post-parent-{case_name}"
+            try:
+                if use_outside:
+                    outside.mkdir()
+                contract = review_family.validate_contract(
+                    self.contract(base=base, candidate=candidate)
+                )
+                github_dir = Path(repo) / ".github"
+                shadow_dir = (
+                    outside / ".github"
+                    if use_outside
+                    else Path(repo) / ".github-post-parent"
+                )
+                with mock.patch.object(
+                    trusted_review_gate.os,
+                    "open",
+                    side_effect=self.patched_os_open_once(
+                        lambda path, dir_fd: (
+                            dir_fd is not None
+                            and os.fspath(path) == self.decision_record_path(repo).name
+                        ),
+                        lambda: (
+                            github_dir.rename(shadow_dir),
+                            github_dir.symlink_to(
+                                shadow_dir
+                                if use_outside
+                                else shadow_dir.name
+                            ),
+                        ),
+                    ),
+                ):
+                    with self.subTest(case=case_name), self.assertRaisesRegex(
+                        reporter.PilotDataError,
+                        "candidate decision record changed during no-follow access",
+                    ):
+                        trusted_review_gate._load_authoritative_trigger(
+                            contract, repo, candidate
+                        )
+            finally:
+                shutil.rmtree(repo)
+                if outside.exists():
+                    shutil.rmtree(outside)
 
     def run_trusted_startup(self):
         environment = {

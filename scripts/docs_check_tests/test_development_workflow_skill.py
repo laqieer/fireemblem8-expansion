@@ -4069,6 +4069,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "Only review threads rooted in accepted authoritative Copilot finding IDs participate in family evidence",
             "Selection authenticates that exact Bot actor before any review body",
             "no-follow regular-file read still matches the candidate tree blob",
+            "dirfd/openat",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(normalize_policy(fragment), pilot_normalized)
@@ -4079,6 +4080,7 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "removing, renaming, emptying, duplicating, or retargeting the candidate PR record fails closed before trust",
             "review selection authenticates the exact Bot actor before parsing body markers or inline comments",
             "verified no-follow candidate-file access that still matches the candidate tree blob",
+            "dirfd/openat no-follow directory walk",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(normalize_policy(fragment), governance_normalized)

@@ -552,7 +552,9 @@ decision/trigger fields must remain identical to the authoritative base state.
 The candidate path is read only after exact candidate/base Git-tree mode
 validation confirms a regular blob and a no-follow regular-file read still
 matches the candidate tree blob; symlink, parent-symlink, escape, replacement,
-and tree/worktree mismatch all fail before trust.
+and tree/worktree mismatch all fail before trust. The live gate pins the
+repository root directory and walks each relative parent with a dirfd/openat
+no-follow directory open before reading the leaf.
 Every schema version, identity, count, duration input, attempt, index, depth,
 cost, and authoritative REST actor database ID uses exact-integer validation
 before bounds or equality checks; JSON booleans are accepted only by declared

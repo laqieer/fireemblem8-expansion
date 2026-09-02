@@ -51,6 +51,7 @@ ASSERTION_PROGRAM_ARGV = (
 )
 ASSERTION_FILE_MODES = {"100644", "100755", "120000"}
 MATERIALIZED_FILE_MODES = {"100644", "100755"}
+MAX_CANDIDATE_DECISION_RECORD_BYTES = 1 << 20
 ASSERTION_INPUT_PATHS = (
     DECISION_RECORD_PATH,
     ".github/workflows/build.yml",
@@ -726,6 +727,112 @@ def _git_blob_oid(payload: bytes) -> str:
     return hashlib.sha1(header + payload).hexdigest()
 
 
+def _same_inode(first: os.stat_result, second: os.stat_result) -> bool:
+    return first.st_dev == second.st_dev and first.st_ino == second.st_ino
+
+
+def _directory_open_flags() -> int:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_DIRECTORY"):
+        flags |= os.O_DIRECTORY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    return flags
+
+
+def _file_open_flags() -> int:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    return flags
+
+
+def _open_directory_fd(
+    path: str | os.PathLike[str],
+    *,
+    dir_fd: int | None,
+    label: str,
+    owner_uid: int,
+) -> tuple[int, os.stat_result]:
+    try:
+        if dir_fd is None:
+            descriptor = os.open(path, _directory_open_flags())
+        else:
+            descriptor = os.open(path, _directory_open_flags(), dir_fd=dir_fd)
+    except OSError as error:
+        raise reporter.PilotDataError(f"{label} is unavailable for drift validation") from error
+    try:
+        metadata = os.fstat(descriptor)
+    except OSError as error:
+        os.close(descriptor)
+        raise reporter.PilotDataError(f"{label} is unavailable for drift validation") from error
+    if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != owner_uid:
+        os.close(descriptor)
+        raise reporter.PilotDataError(f"{label} is unavailable for drift validation")
+    return descriptor, metadata
+
+
+def _relative_no_follow_stat(
+    name: str,
+    *,
+    dir_fd: int,
+    label: str,
+) -> os.stat_result:
+    try:
+        return os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+    except OSError as error:
+        raise reporter.PilotDataError(f"{label} is unavailable for drift validation") from error
+
+
+def _ensure_current_path_matches_pinned(
+    repository_root: Path,
+    relative: Path,
+    *,
+    root_stat: os.stat_result,
+    parent_stats: list[os.stat_result],
+    leaf_stat: os.stat_result,
+) -> None:
+    label = "candidate decision record"
+    try:
+        current_root = os.lstat(repository_root)
+    except OSError as error:
+        raise reporter.PilotDataError(f"{label} changed during no-follow access") from error
+    if (
+        stat.S_ISLNK(current_root.st_mode)
+        or not stat.S_ISDIR(current_root.st_mode)
+        or not _same_inode(current_root, root_stat)
+    ):
+        raise reporter.PilotDataError(f"{label} changed during no-follow access")
+    current = repository_root
+    for part, pinned in zip(relative.parts[:-1], parent_stats):
+        current = current / part
+        try:
+            metadata = os.lstat(current)
+        except OSError as error:
+            raise reporter.PilotDataError(f"{label} changed during no-follow access") from error
+        if (
+            stat.S_ISLNK(metadata.st_mode)
+            or not stat.S_ISDIR(metadata.st_mode)
+            or not _same_inode(metadata, pinned)
+        ):
+            raise reporter.PilotDataError(f"{label} changed during no-follow access")
+    current = repository_root.joinpath(*relative.parts)
+    try:
+        metadata = os.lstat(current)
+    except OSError as error:
+        raise reporter.PilotDataError(f"{label} changed during no-follow access") from error
+    if (
+        stat.S_ISLNK(metadata.st_mode)
+        or not stat.S_ISREG(metadata.st_mode)
+        or not _same_inode(metadata, leaf_stat)
+    ):
+        raise reporter.PilotDataError(f"{label} changed during no-follow access")
+
+
 def _read_candidate_decision_record_bytes(
     repository_root: Path,
     *,
@@ -737,65 +844,97 @@ def _read_candidate_decision_record_bytes(
         raise reporter.PilotDataError(
             f"{label} path escapes repository root"
         )
-    current = repository_root
-    for part in relative.parts[:-1]:
-        current = current / part
+    root_fd = -1
+    parent_fds: list[int] = []
+    leaf_fd = -1
+    try:
         try:
-            metadata = os.lstat(current)
+            root_lstat = os.lstat(repository_root)
         except OSError as error:
             raise reporter.PilotDataError(
                 f"{label} is unavailable for drift validation"
             ) from error
-        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
-            raise reporter.PilotDataError(
-                f"{label} is unavailable for drift validation"
-            )
-    leaf = repository_root / relative
-    try:
-        leaf_stat = os.lstat(leaf)
-    except OSError as error:
-        raise reporter.PilotDataError(
-            f"{label} is unavailable for drift validation"
-        ) from error
-    if stat.S_ISLNK(leaf_stat.st_mode) or not stat.S_ISREG(leaf_stat.st_mode):
-        raise reporter.PilotDataError(
-            f"{label} is unavailable for drift validation"
+        root_fd, root_stat = _open_directory_fd(
+            repository_root,
+            dir_fd=None,
+            label=label,
+            owner_uid=root_lstat.st_uid,
         )
-    flags = os.O_RDONLY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    try:
-        descriptor = os.open(leaf, flags)
-    except OSError as error:
-        raise reporter.PilotDataError(
-            f"{label} is unavailable for drift validation"
-        ) from error
-    try:
-        opened_stat = os.fstat(descriptor)
-        if not stat.S_ISREG(opened_stat.st_mode):
+        if not _same_inode(root_lstat, root_stat):
+            raise reporter.PilotDataError(
+                f"{label} changed during no-follow access"
+            )
+        owner_uid = root_stat.st_uid
+        current_fd = root_fd
+        parent_stats: list[os.stat_result] = []
+        for part in relative.parts[:-1]:
+            parent_fd, parent_stat = _open_directory_fd(
+                part,
+                dir_fd=current_fd,
+                label=label,
+                owner_uid=owner_uid,
+            )
+            parent_fds.append(parent_fd)
+            parent_stats.append(parent_stat)
+            current_fd = parent_fd
+        leaf_name = relative.parts[-1]
+        pre_leaf_stat = _relative_no_follow_stat(
+            leaf_name,
+            dir_fd=current_fd,
+            label=label,
+        )
+        if (
+            not stat.S_ISREG(pre_leaf_stat.st_mode)
+            or pre_leaf_stat.st_uid != owner_uid
+            or pre_leaf_stat.st_size > MAX_CANDIDATE_DECISION_RECORD_BYTES
+        ):
             raise reporter.PilotDataError(
                 f"{label} is unavailable for drift validation"
             )
+        try:
+            leaf_fd = os.open(leaf_name, _file_open_flags(), dir_fd=current_fd)
+            opened_stat = os.fstat(leaf_fd)
+        except OSError as error:
+            raise reporter.PilotDataError(
+                f"{label} is unavailable for drift validation"
+            ) from error
         if (
-            opened_stat.st_dev != leaf_stat.st_dev
-            or opened_stat.st_ino != leaf_stat.st_ino
+            not stat.S_ISREG(opened_stat.st_mode)
+            or opened_stat.st_uid != owner_uid
+            or opened_stat.st_size > MAX_CANDIDATE_DECISION_RECORD_BYTES
         ):
+            raise reporter.PilotDataError(
+                f"{label} is unavailable for drift validation"
+            )
+        if not _same_inode(opened_stat, pre_leaf_stat):
             raise reporter.PilotDataError(
                 f"{label} changed during no-follow access"
             )
         chunks = []
         while True:
-            chunk = os.read(descriptor, 65536)
+            chunk = os.read(leaf_fd, 65536)
             if not chunk:
                 break
             chunks.append(chunk)
     finally:
-        os.close(descriptor)
+        if leaf_fd >= 0:
+            os.close(leaf_fd)
+        for descriptor in reversed(parent_fds):
+            os.close(descriptor)
+        if root_fd >= 0:
+            os.close(root_fd)
     payload = b"".join(chunks)
     if _git_blob_oid(payload) != expected_blob_oid:
         raise reporter.PilotDataError(
             f"{label} differs from the exact candidate tree blob"
         )
+    _ensure_current_path_matches_pinned(
+        repository_root,
+        relative,
+        root_stat=root_stat,
+        parent_stats=parent_stats,
+        leaf_stat=opened_stat,
+    )
     return payload
 
 

@@ -1543,7 +1543,9 @@ game behavior needs a compensating change.
    record fails closed before trust. Require exact candidate/base Git-tree
    regular-blob mode plus verified no-follow candidate-file access that still
    matches the candidate tree blob; parent or leaf symlinks, path escape, swap
-   races, and tree/worktree mismatches fail closed before trust. Treat every
+   races, and tree/worktree mismatches fail closed before trust. Confirm the
+   live gate pins the repository root and each relative parent with a
+   dirfd/openat no-follow directory walk before opening the leaf. Treat every
    parent package
    initializer in that closure as authority-bearing presence/absence state,
    even when the exact base lacks the file; adding `scripts/__init__.py`,
