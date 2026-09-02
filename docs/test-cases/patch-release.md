@@ -184,6 +184,14 @@ unpredictable mode-restricted base path, invokes only that staged tool through
 absolute isolated Python while the base exists, removes it on success/failure,
 verifies cleanup, revalidates the BPS/manifest/README allowlist immediately
 before upload, and uploads only that patch artifact.
+The launcher's parent-death `SIGKILL` prevents an unresumed authenticated
+child from outliving the trusted shell. Before every cleanup signal, the host
+immediately rechecks the immutable shell-parent PID, PID/SID/PGID tuple,
+expected stopped/running state, and `/proc` start time. Missing, forged,
+parent-group, stale, or reused identities cause no PID or process-group
+signal; only the owned cgroup kill remains available, and cleanup reports
+failure. After a valid group signal, escalation requires another exact tuple
+check, while the exact shell-child wait is used only to reap an observed exit.
 Before candidate code, a trusted child launcher closes inherited descriptors
 above 2, while stdin becomes private `/dev/null` and stdout/stderr permanently
 target that same null device.
@@ -243,10 +251,11 @@ failing master `0456f181ad53645a7bc2b677abab05978ab9f35c` then rejects a valid
 asynchronous `setsid` wrapper because `$!` need not equal its observed process
 group. The fixed live namespace harness authenticates the self-stopped
 launcher, resumes it, terminates the exact session and cgroup, and leaves no
-orphan; missing, forged, or parent-process-group identities fail without
-signaling a foreign group. The default bare `make` path remains 16
-MiB/default-off and does not receive a base secret, patch artifact, or publish
-step.
+orphan. Missing, forged, parent-process-group, and reused-start-time identities
+leave an unrelated live process untouched; valid owned identity terminates,
+and the cgroup path still removes namespace descendants. The default bare
+`make` path remains 16 MiB/default-off and does not receive a base secret,
+patch artifact, or publish step.
 
 ### Interactions and save compatibility
 

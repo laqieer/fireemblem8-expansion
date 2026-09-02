@@ -1901,6 +1901,12 @@ def _parse_step(block, job_name, index):
             not in " ".join(token for command in values["run"] for token in command)
             or "signal.SIGSTOP"
             not in " ".join(token for command in values["run"] for token in command)
+            or "libc.prctl(1,"
+            not in " ".join(token for command in values["run"] for token in command)
+            or '/bin/kill -TERM "$builder_supervisor_pid"'
+            in " ".join(token for command in values["run"] for token in command)
+            or '/bin/kill -KILL "$builder_supervisor_pid"'
+            in " ".join(token for command in values["run"] for token in command)
             or "/usr/bin/setsid --wait /usr/bin/timeout"
             in " ".join(token for command in values["run"] for token in command)
             or ("builder_uid_is_empty", "$builder_uid")

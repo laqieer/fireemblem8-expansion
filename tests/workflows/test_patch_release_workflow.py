@@ -35,6 +35,7 @@ PATCH_RELEASE_REGISTRY = ROOT / "docs" / "test-cases" / "registry.json"
 MERGED_MASTER_771 = "771d38c5a531f2d63b269220727b02aa820cc3d4"
 FAILING_MASTER_8D81 = "8d81c30b298ef6265ba9c5335c3ca8c8f94e60e6"
 FAILING_MASTER_0456 = "0456f181ad53645a7bc2b677abab05978ab9f35c"
+REVIEWED_RUNTIME_3_6EE = "6ee4766e6204d01f76b334edd2085e965fac5a66"
 ARTIFACT_FILENAMES = (
     "README.txt",
     "fireemblem8-expansion-all-locales-all-features-aapcs.bps",
@@ -1787,9 +1788,15 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "builder_session_authenticated=1" not in isolated_step
         or "builder_supervisor_identity_matches" not in isolated_step
         or "read_builder_identity" not in isolated_step
+        or "builder_supervisor_parent_pid" not in isolated_step
+        or "builder_supervisor_starttime" not in isolated_step
+        or "builder_supervisor_wait_pid" not in isolated_step
         or "supervisor-launcher.py" not in isolated_step
         or "os.setsid()" not in isolated_step
         or "signal.SIGSTOP" not in isolated_step
+        or "libc.prctl(1, signal.SIGKILL" not in isolated_step
+        or '/bin/kill -TERM "$builder_supervisor_pid"' in isolated_step
+        or '/bin/kill -KILL "$builder_supervisor_pid"' in isolated_step
         or "set +m" not in isolated_step
         or "builder_launch_detail=session-ready" not in isolated_step
         or 'kill -CONT "$builder_supervisor_pid"' not in isolated_step
@@ -2536,9 +2543,21 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("supervisor-launcher.py", self.patch_job)
         self.assertIn("os.setsid()", self.patch_job)
         self.assertIn("signal.SIGSTOP", self.patch_job)
+        self.assertIn("libc.prctl(1, signal.SIGKILL", self.patch_job)
         self.assertIn("builder_session_authenticated=1", self.patch_job)
         self.assertIn("builder_supervisor_identity_matches", self.patch_job)
         self.assertIn("read_builder_identity", self.patch_job)
+        self.assertIn("builder_supervisor_starttime", self.patch_job)
+        self.assertIn("builder_supervisor_wait_pid", self.patch_job)
+        self.assertIn("builder_supervisor_parent_pid", self.patch_job)
+        self.assertNotIn(
+            '/bin/kill -TERM "$builder_supervisor_pid"',
+            self.patch_job,
+        )
+        self.assertNotIn(
+            '/bin/kill -KILL "$builder_supervisor_pid"',
+            self.patch_job,
+        )
         self.assertIn("builder_launch_detail=session-ready", self.patch_job)
         self.assertIn('kill -CONT "$builder_supervisor_pid"', self.patch_job)
         self.assertNotIn(
@@ -6672,6 +6691,7 @@ exit 37
                     "-I",
                     "-S",
                     str(launcher),
+                    str(os.getpid()),
                     "--",
                     "/usr/bin/timeout",
                     "--signal=TERM",
@@ -6758,7 +6778,7 @@ exit 37
                         pass
                     process.wait(timeout=5)
 
-    def test_launch_identity_failures_kill_exact_wrapper_without_parent_group_signal(self):
+    def test_launch_identity_failures_do_not_signal_external_process(self):
         section = builder_cleanup_functions_source(self.text)
         launch = launch_validation_source(self.text)
         artifact_root = ROOT / "build" / "test-artifacts"
@@ -6777,7 +6797,7 @@ exit 37
                 ),
                 (
                     "forged-identity",
-                    'read_builder_identity() { printf "99998 99999 Ts"; }\n',
+                    'read_builder_identity() { printf "1 99998 99999 Ts 123"; }\n',
                     "session-mismatch",
                 ),
             ):
@@ -6793,7 +6813,11 @@ exit 37
                         + 'builder_cgroup_owned=0\n'
                         + 'builder_session_authenticated=0\n'
                         + 'builder_session_id=""\n'
+                        + 'builder_supervisor_parent_pid="$$"\n'
                         + 'builder_supervisor_pid=""\n'
+                        + 'builder_supervisor_starttime=""\n'
+                        + 'builder_supervisor_state=""\n'
+                        + 'builder_supervisor_wait_pid=""\n'
                         + 'builder_root_owned=0\n'
                         + 'builder_user_created=0\n'
                         + 'wheelhouse_owned=0\n'
@@ -6828,10 +6852,18 @@ exit 37
                         completed.stderr,
                     )
                     self.assertLess(duration, 10.0)
+                    os.kill(child_pid, 0)
+                    os.kill(child_pid, signal.SIGTERM)
+                    for _attempt in range(100):
+                        try:
+                            os.kill(child_pid, 0)
+                        except ProcessLookupError:
+                            break
+                        time.sleep(0.01)
                     with self.assertRaises(ProcessLookupError):
                         os.kill(child_pid, 0)
 
-    def test_cleanup_rejects_forged_session_identity_and_reaps_exact_wrapper(self):
+    def test_cleanup_rejects_reused_session_identity_without_signaling_external_process(self):
         section = builder_cleanup_functions_source(self.text)
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
@@ -6848,16 +6880,295 @@ exit 37
                 + 'builder_cgroup_owned=0\n'
                 + 'builder_session_authenticated=1\n'
                 + 'builder_session_id=""\n'
+                + 'builder_supervisor_parent_pid="$$"\n'
                 + 'builder_supervisor_pid=""\n'
-                + "/bin/sleep 60 < /dev/null > /dev/null 2>&1 &\n"
+                + 'builder_supervisor_starttime="1"\n'
+                + 'builder_supervisor_state="running"\n'
+                + 'builder_supervisor_wait_pid=""\n'
+                + "/usr/bin/python3 -I -S -c "
+                + "'import os; os.setsid(); "
+                + 'os.execv("/bin/sleep", ["sleep", "60"])\' '
+                + "< /dev/null > /dev/null 2>&1 &\n"
                 + 'builder_supervisor_pid="$!"\n'
                 + 'builder_session_id="$builder_supervisor_pid"\n'
+                + 'builder_supervisor_wait_pid="$builder_supervisor_pid"\n'
                 + f'printf "%s\\n" "$builder_supervisor_pid" > "{pid_file}"\n'
+                + "for attempt in $(/usr/bin/seq 1 100); do\n"
+                + '  observed="$(/usr/bin/ps -o sid=,pgid= '
+                + '-p "$builder_supervisor_pid" '
+                + "| /usr/bin/awk 'NF == 2 {print $1 \" \" $2}')\"\n"
+                + '  test "$observed" = "$builder_supervisor_pid '
+                + '$builder_supervisor_pid" && break\n'
+                + "  /bin/sleep 0.01\n"
+                + "done\n"
+                + 'test "$observed" = "$builder_supervisor_pid '
+                + '$builder_supervisor_pid"\n'
                 + "set +e\n"
                 + "terminate_builder_processes\n"
                 + 'status="$?"\n'
                 + "set -e\n"
                 + 'test "$status" -eq 1\n'
+            )
+            completed = subprocess.run(
+                ["/bin/bash", "-c", harness],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            wrapper_pid = int(pid_file.read_text(encoding="ascii").strip())
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout, "")
+            self.assertEqual(completed.stderr, "")
+            os.kill(wrapper_pid, 0)
+            os.kill(wrapper_pid, signal.SIGTERM)
+            for _attempt in range(100):
+                try:
+                    os.kill(wrapper_pid, 0)
+                except ProcessLookupError:
+                    break
+                time.sleep(0.01)
+            with self.assertRaises(ProcessLookupError):
+                os.kill(wrapper_pid, 0)
+
+    def test_exact_reviewed_cleanup_kills_stale_external_pid_but_fixed_cleanup_does_not(
+        self,
+    ):
+        reviewed_workflow = subprocess.check_output(
+            [
+                "git",
+                "--no-pager",
+                "show",
+                f"{REVIEWED_RUNTIME_3_6EE}:.github/workflows/build.yml",
+            ],
+            cwd=ROOT,
+            text=True,
+        )
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="stale-external-pid-negative-control-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+
+            def run_cleanup(
+                name: str,
+                section: str,
+                *,
+                fixed: bool,
+            ) -> tuple[subprocess.CompletedProcess[str], int]:
+                pid_file = sandbox / f"{name}.pid"
+                variables = (
+                    'builder_uid="60000"\n'
+                    'builder_cgroup=""\n'
+                    'builder_cgroup_owned=0\n'
+                    'builder_session_authenticated=0\n'
+                    'builder_session_id=""\n'
+                    'builder_supervisor_pid=""\n'
+                )
+                if fixed:
+                    variables += (
+                        'builder_supervisor_parent_pid="$$"\n'
+                        'builder_supervisor_starttime=""\n'
+                        'builder_supervisor_state=""\n'
+                        'builder_supervisor_wait_pid=""\n'
+                    )
+                harness = (
+                    "set -euo pipefail\n"
+                    + section
+                    + variables
+                    + "/bin/sleep 60 < /dev/null > /dev/null 2>&1 &\n"
+                    + 'builder_supervisor_pid="$!"\n'
+                    + f'printf "%s\\n" "$builder_supervisor_pid" > "{pid_file}"\n'
+                    + "terminate_builder_processes\n"
+                )
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", harness],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                return completed, int(
+                    pid_file.read_text(encoding="ascii").strip()
+                )
+
+            reviewed, reviewed_pid = run_cleanup(
+                "reviewed",
+                builder_cleanup_functions_source(reviewed_workflow),
+                fixed=False,
+            )
+            self.assertEqual(reviewed.returncode, 0, reviewed.stderr)
+            with self.assertRaises(ProcessLookupError):
+                os.kill(reviewed_pid, 0)
+
+            fixed, fixed_pid = run_cleanup(
+                "fixed",
+                builder_cleanup_functions_source(self.text),
+                fixed=True,
+            )
+            self.assertEqual(fixed.returncode, 0, fixed.stderr)
+            os.kill(fixed_pid, 0)
+            os.kill(fixed_pid, signal.SIGTERM)
+            for _attempt in range(100):
+                try:
+                    os.kill(fixed_pid, 0)
+                except ProcessLookupError:
+                    break
+                time.sleep(0.01)
+            with self.assertRaises(ProcessLookupError):
+                os.kill(fixed_pid, 0)
+
+    def test_unauthenticated_cleanup_still_kills_owned_cgroup_descendants(self):
+        section = builder_cleanup_functions_source(self.text)
+        cgroup_kill = (
+            "printf '1\\n' \\\n"
+            "        | /usr/bin/sudo /usr/bin/tee \\\n"
+            '          "$builder_cgroup/cgroup.kill" > /dev/null 2>&1'
+        )
+        self.assertIn(cgroup_kill, section)
+        section = section.replace(
+            cgroup_kill,
+            'fake_cgroup_kill "$builder_cgroup/cgroup.kill"',
+            1,
+        )
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="unauthenticated-cgroup-cleanup-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            cgroup = sandbox / "cgroup"
+            cgroup.mkdir()
+            (cgroup / "cgroup.kill").write_text("", encoding="ascii")
+            (cgroup / "cgroup.procs").write_text("", encoding="ascii")
+            pid_file = sandbox / "descendant.pid"
+            harness = (
+                "set -euo pipefail\n"
+                + section
+                + 'builder_uid="60000"\n'
+                + f'builder_cgroup="{cgroup}"\n'
+                + 'builder_cgroup_owned=1\n'
+                + 'builder_session_authenticated=0\n'
+                + 'builder_session_id=""\n'
+                + 'builder_supervisor_parent_pid="$$"\n'
+                + 'builder_supervisor_pid=""\n'
+                + 'builder_supervisor_starttime=""\n'
+                + 'builder_supervisor_state=""\n'
+                + 'builder_supervisor_wait_pid=""\n'
+                + "/bin/sleep 60 < /dev/null > /dev/null 2>&1 &\n"
+                + 'DESCENDANT_PID="$!"\n'
+                + f'printf "%s\\n" "$DESCENDANT_PID" > "{pid_file}"\n'
+                + "builder_cgroup_pids() {\n"
+                + '  if /bin/kill -0 "$DESCENDANT_PID" 2>/dev/null; then\n'
+                + '    printf "%s" "$DESCENDANT_PID"\n'
+                + "  fi\n"
+                + "}\n"
+                + "fake_cgroup_kill() {\n"
+                + '  /bin/kill -TERM "$DESCENDANT_PID"\n'
+                + '  wait "$DESCENDANT_PID" 2>/dev/null || true\n'
+                + "}\n"
+                + "terminate_builder_processes\n"
+                + "builder_cgroup_is_empty\n"
+            )
+            completed = subprocess.run(
+                ["/bin/bash", "-c", harness],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            descendant_pid = int(
+                pid_file.read_text(encoding="ascii").strip()
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout, "")
+            self.assertEqual(completed.stderr, "")
+            with self.assertRaises(ProcessLookupError):
+                os.kill(descendant_pid, 0)
+
+    def test_cleanup_reauthenticates_and_terminates_owned_supervisor(self):
+        section = builder_cleanup_functions_source(self.text)
+        section = section.replace(
+            "/usr/bin/sudo /bin/kill",
+            "/bin/kill",
+        )
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="owned-supervisor-cleanup-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            launcher = sandbox / "supervisor-launcher.py"
+            launcher.write_text(
+                supervisor_launcher_source(self.text),
+                encoding="ascii",
+            )
+            launcher.chmod(0o400)
+            pid_file = sandbox / "wrapper.pid"
+            harness = (
+                "set -euo pipefail\n"
+                + section
+                + 'builder_uid="60000"\n'
+                + 'builder_cgroup=""\n'
+                + 'builder_cgroup_owned=0\n'
+                + 'builder_session_authenticated=0\n'
+                + 'builder_session_id=""\n'
+                + 'builder_supervisor_parent_pid="$$"\n'
+                + 'builder_supervisor_pid=""\n'
+                + 'builder_supervisor_starttime=""\n'
+                + 'builder_supervisor_state=""\n'
+                + 'builder_supervisor_wait_pid=""\n'
+                + "set +m\n"
+                + f'/usr/bin/python3 -I -S "{launcher}" "$$" -- '
+                + "/usr/bin/timeout --signal=TERM --kill-after=2s 30s "
+                + "/bin/sleep 30 < /dev/null > /dev/null 2>&1 &\n"
+                + 'builder_supervisor_pid="$!"\n'
+                + 'builder_supervisor_wait_pid="$builder_supervisor_pid"\n'
+                + f'printf "%s\\n" "$builder_supervisor_pid" > "{pid_file}"\n'
+                + "for attempt in $(/usr/bin/seq 1 100); do\n"
+                + "  set +e\n"
+                + '  identity="$(read_builder_identity '
+                + '"$builder_supervisor_pid")"\n'
+                + '  identity_status="$?"\n'
+                + "  set -e\n"
+                + "  if [ \"$identity_status\" -eq 0 ] && "
+                + "[[ \"$identity\" =~ "
+                + "^([1-9][0-9]*)[[:space:]]+"
+                + "([1-9][0-9]*)[[:space:]]+"
+                + "([1-9][0-9]*)[[:space:]]+"
+                + "([^[:space:]]+)[[:space:]]+"
+                + "([1-9][0-9]*)$ ]] && "
+                + '[[ "${BASH_REMATCH[4]}" = T* ]]; then\n'
+                + '    builder_session_id="$builder_supervisor_pid"\n'
+                + '    builder_supervisor_starttime="${BASH_REMATCH[5]}"\n'
+                + "    builder_supervisor_state=stopped\n"
+                + "    builder_session_authenticated=1\n"
+                + "    break\n"
+                + "  fi\n"
+                + "  /bin/sleep 0.01\n"
+                + "done\n"
+                + "builder_supervisor_identity_matches stopped\n"
+                + '/bin/kill -CONT "$builder_supervisor_pid"\n'
+                + "builder_supervisor_state=starting\n"
+                + "for attempt in $(/usr/bin/seq 1 100); do\n"
+                + "  if builder_supervisor_identity_matches running; then\n"
+                + "    builder_supervisor_state=running\n"
+                + "    break\n"
+                + "  fi\n"
+                + "  /bin/sleep 0.01\n"
+                + "done\n"
+                + "builder_supervisor_identity_matches running\n"
+                + "terminate_builder_processes\n"
+                + 'test -z "$builder_supervisor_pid"\n'
+                + 'test -z "$builder_supervisor_wait_pid"\n'
+                + 'builder_group_is_empty "$builder_session_id"\n'
             )
             completed = subprocess.run(
                 ["/bin/bash", "-c", harness],
@@ -7142,6 +7453,8 @@ exit 37
             self.assertIn("self-stop", text)
             self.assertIn("exact stopped child", text)
             self.assertIn("kernel process", text)
+            self.assertIn("start time", text)
+            self.assertIn("no PID or process-group signal", text)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)
