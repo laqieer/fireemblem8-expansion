@@ -1484,9 +1484,14 @@ game behavior needs a compensating change.
    authority/anchor chain instead of the stored observation fields.
    Manually publish a direct authority advance that keeps the carried sealed
    receipt but swaps in forged receipt-only fields such as `assigned_at`,
-   `input_seal`, `git_seal`, and `result_seal` through a recomputed digest.
+   `input_seal`, `git_seal`, and `result_seal`, refreshes the publication
+   digests, and omits the separately authenticated `history_carrier`.
    Confirm the historical reader rejects that forged record before a successor
-   document can read the authority or become eligible.
+   document can read the authority or become eligible. Then mutate bytes
+   inside an otherwise signed carrier document/result, refresh the publication
+   `history_carrier_digest`, and confirm readback still rejects because the
+   original handoff signatures and recomputed `make_history_receipt()` no
+   longer verify.
 6. Reconcile a direct watcher timeout with an authoritative successful
    `github-actions-api` run. Then use an authoritative failed run plus a
    watcher process error and confirm delivery remains failed.

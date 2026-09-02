@@ -129,7 +129,17 @@ both equal the frozen coordinator user ID with exact `always` mode.
 typed frozen authorization and default to rejection. Bounded
 remote-OID-before/fetch/remote-OID-after reads and a final dual-ref
 observation check reject replay, rollback, and ABA. Historical reads also
-recompute the stored PR binding digest, require the signed publication
+recompute the stored PR binding digest and the exact canonical digest of each
+sealed history receipt. Every protected handoff commit also carries one
+bounded private `history_carrier` containing the exact signed handoff
+document, the canonical validation result, and the selected handoff ID;
+readback re-verifies the original coordinator, PR, and authority signatures,
+replays `make_history_receipt()` from that carrier, and requires the signed
+publication attestation's `history_carrier_digest` and
+`history_receipt_digest` to match the full carried carrier and receipt bytes
+rather than a projected event subset. Returned authority snapshots keep
+`history_carrier: null` so later handoff documents do not recursively embed
+older carriers. Historical reads also require the signed publication
 attestation's `binding_expectation` to match the stored frozen delivery plus
 stored live current-base fields, and re-check that the frozen base remains an
 ancestor of the stored live base OID. The stored `pr_binding.head_oid`, its

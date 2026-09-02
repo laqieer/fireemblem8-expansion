@@ -139,6 +139,7 @@ PROVEN_HOST_ONLY_PREFIXES = (
 )
 TRUSTED_INSTALLATION_MAX_BYTES = 1024 * 1024
 TRUSTED_INSTALLATION_READ_BYTES = TRUSTED_INSTALLATION_MAX_BYTES + 1
+HISTORY_CARRIER_MAX_BYTES = 1024 * 1024
 RSA_SHA256_DIGEST_INFO_PREFIX = bytes.fromhex(
     "3031300d060960864801650304020105000420"
 )
@@ -327,12 +328,148 @@ def publication_history_receipt_digest(
     if history_receipt is None:
         return None
     return hashlib.sha256(normalized_json(history_receipt)).hexdigest()
+def publication_history_carrier_digest(
+    history_carrier: dict[str, Any] | None = None,
+) -> str | None:
+    if history_carrier is None:
+        return None
+    return hashlib.sha256(normalized_json(history_carrier)).hexdigest()
+def _validate_history_carrier_bounds(
+    history_carrier: dict[str, Any],
+    *,
+    label: str,
+) -> None:
+    if len(normalized_json(history_carrier)) > HISTORY_CARRIER_MAX_BYTES:
+        raise HandoffDataError(f"{label} exceeds 1 MiB")
+def make_history_carrier(
+    document: dict[str, Any],
+    result: dict[str, Any],
+    handoff_id: str,
+) -> dict[str, Any]:
+    history_carrier = {
+        "schema_version": 1,
+        "selected_handoff_id": expect_string(
+            handoff_id,
+            "history carrier selected_handoff_id",
+        ),
+        "document": copy.deepcopy(
+            expect_object(document, "history carrier document")
+        ),
+        "result": copy.deepcopy(
+            expect_object(result, "history carrier result")
+        ),
+    }
+    _validate_history_carrier_bounds(
+        history_carrier,
+        label="history carrier",
+    )
+    return history_carrier
+def _parse_history_carrier(
+    raw: Any,
+    *,
+    label: str,
+) -> dict[str, Any]:
+    history_carrier = copy.deepcopy(expect_object(raw, label))
+    expect_keys(
+        history_carrier,
+        label,
+        (
+            "schema_version",
+            "selected_handoff_id",
+            "document",
+            "result",
+        ),
+    )
+    if (
+        expect_int(
+            history_carrier["schema_version"],
+            f"{label}.schema_version",
+            1,
+        )
+        != 1
+    ):
+        raise HandoffDataError(f"{label}.schema_version must be 1")
+    expect_string(
+        history_carrier["selected_handoff_id"],
+        f"{label}.selected_handoff_id",
+    )
+    expect_object(
+        history_carrier["document"],
+        f"{label}.document",
+    )
+    expect_object(
+        history_carrier["result"],
+        f"{label}.result",
+    )
+    _validate_history_carrier_bounds(
+        history_carrier,
+        label=label,
+    )
+    return history_carrier
+def _null_authority_event(kind: str) -> dict[str, Any]:
+    return {
+        "kind": kind,
+        "handoff_seal": None,
+        "handoff_id": None,
+        "handoff_kind": None,
+        "lifecycle_state": None,
+        "candidate_sha": None,
+        "closed_at": None,
+        "operation_nonce": None,
+        "consume_store_id": None,
+        "consume_sequence": None,
+        "consume_anchor": None,
+        "assignment": None,
+        "interruption_snapshot": None,
+        "history_receipt": None,
+        "history_carrier": None,
+    }
+def _history_event_from_receipt(
+    receipt: dict[str, Any],
+    history_carrier: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "kind": "handoff",
+        "handoff_seal": receipt["seal"],
+        "handoff_id": receipt["handoff_id"],
+        "handoff_kind": receipt["handoff_kind"],
+        "lifecycle_state": receipt["lifecycle_state"],
+        "candidate_sha": receipt["candidate_sha"],
+        "closed_at": receipt["closed_at"],
+        "operation_nonce": receipt["operation_nonce"],
+        "consume_store_id": receipt["consume_store_id"],
+        "consume_sequence": receipt["consume_sequence"],
+        "consume_anchor": receipt["consume_anchor"],
+        "assignment": copy.deepcopy(receipt["assignment"]),
+        "interruption_snapshot": copy.deepcopy(
+            receipt["interruption_snapshot"]
+        ),
+        "history_receipt": copy.deepcopy(receipt),
+        "history_carrier": copy.deepcopy(history_carrier),
+    }
+def _public_history_event(
+    event: dict[str, Any],
+    *,
+    history_receipt: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    public = copy.deepcopy(event)
+    public["history_carrier"] = None
+    if history_receipt is not None:
+        public["history_receipt"] = copy.deepcopy(history_receipt)
+    return public
+def _public_authority_record(
+    authority: dict[str, Any],
+) -> dict[str, Any]:
+    public = copy.deepcopy(authority)
+    public["event"] = _public_history_event(public["event"])
+    return public
 def require_publication_attestation_binding(
     publication: dict[str, Any],
     *,
     operation: str,
     new_head_seal: str | None,
     history_receipt: dict[str, Any] | None = None,
+    history_carrier: dict[str, Any] | None = None,
     pull_request_observation: dict[str, Any] | None = None,
     binding_expectation: dict[str, Any] | None = None,
     label: str,
@@ -342,13 +479,24 @@ def require_publication_attestation_binding(
             raise HandoffDataError(
                 f"{label} advance requires a handoff receipt binding"
             )
+        if history_carrier is None:
+            raise HandoffDataError(
+                f"{label} advance requires a handoff carrier binding"
+            )
     elif history_receipt is not None:
         raise HandoffDataError(
             f"{label} non-handoff publication cannot bind a handoff receipt"
         )
+    elif history_carrier is not None:
+        raise HandoffDataError(
+            f"{label} non-handoff publication cannot bind a handoff carrier"
+        )
     expected = {
         "operation": operation,
         "new_head_seal": new_head_seal,
+        "history_carrier_digest": publication_history_carrier_digest(
+            history_carrier
+        ),
         "history_receipt_digest": publication_history_receipt_digest(
             history_receipt
         ),
@@ -482,6 +630,7 @@ def load_history_authority_transition_summary(
             "assignment",
             "interruption_snapshot",
             "history_receipt",
+            "history_carrier",
         ),
     )
     expect_enum(event["kind"], {"genesis", "handoff", "pr_binding"}, f"{label}.event.kind")
@@ -1926,6 +2075,7 @@ def _read_history_authority_commit(
             "assignment",
             "interruption_snapshot",
             "history_receipt",
+            "history_carrier",
         ),
     )
     event_kind = expect_enum(
@@ -1963,6 +2113,7 @@ def _read_history_authority_commit(
                     "assignment",
                     "interruption_snapshot",
                     "history_receipt",
+                    "history_carrier",
                 )
             )
             or authority["previous_object_id"] is not None
@@ -1993,6 +2144,12 @@ def _read_history_authority_commit(
             history_receipt = expect_object(
                 event["history_receipt"],
                 f"history authority object {object_id}.event.history_receipt",
+            )
+            _parse_history_carrier(
+                event["history_carrier"],
+                label=(
+                    f"history authority object {object_id}.event.history_carrier"
+                ),
             )
             if (
                 event["handoff_seal"] is None
@@ -2035,6 +2192,7 @@ def _read_history_authority_commit(
             if (
                 event["handoff_seal"] is not None
                 or event["history_receipt"] is not None
+                or event["history_carrier"] is not None
                 or binding is None
                 or any(
                     event[field] is not None
@@ -2098,6 +2256,9 @@ def _read_history_authority_commit(
             "pr_binding": "bind",
         }[event_kind],
         new_head_seal=authority["head_seal"] if event_kind == "handoff" else None,
+        history_carrier=(
+            event["history_carrier"] if event_kind == "handoff" else None
+        ),
         history_receipt=(
             event["history_receipt"] if event_kind == "handoff" else None
         ),
@@ -2474,13 +2635,12 @@ def read_history_authority(
             "independent authority anchor does not match authority head"
         )
     authority_by_sequence = {authority["sequence"]: object_id}
+    authority_records_by_sequence = {authority["sequence"]: authority}
     expected_sequence = authority["sequence"]
     current_object = object_id
     current_parents = parents
     current = authority
-    history_events = []
     while expected_sequence > 0:
-        history_events.append(current["event"])
         if len(current_parents) != 1:
             raise HandoffDataError(
                 f"history authority {reference!r} truncates its ancestry"
@@ -2536,6 +2696,7 @@ def read_history_authority(
                     "transition"
                 )
         authority_by_sequence[prior["sequence"]] = current_object
+        authority_records_by_sequence[prior["sequence"]] = prior
         current = prior
     for sequence_number, anchor_record in anchor_records_by_sequence.items():
         if anchor_record["authority_object_id"] != authority_by_sequence[
@@ -2544,6 +2705,55 @@ def read_history_authority(
             raise HandoffDataError(
                 f"history anchor {anchor_reference!r} replays or gaps sequence"
             )
+    verified_history_events = []
+    for sequence_number in range(1, authority["sequence"] + 1):
+        current_record = authority_records_by_sequence[sequence_number]
+        if current_record["event"]["kind"] != "handoff":
+            continue
+        verified_receipt = _verify_history_event_carrier(
+            current_record["event"]["history_carrier"],
+            repository_root=repository_root,
+            current_authority={
+                **_public_authority_record(current_record),
+                "ref": reference,
+                "object_id": authority_by_sequence[sequence_number],
+                "anchor_ref": anchor_reference,
+                "anchor_object_id": anchor_ids_by_sequence[sequence_number],
+                "history_events": copy.deepcopy(verified_history_events),
+            },
+            label=(
+                "history authority object "
+                f"{authority_by_sequence[sequence_number]}.event.history_carrier"
+            ),
+        )
+        expected_event = _history_event_from_receipt(
+            verified_receipt,
+            current_record["event"]["history_carrier"],
+        )
+        if current_record["event"] != expected_event:
+            raise HandoffDataError(
+                "history authority object "
+                f"{authority_by_sequence[sequence_number]} has invalid handoff event"
+            )
+        if (
+            verified_receipt["sequence"] != current_record["handoff_sequence"]
+            or verified_receipt["previous_seal"]
+            != (
+                ZERO_SEAL
+                if not verified_history_events
+                else verified_history_events[-1]["history_receipt"]["seal"]
+            )
+            or verified_receipt["seal"] != current_record["head_seal"]
+        ):
+            raise HandoffDataError(
+                f"history authority {reference!r} has invalid handoff transition"
+            )
+        verified_history_events.append(
+            _public_history_event(
+                expected_event,
+                history_receipt=verified_receipt,
+            )
+        )
     binding = authority["pr_binding"]
     if (
         pull_request is not None
@@ -2561,27 +2771,18 @@ def read_history_authority(
         "anchor_ref": anchor_reference,
         "anchor_object_id": anchor_object_id,
         "observation": observation,
-        "history_events": [
-            {
-                **event,
-                "history_receipt": receipt,
-            }
-            for event, receipt in zip(
-                (
-                    copy.deepcopy(event)
-                    for event in reversed(history_events)
-                    if event["kind"] == "handoff"
-                ),
-                validate_prior_handoffs(
-                    [
-                        event["history_receipt"]
-                        for event in reversed(history_events)
-                        if event["kind"] == "handoff"
-                    ]
+        "history_events": verified_history_events,
+        **_public_authority_record(authority),
+        "event": (
+            _public_history_event(
+                authority["event"],
+                history_receipt=(
+                    verified_history_events[-1]["history_receipt"]
+                    if authority["event"]["kind"] == "handoff"
+                    else None
                 ),
             )
-        ],
-        **authority,
+        ),
     }
 def plan_history_authority(
     repository_root: Path,
@@ -2615,7 +2816,7 @@ def plan_history_authority(
         )
     if _repository_from_origin(repository_root) != repository:
         raise HandoffDataError("history authority plan repository mismatch")
-    new_head_seal = history_receipt = expected_binding = None
+    new_head_seal = history_receipt = history_carrier = expected_binding = None
     if operation == "advance":
         if (
             handoff_document is None
@@ -2639,6 +2840,11 @@ def plan_history_authority(
             raise HandoffDataError("history authority advance target pull request does not match the canonical handoff pull request")
         issue = closed["issue"]; pull_request = closed["pull_request"]
         history_receipt = copy.deepcopy(closed); new_head_seal = closed["seal"]
+        history_carrier = make_history_carrier(
+            copy.deepcopy(expect_object(handoff_document, "handoff document")),
+            copy.deepcopy(expect_object(handoff_result, "handoff result")),
+            closed["handoff_id"],
+        )
     elif issue is None:
         raise HandoffDataError(
             "history authority bootstrap and bind require an explicit issue"
@@ -2733,22 +2939,7 @@ def plan_history_authority(
                     "head_repository_full_name"
                 ],
             },
-            "event": {
-                "kind": "genesis",
-                "handoff_seal": None,
-                "handoff_id": None,
-                "handoff_kind": None,
-                "lifecycle_state": None,
-                "candidate_sha": None,
-                "closed_at": None,
-                "operation_nonce": None,
-                "consume_store_id": None,
-                "consume_sequence": None,
-                "consume_anchor": None,
-                "assignment": None,
-                "interruption_snapshot": None,
-                "history_receipt": None,
-            },
+            "event": _null_authority_event("genesis"),
             "previous_object_id": None,
         }
         expected_remote = None
@@ -2803,24 +2994,10 @@ def plan_history_authority(
                     "authorized_bypass_actors"
                 ],
                 "delivery_expectation": current["delivery_expectation"],
-                "event": {
-                    "kind": "handoff",
-                    "handoff_seal": new_head_seal,
-                    "handoff_id": closed["handoff_id"],
-                    "handoff_kind": closed["handoff_kind"],
-                    "lifecycle_state": closed["lifecycle_state"],
-                    "candidate_sha": closed["candidate_sha"],
-                    "closed_at": closed["closed_at"],
-                    "operation_nonce": closed["operation_nonce"],
-                    "consume_store_id": closed["consume_store_id"],
-                    "consume_sequence": closed["consume_sequence"],
-                    "consume_anchor": closed["consume_anchor"],
-                    "assignment": closed["assignment"],
-                    "interruption_snapshot": closed[
-                        "interruption_snapshot"
-                    ],
-                    "history_receipt": closed,
-                },
+                "event": _history_event_from_receipt(
+                    closed,
+                    history_carrier,
+                ),
                 "previous_object_id": expected_object_id,
             }
         else:
@@ -2977,22 +3154,7 @@ def plan_history_authority(
                     "authorized_bypass_actors"
                 ],
                 "delivery_expectation": current["delivery_expectation"],
-                "event": {
-                    "kind": "pr_binding",
-                    "handoff_seal": None,
-                    "handoff_id": None,
-                    "handoff_kind": None,
-                    "lifecycle_state": None,
-                    "candidate_sha": None,
-                    "closed_at": None,
-                    "operation_nonce": None,
-                    "consume_store_id": None,
-                    "consume_sequence": None,
-                    "consume_anchor": None,
-                    "assignment": None,
-                    "interruption_snapshot": None,
-                    "history_receipt": None,
-                },
+                "event": _null_authority_event("pr_binding"),
                 "previous_object_id": expected_object_id,
             }
         expected_remote = expected_object_id
@@ -3025,6 +3187,7 @@ def plan_history_authority(
         parsed_publication,
         operation=operation,
         new_head_seal=new_head_seal,
+        history_carrier=history_carrier,
         history_receipt=history_receipt,
         pull_request_observation=pull_request_observation,
         binding_expectation=expected_binding,
@@ -3369,6 +3532,7 @@ def make_history_receipt(
     handoff_id: str,
     *,
     coordinator_installation: Path | None = None,
+    canonical_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     prior = validate_prior_handoffs(document["prior_handoffs"])
     source = next(
@@ -3379,15 +3543,20 @@ def make_history_receipt(
         raise HandoffDataError(
             f"handoff {handoff_id!r} has no closed result to seal"
         )
-    canonical_result = validate_document(
-        copy.deepcopy(document),
-        Path(source["allowed_worktree"]),
-        coordinator_installation=coordinator_installation,
-        current_time=parse_time(
-            document["coordinator_receipt"]["issued_at"],
-            "coordinator_receipt.issued_at",
-        ),
-    )
+    if canonical_result is None:
+        canonical_result = validate_document(
+            copy.deepcopy(document),
+            Path(source["allowed_worktree"]),
+            coordinator_installation=coordinator_installation,
+            current_time=parse_time(
+                document["coordinator_receipt"]["issued_at"],
+                "coordinator_receipt.issued_at",
+            ),
+        )
+    else:
+        canonical_result = copy.deepcopy(
+            expect_object(canonical_result, "canonical handoff result")
+        )
     if result != canonical_result:
         raise HandoffDataError(
             f"handoff {handoff_id!r} result does not match canonical validation output"
@@ -4152,6 +4321,275 @@ def derive_reporter_result_summary(
         "rejection_codes": rejection_codes,
     }
     return summary, sorted(global_rejections), delivery_graph, watcher_results
+def _verify_handoff_document_result(
+    document: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    current_authority: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    expect_keys(
+        document,
+        "handoff verification document",
+        (
+            "schema_version",
+            "repository",
+            "prior_handoffs",
+            "history_authority",
+            "delivery_graph",
+            "coordinators",
+            "handoffs",
+            "workflow_runs",
+            "watchers",
+            "coordinator_receipt",
+        ),
+    )
+    expect_list(
+        document["handoffs"],
+        "handoff verification document.handoffs",
+    )
+    validate_prior_handoffs(document["prior_handoffs"])
+    expect_keys(
+        result,
+        "handoff verification result",
+        (
+            "schema_version",
+            "repository",
+            "coordinator_id",
+            "delivery_graph",
+            "handoffs",
+            "watchers",
+            "git_authority",
+            "git_seal",
+            "summary",
+            "input_seal",
+            "result_seal",
+        ),
+    )
+    for field in ("input_seal", "git_seal", "result_seal"):
+        value = result[field]
+        if (
+            not isinstance(value, str)
+            or reporter.SHA256_RE.fullmatch(value) is None
+        ):
+            raise HandoffDataError(
+                f"handoff verification result.{field} must be a lowercase SHA-256"
+            )
+    if result["input_seal"] != hashlib.sha256(
+        INPUT_SEAL_DOMAIN + normalized_json(document)
+    ).hexdigest():
+        raise HandoffDataError(
+            "handoff verification result input seal does not verify"
+        )
+    if result["git_seal"] != seal_git_authority(result["git_authority"]):
+        raise HandoffDataError(
+            "handoff verification result Git seal does not verify"
+        )
+    if result["result_seal"] != seal_handoff_result(result):
+        raise HandoffDataError(
+            "handoff verification result seal does not verify"
+        )
+    reported_handoffs = _parse_reporter_result_handoffs(result["handoffs"])
+    expected_summary, _global_rejection_codes, delivery_graph, watcher_results = (
+        derive_reporter_result_summary(document, result)
+    )
+    if result["summary"] != expected_summary:
+        raise HandoffDataError(
+            "handoff verification result summary does not verify"
+        )
+    if result["delivery_graph"] != delivery_graph:
+        raise HandoffDataError(
+            "handoff verification delivery graph does not verify"
+        )
+    if result["watchers"] != watcher_results:
+        raise HandoffDataError(
+            "handoff verification watcher summary does not verify"
+        )
+    source_worktrees = {
+        handoff["allowed_worktree"]
+        for handoff in document["handoffs"]
+    }
+    if len(source_worktrees) != 1:
+        raise HandoffDataError(
+            "handoff verification must identify one source worktree"
+        )
+    source_root = Path(next(iter(source_worktrees)))
+    receipt = expect_object(
+        document["coordinator_receipt"],
+        "handoff verification coordinator receipt",
+    )
+    original_authority = expect_object(
+        document["history_authority"],
+        "handoff verification original authority",
+    )
+    original_signer = _parse_signer_public(
+        original_authority["signer"],
+        "handoff verification original signer",
+    )
+    verify_external_signature(
+        original_signer,
+        coordinator_attestation_payload(document),
+        receipt["signature"],
+        "handoff verification coordinator signature",
+    )
+    original_anchor, _anchor_parents = _read_history_anchor_commit(
+        source_root,
+        original_authority["anchor_object_id"],
+        document["repository"],
+        original_authority["issue"],
+    )
+    if (
+        original_anchor["authority_object_id"]
+        != original_authority["object_id"]
+        or original_anchor["sequence"] != original_authority["sequence"]
+    ):
+        raise HandoffDataError(
+            "historical handoff anchor does not bind original authority"
+        )
+    original_record, _parents = _read_history_authority_commit(
+        source_root,
+        original_authority["object_id"],
+        document["repository"],
+        original_authority["issue"],
+        expected_previous_anchor_object_id=original_anchor["previous_object_id"],
+    )
+    if any(
+        original_authority[key] != value
+        for key, value in _public_authority_record(original_record).items()
+    ):
+        raise HandoffDataError(
+            "historical handoff authority object does not match its record"
+        )
+    if current_authority is None:
+        current_authority = read_history_authority(
+            source_root,
+            document["repository"],
+            expect_int(
+                original_authority["issue"],
+                "handoff verification authority issue",
+                1,
+            ),
+            None,
+        )
+    else:
+        current_authority = copy.deepcopy(
+            expect_object(
+                current_authority,
+                "handoff verification current authority",
+            )
+        )
+    for original_id, current_id, label in (
+        (
+            original_authority["object_id"],
+            current_authority["object_id"],
+            "authority",
+        ),
+        (
+            original_authority["anchor_object_id"],
+            current_authority["anchor_object_id"],
+            "anchor",
+        ),
+    ):
+        ancestry = subprocess.run(
+            reporter.git_command(
+                source_root,
+                "merge-base",
+                "--is-ancestor",
+                original_id,
+                current_id,
+            ),
+            cwd=source_root,
+            env=reporter.git_environment(offline=True),
+            check=False,
+            capture_output=True,
+        )
+        if ancestry.returncode != 0:
+            raise HandoffDataError(
+                f"historical handoff {label} is not in current protected head"
+            )
+    for handoff_index, handoff in enumerate(document["handoffs"]):
+        _parse_check_receipts(
+            handoff["check_receipts"],
+            f"handoff verification document.handoffs[{handoff_index}]",
+        )
+        for check_receipt in handoff["check_receipts"]:
+            if check_receipt["seal"] != seal_check_receipt(check_receipt):
+                raise HandoffDataError(
+                    "handoff verification check receipt does not verify"
+                )
+    verified_handoffs = _verified_reporter_handoffs(
+        document,
+        source_root,
+        original_authority,
+        current_authority,
+    )
+    if reported_handoffs != verified_handoffs:
+        raise HandoffDataError(
+            "handoff verification result handoffs do not verify"
+        )
+    expected_git_authority = _verified_reporter_git_authority(
+        document,
+        source_root,
+        original_authority,
+        current_authority,
+        verified_handoffs,
+    )
+    if (
+        result["git_authority"] != expected_git_authority
+        or result["git_seal"] != seal_git_authority(expected_git_authority)
+    ):
+        raise HandoffDataError(
+            "handoff verification Git authority does not verify"
+        )
+    return original_signer
+def _verify_history_event_carrier(
+    raw_history_carrier: Any,
+    *,
+    repository_root: Path,
+    current_authority: dict[str, Any],
+    label: str,
+) -> dict[str, Any]:
+    history_carrier = _parse_history_carrier(
+        raw_history_carrier,
+        label=label,
+    )
+    document = expect_object(
+        history_carrier["document"],
+        f"{label}.document",
+    )
+    result = expect_object(
+        history_carrier["result"],
+        f"{label}.result",
+    )
+    source_authority = expect_object(
+        document["history_authority"],
+        f"{label}.document.history_authority",
+    )
+    current_publication = expect_object(
+        current_authority["publication_attestation"],
+        f"{label}.current_authority.publication_attestation",
+    )
+    if (
+        source_authority["object_id"] != current_authority["previous_object_id"]
+        or source_authority["anchor_object_id"]
+        != current_publication["anchor_object_id"]
+    ):
+        raise HandoffDataError(
+            f"{label} does not match the canonical predecessor authority"
+        )
+    _verify_handoff_document_result(
+        document,
+        result,
+        current_authority=current_authority,
+    )
+    return make_history_receipt(
+        copy.deepcopy(document),
+        copy.deepcopy(result),
+        expect_string(
+            history_carrier["selected_handoff_id"],
+            f"{label}.selected_handoff_id",
+        ),
+        canonical_result=copy.deepcopy(result),
+    )
 def reporter_record(
     document: dict[str, Any],
     result: dict[str, Any],
@@ -4206,47 +4644,9 @@ def verify_reporter_record(
         record["document"],
         "handoff reporter record.document",
     )
-    expect_keys(
-        document,
-        "handoff reporter record.document",
-        (
-            "schema_version",
-            "repository",
-            "prior_handoffs",
-            "history_authority",
-            "delivery_graph",
-            "coordinators",
-            "handoffs",
-            "workflow_runs",
-            "watchers",
-            "coordinator_receipt",
-        ),
-    )
-    expect_list(
-        document["handoffs"],
-        "handoff reporter record.document.handoffs",
-    )
-    validate_prior_handoffs(document["prior_handoffs"])
     result = expect_object(
         record["result"],
         "handoff reporter record.result",
-    )
-    expect_keys(
-        result,
-        "handoff reporter record.result",
-        (
-            "schema_version",
-            "repository",
-            "coordinator_id",
-            "delivery_graph",
-            "handoffs",
-            "watchers",
-            "git_authority",
-            "git_seal",
-            "summary",
-            "input_seal",
-            "result_seal",
-        ),
     )
     for field in ("input_seal", "git_seal", "result_seal"):
         value = record[field]
@@ -4266,6 +4666,18 @@ def verify_reporter_record(
         raise HandoffDataError(
             "handoff reporter record source identities contradict its document"
         )
+    if record["input_seal"] != result["input_seal"]:
+        raise HandoffDataError(
+            "handoff reporter record.input_seal contradicts its result"
+        )
+    if record["git_seal"] != result["git_seal"]:
+        raise HandoffDataError(
+            "handoff reporter record.git_seal contradicts its result"
+        )
+    if record["result_seal"] != result["result_seal"]:
+        raise HandoffDataError(
+            "handoff reporter record.result_seal contradicts its result"
+        )
     if record["input_seal"] != hashlib.sha256(
         INPUT_SEAL_DOMAIN + normalized_json(document)
     ).hexdigest():
@@ -4279,22 +4691,6 @@ def verify_reporter_record(
     if result["result_seal"] != seal_handoff_result(result):
         raise HandoffDataError(
             "handoff reporter record result seal does not verify"
-        )
-    reported_handoffs = _parse_reporter_result_handoffs(result["handoffs"])
-    expected_summary, _global_rejection_codes, delivery_graph, watcher_results = (
-        derive_reporter_result_summary(document, result)
-    )
-    if result["summary"] != expected_summary:
-        raise HandoffDataError(
-            "handoff reporter record result summary does not verify"
-        )
-    if result["delivery_graph"] != delivery_graph:
-        raise HandoffDataError(
-            "handoff reporter record delivery graph does not verify"
-        )
-    if result["watchers"] != watcher_results:
-        raise HandoffDataError(
-            "handoff reporter record watcher summary does not verify"
         )
     result_attestation = expect_object(
         record["result_attestation"],
@@ -4336,130 +4732,10 @@ def verify_reporter_record(
         result_attestation["signature"],
         "handoff reporter result signature",
     )
-    source_worktrees = {
-        handoff["allowed_worktree"]
-        for handoff in document["handoffs"]
-    }
-    if len(source_worktrees) != 1:
-        raise HandoffDataError(
-            "handoff reporter record must identify one source worktree"
-        )
-    source_root = Path(next(iter(source_worktrees)))
-    receipt = expect_object(
-        document["coordinator_receipt"],
-        "handoff reporter coordinator receipt",
-    )
-    original_authority = expect_object(
-        document["history_authority"],
-        "handoff reporter original authority",
-    )
-    verify_external_signature(
-        original_signer,
-        coordinator_attestation_payload(document),
-        receipt["signature"],
-        "handoff reporter coordinator signature",
-    )
-    current_authority = read_history_authority(
-        source_root,
-        document["repository"],
-        expect_int(
-            original_authority["issue"],
-            "handoff reporter authority issue",
-            1,
-        ),
-        None,
-    )
-    original_anchor, _anchor_parents = _read_history_anchor_commit(
-        source_root,
-        original_authority["anchor_object_id"],
-        document["repository"],
-        original_authority["issue"],
-    )
-    if (
-        original_anchor["authority_object_id"]
-        != original_authority["object_id"]
-        or original_anchor["sequence"] != original_authority["sequence"]
-    ):
-        raise HandoffDataError(
-            "historical handoff anchor does not bind original authority"
-        )
-    original_record, _parents = _read_history_authority_commit(
-        source_root,
-        original_authority["object_id"],
-        document["repository"],
-        original_authority["issue"],
-        expected_previous_anchor_object_id=original_anchor["previous_object_id"],
-    )
-    if any(
-        original_authority[key] != value
-        for key, value in original_record.items()
-    ):
-        raise HandoffDataError(
-            "historical handoff authority object does not match its record"
-        )
-    for original_id, current_id, label in (
-        (
-            original_authority["object_id"],
-            current_authority["object_id"],
-            "authority",
-        ),
-        (
-            original_authority["anchor_object_id"],
-            current_authority["anchor_object_id"],
-            "anchor",
-        ),
-    ):
-        ancestry = subprocess.run(
-            reporter.git_command(
-                source_root,
-                "merge-base",
-                "--is-ancestor",
-                original_id,
-                current_id,
-            ),
-            cwd=source_root,
-            env=reporter.git_environment(offline=True),
-            check=False,
-            capture_output=True,
-        )
-        if ancestry.returncode != 0:
-            raise HandoffDataError(
-                f"historical handoff {label} is not in current protected head"
-            )
-    for handoff_index, handoff in enumerate(document["handoffs"]):
-        _parse_check_receipts(
-            handoff["check_receipts"],
-            f"handoff reporter document.handoffs[{handoff_index}]",
-        )
-        for receipt in handoff["check_receipts"]:
-            if receipt["seal"] != seal_check_receipt(receipt):
-                raise HandoffDataError(
-                    "handoff reporter record check receipt does not verify"
-                )
-    verified_handoffs = _verified_reporter_handoffs(
+    _verify_handoff_document_result(
         document,
-        source_root,
-        original_authority,
-        current_authority,
+        result,
     )
-    if reported_handoffs != verified_handoffs:
-        raise HandoffDataError(
-            "handoff reporter record result handoffs do not verify"
-        )
-    expected_git_authority = _verified_reporter_git_authority(
-        document,
-        source_root,
-        original_authority,
-        current_authority,
-        verified_handoffs,
-    )
-    if (
-        result["git_authority"] != expected_git_authority
-        or result["git_seal"] != seal_git_authority(expected_git_authority)
-    ):
-        raise HandoffDataError(
-            "handoff reporter record Git authority does not verify"
-        )
     return record
 def _repository_from_origin(repository_root: Path) -> str:
     origin = (
@@ -5260,6 +5536,7 @@ def parse_publication_attestation(
             "operation_nonce",
             "operation",
             "new_head_seal",
+            "history_carrier_digest",
             "history_receipt_digest",
             "pull_request_observation_digest",
             "binding_expectation",
@@ -5320,6 +5597,7 @@ def parse_publication_attestation(
             f"{label}.new_head_seal must be a SHA-256"
         )
     for field in (
+        "history_carrier_digest",
         "history_receipt_digest",
         "pull_request_observation_digest",
     ):
@@ -7289,7 +7567,10 @@ def validate_document(
     if [
         event["history_receipt"]
         for event in canonical_authority["history_events"]
-    ] != prior_handoffs:
+    ] != [
+        _public_json(receipt)
+        for receipt in prior_handoffs
+    ]:
         raise HandoffDataError(
             "protected authority receipts do not match handoff history"
         )

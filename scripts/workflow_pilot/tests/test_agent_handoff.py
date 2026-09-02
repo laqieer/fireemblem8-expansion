@@ -27,6 +27,7 @@ COORDINATOR_INSTALLATIONS = {}
 AUTHORIZED_COORDINATORS = {}
 SIGNER_SERVICES = {}
 SIGNER_CONSUME_STATES = {}
+SYNTHETIC_AUTHORITY_ADVANCES = 0
 def load_handoff_schema():
     return json.loads(
         (
@@ -320,6 +321,7 @@ def publication_attestation(
     coordinator_database_id=None,
     operation=None,
     new_head_seal=None,
+    history_carrier=None,
     history_receipt=None,
     pr_observation=None,
     binding_expectation=None,
@@ -345,6 +347,9 @@ def publication_attestation(
         ).hexdigest(),
         "operation": operation,
         "new_head_seal": new_head_seal,
+        "history_carrier_digest": agent_handoff.publication_history_carrier_digest(
+            history_carrier
+        ),
         "history_receipt_digest": agent_handoff.publication_history_receipt_digest(
             history_receipt
         ),
@@ -464,6 +469,7 @@ def authority_publication(
     *,
     issue=178,
     operation,
+    history_carrier=None,
     history_receipt=None,
     pr_observation=None,
     current_base_oid=None,
@@ -492,7 +498,8 @@ def authority_publication(
         issue=issue, coordinator_database_id=coordinator_database_id,
         operation=operation,
         new_head_seal=None if history_receipt is None else history_receipt["seal"],
-        history_receipt=history_receipt, pr_observation=pr_observation,
+        history_carrier=history_carrier, history_receipt=history_receipt,
+        pr_observation=pr_observation,
         binding_expectation=binding_expectation,
     )
 def sign_coordinator_document(document, repository_root):
@@ -645,6 +652,11 @@ def plan_advance_authority(
     handoff_id="issue-178-round-1",
 ):
     history = agent_handoff.make_history_receipt(document, result, handoff_id)
+    history_carrier = agent_handoff.make_history_carrier(
+        document,
+        result,
+        handoff_id,
+    )
     issue = history["issue"] if issue is None else issue
     pull_request = history["pull_request"] if pull_request is None else pull_request
     current = agent_handoff.read_history_authority(repository_root, "example/workflow", issue, pull_request)
@@ -664,8 +676,126 @@ def plan_advance_authority(
             current,
             issue=issue,
             operation="advance",
+            history_carrier=history_carrier,
             history_receipt=history,
         ),
+    )
+def advance_history_authority(repository_root, *, issue=178):
+    global SYNTHETIC_AUTHORITY_ADVANCES
+    current = agent_handoff.read_history_authority(
+        repository_root,
+        "example/workflow",
+        issue,
+        None,
+    )
+    if current["handoff_sequence"] == 0:
+        parent_sha = git(repository_root, "rev-parse", "HEAD^")
+        result_sha = git(repository_root, "rev-parse", "HEAD")
+        handoff_id = f"issue-{issue}-round-1"
+        document = handoff_document(
+            repository_root,
+            parent_sha,
+            result_sha,
+            issue=issue,
+            handoff_id=handoff_id,
+        )
+        shift_handoff_times(document, -120)
+        refresh_coordinator_receipt(document, repository_root)
+    else:
+        prior_closed_at = datetime.fromisoformat(
+            current["history_events"][-1]["closed_at"].replace("Z", "+00:00")
+        )
+        if (
+            current["pr_binding"] is None
+            and datetime.now(timezone.utc).replace(microsecond=0)
+            <= prior_closed_at + timedelta(seconds=30)
+        ):
+            return bind_history_authority(
+                repository_root,
+                issue=issue,
+                pull_request=200,
+            )
+        SYNTHETIC_AUTHORITY_ADVANCES += 1
+        change_path = (
+            repository_root
+            / "scripts"
+            / "workflow_pilot"
+            / f"synthetic_authority_{SYNTHETIC_AUTHORITY_ADVANCES}.py"
+        )
+        change_path.write_text(
+            f"SYNTHETIC_AUTHORITY_ADVANCE = {SYNTHETIC_AUTHORITY_ADVANCES}\n",
+            encoding="utf-8",
+        )
+        git(repository_root, "add", str(change_path.relative_to(repository_root)))
+        git(
+            repository_root,
+            "commit",
+            "-q",
+            "-m",
+            "test: synthetic authority advance "
+            f"{SYNTHETIC_AUTHORITY_ADVANCES}\n\n"
+            + agent_handoff.COPILOT_TRAILER,
+        )
+        parent_sha = git(repository_root, "rev-parse", "HEAD^")
+        result_sha = git(repository_root, "rev-parse", "HEAD")
+        handoff_id = (
+            f"issue-{issue}-round-{current['handoff_sequence'] + 1}"
+        )
+        document = handoff_document(
+            repository_root,
+            parent_sha,
+            result_sha,
+            issue=issue,
+            handoff_id=handoff_id,
+        )
+        prior_handoffs = [
+            copy.deepcopy(event["history_receipt"])
+            for event in current["history_events"]
+        ]
+        configure_review_successor(
+            document,
+            prior_handoffs[-1],
+            handoff_id=handoff_id,
+            owner=(
+                f"owner-{current['handoff_sequence'] + 1}",
+                101 + current["handoff_sequence"],
+            ),
+            pull_request=(
+                current["pr_binding"]["pull_request"]
+                if current["pr_binding"] is not None
+                else None
+            ),
+        )
+        document["prior_handoffs"] = prior_handoffs
+        assignment_sent = min(
+            datetime.fromisoformat(state["at"].replace("Z", "+00:00"))
+            for state in document["handoffs"][0]["states"]
+            if state["state"] == "assignment_sent"
+        )
+        shift_handoff_times(
+            document,
+            int(
+                (
+                    prior_closed_at
+                    + timedelta(seconds=30)
+                    - assignment_sent
+                ).total_seconds()
+            ),
+        )
+        refresh_coordinator_receipt(document, repository_root)
+    report = agent_handoff.validate_document(document, repository_root)
+    return set_history_authority(
+        repository_root,
+        current["sequence"] + 1,
+        issue=issue,
+        pull_request=(
+            current["pr_binding"]["pull_request"]
+            if current["pr_binding"] is not None
+            else None
+        ),
+        document=document,
+        result=report,
+        handoff_id=handoff_id,
     )
 def set_history_authority(
     repository_root,
@@ -716,176 +846,10 @@ def set_history_authority(
             anchor_reference = agent_handoff.history_anchor_ref(issue)
             parent = current["object_id"]
         else:
-            issue = 178 if issue is None else issue
-            owner_root = AUTHORITY_OWNERS[str(repository_root)]
-            reference = agent_handoff.history_authority_ref(issue, pull_request)
-            anchor_reference = agent_handoff.history_anchor_ref(issue)
-            current = agent_handoff.read_history_authority(
-                repository_root,
-                "example/workflow",
-                issue,
-                None,
+            raise AssertionError(
+                "set_history_authority sequence>0 requires document/result; "
+                "use advance_history_authority for synthetic moves"
             )
-            handoff_id = f"synthetic-{sequence}"
-            handoff_kind = (
-                "root"
-                if current["handoff_sequence"] == 0
-                else "review_successor"
-            )
-            replaces_handoff_id = (
-                None
-                if current["handoff_sequence"] == 0
-                else current["history_events"][-1]["handoff_id"]
-            )
-            owner_id, owner_database_id = (
-                ("owner-1", 101)
-                if current["handoff_sequence"] == 0
-                else ("owner-2", 102)
-            )
-            assigned_parent_sha = (
-                current["delivery_expectation"]["immediate_base_oid"]
-                if current["handoff_sequence"] == 0
-                else current["history_events"][-1]["candidate_sha"]
-            )
-            prior_closed_at = (
-                datetime.fromisoformat(
-                    current["history_events"][-1]["closed_at"].replace(
-                        "Z",
-                        "+00:00",
-                    )
-                )
-                if current["history_events"]
-                else datetime(2026, 8, 31, tzinfo=timezone.utc)
-            )
-            assigned_at = iso_utc(prior_closed_at + timedelta(seconds=1))
-            closed_at = iso_utc(prior_closed_at + timedelta(seconds=2))
-            candidate_sha = hashlib.sha1(
-                f"synthetic-candidate:{sequence}".encode()
-            ).hexdigest()
-            history_receipt = {
-                "sequence": current["handoff_sequence"] + 1,
-                "previous_seal": current["head_seal"]
-                or agent_handoff.ZERO_SEAL,
-                "handoff_id": handoff_id,
-                "owner_id": owner_id,
-                "owner_database_id": owner_database_id,
-                "handoff_kind": handoff_kind,
-                "replaces_handoff_id": replaces_handoff_id,
-                "issue": issue,
-                "pull_request": pull_request,
-                "assigned_parent_sha": assigned_parent_sha,
-                "expected_branch": current["delivery_expectation"][
-                    "delivery_branch"
-                ],
-                "allowed_worktree": str(repository_root),
-                "lifecycle_state": "handed_off",
-                "candidate_sha": candidate_sha,
-                "assigned_at": assigned_at,
-                "closed_at": closed_at,
-                "input_seal": hashlib.sha256(
-                    f"synthetic-input:{sequence}".encode()
-                ).hexdigest(),
-                "git_seal": hashlib.sha256(
-                    f"synthetic-git:{sequence}".encode()
-                ).hexdigest(),
-                "result_seal": hashlib.sha256(
-                    f"synthetic-result:{sequence}".encode()
-                ).hexdigest(),
-                "operation_nonce": hashlib.sha256(
-                    f"synthetic-operation:{sequence}".encode()
-                ).hexdigest(),
-                "consume_store_id": "synthetic-store",
-                "consume_sequence": sequence,
-                "consume_anchor": hashlib.sha256(
-                    f"synthetic-anchor:{sequence}".encode()
-                ).hexdigest(),
-                "assignment": {
-                    "id": handoff_id,
-                    "issue": issue,
-                    "pull_request": pull_request,
-                    "owner_id": owner_id,
-                    "owner_database_id": owner_database_id,
-                    "handoff_kind": handoff_kind,
-                    "replaces_handoff_id": replaces_handoff_id,
-                    "assigned_parent_sha": assigned_parent_sha,
-                    "expected_branch": current["delivery_expectation"][
-                        "delivery_branch"
-                    ],
-                    "allowed_worktree": str(repository_root),
-                    "allowed_scope": ["scripts/workflow_pilot/"],
-                    "finding_ids": ["issue-178-synthetic"],
-                    "acceptance_criteria": ["synthetic authority fixture"],
-                    "required_checks": [],
-                    "budgets": {
-                        "changed_lines": 1,
-                        "ram_bytes": 0,
-                        "rom_bytes": 0,
-                        "protocol_changes": 0,
-                    },
-                    "prohibited_remote_actions": sorted(
-                        agent_handoff.PROHIBITED_REMOTE_ACTIONS
-                    ),
-                    "max_lifetime_seconds": 60,
-                    "max_peak_rss_bytes": 1048576,
-                },
-                "interruption_snapshot": None,
-            }
-            history_receipt["seal"] = (
-                agent_handoff.seal_history_receipt(history_receipt)
-            )
-            head_seal = history_receipt["seal"]
-            record = {
-                "schema_version": 2,
-                "repository": "example/workflow",
-                "issue": issue,
-                "sequence": current["sequence"] + 1,
-                "handoff_sequence": current["handoff_sequence"] + 1,
-                "head_seal": head_seal,
-                "pr_binding": current["pr_binding"],
-                "signer": current["signer"],
-                "ruleset_id": current["ruleset_id"],
-                "authorized_bypass_actors": current["authorized_bypass_actors"],
-                "delivery_expectation": current["delivery_expectation"],
-                "publication_attestation": authority_publication(
-                    repository_root,
-                    current,
-                    issue=issue,
-                    operation="advance",
-                    history_receipt=history_receipt,
-                ),
-                "event": {
-                    "kind": "handoff",
-                    "handoff_seal": head_seal,
-                    "handoff_id": history_receipt["handoff_id"],
-                    "handoff_kind": history_receipt["handoff_kind"],
-                    "lifecycle_state": history_receipt["lifecycle_state"],
-                    "candidate_sha": history_receipt["candidate_sha"],
-                    "closed_at": history_receipt["closed_at"],
-                    "operation_nonce": history_receipt["operation_nonce"],
-                    "consume_store_id": history_receipt["consume_store_id"],
-                    "consume_sequence": history_receipt["consume_sequence"],
-                    "consume_anchor": history_receipt["consume_anchor"],
-                    "assignment": history_receipt["assignment"],
-                    "interruption_snapshot": history_receipt["interruption_snapshot"],
-                    "history_receipt": history_receipt,
-                },
-                "previous_object_id": current["object_id"],
-            }
-            plan = {
-                "record": record,
-                "ref": reference,
-                "anchor_ref": anchor_reference,
-                "expected_anchor_object_id": current["anchor_object_id"],
-                "anchor_record_template": {
-                    "schema_version": 1,
-                    "repository": "example/workflow",
-                    "issue": issue,
-                    "sequence": current["sequence"] + 1,
-                    "authority_object_id": "<new-authority-commit>",
-                    "previous_object_id": current["anchor_object_id"],
-                },
-            }
-            parent = current["object_id"]
     planned_sequence = plan["record"]["sequence"]
     if planned_sequence != sequence:
         raise AssertionError("authority test sequence mismatch")
@@ -995,6 +959,7 @@ def publish_bound_history_authority(
             "assignment": None,
             "interruption_snapshot": None,
             "history_receipt": None,
+            "history_carrier": None,
         },
         "previous_object_id": current["object_id"],
     }
@@ -2172,7 +2137,9 @@ class AuthorityReadRaceTests(unittest.TestCase):
                 root,
                 stable["observation"],
             )
-            set_history_authority(root, 1, "1" * 64)
+            document = handoff_document(root, _parent, _result)
+            report = agent_handoff.validate_document(document, root)
+            set_history_authority(root, 1, document=document, result=report)
             advanced = agent_handoff.read_history_authority(
                 root,
                 "example/workflow",
@@ -2189,7 +2156,14 @@ class AuthorityReadRaceTests(unittest.TestCase):
                 nonlocal moved
                 if phase == "after-fetch" and attempt == 1 and not moved:
                     moved = True
-                    set_history_authority(root, 1, "2" * 64)
+                    document = handoff_document(root, _parent, _result)
+                    report = agent_handoff.validate_document(document, root)
+                    set_history_authority(
+                        root,
+                        1,
+                        document=document,
+                        result=report,
+                    )
             authority = agent_handoff.read_history_authority(
                 root,
                 "example/workflow",
@@ -2209,11 +2183,7 @@ class AuthorityReadRaceTests(unittest.TestCase):
                 if phase != "after-fetch":
                     return
                 sequence += 1
-                set_history_authority(
-                    root,
-                    sequence,
-                    f"{sequence:064x}",
-                )
+                advance_history_authority(root)
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
                 "authority-moved",
@@ -2232,12 +2202,18 @@ class AuthorityReadRaceTests(unittest.TestCase):
     def test_advance_after_read_before_eligibility_rejects(self):
         with handoff_repository() as (root, _base, parent, result):
             document = handoff_document(root, parent, result)
+            report = agent_handoff.validate_document(document, root)
             advanced = False
             def advance_at_eligibility(_attempt, phase, _object_id):
                 nonlocal advanced
                 if phase == "before-eligibility-confirm" and not advanced:
                     advanced = True
-                    set_history_authority(root, 1, "3" * 64)
+                    set_history_authority(
+                        root,
+                        1,
+                        document=document,
+                        result=report,
+                    )
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
                 "authority-moved",
@@ -2274,6 +2250,16 @@ class ExactHandoffTests(unittest.TestCase):
         self.assertIn(
             "properties",
             schema["$defs"]["historyReceiptInterrupted"],
+        )
+        self.assertIn(
+            "history_carrier_digest",
+            schema["$defs"]["publicationAttestation"]["required"],
+        )
+        self.assertEqual(
+            schema["$defs"]["handedOffHistoryEvent"]["properties"][
+                "history_carrier"
+            ],
+            {"type": "null"},
         )
     def test_schema_v2_has_no_generic_object_or_array_placeholders(self):
         schema = load_handoff_schema()
@@ -3912,7 +3898,7 @@ class ExactHandoffTests(unittest.TestCase):
                 capture_output=True,
             )
             self.assertNotEqual(split.returncode, 0)
-            recovered = set_history_authority(root, 2, None)
+            recovered = advance_history_authority(root)
             self.assertEqual(recovered["sequence"], 2)
         with handoff_repository() as (root, _base, _parent, _result):
             remote = Path(git(root, "remote", "get-url", "origin"))
@@ -4291,8 +4277,13 @@ class ExactHandoffTests(unittest.TestCase):
             ),
         )
     def test_historical_handoff_requires_exact_publication_receipt_digest(self):
-        for name, digest in (("missing", None), ("wrong", "f" * 64)):
-            with self.subTest(digest=name):
+        for field, name, digest in (
+            ("history_receipt_digest", "receipt-missing", None),
+            ("history_receipt_digest", "receipt-wrong", "f" * 64),
+            ("history_carrier_digest", "carrier-missing", None),
+            ("history_carrier_digest", "carrier-wrong", "e" * 64),
+        ):
+            with self.subTest(field=field, digest=name):
                 with handoff_repository() as (
                     root,
                     _base,
@@ -4309,7 +4300,7 @@ class ExactHandoffTests(unittest.TestCase):
                     publication = copy.deepcopy(
                         plan["record"]["publication_attestation"]
                     )
-                    publication["history_receipt_digest"] = digest
+                    publication[field] = digest
                     publication["signature"] = external_sign(
                         root,
                         agent_handoff.signed_record_payload(
@@ -4372,10 +4363,13 @@ class ExactHandoffTests(unittest.TestCase):
             )
             plan["record"]["head_seal"] = forged_history["seal"]
             plan["record"]["event"]["handoff_seal"] = forged_history["seal"]
+            plan["record"]["event"]["history_receipt"] = forged_history
+            plan["record"]["event"]["history_carrier"] = None
             plan["record"]["publication_attestation"] = authority_publication(
                 root,
                 current,
                 operation="advance",
+                history_carrier=None,
                 history_receipt=forged_history,
             )
             publish_authority_plan(
@@ -4401,7 +4395,7 @@ class ExactHandoffTests(unittest.TestCase):
             second_result = git(root, "rev-parse", "HEAD")
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
-                "invalid handoff event",
+                "history_carrier",
             ):
                 agent_handoff.read_history_authority(
                     root,
@@ -4411,9 +4405,51 @@ class ExactHandoffTests(unittest.TestCase):
                 )
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
-                "invalid handoff event",
+                "history_carrier",
             ):
                 handoff_document(root, first_result, second_result)
+    def test_historical_handoff_rejects_mutated_signed_carrier(self):
+        with handoff_repository() as (root, _base, parent, result):
+            document = handoff_document(root, parent, result)
+            report = agent_handoff.validate_document(document, root)
+            current, history, plan = plan_advance_authority(
+                root,
+                document,
+                report,
+            )
+            mutated_carrier = copy.deepcopy(
+                plan["record"]["event"]["history_carrier"]
+            )
+            mutated_carrier["document"]["handoffs"][0]["states"][0]["at"] = (
+                "2025-12-31T23:59:58Z"
+            )
+            plan["record"]["event"]["history_carrier"] = mutated_carrier
+            plan["record"]["publication_attestation"] = authority_publication(
+                root,
+                current,
+                operation="advance",
+                history_carrier=mutated_carrier,
+                history_receipt=history,
+            )
+            publish_authority_plan(
+                root,
+                AUTHORITY_OWNERS[str(root)],
+                plan,
+                current["object_id"],
+                issue=history["issue"],
+                pull_request=history["pull_request"],
+                read_back=False,
+            )
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "does not verify",
+            ):
+                agent_handoff.read_history_authority(
+                    root,
+                    "example/workflow",
+                    history["issue"],
+                    history["pull_request"],
+                )
     def test_historical_bind_rejects_stale_signed_authority_observation_and_blocks_successor(self):
         with handoff_repository() as (root, _base, parent, result):
             stale_observation = pull_request_observation(
@@ -4844,6 +4880,7 @@ class ExactHandoffTests(unittest.TestCase):
                         "assignment": None,
                         "interruption_snapshot": None,
                         "history_receipt": None,
+                        "history_carrier": None,
                     },
                     "previous_object_id": None,
                 },
@@ -5818,6 +5855,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                         "assignment": None,
                         "interruption_snapshot": None,
                         "history_receipt": None,
+                        "history_carrier": None,
                     },
                     "previous_object_id": None,
                 }

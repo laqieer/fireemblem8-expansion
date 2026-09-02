@@ -700,17 +700,25 @@ new pair up to the fixed bound, then fail `authority-moved`. Re-query the
 sealed dual-ref observation immediately before eligibility. This independent
 anchor rejects rollback and authority A-to-B-to-A ABA even if a caller
 presents an old valid authority object. Historical reads also recompute the
-stored PR binding digest, the exact canonical digest of each sealed history
-receipt, and require the signed publication attestation's
-`history_receipt_digest` to match the full carried receipt bytes rather than
-a projected event subset. They also require the signed publication attestation's
-`binding_expectation` to match the stored frozen delivery plus stored live
-current-base fields, and re-check that the frozen base remains an ancestor of
-the stored live base OID. The stored `pr_binding.head_oid`, its digest, and
-`binding_expectation.head_oid` must all match the immediately prior sealed
-handoff candidate carried by the current `handoff_sequence`/`head_seal`.
-Derive the stored observation's `authority_object_id` from the bind commit's
-canonical `previous_object_id`. Derive the stored observation's
+stored PR binding digest and the exact canonical digest of each sealed
+history receipt. Every protected handoff commit also carries one bounded
+private `history_carrier` containing the exact signed handoff document, the
+canonical validation result, and the selected handoff ID; readback
+re-verifies the original coordinator, PR, and authority signatures, replays
+`make_history_receipt()` from that carrier, and requires the signed
+publication attestation's `history_carrier_digest` and
+`history_receipt_digest` to match the full carried carrier and receipt bytes
+rather than a projected event subset. Returned authority snapshots keep
+`history_carrier: null` so later handoff documents do not recursively embed
+older carriers. Historical reads also require the signed publication
+attestation's `binding_expectation` to match the stored frozen delivery plus
+stored live current-base fields, and re-check that the frozen base remains an
+ancestor of the stored live base OID. The stored `pr_binding.head_oid`, its
+digest, and `binding_expectation.head_oid` must all match the immediately
+prior sealed handoff candidate carried by the current
+`handoff_sequence`/`head_seal`. Derive the stored observation's
+`authority_object_id` from the bind commit's canonical `previous_object_id`.
+Derive the stored observation's
 `anchor_object_id` from the exact prior canonical anchor record, never from
 fields copied inside the observation.
 Swapped signed observations/publications, stale signed observation replays,
