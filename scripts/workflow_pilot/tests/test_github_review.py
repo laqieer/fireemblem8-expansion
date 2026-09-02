@@ -1875,6 +1875,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
         real_open = os.open
         real_write = os.write
         real_fsync = os.fsync
+        real_unlink = os.unlink
         publish_kwargs = {
             "repository": "laqieer/fireemblem8-expansion",
             "pull_request": SYNTHETIC_PULL_REQUEST,
@@ -1892,6 +1893,17 @@ class TrustedGitHubGateTests(unittest.TestCase):
         def write_private(path, content):
             path.write_bytes(content)
             os.chmod(path, 0o600)
+
+        def link_temp_alias(root, final_path, token="a" * 16):
+            alias = (
+                Path(root)
+                / trusted_review_gate._receipt_temp_name(
+                    final_path.name.removeprefix("original-"),
+                    token,
+                )
+            )
+            os.link(final_path, alias)
+            return alias
 
         def persist(root):
             trusted_review_gate.persist_original_receipt(
@@ -2030,9 +2042,70 @@ class TrustedGitHubGateTests(unittest.TestCase):
         finally:
             shutil.rmtree(root)
 
-        for case_name, winner_bytes, should_succeed in (
-            ("concurrent-same", payload, True),
-            ("concurrent-different", b"other-receipt\n", False),
+        root = self.temporary_repo("replay-existing-temp")
+        final_path = self.replay_receipt_path(root)
+        try:
+            write_private(final_path, payload)
+            alias = link_temp_alias(root, final_path)
+            fsync_calls = {"count": 0}
+
+            def count_fsync(fd):
+                fsync_calls["count"] += 1
+                return real_fsync(fd)
+
+            with mock.patch.object(
+                trusted_review_gate.os,
+                "fsync",
+                side_effect=count_fsync,
+            ):
+                persist(root)
+            self.assertEqual(final_path.read_bytes(), payload)
+            self.assertFalse(alias.exists())
+            self.assertEqual(temp_entries(root), [])
+            self.assertEqual(fsync_calls["count"], 1)
+        finally:
+            shutil.rmtree(root)
+
+        for case_name, unlink_side_effect in (
+            ("unlink-error", PermissionError("blocked")),
+            ("unlink-enoent", FileNotFoundError("gone")),
+        ):
+            root = self.temporary_repo("replay-existing-temp-fault")
+            final_path = self.replay_receipt_path(root)
+            try:
+                write_private(final_path, payload)
+                alias = link_temp_alias(root, final_path)
+
+                def unlink_fault(name, *, dir_fd=None):
+                    if alias is not None and name == alias.name:
+                        if isinstance(unlink_side_effect, FileNotFoundError):
+                            real_unlink(name, dir_fd=dir_fd)
+                        raise unlink_side_effect
+                    return real_unlink(name, dir_fd=dir_fd)
+
+                with self.subTest(case=case_name), mock.patch.object(
+                    trusted_review_gate.os,
+                    "unlink",
+                    side_effect=unlink_fault,
+                ):
+                    if isinstance(unlink_side_effect, FileNotFoundError):
+                        persist(root)
+                        self.assertEqual(final_path.read_bytes(), payload)
+                        self.assertFalse(alias.exists())
+                        self.assertEqual(temp_entries(root), [])
+                    else:
+                        with self.assertRaisesRegex(
+                            reporter.PilotDataError,
+                            "could not be published",
+                        ):
+                            persist(root)
+                        self.assertTrue(alias.exists())
+            finally:
+                shutil.rmtree(root)
+
+        for case_name, winner_bytes, unlink_race, should_succeed in (
+            ("concurrent-same", payload, True, True),
+            ("concurrent-different", b"other-receipt\n", False, False),
         ):
             root = self.temporary_repo("replay-concurrent")
             final_path = self.replay_receipt_path(root)
@@ -2051,15 +2124,26 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     os.close(descriptor)
                 raise FileExistsError
 
+            def unlink_racing(name, *, dir_fd=None):
+                if unlink_race and name.startswith(".original-"):
+                    real_unlink(name, dir_fd=dir_fd)
+                    raise FileNotFoundError("gone")
+                return real_unlink(name, dir_fd=dir_fd)
+
             try:
                 with self.subTest(case=case_name), mock.patch.object(
                     trusted_review_gate.os,
                     "link",
                     side_effect=losing_link,
+                ), mock.patch.object(
+                    trusted_review_gate.os,
+                    "unlink",
+                    side_effect=unlink_racing,
                 ):
                     if should_succeed:
                         persist(root)
                         self.assertEqual(final_path.read_bytes(), payload)
+                        self.assertEqual(temp_entries(root), [])
                     else:
                         with self.assertRaisesRegex(
                             reporter.PilotDataError,
@@ -2069,22 +2153,26 @@ class TrustedGitHubGateTests(unittest.TestCase):
             finally:
                 shutil.rmtree(root)
 
-        for case_name, existing_bytes, hardlink_alias, should_succeed in (
-            ("existing-exact", payload, False, True),
-            ("existing-different", b"different\n", False, False),
-            ("existing-partial", payload[:7], False, False),
-            ("existing-hardlink", payload, True, False),
+        for case_name, existing_bytes, alias_tokens, extra_name, should_succeed in (
+            ("existing-exact", payload, (), None, True),
+            ("existing-different", b"different\n", (), None, False),
+            ("existing-partial", payload[:7], (), None, False),
+            ("existing-hardlink", payload, (), "unexpected-link", False),
+            ("existing-multi-temp", payload, ("b" * 16, "c" * 16), None, False),
         ):
             root = self.temporary_repo("replay-existing")
             final_path = self.replay_receipt_path(root)
             try:
                 write_private(final_path, existing_bytes)
-                if hardlink_alias:
-                    os.link(final_path, Path(root) / "unexpected-link")
+                for token in alias_tokens:
+                    link_temp_alias(root, final_path, token)
+                if extra_name is not None:
+                    os.link(final_path, Path(root) / extra_name)
                 with self.subTest(case=case_name):
                     if should_succeed:
                         persist(root)
                         self.assertEqual(final_path.read_bytes(), payload)
+                        self.assertEqual(temp_entries(root), [])
                     else:
                         with self.assertRaisesRegex(
                             reporter.PilotDataError,

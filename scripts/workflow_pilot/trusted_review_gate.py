@@ -275,11 +275,12 @@ def _preserved_receipt_bytes(
     directory_fd = -1
     try:
         directory_fd = _open_replay_store_fd(replay_store)
-        payload = _read_replay_receipt_bytes(
+        payload, _extras = _read_replay_receipt_bytes(
             directory_fd,
             name=_receipt_final_name(scope_id),
             scope_id=scope_id,
             allow_missing=False,
+            allow_temp_link=False,
             not_found_message="preserved original pre-review is unavailable",
             invalid_message="preserved original pre-review is unavailable",
         )
@@ -358,15 +359,24 @@ def persist_original_receipt(
     temp_stat: os.stat_result | None = None
     try:
         directory_fd = _open_replay_store_fd(replay_store)
-        if _read_replay_receipt_bytes(
+        existing_payload, aliases = _read_replay_receipt_bytes(
             directory_fd,
             name=final_name,
             scope_id=scope_id,
             expected_bytes=receipt_bytes,
             allow_missing=True,
+            allow_temp_link=True,
             not_found_message="authenticated original pre-review is unavailable",
             invalid_message="authenticated original pre-review was already consumed or re-signed",
-        ) is not None:
+        )
+        if existing_payload is not None:
+            _finalize_published_replay_receipt(
+                directory_fd,
+                final_name=final_name,
+                scope_id=scope_id,
+                expected_bytes=receipt_bytes,
+                aliases=aliases,
+            )
             return
         temp_fd, temp_name = _create_replay_temp_file(directory_fd, scope_id)
         _write_all_bytes(
@@ -391,25 +401,54 @@ def persist_original_receipt(
                 error_message="authenticated original pre-review could not be published",
             )
         except FileExistsError:
-            if _read_replay_receipt_bytes(
+            winner_payload, winner_aliases = _read_replay_receipt_bytes(
                 directory_fd,
                 name=final_name,
                 scope_id=scope_id,
                 expected_bytes=receipt_bytes,
                 allow_missing=True,
+                allow_temp_link=True,
                 not_found_message="authenticated original pre-review is unavailable",
                 invalid_message="authenticated original pre-review was already consumed or re-signed",
-            ) is None:
+            )
+            if winner_payload is None:
                 raise reporter.PilotDataError(
                     "authenticated original pre-review could not be published"
                 )
-            _unlink_if_same_inode(directory_fd, temp_name, temp_stat)
+            _finalize_published_replay_receipt(
+                directory_fd,
+                final_name=final_name,
+                scope_id=scope_id,
+                expected_bytes=receipt_bytes,
+                aliases=winner_aliases,
+            )
+            _unlink_if_same_inode(
+                directory_fd,
+                temp_name,
+                temp_stat,
+                final_name=final_name,
+                scope_id=scope_id,
+                expected_bytes=receipt_bytes,
+                invalid_message="authenticated original pre-review could not be published",
+            )
+            _fsync_descriptor(
+                directory_fd,
+                error_message="authenticated original pre-review could not be published",
+            )
             return
         _fsync_descriptor(
             directory_fd,
             error_message="authenticated original pre-review could not be published",
         )
-        _unlink_if_same_inode(directory_fd, temp_name, temp_stat)
+        _unlink_if_same_inode(
+            directory_fd,
+            temp_name,
+            temp_stat,
+            final_name=final_name,
+            scope_id=scope_id,
+            expected_bytes=receipt_bytes,
+            invalid_message="authenticated original pre-review could not be published",
+        )
         _fsync_descriptor(
             directory_fd,
             error_message="authenticated original pre-review could not be published",
@@ -422,7 +461,7 @@ def persist_original_receipt(
             except OSError:
                 cleanup_stat = None
         if temp_name is not None and cleanup_stat is not None:
-            _unlink_if_same_inode(directory_fd, temp_name, cleanup_stat)
+            _discard_temp_if_same_inode(directory_fd, temp_name, cleanup_stat)
         if temp_fd >= 0:
             os.close(temp_fd)
         if directory_fd >= 0:
@@ -1014,7 +1053,7 @@ def _validate_replay_file_topology(
     metadata: os.stat_result,
     allow_temp_link: bool,
     error_message: str,
-) -> None:
+) -> list[str]:
     if (
         not stat.S_ISREG(metadata.st_mode)
         or stat.S_IMODE(metadata.st_mode) != 0o600
@@ -1031,7 +1070,7 @@ def _validate_replay_file_topology(
     if not extras:
         if metadata.st_nlink != 1:
             raise reporter.PilotDataError(error_message)
-        return
+        return []
     if (
         not allow_temp_link
         or metadata.st_nlink != 2
@@ -1039,6 +1078,7 @@ def _validate_replay_file_topology(
         or not _is_bounded_receipt_temp_name(extras[0], scope_id)
     ):
         raise reporter.PilotDataError(error_message)
+    return extras
 
 
 def _read_replay_receipt_bytes(
@@ -1048,9 +1088,10 @@ def _read_replay_receipt_bytes(
     scope_id: str,
     expected_bytes: bytes | None = None,
     allow_missing: bool,
+    allow_temp_link: bool,
     not_found_message: str,
     invalid_message: str,
-) -> bytes | None:
+) -> tuple[bytes | None, list[str]]:
     descriptor = -1
     maximum_size = max(
         MAX_AUTHENTICATED_RECEIPT_BYTES,
@@ -1061,7 +1102,7 @@ def _read_replay_receipt_bytes(
             pre_open = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
         except FileNotFoundError as error:
             if allow_missing:
-                return None
+                return None, []
             raise reporter.PilotDataError(not_found_message) from error
         except OSError as error:
             raise reporter.PilotDataError(invalid_message) from error
@@ -1070,18 +1111,18 @@ def _read_replay_receipt_bytes(
             opened = os.fstat(descriptor)
         except FileNotFoundError as error:
             if allow_missing:
-                return None
+                return None, []
             raise reporter.PilotDataError(not_found_message) from error
         except OSError as error:
             raise reporter.PilotDataError(invalid_message) from error
         if not _same_inode(pre_open, opened) or opened.st_size > maximum_size:
             raise reporter.PilotDataError(invalid_message)
-        _validate_replay_file_topology(
+        extras = _validate_replay_file_topology(
             directory_fd,
             name=name,
             scope_id=scope_id,
             metadata=opened,
-            allow_temp_link=True,
+            allow_temp_link=allow_temp_link,
             error_message=invalid_message,
         )
         if expected_bytes is not None and opened.st_size != len(expected_bytes):
@@ -1099,7 +1140,7 @@ def _read_replay_receipt_bytes(
             payload, expected_bytes
         ):
             raise reporter.PilotDataError(invalid_message)
-        return payload
+        return payload, extras
     finally:
         if descriptor >= 0:
             os.close(descriptor)
@@ -1190,7 +1231,131 @@ def _publish_replay_temp(
         raise reporter.PilotDataError(error_message) from error
 
 
+def _finalize_published_replay_receipt(
+    directory_fd: int,
+    *,
+    final_name: str,
+    scope_id: str,
+    expected_bytes: bytes,
+    aliases: list[str],
+) -> None:
+    if len(aliases) > 1:
+        raise reporter.PilotDataError(
+            "authenticated original pre-review was already consumed or re-signed"
+        )
+    if aliases:
+        _unlink_same_inode_alias(
+            directory_fd,
+            aliases[0],
+            final_name=final_name,
+            scope_id=scope_id,
+            expected_bytes=expected_bytes,
+        )
+        _fsync_descriptor(
+            directory_fd,
+            error_message="authenticated original pre-review could not be published",
+        )
+    payload, final_aliases = _read_replay_receipt_bytes(
+        directory_fd,
+        name=final_name,
+        scope_id=scope_id,
+        expected_bytes=expected_bytes,
+        allow_missing=False,
+        allow_temp_link=False,
+        not_found_message="authenticated original pre-review was already consumed or re-signed",
+        invalid_message="authenticated original pre-review was already consumed or re-signed",
+    )
+    if payload is None or final_aliases:
+        raise reporter.PilotDataError(
+            "authenticated original pre-review was already consumed or re-signed"
+        )
+
+
+def _unlink_same_inode_alias(
+    directory_fd: int,
+    name: str,
+    *,
+    final_name: str,
+    scope_id: str,
+    expected_bytes: bytes,
+) -> None:
+    message = "authenticated original pre-review could not be published"
+    try:
+        metadata = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        _finalize_published_replay_receipt(
+            directory_fd,
+            final_name=final_name,
+            scope_id=scope_id,
+            expected_bytes=expected_bytes,
+            aliases=[],
+        )
+        return
+    except OSError as error:
+        raise reporter.PilotDataError(message) from error
+    _unlink_if_same_inode(
+        directory_fd,
+        name,
+        metadata,
+        final_name=final_name,
+        scope_id=scope_id,
+        expected_bytes=expected_bytes,
+        invalid_message=message,
+    )
+
+
 def _unlink_if_same_inode(
+    directory_fd: int,
+    name: str,
+    metadata: os.stat_result,
+    *,
+    final_name: str,
+    scope_id: str,
+    expected_bytes: bytes,
+    invalid_message: str,
+) -> None:
+    if directory_fd < 0:
+        return
+    try:
+        current = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        payload, aliases = _read_replay_receipt_bytes(
+            directory_fd,
+            name=final_name,
+            scope_id=scope_id,
+            expected_bytes=expected_bytes,
+            allow_missing=False,
+            allow_temp_link=False,
+            not_found_message=invalid_message,
+            invalid_message=invalid_message,
+        )
+        if payload is None or aliases:
+            raise reporter.PilotDataError(invalid_message)
+        return
+    except OSError as error:
+        raise reporter.PilotDataError(invalid_message) from error
+    if not _same_inode(current, metadata):
+        return
+    try:
+        os.unlink(name, dir_fd=directory_fd)
+    except FileNotFoundError:
+        payload, aliases = _read_replay_receipt_bytes(
+            directory_fd,
+            name=final_name,
+            scope_id=scope_id,
+            expected_bytes=expected_bytes,
+            allow_missing=False,
+            allow_temp_link=False,
+            not_found_message=invalid_message,
+            invalid_message=invalid_message,
+        )
+        if payload is None or aliases:
+            raise reporter.PilotDataError(invalid_message)
+    except OSError as error:
+        raise reporter.PilotDataError(invalid_message) from error
+
+
+def _discard_temp_if_same_inode(
     directory_fd: int,
     name: str,
     metadata: os.stat_result,
@@ -1199,14 +1364,22 @@ def _unlink_if_same_inode(
         return
     try:
         current = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
-    except OSError:
+    except FileNotFoundError:
         return
+    except OSError as error:
+        raise reporter.PilotDataError(
+            "authenticated original pre-review could not be published"
+        ) from error
     if not _same_inode(current, metadata):
         return
     try:
         os.unlink(name, dir_fd=directory_fd)
-    except OSError:
+    except FileNotFoundError:
         return
+    except OSError as error:
+        raise reporter.PilotDataError(
+            "authenticated original pre-review could not be published"
+        ) from error
 
 
 def _relative_no_follow_stat(
