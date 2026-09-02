@@ -487,6 +487,22 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
             ),
         ),
         (
+            "dynamic-sh-c-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                '/bin/sh -c "$cmd"',
+            ),
+        ),
+        (
+            "dynamic-dash-c-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                '/bin/dash -c "$cmd"',
+            ),
+        ),
+        (
             "literal-bash-c-wrapper",
             (
                 '/bin/bash -c "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"',
@@ -518,11 +534,109 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
             ),
         ),
         (
+            "env-short-chdir-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env -C /tmp /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "env-long-chdir-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env --chdir /tmp /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "env-long-chdir-equals-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env --chdir=/tmp /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "env-unset-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env -u HOME /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "env-unset-long-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env --unset HOME /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "env-unset-equals-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env --unset=HOME /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "env-ignore-assign-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env -i ROOT=/mnt /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "env-option-terminator-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env -i -- /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "env-split-string-wrapper",
+            (
+                'env -S "/bin/bash -c /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"',
+            ),
+        ),
+        (
+            "env-split-string-long-wrapper",
+            (
+                'env --split-string "/bin/bash -c /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"',
+            ),
+        ),
+        (
+            "env-split-string-equals-wrapper",
+            (
+                'env \'--split-string=/bin/bash -c /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor\'',
+            ),
+        ),
+        (
+            "env-combined-options-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env -iu HOME /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
             "command-shell-wrapper",
             (
                 "root=/mnt",
                 'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
                 'command /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "command-option-shell-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'command -- /bin/bash -c "$cmd"',
             ),
         ),
         (
@@ -534,11 +648,27 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
             ),
         ),
         (
+            "sudo-option-shell-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'sudo -u root /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
             "timeout-shell-wrapper",
             (
                 "root=/mnt",
                 'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
                 'timeout 5 /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "timeout-option-shell-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'timeout --signal TERM --kill-after 1 5 /bin/bash -c "$cmd"',
             ),
         ),
         (
