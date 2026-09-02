@@ -10,10 +10,12 @@ from unittest import mock
 
 from scripts.upstream_port import cli, verify as verify_mod
 from tests.workflows import test_build_ci_topology as topology_tests
+from tests.workflows import test_patch_release_workflow as patch_workflow_tests
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 BUILD_WORKFLOW_PATH = os.path.join(REPO_ROOT, ".github", "workflows", "build.yml")
 UPSTREAM_PORTING_PATH = os.path.join(REPO_ROOT, "docs", "upstream-porting.md")
+BROKEN_PUBLISHER_INDENTATION_SHA = "77aae9df769aa87f2fd9bed13b767ff8e7dd171a"
 
 # Issues #7/#17 remediation: the documentation step is a genuine required
 # workflow gate, but it is the sole correctness step deliberately excluded
@@ -95,6 +97,39 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             ["make", "expansion-modern-all-locales-all-features-check", "-j1"],
             [command for _, command in _parse_workflow_gate_commands()],
         )
+
+    def test_patch_release_workflow_imports_without_yaml_dependency(self):
+        script = inspect.cleandoc(
+            """
+            import importlib.abc
+            import sys
+
+            repo_root = sys.argv[1]
+
+            class BlockYaml(importlib.abc.MetaPathFinder):
+                def find_spec(self, fullname, path=None, target=None):
+                    if fullname == "yaml" or fullname.startswith("yaml."):
+                        raise ModuleNotFoundError("yaml dependency blocked")
+                    return None
+
+            sys.modules.pop("yaml", None)
+            sys.meta_path.insert(0, BlockYaml())
+            sys.path = [repo_root] + [entry for entry in sys.path if entry]
+
+            import tests.upstream_port.test_verify  # noqa: F401
+            import tests.workflows.test_patch_release_workflow  # noqa: F401
+
+            print("IMPORT_OK")
+            """
+        )
+        completed = subprocess.run(
+            ["python3", "-I", "-S", "-c", script, REPO_ROOT],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout, "IMPORT_OK\n")
 
     def test_checkout_verification_is_not_counted_as_a_mirrored_gate(self):
         parsed = _parse_workflow_gate_commands()
@@ -1160,6 +1195,56 @@ class VerifyCliCwdTests(unittest.TestCase):
                     continue
                 self.assertNotEqual(changed_structure, structure)
 
+    def test_patch_release_supervisor_parent_remount_variants_reject_structure_parse(self):
+        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
+            original = handle.read()
+        verify_mod._parse_workflow_structure_text(original)
+        for label, changed in patch_workflow_tests.generate_supervisor_parent_remount_mutations(
+            original
+        ):
+            with self.subTest(variant=label):
+                self.assertTrue(
+                    patch_workflow_tests.workflow_has_supervisor_parent_readonly_remount(
+                        changed
+                    )
+                )
+                with self.assertRaises(ValueError):
+                    verify_mod._parse_workflow_structure_text(changed)
+
+    def test_patch_release_raw_identity_variants_reject_structure_parse(self):
+        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
+            original = handle.read()
+        verify_mod._parse_workflow_structure_text(original)
+        for label, changed in patch_workflow_tests.generate_publisher_raw_identity_mutations(
+            original
+        ):
+            with self.subTest(variant=label):
+                self.assertTrue(
+                    patch_workflow_tests.publisher_boundary_errors(changed)
+                )
+                with self.assertRaises(ValueError):
+                    verify_mod._parse_workflow_structure_text(changed)
+
+    def test_historical_patch_release_parser_indentation_is_rejected(self):
+        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
+            original = handle.read()
+        verify_mod._parse_workflow_structure_text(original)
+        broken = subprocess.check_output(
+            [
+                "git",
+                "--no-pager",
+                "show",
+                f"{BROKEN_PUBLISHER_INDENTATION_SHA}:.github/workflows/build.yml",
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "patch-release parser script differs|isolated candidate build differs",
+        ):
+            verify_mod._parse_workflow_structure_text(broken)
+
     def test_every_combined_worker_requires_the_fail_closed_classifier_edge(self):
         with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
             original = handle.read()
@@ -1688,6 +1773,26 @@ class VerifyCliCwdTests(unittest.TestCase):
                         '        /usr/bin/mount --bind "$cgroup_path" '
                         "/mnt/supervisor/cgroup",
                         "        true",
+                ),
+                (
+                        "patch-release",
+                        "late-supervisor-parent-remount",
+                        "        /usr/bin/mount -t tmpfs \\\n"
+                        "          -o nosuid,mode=0755,size=4m builder-dev /dev",
+                        "        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec "
+                        "/mnt/supervisor\n"
+                        "        /usr/bin/mount -t tmpfs \\\n"
+                        "          -o nosuid,mode=0755,size=4m builder-dev /dev",
+                ),
+                (
+                        "patch-release",
+                        "reordered-supervisor-parent-remount",
+                        "        /usr/bin/mount -t tmpfs \\\n"
+                        "          -o nosuid,mode=0755,size=4m builder-dev /dev",
+                        "        /usr/bin/mount -o nodev,ro,noexec,nosuid,remount "
+                        "/mnt/supervisor\n"
+                        "        /usr/bin/mount -t tmpfs \\\n"
+                        "          -o nosuid,mode=0755,size=4m builder-dev /dev",
                 ),
                 (
                         "patch-release",

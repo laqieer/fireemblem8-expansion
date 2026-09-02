@@ -181,8 +181,14 @@ The candidate receives no GitHub workflow command-file paths and cannot recover
 the Actions log through proc FDs, `/dev/stdout`, console/kmsg, `tee`, xtrace,
 helpers, or forks. ROM-sized output is discarded and never replayed; arbitrary
 output volume cannot fail an otherwise successful build. No output sink exists.
-Fixed trusted text and a numeric exit classification preserve build failure
-without exposing candidate bytes.
+Fixed trusted text and a numeric exit classification preserve post-spawn build
+failure without exposing candidate bytes. After the isolated builder is
+spawned, `launch` covers only process-group and launch validation, `isolated`
+reports the child exit, and `cleanup` reports teardown summary status whenever
+teardown fails. Earlier trusted pre-spawn setup and later post-child handoff
+validation still use normal shell failure output and are outside this stage
+enum; cleanup may therefore be the only stage text even when the failure began
+before spawn.
 The wrapper binds the exact owned cgroup read-only under root-only mode-`0700`
 `/mnt/supervisor` before masking `/sys`. The candidate cannot read, write,
 execute, or traverse that parent, while the exact cgroup child remains
@@ -237,11 +243,19 @@ archival-lane behavior changes.
   exact-after isolated tool, no-ROM-transfer boundary, dedicated builder UID
   and namespaces, read-only host/private-filesystem probes, exact cgroup-v2 and
   process teardown, decoded recursive `/dev` target parsing and deepest-first
-  unmount order, socket/daemon/cgroup-escape adversaries, two-file handoff
-  rejection controls, unpredictable private path, cleanup-before-upload, late
-  artifact revalidation, null/no-replay candidate output adversaries, the old
-  Bash-FD-255/memfd exit-125 reproducer, inherited pipe/memfd/socket closure in
-  the child launcher, and profile/verifier requirements.
+  unmount order, recursive command/process-substitution inspection for
+  `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions
+  through inline `else`/brace/case/loop forms, `setsid`-wrapped and common
+  outer-wrapper (`nohup`/`taskset`/`ionice`/`flock`) `env`/BusyBox command
+  slots, regular flock lockfile and command-string forms, clustered mount
+  short-option remount parsing (`-ro`, attached/separate `-o`, and `-w`/`rw`
+  override semantics), inline-function fail-closed behavior, literal
+  quoted/escaped non-execution controls, socket/daemon/cgroup-escape
+  adversaries, two-file handoff rejection controls, unpredictable private
+  path, cleanup-before-upload, late artifact revalidation, null/no-replay
+  candidate output adversaries, the old Bash-FD-255/memfd exit-125
+  reproducer, inherited pipe/memfd/socket closure in the child launcher, and
+  profile/verifier requirements.
 
 ### Cleanup and limitations
 
