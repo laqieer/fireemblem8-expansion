@@ -479,6 +479,91 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
             ),
         ),
         (
+            "dynamic-bash-c-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                '/bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "literal-bash-c-wrapper",
+            (
+                '/bin/bash -c "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"',
+            ),
+        ),
+        (
+            "shell-alias-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'bash -c "$cmd"',
+            ),
+        ),
+        (
+            "split-interpreter-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                "shell=/bin/bash",
+                '"$shell" -c "$cmd"',
+            ),
+        ),
+        (
+            "env-shell-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "command-shell-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'command /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "sudo-shell-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'sudo /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "timeout-shell-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'timeout 5 /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "command-substitution-shell",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                '$(printf /bin/bash) -c "$cmd"',
+            ),
+        ),
+        (
+            "backtick-shell",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                '`printf /bin/bash` -c "$cmd"',
+            ),
+        ),
+        (
+            "nested-shell-c",
+            (
+                '/bin/bash -c \'/bin/sh -c "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"\'',
+            ),
+        ),
+        (
             "split-cmd-target-options",
             (
                 "mount_cmd=/usr/bin/mount",

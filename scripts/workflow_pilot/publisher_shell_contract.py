@@ -87,6 +87,17 @@ _SIMPLE_COMMAND_PREFIXES = frozenset({"if", "then", "do", "elif", "while", "unti
 _CONTROL_OPERATORS = frozenset({";", "&&", "||", "|", "&"})
 _DISALLOWED_MOUNT_WRAPPERS = frozenset({"env", "command", "eval"})
 _ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
+_SHELL_INTERPRETER_BASENAMES = frozenset({"bash", "sh", "dash"})
+_ENV_WRAPPERS = frozenset({"env", "/usr/bin/env"})
+_COMMAND_WRAPPERS = frozenset({"command", "/usr/bin/command"})
+_SUDO_WRAPPERS = frozenset({"sudo", "/usr/bin/sudo"})
+_TIMEOUT_WRAPPERS = frozenset({"timeout", "/usr/bin/timeout"})
+_SUDO_OPTIONS_WITH_ARGS = frozenset(
+    {"-C", "-c", "-g", "-h", "-p", "-r", "-t", "-u", "-U"}
+)
+_TIMEOUT_OPTIONS_WITH_ARGS = frozenset(
+    {"-k", "--kill-after", "-s", "--signal"}
+)
 _LITERAL_RUN_HEADER_RE = re.compile(
     r"^(?P<indent> {6})run:[ \t]*(?P<style>\|[1-9+-]*)(?:[ \t]*(?:#.*)?)?(?:\r?\n|\Z)$"
 )
@@ -423,6 +434,13 @@ def _is_reviewed_supervisor_command(tokens: tuple[str, ...]) -> bool:
     )
 
 
+def _is_shell_interpreter_token(token: str) -> bool:
+    return (
+        not _token_has_shell_syntax(token)
+        and posixpath.basename(token) in _SHELL_INTERPRETER_BASENAMES
+    )
+
+
 def _strip_command_prefixes(command: tuple[str, ...]) -> tuple[str, ...]:
     tokens = list(command)
     while tokens and tokens[0] in _SIMPLE_COMMAND_PREFIXES:
@@ -430,6 +448,86 @@ def _strip_command_prefixes(command: tuple[str, ...]) -> tuple[str, ...]:
     while tokens and _ASSIGNMENT_RE.fullmatch(tokens[0]):
         tokens.pop(0)
     return tuple(tokens)
+
+
+def _resolve_shell_c_executable_index(prefix: tuple[str, ...]) -> int | None:
+    index = 0
+    while index < len(prefix):
+        token = prefix[index]
+        if token in _ENV_WRAPPERS:
+            index += 1
+            while index < len(prefix):
+                current = prefix[index]
+                if _ASSIGNMENT_RE.fullmatch(current):
+                    index += 1
+                    continue
+                if current.startswith("-"):
+                    index += 1
+                    continue
+                break
+            continue
+        if token in _COMMAND_WRAPPERS:
+            index += 1
+            while index < len(prefix) and prefix[index].startswith("-"):
+                index += 1
+            continue
+        if token in _SUDO_WRAPPERS:
+            index += 1
+            while index < len(prefix) and prefix[index].startswith("-"):
+                option = prefix[index]
+                index += 1
+                if option in _SUDO_OPTIONS_WITH_ARGS and index < len(prefix):
+                    index += 1
+            continue
+        if token in _TIMEOUT_WRAPPERS:
+            index += 1
+            while index < len(prefix) and prefix[index].startswith("-"):
+                option = prefix[index]
+                index += 1
+                if option in _TIMEOUT_OPTIONS_WITH_ARGS and index < len(prefix):
+                    index += 1
+            if index < len(prefix):
+                index += 1
+            continue
+        return index
+    return None
+
+
+def _shell_c_invocation_is_forbidden(command: tuple[str, ...]) -> bool:
+    tokens = _strip_command_prefixes(command)
+    if not tokens:
+        return False
+
+    for index, token in enumerate(tokens):
+        if token == "-c":
+            payload_index = index + 1
+        elif token.startswith("-") and not token.startswith("--") and "c" in token[1:]:
+            payload_index = index + 1
+        else:
+            continue
+
+        if payload_index >= len(tokens):
+            return True
+
+        executable_index = _resolve_shell_c_executable_index(tokens[:index])
+        if executable_index is None or executable_index >= index:
+            continue
+
+        executable = tokens[executable_index]
+        if not (_is_shell_interpreter_token(executable) or _token_has_shell_syntax(executable)):
+            continue
+
+        payload = tokens[payload_index]
+        if _token_has_shell_syntax(executable):
+            return True
+        if _token_has_shell_syntax(payload):
+            return True
+
+        # No direct reviewed shell -c command exists in the builder-shell command
+        # surface, so any literal payload is fail-closed.
+        return True
+
+    return False
 
 
 def reviewed_hidden_mask_loop_source(script: str, *, label: str) -> str:
@@ -661,6 +759,8 @@ def has_forbidden_supervisor_parent_readonly_mount(
         split_bash_simple_command_strings(script, label=label)
     ):
         command_tokens = tuple(shlex.split(command_text))
+        if _shell_c_invocation_is_forbidden(command_tokens):
+            return True
         if _mount_command_targets_supervisor_parent(
             command_tokens,
             allow_reviewed_nonliteral_hidden=command_index in allowed_hidden_indices,
