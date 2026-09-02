@@ -605,7 +605,10 @@ number, base SHA, original first-reviewed head, preregistered initial remote
 head, and the full normalized decision entry. Later descendant remote heads
 may reuse that immutable preregistration only while current PR commit history
 and Git ancestry preserve that preregistered head as a non-rewritten
-ancestor. The comment author must equal the
+ancestor. That payload `candidate_sha` is the actual initial remote review
+head, never a later unpushed local descendant, and the exact local candidate
+tree must still carry a matching decision-file entry before trust. The comment
+author must equal the
 current trusted authenticated GraphQL actor exactly, the top-level
 `pullRequest.comments` selection must carry both `createdAt` and `updatedAt`,
 those timestamps must be exact RFC 3339 UTC strings with byte-identical values,
@@ -662,10 +665,12 @@ nonce over the same scope, is rejected.
 For a held-head pre-push decision, the authoritative current remote head A and
 the proposed clean local descendant B are distinct identities. GitHub must
 still report A at evaluation time; local Git independently proves B, B must
-descend from A, and the authenticated disposition must authorize exactly the
-A→B transition before `trusted_push_allowed` can become true. After push,
-normal exact-remote-head validation still requires GitHub's `headRefOid` to
-equal B.
+descend from A, and a base-owned local remediation receipt for the exact A→B
+finding set is required before `trusted_push_allowed` can become true. For the
+first and second change-request rounds that exact receipt is sufficient; after
+a third consecutive change-request hold, the authenticated disposition must
+also authorize exactly the A→B transition. After push, normal exact-remote-head
+validation still requires GitHub's `headRefOid` to equal B.
 
 Later GitHub review IDs and inline finding node IDs are collected and
 validated separately after they exist. They never replace, backdate, or
@@ -762,13 +767,16 @@ removing, or mode-changing one of those parent initializers therefore produces
 the same hold before execution rather than silently changing future import
 semantics.
 
-Each `affected-fixed` assertion executes the fixed member program against the
-origin artifact and requires failing semantics, then executes it against the
-remediation artifact and requires passing semantics. Each
+Each `affected-fixed` assertion executes the same base-owned member predicate
+against the materialized origin artifact and remediation artifact: origin may
+fail only because that root's real production code/data violates the predicate,
+and remediation may pass only because that root fixes it. `action/items`,
+`lifecycle/entries`, and `wire/stale-bindings` therefore parse their exact
+materialized production sources instead of manufacturing failure from round or
+SHA mismatch. Each
 `verified-unaffected` assertion runs only for members with a registered
 unaffected invariant and requires passing equivalent member-specific semantic
-output; `action/items`, `lifecycle/entries`, and `wire/stale-bindings`
-currently require `affected-fixed`. One arbitrary unchanged file cannot certify
+output. One arbitrary unchanged file cannot certify
 unrelated members. `not-applicable` is accepted only for
 the explicit `resource/disabled/feature-disabled-by-contract` predicate, which
 must execute and establish false. Swapping a member, family, disposition,

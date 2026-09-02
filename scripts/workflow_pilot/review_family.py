@@ -83,11 +83,7 @@ BEHAVIOR_ASSERTION_IDS = {
     }
     for row in REQUIRED_BEHAVIOR_ROWS
 }
-MEMBERS_WITHOUT_VERIFIED_UNAFFECTED = {
-    ("action", "items"),
-    ("lifecycle", "entries"),
-    ("wire", "stale-bindings"),
-}
+MEMBERS_WITHOUT_VERIFIED_UNAFFECTED = set()
 REGISTERED_NOT_APPLICABLE_REASONS = {
     ("resource", "disabled"): "feature-disabled-by-contract"
 }
@@ -1261,6 +1257,58 @@ def assertion_authority_binding(
     }
 
 
+def local_remediation_authority_binding(
+    contract: dict[str, Any],
+    evidence: dict[str, Any],
+    authority_root: Path,
+    target_head: str,
+    review_round: int,
+    assertion_id: str,
+    finding_id: str,
+) -> dict[str, Any]:
+    head_tree = reporter.run_git(
+        authority_root, "rev-parse", f"{target_head}^{{tree}}"
+    ).decode("ascii").strip()
+    parsed = parse_assertion_id(assertion_id)
+    if parsed["kind"] != "member":
+        raise reporter.PilotDataError(
+            "local remediation assertions must reference exact finding members"
+        )
+    review = evidence["remote_reviews"][review_round - 1]
+    finding = evidence["findings"].get(finding_id)
+    if finding is None or finding["review_id"] != review["node_id"]:
+        raise reporter.PilotDataError(
+            "local remediation finding is absent from the authoritative reviewed head"
+        )
+    finding_head_sha = review["candidate_sha"]
+    finding_head_tree = reporter.run_git(
+        authority_root,
+        "rev-parse",
+        f"{finding_head_sha}^{{tree}}",
+    ).decode("ascii").strip()
+    if finding["candidate_sha"] != finding_head_sha:
+        raise reporter.PilotDataError(
+            f"finding {finding_id!r} does not bind its authoritative head"
+        )
+    if finding["family"] != parsed["family"]:
+        raise reporter.PilotDataError(
+            f"finding {finding_id!r} family does not match its assertion"
+        )
+    return {
+        "finding_id": finding_id,
+        "finding_family": finding["family"],
+        "finding_member": parsed["member"],
+        "finding_review_id": finding["review_id"],
+        "finding_review_round": review["round"],
+        "finding_head_sha": finding_head_sha,
+        "finding_head_tree": finding_head_tree,
+        "finding_origin_sha": finding_head_sha,
+        "finding_origin_tree": finding_head_tree,
+        "head_sha": target_head,
+        "head_tree": head_tree,
+    }
+
+
 def assertion_result_id(
     review_round: int,
     assertion_id: str,
@@ -1327,6 +1375,49 @@ def build_assertion_requests(
             request["assertion_id"],
             request["finding_id"] or "",
         ),
+    )
+
+
+def build_local_remediation_requests(
+    contract: dict[str, Any],
+    evidence: dict[str, Any],
+    target_head: str,
+    review_round: int,
+) -> list[dict[str, Any]]:
+    review = {
+        item["round"]: item for item in evidence.get("remote_reviews", [])
+    }.get(review_round)
+    if review is None:
+        raise reporter.PilotDataError(
+            "local remediation review round is not available"
+        )
+    if review["candidate_sha"] == target_head:
+        raise reporter.PilotDataError(
+            "local remediation candidate must differ from the reviewed remote head"
+        )
+    if review["outcome"] == "clean" or not review["finding_ids"]:
+        raise reporter.PilotDataError(
+            "local remediation review has no authoritative findings"
+        )
+    requests = []
+    review_finding_ids = set(review["finding_ids"])
+    for sweep in contract["family_sweeps"]:
+        if sweep["finding_id"] not in review_finding_ids:
+            continue
+        requests.extend(
+            {
+                "assertion_id": sibling["assertion_id"],
+                "finding_id": sweep["finding_id"],
+            }
+            for sibling in sweep["siblings"]
+        )
+    assertion_keys = [
+        (request["assertion_id"], request["finding_id"]) for request in requests
+    ]
+    reporter.expect_unique(assertion_keys, "local remediation assertion requests")
+    return sorted(
+        requests,
+        key=lambda request: (request["assertion_id"], request["finding_id"]),
     )
 
 
@@ -2164,16 +2255,12 @@ def _validate_result_manifest(value: Any) -> dict[str, dict[str, Any]]:
     return results
 
 
-def _validate_execution_receipts(value: Any) -> list[dict[str, Any]]:
-    receipts = []
-    ids = []
-    seals = []
-    for index, raw in enumerate(
-        reporter.expect_list(value, "evidence.execution_receipts")
-    ):
-        label = f"evidence.execution_receipts[{index}]"
-        receipt = reporter.expect_object(raw, label)
-        required = (
+def _validate_execution_receipt(value: Any, label: str) -> dict[str, Any]:
+    receipt = reporter.expect_object(value, label)
+    reporter.expect_keys(
+        receipt,
+        label,
+        (
             "id",
             "check_id",
             "base_sha",
@@ -2181,6 +2268,8 @@ def _validate_execution_receipts(value: Any) -> list[dict[str, Any]]:
             "original_pre_review_head",
             "original_receipt_sha256",
             "review_round",
+            "review_head_sha",
+            "review_head_tree",
             "candidate_sha",
             "candidate_tree",
             "checker_path",
@@ -2207,159 +2296,151 @@ def _validate_execution_receipts(value: Any) -> list[dict[str, Any]]:
             "result",
             "output_sha256",
             "seal",
+        ),
+    )
+    receipt_id = reporter.expect_string(receipt["id"], f"{label}.id")
+    seal = reporter.expect_string(receipt["seal"], f"{label}.seal")
+    hash_fields = {
+        "seal": seal,
+        "review_report_sha256": reporter.expect_string(
+            receipt["review_report_sha256"],
+            f"{label}.review_report_sha256",
+        ),
+        "checker_input_sha256": reporter.expect_string(
+            receipt["checker_input_sha256"],
+            f"{label}.checker_input_sha256",
+        ),
+        "output_sha256": reporter.expect_string(
+            receipt["output_sha256"], f"{label}.output_sha256"
+        ),
+        "original_receipt_sha256": reporter.expect_string(
+            receipt["original_receipt_sha256"],
+            f"{label}.original_receipt_sha256",
+        ),
+    }
+    if any(
+        reporter.SHA256_RE.fullmatch(digest) is None
+        for digest in hash_fields.values()
+    ):
+        raise reporter.PilotDataError(
+            f"{label} receipt digests must be lowercase SHA-256"
         )
-        reporter.expect_keys(receipt, label, required)
-        receipt_id = reporter.expect_string(receipt["id"], f"{label}.id")
-        seal = reporter.expect_string(receipt["seal"], f"{label}.seal")
-        hash_fields = {
-            "seal": seal,
-            "review_report_sha256": reporter.expect_string(
-                receipt["review_report_sha256"],
-                f"{label}.review_report_sha256",
-            ),
-            "checker_input_sha256": reporter.expect_string(
-                receipt["checker_input_sha256"],
-                f"{label}.checker_input_sha256",
-            ),
-            "output_sha256": reporter.expect_string(
-                receipt["output_sha256"], f"{label}.output_sha256"
-            ),
-            "original_receipt_sha256": reporter.expect_string(
-                receipt["original_receipt_sha256"],
-                f"{label}.original_receipt_sha256",
-            ),
-        }
-        if any(
-            reporter.SHA256_RE.fullmatch(digest) is None
-            for digest in hash_fields.values()
-        ):
-            raise reporter.PilotDataError(
-                f"{label} receipt digests must be lowercase SHA-256"
-            )
-        ids.append(receipt_id)
-        seals.append(seal)
-        started_at, started = _expect_time(
-            receipt["started_at"], f"{label}.started_at"
+    started_at, started = _expect_time(receipt["started_at"], f"{label}.started_at")
+    completed_at, completed = _expect_time(
+        receipt["completed_at"], f"{label}.completed_at"
+    )
+    if completed < started:
+        raise reporter.PilotDataError(f"{label} completed before it started")
+    exit_code = reporter.expect_int(receipt["exit_code"], f"{label}.exit_code", 0)
+    result_value = reporter.expect_enum(
+        receipt["result"], {"fail", "pass", "hold"}, f"{label}.result"
+    )
+    if (exit_code == 0) != (result_value in {"pass", "hold"}):
+        raise reporter.PilotDataError(f"{label} exit code contradicts result")
+    assertion_results = reporter.expect_list(
+        receipt["assertion_results"], f"{label}.assertion_results"
+    )
+    for position, assertion_result in enumerate(assertion_results):
+        reporter.expect_object(
+            assertion_result, f"{label}.assertion_results[{position}]"
         )
-        completed_at, completed = _expect_time(
-            receipt["completed_at"], f"{label}.completed_at"
+    return {
+        **receipt,
+        "id": receipt_id,
+        "seal": seal,
+        "check_id": reporter.expect_enum(
+            receipt["check_id"],
+            {"base-pinned-independent-review"},
+            f"{label}.check_id",
+        ),
+        "base_sha": reporter.expect_sha(receipt["base_sha"], f"{label}.base_sha"),
+        "base_tree": reporter.expect_sha(receipt["base_tree"], f"{label}.base_tree"),
+        "original_pre_review_head": reporter.expect_sha(
+            receipt["original_pre_review_head"],
+            f"{label}.original_pre_review_head",
+        ),
+        "review_round": reporter.expect_int(
+            receipt["review_round"], f"{label}.review_round", 1
+        ),
+        "review_head_sha": reporter.expect_sha(
+            receipt["review_head_sha"], f"{label}.review_head_sha"
+        ),
+        "review_head_tree": reporter.expect_sha(
+            receipt["review_head_tree"], f"{label}.review_head_tree"
+        ),
+        "candidate_sha": reporter.expect_sha(
+            receipt["candidate_sha"], f"{label}.candidate_sha"
+        ),
+        "candidate_tree": reporter.expect_sha(
+            receipt["candidate_tree"], f"{label}.candidate_tree"
+        ),
+        "checker_path": _validate_path(receipt["checker_path"], f"{label}.checker_path"),
+        "checker_blob_oid": reporter.expect_sha(
+            receipt["checker_blob_oid"], f"{label}.checker_blob_oid"
+        ),
+        "argv": _expect_string_list(receipt["argv"], f"{label}.argv"),
+        "assertion_program_path": _validate_path(
+            receipt["assertion_program_path"], f"{label}.assertion_program_path"
+        ),
+        "assertion_program_blob_oid": reporter.expect_sha(
+            receipt["assertion_program_blob_oid"],
+            f"{label}.assertion_program_blob_oid",
+        ),
+        "assertion_program_argv": _expect_string_list(
+            receipt["assertion_program_argv"], f"{label}.assertion_program_argv"
+        ),
+        "finding_origin_sha": reporter.expect_sha(
+            receipt["finding_origin_sha"], f"{label}.finding_origin_sha"
+        ),
+        "finding_origin_tree": reporter.expect_sha(
+            receipt["finding_origin_tree"], f"{label}.finding_origin_tree"
+        ),
+        "assertion_input_artifacts": _validate_assertion_input_artifacts(
+            receipt["assertion_input_artifacts"],
+            f"{label}.assertion_input_artifacts",
+        ),
+        "changed_files": _expect_string_list(
+            receipt["changed_files"], f"{label}.changed_files"
+        ),
+        "changes": _validate_change_records(receipt["changes"], f"{label}.changes"),
+        "remote_finding_ids": _expect_string_list(
+            receipt["remote_finding_ids"],
+            f"{label}.remote_finding_ids",
+            nonempty=False,
+        ),
+        "assertion_results": assertion_results,
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "_started": started,
+        "_completed": completed,
+        "exit_code": exit_code,
+        "result": result_value,
+        "read_only": reporter.expect_bool(receipt["read_only"], f"{label}.read_only"),
+        "pre_clean": reporter.expect_bool(receipt["pre_clean"], f"{label}.pre_clean"),
+        "post_clean": reporter.expect_bool(receipt["post_clean"], f"{label}.post_clean"),
+    }
+
+
+def _validate_execution_receipts(value: Any) -> list[dict[str, Any]]:
+    receipts = [
+        _validate_execution_receipt(raw, f"evidence.execution_receipts[{index}]")
+        for index, raw in enumerate(
+            reporter.expect_list(value, "evidence.execution_receipts")
         )
-        if completed < started:
-            raise reporter.PilotDataError(
-                f"{label} completed before it started"
-            )
-        exit_code = reporter.expect_int(
-            receipt["exit_code"], f"{label}.exit_code", 0
-        )
-        result_value = reporter.expect_enum(
-            receipt["result"], {"fail", "pass", "hold"}, f"{label}.result"
-        )
-        if (exit_code == 0) != (result_value in {"pass", "hold"}):
-            raise reporter.PilotDataError(
-                f"{label} exit code contradicts result"
-            )
-        assertion_results = reporter.expect_list(
-            receipt["assertion_results"], f"{label}.assertion_results"
-        )
-        for position, assertion_result in enumerate(assertion_results):
-            reporter.expect_object(
-                assertion_result, f"{label}.assertion_results[{position}]"
-            )
-        receipts.append(
-            {
-                **receipt,
-                "id": receipt_id,
-                "check_id": reporter.expect_enum(
-                    receipt["check_id"],
-                    {"base-pinned-independent-review"},
-                    f"{label}.check_id",
-                ),
-                "base_sha": reporter.expect_sha(
-                    receipt["base_sha"], f"{label}.base_sha"
-                ),
-                "base_tree": reporter.expect_sha(
-                    receipt["base_tree"], f"{label}.base_tree"
-                ),
-                "original_pre_review_head": reporter.expect_sha(
-                    receipt["original_pre_review_head"],
-                    f"{label}.original_pre_review_head",
-                ),
-                "original_receipt_sha256": reporter.expect_string(
-                    receipt["original_receipt_sha256"],
-                    f"{label}.original_receipt_sha256",
-                ),
-                "review_round": reporter.expect_int(
-                    receipt["review_round"], f"{label}.review_round", 1
-                ),
-                "candidate_sha": reporter.expect_sha(
-                    receipt["candidate_sha"], f"{label}.candidate_sha"
-                ),
-                "candidate_tree": reporter.expect_sha(
-                    receipt["candidate_tree"], f"{label}.candidate_tree"
-                ),
-                "checker_path": _validate_path(
-                    receipt["checker_path"], f"{label}.checker_path"
-                ),
-                "checker_blob_oid": reporter.expect_sha(
-                    receipt["checker_blob_oid"], f"{label}.checker_blob_oid"
-                ),
-                "argv": _expect_string_list(receipt["argv"], f"{label}.argv"),
-                "assertion_program_path": _validate_path(
-                    receipt["assertion_program_path"],
-                    f"{label}.assertion_program_path",
-                ),
-                "assertion_program_blob_oid": reporter.expect_sha(
-                    receipt["assertion_program_blob_oid"],
-                    f"{label}.assertion_program_blob_oid",
-                ),
-                "assertion_program_argv": _expect_string_list(
-                    receipt["assertion_program_argv"],
-                    f"{label}.assertion_program_argv",
-                ),
-                "finding_origin_sha": reporter.expect_sha(
-                    receipt["finding_origin_sha"],
-                    f"{label}.finding_origin_sha",
-                ),
-                "finding_origin_tree": reporter.expect_sha(
-                    receipt["finding_origin_tree"],
-                    f"{label}.finding_origin_tree",
-                ),
-                "assertion_input_artifacts": _validate_assertion_input_artifacts(
-                    receipt["assertion_input_artifacts"],
-                    f"{label}.assertion_input_artifacts",
-                ),
-                "changed_files": _expect_string_list(
-                    receipt["changed_files"], f"{label}.changed_files"
-                ),
-                "changes": _validate_change_records(
-                    receipt["changes"], f"{label}.changes"
-                ),
-                "remote_finding_ids": _expect_string_list(
-                    receipt["remote_finding_ids"],
-                    f"{label}.remote_finding_ids",
-                    nonempty=False,
-                ),
-                "assertion_results": assertion_results,
-                "started_at": started_at,
-                "completed_at": completed_at,
-                "_started": started,
-                "_completed": completed,
-                "exit_code": exit_code,
-                "result": result_value,
-                "read_only": reporter.expect_bool(
-                    receipt["read_only"], f"{label}.read_only"
-                ),
-                "pre_clean": reporter.expect_bool(
-                    receipt["pre_clean"], f"{label}.pre_clean"
-                ),
-                "post_clean": reporter.expect_bool(
-                    receipt["post_clean"], f"{label}.post_clean"
-                ),
-            }
-        )
-    reporter.expect_unique(ids, "execution receipt IDs")
-    reporter.expect_unique(seals, "execution receipt seals")
+    ]
+    reporter.expect_unique(
+        [receipt["id"] for receipt in receipts], "execution receipt IDs"
+    )
+    reporter.expect_unique(
+        [receipt["seal"] for receipt in receipts], "execution receipt seals"
+    )
     return receipts
+
+
+def _validate_local_remediation_receipt(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    return _validate_execution_receipt(value, "evidence.local_remediation_receipt")
 
 
 def validate_evidence(raw_evidence: Any) -> dict[str, Any]:
@@ -2390,6 +2471,7 @@ def validate_evidence(raw_evidence: Any) -> dict[str, Any]:
             "execution_receipts",
             "result_manifest",
         ),
+        optional=("local_remediation_receipt",),
     )
     if reporter.expect_int(
         evidence["schema_version"], "evidence.schema_version", 1
@@ -2524,6 +2606,9 @@ def validate_evidence(raw_evidence: Any) -> dict[str, Any]:
         ),
         "execution_receipts": _validate_execution_receipts(
             evidence["execution_receipts"]
+        ),
+        "local_remediation_receipt": _validate_local_remediation_receipt(
+            evidence.get("local_remediation_receipt")
         ),
         "result_manifest": _validate_result_manifest(
             evidence["result_manifest"]
@@ -2800,25 +2885,26 @@ def _resolve_authoritative_trigger(
             raise reporter.PilotDataError(
                 "external authoritative trigger does not bind one exact trusted comment"
             )
-        if trigger["candidate_sha"] != authority["head"]:
+        remote_head = evidence["pull_request"]["head_sha"]
+        if trigger["candidate_sha"] != remote_head:
             commit_shas = evidence["pull_request"]["commit_shas"]
             if commit_shas is None:
                 raise reporter.PilotDataError(
-                    "authoritative PR commit history is required when the preregistered remote head differs from the current candidate head"
+                    "authoritative PR commit history is required when the preregistered remote head differs from the current remote head"
                 )
-            if trigger["candidate_sha"] not in commit_shas or authority["head"] not in commit_shas:
+            if trigger["candidate_sha"] not in commit_shas or remote_head not in commit_shas:
                 raise reporter.PilotDataError(
-                    "authoritative PR commit history does not preserve the preregistered remote head and current candidate head"
+                    "authoritative PR commit history does not preserve the preregistered remote head and current remote head"
                 )
-            if commit_shas.index(trigger["candidate_sha"]) >= commit_shas.index(authority["head"]):
+            if commit_shas.index(trigger["candidate_sha"]) >= commit_shas.index(remote_head):
                 raise reporter.PilotDataError(
-                    "preregistered remote head does not precede the current candidate head in authoritative PR history"
+                    "preregistered remote head does not precede the current remote head in authoritative PR history"
                 )
             if not reporter.is_ancestor(
-                trigger["candidate_sha"], authority["head"], authority["commits"]
+                trigger["candidate_sha"], remote_head, authority["commits"]
             ):
                 raise reporter.PilotDataError(
-                    "preregistered remote head is not the non-rewritten ancestor of the current candidate head"
+                    "preregistered remote head is not the non-rewritten ancestor of the current remote head"
                 )
     if trigger["trigger"] != contract["trigger"]:
         raise reporter.PilotDataError(
@@ -3068,15 +3154,16 @@ def _validate_execution(
     contract: dict[str, Any],
     evidence: dict[str, Any],
     authority: dict[str, Any],
-) -> list[str]:
+) -> dict[str, Any]:
     receipts = evidence["execution_receipts"]
+    local_receipt = evidence["local_remediation_receipt"]
     manifest = evidence["result_manifest"]
     if not receipts:
-        if manifest:
+        if local_receipt is not None or manifest:
             raise reporter.PilotDataError(
                 "candidate result IDs have no trusted execution receipt"
             )
-        return []
+        return {"seals": [], "local_remediation": None}
     reviews = evidence["remote_reviews"]
     if len(receipts) != len(reviews):
         raise reporter.PilotDataError(
@@ -3153,6 +3240,8 @@ def _validate_execution(
             or receipt["original_pre_review_head"]
             != contract["original_pre_review_head"]
             or receipt["review_round"] != round_number
+            or receipt["review_head_sha"] != target_head
+            or receipt["review_head_tree"] != target_tree
             or receipt["candidate_sha"] != target_head
             or receipt["result"] != expected_receipt_result
             or receipt["exit_code"] != 0
@@ -3255,6 +3344,7 @@ def _validate_execution(
                 "authority_binding": authority_binding,
                 "candidate_sha": target_head,
                 "review_round": round_number,
+                "receipt_kind": "execution",
                 "checker_input_sha256": receipt["checker_input_sha256"],
             }
         current_ids = {
@@ -3264,6 +3354,7 @@ def _validate_execution(
             result_id
             for result_id, expected in expected_results.items()
             if expected["review_round"] == round_number
+            and expected["receipt_kind"] == "execution"
         }
         if current_ids != expected_current:
             raise reporter.PilotDataError(
@@ -3275,6 +3366,161 @@ def _validate_execution(
             )
         receipt_result_ids.update(current_ids)
         seals.append(receipt["seal"])
+    local_remediation = None
+    if local_receipt is not None:
+        if not reviews:
+            raise reporter.PilotDataError(
+                "local remediation receipt requires authoritative remote reviews"
+            )
+        remote_head = evidence["pull_request"]["head_sha"]
+        if authority["head"] == remote_head:
+            raise reporter.PilotDataError(
+                "local remediation receipt is only valid for a distinct local candidate head"
+            )
+        latest = reviews[-1]
+        review_head_tree = reporter.run_git(
+            authority["root"], "rev-parse", f"{remote_head}^{{tree}}"
+        ).decode("ascii").strip()
+        candidate_changes = derive_change_records(
+            authority["root"], contract["base_sha"], authority["head"]
+        )
+        candidate_files = sorted(
+            {
+                path
+                for change in candidate_changes
+                for path in (change["old_path"], change["new_path"])
+                if path is not None
+            }
+        )
+        assertion_input_artifacts = []
+        for path in ASSERTION_INPUT_PATHS:
+            base_state = _tree_state(authority["root"], contract["base_sha"], path)
+            origin_state = _tree_state(authority["root"], remote_head, path)
+            head_state = _tree_state(authority["root"], authority["head"], path)
+            assertion_input_artifacts.append(
+                {
+                    "path": path,
+                    "base_mode": base_state["mode"],
+                    "base_blob_oid": base_state["blob_oid"],
+                    "origin_mode": origin_state["mode"],
+                    "origin_blob_oid": origin_state["blob_oid"],
+                    "head_mode": head_state["mode"],
+                    "head_blob_oid": head_state["blob_oid"],
+                }
+            )
+        assertion_input_artifacts.sort(key=lambda item: item["path"])
+        local_hold = any(
+            result["status"] == "hold"
+            for result in local_receipt["assertion_results"]
+        )
+        expected_local_result = "hold" if local_hold else "pass"
+        try:
+            reporter.run_git(
+                authority["root"],
+                "merge-base",
+                "--is-ancestor",
+                remote_head,
+                authority["head"],
+            )
+        except reporter.PilotDataError as error:
+            raise reporter.PilotDataError(
+                "local remediation candidate is not descended from the authoritative remote head"
+            ) from error
+        if (
+            latest["candidate_sha"] != remote_head
+            or local_receipt["base_sha"] != contract["base_sha"]
+            or local_receipt["original_pre_review_head"]
+            != contract["original_pre_review_head"]
+            or local_receipt["review_round"] != latest["round"]
+            or local_receipt["review_head_sha"] != remote_head
+            or local_receipt["review_head_tree"] != review_head_tree
+            or local_receipt["candidate_sha"] != authority["head"]
+            or local_receipt["candidate_tree"] != authority["tree"]
+            or local_receipt["result"] != expected_local_result
+            or local_receipt["exit_code"] != 0
+            or latest["outcome"] == "clean"
+            or not latest["finding_ids"]
+            or local_receipt["finding_origin_sha"] != remote_head
+            or local_receipt["finding_origin_tree"] != review_head_tree
+            or local_receipt["base_tree"] != actual_base_tree
+            or local_receipt["checker_path"]
+            != "scripts/workflow_pilot/review_base_checker.py"
+            or local_receipt["checker_blob_oid"] != actual_checker_blob
+            or local_receipt["argv"]
+            != [
+                "/usr/bin/python3",
+                "-I",
+                "review_base_checker.py",
+                "--input",
+                "checker-input.json",
+            ]
+            or local_receipt["assertion_program_path"] != ASSERTION_PROGRAM_PATH
+            or local_receipt["assertion_program_blob_oid"]
+            != actual_assertion_program_blob
+            or local_receipt["assertion_program_argv"]
+            != [
+                "/usr/bin/python3",
+                "-I",
+                "review_assertions.py",
+                "--stdin",
+            ]
+            or local_receipt["assertion_input_artifacts"] != assertion_input_artifacts
+            or sorted(local_receipt["changed_files"]) != candidate_files
+            or local_receipt["changes"] != candidate_changes
+            or sorted(local_receipt["remote_finding_ids"])
+            != sorted(latest["finding_ids"])
+            or local_receipt["original_receipt_sha256"]
+            != evidence["original_receipt_sha256"]
+            or not local_receipt["read_only"]
+            or not local_receipt["pre_clean"]
+            or not local_receipt["post_clean"]
+        ):
+            raise reporter.PilotDataError(
+                "local remediation receipt does not bind exact remote/head state"
+            )
+        requests = build_local_remediation_requests(
+            contract, evidence["raw"], authority["head"], latest["round"]
+        )
+        for request in requests:
+            authority_binding = local_remediation_authority_binding(
+                contract,
+                evidence,
+                authority["root"],
+                authority["head"],
+                latest["round"],
+                request["assertion_id"],
+                request["finding_id"],
+            )
+            result_id = assertion_result_id(
+                latest["round"],
+                request["assertion_id"],
+                authority_binding,
+            )
+            expected_results[result_id] = {
+                **request,
+                "authority_binding": authority_binding,
+                "candidate_sha": authority["head"],
+                "review_round": latest["round"],
+                "receipt_kind": "local-remediation",
+                "checker_input_sha256": local_receipt["checker_input_sha256"],
+            }
+        current_ids = {result["id"] for result in local_receipt["assertion_results"]}
+        expected_current = {
+            result_id
+            for result_id, expected in expected_results.items()
+            if expected["receipt_kind"] == "local-remediation"
+        }
+        if current_ids != expected_current:
+            raise reporter.PilotDataError(
+                "local remediation receipt results are missing or fabricated"
+            )
+        if receipt_result_ids & current_ids:
+            raise reporter.PilotDataError(
+                "execution result IDs replay across receipts"
+            )
+        receipt_result_ids.update(current_ids)
+        seals.append(local_receipt["seal"])
+        local_remediation = {"result": local_receipt["result"]}
     if set(manifest) != set(expected_results):
         raise reporter.PilotDataError(
             "trusted registry results do not exactly cover derived assertions"
@@ -3316,7 +3562,7 @@ def _validate_execution(
                     raise reporter.PilotDataError(
                         f"result {result_id!r} semantic output lost authoritative {field}"
                     )
-    return seals
+    return {"seals": seals, "local_remediation": local_remediation}
 
 
 def _consume_disposition(
@@ -3480,7 +3726,7 @@ def build_report(
         trigger_authority["pre_review_required"],
     )
     sweeps, family_counts = _validate_findings_and_sweeps(contract, evidence)
-    execution_seals = _validate_execution(contract, evidence, authority)
+    execution = _validate_execution(contract, evidence, authority)
     forbidden_disposition_actors = {
         roles["implementer"]["id"],
         *(actor["id"] for actor in roles["remote_actors"]),
@@ -3531,19 +3777,17 @@ def build_report(
         for result in evidence["result_manifest"].values()
         if result["status"] == "hold"
     ]
-    executable_complete = bool(execution_seals)
-    consumed_ids = set(consumed)
-    transition_authorized = any(
-        event["node_id"] in consumed_ids
-        and event["held_head_sha"] == remote_head
-        and event["authorized_next_head_sha"] == authority["head"]
-        for event in evidence["architecture_dispositions"]
+    executable_complete = bool(execution["seals"])
+    local_remediation_authorized = bool(
+        execution["local_remediation"] is not None
+        and execution["local_remediation"]["result"] == "pass"
+        and remote_head != authority["head"]
     )
     structural_push = bool(
         hold is None
         and not authority_holds
         and executable_complete
-        and (current_clean or transition_authorized)
+        and (current_clean or local_remediation_authorized)
     )
     structural_merge = bool(
         structural_push and current_clean and unresolved == 0
@@ -3567,7 +3811,7 @@ def build_report(
             "authenticated_receipt": False,
             "base_pinned_checker": False,
             "executable_evidence_trusted": False,
-            "execution_receipt_seals": execution_seals,
+            "execution_receipt_seals": execution["seals"],
         },
         "trigger": {
             **contract["trigger"],

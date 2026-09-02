@@ -1520,7 +1520,9 @@ game behavior needs a compensating change.
    head, preregistered initial remote head, and normalized decision entry.
    Later descendant remote heads may reuse that immutable preregistration only
    while current PR commit history and Git ancestry preserve it as a
-   non-rewritten ancestor. The
+   non-rewritten ancestor. That preregistration `candidate_sha` is the actual
+   initial remote review head, never a later local descendant, and the exact
+   local candidate decision record must still match it before trust. The
    top-level PR comment query must carry `createdAt` and `updatedAt`, and those
    timestamps must be strict RFC 3339 UTC strings with byte-identical values.
 5. Confirm a synthetic exact base without the trusted checker or decision
@@ -1570,11 +1572,10 @@ game behavior needs a compensating change.
    generated, and resource family members and configured file, finding,
    duration, sibling, and handoff bounds. Confirm candidates provide assertion
    IDs only. Require `affected-fixed` to execute a member-specific failing
-   before-probe and passing after-probe; require `verified-unaffected` to
+   before-probe and passing after-probe with the same base-owned predicate over
+   the materialized origin and remediation roots; require `verified-unaffected` to
    compare a member-specific invariant over parsed production docs/tests/code
-   rather than one shared file or a witness sidecar; reject
-   `action/items`, `lifecycle/entries`, and `wire/stale-bindings` with
-   `verified-unaffected` until they gain a sound unaffected evaluator; permit
+   rather than one shared file or a witness sidecar; permit
    `not-applicable` only for its explicit member/reason registry entry.
    Every accepted finding sweep must include at least one `affected-fixed`
    sibling; a sweep of only `verified-unaffected`/`not-applicable` members is
@@ -1621,6 +1622,10 @@ game behavior needs a compensating change.
     Separately exercise the pre-push case where GitHub still reports held head
     A while clean local Git proves descendant B, and require the trusted gate
     to bind `--expected-remote-head A` separately from `--expected-candidate B`.
+    Require an exact local remediation receipt for A→B in every descendant
+    pre-push case, with first/second change-request rounds authorized by that
+    receipt alone and the third-round hold additionally requiring the exact
+    consumed disposition.
 11. Add a second independent round-6 hold and disposition. Confirm rounds 3
     and 6 consume distinct receipts once and do not infer advancement from
     commit or push timestamps.

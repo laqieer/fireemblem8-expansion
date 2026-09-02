@@ -415,17 +415,39 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         path.write_bytes(reporter.normalized_json(decisions))
 
     @classmethod
+    def _set_wire_stale_bindings_health(cls, healthy):
+        cls._replace_once(
+            "scripts/workflow_pilot/review_base_checker.py",
+            'elif validated_review_context["candidate_sha"] != candidate_sha:',
+            'elif validated_review_context["candidate_sha"] != validated_review_context["candidate_sha"]:',
+        )
+        if healthy:
+            cls._replace_once(
+                "scripts/workflow_pilot/review_base_checker.py",
+                'elif validated_review_context["candidate_sha"] != validated_review_context["candidate_sha"]:',
+                'elif validated_review_context["candidate_sha"] != candidate_sha:',
+            )
+
+    @classmethod
     def _set_wire_producers_health(cls, healthy):
         cls._replace_once(
             "scripts/workflow_pilot/trusted_review_gate.py",
-            '"result_manifest": build_result_manifest(execution_receipts),',
-            '"candidate_manifest": build_result_manifest(execution_receipts),',
+            '"result_manifest": build_result_manifest(\n'
+            "            execution_receipts, local_remediation_receipt\n"
+            "        ),",
+            '"candidate_manifest": build_result_manifest(\n'
+            "            execution_receipts, local_remediation_receipt\n"
+            "        ),",
         )
         if healthy:
             cls._replace_once(
                 "scripts/workflow_pilot/trusted_review_gate.py",
-                '"candidate_manifest": build_result_manifest(execution_receipts),',
-                '"result_manifest": build_result_manifest(execution_receipts),',
+                '"candidate_manifest": build_result_manifest(\n'
+                "            execution_receipts, local_remediation_receipt\n"
+                "        ),",
+                '"result_manifest": build_result_manifest(\n'
+                "            execution_receipts, local_remediation_receipt\n"
+                "        ),",
             )
 
     @classmethod
@@ -516,7 +538,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         )
         spoof = (
             "        fake = {\n"
-            '            "result_manifest": build_result_manifest(execution_receipts),\n'
+            '            "result_manifest": build_result_manifest(execution_receipts, local_remediation_receipt),\n'
             '            "authoritative_trigger": authoritative_trigger,\n'
             "        }\n"
         )
@@ -562,7 +584,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 '            "force_push_events": force_push_events,\n'
                 '            "architecture_dispositions": architecture_dispositions,\n'
                 '            "execution_receipts": execution_receipts,\n'
-                '            "candidate_manifest": build_result_manifest(execution_receipts),\n'
+                '            "candidate_manifest": build_result_manifest(execution_receipts, local_remediation_receipt),\n'
                 "        }\n"
                 + spoof
             )
@@ -591,7 +613,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 '            "force_push_events": force_push_events,\n'
                 '            "architecture_dispositions": architecture_dispositions,\n'
                 '            "execution_receipts": execution_receipts,\n'
-                '            "candidate_manifest": build_result_manifest(execution_receipts),\n'
+                '            "candidate_manifest": build_result_manifest(execution_receipts, local_remediation_receipt),\n'
                 "        }\n"
                 "    finally:\n"
                 "        pass\n"
@@ -1277,6 +1299,10 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         with self.assertRaisesRegex(review_base_checker.CheckError, message):
             self.execute(data)
 
+    def assert_cli_rejected(self, data, message):
+        with self.assertRaisesRegex(AssertionError, message):
+            self.execute_via_cli(data)
+
     def assert_held(
         self,
         data,
@@ -1327,19 +1353,21 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             self.evaluate_member_contract(family, member, data, commit_sha, binding)
 
     def test_member_parsers_reject_unregistered_verified_unaffected(self):
-        invalid_ids = (
+        valid_ids = (
             "registry:sibling:action:items:verified-unaffected:v2",
             "registry:sibling:lifecycle:entries:verified-unaffected:v2",
             "registry:sibling:wire:stale-bindings:verified-unaffected:v2",
         )
-        for parser, error in (
-            (review_base_checker.parse_assertion_id, review_base_checker.CheckError),
-            (review_assertions.parse_assertion, review_assertions.AssertionFailure),
+        for parser in (
+            review_base_checker.parse_assertion_id,
+            review_assertions.parse_assertion,
         ):
-            for assertion_id in invalid_ids:
+            for assertion_id in valid_ids:
                 with self.subTest(parser=parser.__module__, assertion_id=assertion_id):
-                    with self.assertRaisesRegex(error, "not registered for"):
-                        parser(assertion_id)
+                    self.assertEqual(
+                        parser(assertion_id)["outcome"],
+                        "verified-unaffected",
+                    )
 
     def test_round_one_executes_local_finding_with_authoritative_binding(self):
         result = self.execute(self.build_input(review_round=1))
@@ -1603,11 +1631,9 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             candidate_sha=witness_head,
             candidate_tree=witness_tree,
         )
-        self.assert_held(
+        self.assert_cli_rejected(
             data,
-            assertion_id="registry:sibling:action:items:affected-fixed:v2",
-            finding_id="FINDING-ACTION-1",
-            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+            "member-item authority binding is incomplete",
         )
 
     def test_gate_import_closure_dependency_changes_hold(self):
@@ -1663,11 +1689,9 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                     candidate_sha=spoof_head,
                     candidate_tree=spoof_tree,
                 )
-                self.assert_held(
+                self.assert_cli_rejected(
                     data,
-                    assertion_id="registry:sibling:action:items:affected-fixed:v2",
-                    finding_id="FINDING-ACTION-1",
-                    dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+                    "member-item authority binding is incomplete",
                 )
 
     def test_action_sequence_enforcement_bypass_fails(self):
@@ -1781,17 +1805,26 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         )
 
     def test_lifecycle_entries_affected_fixed_uses_review_progression(self):
-        data = self.build_input(review_round=2, assertion_requests=[{"assertion_id": "registry:sibling:lifecycle:entries:affected-fixed:v2", "finding_id": "FINDING-LIFECYCLE-1"}])
-        data["all_remote_reviews"][0]["finding_ids"] = ["FINDING-LIFECYCLE-1"]
-        data["remote_findings"] = [{"node_id": "FINDING-LIFECYCLE-1", "review_id": "REMOTE_REVIEW_1", "candidate_sha": self.head1, "created_at": "2026-09-01T00:01:30Z", "author_actor_id": COPILOT_ACTOR_ID, "family": "lifecycle"}]
+        self._restore_baseline()
+        self._set_lifecycle_entries_health(False)
+        (self.repo / "changed.txt").write_text("lifecycle origin\n", encoding="utf-8"); origin = self._commit("lifecycle-origin"); origin_tree = git_text(self.repo, "rev-parse", f"{origin}^{{tree}}")
+        self._restore_baseline()
+        (self.repo / "changed.txt").write_text("lifecycle head\n", encoding="utf-8"); head = self._commit("lifecycle-head"); head_tree = git_text(self.repo, "rev-parse", f"{head}^{{tree}}")
+        data = self.build_input(review_round=2, candidate_sha=head, candidate_tree=head_tree, assertion_requests=[{"assertion_id": "registry:sibling:lifecycle:entries:affected-fixed:v2", "finding_id": "FINDING-LIFECYCLE-1"}])
+        shutil.rmtree(data["origin_root"])
+        self.materialize_input_root(origin, Path(data["origin_root"]))
+        data["all_remote_reviews"][0]["candidate_sha"] = origin; data["all_remote_reviews"][0]["finding_ids"] = ["FINDING-LIFECYCLE-1"]
+        data["remote_findings"] = [{"node_id": "FINDING-LIFECYCLE-1", "review_id": "REMOTE_REVIEW_1", "candidate_sha": origin, "created_at": "2026-09-01T00:01:30Z", "author_actor_id": COPILOT_ACTOR_ID, "family": "lifecycle"}]
+        data["finding_origin_sha"] = origin; data["finding_origin_tree"] = origin_tree
+        data["assertion_input_artifacts"] = self.assertion_artifacts(origin, head)
         data["review_context"]["finding_ids"] = []; data["remote_finding_ids"] = []
-        data["captured_github_payload"] = self.captured_github_payload(data["candidate_sha"], data["all_remote_reviews"], data["remote_findings"])
+        data["captured_github_payload"] = self.captured_github_payload(head, data["all_remote_reviews"], data["remote_findings"])
         data["review_contract"]["family_sweeps"] = self.configured_family_sweeps(data["original_pre_review"]["findings"], data["remote_findings"], data["assertion_requests"])
         member = self.execute(data)["results"][0]
         self.assertEqual((member["status"], member["output"]["program_case"]), ("pass", "member/lifecycle/entries/affected-fixed"))
         self.assertEqual((member["output"]["origin_status"], member["output"]["head_status"]), ("fail", "pass"))
 
-    def test_action_member_passes_when_checker_authority_matches_base(self):
+    def test_action_member_requires_real_origin_failure(self):
         self._restore_baseline()
         (self.repo / "changed.txt").write_text("clean action candidate\n", encoding="utf-8")
         action_head = self._commit("action-clean-head"); action_tree = git_text(self.repo, "rev-parse", f"{action_head}^{{tree}}")
@@ -1810,10 +1843,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         data["review_contract"]["original_pre_review_head"] = action_head
         data["review_contract"]["family_sweeps"] = self.configured_family_sweeps(data["original_pre_review"]["findings"], [], data["assertion_requests"])
         data["captured_github_payload"] = self.captured_github_payload(action_head, data["all_remote_reviews"], [])
-        result = self.execute_via_cli(data)
-        self.assertEqual(result["results"][0]["status"], "pass")
-        self.assertEqual(result["results"][0]["output"]["program_case"], "member/action/items/affected-fixed")
-        self.assertEqual((result["results"][0]["output"]["origin_status"], result["results"][0]["output"]["head_status"]), ("fail", "pass"))
+        self.assert_cli_rejected(data, "affected-fixed origin assertion unexpectedly passed")
 
     def test_resource_enabled_affected_fixed_reads_subject_decision_record(self):
         self._restore_baseline()
@@ -1842,11 +1872,9 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             candidate_sha=spoof_head,
             candidate_tree=spoof_tree,
         )
-        self.assert_held(
+        self.assert_cli_rejected(
             data,
-            assertion_id="registry:sibling:action:items:affected-fixed:v2",
-            finding_id="FINDING-ACTION-1",
-            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+            "member-item authority binding is incomplete",
         )
 
     def test_member_binding_import_name_whitelist_fails(self):
@@ -1856,11 +1884,9 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             candidate_sha=spoof_head,
             candidate_tree=spoof_tree,
         )
-        self.assert_held(
+        self.assert_cli_rejected(
             data,
-            assertion_id="registry:sibling:action:items:affected-fixed:v2",
-            finding_id="FINDING-ACTION-1",
-            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+            "member-item authority binding is incomplete",
         )
 
     def test_member_binding_argv_whitelist_fails(self):
@@ -1870,11 +1896,9 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             candidate_sha=spoof_head,
             candidate_tree=spoof_tree,
         )
-        self.assert_held(
+        self.assert_cli_rejected(
             data,
-            assertion_id="registry:sibling:action:items:affected-fixed:v2",
-            finding_id="FINDING-ACTION-1",
-            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+            "member-item authority binding is incomplete",
         )
 
     def test_member_binding_path_whitelist_fails(self):
@@ -1884,11 +1908,9 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             candidate_sha=spoof_head,
             candidate_tree=spoof_tree,
         )
-        self.assert_held(
+        self.assert_cli_rejected(
             data,
-            assertion_id="registry:sibling:action:items:affected-fixed:v2",
-            finding_id="FINDING-ACTION-1",
-            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+            "member-item authority binding is incomplete",
         )
 
     def test_whitespace_and_order_refactor_preserves_member_fix(self):
@@ -1898,11 +1920,16 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             candidate_sha=refactor_head,
             candidate_tree=refactor_tree,
         )
-        self.assert_held(
-            data,
-            assertion_id="registry:sibling:action:items:affected-fixed:v2",
-            finding_id="FINDING-ACTION-1",
-            dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
+        result = next(
+            item
+            for item in self.execute_via_cli(data)["results"]
+            if item["assertion_id"]
+            == "registry:sibling:action:items:affected-fixed:v2"
+        )
+        self.assertEqual(result["status"], "pass")
+        self.assertEqual(
+            result["output"]["program_case"],
+            "member/action/items/affected-fixed",
         )
 
     def test_wire_producer_dead_ast_spoofs_fail(self):
@@ -2008,6 +2035,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
 
     def test_wire_stale_bindings_affected_fixed_uses_current_review_binding(self):
         self._restore_baseline()
+        self._set_wire_stale_bindings_health(False)
         (self.repo / "changed.txt").write_text("wire stale origin\n", encoding="utf-8"); origin = self._commit("wire-stale-origin")
         self._restore_baseline()
         (self.repo / "changed.txt").write_text("wire stale head\n", encoding="utf-8"); head = self._commit("wire-stale-head"); head_tree = git_text(self.repo, "rev-parse", f"{head}^{{tree}}")

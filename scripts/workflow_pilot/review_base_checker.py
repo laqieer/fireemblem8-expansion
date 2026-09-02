@@ -28,11 +28,7 @@ FAMILY_MEMBERS = {
     "resource": ("enabled", "disabled"),
     "wire": ("producers", "consumers", "validators", "replay", "stale-bindings"),
 }
-MEMBERS_WITHOUT_VERIFIED_UNAFFECTED = {
-    ("action", "items"),
-    ("lifecycle", "entries"),
-    ("wire", "stale-bindings"),
-}
+MEMBERS_WITHOUT_VERIFIED_UNAFFECTED = set()
 REGISTERED_NOT_APPLICABLE_REASONS = {
     ("resource", "disabled"): "feature-disabled-by-contract"
 }
@@ -1244,19 +1240,35 @@ def validate_review_context_binding(
     candidate_sha: str,
     remote_finding_ids: Any,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
-    validated_review_context = _validate_remote_review(
-        review_context, "checker input.review_context"
+    return _validate_review_context_binding(
+        review_round=review_round,
+        review_context=review_context,
+        all_remote_reviews=all_remote_reviews,
+        candidate_sha=candidate_sha,
+        remote_finding_ids=remote_finding_ids,
+        local_remediation=False,
     )
-    validated_all_remote_reviews = _validate_remote_reviews(all_remote_reviews)
-    if (
-        validated_review_context["round"] != review_round
-        or validated_review_context["candidate_sha"] != candidate_sha
-        or review_round > len(validated_all_remote_reviews)
-        or validated_all_remote_reviews[review_round - 1] != validated_review_context
-    ):
-        raise CheckError(
-            "checker review context does not match current assertion round/head"
-        )
+
+
+def validate_local_remediation_context_binding(
+    *,
+    review_round: int,
+    review_context: Any,
+    all_remote_reviews: Any,
+    candidate_sha: str,
+    remote_finding_ids: Any,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
+    return _validate_review_context_binding(
+        review_round=review_round,
+        review_context=review_context,
+        all_remote_reviews=all_remote_reviews,
+        candidate_sha=candidate_sha,
+        remote_finding_ids=remote_finding_ids,
+        local_remediation=True,
+    )
+
+
+def _validate_remote_finding_ids(remote_finding_ids: Any) -> list[str]:
     validated_remote_finding_ids = [
         expect_string(value, f"checker input.remote_finding_ids[{index}]")
         for index, value in enumerate(
@@ -1271,9 +1283,50 @@ def validate_review_context_binding(
         raise CheckError(
             "remote finding IDs overlap the independent namespace"
         )
+    return validated_remote_finding_ids
+
+
+def _validate_review_context_binding(
+    *,
+    review_round: int,
+    review_context: Any,
+    all_remote_reviews: Any,
+    candidate_sha: str,
+    remote_finding_ids: Any,
+    local_remediation: bool,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[str]]:
+    validated_review_context = _validate_remote_review(
+        review_context, "checker input.review_context"
+    )
+    validated_all_remote_reviews = _validate_remote_reviews(all_remote_reviews)
+    if (
+        validated_review_context["round"] != review_round
+        or review_round > len(validated_all_remote_reviews)
+        or validated_all_remote_reviews[review_round - 1] != validated_review_context
+    ):
+        raise CheckError(
+            "checker review context does not match current assertion round/head"
+        )
+    if local_remediation:
+        if validated_review_context["candidate_sha"] == candidate_sha:
+            raise CheckError(
+                "checker local remediation candidate must differ from the authoritative remote head"
+            )
+    elif validated_review_context["candidate_sha"] != candidate_sha:
+        raise CheckError(
+            "checker review context does not match current assertion round/head"
+        )
+    validated_remote_finding_ids = _validate_remote_finding_ids(remote_finding_ids)
     if sorted(validated_remote_finding_ids) != sorted(validated_review_context["finding_ids"]):
         raise CheckError(
             "checker input.remote_finding_ids do not match the current review findings"
+        )
+    if local_remediation and (
+        not validated_remote_finding_ids
+        or validated_review_context["outcome"] == "clean"
+    ):
+        raise CheckError(
+            "checker local remediation requires one exact authoritative remote finding set"
         )
     return (
         validated_review_context,
@@ -1433,8 +1486,23 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
     if head_sha != candidate_sha:
         raise CheckError("checker input head does not equal candidate")
     review_round = expect_int(data["review_round"], "checker input.review_round")
+    review_context_candidate = expect_sha(
+        expect_object(data["review_context"], "checker input.review_context").get(
+            "candidate_sha"
+        ),
+        "checker input.review_context.candidate_sha",
+    )
+    local_remediation = review_context_candidate != candidate_sha
     review_context, all_remote_reviews, remote_finding_ids = (
-        validate_review_context_binding(
+        validate_local_remediation_context_binding(
+            review_round=review_round,
+            review_context=data["review_context"],
+            all_remote_reviews=data["all_remote_reviews"],
+            candidate_sha=candidate_sha,
+            remote_finding_ids=data["remote_finding_ids"],
+        )
+        if local_remediation
+        else validate_review_context_binding(
             review_round=review_round,
             review_context=data["review_context"],
             all_remote_reviews=data["all_remote_reviews"],
@@ -1531,19 +1599,51 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         raise CheckError(
             "checker current head is not a descendant of the authoritative base"
         ) from error
+    required_ancestor = (
+        review_context["candidate_sha"]
+        if local_remediation
+        else original_pre_review_head
+    )
     try:
         run_git(
             repository_root,
             "merge-base",
             "--is-ancestor",
-            original_pre_review_head,
+            required_ancestor,
             candidate_sha,
         )
     except CheckError as error:
         raise CheckError(
-            "checker current head is not descended from the original pre-review head"
+            (
+                "checker local remediation candidate is not descended from the authoritative remote head"
+                if local_remediation
+                else "checker current head is not descended from the original pre-review head"
+            )
         ) from error
-    if review_round == 1:
+    if local_remediation:
+        expected_finding_origin_sha = review_context["candidate_sha"]
+        expected_finding_origin_tree = git_commit_tree(
+            repository_root,
+            expected_finding_origin_sha,
+            "checker input.review_context.candidate_sha",
+        )
+        round_findings = {}
+        for finding_id in review_context["finding_ids"]:
+            finding = remote_findings.get(finding_id)
+            if finding is None or finding["review_id"] != review_context["node_id"]:
+                raise CheckError(
+                    "checker local remediation findings do not match authoritative collection"
+                )
+            round_findings[finding_id] = {
+                "family": finding["family"],
+                "review_id": review_context["node_id"],
+                "review_round": review_context["round"],
+                "finding_head_sha": review_context["candidate_sha"],
+                "finding_head_tree": expected_finding_origin_tree,
+                "finding_origin_sha": review_context["candidate_sha"],
+                "finding_origin_tree": expected_finding_origin_tree,
+            }
+    elif review_round == 1:
         expected_finding_origin_sha = base_sha
         expected_finding_origin_tree = actual_base_tree
         round_findings = {
@@ -1689,6 +1789,7 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
 
 def execute_registry(raw_input: Any) -> dict[str, Any]:
     data = validate_input(raw_input)
+    local_remediation = data["review_context"]["candidate_sha"] != data["candidate_sha"]
     input_sha256 = hashlib.sha256(normalized_json(raw_input)).hexdigest()
     command_id = hashlib.sha256(normalized_json(list(CHECKER_ARGV))).hexdigest()
     program_context = _assertion_program_context(data)
@@ -1702,6 +1803,10 @@ def execute_registry(raw_input: Any) -> dict[str, Any]:
         expect_keys(request, label, ("assertion_id", "finding_id"))
         assertion_id = expect_string(request["assertion_id"], f"{label}.assertion_id")
         parsed_assertion = parse_assertion_id(assertion_id)
+        if local_remediation and parsed_assertion["kind"] != "member":
+            raise CheckError(
+                "checker local remediation cannot execute behavior assertions"
+            )
         raw_finding_id = request["finding_id"]
         if parsed_assertion["kind"] == "member":
             if raw_finding_id is None:

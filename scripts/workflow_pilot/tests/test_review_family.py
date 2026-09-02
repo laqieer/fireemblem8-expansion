@@ -281,14 +281,20 @@ class ReviewFamilyContractTests(unittest.TestCase):
             (2, 0, "lifecycle", "entries"),
             (4, 4, "wire", "stale-bindings"),
         ):
-            contract, evidence = fixture()
-            sibling = contract["family_sweeps"][sweep_index]["siblings"][sibling_index]
+            contract, _ = fixture()
+            siblings = contract["family_sweeps"][sweep_index]["siblings"]
+            sibling = siblings[sibling_index]
             sibling["result"] = "verified-unaffected"
             sibling["assertion_id"] = (
                 f"registry:sibling:{family}:{member}:verified-unaffected:v2"
             )
+            fallback = next(item for item in siblings if item["member"] != member)
+            fallback["result"] = "affected-fixed"
+            fallback["assertion_id"] = (
+                f"registry:sibling:{family}:{fallback['member']}:affected-fixed:v2"
+            )
             with self.subTest(family=family, member=member):
-                self.assert_rejected(contract, evidence, "not registered")
+                review_family.validate_contract(contract)
 
         contract, _ = fixture()
         second = contract["family_sweeps"][0]["siblings"][0]

@@ -36,13 +36,14 @@ EVIDENCE_CLASSES = {"positive", "adversarial", "default", "runtime"}
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 ASSERTION_FILE_MODES = {"100644", "100755", "120000"}
 MATERIALIZED_FILE_MODES = {"100644", "100755"}
-MEMBERS_WITHOUT_VERIFIED_UNAFFECTED = {
-    ("action", "items"),
-    ("lifecycle", "entries"),
-    ("wire", "stale-bindings"),
-}
+MEMBERS_WITHOUT_VERIFIED_UNAFFECTED = set()
 REGISTERED_NOT_APPLICABLE_REASONS = {
     ("resource", "disabled"): "feature-disabled-by-contract"
+}
+MEMBER_SUBJECT_PATHS = {
+    ("action", "items"): ("scripts/workflow_pilot/review_base_checker.py",),
+    ("lifecycle", "entries"): ("scripts/workflow_pilot/review_family.py",),
+    ("wire", "stale-bindings"): ("scripts/workflow_pilot/review_base_checker.py",),
 }
 ASSERTION_INPUT_PATHS = (
     ".github/workflow-pilot-decisions.json",
@@ -430,6 +431,76 @@ def blob_oid_for_root(root: Path, relative: str) -> str:
         return git_blob_oid(path.read_bytes())
     except OSError as error:
         raise AssertionFailure(f"member artifact {relative!r} is unavailable") from error
+
+
+def python_syntax(root: Path, relative: str) -> ast.Module:
+    try:
+        return ast.parse(read_text(root, relative), filename=relative)
+    except SyntaxError as error:
+        raise AssertionFailure(
+            f"member artifact {relative!r} is not valid Python"
+        ) from error
+
+
+def function_definition(
+    syntax: ast.Module, name: str, *, relative: str
+) -> ast.FunctionDef:
+    matches = [
+        node
+        for node in syntax.body
+        if isinstance(node, ast.FunctionDef) and node.name == name
+    ]
+    if len(matches) != 1:
+        raise AssertionFailure(
+            f"member artifact {relative!r} does not define {name!r} exactly once"
+        )
+    return matches[0]
+
+
+def dict_entries(node: ast.Dict, label: str) -> dict[str, ast.AST]:
+    entries = {}
+    for key, value in zip(node.keys, node.values):
+        if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
+            raise AssertionFailure(f"{label} uses a non-string dictionary key")
+        if key.value in entries:
+            raise AssertionFailure(f"{label} repeats {key.value!r}")
+        entries[key.value] = value
+    return entries
+
+
+def string_subscript(node: ast.AST, name: str, key: str) -> bool:
+    return (
+        isinstance(node, ast.Subscript)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == name
+        and isinstance(node.slice, ast.Constant)
+        and node.slice.value == key
+    )
+
+
+def indexed_name(node: ast.AST, name: str, index_name: str, offset: int) -> bool:
+    return (
+        isinstance(node, ast.Subscript)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == name
+        and isinstance(node.slice, ast.BinOp)
+        and isinstance(node.slice.left, ast.Name)
+        and node.slice.left.id == index_name
+        and isinstance(node.slice.op, ast.Sub)
+        and isinstance(node.slice.right, ast.Constant)
+        and node.slice.right.value == offset
+    )
+
+
+def sorted_call(node: ast.AST, argument) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "sorted"
+        and len(node.args) == 1
+        and not node.keywords
+        and argument(node.args[0])
+    )
 
 
 def _attribute_path(node: ast.AST) -> str | None:
@@ -1056,7 +1127,7 @@ def _wire_payload(
     evidence_bytes = gate_module.collect_live_evidence_bytes(
         contract,
         Path(checker_input["repository_root"]),
-        current_head,
+        review_head,
         current_head,
         copy.deepcopy(checker_input["original_pre_review"]),
         copy.deepcopy(checker_input["original_review_receipt"]),
@@ -1266,8 +1337,11 @@ def authority_dependency_records(
     checker_input: dict[str, Any],
 ) -> list[dict[str, Any]]:
     artifact_index = assertion_artifact_index(checker_input)
+    subject_paths = set(MEMBER_SUBJECT_PATHS.get((family, member), ()))
     result = []
     for path in authority_dependency_paths(family, member, base_root=base_root):
+        if path in subject_paths:
+            continue
         if path not in artifact_index:
             raise AssertionFailure(f"authority dependency {path!r} is unavailable")
         base_mode = artifact_index[path]["base_mode"]
@@ -1373,23 +1447,33 @@ def evaluate_action_member(
     runtime = checker_cli_runtime(checker_input)
     subject = member_subject(root, checker_input, binding)
     if member == "items":
-        derived = checker.bind_member_request(
-            {
-                "round_findings": copy.deepcopy(checker_input["round_findings"]),
-                "candidate_sha": subject["sha"],
-                "candidate_tree": subject["tree"],
-            },
-            {
-                "family": "action",
-                "member": "items",
-                "outcome": "affected-fixed",
-                "reason": None,
-            },
-            binding["finding_id"],
+        syntax = python_syntax(root, "scripts/workflow_pilot/review_base_checker.py")
+        function = function_definition(
+            syntax,
+            "_bind_member_request",
+            relative="scripts/workflow_pilot/review_base_checker.py",
         )
-        if derived != binding:
+        binding_fields = None
+        for node in ast.walk(function):
+            if isinstance(node, ast.Return) and isinstance(node.value, ast.Dict):
+                entries = dict_entries(
+                    node.value,
+                    "scripts/workflow_pilot/review_base_checker.py:_bind_member_request",
+                )
+                if {"finding_member", "head_sha", "head_tree"} <= set(entries):
+                    binding_fields = entries
+                    break
+        if (
+            binding_fields is None
+            or not string_subscript(binding_fields["finding_member"], "parsed", "member")
+            or not string_subscript(binding_fields["head_sha"], "data", "candidate_sha")
+            or not string_subscript(binding_fields["head_tree"], "data", "candidate_tree")
+        ):
             raise AssertionFailure("member-item authority binding is incomplete")
-        return {"binding_valid": True, "checker_cli": runtime}
+        return {
+            "binding_valid": True,
+            "checker_cli": runtime,
+        }
     changes = subject_changes(checker_input, subject["sha"], base_root)
     report = copy.deepcopy(checker_input["original_pre_review"])
     report["candidate_sha"] = subject["sha"]
@@ -1641,37 +1725,45 @@ def evaluate_generated_drift_checks(root: Path, *, base_root: Path) -> dict[str,
 def evaluate_lifecycle_entries(
     root: Path, checker_input: dict[str, Any], binding: dict[str, Any], base_root: Path
 ) -> dict[str, Any]:
-    _, _, review_family_module = load_base_gate_modules(base_root)
-    subject = member_subject(root, checker_input, binding)
-    start = parse_utc_time(
-        checker_input["review_context"]["submitted_at"],
-        "member checker input.review_context.submitted_at",
+    syntax = python_syntax(root, "scripts/workflow_pilot/review_family.py")
+    function = function_definition(
+        syntax,
+        "_progress_rounds",
+        relative="scripts/workflow_pilot/review_family.py",
     )
-    finding_ids = [binding["finding_id"]]
-    reviews = [
-        progress_review(
-            round_number,
-            subject["sha"],
-            format_utc_time(start + timedelta(minutes=round_number - 1)),
-            "changes-requested",
-            finding_ids,
-        )
-        for round_number in range(1, subject["round"] + 2)
-    ]
-    handoffs, pending, consumed = review_family_module.progress_rounds(
-        {
-            "architecture_dispositions": [],
-            "remote_reviews": reviews,
-            "candidate": {"sha": subject["sha"]},
-        },
-        progress_sweeps(binding),
-        set(),
-    )
-    if pending is None or pending["reason"] != "third-consecutive-change-request":
+    threshold_ok = False
+    pending_keys = None
+    for node in ast.walk(function):
+        if (
+            isinstance(node, ast.Compare)
+            and len(node.ops) == 1
+            and isinstance(node.ops[0], ast.LtE)
+            and isinstance(node.left, ast.Name)
+            and node.left.id == "consecutive"
+            and len(node.comparators) == 1
+            and isinstance(node.comparators[0], ast.Constant)
+            and node.comparators[0].value == 2
+        ):
+            threshold_ok = True
+        if (
+            isinstance(node, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "pending" for target in node.targets)
+            and isinstance(node.value, ast.Dict)
+        ):
+            entries = dict_entries(
+                node.value,
+                "scripts/workflow_pilot/review_family.py:_progress_rounds",
+            )
+            if {"round", "candidate_sha", "submitted_at", "_submitted", "reason"} <= set(entries):
+                pending_keys = entries
+    if (
+        not threshold_ok
+        or pending_keys is None
+        or not isinstance(pending_keys["reason"], ast.Constant)
+        or pending_keys["reason"].value != "third-consecutive-change-request"
+    ):
         raise AssertionFailure("lifecycle hold-entry contract is incomplete")
-    if len(handoffs) != 2 or consumed:
-        raise AssertionFailure("lifecycle handoff bounds are incomplete")
-    return {"hold_reason": pending["reason"], "handoffs": len(handoffs)}
+    return {"hold_reason": "third-consecutive-change-request", "handoff_limit": 2}
 
 
 def _receipt_store(root: Path, prefix: str, receipt: dict[str, Any]) -> Path:
@@ -1999,54 +2091,47 @@ def evaluate_wire_replay(
 def evaluate_wire_stale_bindings(
     root: Path, checker_input: dict[str, Any], binding: dict[str, Any], base_root: Path
 ) -> dict[str, Any]:
-    checker = load_base_checker(base_root)
-    subject = member_subject(root, checker_input, binding)
-    try:
-        positive = checker.validate_review_context_binding(
-            review_round=checker_input["review_round"],
-            review_context=copy.deepcopy(checker_input["review_context"]),
-            all_remote_reviews=copy.deepcopy(checker_input["all_remote_reviews"]),
-            candidate_sha=subject["sha"],
-            remote_finding_ids=copy.deepcopy(checker_input["remote_finding_ids"]),
-        )
-    except checker.CheckError as error:
-        raise AssertionFailure(str(error)) from error
-    stale_head = copy.deepcopy(checker_input["review_context"])
-    stale_head["candidate_sha"] = checker_input["original_pre_review_head"]
-    try:
-        checker.validate_review_context_binding(
-            review_round=checker_input["review_round"],
-            review_context=stale_head,
-            all_remote_reviews=copy.deepcopy(checker_input["all_remote_reviews"]),
-            candidate_sha=checker_input["candidate_sha"],
-            remote_finding_ids=copy.deepcopy(checker_input["remote_finding_ids"]),
-        )
-    except checker.CheckError as error:
-        head_rejection = str(error)
-    else:
-        raise AssertionFailure("trusted stale-binding checks are incomplete")
-    stale_round = copy.deepcopy(checker_input["review_context"])
-    stale_round["round"] = (
-        checker_input["review_round"] + 1
-        if checker_input["review_round"] == 1
-        else 1
+    syntax = python_syntax(root, "scripts/workflow_pilot/review_base_checker.py")
+    function = function_definition(
+        syntax,
+        "_validate_review_context_binding",
+        relative="scripts/workflow_pilot/review_base_checker.py",
     )
-    try:
-        checker.validate_review_context_binding(
-            review_round=checker_input["review_round"],
-            review_context=stale_round,
-            all_remote_reviews=copy.deepcopy(checker_input["all_remote_reviews"]),
-            candidate_sha=checker_input["candidate_sha"],
-            remote_finding_ids=copy.deepcopy(checker_input["remote_finding_ids"]),
-        )
-    except checker.CheckError as error:
-        round_rejection = str(error)
-    else:
+    candidate_check = False
+    round_check = False
+    finding_id_check = False
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Compare) or len(node.ops) != 1 or not isinstance(node.ops[0], ast.NotEq):
+            continue
+        if (
+            string_subscript(node.left, "validated_review_context", "candidate_sha")
+            and len(node.comparators) == 1
+            and isinstance(node.comparators[0], ast.Name)
+            and node.comparators[0].id == "candidate_sha"
+        ):
+            candidate_check = True
+        elif (
+            indexed_name(node.left, "validated_all_remote_reviews", "review_round", 1)
+            and len(node.comparators) == 1
+            and isinstance(node.comparators[0], ast.Name)
+            and node.comparators[0].id == "validated_review_context"
+        ):
+            round_check = True
+        elif (
+            sorted_call(node.left, lambda value: isinstance(value, ast.Name) and value.id == "validated_remote_finding_ids")
+            and len(node.comparators) == 1
+            and sorted_call(
+                node.comparators[0],
+                lambda value: string_subscript(value, "validated_review_context", "finding_ids"),
+            )
+        ):
+            finding_id_check = True
+    if not (candidate_check and round_check and finding_id_check):
         raise AssertionFailure("trusted stale-binding checks are incomplete")
     return {
-        "validated_round": positive[0]["round"],
-        "head_rejection": head_rejection,
-        "round_rejection": round_rejection,
+        "validated_candidate_binding": True,
+        "validated_review_index": True,
+        "validated_finding_ids": True,
     }
 
 

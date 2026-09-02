@@ -1681,7 +1681,7 @@ def _parse_external_trigger_comment(
     repository_id: str | None,
     repository_name: str | None,
     contract: dict[str, Any],
-    current_candidate_sha: str,
+    initial_remote_head: str,
     first_remote_review_at: datetime | None,
     actors: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
@@ -1759,6 +1759,10 @@ def _parse_external_trigger_comment(
         )
         if original_head != contract["original_pre_review_head"]:
             raise reporter.PilotDataError(f"{label} decision preregistration lost the initial reviewed head")
+        if preregistered_head != initial_remote_head:
+            raise reporter.PilotDataError(
+                f"{label} decision preregistration does not bind the exact initial remote review head"
+            )
         decision = _normalize_trigger_decision_record(
             reporter.expect_object(
                 payload["decision"], f"{label} decision preregistration.decision"
@@ -1866,13 +1870,17 @@ def load_authoritative_trigger(
 
 
 def build_result_manifest(
-    execution_receipts: list[dict[str, Any]]
+    execution_receipts: list[dict[str, Any]],
+    local_remediation_receipt: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    return [
+    result = [
         result
         for receipt in execution_receipts
         for result in receipt["assertion_results"]
     ]
+    if local_remediation_receipt is not None:
+        result.extend(local_remediation_receipt["assertion_results"])
+    return result
 
 
 def build_live_evidence_payload(
@@ -1893,9 +1901,10 @@ def build_live_evidence_payload(
     force_push_events: list[dict[str, Any]],
     architecture_dispositions: list[dict[str, Any]],
     execution_receipts: list[dict[str, Any]],
+    local_remediation_receipt: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     _expect_bound_modules()
-    return {
+    payload = {
         "schema_version": review_family.SCHEMA_VERSION,
         "repository": contract["repository"],
         "source": {"kind": source_kind, "complete": True},
@@ -1916,8 +1925,13 @@ def build_live_evidence_payload(
         "force_push_events": force_push_events,
         "architecture_dispositions": architecture_dispositions,
         "execution_receipts": execution_receipts,
-        "result_manifest": build_result_manifest(execution_receipts),
+        "result_manifest": build_result_manifest(
+            execution_receipts, local_remediation_receipt
+        ),
     }
+    if local_remediation_receipt is not None:
+        payload["local_remediation_receipt"] = local_remediation_receipt
+    return payload
 
 
 def run_base_pinned_checker(
@@ -1951,6 +1965,10 @@ def run_base_pinned_checker(
         raise reporter.PilotDataError(
             "base checker requires a clean candidate worktree"
         )
+    review_head_sha = reporter.expect_sha(
+        review_context.get("candidate_sha"),
+        "base checker review context candidate_sha",
+    )
     try:
         reporter.run_git(root, "merge-base", "--is-ancestor", base_sha, candidate_sha)
     except reporter.PilotDataError as error:
@@ -1970,6 +1988,7 @@ def run_base_pinned_checker(
             "base checker current head is not descended from the original pre-review head"
         ) from error
     base_tree = _git_text(root, "rev-parse", f"{base_sha}^{{tree}}")
+    review_head_tree = _git_text(root, "rev-parse", f"{review_head_sha}^{{tree}}")
     candidate_tree = _git_text(root, "rev-parse", f"{candidate_sha}^{{tree}}")
     checker_blob = _git_text(root, "rev-parse", f"{base_sha}:{BASE_CHECKER_PATH}")
     checker_source = reporter.run_git(root, "show", f"{base_sha}:{BASE_CHECKER_PATH}")
@@ -1980,7 +1999,9 @@ def run_base_pinned_checker(
         root, "show", f"{base_sha}:{ASSERTION_PROGRAM_PATH}"
     )
     finding_origin_sha = (
-        base_sha
+        review_head_sha
+        if review_head_sha != candidate_sha
+        else base_sha
         if review_round == 1
         else all_remote_reviews[review_round - 2]["candidate_sha"]
     )
@@ -2222,6 +2243,8 @@ def run_base_pinned_checker(
         "original_pre_review_head": contract["original_pre_review_head"],
         "original_receipt_sha256": original_receipt_sha256,
         "review_round": review_round,
+        "review_head_sha": review_head_sha,
+        "review_head_tree": review_head_tree,
         "candidate_sha": candidate_sha,
         "candidate_tree": candidate_tree,
         "checker_path": BASE_CHECKER_PATH,
@@ -2706,6 +2729,7 @@ def collect_live_evidence_bytes(
     receipt_envelope: dict[str, Any],
     execution_receipts: list[dict[str, Any]],
     *,
+    local_remediation_receipt: dict[str, Any] | None = None,
     authoritative_trigger: dict[str, Any] | None = None,
     adapter: GhApiAdapter | None = None,
     clock: Callable[[], datetime] = _utc_now,
@@ -2968,7 +2992,11 @@ def collect_live_evidence_bytes(
             repository_id=repository_id,
             repository_name=repository_name,
             contract=contract,
-            current_candidate_sha=expected_remote_head,
+            initial_remote_head=(
+                remote_reviews[0]["candidate_sha"]
+                if remote_reviews
+                else expected_remote_head
+            ),
             first_remote_review_at=(
                 remote_reviews[0]["_submitted"] if remote_reviews else None
             ),
@@ -2977,7 +3005,7 @@ def collect_live_evidence_bytes(
         if external_trigger is not None:
             candidate_record, _candidate_blob_oid = _load_candidate_trigger_record(
                 root,
-                candidate_sha=expected_remote_head,
+                candidate_sha=expected_candidate,
                 pull_request=contract["pull_request"],
             )
             if candidate_record != external_trigger["_record"]:
@@ -3200,6 +3228,7 @@ def collect_live_evidence_bytes(
         force_push_events=force_push_events,
         architecture_dispositions=dispositions,
         execution_receipts=execution_receipts,
+        local_remediation_receipt=local_remediation_receipt,
     )
     return reporter.normalized_json(raw_evidence)
 
@@ -3442,6 +3471,46 @@ def _run_trusted_gate(
         ):
             raise reporter.PilotDataError("execution receipt HMAC is invalid")
         execution_receipts.append(receipt)
+    local_remediation_receipt = None
+    latest_review = (
+        first_evidence["remote_reviews"][-1]
+        if first_evidence["remote_reviews"]
+        else None
+    )
+    if (
+        expected_remote_head != expected_candidate
+        and latest_review is not None
+        and latest_review["candidate_sha"] == expected_remote_head
+        and latest_review["outcome"] != "clean"
+        and latest_review["finding_ids"]
+    ):
+        local_remediation_receipt = run_base_pinned_checker(
+            repository_root,
+            contract=contract,
+            candidate_sha=expected_candidate,
+            review_round=latest_review["round"],
+            review_context=latest_review,
+            all_remote_reviews=first_evidence["remote_reviews"],
+            remote_findings=first_evidence["findings"],
+            remote_finding_ids=latest_review["finding_ids"],
+            captured_github_payload=adapter.last_payload,
+            original_review_report_bytes=report_bytes,
+            original_review_receipt=envelope,
+            original_receipt_sha256=original_receipt_sha256,
+            assertion_requests=review_family.build_local_remediation_requests(
+                contract,
+                first_evidence,
+                expected_candidate,
+                latest_review["round"],
+            ),
+            trusted_key=trusted_key,
+            clock=clock,
+        )
+        if not hmac.compare_digest(
+            local_remediation_receipt["seal"],
+            _execution_receipt_seal(local_remediation_receipt, trusted_key),
+        ):
+            raise reporter.PilotDataError("local remediation receipt HMAC is invalid")
     second_evidence = collect_live_evidence_bytes(
         raw_contract,
         repository_root,
@@ -3450,6 +3519,7 @@ def _run_trusted_gate(
         review_report,
         envelope,
         execution_receipts,
+        local_remediation_receipt=local_remediation_receipt,
         authoritative_trigger=authoritative_trigger,
         adapter=adapter,
         clock=clock,
@@ -3474,7 +3544,15 @@ def _run_trusted_gate(
         "base_pinned_checker": True,
         "executable_evidence_trusted": True,
         "execution_receipt_seals": [
-            receipt["seal"] for receipt in execution_receipts
+            receipt["seal"]
+            for receipt in (
+                [*execution_receipts]
+                + (
+                    [local_remediation_receipt]
+                    if local_remediation_receipt is not None
+                    else []
+                )
+            )
         ],
     }
     result["gates"] = {
