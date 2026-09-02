@@ -1030,6 +1030,62 @@ class BaselineFixtureTests(unittest.TestCase):
                         result.stderr,
                     )
 
+    def test_trusted_json_sidecar_reader_rejects_unsafe_inputs(self):
+        with tempfile.TemporaryDirectory(prefix="workflow-pilot-trust-sidecar-", dir=TEST_ARTIFACTS) as temporary:
+            root = Path(temporary)
+            valid = root / "trust.json"
+            valid.write_text('{"schema_version":1,"anchors":[]}\n', encoding="utf-8")
+            load = lambda path: reporter.load_json(
+                path,
+                label="implementation handoff trust sidecar",
+                max_bytes=reporter.TRUSTED_JSON_MAX_BYTES,
+            )
+            self.assertEqual(
+                load(valid),
+                {"schema_version": 1, "anchors": []},
+            )
+            symlink = root / "trust-link.json"
+            symlink.symlink_to(valid.name)
+            fifo = root / "trust-fifo.json"
+            os.mkfifo(fifo)
+            duplicate = root / "trust-duplicate.json"
+            duplicate.write_text('{"schema_version":1,"schema_version":2}', encoding="utf-8")
+            oversized = root / "trust-oversized.json"
+            oversized.write_bytes(
+                b'{"schema_version":1,"anchors":["'
+                + (b"x" * reporter.TRUSTED_JSON_MAX_BYTES)
+                + b'"]}'
+            )
+            for path, message in (
+                (symlink, "must be a regular file"),
+                (fifo, "must be a regular file"),
+                (duplicate, "duplicate JSON key 'schema_version'"),
+                (oversized, "exceeds 1 MiB"),
+            ):
+                with self.subTest(path=path.name):
+                    with self.assertRaisesRegex(reporter.PilotDataError, message):
+                        load(path)
+
+    def test_trusted_json_sidecar_reader_rejects_raced_path(self):
+        with tempfile.TemporaryDirectory(prefix="workflow-pilot-trust-sidecar-race-", dir=TEST_ARTIFACTS) as temporary:
+            path = Path(temporary) / "trust.json"
+            path.write_text('{"schema_version":1,"anchors":[]}\n', encoding="utf-8")
+            real_signature = reporter._json_file_signature
+            calls = 0
+            def raced_signature(metadata):
+                nonlocal calls
+                calls += 1
+                signature = real_signature(metadata)
+                if calls == 3:
+                    return (*signature[:-1], signature[-1] + 1)
+                return signature
+
+            with (
+                mock.patch.object(reporter, "_json_file_signature", side_effect=raced_signature),
+                self.assertRaisesRegex(reporter.PilotDataError, "changed while being read"),
+            ):
+                reporter.load_json(path, label="implementation handoff trust sidecar", max_bytes=reporter.TRUSTED_JSON_MAX_BYTES)
+
 
 class RepositoryAuthorityTests(unittest.TestCase):
     def test_override_blob_commits_derive_from_strict_fixture_and_decisions(self):

@@ -61,6 +61,7 @@ DELETION_PROOF_SUPPORT_PATHS = (
 )
 DELETION_PROOF_REASON = "removal loses the issue #176 baseline decision invariant"
 DELETION_PROOF_TIMEOUT_SECONDS = 30
+TRUSTED_JSON_MAX_BYTES = 1024 * 1024
 EXECUTABLE_DELETION_PROOFS = {
     "workflow-pilot-decisions": {
         "path": DECISION_RECORD_PATH,
@@ -345,11 +346,76 @@ def _object_no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def load_json(path: Path) -> Any:
+def _json_file_signature(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        metadata.st_dev, metadata.st_ino, metadata.st_mode, metadata.st_uid,
+        metadata.st_size, metadata.st_nlink,
+        getattr(metadata, "st_mtime_ns", 0), getattr(metadata, "st_ctime_ns", 0),
+    )
+
+
+def _load_bounded_json(path: Path, *, label: str, max_bytes: int) -> Any:
+    absolute = Path(os.path.abspath(os.fspath(path)))
     try:
-        return parse_json(path.read_text(encoding="utf-8"), str(path))
+        metadata = absolute.lstat()
     except OSError as error:
-        raise PilotDataError(f"cannot read {path}: {error}") from error
+        raise PilotDataError(f"cannot inspect {label}: {error}") from error
+    if not stat.S_ISREG(metadata.st_mode):
+        raise PilotDataError(f"{label} must be a regular file")
+    if metadata.st_size > max_bytes:
+        raise PilotDataError(f"{label} exceeds 1 MiB")
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
+    try:
+        descriptor = os.open(os.fspath(absolute), flags)
+    except OSError as error:
+        raise PilotDataError(f"cannot open {label}: {error}") from error
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            raise PilotDataError(f"{label} must be a regular file")
+        if (
+            opened.st_size > max_bytes
+            or _json_file_signature(opened) != _json_file_signature(metadata)
+        ):
+            raise PilotDataError(f"{label} changed before read")
+        raw = bytearray()
+        while len(raw) <= max_bytes:
+            chunk = os.read(descriptor, min(65536, max_bytes + 1 - len(raw)))
+            if not chunk:
+                break
+            raw.extend(chunk)
+        final = os.fstat(descriptor)
+    except OSError as error:
+        raise PilotDataError(f"cannot read {label}: {error}") from error
+    finally:
+        os.close(descriptor)
+    if len(raw) > max_bytes:
+        raise PilotDataError(f"{label} exceeds 1 MiB")
+    if (
+        _json_file_signature(final) != _json_file_signature(metadata)
+        or len(raw) != metadata.st_size
+    ):
+        raise PilotDataError(f"{label} changed while being read")
+    try:
+        return parse_json(raw.decode("utf-8"), label)
+    except UnicodeError as error:
+        raise PilotDataError(f"{label} is not valid UTF-8") from error
+
+
+def load_json(
+    path: Path, *, label: str | None = None, max_bytes: int | None = None,
+) -> Any:
+    if max_bytes is not None:
+        return _load_bounded_json(path, label=label or str(path), max_bytes=max_bytes)
+    try:
+        return parse_json(path.read_text(encoding="utf-8"), label or str(path))
+    except OSError as error:
+        raise PilotDataError(f"cannot read {label or path}: {error}") from error
 
 
 def parse_json(text: str, label: str) -> Any:
@@ -4541,7 +4607,11 @@ def main(argv: list[str] | None = None) -> int:
         fixture = load_json(args.fixture)
         decisions = load_json(args.decisions)
         handoff_trust = (
-            load_json(args.implementation_handoff_trust)
+            load_json(
+                args.implementation_handoff_trust,
+                label="implementation handoff trust sidecar",
+                max_bytes=TRUSTED_JSON_MAX_BYTES,
+            )
             if args.implementation_handoff_trust is not None
             else None
         )

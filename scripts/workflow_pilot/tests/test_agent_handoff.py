@@ -7374,6 +7374,11 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                     completed.stdout,
                     reporter.normalized_json(report),
                 )
+                link_path = authority_root / "operational-trust-link.json"
+                link_path.symlink_to(trust_path.name)
+                linked = subprocess.run([*completed.args[:-1], str(link_path)], cwd=ROOT, check=False, capture_output=True)
+                self.assertEqual(linked.returncode, 2)
+                self.assertIn(b"implementation handoff trust sidecar must be a regular file", linked.stderr)
         self.assertEqual(report["schema_version"], 2)
         self.assertEqual(
             report["identities"]["implementation_handoffs"],
