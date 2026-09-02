@@ -536,6 +536,31 @@ class TrustedGitHubGateTests(unittest.TestCase):
     def decision_record_path(self, root):
         return Path(root) / trusted_review_gate.DECISION_RECORD_PATH
 
+    def replay_receipt_path(
+        self,
+        root,
+        *,
+        repository="laqieer/fireemblem8-expansion",
+        pull_request=SYNTHETIC_PULL_REQUEST,
+        base_sha=BASE,
+        candidate_sha=CANDIDATE,
+        key_id=KEY_ID,
+        key_epoch=KEY_EPOCH,
+    ):
+        scope_id = hashlib.sha256(
+            reporter.normalized_json(
+                trusted_review_gate.receipt_scope(
+                    repository,
+                    pull_request,
+                    base_sha,
+                    candidate_sha,
+                    key_id,
+                    key_epoch,
+                )
+            )
+        ).hexdigest()
+        return Path(root) / f"original-{scope_id}"
+
     def patched_os_open_once(self, predicate, mutate):
         real_open = trusted_review_gate.os.open
         fired = False
@@ -1750,6 +1775,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
         payload = reporter.normalized_json(review_report())
         receipt = signed_receipt(payload)
         now = datetime(2026, 8, 31, 3, 15, tzinfo=timezone.utc)
+        replay_path = self.replay_receipt_path(self.replay)
         verified, envelope = trusted_review_gate._verify_signed_receipt_bytes(
             receipt,
             repository="laqieer/fireemblem8-expansion",
@@ -1765,6 +1791,22 @@ class TrustedGitHubGateTests(unittest.TestCase):
         )
         self.assertEqual(verified, payload)
         self.assertEqual(envelope["base_sha"], BASE)
+        self.assertEqual(replay_path.read_bytes(), receipt)
+        verified_again, envelope_again = trusted_review_gate._verify_signed_receipt_bytes(
+            receipt,
+            repository="laqieer/fireemblem8-expansion",
+            pull_request=SYNTHETIC_PULL_REQUEST,
+            base_sha=BASE,
+            candidate_sha=CANDIDATE,
+            trusted_key_id=KEY_ID,
+            trusted_key_epoch=KEY_EPOCH,
+            trusted_key=KEY,
+            current_time=now,
+            replay_store=self.replay,
+            consume_nonce=True,
+        )
+        self.assertEqual(verified_again, payload)
+        self.assertEqual(envelope_again, envelope)
         preserved_payload, _ = (
             trusted_review_gate._verify_signed_receipt_bytes(
                 receipt,
@@ -1783,22 +1825,6 @@ class TrustedGitHubGateTests(unittest.TestCase):
             )
         )
         self.assertEqual(preserved_payload, payload)
-        with self.assertRaisesRegex(
-            reporter.PilotDataError, "already consumed"
-        ):
-            trusted_review_gate._verify_signed_receipt_bytes(
-                receipt,
-                repository="laqieer/fireemblem8-expansion",
-                pull_request=SYNTHETIC_PULL_REQUEST,
-                base_sha=BASE,
-                candidate_sha=CANDIDATE,
-                trusted_key_id=KEY_ID,
-                trusted_key_epoch=KEY_EPOCH,
-                trusted_key=KEY,
-                current_time=now,
-                replay_store=self.replay,
-                consume_nonce=True,
-            )
         resigned = signed_receipt(
             payload, nonce="different-nonce-0002"
         )
@@ -1843,6 +1869,230 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 trusted_review_gate._verify_signed_receipt_bytes(
                     receipt, **arguments
                 )
+
+    def test_persist_original_receipt_is_atomic_and_idempotent(self):
+        payload = b"atomic-replay-receipt\n"
+        real_open = os.open
+        real_write = os.write
+        real_fsync = os.fsync
+        publish_kwargs = {
+            "repository": "laqieer/fireemblem8-expansion",
+            "pull_request": SYNTHETIC_PULL_REQUEST,
+            "base_sha": BASE,
+            "original_pre_review_head": CANDIDATE,
+            "key_id": KEY_ID,
+            "key_epoch": KEY_EPOCH,
+        }
+
+        def temp_entries(root):
+            return sorted(
+                name for name in os.listdir(root) if name.startswith(".original-")
+            )
+
+        def write_private(path, content):
+            path.write_bytes(content)
+            os.chmod(path, 0o600)
+
+        def persist(root):
+            trusted_review_gate.persist_original_receipt(
+                payload,
+                root,
+                **publish_kwargs,
+            )
+
+        for split in range(1, len(payload)):
+            root = self.temporary_repo("replay-short-write")
+            final_path = self.replay_receipt_path(root)
+            state = {"calls": 0}
+
+            def short_write(fd, data):
+                blob = bytes(data)
+                if state["calls"] == 0:
+                    state["calls"] += 1
+                    return real_write(fd, blob[:split])
+                return real_write(fd, blob)
+
+            try:
+                with self.subTest(case=f"short-write-{split}"), mock.patch.object(
+                    trusted_review_gate.os,
+                    "write",
+                    side_effect=short_write,
+                ):
+                    persist(root)
+                    self.assertEqual(final_path.read_bytes(), payload)
+            finally:
+                shutil.rmtree(root)
+
+        for case_name, side_effect, final_expected in (
+            (
+                "eintr",
+                lambda: InterruptedError(),
+                payload,
+            ),
+            (
+                "zero",
+                lambda: 0,
+                None,
+            ),
+            (
+                "write-error",
+                lambda: OSError("write failed"),
+                None,
+            ),
+        ):
+            root = self.temporary_repo("replay-write-fault")
+            final_path = self.replay_receipt_path(root)
+            state = {"calls": 0}
+
+            def write_fault(fd, data):
+                if state["calls"] == 0:
+                    state["calls"] += 1
+                    outcome = side_effect()
+                    if isinstance(outcome, BaseException):
+                        raise outcome
+                    return outcome
+                return real_write(fd, bytes(data))
+
+            try:
+                with self.subTest(case=case_name), mock.patch.object(
+                    trusted_review_gate.os,
+                    "write",
+                    side_effect=write_fault,
+                ):
+                    if final_expected is None:
+                        with self.assertRaisesRegex(
+                            reporter.PilotDataError,
+                            "could not be published",
+                        ):
+                            persist(root)
+                        self.assertFalse(final_path.exists())
+                        self.assertEqual(temp_entries(root), [])
+                        persist(root)
+                        self.assertEqual(final_path.read_bytes(), payload)
+                    else:
+                        persist(root)
+                        self.assertEqual(final_path.read_bytes(), final_expected)
+            finally:
+                shutil.rmtree(root)
+
+        for case_name, fsync_fault_call, published in (
+            ("file-fsync-error", 1, False),
+            ("directory-fsync-error", 2, True),
+        ):
+            root = self.temporary_repo("replay-fsync-fault")
+            final_path = self.replay_receipt_path(root)
+            state = {"calls": 0}
+
+            def fsync_fault(fd):
+                state["calls"] += 1
+                if state["calls"] == fsync_fault_call:
+                    raise OSError("fsync failed")
+                return real_fsync(fd)
+
+            try:
+                with self.subTest(case=case_name), mock.patch.object(
+                    trusted_review_gate.os,
+                    "fsync",
+                    side_effect=fsync_fault,
+                ):
+                    with self.assertRaisesRegex(
+                        reporter.PilotDataError,
+                        "could not be published",
+                    ):
+                        persist(root)
+                self.assertEqual(final_path.exists(), published)
+                if published:
+                    self.assertEqual(final_path.read_bytes(), payload)
+                else:
+                    self.assertEqual(temp_entries(root), [])
+                persist(root)
+                self.assertEqual(final_path.read_bytes(), payload)
+            finally:
+                shutil.rmtree(root)
+
+        root = self.temporary_repo("replay-link-fault")
+        final_path = self.replay_receipt_path(root)
+        try:
+            with mock.patch.object(
+                trusted_review_gate.os,
+                "link",
+                side_effect=OSError("link failed"),
+            ):
+                with self.assertRaisesRegex(
+                    reporter.PilotDataError,
+                    "could not be published",
+                ):
+                    persist(root)
+            self.assertFalse(final_path.exists())
+            self.assertEqual(temp_entries(root), [])
+            persist(root)
+            self.assertEqual(final_path.read_bytes(), payload)
+        finally:
+            shutil.rmtree(root)
+
+        for case_name, winner_bytes, should_succeed in (
+            ("concurrent-same", payload, True),
+            ("concurrent-different", b"other-receipt\n", False),
+        ):
+            root = self.temporary_repo("replay-concurrent")
+            final_path = self.replay_receipt_path(root)
+
+            def losing_link(_src, dst, *, dst_dir_fd=None):
+                descriptor = real_open(
+                    dst,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                    0o600,
+                    dir_fd=dst_dir_fd,
+                )
+                try:
+                    real_write(descriptor, winner_bytes)
+                    real_fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+                raise FileExistsError
+
+            try:
+                with self.subTest(case=case_name), mock.patch.object(
+                    trusted_review_gate.os,
+                    "link",
+                    side_effect=losing_link,
+                ):
+                    if should_succeed:
+                        persist(root)
+                        self.assertEqual(final_path.read_bytes(), payload)
+                    else:
+                        with self.assertRaisesRegex(
+                            reporter.PilotDataError,
+                            "consumed or re-signed",
+                        ):
+                            persist(root)
+            finally:
+                shutil.rmtree(root)
+
+        for case_name, existing_bytes, hardlink_alias, should_succeed in (
+            ("existing-exact", payload, False, True),
+            ("existing-different", b"different\n", False, False),
+            ("existing-partial", payload[:7], False, False),
+            ("existing-hardlink", payload, True, False),
+        ):
+            root = self.temporary_repo("replay-existing")
+            final_path = self.replay_receipt_path(root)
+            try:
+                write_private(final_path, existing_bytes)
+                if hardlink_alias:
+                    os.link(final_path, Path(root) / "unexpected-link")
+                with self.subTest(case=case_name):
+                    if should_succeed:
+                        persist(root)
+                        self.assertEqual(final_path.read_bytes(), payload)
+                    else:
+                        with self.assertRaisesRegex(
+                            reporter.PilotDataError,
+                            "consumed or re-signed",
+                        ):
+                            persist(root)
+            finally:
+                shutil.rmtree(root)
 
     def test_authoritative_trigger_decision_record_is_exact_and_fail_closed(self):
         repo, base, candidate = self.build_decision_repo(self.decision_entry())
@@ -3584,26 +3834,27 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     clock=clock,
                 )
 
-            with self.assertRaisesRegex(
-                reporter.PilotDataError, "already consumed"
-            ):
-                trusted_review_gate._run_trusted_gate(
-                    raw_contract=contract,
-                    repository_root=repository,
-                    expected_candidate=heads[-1],
-                    expected_remote_head=heads[-1],
-                    expected_base=base,
-                    review_receipt_bytes=receipt,
-                    replay_store=self.replay,
-                    trusted_key_id=KEY_ID,
-                    trusted_key_epoch=KEY_EPOCH,
-                    trusted_key=KEY,
-                    current_time=datetime(
-                        2026, 8, 31, 4, 1, tzinfo=timezone.utc
-                    ),
-                    adapter=StaticAdapter(payload),
-                    clock=clock,
-                )
+            repeated = trusted_review_gate._run_trusted_gate(
+                raw_contract=contract,
+                repository_root=repository,
+                expected_candidate=heads[-1],
+                expected_remote_head=heads[-1],
+                expected_base=base,
+                review_receipt_bytes=receipt,
+                replay_store=self.replay,
+                trusted_key_id=KEY_ID,
+                trusted_key_epoch=KEY_EPOCH,
+                trusted_key=KEY,
+                current_time=datetime(
+                    2026, 8, 31, 4, 1, tzinfo=timezone.utc
+                ),
+                adapter=StaticAdapter(payload),
+                clock=clock,
+            )
+            self.assertEqual(
+                repeated["architecture_hold"]["consumed_disposition_ids"],
+                ["DISPOSITION_MULTI_3", "DISPOSITION_MULTI_6"],
+            )
         finally:
             shutil.rmtree(repository)
 

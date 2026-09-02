@@ -13,6 +13,7 @@ import importlib
 import json
 import os
 import re
+import secrets
 import shutil
 import stat
 import subprocess
@@ -84,6 +85,10 @@ RECEIPT_DOMAIN = b"workflow-review-authenticated-envelope-v2\0"
 EXECUTION_RECEIPT_DOMAIN = b"workflow-review-execution-receipt-v2\0"
 RECEIPT_PURPOSE = "independent-pre-review-report"
 RECEIPT_MAX_LIFETIME_SECONDS = 600
+MAX_AUTHENTICATED_RECEIPT_BYTES = 1 << 20
+REPLAY_IO_CHUNK_SIZE = 65536
+REPLAY_TEMP_NAME_ATTEMPTS = 32
+REPLAY_TEMP_TOKEN_BYTES = 8
 NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 EXTERNAL_DECISION_COMMENT_PREFIX = "workflow-review-family-decision:v1 "
 EXTERNAL_CLASSIFICATION_COMMENT_PREFIX = (
@@ -209,6 +214,46 @@ def _receipt_scope(
     }
 
 
+def _receipt_scope_id(
+    repository: str,
+    pull_request: int,
+    base_sha: str,
+    original_pre_review_head: str,
+    key_id: str,
+    key_epoch: int,
+) -> str:
+    return hashlib.sha256(
+        reporter.normalized_json(
+            _receipt_scope(
+                repository,
+                pull_request,
+                base_sha,
+                original_pre_review_head,
+                key_id,
+                key_epoch,
+            )
+        )
+    ).hexdigest()
+
+
+def _receipt_final_name(scope_id: str) -> str:
+    return f"original-{scope_id}"
+
+
+def _receipt_temp_name(scope_id: str, token: str) -> str:
+    return f".original-{scope_id}.{token}.tmp"
+
+
+def _is_bounded_receipt_temp_name(name: str, scope_id: str) -> bool:
+    return (
+        re.fullmatch(
+            rf"\.original-{scope_id}\.[0-9a-f]{{{REPLAY_TEMP_TOKEN_BYTES * 2}}}\.tmp",
+            name,
+        )
+        is not None
+    )
+
+
 def _preserved_receipt_bytes(
     replay_store: Path,
     *,
@@ -219,7 +264,7 @@ def _preserved_receipt_bytes(
     key_id: str,
     key_epoch: int,
 ) -> bytes:
-    scope = _receipt_scope(
+    scope_id = _receipt_scope_id(
         repository,
         pull_request,
         base_sha,
@@ -227,18 +272,22 @@ def _preserved_receipt_bytes(
         key_id,
         key_epoch,
     )
-    scope_id = hashlib.sha256(reporter.normalized_json(scope)).hexdigest()
-    path = replay_store.resolve() / f"original-{scope_id}"
-    if path.is_symlink():
-        raise reporter.PilotDataError(
-            "preserved original pre-review is unavailable"
-        )
+    directory_fd = -1
     try:
-        return path.read_bytes()
-    except OSError as error:
-        raise reporter.PilotDataError(
-            "preserved original pre-review is unavailable"
-        ) from error
+        directory_fd = _open_replay_store_fd(replay_store)
+        payload = _read_replay_receipt_bytes(
+            directory_fd,
+            name=_receipt_final_name(scope_id),
+            scope_id=scope_id,
+            allow_missing=False,
+            not_found_message="preserved original pre-review is unavailable",
+            invalid_message="preserved original pre-review is unavailable",
+        )
+        assert payload is not None
+        return payload
+    finally:
+        if directory_fd >= 0:
+            os.close(directory_fd)
 
 
 def receipt_scope(
@@ -294,42 +343,90 @@ def persist_original_receipt(
     _expect_bound_modules()
     if not isinstance(receipt_bytes, bytes):
         raise reporter.PilotDataError("receipt must be immutable bytes")
-    if replay_store.is_symlink():
-        raise reporter.PilotDataError(
-            "authenticated pre-review requires external replay authority"
+    scope_id = _receipt_scope_id(
+        repository,
+        pull_request,
+        base_sha,
+        original_pre_review_head,
+        key_id,
+        key_epoch,
+    )
+    final_name = _receipt_final_name(scope_id)
+    directory_fd = -1
+    temp_fd = -1
+    temp_name: str | None = None
+    temp_stat: os.stat_result | None = None
+    try:
+        directory_fd = _open_replay_store_fd(replay_store)
+        if _read_replay_receipt_bytes(
+            directory_fd,
+            name=final_name,
+            scope_id=scope_id,
+            expected_bytes=receipt_bytes,
+            allow_missing=True,
+            not_found_message="authenticated original pre-review is unavailable",
+            invalid_message="authenticated original pre-review was already consumed or re-signed",
+        ) is not None:
+            return
+        temp_fd, temp_name = _create_replay_temp_file(directory_fd, scope_id)
+        _write_all_bytes(
+            temp_fd,
+            receipt_bytes,
+            error_message="authenticated original pre-review could not be published",
         )
-    replay_store = replay_store.resolve()
-    if not replay_store.is_dir():
-        raise reporter.PilotDataError(
-            "authenticated pre-review replay store is unavailable"
+        _fsync_descriptor(
+            temp_fd,
+            error_message="authenticated original pre-review could not be published",
         )
-    scope_id = hashlib.sha256(
-        reporter.normalized_json(
-            receipt_scope(
-                repository,
-                pull_request,
-                base_sha,
-                original_pre_review_head,
-                key_id,
-                key_epoch,
+        temp_stat = _validate_temp_receipt_file(
+            temp_fd,
+            receipt_bytes,
+            error_message="authenticated original pre-review could not be published",
+        )
+        try:
+            _publish_replay_temp(
+                temp_fd,
+                directory_fd,
+                final_name,
+                error_message="authenticated original pre-review could not be published",
             )
+        except FileExistsError:
+            if _read_replay_receipt_bytes(
+                directory_fd,
+                name=final_name,
+                scope_id=scope_id,
+                expected_bytes=receipt_bytes,
+                allow_missing=True,
+                not_found_message="authenticated original pre-review is unavailable",
+                invalid_message="authenticated original pre-review was already consumed or re-signed",
+            ) is None:
+                raise reporter.PilotDataError(
+                    "authenticated original pre-review could not be published"
+                )
+            _unlink_if_same_inode(directory_fd, temp_name, temp_stat)
+            return
+        _fsync_descriptor(
+            directory_fd,
+            error_message="authenticated original pre-review could not be published",
         )
-    ).hexdigest()
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    receipt_path = replay_store / f"original-{scope_id}"
-    try:
-        descriptor = os.open(receipt_path, flags, 0o600)
-    except FileExistsError as error:
-        raise reporter.PilotDataError(
-            "authenticated original pre-review was already consumed or re-signed"
-        ) from error
-    try:
-        os.write(descriptor, receipt_bytes)
-        os.fsync(descriptor)
+        _unlink_if_same_inode(directory_fd, temp_name, temp_stat)
+        _fsync_descriptor(
+            directory_fd,
+            error_message="authenticated original pre-review could not be published",
+        )
     finally:
-        os.close(descriptor)
+        cleanup_stat = temp_stat
+        if cleanup_stat is None and temp_fd >= 0:
+            try:
+                cleanup_stat = os.fstat(temp_fd)
+            except OSError:
+                cleanup_stat = None
+        if temp_name is not None and cleanup_stat is not None:
+            _unlink_if_same_inode(directory_fd, temp_name, cleanup_stat)
+        if temp_fd >= 0:
+            os.close(temp_fd)
+        if directory_fd >= 0:
+            os.close(directory_fd)
 
 
 def _minimal_git(root: Path, *arguments: str) -> bytes:
@@ -649,14 +746,9 @@ def _verify_signed_receipt_bytes(
             "pre-review cannot be consumed and preserved simultaneously"
         )
     if consume_nonce or require_preserved:
-        if replay_store is None or replay_store.is_symlink():
+        if replay_store is None:
             raise reporter.PilotDataError(
                 "authenticated pre-review requires external replay authority"
-            )
-        replay_store = replay_store.resolve()
-        if not replay_store.is_dir():
-            raise reporter.PilotDataError(
-                "authenticated pre-review replay store is unavailable"
             )
         if consume_nonce:
             persist_original_receipt(
@@ -762,6 +854,15 @@ def _file_open_flags() -> int:
     return flags
 
 
+def _replay_temp_open_flags() -> int:
+    flags = os.O_RDWR | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    return flags
+
+
 def _open_directory_fd(
     path: str | os.PathLike[str],
     *,
@@ -785,6 +886,327 @@ def _open_directory_fd(
         os.close(descriptor)
         raise reporter.PilotDataError(f"{label} is unavailable for drift validation")
     return descriptor, metadata
+
+
+def _open_replay_store_fd(replay_store: Path) -> int:
+    message = "authenticated pre-review replay store is unavailable"
+    replay_store = Path(replay_store)
+    parts = [
+        part
+        for part in replay_store.parts
+        if part not in (os.path.sep, "", ".")
+    ]
+    if any(part == ".." for part in parts):
+        raise reporter.PilotDataError(message)
+    current_fd = -1
+    root = os.path.sep if replay_store.is_absolute() else "."
+    try:
+        current_fd = os.open(root, _directory_open_flags())
+        metadata = os.fstat(current_fd)
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise reporter.PilotDataError(message)
+        for part in parts:
+            next_fd = os.open(part, _directory_open_flags(), dir_fd=current_fd)
+            next_metadata = os.fstat(next_fd)
+            if not stat.S_ISDIR(next_metadata.st_mode):
+                os.close(next_fd)
+                raise reporter.PilotDataError(message)
+            os.close(current_fd)
+            current_fd = next_fd
+        return current_fd
+    except OSError as error:
+        if current_fd >= 0:
+            os.close(current_fd)
+        raise reporter.PilotDataError(message) from error
+    except Exception:
+        if current_fd >= 0:
+            os.close(current_fd)
+        raise
+
+
+def _read_exact_bytes(
+    descriptor: int,
+    *,
+    size: int,
+    error_message: str,
+) -> bytes:
+    chunks = []
+    remaining = size
+    while remaining:
+        try:
+            chunk = os.read(descriptor, min(REPLAY_IO_CHUNK_SIZE, remaining))
+        except InterruptedError:
+            continue
+        except OSError as error:
+            raise reporter.PilotDataError(error_message) from error
+        if not chunk:
+            raise reporter.PilotDataError(error_message)
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    while True:
+        try:
+            trailing = os.read(descriptor, 1)
+            break
+        except InterruptedError:
+            continue
+        except OSError as error:
+            raise reporter.PilotDataError(error_message) from error
+    if trailing:
+        raise reporter.PilotDataError(error_message)
+    return b"".join(chunks)
+
+
+def _write_all_bytes(
+    descriptor: int,
+    payload: bytes,
+    *,
+    error_message: str,
+) -> None:
+    view = memoryview(payload)
+    written_total = 0
+    while written_total < len(payload):
+        try:
+            written = os.write(descriptor, view[written_total:])
+        except InterruptedError:
+            continue
+        except OSError as error:
+            raise reporter.PilotDataError(error_message) from error
+        if written <= 0:
+            raise reporter.PilotDataError(error_message)
+        written_total += written
+
+
+def _fsync_descriptor(descriptor: int, *, error_message: str) -> None:
+    try:
+        os.fsync(descriptor)
+    except OSError as error:
+        raise reporter.PilotDataError(error_message) from error
+
+
+def _same_inode_entries(
+    directory_fd: int,
+    metadata: os.stat_result,
+    *,
+    error_message: str,
+) -> list[str]:
+    try:
+        entries = os.listdir(f"/proc/self/fd/{directory_fd}")
+    except OSError as error:
+        raise reporter.PilotDataError(error_message) from error
+    matches = []
+    for entry in entries:
+        try:
+            current = os.stat(entry, dir_fd=directory_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            raise reporter.PilotDataError(error_message) from error
+        if _same_inode(current, metadata):
+            matches.append(entry)
+    return matches
+
+
+def _validate_replay_file_topology(
+    directory_fd: int,
+    *,
+    name: str,
+    scope_id: str,
+    metadata: os.stat_result,
+    allow_temp_link: bool,
+    error_message: str,
+) -> None:
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+    ):
+        raise reporter.PilotDataError(error_message)
+    aliases = _same_inode_entries(
+        directory_fd,
+        metadata,
+        error_message=error_message,
+    )
+    if name not in aliases or len(aliases) != metadata.st_nlink:
+        raise reporter.PilotDataError(error_message)
+    extras = [entry for entry in aliases if entry != name]
+    if not extras:
+        if metadata.st_nlink != 1:
+            raise reporter.PilotDataError(error_message)
+        return
+    if (
+        not allow_temp_link
+        or metadata.st_nlink != 2
+        or len(extras) != 1
+        or not _is_bounded_receipt_temp_name(extras[0], scope_id)
+    ):
+        raise reporter.PilotDataError(error_message)
+
+
+def _read_replay_receipt_bytes(
+    directory_fd: int,
+    *,
+    name: str,
+    scope_id: str,
+    expected_bytes: bytes | None = None,
+    allow_missing: bool,
+    not_found_message: str,
+    invalid_message: str,
+) -> bytes | None:
+    descriptor = -1
+    maximum_size = max(
+        MAX_AUTHENTICATED_RECEIPT_BYTES,
+        0 if expected_bytes is None else len(expected_bytes),
+    )
+    try:
+        try:
+            pre_open = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+        except FileNotFoundError as error:
+            if allow_missing:
+                return None
+            raise reporter.PilotDataError(not_found_message) from error
+        except OSError as error:
+            raise reporter.PilotDataError(invalid_message) from error
+        try:
+            descriptor = os.open(name, _file_open_flags(), dir_fd=directory_fd)
+            opened = os.fstat(descriptor)
+        except FileNotFoundError as error:
+            if allow_missing:
+                return None
+            raise reporter.PilotDataError(not_found_message) from error
+        except OSError as error:
+            raise reporter.PilotDataError(invalid_message) from error
+        if not _same_inode(pre_open, opened) or opened.st_size > maximum_size:
+            raise reporter.PilotDataError(invalid_message)
+        _validate_replay_file_topology(
+            directory_fd,
+            name=name,
+            scope_id=scope_id,
+            metadata=opened,
+            allow_temp_link=True,
+            error_message=invalid_message,
+        )
+        if expected_bytes is not None and opened.st_size != len(expected_bytes):
+            raise reporter.PilotDataError(invalid_message)
+        try:
+            os.lseek(descriptor, 0, os.SEEK_SET)
+        except OSError as error:
+            raise reporter.PilotDataError(invalid_message) from error
+        payload = _read_exact_bytes(
+            descriptor,
+            size=opened.st_size,
+            error_message=invalid_message,
+        )
+        if expected_bytes is not None and not hmac.compare_digest(
+            payload, expected_bytes
+        ):
+            raise reporter.PilotDataError(invalid_message)
+        return payload
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _create_replay_temp_file(directory_fd: int, scope_id: str) -> tuple[int, str]:
+    error_message = "authenticated original pre-review could not be published"
+    for _attempt in range(REPLAY_TEMP_NAME_ATTEMPTS):
+        name = _receipt_temp_name(
+            scope_id,
+            secrets.token_hex(REPLAY_TEMP_TOKEN_BYTES),
+        )
+        try:
+            descriptor = os.open(
+                name,
+                _replay_temp_open_flags(),
+                0o600,
+                dir_fd=directory_fd,
+            )
+        except FileExistsError:
+            continue
+        except OSError as error:
+            raise reporter.PilotDataError(error_message) from error
+        try:
+            metadata = os.fstat(descriptor)
+        except OSError as error:
+            os.close(descriptor)
+            raise reporter.PilotDataError(error_message) from error
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_IMODE(metadata.st_mode) != 0o600
+            or metadata.st_nlink != 1
+            or metadata.st_size != 0
+        ):
+            os.close(descriptor)
+            raise reporter.PilotDataError(error_message)
+        return descriptor, name
+    raise reporter.PilotDataError(error_message)
+
+
+def _validate_temp_receipt_file(
+    descriptor: int,
+    expected_bytes: bytes,
+    *,
+    error_message: str,
+) -> os.stat_result:
+    try:
+        metadata = os.fstat(descriptor)
+    except OSError as error:
+        raise reporter.PilotDataError(error_message) from error
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_nlink != 1
+        or metadata.st_size != len(expected_bytes)
+    ):
+        raise reporter.PilotDataError(error_message)
+    try:
+        os.lseek(descriptor, 0, os.SEEK_SET)
+    except OSError as error:
+        raise reporter.PilotDataError(error_message) from error
+    payload = _read_exact_bytes(
+        descriptor,
+        size=len(expected_bytes),
+        error_message=error_message,
+    )
+    if not hmac.compare_digest(payload, expected_bytes):
+        raise reporter.PilotDataError(error_message)
+    return metadata
+
+
+def _publish_replay_temp(
+    descriptor: int,
+    directory_fd: int,
+    final_name: str,
+    *,
+    error_message: str,
+) -> None:
+    try:
+        os.link(
+            f"/proc/self/fd/{descriptor}",
+            final_name,
+            dst_dir_fd=directory_fd,
+        )
+    except FileExistsError:
+        raise
+    except OSError as error:
+        raise reporter.PilotDataError(error_message) from error
+
+
+def _unlink_if_same_inode(
+    directory_fd: int,
+    name: str,
+    metadata: os.stat_result,
+) -> None:
+    if directory_fd < 0:
+        return
+    try:
+        current = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+    except OSError:
+        return
+    if not _same_inode(current, metadata):
+        return
+    try:
+        os.unlink(name, dir_fd=directory_fd)
+    except OSError:
+        return
 
 
 def _relative_no_follow_stat(
