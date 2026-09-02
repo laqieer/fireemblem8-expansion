@@ -1592,6 +1592,10 @@ game behavior needs a compensating change.
    the candidate contract, reject `family-authority-drift`, and keep the
    trusted family authoritative even when the candidate's sibling assertions
    remain internally consistent.
+   Apply that same immutable top-level-comment contract to
+   `workflow-review-family-disposition:v2`: exact trusted coordinator actor,
+   canonical closed JSON body, strict RFC 3339 UTC `createdAt`/`updatedAt`,
+   and byte-identical timestamps so chronology uses the unedited creation time.
    Reuse the current checkout or swap dirty materialized roots and require the
    authoritative origin/head Git-tree binding to fail before execution.
 9. Parse the captured clean PR #183 body and accept its first-line exact

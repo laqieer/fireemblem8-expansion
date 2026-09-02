@@ -158,6 +158,35 @@ def authoritative_family_comment(
     }
 
 
+def authoritative_disposition_comment(
+    *,
+    held_round,
+    held_head_sha,
+    authorized_next_head_sha,
+    action="redesign",
+    comment_id="COMMENT_DISPOSITION_001",
+    created_at="2026-08-31T03:36:00Z",
+    updated_at=None,
+    author=None,
+):
+    if updated_at is None:
+        updated_at = created_at
+    payload = {
+        "action": action,
+        "authorized_next_head_sha": authorized_next_head_sha,
+        "held_head_sha": held_head_sha,
+        "held_round": held_round,
+    }
+    return {
+        "id": comment_id,
+        "createdAt": created_at,
+        "updatedAt": updated_at,
+        "body": "workflow-review-family-disposition:v2 "
+        + reporter.normalized_json(payload).decode("ascii").rstrip("\n"),
+        "author": copy.deepcopy(author) if author is not None else trusted_comment_actor(),
+    }
+
+
 def git(root, *arguments):
     return subprocess.run(
         reporter.git_command(root, *arguments),
@@ -907,13 +936,13 @@ class TrustedGitHubGateTests(unittest.TestCase):
         self.assertEqual(evidence["threads"], [])
         self.assertEqual(evidence["findings"], [])
 
-    def test_issue_comments_ignore_unrelated_deleted_authors_but_reject_prefixed_null_authors(self):
+    def test_issue_comments_ignore_unrelated_edited_deleted_authors_but_reject_prefixed_null_authors(self):
         payload = self.exact_graphql_payload()
         payload["data"]["repository"]["pullRequest"]["comments"]["nodes"] = [
             {
                 "id": "COMMENT_UNRELATED_NULL_001",
                 "createdAt": "2026-08-31T03:36:00Z",
-                "updatedAt": "2026-08-31T03:36:00Z",
+                "updatedAt": "2026-08-31T03:36:30Z",
                 "body": "ordinary unrelated comment",
                 "author": None,
             }
@@ -922,28 +951,126 @@ class TrustedGitHubGateTests(unittest.TestCase):
         self.assertEqual(evidence["authoritative_trigger"], None)
 
         payload = self.exact_graphql_payload()
-        payload["data"]["repository"]["pullRequest"]["comments"]["nodes"] = [
-            {
-                "id": "COMMENT_DISPOSITION_NULL_001",
-                "createdAt": "2026-08-31T03:36:00Z",
-                "updatedAt": "2026-08-31T03:36:00Z",
-                "body": (
-                    "workflow-review-family-disposition:v2 "
-                    + json.dumps(
-                        {
-                            "held_round": 3,
-                            "held_head_sha": self.candidate_sha,
-                            "authorized_next_head_sha": self.candidate_sha,
-                            "action": "redesign",
-                        },
-                        separators=(",", ":"),
-                    )
-                ),
-                "author": None,
-            }
-        ]
+        comment = authoritative_disposition_comment(
+            held_round=3,
+            held_head_sha=self.candidate_sha,
+            authorized_next_head_sha="b" * 40,
+            comment_id="COMMENT_DISPOSITION_NULL_001",
+        )
+        comment["author"] = None
+        payload["data"]["repository"]["pullRequest"]["comments"]["nodes"] = [comment]
         with self.assertRaisesRegex(reporter.PilotDataError, "must be an object"):
             self.collect_exact_live_evidence(payload)
+
+    def test_disposition_comments_require_unedited_canonical_exact_trusted_shape(self):
+        payload = self.exact_graphql_payload()
+        comment = authoritative_disposition_comment(
+            held_round=3,
+            held_head_sha=self.candidate_sha,
+            authorized_next_head_sha="b" * 40,
+            created_at="2026-08-31T03:36:00Z",
+        )
+        payload["data"]["repository"]["pullRequest"]["comments"]["nodes"] = [comment]
+        evidence = json.loads(self.collect_exact_live_evidence(payload))
+        self.assertEqual(
+            evidence["architecture_dispositions"],
+            [
+                {
+                    "node_id": "COMMENT_DISPOSITION_001",
+                    "held_round": 3,
+                    "held_head_sha": self.candidate_sha,
+                    "authorized_next_head_sha": "b" * 40,
+                    "actor_id": trusted_comment_actor()["id"],
+                    "action": "redesign",
+                    "occurred_at": "2026-08-31T03:36:00Z",
+                }
+            ],
+        )
+
+        prefix = "workflow-review-family-disposition:v2 "
+
+        def duplicate_body():
+            return (
+                prefix
+                + '{"action":"redesign","authorized_next_head_sha":"'
+                + ("b" * 40)
+                + '","held_head_sha":"'
+                + self.candidate_sha
+                + '","held_round":3,"action":"redesign"}'
+            )
+
+        def edited_body(current):
+            current["body"] = (
+                prefix
+                + reporter.normalized_json(
+                    {
+                        "action": "decompose",
+                        "authorized_next_head_sha": "b" * 40,
+                        "held_head_sha": self.candidate_sha,
+                        "held_round": 3,
+                    }
+                )
+                .decode("ascii")
+                .rstrip("\n")
+            )
+            current["updatedAt"] = "2026-08-31T03:36:30Z"
+
+        cases = (
+            ("missing-updatedAt", lambda current: current.pop("updatedAt"), "updatedAt"),
+            (
+                "edited-timestamp",
+                lambda current: current.__setitem__("updatedAt", "2026-08-31T03:36:30Z"),
+                "must not be edited",
+            ),
+            ("edited-body", edited_body, "must not be edited"),
+            (
+                "wrong-actor",
+                lambda current: current.__setitem__("author", human_graphql_actor()),
+                "exact trusted coordinator actor",
+            ),
+            (
+                "noncanonical",
+                lambda current: current.__setitem__(
+                    "body",
+                    prefix
+                    + json.dumps(
+                        json.loads(current["body"][len(prefix) :]),
+                        indent=2,
+                        sort_keys=True,
+                    ),
+                ),
+                "canonical closed JSON",
+            ),
+            (
+                "duplicate-key",
+                lambda current: current.__setitem__("body", duplicate_body()),
+                "duplicate JSON key",
+            ),
+            (
+                "trailing-content",
+                lambda current: current.__setitem__(
+                    "body", current["body"] + "\ntrailing"
+                ),
+                "invalid JSON",
+            ),
+        )
+        for case_name, mutate, pattern in cases:
+            payload = self.exact_graphql_payload()
+            current = authoritative_disposition_comment(
+                held_round=3,
+                held_head_sha=self.candidate_sha,
+                authorized_next_head_sha="b" * 40,
+                created_at="2026-08-31T03:36:00Z",
+            )
+            mutate(current)
+            payload["data"]["repository"]["pullRequest"]["comments"]["nodes"] = [
+                current
+            ]
+            with self.subTest(case=case_name), self.assertRaisesRegex(
+                reporter.PilotDataError,
+                pattern,
+            ):
+                self.collect_exact_live_evidence(payload)
 
     def test_authoritative_family_comment_requires_unedited_updated_at(self):
         for case_name, mutate, pattern in (
@@ -2713,28 +2840,13 @@ class TrustedGitHubGateTests(unittest.TestCase):
                                 "comments": {
                                     "pageInfo": {"hasNextPage": False},
                                     "nodes": [
-                                        {
-                                            "id": "DISPOSITION_PREPUSH_3",
-                                            "createdAt": "2026-08-31T03:13:30Z",
-                                            "updatedAt": "2026-08-31T03:13:30Z",
-                                            "body": (
-                                                "workflow-review-family-disposition:v2 "
-                                                + json.dumps(
-                                                    {
-                                                        "held_round": 3,
-                                                        "held_head_sha": head_c,
-                                                        "authorized_next_head_sha": proposed_head,
-                                                        "action": "redesign",
-                                                    },
-                                                    separators=(",", ":"),
-                                                )
-                                            ),
-                                            "author": {
-                                                "__typename": "User",
-                                                "id": "ACTOR_COORDINATOR_001",
-                                                "login": "independent-coordinator",
-                                            },
-                                        }
+                                        authoritative_disposition_comment(
+                                            held_round=3,
+                                            held_head_sha=head_c,
+                                            authorized_next_head_sha=proposed_head,
+                                            comment_id="DISPOSITION_PREPUSH_3",
+                                            created_at="2026-08-31T03:13:30Z",
+                                        )
                                     ],
                                 },
                             },
@@ -2911,16 +3023,13 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 shutil.rmtree(unrelated)
 
             bad_disposition = payload(head_c)
-            bad_disposition["data"]["repository"]["pullRequest"]["comments"]["nodes"][0]["body"] = (
-                "workflow-review-family-disposition:v2 "
-                + json.dumps(
-                    {
-                        "held_round": 3,
-                        "held_head_sha": head_b,
-                        "authorized_next_head_sha": proposed_head,
-                        "action": "redesign",
-                    },
-                    separators=(",", ":"),
+            bad_disposition["data"]["repository"]["pullRequest"]["comments"]["nodes"][0] = (
+                authoritative_disposition_comment(
+                    held_round=3,
+                    held_head_sha=head_b,
+                    authorized_next_head_sha=proposed_head,
+                    comment_id="DISPOSITION_PREPUSH_3",
+                    created_at="2026-08-31T03:13:30Z",
                 )
             )
             with self.assertRaisesRegex(
@@ -3327,50 +3436,20 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     )
                     for round_number in range(1, 7)
                 ],
-                {
-                    "id": "DISPOSITION_MULTI_3",
-                    "createdAt": "2026-08-31T03:15:30Z",
-                    "updatedAt": "2026-08-31T03:15:30Z",
-                    "body": (
-                        "workflow-review-family-disposition:v2 "
-                        + json.dumps(
-                            {
-                                "held_round": 3,
-                                "held_head_sha": heads[2],
-                                "authorized_next_head_sha": heads[3],
-                                "action": "redesign",
-                            },
-                            separators=(",", ":"),
-                        )
-                    ),
-                    "author": {
-                        "__typename": "User",
-                        "id": "ACTOR_COORDINATOR_001",
-                        "login": "independent-coordinator",
-                    },
-                },
-                {
-                    "id": "DISPOSITION_MULTI_6",
-                    "createdAt": "2026-08-31T03:21:30Z",
-                    "updatedAt": "2026-08-31T03:21:30Z",
-                    "body": (
-                        "workflow-review-family-disposition:v2 "
-                        + json.dumps(
-                            {
-                                "held_round": 6,
-                                "held_head_sha": heads[5],
-                                "authorized_next_head_sha": heads[6],
-                                "action": "redesign",
-                            },
-                            separators=(",", ":"),
-                        )
-                    ),
-                    "author": {
-                        "__typename": "User",
-                        "id": "ACTOR_COORDINATOR_001",
-                        "login": "independent-coordinator",
-                    },
-                },
+                authoritative_disposition_comment(
+                    held_round=3,
+                    held_head_sha=heads[2],
+                    authorized_next_head_sha=heads[3],
+                    comment_id="DISPOSITION_MULTI_3",
+                    created_at="2026-08-31T03:15:30Z",
+                ),
+                authoritative_disposition_comment(
+                    held_round=6,
+                    held_head_sha=heads[5],
+                    authorized_next_head_sha=heads[6],
+                    comment_id="DISPOSITION_MULTI_6",
+                    created_at="2026-08-31T03:21:30Z",
+                ),
             ]
             receipt = signed_receipt(
                 reporter.normalized_json(report),

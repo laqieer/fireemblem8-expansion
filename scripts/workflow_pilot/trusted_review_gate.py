@@ -1954,7 +1954,10 @@ def _require_exact_viewer_comment_author(
 
 
 def _parse_disposition_comments(
-    comments: list[Any], actors: list[dict[str, Any]]
+    comments: list[Any],
+    *,
+    viewer: dict[str, Any],
+    actors: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     prefix = "workflow-review-family-disposition:v2 "
     result = []
@@ -1963,10 +1966,16 @@ def _parse_disposition_comments(
         comment, body = _comment_object_and_body(raw, label)
         if not body.startswith(prefix):
             continue
-        author = _graphql_actor(comment["author"], f"{label}.author")
-        actors.append(author)
-        payload = reporter.expect_object(
-            reporter.parse_json(body[len(prefix) :], f"{label} disposition"),
+        _require_unedited_comment(comment, label)
+        author = _require_exact_viewer_comment_author(
+            comment,
+            viewer=viewer,
+            actors=actors,
+            label=label,
+        )
+        payload = _canonical_prefixed_comment_payload(
+            body,
+            prefix,
             f"{label} disposition",
         )
         reporter.expect_keys(
@@ -2575,7 +2584,11 @@ def collect_live_evidence_bytes(
                 f"remote finding {finding_id!r} thread author does not match the exact authoritative review actor"
             )
 
-    dispositions = _parse_disposition_comments(comment_nodes, actor_records)
+    dispositions = _parse_disposition_comments(
+        comment_nodes,
+        viewer=viewer,
+        actors=actor_records,
+    )
     actor_records.append(
         {
             "id": review_report["reviewer_actor_id"],

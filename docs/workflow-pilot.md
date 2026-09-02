@@ -701,7 +701,11 @@ family rather than a candidate rewrite. Every accepted finding sweep must still
 include at least one `affected-fixed` sibling. Unrelated PR comments,
 including deleted-user `author: null` comments, are ignored before actor
 parsing; only prefixed authority/disposition comments require an authenticated
-author and fail closed on null or malformed actors.
+author and fail closed on null or malformed actors. The same immutable
+top-level-comment contract applies to `workflow-review-family-disposition:v2`:
+exact trusted coordinator actor, canonical closed JSON body, strict RFC 3339
+UTC `createdAt`/`updatedAt`, and byte-identical timestamps so chronology binds
+to the unedited comment creation time.
 
 ### Base-owned executable evidence
 
