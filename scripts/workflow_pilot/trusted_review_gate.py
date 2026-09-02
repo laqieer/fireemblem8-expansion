@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -720,6 +721,84 @@ def _assertion_input_state(
     return {"mode": mode, "blob_oid": blob_oid}
 
 
+def _git_blob_oid(payload: bytes) -> str:
+    header = f"blob {len(payload)}\0".encode("ascii")
+    return hashlib.sha1(header + payload).hexdigest()
+
+
+def _read_candidate_decision_record_bytes(
+    repository_root: Path,
+    *,
+    expected_blob_oid: str,
+) -> bytes:
+    label = "candidate decision record"
+    relative = Path(DECISION_RECORD_PATH)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise reporter.PilotDataError(
+            f"{label} path escapes repository root"
+        )
+    current = repository_root
+    for part in relative.parts[:-1]:
+        current = current / part
+        try:
+            metadata = os.lstat(current)
+        except OSError as error:
+            raise reporter.PilotDataError(
+                f"{label} is unavailable for drift validation"
+            ) from error
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+            raise reporter.PilotDataError(
+                f"{label} is unavailable for drift validation"
+            )
+    leaf = repository_root / relative
+    try:
+        leaf_stat = os.lstat(leaf)
+    except OSError as error:
+        raise reporter.PilotDataError(
+            f"{label} is unavailable for drift validation"
+        ) from error
+    if stat.S_ISLNK(leaf_stat.st_mode) or not stat.S_ISREG(leaf_stat.st_mode):
+        raise reporter.PilotDataError(
+            f"{label} is unavailable for drift validation"
+        )
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(leaf, flags)
+    except OSError as error:
+        raise reporter.PilotDataError(
+            f"{label} is unavailable for drift validation"
+        ) from error
+    try:
+        opened_stat = os.fstat(descriptor)
+        if not stat.S_ISREG(opened_stat.st_mode):
+            raise reporter.PilotDataError(
+                f"{label} is unavailable for drift validation"
+            )
+        if (
+            opened_stat.st_dev != leaf_stat.st_dev
+            or opened_stat.st_ino != leaf_stat.st_ino
+        ):
+            raise reporter.PilotDataError(
+                f"{label} changed during no-follow access"
+            )
+        chunks = []
+        while True:
+            chunk = os.read(descriptor, 65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    finally:
+        os.close(descriptor)
+    payload = b"".join(chunks)
+    if _git_blob_oid(payload) != expected_blob_oid:
+        raise reporter.PilotDataError(
+            f"{label} differs from the exact candidate tree blob"
+        )
+    return payload
+
+
 def _base_contains_gate(repository_root: Path, base_sha: str) -> bool:
     for path in TRUSTED_REQUIRED_PATHS:
         try:
@@ -902,24 +981,39 @@ def _load_authoritative_trigger(
         raise reporter.PilotDataError(
             "candidate trigger does not match the authoritative decision record"
         )
-    blob_oid = _minimal_git(
-        root,
-        "rev-parse",
-        f"{contract['base_sha']}:{DECISION_RECORD_PATH}",
-    ).decode("ascii").strip()
-    candidate_path = (root / DECISION_RECORD_PATH).resolve()
-    if candidate_path.is_symlink() or not candidate_path.is_file():
+    base_state = _assertion_input_state(
+        root, contract["base_sha"], DECISION_RECORD_PATH
+    )
+    if base_state["mode"] not in MATERIALIZED_FILE_MODES:
+        raise reporter.PilotDataError(
+            "authoritative trigger decision record has an unsafe type or mode"
+        )
+    candidate_state = _assertion_input_state(
+        root, candidate_sha, DECISION_RECORD_PATH
+    )
+    if candidate_state["mode"] is None:
         raise reporter.PilotDataError(
             "candidate decision record is unavailable for drift validation"
+        )
+    if candidate_state["mode"] not in MATERIALIZED_FILE_MODES:
+        raise reporter.PilotDataError(
+            "candidate decision record has an unsafe type or mode"
         )
     try:
         candidate_decisions = reporter.expect_object(
             reporter.parse_json(
-                candidate_path.read_text(encoding="utf-8"),
-                str(candidate_path),
+                _read_candidate_decision_record_bytes(
+                    root,
+                    expected_blob_oid=candidate_state["blob_oid"],
+                ).decode("utf-8"),
+                str(root / DECISION_RECORD_PATH),
             ),
             "candidate trigger decisions",
         )
+    except UnicodeDecodeError as error:
+        raise reporter.PilotDataError(
+            "candidate decision record is not valid UTF-8"
+        ) from error
     except OSError as error:
         raise reporter.PilotDataError(
             "candidate decision record is unavailable for drift validation"
@@ -939,7 +1033,7 @@ def _load_authoritative_trigger(
         )
     return {
         "path": DECISION_RECORD_PATH,
-        "blob_oid": blob_oid,
+        "blob_oid": base_state["blob_oid"],
         "pull_request": contract["pull_request"],
         "base_sha": contract["base_sha"],
         "candidate_sha": candidate_sha,
@@ -1683,6 +1777,13 @@ def collect_live_evidence_bytes(
                 "comments",
             ),
         )
+        review_actor = _graphql_actor(review["author"], f"{label}.author")
+        is_authoritative_copilot = review_family.is_authoritative_copilot_actor(
+            review_actor
+        )
+        if not is_authoritative_copilot:
+            continue
+        actor_records.append(review_actor)
         comments = _expect_page_complete(review["comments"], f"{label}.comments")
         state = reporter.expect_enum(
             review["state"],
@@ -1693,15 +1794,6 @@ def collect_live_evidence_bytes(
         body_classification = review_family.classify_copilot_body(
             body, f"{label}.body"
         )
-        review_actor = _graphql_actor(review["author"], f"{label}.author")
-        actor_records.append(review_actor)
-        is_authoritative_copilot = review_family.is_authoritative_copilot_actor(
-            review_actor
-        )
-        if not is_authoritative_copilot:
-            if body_classification != "unknown" or comments:
-                _require_authoritative_copilot_actor(review_actor, f"{label}.author")
-            continue
         review_commit = reporter.expect_object(review["commit"], f"{label}.commit")
         reporter.expect_keys(review_commit, f"{label}.commit", ("oid",))
         review_candidate = reporter.expect_sha(
@@ -1784,17 +1876,17 @@ def collect_live_evidence_bytes(
         if not comments:
             continue
         first = reporter.expect_object(comments[0], f"{label}.comments[0]")
+        finding_id = first.get("id")
+        if not isinstance(finding_id, str) or not finding_id.strip():
+            continue
+        accepted_finding = accepted_findings.get(finding_id)
+        if accepted_finding is None:
+            continue
         reporter.expect_keys(
             first,
             f"{label}.comments[0]",
             ("id", "createdAt", "author", "pullRequestReview"),
         )
-        finding_id = reporter.expect_string(
-            first["id"], f"{label}.comments[0].id"
-        )
-        accepted_finding = accepted_findings.get(finding_id)
-        if accepted_finding is None:
-            continue
         thread_review = reporter.expect_object(
             first["pullRequestReview"],
             f"{label}.comments[0].pullRequestReview",
@@ -1819,6 +1911,10 @@ def collect_live_evidence_bytes(
             first["author"], f"{label}.comments[0].author"
         )
         actor_records.append(thread_author)
+        if finding_id in finding_to_thread:
+            raise reporter.PilotDataError(
+                f"remote finding {finding_id!r} has duplicate review threads"
+            )
         finding_to_thread[finding_id] = thread["id"]
         finding_to_thread_actor[finding_id] = thread_author["id"]
         threads.append(

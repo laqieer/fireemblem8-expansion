@@ -549,6 +549,10 @@ authority, and the decision record stores no copied tree, blob, or commit hash.
 In the trusted live gate, both the exact base decision record and the current
 candidate PR record must exist for the same PR, and the candidate's
 decision/trigger fields must remain identical to the authoritative base state.
+The candidate path is read only after exact candidate/base Git-tree mode
+validation confirms a regular blob and a no-follow regular-file read still
+matches the candidate tree blob; symlink, parent-symlink, escape, replacement,
+and tree/worktree mismatch all fail before trust.
 Every schema version, identity, count, duration input, attempt, index, depth,
 cost, and authoritative REST actor database ID uses exact-integer validation
 before bounds or equality checks; JSON booleans are accepted only by declared
@@ -663,6 +667,10 @@ when a fixture explicitly declares REST actor shape. Case/suffix normalization
 remains limited to non-authoritative display and alias checks. PR, actor, local
 review/action/finding, remote review/finding/thread, force-push, and
 disposition identities still share one case-normalized uniqueness check.
+Selection authenticates that exact Bot actor before any review body, inline
+finding, or thread becomes authoritative. Human reviews, other bots, and
+lookalike bots are ignored entirely for trusted review-family evidence even if
+their bodies use a recognized marker or carry inline comments.
 Only review threads rooted in accepted authoritative Copilot finding IDs
 participate in family evidence. Human or other-bot threads and replies remain
 visible on GitHub but neither satisfy nor poison the exact Copilot thread

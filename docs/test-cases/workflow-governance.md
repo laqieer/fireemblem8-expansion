@@ -1510,7 +1510,9 @@ game behavior needs a compensating change.
    historical finding/comment record, with same-actor linkage fail-closed.
    Confirm only threads rooted in authenticated accepted Copilot findings count
    toward family evidence; human or other-bot threads must neither satisfy nor
-   poison that coverage.
+   poison that coverage. Confirm review selection authenticates the exact Bot
+   actor before parsing body markers or inline comments, so human and lookalike
+   reviews are ignored instead of poisoning authority.
 5. Confirm a synthetic exact base without the trusted checker or decision
    consumer takes explicit `introduction` mode. Require false merge/push
    authority plus an external-coordinator requirement. Do not substitute a
@@ -1538,7 +1540,11 @@ game behavior needs a compensating change.
    Missing or ambiguous local imports fail closed. Require both the exact base
    decision record entry and the candidate PR entry to exist for the same PR;
    removing, renaming, emptying, duplicating, or retargeting the candidate PR
-   record fails closed before trust. Treat every parent package
+   record fails closed before trust. Require exact candidate/base Git-tree
+   regular-blob mode plus verified no-follow candidate-file access that still
+   matches the candidate tree blob; parent or leaf symlinks, path escape, swap
+   races, and tree/worktree mismatches fail closed before trust. Treat every
+   parent package
    initializer in that closure as authority-bearing presence/absence state,
    even when the exact base lacks the file; adding `scripts/__init__.py`,
    `scripts/docs_check_tests/__init__.py`, `tests/__init__.py`, or another

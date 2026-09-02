@@ -11,6 +11,7 @@ import unittest
 from itertools import count
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
 from scripts.workflow_pilot import reporter, review_family, trusted_review_gate
 
@@ -47,6 +48,14 @@ def copilot_graphql_actor():
         COPILOT_ACTOR_ID,
         review_family.COPILOT_GRAPHQL_LOGIN,
     )
+
+
+def human_graphql_actor():
+    return graphql_actor("User", "ACTOR_HUMAN_001", "human-reviewer")
+
+
+def lookalike_graphql_actor():
+    return graphql_actor("Bot", "BOT_LOOKALIKE_001", "copilot-pull-request-reviewer-bot")
 
 
 def git(root, *arguments):
@@ -353,6 +362,9 @@ class TrustedGitHubGateTests(unittest.TestCase):
             if entry["pull_request"] == pull_request
         )
 
+    def decision_record_path(self, root):
+        return Path(root) / trusted_review_gate.DECISION_RECORD_PATH
+
     def temporary_repo(self, name):
         artifact_root = ROOT / "build" / "test-artifacts"
         suffix = len(list(artifact_root.glob(f"{name}-{os.getpid()}-*")))
@@ -500,39 +512,6 @@ class TrustedGitHubGateTests(unittest.TestCase):
         self.assertTrue(review_family.is_authoritative_copilot_actor(rest_actor))
 
     def test_collect_live_evidence_rejects_nonexact_copilot_review_and_finding_authors(self):
-        review_cases = (
-            ("login-bracket", "login", review_family.COPILOT_REST_LOGIN),
-            ("login-suffix", "login", "copilot-pull-request-reviewer-bot"),
-            ("login-prefix", "login", "evil-copilot-pull-request-reviewer"),
-            ("login-case", "login", "Copilot-Pull-Request-Reviewer"),
-            ("login-unicode", "login", "copilot-pull-request-revi\u0435wer"),
-            ("type-user", "__typename", "User"),
-            ("type-organization", "__typename", "Organization"),
-            ("type-enterprise-owner", "__typename", "EnterpriseOwner"),
-            ("type-mannequin", "__typename", "Mannequin"),
-            ("id-drift", "id", "BOT_kgDOCnlnWB"),
-        )
-        for case_name, field, value in review_cases:
-            payload = self.exact_graphql_payload()
-            payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["author"][
-                field
-            ] = value
-            with self.subTest(case=case_name), self.assertRaisesRegex(
-                reporter.PilotDataError,
-                "exact authoritative GitHub Copilot Bot",
-            ):
-                self.collect_exact_live_evidence(payload)
-
-        payload = self.exact_graphql_payload()
-        payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0][
-            "author"
-        ] = None
-        with self.assertRaisesRegex(
-            reporter.PilotDataError,
-            "must be an object",
-        ):
-            self.collect_exact_live_evidence(payload)
-
         finding_cases = (
             ("login-bracket", "login", review_family.COPILOT_REST_LOGIN),
             ("login-suffix", "login", "copilot-pull-request-reviewer-bot"),
@@ -571,6 +550,52 @@ class TrustedGitHubGateTests(unittest.TestCase):
     def test_collect_live_evidence_filters_threads_to_exact_copilot_findings(self):
         payload = self.exact_graphql_payload(with_finding=True)
         pr = payload["data"]["repository"]["pullRequest"]
+        pr["reviews"]["nodes"].insert(
+            0,
+            {
+                "id": "REMOTE_HUMAN_001",
+                "databaseId": 2999,
+                "state": "COMMENTED",
+                "submittedAt": "2026-08-31T03:36:00Z",
+                "body": "### 🟡 Changes recommended",
+                "commit": {"oid": self.candidate_sha},
+                "author": human_graphql_actor(),
+                "comments": {
+                    "pageInfo": {"hasNextPage": False},
+                    "nodes": [
+                        {
+                            "id": "HUMAN_FINDING_001",
+                            "createdAt": "2026-08-31T03:36:10Z",
+                            "body": "human finding",
+                            "author": human_graphql_actor(),
+                        }
+                    ],
+                },
+            },
+        )
+        pr["reviews"]["nodes"].insert(
+            1,
+            {
+                "id": "REMOTE_LOOKALIKE_001",
+                "databaseId": 3000,
+                "state": "COMMENTED",
+                "submittedAt": "2026-08-31T03:36:20Z",
+                "body": "### 🟡 Changes recommended",
+                "commit": {"oid": self.candidate_sha},
+                "author": lookalike_graphql_actor(),
+                "comments": {
+                    "pageInfo": {"hasNextPage": False},
+                    "nodes": [
+                        {
+                            "id": "LOOKALIKE_FINDING_001",
+                            "createdAt": "2026-08-31T03:36:21Z",
+                            "body": "lookalike finding",
+                            "author": lookalike_graphql_actor(),
+                        }
+                    ],
+                },
+            },
+        )
         pr["reviewThreads"]["nodes"][0]["comments"]["nodes"].append(
             {
                 "id": "HUMAN_REPLY_001",
@@ -613,7 +638,49 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 },
             }
         )
+        pr["reviewThreads"]["nodes"].append(
+            {
+                "id": "THREAD_HUMAN_INLINE_001",
+                "isResolved": False,
+                "comments": {
+                    "pageInfo": {"hasNextPage": False},
+                    "nodes": [
+                        {
+                            "id": "HUMAN_FINDING_001",
+                            "createdAt": "2026-08-31T03:36:10Z",
+                            "author": human_graphql_actor(),
+                            "pullRequestReview": {"id": "REMOTE_HUMAN_001"},
+                        }
+                    ],
+                },
+            }
+        )
+        pr["reviewThreads"]["nodes"].append(
+            {
+                "id": "THREAD_LOOKALIKE_INLINE_001",
+                "isResolved": False,
+                "comments": {
+                    "pageInfo": {"hasNextPage": False},
+                    "nodes": [
+                        {
+                            "id": "LOOKALIKE_FINDING_001",
+                            "createdAt": "2026-08-31T03:36:21Z",
+                            "author": lookalike_graphql_actor(),
+                            "pullRequestReview": {"id": "REMOTE_LOOKALIKE_001"},
+                        }
+                    ],
+                },
+            }
+        )
         evidence = json.loads(self.collect_exact_live_evidence(payload, kind="complete"))
+        self.assertEqual(
+            [review["node_id"] for review in evidence["remote_reviews"]],
+            ["REMOTE_REVIEW_LIVE_001"],
+        )
+        self.assertEqual(
+            [finding["node_id"] for finding in evidence["findings"]],
+            ["FINDING_ACTION_001"],
+        )
         self.assertEqual(
             evidence["threads"],
             [
@@ -647,6 +714,28 @@ class TrustedGitHubGateTests(unittest.TestCase):
         self.assertEqual(evidence["threads"], [])
         self.assertEqual(evidence["findings"], [])
 
+    def test_non_authoritative_reviews_do_not_satisfy_copilot_authority(self):
+        for actor in (human_graphql_actor(), lookalike_graphql_actor()):
+            payload = self.exact_graphql_payload(with_finding=True)
+            review = payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]
+            review["author"] = copy.deepcopy(actor)
+            review["comments"]["nodes"][0]["author"] = copy.deepcopy(actor)
+            payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"][0][
+                "comments"
+            ]["nodes"][0]["author"] = copy.deepcopy(actor)
+            evidence = json.loads(self.collect_exact_live_evidence(payload))
+            self.assertEqual(evidence["remote_reviews"], [])
+            self.assertEqual(evidence["findings"], [])
+            self.assertEqual(evidence["threads"], [])
+            report = review_family.build_report(
+                self.contract(base=self.base_sha, candidate=self.candidate_sha),
+                evidence,
+                self.repo,
+                self.candidate_sha,
+            )
+            self.assertFalse(report["gates"]["current_candidate_reviewed"])
+            self.assertTrue(report["gates"]["remote_copilot_review_required"])
+
     def test_collect_live_evidence_rejects_missing_or_mismatched_copilot_threads(self):
         payload = self.exact_graphql_payload(with_finding=True)
         payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"] = []
@@ -675,6 +764,140 @@ class TrustedGitHubGateTests(unittest.TestCase):
             "review thread root does not preserve its exact authoritative chronology",
         ):
             self.collect_exact_live_evidence(payload, kind="complete")
+
+        payload = self.exact_graphql_payload(with_finding=True)
+        payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"].append(
+            copy.deepcopy(
+                payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"][0]
+            )
+        )
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "duplicate review threads",
+        ):
+            self.collect_exact_live_evidence(payload, kind="complete")
+
+    def test_candidate_decision_record_no_follow_and_tree_mode_guards(self):
+        repo, base, candidate = self.build_decision_repo(self.decision_entry())
+        try:
+            contract = review_family.validate_contract(
+                self.contract(base=base, candidate=candidate)
+            )
+            self.assertEqual(
+                trusted_review_gate._load_authoritative_trigger(
+                    contract, repo, candidate
+                )["pull_request"],
+                SYNTHETIC_PULL_REQUEST,
+            )
+
+            decision_path = self.decision_record_path(repo)
+            shadow = decision_path.with_suffix(".shadow.json")
+            shadow.write_text(decision_path.read_text(encoding="utf-8"), encoding="utf-8")
+            decision_path.unlink()
+            decision_path.symlink_to(shadow.name)
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "candidate decision record is unavailable for drift validation",
+            ):
+                trusted_review_gate._load_authoritative_trigger(
+                    contract, repo, candidate
+                )
+        finally:
+            shutil.rmtree(repo)
+
+        repo, base, candidate = self.build_decision_repo(self.decision_entry())
+        try:
+            github_dir = Path(repo) / ".github"
+            shadow_dir = Path(repo) / ".github-real"
+            github_dir.rename(shadow_dir)
+            github_dir.symlink_to(shadow_dir.name)
+            contract = review_family.validate_contract(
+                self.contract(base=base, candidate=candidate)
+            )
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "candidate decision record is unavailable for drift validation",
+            ):
+                trusted_review_gate._load_authoritative_trigger(
+                    contract, repo, candidate
+                )
+        finally:
+            shutil.rmtree(repo)
+
+        repo, base, candidate = self.build_decision_repo(self.decision_entry())
+        outside = Path(repo).parent / "outside-github"
+        try:
+            outside.mkdir()
+            github_dir = Path(repo) / ".github"
+            github_dir.rename(outside / ".github")
+            github_dir.symlink_to(outside / ".github")
+            contract = review_family.validate_contract(
+                self.contract(base=base, candidate=candidate)
+            )
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "candidate decision record is unavailable for drift validation",
+            ):
+                trusted_review_gate._load_authoritative_trigger(
+                    contract, repo, candidate
+                )
+        finally:
+            shutil.rmtree(repo)
+            if outside.exists():
+                shutil.rmtree(outside)
+
+        repo, base, candidate = self.build_decision_repo(self.decision_entry())
+        try:
+            decision_path = self.decision_record_path(repo)
+            shadow = decision_path.with_suffix(".same-content.json")
+            shadow.write_text(decision_path.read_text(encoding="utf-8"), encoding="utf-8")
+            decision_path.unlink()
+            decision_path.symlink_to(shadow.name)
+            self.commit_all(repo, "commit decision symlink")
+            symlink_candidate = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
+            contract = review_family.validate_contract(
+                self.contract(base=base, candidate=symlink_candidate)
+            )
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "candidate decision record has an unsafe type or mode",
+            ):
+                trusted_review_gate._load_authoritative_trigger(
+                    contract, repo, symlink_candidate
+                )
+        finally:
+            shutil.rmtree(repo)
+
+        repo, base, candidate = self.build_decision_repo(self.decision_entry())
+        try:
+            contract = review_family.validate_contract(
+                self.contract(base=base, candidate=candidate)
+            )
+            decision_path = self.decision_record_path(repo)
+            replacement = decision_path.with_suffix(".replacement.json")
+            replacement.write_text(
+                decision_path.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            real_open = trusted_review_gate.os.open
+
+            def swapping_open(path, flags, mode=0o777):
+                target = Path(path)
+                if target == decision_path:
+                    target.unlink()
+                    replacement.rename(target)
+                return real_open(path, flags, mode)
+
+            with mock.patch.object(trusted_review_gate.os, "open", side_effect=swapping_open):
+                with self.assertRaisesRegex(
+                    reporter.PilotDataError,
+                    "candidate decision record changed during no-follow access",
+                ):
+                    trusted_review_gate._load_authoritative_trigger(
+                        contract, repo, candidate
+                    )
+        finally:
+            shutil.rmtree(repo)
 
     def run_trusted_startup(self):
         environment = {
