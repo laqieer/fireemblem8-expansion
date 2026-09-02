@@ -3458,8 +3458,11 @@ def build_report(
         evidence, sweeps, forbidden_disposition_actors
     )
     latest = evidence["remote_reviews"][-1] if evidence["remote_reviews"] else None
+    remote_head = evidence["pull_request"]["head_sha"]
     current_reviewed = bool(
-        latest and latest["candidate_sha"] == authority["head"]
+        latest
+        and remote_head == authority["head"]
+        and latest["candidate_sha"] == authority["head"]
     )
     current_clean = bool(
         current_reviewed
@@ -3485,7 +3488,19 @@ def build_report(
         if result["status"] == "hold"
     ]
     executable_complete = bool(execution_seals)
-    structural_push = hold is None and not authority_holds and executable_complete
+    consumed_ids = set(consumed)
+    transition_authorized = any(
+        event["node_id"] in consumed_ids
+        and event["held_head_sha"] == remote_head
+        and event["authorized_next_head_sha"] == authority["head"]
+        for event in evidence["architecture_dispositions"]
+    )
+    structural_push = bool(
+        hold is None
+        and not authority_holds
+        and executable_complete
+        and (current_clean or transition_authorized)
+    )
     structural_merge = bool(
         structural_push and current_clean and unresolved == 0
     )

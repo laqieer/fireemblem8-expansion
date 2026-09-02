@@ -2496,6 +2496,8 @@ class TrustedGitHubGateTests(unittest.TestCase):
             )
             self.assertTrue(result["trigger"]["authoritative"])
             self.assertTrue(result["trigger"]["adversarial_pre_review_required"])
+            self.assertTrue(result["gates"]["current_candidate_clean"])
+            self.assertTrue(result["gates"]["trusted_push_allowed"])
 
             self.write_decision_record(repo, self.decision_entry())
             git(repo, "add", trusted_review_gate.DECISION_RECORD_PATH)
@@ -2545,6 +2547,83 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     adapter=StaticAdapter(drift_payload),
                     clock=lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc),
                 )
+        finally:
+            shutil.rmtree(repo)
+
+    def test_base_record_requires_disposition_before_authorizing_local_descendant_push(self):
+        repo, base, remote_head = self.build_decision_repo(
+            self.decision_entry(
+                risks=("lifecycle", "protocol"),
+                triggers=("changed-files", "risk-boundary"),
+            )
+        )
+        try:
+            (repo / "changed.txt").write_text("local descendant\n", encoding="utf-8")
+            self.commit_all_at(repo, "local descendant", "2026-08-31T03:06:00Z")
+            local_candidate = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
+            remote_commit_time = git(
+                repo, "show", "-s", "--format=%cI", remote_head
+            ).stdout.decode().strip().replace("+00:00", "Z")
+            payload = self.adapter()
+            pr = payload["data"]["repository"]["pullRequest"]
+            pr["createdAt"] = "2026-08-31T03:08:00Z"
+            pr["baseRefOid"] = base
+            pr["headRefOid"] = remote_head
+            pr["commits"]["nodes"] = [
+                {
+                    "commit": {
+                        "id": "COMMIT_REMOTE_HEAD",
+                        "oid": remote_head,
+                        "pushedDate": None,
+                        "committedDate": remote_commit_time,
+                    }
+                }
+            ]
+            pr["reviews"]["nodes"][0]["commit"]["oid"] = remote_head
+            pr["reviews"]["nodes"][0]["submittedAt"] = "2026-08-31T03:15:00Z"
+            contract = self.contract(base=base, candidate=local_candidate)
+            contract["original_pre_review_head"] = remote_head
+            contract["trust_mode"] = "base-pinned"
+            contract["trigger"] = {
+                "risk_boundaries": ["lifecycle", "protocol"],
+                "threshold_triggers": ["changed-files", "risk-boundary"],
+            }
+            receipt = signed_receipt(
+                reporter.normalized_json(
+                    review_report(
+                        base,
+                        remote_head,
+                        ["changed.txt"],
+                        review_family.derive_change_records(repo, base, remote_head),
+                    )
+                ),
+                base=base,
+                candidate=remote_head,
+                nonce="base-record-prepush-0001",
+            )
+            result = trusted_review_gate._run_trusted_gate(
+                raw_contract=contract,
+                repository_root=repo,
+                expected_candidate=local_candidate,
+                expected_remote_head=remote_head,
+                expected_base=base,
+                review_receipt_bytes=receipt,
+                replay_store=self.replay,
+                trusted_key_id=KEY_ID,
+                trusted_key_epoch=KEY_EPOCH,
+                trusted_key=KEY,
+                current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc),
+                adapter=StaticAdapter(payload),
+                clock=lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc),
+            )
+            self.assertFalse(result["gates"]["current_candidate_reviewed"])
+            self.assertFalse(result["gates"]["current_candidate_clean"])
+            self.assertFalse(result["gates"]["trusted_push_allowed"])
+            self.assertFalse(result["structural_eligibility"]["push"])
+            self.assertFalse(result["architecture_hold"]["required"])
+            self.assertEqual(
+                result["architecture_hold"]["consumed_disposition_ids"], []
+            )
         finally:
             shutil.rmtree(repo)
 
