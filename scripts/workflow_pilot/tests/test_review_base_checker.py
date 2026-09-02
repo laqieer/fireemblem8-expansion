@@ -1326,6 +1326,8 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         self.assertIn("tests/__init__.py", consumers)
         self.assertIn("tests/workflows/__init__.py", consumers)
         self.assertIn("scripts/workflow_pilot/hydrate_authority.py", consumers)
+        self.assertIn("scripts/workflow_pilot/metadata_adapter_contract.py", consumers)
+        self.assertIn("scripts/workflow_pilot/summary_continuity_contract.py", consumers)
 
         drift_checks = self.authority_dependency_paths(
             "generated", "drift-checks", base_root=base_root

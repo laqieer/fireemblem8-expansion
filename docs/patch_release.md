@@ -59,6 +59,19 @@ is private and all recursively visible host root/system/tool mounts, including
 temporary, and handoff mounts are writable. Private tmpfs `/tmp`, `/run`,
 `/dev`, and `/dev/shm` plus private `/proc` hide host D-Bus activation/service,
 Docker, containerd, systemd, snap, and other UNIX sockets and runtime paths.
+The trusted PID-1 wrapper is loaded into Bash `-c` memory before
+`/home/runner` is masked, so no open script descriptor pins the host mount.
+The private `/dev` is mounted over the host path without trying to unmount the
+trusted wrapper's already-open null descriptors. Before that overmount, the
+wrapper reads the recursive `/dev` mount tree as structured JSON, decodes and
+validates every target, writes the NUL-delimited result into checked root-owned
+regular temp files under `/mnt/supervisor`, and unmounts only descendants
+deepest-first. This removes inherited `/dev/pts`, `/dev/mqueue`, `/dev/shm`,
+and runner-specific child mounts without touching the root-owned mode-`0700`
+supervisor parent. The candidate's writable-mount audit also consumes only
+decoded structured JSON target records through checked NUL-delimited
+transport, so raw escaped or whitespace-delimited mount text can never be
+mistaken for an unapproved path.
 Hash-locked wheels are fetched by the trusted host before isolation and
 installed offline inside it. Every builder descendant is placed in one exact
 cgroup v2 that the candidate cannot see or leave. The trusted host stops the
@@ -70,11 +83,14 @@ against the after SHA, copies only those public inputs into runner-owned `0400`
 staging, and removes the builder user, tree, wheelhouse, and candidate
 checkout. Missing mount/cgroup-v2 capabilities fail before candidate execution;
 cleanup never uses `pkill`, `killall`, or a UID-wide signal.
+After descendants terminate, privileged cleanup removes only the exact
+owned builder root so builder-UID files cannot make teardown fail.
 Before hiding `/sys`, the wrapper bind-mounts only the exact owned cgroup
-read-only under root-owned mode-`0700` `/mnt/supervisor`. The candidate cannot
-traverse or receive an FD for that path. After candidate exit, the wrapper
-reads membership there and exports the ROM only when the wrapper PID is the
-sole member; the host continues to use the actual cgroup path for kill and
+read-only under the exact root-owned mode-`0700` `/mnt/supervisor` parent.
+The candidate cannot read, write, execute, or traverse that parent and cannot
+receive an FD for it. After candidate exit, the wrapper reads the exact
+read-only cgroup child there and exports the ROM only when the wrapper PID is
+the sole member; the host continues to use the actual cgroup path for kill and
 removal.
 
 Before candidate code starts, its PID-1 wrapper redirects inherited standard

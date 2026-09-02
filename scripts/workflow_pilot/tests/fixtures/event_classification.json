@@ -406,7 +406,9 @@
         "expected_head": "1111111111111111111111111111111111111111",
         "identity_valid": true,
         "jobs": [
+          "build",
           "event-classifier",
+          "host-tests",
           "summary"
         ],
         "reason": "body-title-only-edit",
@@ -449,7 +451,9 @@
         "expected_head": "1111111111111111111111111111111111111111",
         "identity_valid": true,
         "jobs": [
+          "build",
           "event-classifier",
+          "host-tests",
           "summary"
         ],
         "reason": "body-title-only-edit",
@@ -492,7 +496,9 @@
         "expected_head": "1111111111111111111111111111111111111111",
         "identity_valid": true,
         "jobs": [
+          "build",
           "event-classifier",
+          "host-tests",
           "summary"
         ],
         "reason": "body-title-only-edit",
