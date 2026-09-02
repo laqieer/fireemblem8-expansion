@@ -1956,9 +1956,11 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 check=True,
                 capture_output=True,
             )
-            drift_candidate = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
-            git(repo, "checkout", "-q", candidate)
+            drift_candidate = git(repo, "rev-parse", "HEAD").stdout.decode().strip(); git(repo, "checkout", "-q", candidate)
+            self.assertTrue(self.run_gate(contract=contract, receipt=receipt, payload=payload_for(base), repository=repo, candidate=candidate, remote_head=candidate, base=base)["gates"]["merge_allowed"])
             for case, base_sha, mergeable, pattern in (
+                ("base-conflict", base, "CONFLICTING", "mergeability is unresolved|conflicting"),
+                ("base-unknown", base, "UNKNOWN", "mergeability is unresolved|conflicting"),
                 ("rewritten", rewritten, "MERGEABLE", "rewrites or predates the immutable merge base"),
                 ("missing", "f" * 40, "MERGEABLE", "current live base tip is unavailable from trusted Git authority"),
                 ("conflict", live_base, "CONFLICTING", "mergeability is unresolved|conflicting"),

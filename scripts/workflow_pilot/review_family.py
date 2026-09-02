@@ -2678,11 +2678,8 @@ def _repository_authority(
         raise reporter.PilotDataError(
             "current candidate is not descended from the original pre-review head"
         ) from error
+    if live_mergeable != "MERGEABLE": raise reporter.PilotDataError("current live base tip is conflicting or mergeability is unresolved")
     if live_base != contract["base_sha"]:
-        if live_mergeable != "MERGEABLE":
-            raise reporter.PilotDataError(
-                "current live base tip is conflicting or mergeability is unresolved"
-            )
         try:
             reporter.run_git(root, "rev-parse", "--verify", f"{live_base}^{{commit}}")
         except reporter.PilotDataError as error:
