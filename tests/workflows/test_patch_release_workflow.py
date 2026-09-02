@@ -672,6 +672,16 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
             ),
         ),
         (
+            "busybox-variable-env-unset-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "ENV_APPLET=env",
+                '/bin/busybox "$ENV_APPLET" --unset HOME --split-string '
+                '"/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
             "variable-env-wrapper",
             (
                 "ROOT=/mnt",
@@ -1204,6 +1214,14 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         and revalidate == cleanup + 1
     ):
         errors.append("private base lifetime ordering differs")
+    strict_shell = "shell: /bin/bash --noprofile --norc -euo pipefail {0}"
+    if any(steps[index].count(strict_shell) != 1 for index in (
+        isolated_build,
+        create,
+        cleanup,
+        revalidate,
+    )):
+        errors.append("publisher step shell boundary differs")
     if revalidate != len(steps) - 2:
         errors.append("late patch-only revalidation must immediately precede upload")
     candidate_markers = (
@@ -2993,6 +3011,32 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     "GIT_NO_REPLACE_OBJECTS: '1'",
                 ):
                     self.assertIn(cleared, step)
+
+    def test_every_private_boundary_step_requires_exact_shell(self):
+        shell = "shell: /bin/bash --noprofile --norc -euo pipefail {0}"
+        for step_name in (
+            "Build candidate in isolated namespace and stage public inputs",
+            "Create and verify patch artifact",
+            "Cleanup and verify private base",
+            "Revalidate patch-only upload",
+        ):
+            with self.subTest(step=step_name):
+                step = next(
+                    item
+                    for item in patch_release_step_blocks(self.text)
+                    if f"- name: {step_name}" in item
+                )
+                changed_step = step.replace(
+                    shell,
+                    "shell: /bin/bash --noprofile --norc -xeuo pipefail {0}",
+                    1,
+                )
+                changed = self.text.replace(step, changed_step, 1)
+                self.assertNotEqual(changed, self.text)
+                self.assertIn(
+                    "publisher step shell boundary differs",
+                    publisher_boundary_errors(changed),
+                )
 
     def test_private_base_boundary_mutations_fail(self):
         steps = patch_release_step_blocks(self.text)

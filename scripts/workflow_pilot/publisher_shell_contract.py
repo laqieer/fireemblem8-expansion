@@ -559,8 +559,9 @@ def _command_has_ambiguous_env_shell_surface(tokens: tuple[str, ...]) -> bool:
                 continue
             applet = tokens[index + 1]
             if _token_has_shell_syntax(applet):
-                if index + 2 < len(tokens) and _reject_env_split_string_option(
-                    tokens[index + 2]
+                if _env_wrapper_followed_by_ambiguous_surface(
+                    tokens,
+                    start_index=index + 2,
                 ):
                     return True
                 index += 1
