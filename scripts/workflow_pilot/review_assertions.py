@@ -36,6 +36,14 @@ EVIDENCE_CLASSES = {"positive", "adversarial", "default", "runtime"}
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 ASSERTION_FILE_MODES = {"100644", "100755", "120000"}
 MATERIALIZED_FILE_MODES = {"100644", "100755"}
+MEMBERS_WITHOUT_VERIFIED_UNAFFECTED = {
+    ("action", "items"),
+    ("lifecycle", "entries"),
+    ("wire", "stale-bindings"),
+}
+REGISTERED_NOT_APPLICABLE_REASONS = {
+    ("resource", "disabled"): "feature-disabled-by-contract"
+}
 ASSERTION_INPUT_PATHS = (
     ".github/workflow-pilot-decisions.json",
     ".github/workflows/build.yml",
@@ -311,12 +319,15 @@ def parse_assertion(assertion_id: str):
         raise AssertionFailure("assertion member is absent from registry")
     if outcome not in {"affected-fixed", "verified-unaffected", "not-applicable"}:
         raise AssertionFailure("assertion outcome is absent from registry")
+    if (
+        outcome == "verified-unaffected"
+        and (family, member) in MEMBERS_WITHOUT_VERIFIED_UNAFFECTED
+    ):
+        raise AssertionFailure(
+            f"assertion outcome is not registered for {family}/{member}"
+        )
     if outcome == "not-applicable":
-        if (
-            family,
-            member,
-            reason,
-        ) != ("resource", "disabled", "feature-disabled-by-contract"):
+        if reason != REGISTERED_NOT_APPLICABLE_REASONS.get((family, member)):
             raise AssertionFailure("not-applicable reason is not registered")
     elif reason is not None:
         raise AssertionFailure("outcome assertion has an unexpected reason")

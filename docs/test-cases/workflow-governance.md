@@ -1572,8 +1572,10 @@ game behavior needs a compensating change.
    IDs only. Require `affected-fixed` to execute a member-specific failing
    before-probe and passing after-probe; require `verified-unaffected` to
    compare a member-specific invariant over parsed production docs/tests/code
-   rather than one shared file or a witness sidecar; permit `not-applicable`
-   only for its explicit member/reason registry entry.
+   rather than one shared file or a witness sidecar; reject
+   `action/items`, `lifecycle/entries`, and `wire/stale-bindings` with
+   `verified-unaffected` until they gain a sound unaffected evaluator; permit
+   `not-applicable` only for its explicit member/reason registry entry.
    Every accepted finding sweep must include at least one `affected-fixed`
    sibling; a sweep of only `verified-unaffected`/`not-applicable` members is
    not remediation.
@@ -1657,7 +1659,8 @@ ancestor-base substitution, bootstrap self-attestation, invalid Actor
 selection, base/head mismatch, re-signing A for B/C, stale/missing/replayed
 round receipts, fabricated outcome/class results, invented or wrong-family
 finding IDs, reused or swapped materialized roots, shared-file member
-evidence, fake origin/program blob/tree identities, unsupported dispositions,
+evidence, fake origin/program blob/tree identities, unsupported dispositions
+or `verified-unaffected` member combinations without a registered invariant,
 incorrect status/blob coverage, local/remote finding overlap, backdating,
 exceeded bounds, incomplete pages, spoofed clean bodies, global identity
 collisions, undisposed heads, and actor overlap.

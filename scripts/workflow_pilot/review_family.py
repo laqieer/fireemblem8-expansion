@@ -83,9 +83,28 @@ BEHAVIOR_ASSERTION_IDS = {
     }
     for row in REQUIRED_BEHAVIOR_ROWS
 }
+MEMBERS_WITHOUT_VERIFIED_UNAFFECTED = {
+    ("action", "items"),
+    ("lifecycle", "entries"),
+    ("wire", "stale-bindings"),
+}
+REGISTERED_NOT_APPLICABLE_REASONS = {
+    ("resource", "disabled"): "feature-disabled-by-contract"
+}
+
+
+def _registered_member_outcomes(family: str, member: str) -> set[str]:
+    outcomes = {"affected-fixed"}
+    if (family, member) not in MEMBERS_WITHOUT_VERIFIED_UNAFFECTED:
+        outcomes.add("verified-unaffected")
+    if (family, member) in REGISTERED_NOT_APPLICABLE_REASONS:
+        outcomes.add("not-applicable")
+    return outcomes
+
+
 MEMBER_OUTCOME_REGISTRY = {
     family: {
-        member: {"affected-fixed", "verified-unaffected"}
+        member: _registered_member_outcomes(family, member)
         for member in members
     }
     for family, members in FAMILY_MEMBERS.items()
@@ -887,14 +906,14 @@ def _validate_limits(value: Any) -> dict[str, int]:
 
 
 def member_assertion_id(family: str, member: str, disposition: str) -> str:
-    if (
-        family == "resource"
-        and member == "disabled"
-        and disposition == "not-applicable"
-    ):
+    if disposition not in MEMBER_OUTCOME_REGISTRY.get(family, {}).get(member, set()):
+        raise reporter.PilotDataError(
+            f"assertion disposition is not registered for {family}/{member}"
+        )
+    if disposition == "not-applicable":
         return (
-            "registry:sibling:resource:disabled:not-applicable:"
-            "feature-disabled-by-contract:v2"
+            f"registry:sibling:{family}:{member}:not-applicable:"
+            f"{REGISTERED_NOT_APPLICABLE_REASONS[(family, member)]}:v2"
         )
     return f"registry:sibling:{family}:{member}:{disposition}:v2"
 
@@ -923,14 +942,14 @@ def parse_assertion_id(assertion_id: str) -> dict[str, Any]:
         or parts[-1] != "v2"
     ):
         raise reporter.PilotDataError("assertion member is absent from registry")
-    if outcome not in {"affected-fixed", "verified-unaffected", "not-applicable"}:
+    if outcome not in SWEEP_RESULTS:
         raise reporter.PilotDataError("assertion outcome is absent from registry")
+    if outcome not in MEMBER_OUTCOME_REGISTRY[family][member]:
+        raise reporter.PilotDataError(
+            f"assertion outcome is not registered for {family}/{member}"
+        )
     if outcome == "not-applicable":
-        if (
-            family,
-            member,
-            reason,
-        ) != ("resource", "disabled", "feature-disabled-by-contract"):
+        if reason != REGISTERED_NOT_APPLICABLE_REASONS.get((family, member)):
             raise reporter.PilotDataError("not-applicable reason is not registered")
     elif reason is not None:
         raise reporter.PilotDataError("outcome assertion has an unexpected reason")
@@ -1035,16 +1054,7 @@ def _validate_sweeps(value: Any) -> list[dict[str, Any]]:
             disposition = reporter.expect_enum(
                 sibling["result"], SWEEP_RESULTS, f"{sibling_label}.result"
             )
-            registered = MEMBER_OUTCOME_REGISTRY[family][member]
-            explicitly_permitted_not_applicable = (
-                family == "resource"
-                and member == "disabled"
-                and disposition == "not-applicable"
-            )
-            if (
-                disposition not in registered
-                and not explicitly_permitted_not_applicable
-            ):
+            if disposition not in MEMBER_OUTCOME_REGISTRY[family][member]:
                 raise reporter.PilotDataError(
                     f"{sibling_label} disposition is not registered for "
                     f"{family}/{member}"

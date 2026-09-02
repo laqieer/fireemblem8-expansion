@@ -719,13 +719,20 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 if requested_finding == finding_id and requested_family == family
             }
             for sibling in sweep["siblings"]:
+                member = sibling["member"]
+                default_outcome = (
+                    "verified-unaffected"
+                    if "verified-unaffected"
+                    in review_family.MEMBER_OUTCOME_REGISTRY[family][member]
+                    else "affected-fixed"
+                )
                 outcome = requested.get(
-                    (finding_id, family, sibling["member"]),
-                    "verified-unaffected",
+                    (finding_id, family, member),
+                    default_outcome,
                 )
                 sibling["result"] = outcome
                 sibling["assertion_id"] = review_family.member_assertion_id(
-                    family, sibling["member"], outcome
+                    family, member, outcome
                 )
             if not any(
                 sibling["result"] == "affected-fixed"
@@ -1318,6 +1325,21 @@ class ReviewBaseCheckerTests(unittest.TestCase):
     def assert_member_rejected(self, family, member, data, commit_sha, message, binding):
         with self.assertRaisesRegex(review_assertions.AssertionFailure, message):
             self.evaluate_member_contract(family, member, data, commit_sha, binding)
+
+    def test_member_parsers_reject_unregistered_verified_unaffected(self):
+        invalid_ids = (
+            "registry:sibling:action:items:verified-unaffected:v2",
+            "registry:sibling:lifecycle:entries:verified-unaffected:v2",
+            "registry:sibling:wire:stale-bindings:verified-unaffected:v2",
+        )
+        for parser, error in (
+            (review_base_checker.parse_assertion_id, review_base_checker.CheckError),
+            (review_assertions.parse_assertion, review_assertions.AssertionFailure),
+        ):
+            for assertion_id in invalid_ids:
+                with self.subTest(parser=parser.__module__, assertion_id=assertion_id):
+                    with self.assertRaisesRegex(error, "not registered for"):
+                        parser(assertion_id)
 
     def test_round_one_executes_local_finding_with_authoritative_binding(self):
         result = self.execute(self.build_input(review_round=1))

@@ -3589,15 +3589,21 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 sweep = copy.deepcopy(source_sweeps[family])
                 sweep["finding_id"] = f"FINDING_MULTI_{round_number}"
                 for sibling in sweep["siblings"]:
+                    member = sibling["member"]
                     outcome = (
                         "affected-fixed"
-                        if sibling["member"] == affected_member
-                        else "verified-unaffected"
+                        if member == affected_member
+                        else (
+                            "verified-unaffected"
+                            if "verified-unaffected"
+                            in review_family.MEMBER_OUTCOME_REGISTRY[family][member]
+                            else "affected-fixed"
+                        )
                     )
                     sibling["result"] = outcome
                     sibling["assertion_id"] = (
                         review_family.member_assertion_id(
-                            family, sibling["member"], outcome
+                            family, member, outcome
                         )
                     )
                 contract["family_sweeps"].append(sweep)

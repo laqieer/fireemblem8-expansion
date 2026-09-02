@@ -28,6 +28,14 @@ FAMILY_MEMBERS = {
     "resource": ("enabled", "disabled"),
     "wire": ("producers", "consumers", "validators", "replay", "stale-bindings"),
 }
+MEMBERS_WITHOUT_VERIFIED_UNAFFECTED = {
+    ("action", "items"),
+    ("lifecycle", "entries"),
+    ("wire", "stale-bindings"),
+}
+REGISTERED_NOT_APPLICABLE_REASONS = {
+    ("resource", "disabled"): "feature-disabled-by-contract"
+}
 CHECKER_ARGV = (
     "/usr/bin/python3",
     "-I",
@@ -657,12 +665,15 @@ def parse_assertion_id(assertion_id: str) -> dict[str, Any]:
         raise CheckError("assertion member is absent from registry")
     if outcome not in {"affected-fixed", "verified-unaffected", "not-applicable"}:
         raise CheckError("assertion outcome is absent from registry")
+    if (
+        outcome == "verified-unaffected"
+        and (family, member) in MEMBERS_WITHOUT_VERIFIED_UNAFFECTED
+    ):
+        raise CheckError(
+            f"assertion outcome is not registered for {family}/{member}"
+        )
     if outcome == "not-applicable":
-        if (
-            family,
-            member,
-            reason,
-        ) != ("resource", "disabled", "feature-disabled-by-contract"):
+        if reason != REGISTERED_NOT_APPLICABLE_REASONS.get((family, member)):
             raise CheckError("not-applicable reason is not registered")
     elif reason is not None:
         raise CheckError("outcome assertion has an unexpected reason")

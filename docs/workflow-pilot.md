@@ -765,9 +765,11 @@ semantics.
 Each `affected-fixed` assertion executes the fixed member program against the
 origin artifact and requires failing semantics, then executes it against the
 remediation artifact and requires passing semantics. Each
-`verified-unaffected` assertion runs against both exact trees and requires
-passing equivalent member-specific semantic output; one arbitrary unchanged
-file cannot certify unrelated members. `not-applicable` is accepted only for
+`verified-unaffected` assertion runs only for members with a registered
+unaffected invariant and requires passing equivalent member-specific semantic
+output; `action/items`, `lifecycle/entries`, and `wire/stale-bindings`
+currently require `affected-fixed`. One arbitrary unchanged file cannot certify
+unrelated members. `not-applicable` is accepted only for
 the explicit `resource/disabled/feature-disabled-by-contract` predicate, which
 must execute and establish false. Swapping a member, family, disposition,
 assertion ID, or reason fails before result creation.

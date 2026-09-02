@@ -276,11 +276,19 @@ class ReviewFamilyContractTests(unittest.TestCase):
         )
         self.assert_rejected(contract, evidence, "member-specific")
 
-        contract, evidence = fixture()
-        contract["family_sweeps"][0]["siblings"][1]["result"] = (
-            "verified-unaffected"
-        )
-        self.assert_rejected(contract, evidence, "member-specific")
+        for sweep_index, sibling_index, family, member in (
+            (0, 1, "action", "items"),
+            (2, 0, "lifecycle", "entries"),
+            (4, 4, "wire", "stale-bindings"),
+        ):
+            contract, evidence = fixture()
+            sibling = contract["family_sweeps"][sweep_index]["siblings"][sibling_index]
+            sibling["result"] = "verified-unaffected"
+            sibling["assertion_id"] = (
+                f"registry:sibling:{family}:{member}:verified-unaffected:v2"
+            )
+            with self.subTest(family=family, member=member):
+                self.assert_rejected(contract, evidence, "not registered")
 
         contract, _ = fixture()
         second = contract["family_sweeps"][0]["siblings"][0]
@@ -308,10 +316,10 @@ class ReviewFamilyContractTests(unittest.TestCase):
 
     def test_every_finding_sweep_requires_at_least_one_affected_fixed_member(self):
         contract, evidence = fixture()
-        for sibling in contract["family_sweeps"][0]["siblings"]:
+        for sibling in contract["family_sweeps"][1]["siblings"]:
             sibling["result"] = "verified-unaffected"
             sibling["assertion_id"] = review_family.member_assertion_id(
-                "action", sibling["member"], "verified-unaffected"
+                "generated", sibling["member"], "verified-unaffected"
             )
         self.assert_rejected(
             contract,
