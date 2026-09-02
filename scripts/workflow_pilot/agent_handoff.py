@@ -3800,19 +3800,10 @@ def validate_prior_handoffs(raw_history: Any) -> list[dict[str, Any]]:
                 )
                 file_paths.append(path)
                 expect_int(file_record["mode"], f"{file_label}.mode", 0)
-                try:
-                    content = base64.b64decode(
-                        expect_string(
-                            file_record["content_base64"],
-                            f"{file_label}.content_base64",
-                            allow_empty=True,
-                        ),
-                        validate=True,
-                    )
-                except (binascii.Error, ValueError) as error:
-                    raise HandoffDataError(
-                        f"{file_label}.content_base64 is invalid"
-                    ) from error
+                content = _decode_canonical_base64(
+                    file_record["content_base64"],
+                    f"{file_label}.content_base64",
+                )
                 if file_record["sha256"] != hashlib.sha256(content).hexdigest():
                     raise HandoffDataError(
                         f"{file_label}.sha256 does not match content"
@@ -4124,11 +4115,14 @@ def _parse_reporter_result_handoffs(raw_handoffs: Any) -> list[dict[str, Any]]:
                     raise HandoffDataError(
                         f"{file_label}.sha256 must be a lowercase SHA-256"
                     )
-                expect_string(
+                content = _decode_canonical_base64(
                     file_record["content_base64"],
                     f"{file_label}.content_base64",
-                    allow_empty=True,
                 )
+                if file_record["sha256"] != hashlib.sha256(content).hexdigest():
+                    raise HandoffDataError(
+                        f"{file_label}.sha256 does not match content"
+                    )
         rejection_codes = expect_list(
             handoff["rejection_codes"],
             f"{label}.rejection_codes",
@@ -7372,19 +7366,10 @@ def _parse_coordinator_receipt(
                     )
                 )
                 expect_int(file_record["mode"], f"{file_label}.mode", 0)
-                try:
-                    content = base64.b64decode(
-                        expect_string(
-                            file_record["content_base64"],
-                            f"{file_label}.content_base64",
-                            allow_empty=True,
-                        ),
-                        validate=True,
-                    )
-                except (binascii.Error, ValueError) as error:
-                    raise HandoffDataError(
-                        f"{file_label}.content_base64 is invalid"
-                    ) from error
+                content = _decode_canonical_base64(
+                    file_record["content_base64"],
+                    f"{file_label}.content_base64",
+                )
                 if file_record["sha256"] != hashlib.sha256(content).hexdigest():
                     raise HandoffDataError(
                         f"{file_label}.sha256 does not match content"

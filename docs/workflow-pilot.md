@@ -748,7 +748,9 @@ edges, interruptions, metrics, PR/ruleset observations, remote source events,
 runs, watchers, availability, process policy, and resource receipts. Every
 signature field is canonical standard-padded base64 text, and RSA verification
 rejects any same-width representative greater than or equal to the public
-modulus before exponentiation.
+modulus before exponentiation. The same canonical base64 rule also applies to
+sealed interruption-snapshot `content_base64` bytes anywhere they are replayed
+through coordinator telemetry, prior handoff history, or reporter records.
 
 `--coordinator-installation` (or
 `WORKFLOW_PILOT_COORDINATOR_INSTALLATION`) points outside the candidate

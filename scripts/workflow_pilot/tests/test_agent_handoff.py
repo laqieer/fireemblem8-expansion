@@ -2147,6 +2147,49 @@ def add_run(document, result_sha, conclusion="success", process_result="success"
         document,
         Path(document["handoffs"][0]["allowed_worktree"]),
     )
+def interrupted_handoff_document(
+    repository_root,
+    result_sha,
+    *,
+    preserved_path="scripts/workflow_pilot/recovery.py",
+    content=b"TEST",
+    replacement_handoff_id=None,
+):
+    preserved = repository_root / preserved_path
+    preserved.parent.mkdir(parents=True, exist_ok=True)
+    preserved.write_bytes(content)
+    document = handoff_document(repository_root, result_sha, result_sha)
+    handoff = document["handoffs"][0]
+    handoff["result"] = None
+    states = timestamped_states()[:3]
+    interrupted_at = (
+        datetime.fromisoformat(states[-1]["at"].replace("Z", "+00:00"))
+        + timedelta(seconds=30)
+    ).isoformat().replace("+00:00", "Z")
+    handoff["states"] = states + [{"state": "interrupted", "at": interrupted_at}]
+    handoff["evidence"] = evidence("incomplete")
+    handoff["required_checks"][0]["receipt_id"] = None
+    handoff["check_receipts"] = []
+    handoff["interruption"] = {
+        "kind": "sigkill_oom",
+        "signal": 9,
+        "occurred_at": interrupted_at,
+        "kernel_evidence": "kernel OOM kill",
+        "interrupted_check_ids": ["focused-module"],
+        "preserved_paths": [preserved_path],
+        "replacement_handoff_id": replacement_handoff_id,
+        "host_process_actions": [],
+    }
+    task = next(
+        item
+        for item in document["delivery_graph"]["tasks"]
+        if item["phase"] == "implementation"
+    )
+    task["status"] = "blocked"
+    task["status_reason"] = "owner_interrupted"
+    task["candidate_sha"] = result_sha
+    refresh_coordinator_receipt(document, repository_root)
+    return document
 class DeliveryDependencyGraphTests(unittest.TestCase):
     def test_parent_merge_unblocks_child_before_parent_remote_completion(self):
         report = agent_handoff.evaluate_delivery_graph(delivery_graph())
@@ -4313,6 +4356,122 @@ class ExactHandoffTests(unittest.TestCase):
                         "authority_object_id"
                     ],
                     anchor_object_id=bound["pr_binding"]["anchor_object_id"],
+                )
+    def test_interruption_snapshot_content_base64_must_be_canonical(self):
+        with handoff_repository() as (root, _base, _parent, result):
+            interrupted = interrupted_handoff_document(
+                root,
+                result,
+            )
+            canonical_file = interrupted["coordinator_receipt"][
+                "runtime_telemetry"
+            ][0]["interruption_snapshot"]["files"][0]
+            self.assertEqual(canonical_file["content_base64"], "VEVTVA==")
+            interrupted_report = agent_handoff.validate_document(
+                interrupted,
+                root,
+            )
+            self.assertEqual(
+                interrupted_report["handoffs"][0]["outcome"],
+                "interrupted",
+            )
+            interrupted_record = reporter_record(
+                root,
+                interrupted,
+                interrupted_report,
+            )
+            self.assertEqual(
+                reporter.validate_fixture(
+                    reporter_fixture_with_handoffs(interrupted_record)
+                )["implementation_handoffs"]["issue-178-round-1"][
+                    "reported_outcome"
+                ],
+                "interrupted",
+            )
+
+            aliased_document = interrupted_handoff_document(root, result)
+            aliased_file = aliased_document["coordinator_receipt"][
+                "runtime_telemetry"
+            ][0]["interruption_snapshot"]["files"][0]
+            aliased_file["content_base64"] = noncanonical_base64_alias(
+                aliased_file["content_base64"]
+            )
+            sign_coordinator_document(aliased_document, root)
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "canonical base64",
+            ):
+                agent_handoff.validate_document(aliased_document, root)
+
+            history = agent_handoff.make_history_receipt(
+                interrupted,
+                interrupted_report,
+                "issue-178-round-1",
+            )
+            agent_handoff.validate_prior_handoffs([history])
+            aliased_history = copy.deepcopy(history)
+            aliased_history["interruption_snapshot"]["files"][0][
+                "content_base64"
+            ] = noncanonical_base64_alias(
+                aliased_history["interruption_snapshot"]["files"][0][
+                    "content_base64"
+                ]
+            )
+            aliased_history["seal"] = agent_handoff.seal_history_receipt(
+                aliased_history
+            )
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "canonical base64",
+            ):
+                agent_handoff.validate_prior_handoffs([aliased_history])
+
+        with handoff_repository() as (root, _base, _parent, result):
+            interrupted = interrupted_handoff_document(root, result)
+            interrupted_report = agent_handoff.validate_document(
+                interrupted,
+                root,
+            )
+            forged_result = copy.deepcopy(interrupted_report)
+            forged_result["handoffs"][0]["interruption_snapshot"]["files"][0][
+                "content_base64"
+            ] = noncanonical_base64_alias(
+                forged_result["handoffs"][0]["interruption_snapshot"]["files"][0][
+                    "content_base64"
+                ]
+            )
+            forged_result["result_seal"] = agent_handoff.seal_handoff_result(
+                forged_result
+            )
+            forged_record = {
+                "source_handoff_ids": sorted(
+                    item["id"] for item in interrupted["handoffs"]
+                ),
+                "document": copy.deepcopy(interrupted),
+                "input_seal": forged_result["input_seal"],
+                "git_seal": forged_result["git_seal"],
+                "result_seal": forged_result["result_seal"],
+                "result": forged_result,
+                "result_attestation": finalize_result_attestation(
+                    root,
+                    interrupted,
+                    forged_result,
+                ),
+            }
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "canonical base64",
+            ):
+                agent_handoff.verify_reporter_record(
+                    forged_record,
+                    revalidate_git=False,
+                )
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "canonical base64",
+            ):
+                reporter.validate_fixture(
+                    reporter_fixture_with_handoffs(forged_record)
                 )
     def test_verify_external_signature_rejects_same_width_representatives_ge_modulus(self):
         with handoff_repository() as (root, _base, _parent, _result):
