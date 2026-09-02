@@ -1948,6 +1948,9 @@ class ReviewBaseCheckerTests(unittest.TestCase):
 
     def test_wire_producer_real_contract_still_passes(self):
         self._restore_baseline()
+        (self.repo / "changed.txt").write_text(
+            "wire producer healthy\n", encoding="utf-8"
+        )
         healthy_head = self._commit("wire-producer-healthy")
         healthy_tree = git_text(self.repo, "rev-parse", f"{healthy_head}^{{tree}}")
         data, binding = self.wire_member_input(
@@ -1961,11 +1964,16 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             healthy_head,
             binding,
         )
-        self.assertFalse((Path(data["base_root"]) / "scripts/__init__.py").exists())
-        self.assertFalse((Path(data["head_root"]) / "scripts/__init__.py").exists())
-        self.assertEqual(result["live_source_kind"], "live-gh-api")
-        self.assertEqual(result["offline_source_kind"], "offline-transform-fixture")
-        self.assertEqual(result["result_manifest_size"], 0)
+        self.assertFalse(any((Path(data[root]) / "scripts/__init__.py").exists() for root in ("base_root", "head_root")))
+        self.assertEqual((result["live_source_kind"], result["offline_source_kind"], result["result_manifest_size"]), ("live-gh-api", "offline-transform-fixture", 0))
+        replay_data, replay_binding = self.wire_member_input(
+            candidate_sha=healthy_head,
+            candidate_tree=healthy_tree,
+            assertion_id="registry:sibling:wire:replay:verified-unaffected:v2",
+        )
+        replay = self.evaluate_member_contract("wire", "replay", replay_data, healthy_head, replay_binding)
+        self.assertEqual((replay["replay_sha256"], len(replay["replay_entries"]), replay["replay_entries"][0].startswith("original-")), (replay_data["original_receipt_sha256"], 1, True))
+        self.assertIn("re-signed", replay["replay_rejection"])
 
     def test_unrelated_initializer_outside_member_closure_does_not_hold(self):
         candidate_head, candidate_tree = self._make_namespace_init_addition_head(

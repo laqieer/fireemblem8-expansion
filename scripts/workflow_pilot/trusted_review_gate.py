@@ -1757,13 +1757,10 @@ def _parse_external_trigger_comment(
             payload["candidate_sha"],
             f"{label} decision preregistration.candidate_sha",
         )
-        if (
-            original_head != contract["original_pre_review_head"]
-            or preregistered_head != contract["original_pre_review_head"]
-        ):
-            raise reporter.PilotDataError(
-                f"{label} decision preregistration does not bind the exact initial reviewed head"
-            )
+        if original_head != contract["original_pre_review_head"]:
+            raise reporter.PilotDataError(f"{label} decision preregistration lost the initial reviewed head")
+        if preregistered_head != current_candidate_sha:
+            raise reporter.PilotDataError(f"{label} decision preregistration lost the current candidate head")
         decision = _normalize_trigger_decision_record(
             reporter.expect_object(
                 payload["decision"], f"{label} decision preregistration.decision"

@@ -1924,38 +1924,44 @@ def evaluate_wire_replay(
     replay_store = _receipt_store(
         Path(checker_input["repository_root"]), "assertion-replay", receipt
     )
+    publish = {
+        "repository": checker_input["repository"],
+        "pull_request": checker_input["pull_request"],
+        "base_sha": checker_input["base_sha"],
+        "original_pre_review_head": checker_input["original_pre_review_head"],
+        "key_id": receipt["key_id"],
+        "key_epoch": receipt["key_epoch"],
+    }
     if replay_store.exists():
         shutil.rmtree(replay_store)
     replay_store.mkdir(parents=True)
     try:
-        gate_module.persist_original_receipt(
-            receipt_bytes,
-            replay_store,
-            repository=checker_input["repository"],
-            pull_request=checker_input["pull_request"],
-            base_sha=checker_input["base_sha"],
-            original_pre_review_head=checker_input["original_pre_review_head"],
-            key_id=receipt["key_id"],
-            key_epoch=receipt["key_epoch"],
+        final_name = gate_module._receipt_final_name(
+            gate_module._receipt_scope_id(**publish)
         )
+        gate_module.persist_original_receipt(receipt_bytes, replay_store, **publish)
+        gate_module.persist_original_receipt(receipt_bytes, replay_store, **publish)
+        preserved = gate_module.preserved_receipt_bytes(replay_store, **publish)
         try:
             gate_module.persist_original_receipt(
-                receipt_bytes,
+                normalized_json({**receipt, "nonce": f"{receipt['nonce']}-replay"}),
                 replay_store,
-                repository=checker_input["repository"],
-                pull_request=checker_input["pull_request"],
-                base_sha=checker_input["base_sha"],
-                original_pre_review_head=checker_input["original_pre_review_head"],
-                key_id=receipt["key_id"],
-                key_epoch=receipt["key_epoch"],
+                **publish,
             )
         except gate_module.reporter.PilotDataError as error:
             rejection = str(error)
         else:
             raise AssertionFailure("replay boundary is incomplete")
+        entries = sorted(path.name for path in replay_store.iterdir())
     finally:
         shutil.rmtree(replay_store)
-    return {"replay_rejection": rejection}
+    if preserved != receipt_bytes or entries != [final_name]:
+        raise AssertionFailure("replay store changed across idempotent persist")
+    return {
+        "replay_entries": entries,
+        "replay_sha256": hashlib.sha256(preserved).hexdigest(),
+        "replay_rejection": rejection,
+    }
 
 
 def evaluate_wire_stale_bindings(

@@ -99,6 +99,7 @@ def authoritative_decision_comment(
     *,
     base_sha,
     head_sha,
+    candidate_sha=None,
     decision=None,
     comment_id="COMMENT_DECISION_001",
     created_at="2026-08-31T03:11:30Z",
@@ -113,7 +114,7 @@ def authoritative_decision_comment(
         "pull_request": SYNTHETIC_PULL_REQUEST,
         "base_sha": base_sha,
         "original_pre_review_head": head_sha,
-        "candidate_sha": head_sha,
+        "candidate_sha": head_sha if candidate_sha is None else candidate_sha,
         "decision": copy.deepcopy(decision),
     }
     return {
@@ -2155,6 +2156,24 @@ class TrustedGitHubGateTests(unittest.TestCase):
         finally:
             shutil.rmtree(repo)
 
+    def test_external_preregistration_parser_keeps_original_and_current_heads_separate(self):
+        original_head, current_head = "a" * 40, "b" * 40
+        contract = self.contract(base=self.base_sha, candidate=current_head)
+        contract["original_pre_review_head"] = original_head
+        result = trusted_review_gate._parse_external_trigger_comment(
+            [authoritative_decision_comment(base_sha=self.base_sha, head_sha=original_head, candidate_sha=current_head)],
+            viewer=trusted_review_gate._graphql_actor(
+                trusted_comment_actor(), "GitHub viewer"
+            ),
+            repository_id=repository_identity()["id"],
+            repository_name=repository_identity()["name"],
+            contract=contract,
+            current_candidate_sha=current_head,
+            first_remote_review_at=datetime(2026, 8, 31, 3, 15, tzinfo=timezone.utc),
+            actors=[],
+        )
+        self.assertEqual((result["original_pre_review_head"], result["candidate_sha"]), (original_head, current_head))
+
     def test_external_preregistration_must_be_exact_and_unique(self):
         cases = (
             ("missing", "missing", "requires authoritative trigger decision or trusted preregistration evidence"),
@@ -2164,7 +2183,8 @@ class TrustedGitHubGateTests(unittest.TestCase):
             ("wrong-actor", {"author": human_graphql_actor()}, "exact trusted coordinator actor"),
             ("wrong-repo", {"repository": "other/repository"}, "exact repository"),
             ("wrong-base", {"base_sha": "f" * 40}, "exact base"),
-            ("wrong-head", {"candidate_sha": "f" * 40}, "exact initial reviewed head"),
+            ("wrong-original-head", {"original_pre_review_head": "f" * 40}, "initial reviewed head"),
+            ("wrong-head", {"candidate_sha": "f" * 40}, "current candidate head"),
             ("duplicate", "duplicate", "not unique"),
         )
         for case_name, override, pattern in cases:
@@ -2206,30 +2226,12 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     pr["comments"]["nodes"][1]["id"] = "COMMENT_DECISION_002"
                 else:
                     if override is not None:
-                        if "repository" in override:
-                            body = json.loads(comment["body"][len(trusted_review_gate.EXTERNAL_DECISION_COMMENT_PREFIX):])
-                            body["repository"] = override["repository"]
-                            comment["body"] = (
-                                trusted_review_gate.EXTERNAL_DECISION_COMMENT_PREFIX
-                                + reporter.normalized_json(body).decode("ascii").rstrip("\n")
-                            )
-                            override = {k: v for k, v in override.items() if k != "repository"}
-                        if "base_sha" in override:
-                            body = json.loads(comment["body"][len(trusted_review_gate.EXTERNAL_DECISION_COMMENT_PREFIX):])
-                            body["base_sha"] = override["base_sha"]
-                            comment["body"] = (
-                                trusted_review_gate.EXTERNAL_DECISION_COMMENT_PREFIX
-                                + reporter.normalized_json(body).decode("ascii").rstrip("\n")
-                            )
-                            override = {k: v for k, v in override.items() if k != "base_sha"}
-                        if "candidate_sha" in override:
-                            body = json.loads(comment["body"][len(trusted_review_gate.EXTERNAL_DECISION_COMMENT_PREFIX):])
-                            body["candidate_sha"] = override["candidate_sha"]
-                            comment["body"] = (
-                                trusted_review_gate.EXTERNAL_DECISION_COMMENT_PREFIX
-                                + reporter.normalized_json(body).decode("ascii").rstrip("\n")
-                            )
-                            override = {k: v for k, v in override.items() if k != "candidate_sha"}
+                        for field in ("repository", "base_sha", "candidate_sha", "original_pre_review_head"):
+                            if field in override:
+                                body = json.loads(comment["body"][len(trusted_review_gate.EXTERNAL_DECISION_COMMENT_PREFIX):])
+                                body[field] = override[field]
+                                comment["body"] = trusted_review_gate.EXTERNAL_DECISION_COMMENT_PREFIX + reporter.normalized_json(body).decode("ascii").rstrip("\n")
+                                override = {key: value for key, value in override.items() if key != field}
                         comment.update(override)
                     pr["comments"]["nodes"] = [comment]
                 contract = self.contract(base=base, candidate=candidate)
