@@ -1940,8 +1940,8 @@ class TrustedGitHubGateTests(unittest.TestCase):
             ).stdout.decode().strip()
             shared_base = commit_from(
                 base,
-                "changed.txt",
-                "shared contract change\n",
+                "docs/workflow-pilot.md",
+                "authority shared contract change\n",
                 "2026-08-31T03:06:30Z",
                 "live base shared",
             )
@@ -1962,7 +1962,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 ("rewritten", rewritten, "MERGEABLE", "rewrites or predates the immutable merge base"),
                 ("missing", "f" * 40, "MERGEABLE", "current live base tip is unavailable from trusted Git authority"),
                 ("conflict", live_base, "CONFLICTING", "mergeability is unresolved|conflicting"),
-                ("shared", shared_base, "MERGEABLE", "candidate/shared contract paths"),
+                ("authority", shared_base, "MERGEABLE", "candidate/shared contract paths"),
             ):
                 with self.subTest(case=case), self.assertRaisesRegex(reporter.PilotDataError, pattern):
                     self.run_gate(

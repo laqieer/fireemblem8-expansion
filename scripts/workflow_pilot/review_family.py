@@ -2753,10 +2753,8 @@ def _repository_authority(
     changes = derive_change_records(root, contract["base_sha"], head)
     if live_base != contract["base_sha"]:
         base_advance_paths = {
-            path
-            for change in derive_change_records(root, contract["base_sha"], live_base)
-            for path in (change["old_path"], change["new_path"])
-            if path is not None
+            path for change in derive_change_records(root, contract["base_sha"], live_base)
+            for path in (change["old_path"], change["new_path"]) if path is not None
         }
         candidate_paths = {
             path
@@ -2764,7 +2762,8 @@ def _repository_authority(
             for path in (change["old_path"], change["new_path"])
             if path is not None
         }
-        shared_paths = sorted(base_advance_paths & candidate_paths)
+        protected_paths = {PurePosixPath(path) for path in candidate_paths | set(ASSERTION_INPUT_PATHS)}
+        shared_paths = sorted(path for path in base_advance_paths if any((current := PurePosixPath(path)) == scope or current in scope.parents or scope in current.parents for scope in protected_paths))
         if shared_paths:
             raise reporter.PilotDataError(
                 "current live base tip changes overlap candidate/shared contract paths"

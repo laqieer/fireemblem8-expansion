@@ -1526,4 +1526,4 @@ After a replacement push, the delivery coordinator runs the live read-only gate 
   --review-receipt <independent-pre-review-receipt.json>
 ```
 
-For a post-push exact-head recheck, `--expected-remote-head` and `--expected-candidate` are the same SHA. `--expected-base` is the current live PR base tip, while the contract and receipts stay bound to the older frozen merge base. For a held-head pre-push decision, they differ: GitHub must still report A while local Git proves descendant B. Missing or mismatched decision records, merge-base ancestry, mergeability, PR/base/head identities, shared-path drift, or replay scope still fail closed.
+For a post-push exact-head recheck, `--expected-remote-head` and `--expected-candidate` are the same SHA. `--expected-base` is the current live PR base tip, while the contract and receipts stay bound to the older frozen merge base. For a held-head pre-push decision, they differ: GitHub must still report A while local Git proves descendant B. Missing or mismatched decision records, merge-base ancestry, mergeability, PR/base/head identities, candidate/authority shared-contract drift, or replay scope still fail closed.
