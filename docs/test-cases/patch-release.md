@@ -243,11 +243,13 @@ archival-lane behavior changes.
   exact-after isolated tool, no-ROM-transfer boundary, dedicated builder UID
   and namespaces, read-only host/private-filesystem probes, exact cgroup-v2 and
   process teardown, decoded recursive `/dev` target parsing and deepest-first
-  unmount order, socket/daemon/cgroup-escape adversaries, two-file handoff
-  rejection controls, unpredictable private path, cleanup-before-upload, late
-  artifact revalidation, null/no-replay candidate output adversaries, the old
-  Bash-FD-255/memfd exit-125 reproducer, inherited pipe/memfd/socket closure in
-  the child launcher, and profile/verifier requirements.
+  unmount order, structured `env -S` shell-c evasions through inline
+  `else`/brace/case/loop forms and inline-function fail-closed behavior,
+  socket/daemon/cgroup-escape adversaries, two-file handoff rejection
+  controls, unpredictable private path, cleanup-before-upload, late artifact
+  revalidation, null/no-replay candidate output adversaries, the old
+  Bash-FD-255/memfd exit-125 reproducer, inherited pipe/memfd/socket closure
+  in the child launcher, and profile/verifier requirements.
 
 ### Cleanup and limitations
 

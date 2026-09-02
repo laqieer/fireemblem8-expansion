@@ -3866,6 +3866,128 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     )
                 )
 
+    def test_structural_prefix_env_split_string_repros_execute_and_detector_rejects_them(
+        self,
+    ):
+        prefix = (
+            'ROOT=/mnt\n'
+            'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+        )
+        cases = (
+            (
+                "inline-else",
+                'if false; then :; else /bin/env -S "/bin/bash -c \\"printf RUNTIME_INLINE_ELSE\\""; fi\n',
+                "RUNTIME_INLINE_ELSE",
+                prefix
+                + 'if false; then :; else /bin/env -S "/bin/bash -c \\"$cmd\\""; fi\n',
+            ),
+            (
+                "brace-group",
+                '{ /bin/env -S "/bin/bash -c \\"printf RUNTIME_BRACE_GROUP\\""; }\n',
+                "RUNTIME_BRACE_GROUP",
+                prefix + '{ /bin/env -S "/bin/bash -c \\"$cmd\\""; }\n',
+            ),
+            (
+                "nested-else-brace-group",
+                'if false; then :; else { /bin/env -S "/bin/bash -c \\"printf RUNTIME_NESTED_ELSE_BRACE\\""; }; fi\n',
+                "RUNTIME_NESTED_ELSE_BRACE",
+                prefix
+                + 'if false; then :; else { /bin/env -S "/bin/bash -c \\"$cmd\\""; }; fi\n',
+            ),
+            (
+                "then-body",
+                'if true; then /bin/env -S "/bin/bash -c \\"printf RUNTIME_THEN_BODY\\""; fi\n',
+                "RUNTIME_THEN_BODY",
+                prefix + 'if true; then /bin/env -S "/bin/bash -c \\"$cmd\\""; fi\n',
+            ),
+            (
+                "do-body",
+                'for iteration in 1; do /bin/env -S "/bin/bash -c \\"printf RUNTIME_DO_BODY\\""; done\n',
+                "RUNTIME_DO_BODY",
+                prefix
+                + 'for iteration in 1; do /bin/env -S "/bin/bash -c \\"$cmd\\""; done\n',
+            ),
+            (
+                "subshell-else-group",
+                'if false; then :; else ( /bin/env -S "/bin/bash -c \\"printf RUNTIME_SUBSHELL_GROUP\\""); fi\n',
+                "RUNTIME_SUBSHELL_GROUP",
+                prefix
+                + 'if false; then :; else ( /bin/env -S "/bin/bash -c \\"$cmd\\""); fi\n',
+            ),
+            (
+                "case-arm-brace-group",
+                'case x in\n  *) { /bin/env -S "/bin/bash -c \\"printf RUNTIME_CASE_ARM_GROUP\\""; } ;;\nesac\n',
+                "RUNTIME_CASE_ARM_GROUP",
+                prefix
+                + 'case x in\n  *) { /bin/env -S "/bin/bash -c \\"$cmd\\""; } ;;\nesac\n',
+            ),
+        )
+
+        for label, runtime_script, expected_stdout, semantic_script in cases:
+            with self.subTest(case=label):
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "--noprofile",
+                        "--norc",
+                        "-eu",
+                        "-o",
+                        "pipefail",
+                        "-c",
+                        runtime_script,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, expected_stdout)
+                self.assertEqual(completed.stderr, "")
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        semantic_script,
+                        label=label,
+                    )
+                )
+
+    def test_inline_function_body_env_split_string_runtime_fails_closed(self):
+        runtime_script = (
+            'wrapped() { /bin/env -S "/bin/bash -c \\"printf RUNTIME_INLINE_FUNCTION\\""; }\n'
+            "wrapped\n"
+        )
+        semantic_script = (
+            'ROOT=/mnt\n'
+            'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+            'wrapped() { /bin/env -S "/bin/bash -c \\"$cmd\\""; }\n'
+            "wrapped\n"
+        )
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "--noprofile",
+                "--norc",
+                "-eu",
+                "-o",
+                "pipefail",
+                "-c",
+                runtime_script,
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout, "RUNTIME_INLINE_FUNCTION")
+        self.assertEqual(completed.stderr, "")
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                semantic_script,
+                label="inline-function-body",
+            )
+        )
+
     def test_unquoted_glob_brace_and_tilde_shell_surfaces_fail_closed_while_quoted_literals_stay_distinct(
         self,
     ):

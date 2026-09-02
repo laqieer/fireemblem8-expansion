@@ -84,7 +84,9 @@ _PATCH_RELEASE_PARSER_HEREDOC_RE = re.compile(
     r"PY\n"
     r"\}"
 )
-_SIMPLE_COMMAND_PREFIXES = frozenset({"if", "then", "do", "elif", "while", "until", "!"})
+_SIMPLE_COMMAND_PREFIXES = frozenset(
+    {"if", "then", "do", "elif", "while", "until", "!", "else", "{"}
+)
 _CONTROL_OPERATORS = frozenset({";", "&&", "||", "|", "&"})
 _DISALLOWED_MOUNT_WRAPPERS = frozenset({"env", "command", "eval"})
 _ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
@@ -603,10 +605,22 @@ def _is_shell_interpreter_reference_token(token: _ShellToken) -> bool:
 
 def _strip_command_prefixes(command: tuple[_ShellToken, ...]) -> tuple[_ShellToken, ...]:
     tokens = list(command)
-    while tokens and tokens[0].text in _SIMPLE_COMMAND_PREFIXES:
-        tokens.pop(0)
-    while tokens and _ASSIGNMENT_RE.fullmatch(tokens[0].text):
-        tokens.pop(0)
+    while tokens:
+        stripped = False
+        while tokens and tokens[0].text in _SIMPLE_COMMAND_PREFIXES:
+            tokens.pop(0)
+            stripped = True
+        while tokens and _ASSIGNMENT_RE.fullmatch(tokens[0].text):
+            tokens.pop(0)
+            stripped = True
+        if tokens and tokens[0].text == "time":
+            tokens.pop(0)
+            stripped = True
+            if tokens and tokens[0].text == "-p":
+                tokens.pop(0)
+            continue
+        if not stripped:
+            break
     return tuple(tokens)
 
 
@@ -624,22 +638,25 @@ def _is_case_pattern_token(token: _ShellToken) -> bool:
 
 
 def _semantic_surface_tokens(command: tuple[_ShellToken, ...]) -> tuple[_ShellToken, ...]:
-    tokens = _strip_command_prefixes(command)
-    if not tokens:
-        return ()
-    if len(tokens) >= 2 and tokens[0].text.endswith("()") and tokens[1].text == "{":
-        return ()
-    if tokens[0].text in _SHELL_STRUCTURE_TOKENS:
-        return ()
-    if tokens[0].text == ")" or tokens[0].text.endswith("))"):
-        return ()
-    if _is_case_pattern_token(tokens[0]):
-        tokens = tokens[1:]
+    tokens = command
+    while True:
+        tokens = _strip_command_prefixes(tokens)
         if not tokens:
             return ()
-    if tokens[0].text in _SHELL_STRUCTURE_TOKENS:
-        return ()
-    return tokens
+        if len(tokens) >= 2 and tokens[0].text.endswith("()") and tokens[1].text == "{":
+            if len(tokens) == 2:
+                return ()
+            raise ValueError("inline shell function body differs")
+        if tokens[0].text in _SHELL_STRUCTURE_TOKENS:
+            return ()
+        if tokens[0].text == ")" or tokens[0].text.endswith("))"):
+            return ()
+        if _is_case_pattern_token(tokens[0]):
+            tokens = tokens[1:]
+            if not tokens:
+                return ()
+            continue
+        return tokens
 
 
 def _reject_env_split_string_option(token: str) -> bool:
