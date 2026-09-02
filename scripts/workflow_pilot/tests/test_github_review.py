@@ -26,10 +26,19 @@ ISSUE_179_URL = "https://github.com/laqieer/fireemblem8-expansion/issues/179"
 KEY = b"test-only-external-receipt-key-material-32-bytes"
 KEY_ID = "test-review-root"
 KEY_EPOCH = 7
+COPILOT_ACTOR_ID = review_family.COPILOT_GRAPHQL_NODE_ID
 
 
 def iso(value):
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def copilot_graphql_actor():
+    return {
+        "__typename": review_family.COPILOT_GRAPHQL_TYPE,
+        "id": COPILOT_ACTOR_ID,
+        "login": review_family.COPILOT_GRAPHQL_LOGIN,
+    }
 
 
 def git(root, *arguments):
@@ -195,6 +204,87 @@ class TrustedGitHubGateTests(unittest.TestCase):
     def adapter(self):
         return reporter.load_json(ADAPTER_PATH)
 
+    def exact_graphql_payload(self, *, with_finding=False):
+        payload = self.adapter()
+        pr = payload["data"]["repository"]["pullRequest"]
+        pr["baseRefOid"] = self.base_sha
+        pr["headRefOid"] = self.candidate_sha
+        pr["commits"]["nodes"][0]["commit"]["oid"] = self.candidate_sha
+        pr["commits"]["nodes"][0]["commit"]["committedDate"] = git(
+            self.repo, "show", "-s", "--format=%cI", self.candidate_sha
+        ).stdout.decode().strip().replace("+00:00", "Z")
+        pr["reviews"]["nodes"][0]["commit"]["oid"] = self.candidate_sha
+        if with_finding:
+            pr["reviews"]["nodes"][0]["body"] = "### 🟡 Changes recommended"
+            pr["reviews"]["nodes"][0]["comments"]["nodes"] = [
+                {
+                    "id": "FINDING_ACTION_001",
+                    "createdAt": "2026-08-31T03:36:30Z",
+                    "body": "member-specific finding",
+                    "author": copilot_graphql_actor(),
+                }
+            ]
+            pr["reviewThreads"]["nodes"] = [
+                {
+                    "id": "THREAD_LIVE_001",
+                    "isResolved": False,
+                    "comments": {
+                        "pageInfo": {"hasNextPage": False},
+                        "nodes": [
+                            {
+                                "id": "FINDING_ACTION_001",
+                                "createdAt": "2026-08-31T03:36:30Z",
+                                "author": copilot_graphql_actor(),
+                                "pullRequestReview": {"id": "REMOTE_REVIEW_LIVE_001"},
+                            }
+                        ],
+                    },
+                }
+            ]
+        return payload
+
+    def exact_review_receipt_envelope(self):
+        return json.loads(
+            signed_receipt(
+                reporter.normalized_json(
+                    review_report(
+                        self.base_sha,
+                        self.candidate_sha,
+                        ["changed.txt"],
+                        review_family.derive_change_records(
+                            self.repo, self.base_sha, self.candidate_sha
+                        ),
+                    )
+                ),
+                base=self.base_sha,
+                candidate=self.candidate_sha,
+            )
+        )
+
+    def collect_exact_live_evidence(self, payload, *, kind="default"):
+        return trusted_review_gate.collect_live_evidence_bytes(
+            self.contract(
+                base=self.base_sha,
+                candidate=self.candidate_sha,
+                kind=kind,
+            ),
+            self.repo,
+            self.candidate_sha,
+            self.candidate_sha,
+            review_report(
+                self.base_sha,
+                self.candidate_sha,
+                ["changed.txt"],
+                review_family.derive_change_records(
+                    self.repo, self.base_sha, self.candidate_sha
+                ),
+            ),
+            self.exact_review_receipt_envelope(),
+            [],
+            adapter=StaticAdapter(payload),
+            clock=lambda: datetime(2026, 8, 31, 3, 13, tzinfo=timezone.utc),
+        )
+
     def decision_entry(
         self,
         *,
@@ -347,9 +437,105 @@ class TrustedGitHubGateTests(unittest.TestCase):
         query = trusted_review_gate.GRAPHQL_QUERY
         self.assertIn("baseRefOid", query)
         self.assertIn("headRefOid", query)
-        self.assertGreaterEqual(query.count("... on Node { id }"), 5)
+        self.assertGreaterEqual(query.count("__typename"), 7)
+        self.assertGreaterEqual(query.count("... on Node { id }"), 6)
         self.assertNotIn("author { id login }", query)
         self.assertNotIn("owner { id login }", query)
+        self.assertIn("author { __typename", query)
+
+    def test_exact_actor_parser_supports_explicit_graphql_and_rest_shapes(self):
+        graphql_actor = trusted_review_gate._actor(
+            copilot_graphql_actor(), "GraphQL author"
+        )
+        self.assertEqual(
+            graphql_actor,
+            {
+                "id": review_family.COPILOT_GRAPHQL_NODE_ID,
+                "login": review_family.COPILOT_GRAPHQL_LOGIN,
+                "kind": "bot",
+                "source": review_family.GITHUB_GRAPHQL_ACTOR_SOURCE,
+                "type": review_family.COPILOT_GRAPHQL_TYPE,
+            },
+        )
+        rest_actor = trusted_review_gate._actor(
+            {
+                "type": review_family.COPILOT_REST_TYPE,
+                "node_id": review_family.COPILOT_REST_NODE_ID,
+                "id": review_family.COPILOT_REST_DATABASE_ID,
+                "login": review_family.COPILOT_REST_LOGIN,
+            },
+            "REST author",
+        )
+        self.assertTrue(review_family.is_authoritative_copilot_actor(rest_actor))
+
+    def test_collect_live_evidence_rejects_nonexact_copilot_review_and_finding_authors(self):
+        review_cases = (
+            ("login-bracket", "login", review_family.COPILOT_REST_LOGIN),
+            ("login-suffix", "login", "copilot-pull-request-reviewer-bot"),
+            ("login-prefix", "login", "evil-copilot-pull-request-reviewer"),
+            ("login-case", "login", "Copilot-Pull-Request-Reviewer"),
+            ("login-unicode", "login", "copilot-pull-request-revi\u0435wer"),
+            ("type-user", "__typename", "User"),
+            ("type-organization", "__typename", "Organization"),
+            ("type-enterprise-owner", "__typename", "EnterpriseOwner"),
+            ("type-mannequin", "__typename", "Mannequin"),
+            ("id-drift", "id", "BOT_kgDOCnlnWB"),
+        )
+        for case_name, field, value in review_cases:
+            payload = self.exact_graphql_payload()
+            payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["author"][
+                field
+            ] = value
+            with self.subTest(case=case_name), self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "exact authoritative GitHub Copilot Bot",
+            ):
+                self.collect_exact_live_evidence(payload)
+
+        payload = self.exact_graphql_payload()
+        payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0][
+            "author"
+        ] = None
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "must be an object",
+        ):
+            self.collect_exact_live_evidence(payload)
+
+        finding_cases = (
+            ("login-bracket", "login", review_family.COPILOT_REST_LOGIN),
+            ("login-suffix", "login", "copilot-pull-request-reviewer-bot"),
+            ("login-prefix", "login", "evil-copilot-pull-request-reviewer"),
+            ("login-case", "login", "Copilot-Pull-Request-Reviewer"),
+            ("login-unicode", "login", "copilot-pull-request-revi\u0435wer"),
+            ("type-user", "__typename", "User"),
+            ("type-organization", "__typename", "Organization"),
+            ("type-enterprise-owner", "__typename", "EnterpriseOwner"),
+            ("type-mannequin", "__typename", "Mannequin"),
+            ("id-drift", "id", "BOT_kgDOCnlnWB"),
+        )
+        for case_name, field, value in finding_cases:
+            payload = self.exact_graphql_payload(with_finding=True)
+            for author in (
+                payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["comments"]["nodes"][0]["author"],
+                payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"][0]["comments"]["nodes"][0]["author"],
+            ):
+                author[field] = value
+            with self.subTest(case=f"finding-{case_name}"), self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "exact authoritative GitHub Copilot Bot",
+            ):
+                self.collect_exact_live_evidence(payload, kind="complete")
+
+        payload = self.exact_graphql_payload(with_finding=True)
+        payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"][0]["comments"]["nodes"][0]["author"][
+            "id"
+        ] = "BOT_kgDOCnlnWB"
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "thread author does not match the exact authoritative review actor",
+        ):
+            self.collect_exact_live_evidence(payload, kind="complete")
 
     def run_trusted_startup(self):
         environment = {
@@ -1005,7 +1191,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
             "id": 1001,
             "node_id": "REMOTE_SYNTHETIC_1",
             "round": 1,
-            "reviewer_actor_id": "COPILOT",
+            "reviewer_actor_id": COPILOT_ACTOR_ID,
             "candidate_sha": self.candidate_sha,
             "submitted_at": "2026-08-31T04:02:00Z",
             "state": "COMMENTED",
@@ -1125,7 +1311,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
             "id": 1001,
             "node_id": "REMOTE_SYNTHETIC_1",
             "round": 1,
-            "reviewer_actor_id": "COPILOT",
+            "reviewer_actor_id": COPILOT_ACTOR_ID,
             "candidate_sha": self.candidate_sha,
             "submitted_at": "2026-08-31T04:02:00Z",
             "state": "COMMENTED",
@@ -1326,10 +1512,18 @@ class TrustedGitHubGateTests(unittest.TestCase):
             def payload(remote_head):
                 return {
                     "data": {
-                        "viewer": {"id": "ACTOR_COLLECTOR_001", "login": "fresh-collector"},
+                        "viewer": {
+                            "__typename": "User",
+                            "id": "ACTOR_COLLECTOR_001",
+                            "login": "fresh-collector",
+                        },
                         "repository": {
                             "viewerPermission": "READ",
-                            "owner": {"id": "ACTOR_OWNER_001", "login": "repository-owner"},
+                            "owner": {
+                                "__typename": "User",
+                                "id": "ACTOR_OWNER_001",
+                                "login": "repository-owner",
+                            },
                             "pullRequest": {
                                 "id": "PR_SYNTHETIC_PREPUSH",
                                 "number": SYNTHETIC_PULL_REQUEST,
@@ -1337,6 +1531,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                                 "baseRefOid": base,
                                 "headRefOid": remote_head,
                                 "author": {
+                                    "__typename": "User",
                                     "id": "ACTOR_IMPLEMENTER_001",
                                     "login": "implementation-agent",
                                 },
@@ -1383,10 +1578,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                                             "submittedAt": f"2026-08-31T03:1{round_number}:00Z",
                                             "body": "### 🟡 Changes recommended",
                                             "commit": {"oid": head_c},
-                                            "author": {
-                                                "id": "ACTOR_COPILOT_001",
-                                                "login": "copilot-pull-request-reviewer[bot]",
-                                            },
+                                            "author": copilot_graphql_actor(),
                                             "comments": {
                                                 "pageInfo": {"hasNextPage": False},
                                                 "nodes": [],
@@ -1418,6 +1610,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                                                 )
                                             ),
                                             "author": {
+                                                "__typename": "User",
                                                 "id": "ACTOR_COORDINATOR_001",
                                                 "login": "independent-coordinator",
                                             },
@@ -1938,12 +2131,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                                 - timedelta(seconds=30)
                             ),
                             "body": "member-specific finding",
-                            "author": {
-                                "id": "ACTOR_COPILOT_001",
-                                "login": (
-                                    "copilot-pull-request-reviewer[bot]"
-                                ),
-                            },
+                            "author": copilot_graphql_actor(),
                         }
                     ]
                     if finding_id
@@ -1961,10 +2149,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                             else "### 🟢 Approval recommended"
                         ),
                         "commit": {"oid": head},
-                        "author": {
-                            "id": "ACTOR_COPILOT_001",
-                            "login": "copilot-pull-request-reviewer[bot]",
-                        },
+                        "author": copilot_graphql_actor(),
                         "comments": {
                             "pageInfo": {"hasNextPage": False},
                             "nodes": comments,
@@ -2010,6 +2195,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                         )
                     ),
                     "author": {
+                        "__typename": "User",
                         "id": "ACTOR_COORDINATOR_001",
                         "login": "independent-coordinator",
                     },
@@ -2030,6 +2216,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                         )
                     ),
                     "author": {
+                        "__typename": "User",
                         "id": "ACTOR_COORDINATOR_001",
                         "login": "independent-coordinator",
                     },
@@ -2194,8 +2381,13 @@ class TrustedGitHubGateTests(unittest.TestCase):
     def test_fixture_query_shape_matches_actor_fragment_response(self):
         payload = self.adapter()
         pr = payload["data"]["repository"]["pullRequest"]
-        self.assertIn("id", pr["author"])
-        self.assertIn("id", payload["data"]["repository"]["owner"])
+        self.assertEqual(payload["data"]["viewer"]["__typename"], "User")
+        self.assertEqual(payload["data"]["repository"]["owner"]["__typename"], "User")
+        self.assertEqual(pr["author"]["__typename"], "User")
+        self.assertEqual(
+            pr["reviews"]["nodes"][0]["author"],
+            copilot_graphql_actor(),
+        )
         self.assertIsNone(pr["commits"]["nodes"][0]["commit"]["pushedDate"])
         self.assertEqual(pr["baseRefOid"], BASE)
 

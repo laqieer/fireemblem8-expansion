@@ -29,6 +29,22 @@ READ_ONLY_PERMISSIONS = ("contents:read",)
 READ_ONLY_ACTIONS = ("read-candidate", "emit-local-report")
 ARCHITECTURE_ACTIONS = {"decompose", "redesign", "retain-with-evidence"}
 ACTOR_KINDS = {"bot", "service", "user"}
+SERVICE_ACTOR_SOURCE = "local-service"
+GITHUB_GRAPHQL_ACTOR_SOURCE = "github-graphql"
+GITHUB_REST_ACTOR_SOURCE = "github-rest"
+ACTOR_SOURCES = {
+    SERVICE_ACTOR_SOURCE,
+    GITHUB_GRAPHQL_ACTOR_SOURCE,
+    GITHUB_REST_ACTOR_SOURCE,
+}
+ACTOR_TYPE_TO_KIND = {
+    "Bot": "bot",
+    "EnterpriseOwner": "user",
+    "EnterpriseUserAccount": "user",
+    "Mannequin": "user",
+    "Organization": "user",
+    "User": "user",
+}
 LARGE_TRIGGERS = {"changed-files", "changed-lines", "major-boundaries"}
 LIMIT_CAPS = {
     "max_duration_minutes": 60,
@@ -107,6 +123,13 @@ ASSERTION_INPUT_PATHS = (
     "tests/workflows/test_build_ci_topology.py",
 )
 COPILOT_ACTOR = "copilot-pull-request-reviewer"
+COPILOT_GRAPHQL_NODE_ID = "BOT_kgDOCnlnWA"
+COPILOT_GRAPHQL_LOGIN = COPILOT_ACTOR
+COPILOT_GRAPHQL_TYPE = "Bot"
+COPILOT_REST_NODE_ID = COPILOT_GRAPHQL_NODE_ID
+COPILOT_REST_LOGIN = "copilot-pull-request-reviewer[bot]"
+COPILOT_REST_TYPE = "Bot"
+COPILOT_REST_DATABASE_ID = 175728472
 COPILOT_APPROVAL_MARKER = "### 🟢 Approval recommended"
 COPILOT_CHANGES_MARKER = "### 🟡 Changes recommended"
 COPILOT_CLOSER_LOOK_MARKER = "### 🔵 Needs a closer look"
@@ -615,6 +638,8 @@ def normalize_actor_login(value: Any, label: str = "actor login") -> str:
     login = reporter.expect_string(value, label)
     if ACTOR_LOGIN_RE.fullmatch(login) is None:
         raise reporter.PilotDataError(f"{label} is not a valid actor login")
+    # This normalized family is for display/alias diagnostics only. Exact
+    # authoritative actor authentication uses source/type/node/database IDs.
     normalized = login.removeprefix("@").casefold()
     while True:
         stripped = ACTOR_BOT_SUFFIX_RE.sub("", normalized)
@@ -624,6 +649,43 @@ def normalize_actor_login(value: Any, label: str = "actor login") -> str:
     if not normalized:
         raise reporter.PilotDataError(f"{label} has no normalized identity")
     return normalized
+
+
+def actor_kind_from_source_type(
+    source: str, type_name: str, label: str
+) -> str:
+    if source not in {
+        GITHUB_GRAPHQL_ACTOR_SOURCE,
+        GITHUB_REST_ACTOR_SOURCE,
+    }:
+        raise reporter.PilotDataError(
+            f"{label} source {source!r} does not carry a GitHub actor type"
+        )
+    kind = ACTOR_TYPE_TO_KIND.get(type_name)
+    if kind is None:
+        raise reporter.PilotDataError(
+            f"{label} must use a supported GitHub actor type"
+        )
+    return kind
+
+
+def is_authoritative_copilot_actor(actor: dict[str, Any]) -> bool:
+    if actor["source"] == GITHUB_GRAPHQL_ACTOR_SOURCE:
+        return (
+            actor["kind"] == "bot"
+            and actor["type"] == COPILOT_GRAPHQL_TYPE
+            and actor["id"] == COPILOT_GRAPHQL_NODE_ID
+            and actor["login"] == COPILOT_GRAPHQL_LOGIN
+        )
+    if actor["source"] == GITHUB_REST_ACTOR_SOURCE:
+        return (
+            actor["kind"] == "bot"
+            and actor["type"] == COPILOT_REST_TYPE
+            and actor["id"] == COPILOT_REST_NODE_ID
+            and actor["login"] == COPILOT_REST_LOGIN
+            and actor["database_id"] == COPILOT_REST_DATABASE_ID
+        )
+    return False
 
 
 def classify_copilot_body(value: Any, label: str = "Copilot review body") -> str:
@@ -1199,13 +1261,50 @@ def build_assertion_requests(
     )
 
 
-def _validate_actors(value: Any) -> dict[str, dict[str, str]]:
+def _validate_actors(value: Any) -> dict[str, dict[str, Any]]:
     actors = {}
     normalized = []
     for index, raw in enumerate(reporter.expect_list(value, "evidence.actors")):
         label = f"evidence.actors[{index}]"
         actor = reporter.expect_object(raw, label)
-        reporter.expect_keys(actor, label, ("id", "login", "kind"))
+        source = reporter.expect_enum(
+            actor.get("source"), ACTOR_SOURCES, f"{label}.source"
+        )
+        if source == SERVICE_ACTOR_SOURCE:
+            reporter.expect_keys(actor, label, ("id", "login", "kind", "source"))
+            kind = reporter.expect_enum(actor["kind"], {"service"}, f"{label}.kind")
+            type_name = None
+            database_id = None
+        elif source == GITHUB_GRAPHQL_ACTOR_SOURCE:
+            reporter.expect_keys(
+                actor, label, ("id", "login", "kind", "source", "type")
+            )
+            type_name = reporter.expect_string(actor["type"], f"{label}.type")
+            kind = actor_kind_from_source_type(
+                source, type_name, f"{label}.type"
+            )
+            if actor["kind"] != kind:
+                raise reporter.PilotDataError(
+                    f"{label}.kind does not match the explicit GitHub actor type"
+                )
+            database_id = None
+        else:
+            reporter.expect_keys(
+                actor,
+                label,
+                ("id", "login", "kind", "source", "type", "database_id"),
+            )
+            type_name = reporter.expect_string(actor["type"], f"{label}.type")
+            kind = actor_kind_from_source_type(
+                source, type_name, f"{label}.type"
+            )
+            if actor["kind"] != kind:
+                raise reporter.PilotDataError(
+                    f"{label}.kind does not match the explicit GitHub actor type"
+                )
+            database_id = reporter.expect_int(
+                actor["database_id"], f"{label}.database_id", 1
+            )
         actor_id = reporter.expect_string(actor["id"], f"{label}.id")
         if actor_id in actors:
             raise reporter.PilotDataError(f"duplicate actor ID {actor_id!r}")
@@ -1216,9 +1315,10 @@ def _validate_actors(value: Any) -> dict[str, dict[str, str]]:
             "id": actor_id,
             "login": login,
             "normalized_login": normalized_login,
-            "kind": reporter.expect_enum(
-                actor["kind"], ACTOR_KINDS, f"{label}.kind"
-            ),
+            "kind": reporter.expect_enum(kind, ACTOR_KINDS, f"{label}.kind"),
+            "source": source,
+            "type": type_name,
+            "database_id": database_id,
         }
     reporter.expect_unique(normalized, "evidence actor identities")
     return actors
@@ -2593,13 +2693,9 @@ def _validate_roles_and_causality(
     remote_actors = []
     for review in evidence["remote_reviews"]:
         actor = actors.get(review["reviewer_actor_id"])
-        if (
-            actor is None
-            or actor["kind"] != "bot"
-            or actor["normalized_login"] != COPILOT_ACTOR
-        ):
+        if actor is None or not is_authoritative_copilot_actor(actor):
             raise reporter.PilotDataError(
-                "remote review actor is not canonical GitHub Copilot"
+                "remote review actor is not the exact authoritative GitHub Copilot Bot"
             )
         if actor["normalized_login"] == implementer["normalized_login"]:
             raise reporter.PilotDataError(
@@ -2657,6 +2753,11 @@ def _validate_roles_and_causality(
         if finding["_created"] > evidence["captured"]:
             raise reporter.PilotDataError(
                 f"finding {finding['id']!r} follows evidence capture"
+            )
+    for finding in evidence["findings"].values():
+        if not is_authoritative_copilot_actor(actors[finding["author_actor_id"]]):
+            raise reporter.PilotDataError(
+                f"finding {finding['id']!r} author is not the exact authoritative GitHub Copilot Bot"
             )
     for event in evidence["force_push_events"]:
         committed = authority["commits"][event["candidate_sha"]][
@@ -2730,6 +2831,10 @@ def _validate_findings_and_sweeps(
         if finding["candidate_sha"] != review["candidate_sha"]:
             raise reporter.PilotDataError(
                 f"finding {finding_id!r} has stale candidate binding"
+            )
+        if finding_id in remote and finding["author_actor_id"] != review["reviewer_actor_id"]:
+            raise reporter.PilotDataError(
+                f"finding {finding_id!r} author does not match its exact remote review actor"
             )
         lower = review.get("_started", evidence["pull_request"]["_created"])
         upper = review.get("_completed", review.get("_submitted"))

@@ -20,6 +20,7 @@ COMPLETE = FIXTURES / "review_family_complete.json"
 COMPLETE_EVIDENCE = FIXTURES / "review_family_complete_evidence.json"
 DEFAULT = FIXTURES / "review_family_default.json"
 DEFAULT_EVIDENCE = FIXTURES / "review_family_default_evidence.json"
+COPILOT_ACTOR_ID = review_family.COPILOT_GRAPHQL_NODE_ID
 
 
 def load(path):
@@ -321,8 +322,60 @@ class ReviewFamilyContractTests(unittest.TestCase):
         self.assert_rejected(contract, evidence, "actor identities")
 
         contract, evidence = fixture()
-        evidence["actors"][2]["login"] = "other-reviewer[bot]"
-        self.assert_rejected(contract, evidence, "canonical GitHub Copilot")
+        evidence["actors"][2]["login"] = "copilot-pull-request-reviewer-bot"
+        self.assert_rejected(
+            contract,
+            evidence,
+            "exact authoritative GitHub Copilot Bot",
+        )
+
+        contract, evidence = fixture("default")
+        evidence["actors"][1] = {
+            "id": review_family.COPILOT_REST_NODE_ID,
+            "login": review_family.COPILOT_REST_LOGIN,
+            "kind": "bot",
+            "source": review_family.GITHUB_REST_ACTOR_SOURCE,
+            "type": review_family.COPILOT_REST_TYPE,
+            "database_id": review_family.COPILOT_REST_DATABASE_ID,
+        }
+        report = self.report(contract, evidence)
+        self.assertTrue(report["gates"]["current_candidate_reviewed"])
+
+        for field, value in (
+            ("login", "copilot-pull-request-reviewer[bot]",),
+            ("id", "BOT_kgDOCnlnWB",),
+            ("type", "User",),
+        ):
+            contract, evidence = fixture()
+            evidence["actors"][2][field] = value
+            if field == "type":
+                evidence["actors"][2]["kind"] = "user"
+            with self.subTest(field=field, value=value):
+                self.assert_rejected(
+                    contract,
+                    evidence,
+                    "exact authoritative GitHub Copilot Bot",
+                )
+
+        contract, evidence = fixture("default")
+        evidence["actors"][1]["source"] = review_family.GITHUB_REST_ACTOR_SOURCE
+        evidence["actors"][1]["login"] = review_family.COPILOT_REST_LOGIN
+        evidence["actors"][1]["type"] = review_family.COPILOT_REST_TYPE
+        evidence["actors"][1]["database_id"] = review_family.COPILOT_REST_DATABASE_ID + 1
+        self.assert_rejected(
+            contract,
+            evidence,
+            "exact authoritative GitHub Copilot Bot",
+        )
+
+    def test_remote_findings_must_match_the_exact_review_actor(self):
+        contract, evidence = fixture()
+        evidence["findings"][0]["author_actor_id"] = "ACTOR_PRE_REVIEWER_001"
+        self.assert_rejected(
+            contract,
+            evidence,
+            "exact remote review actor|exact authoritative GitHub Copilot Bot",
+        )
 
     def test_changes_requested_body_and_unresolved_threads_never_merge(self):
         contract, evidence = fixture("default")
@@ -347,7 +400,7 @@ class ReviewFamilyContractTests(unittest.TestCase):
                 "id": 1002,
                 "node_id": "REMOTE_REVIEW_002",
                 "round": 2,
-                "reviewer_actor_id": "ACTOR_COPILOT_001",
+                "reviewer_actor_id": COPILOT_ACTOR_ID,
                 "candidate_sha": CANDIDATE,
                 "submitted_at": "2026-08-31T03:12:30Z",
                 "state": "COMMENTED",

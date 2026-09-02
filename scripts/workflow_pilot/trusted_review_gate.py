@@ -88,17 +88,17 @@ NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 # obtains id through a Node fragment; viewer is a concrete User.
 GRAPHQL_QUERY = r"""
 query ReviewFamilyEvidence($owner: String!, $name: String!, $number: Int!) {
-  viewer { id login }
+  viewer { __typename id login }
   repository(owner: $owner, name: $name) {
     viewerPermission
-    owner { login ... on Node { id } }
+    owner { __typename login ... on Node { id } }
     pullRequest(number: $number) {
       id
       number
       createdAt
       baseRefOid
       headRefOid
-      author { login ... on Node { id } }
+      author { __typename login ... on Node { id } }
       commits(first: 100) {
         pageInfo { hasNextPage }
         nodes { commit { id oid pushedDate committedDate } }
@@ -122,14 +122,14 @@ query ReviewFamilyEvidence($owner: String!, $name: String!, $number: Int!) {
           submittedAt
           body
           commit { oid }
-          author { login ... on Node { id } }
+          author { __typename login ... on Node { id } }
           comments(first: 100) {
             pageInfo { hasNextPage }
             nodes {
               id
               createdAt
               body
-              author { login ... on Node { id } }
+              author { __typename login ... on Node { id } }
             }
           }
         }
@@ -144,7 +144,7 @@ query ReviewFamilyEvidence($owner: String!, $name: String!, $number: Int!) {
             nodes {
               id
               createdAt
-              author { login ... on Node { id } }
+              author { __typename login ... on Node { id } }
               pullRequestReview { id }
             }
           }
@@ -156,7 +156,7 @@ query ReviewFamilyEvidence($owner: String!, $name: String!, $number: Int!) {
           id
           createdAt
           body
-          author { login ... on Node { id } }
+          author { __typename login ... on Node { id } }
         }
       }
     }
@@ -906,7 +906,7 @@ def build_live_evidence_payload(
     original_receipt_sha256: str,
     pull_request: dict[str, Any],
     authoritative_trigger: dict[str, Any] | None,
-    actors: list[dict[str, str]],
+    actors: list[dict[str, Any]],
     pre_reviews: list[dict[str, Any]],
     pre_review_findings: list[dict[str, Any]],
     remote_reviews: list[dict[str, Any]],
@@ -1347,17 +1347,60 @@ def _expect_page_complete(connection: Any, label: str) -> list[Any]:
     return reporter.expect_list(connection["nodes"], f"{label}.nodes")
 
 
-def _actor(raw: Any, kind: str, label: str) -> dict[str, str]:
+def _actor(raw: Any, label: str) -> dict[str, Any]:
+    _expect_bound_modules()
     raw = reporter.expect_object(raw, label)
-    reporter.expect_keys(raw, label, ("id", "login"))
-    return {
-        "id": reporter.expect_string(raw["id"], f"{label}.id"),
-        "login": reporter.expect_string(raw["login"], f"{label}.login"),
-        "kind": kind,
-    }
+    if set(raw) == {"__typename", "id", "login"}:
+        type_name = reporter.expect_string(raw["__typename"], f"{label}.__typename")
+        return {
+            "id": reporter.expect_string(raw["id"], f"{label}.id"),
+            "login": reporter.expect_string(raw["login"], f"{label}.login"),
+            "kind": review_family.actor_kind_from_source_type(
+                review_family.GITHUB_GRAPHQL_ACTOR_SOURCE,
+                type_name,
+                f"{label}.__typename",
+            ),
+            "source": review_family.GITHUB_GRAPHQL_ACTOR_SOURCE,
+            "type": type_name,
+        }
+    if set(raw) == {"type", "node_id", "id", "login"}:
+        type_name = reporter.expect_string(raw["type"], f"{label}.type")
+        return {
+            "id": reporter.expect_string(raw["node_id"], f"{label}.node_id"),
+            "login": reporter.expect_string(raw["login"], f"{label}.login"),
+            "kind": review_family.actor_kind_from_source_type(
+                review_family.GITHUB_REST_ACTOR_SOURCE,
+                type_name,
+                f"{label}.type",
+            ),
+            "source": review_family.GITHUB_REST_ACTOR_SOURCE,
+            "type": type_name,
+            "database_id": reporter.expect_int(raw["id"], f"{label}.id", 1),
+        }
+    raise reporter.PilotDataError(
+        f"{label} must use the explicit GraphQL or REST actor shape"
+    )
 
 
-def _collect_actors(records: list[dict[str, str]]) -> list[dict[str, str]]:
+def _graphql_actor(raw: Any, label: str) -> dict[str, Any]:
+    actor = _actor(raw, label)
+    if actor["source"] != review_family.GITHUB_GRAPHQL_ACTOR_SOURCE:
+        raise reporter.PilotDataError(
+            f"{label} must use the authoritative GraphQL actor shape"
+        )
+    return actor
+
+
+def _require_authoritative_copilot_actor(
+    actor: dict[str, Any], label: str
+) -> None:
+    if not review_family.is_authoritative_copilot_actor(actor):
+        raise reporter.PilotDataError(
+            f"{label} is not the exact authoritative GitHub Copilot Bot"
+        )
+
+
+def _collect_actors(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     actors = {}
     for actor in records:
         existing = actors.get(actor["id"])
@@ -1370,7 +1413,7 @@ def _collect_actors(records: list[dict[str, str]]) -> list[dict[str, str]]:
 
 
 def _parse_disposition_comments(
-    comments: list[Any], actors: list[dict[str, str]]
+    comments: list[Any], actors: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     prefix = "workflow-review-family-disposition:v2 "
     result = []
@@ -1378,7 +1421,7 @@ def _parse_disposition_comments(
         label = f"GitHub pull-request comment[{index}]"
         comment = reporter.expect_object(raw, label)
         reporter.expect_keys(comment, label, ("id", "createdAt", "body", "author"))
-        author = _actor(comment["author"], "user", f"{label}.author")
+        author = _graphql_actor(comment["author"], f"{label}.author")
         actors.append(author)
         body = reporter.expect_string(comment["body"], f"{label}.body", allow_empty=True)
         if not body.startswith(prefix):
@@ -1445,7 +1488,7 @@ def collect_live_evidence_bytes(
     reporter.expect_keys(payload, "GitHub GraphQL response", ("data",))
     data = reporter.expect_object(payload["data"], "GitHub GraphQL data")
     reporter.expect_keys(data, "GitHub GraphQL data", ("viewer", "repository"))
-    viewer = _actor(data["viewer"], "user", "GitHub viewer")
+    viewer = _graphql_actor(data["viewer"], "GitHub viewer")
     repository = reporter.expect_object(data["repository"], "GitHub repository")
     reporter.expect_keys(
         repository,
@@ -1488,8 +1531,8 @@ def collect_live_evidence_bytes(
         raise reporter.PilotDataError(
             "immutable pre-review does not bind original first-reviewed head"
         )
-    author = _actor(pr["author"], "user", "GitHub pull-request author")
-    owner = _actor(repository["owner"], "user", "GitHub repository owner")
+    author = _graphql_actor(pr["author"], "GitHub pull-request author")
+    owner = _graphql_actor(repository["owner"], "GitHub repository owner")
     actor_records = [viewer, author, owner]
 
     # pushedDate is nullable metadata and is never reconstructed into head
@@ -1563,13 +1606,6 @@ def collect_live_evidence_bytes(
                 "comments",
             ),
         )
-        review_actor = _actor(review["author"], "bot", f"{label}.author")
-        actor_records.append(review_actor)
-        if (
-            review_family.normalize_actor_login(review_actor["login"])
-            != review_family.COPILOT_ACTOR
-        ):
-            continue
         comments = _expect_page_complete(review["comments"], f"{label}.comments")
         state = reporter.expect_enum(
             review["state"],
@@ -1580,6 +1616,15 @@ def collect_live_evidence_bytes(
         body_classification = review_family.classify_copilot_body(
             body, f"{label}.body"
         )
+        review_actor = _graphql_actor(review["author"], f"{label}.author")
+        actor_records.append(review_actor)
+        is_authoritative_copilot = review_family.is_authoritative_copilot_actor(
+            review_actor
+        )
+        if not is_authoritative_copilot:
+            if body_classification != "unknown" or comments:
+                _require_authoritative_copilot_actor(review_actor, f"{label}.author")
+            continue
         review_commit = reporter.expect_object(review["commit"], f"{label}.commit")
         reporter.expect_keys(review_commit, f"{label}.commit", ("oid",))
         review_candidate = reporter.expect_sha(
@@ -1594,10 +1639,15 @@ def collect_live_evidence_bytes(
                 comment_label,
                 ("id", "createdAt", "body", "author"),
             )
-            finding_author = _actor(
-                comment["author"], "bot", f"{comment_label}.author"
-            )
+            finding_author = _graphql_actor(comment["author"], f"{comment_label}.author")
             actor_records.append(finding_author)
+            _require_authoritative_copilot_actor(
+                finding_author, f"{comment_label}.author"
+            )
+            if finding_author["id"] != review_actor["id"]:
+                raise reporter.PilotDataError(
+                    f"{comment_label}.author does not match the exact authoritative review actor"
+                )
             finding_id = reporter.expect_string(
                 comment["id"], f"{comment_label}.id"
             )
@@ -1643,6 +1693,7 @@ def collect_live_evidence_bytes(
 
     threads = []
     finding_to_thread = {}
+    finding_to_thread_actor = {}
     for index, raw_thread in enumerate(
         _expect_page_complete(pr["reviewThreads"], "GitHub pull-request threads")
     ):
@@ -1658,10 +1709,15 @@ def collect_live_evidence_bytes(
             f"{label}.comments[0]",
             ("id", "createdAt", "author", "pullRequestReview"),
         )
+        thread_author = _graphql_actor(
+            first["author"], f"{label}.comments[0].author"
+        )
+        actor_records.append(thread_author)
         finding_id = reporter.expect_string(
             first["id"], f"{label}.comments[0].id"
         )
         finding_to_thread[finding_id] = thread["id"]
+        finding_to_thread_actor[finding_id] = thread_author["id"]
         threads.append(
             {
                 "node_id": reporter.expect_string(thread["id"], f"{label}.id"),
@@ -1684,6 +1740,10 @@ def collect_live_evidence_bytes(
             raise reporter.PilotDataError(
                 f"remote finding {finding_id!r} has no review thread"
             )
+        if finding_to_thread_actor.get(finding_id) != finding["author_actor_id"]:
+            raise reporter.PilotDataError(
+                f"remote finding {finding_id!r} thread author does not match the exact authoritative review actor"
+            )
 
     comment_nodes = _expect_page_complete(
         pr["comments"], "GitHub pull-request comments"
@@ -1694,6 +1754,7 @@ def collect_live_evidence_bytes(
             "id": review_report["reviewer_actor_id"],
             "login": review_report["reviewer_login"],
             "kind": "service",
+            "source": review_family.SERVICE_ACTOR_SOURCE,
         }
     )
     actors = _collect_actors(actor_records)

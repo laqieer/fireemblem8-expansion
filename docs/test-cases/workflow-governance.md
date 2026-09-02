@@ -1493,8 +1493,14 @@ game behavior needs a compensating change.
    base-tree object identity for the initializer, gate, reporter, family
    validator, checker, and every transitive local import.
 4. Inspect the GraphQL query and fixture. Validate every polymorphic Actor ID
-   through `... on Node { id }`, exact `baseRefOid`/`headRefOid`, bounded
-   pagination, review bodies/states/threads, and nullable `pushedDate`.
+   through `... on Node { id }` plus exact `__typename`, exact
+   `baseRefOid`/`headRefOid`, bounded pagination, review bodies/states/threads,
+   and nullable `pushedDate`. The authoritative Copilot review/finding actor is
+   the exact GraphQL Bot tuple `(__typename: Bot, id: BOT_kgDOCnlnWA, login:
+   copilot-pull-request-reviewer)`. If a fixture explicitly models REST actor
+   shape instead, require the exact REST tuple `(type: Bot, node_id:
+   BOT_kgDOCnlnWA, id: 175728472, login:
+   copilot-pull-request-reviewer[bot])`.
 5. Confirm a synthetic exact base without the trusted checker or decision
    consumer takes explicit `introduction` mode. Require false merge/push
    authority plus an external-coordinator requirement. Do not substitute a

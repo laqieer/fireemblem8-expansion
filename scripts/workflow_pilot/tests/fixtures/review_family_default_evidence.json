@@ -38,12 +38,15 @@
     {
       "id": "ACTOR_IMPLEMENTER_001",
       "login": "implementation-agent",
-      "kind": "service"
+      "kind": "service",
+      "source": "local-service"
     },
     {
-      "id": "ACTOR_COPILOT_001",
-      "login": "copilot-pull-request-reviewer[bot]",
-      "kind": "bot"
+      "id": "BOT_kgDOCnlnWA",
+      "login": "copilot-pull-request-reviewer",
+      "kind": "bot",
+      "source": "github-graphql",
+      "type": "Bot"
     }
   ],
   "pre_reviews": [],
@@ -53,7 +56,7 @@
       "id": 2001,
       "node_id": "REMOTE_REVIEW_DEFAULT_001",
       "round": 1,
-      "reviewer_actor_id": "ACTOR_COPILOT_001",
+      "reviewer_actor_id": "BOT_kgDOCnlnWA",
       "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
       "submitted_at": "2026-08-31T03:12:00Z",
       "state": "COMMENTED",

@@ -1,12 +1,14 @@
 {
   "data": {
     "viewer": {
+      "__typename": "User",
       "id": "ACTOR_COLLECTOR_001",
       "login": "fresh-collector"
     },
     "repository": {
       "viewerPermission": "READ",
       "owner": {
+        "__typename": "User",
         "id": "ACTOR_OWNER_001",
         "login": "repository-owner"
       },
@@ -17,6 +19,7 @@
         "baseRefOid": "853cff1eb7bdb3ecce46f780473e81be73e24315",
         "headRefOid": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
         "author": {
+          "__typename": "User",
           "id": "ACTOR_IMPLEMENTER_001",
           "login": "implementation-agent"
         },
@@ -56,8 +59,9 @@
                 "oid": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45"
               },
               "author": {
-                "id": "ACTOR_COPILOT_001",
-                "login": "copilot-pull-request-reviewer[bot]"
+                "__typename": "Bot",
+                "id": "BOT_kgDOCnlnWA",
+                "login": "copilot-pull-request-reviewer"
               },
               "comments": {
                 "pageInfo": {

@@ -23,6 +23,7 @@ ASSERTION_INPUTS = review_base_checker.ASSERTION_INPUT_PATHS
 ISSUE_179_URL = "https://github.com/laqieer/fireemblem8-expansion/issues/179"
 REPOSITORY = "laqieer/fireemblem8-expansion"
 PULL_REQUEST = 189
+COPILOT_ACTOR_ID = review_family.COPILOT_GRAPHQL_NODE_ID
 
 
 def git_text(root, *arguments):
@@ -61,6 +62,14 @@ def changed_files(changes):
 
 def utc_text(value):
     return value.replace("+00:00", "Z")
+
+
+def copilot_graphql_actor():
+    return {
+        "__typename": review_family.COPILOT_GRAPHQL_TYPE,
+        "id": COPILOT_ACTOR_ID,
+        "login": review_family.COPILOT_GRAPHQL_LOGIN,
+    }
 
 
 class ReviewBaseCheckerTests(unittest.TestCase):
@@ -666,10 +675,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                     "id": finding["node_id"],
                     "createdAt": finding["created_at"],
                     "body": "member-specific finding",
-                    "author": {
-                        "id": finding["author_actor_id"],
-                        "login": "copilot-pull-request-reviewer[bot]",
-                    },
+                    "author": copilot_graphql_actor(),
                 }
                 for finding in remote_findings
                 if finding["review_id"] == review["node_id"]
@@ -682,10 +688,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                     "submittedAt": review["submitted_at"],
                     "body": review["body"],
                     "commit": {"oid": review["candidate_sha"]},
-                    "author": {
-                        "id": review["reviewer_actor_id"],
-                        "login": "copilot-pull-request-reviewer[bot]",
-                    },
+                    "author": copilot_graphql_actor(),
                     "comments": {
                         "pageInfo": {"hasNextPage": False},
                         "nodes": comments,
@@ -712,17 +715,29 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 )
         return {
             "data": {
-                "viewer": {"id": "VIEWER", "login": "viewer"},
+                "viewer": {
+                    "__typename": "User",
+                    "id": "VIEWER",
+                    "login": "viewer",
+                },
                 "repository": {
                     "viewerPermission": "READ",
-                    "owner": {"id": "OWNER", "login": "owner"},
+                    "owner": {
+                        "__typename": "User",
+                        "id": "OWNER",
+                        "login": "owner",
+                    },
                     "pullRequest": {
                         "id": f"PR_{PULL_REQUEST}",
                         "number": PULL_REQUEST,
                         "createdAt": "2026-09-01T00:00:00Z",
                         "baseRefOid": self.base,
                         "headRefOid": head_sha,
-                        "author": {"id": "IMPLEMENTER_1", "login": "implementer"},
+                        "author": {
+                            "__typename": "User",
+                            "id": "IMPLEMENTER_1",
+                            "login": "implementer",
+                        },
                         "commits": {
                             "pageInfo": {"hasNextPage": False},
                             "nodes": [
@@ -830,7 +845,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             "id": 1001,
             "node_id": "REMOTE_REVIEW_1",
             "round": 1,
-            "reviewer_actor_id": "COPILOT",
+            "reviewer_actor_id": COPILOT_ACTOR_ID,
             "candidate_sha": self.head1,
             "submitted_at": "2026-09-01T00:02:00Z",
             "state": "COMMENTED",
@@ -844,7 +859,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             "id": 1002,
             "node_id": "REMOTE_REVIEW_2",
             "round": 2,
-            "reviewer_actor_id": "COPILOT",
+            "reviewer_actor_id": COPILOT_ACTOR_ID,
             "candidate_sha": second_head,
             "submitted_at": "2026-09-01T00:04:00Z",
             "state": "COMMENTED",
@@ -863,7 +878,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 "review_id": "REMOTE_REVIEW_1",
                 "candidate_sha": self.head1,
                 "created_at": "2026-09-01T00:01:30Z",
-                "author_actor_id": "COPILOT",
+                "author_actor_id": COPILOT_ACTOR_ID,
                 "family": "action",
             }
         ]
@@ -1037,7 +1052,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 "review_id": "REMOTE_REVIEW_1",
                 "candidate_sha": self.head1,
                 "created_at": "2026-09-01T00:01:30Z",
-                "author_actor_id": "COPILOT",
+                "author_actor_id": COPILOT_ACTOR_ID,
                 "family": "wire",
             }
         ]
@@ -1075,7 +1090,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 "review_id": "REMOTE_REVIEW_1",
                 "candidate_sha": self.head1,
                 "created_at": "2026-09-01T00:01:30Z",
-                "author_actor_id": "COPILOT",
+                "author_actor_id": COPILOT_ACTOR_ID,
                 "family": "generated",
             }
         ]

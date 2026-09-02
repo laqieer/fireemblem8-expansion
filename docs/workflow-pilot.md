@@ -35,9 +35,13 @@ The frozen source semantics are:
 - Issue identities are the closing-issue relationships returned by GitHub for
   those PRs. An authoritative empty relationship is reported as excluded from
   issue-to-merge; a referenced issue with no fixture record is an error.
-- Review identities are submitted
-  `copilot-pull-request-reviewer[bot]` reviews on those PRs. Inline Copilot
-  comments are review findings. GitHub exposes each thread's current
+- Review identities are submitted Copilot reviews on those PRs. The immutable
+  issue #176 baseline preserves the historical REST author tuple
+  `type: Bot`, `node_id: BOT_kgDOCnlnWA`, `id: 175728472`, and
+  `login: copilot-pull-request-reviewer[bot]`; the trusted live review gate
+  separately authenticates the same actor from GraphQL only as exact
+  `__typename: Bot`, `id: BOT_kgDOCnlnWA`, `login: copilot-pull-request-reviewer`.
+  Inline Copilot comments are review findings. GitHub exposes each thread's current
   `isResolved`/`resolvedBy` state, but neither the review-thread GraphQL object
   nor the PR timeline supplies a historical resolution timestamp. The
   fixture therefore preserves finding identities and current resolution state
@@ -642,9 +646,13 @@ the documented exact `### 🟢 Approval recommended` marker, or its entire body
 is the legacy exact `No issues found.` marker. Exact
 `### 🟡 Changes recommended` and `### 🔵 Needs a closer look` markers,
 unknown/empty bodies, nested/spoofed markers, or conflicting later top-level
-markers are non-clean. PR, actor, local review/action/finding, remote
-review/finding/thread, force-push, and disposition identities share one
-case-normalized uniqueness check.
+markers are non-clean. Authoritative Copilot authentication never uses
+suffix-normalized login families: each trusted review body and inline finding
+must bind the exact GraphQL Bot tuple above, or the exact REST tuple above only
+when a fixture explicitly declares REST actor shape. Case/suffix normalization
+remains limited to non-authoritative display and alias checks. PR, actor, local
+review/action/finding, remote review/finding/thread, force-push, and
+disposition identities still share one case-normalized uniqueness check.
 
 ### Base-owned executable evidence
 
