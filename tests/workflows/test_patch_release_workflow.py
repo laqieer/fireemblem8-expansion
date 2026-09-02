@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import http.server
 import io
+import itertools
 import json
 import os
 import re
@@ -14,12 +15,14 @@ import socket
 import subprocess
 import tempfile
 import textwrap
+import time
 import threading
 import unittest
 from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
+from scripts.workflow_pilot import publisher_shell_contract
 from scripts.modernize import patch_release
 
 
@@ -27,6 +30,8 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
 PATCH_RELEASE_CASE = ROOT / "docs" / "test-cases" / "patch-release.md"
 PATCH_RELEASE_OVERVIEW = ROOT / "docs" / "patch_release.md"
+PATCH_RELEASE_REGISTRY = ROOT / "docs" / "test-cases" / "registry.json"
+MERGED_MASTER_771 = "771d38c5a531f2d63b269220727b02aa820cc3d4"
 ARTIFACT_FILENAMES = (
     "README.txt",
     "fireemblem8-expansion-all-locales-all-features-aapcs.bps",
@@ -37,28 +42,24 @@ AUDITED_PATCH_TOOL_FILES = (
     "scripts/modernize/bps_patch.py",
     "scripts/modernize/verify_rom_header.py",
 )
+SUPERVISOR_PARENT_REMOUNT_SEQUENCE = (
+    "remount",
+    "ro",
+    "nosuid",
+    "nodev",
+    "noexec",
+)
+SUPERVISOR_PARENT_REMOUNT_INSERTION_MARKER = (
+    "        /usr/bin/mount -t tmpfs \\\n"
+    "          -o nosuid,mode=0755,size=4m builder-dev /dev"
+)
 
 
 def parse_patch_release_run_commands(workflow: str) -> list[list[list[str]]]:
     """Parse run scalars from the publisher job's YAML sequence structure."""
-    job = re.search(
-        r"(?ms)^  patch-release:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
-        workflow,
-    )
-    if job is None:
-        raise AssertionError("workflow must define a jobs.patch-release job")
-
-    steps = job.group("body").split("\n    steps:\n", 1)
-    if len(steps) != 2:
-        raise AssertionError("publisher job must define a steps sequence")
-
-    lines = steps[1].splitlines()
-    step_starts = [
-        index for index, line in enumerate(lines) if re.match(r"^    - ", line)
-    ]
     commands = []
-    for start, end in zip(step_starts, step_starts[1:] + [len(lines)]):
-        step = lines[start:end]
+    for step_block in patch_release_step_blocks(workflow):
+        step = step_block.splitlines()
         run = None
         for index, line in enumerate(step):
             inline = re.match(r"^    - run: (?P<value>.+)$", line)
@@ -67,28 +68,24 @@ def parse_patch_release_run_commands(workflow: str) -> list[list[list[str]]]:
             if match is None:
                 continue
             value = match.group("value")
-            if value == "|":
-                physical = [
-                    following[8:]
-                    for following in step[index + 1:]
-                    if following.startswith("        ")
-                ]
-                run = []
-                continued = ""
-                for line in physical:
-                    logical = continued + line.strip()
-                    if logical.endswith("\\"):
-                        continued = logical[:-1] + " "
-                        continue
-                    run.append(logical)
-                    continued = ""
-                if continued:
-                    raise AssertionError("publisher run block has dangling continuation")
+            if value.startswith("|"):
+                script = named_step_run_script_from_block(step_block)
+                try:
+                    run = [
+                        shlex.split(logical)
+                        for logical in publisher_shell_contract.bash_logical_lines(
+                            script,
+                            label="publisher run block",
+                        )
+                        if logical.strip() and not logical.lstrip().startswith("#")
+                    ]
+                except ValueError as error:
+                    raise AssertionError(str(error)) from error
             else:
-                run = [value]
+                run = [shlex.split(value)]
             break
         if run is not None:
-            commands.append([shlex.split(line) for line in run if line])
+            commands.append(run)
     return commands
 
 
@@ -112,42 +109,1174 @@ def patch_release_step_blocks(workflow: str) -> list[str]:
     ]
 
 
-def named_step_run_script(workflow: str, name: str) -> str:
+def named_step_run_script_from_block(step_block: str) -> str:
+    try:
+        return publisher_shell_contract.literal_run_script_from_step_block(
+            step_block,
+            label="publisher run block",
+        )
+    except ValueError as error:
+        raise AssertionError(str(error)) from error
+
+
+def named_patch_release_step_block(workflow: str, name: str) -> str:
     steps = patch_release_step_blocks(workflow)
     matches = [
         step for step in steps if f"    - name: {name}\n" in step
     ]
     if len(matches) != 1:
         raise AssertionError(f"expected one publisher step named {name!r}")
-    lines = matches[0].splitlines()
-    run_index = lines.index("      run: |")
-    return "\n".join(
-        line[8:] for line in lines[run_index + 1:] if line.startswith("        ")
+    return matches[0]
+
+
+def named_step_run_script(workflow: str, name: str) -> str:
+    return named_step_run_script_from_block(named_patch_release_step_block(workflow, name))
+
+
+_REFERENCE_LITERAL_RUN_HEADER_RE = re.compile(
+    r"^ {6}run:[ \t]*(?P<style>\|(?:[-+])?)(?:[ \t]*(?:#.*)?)?(?:\r?\n|\Z)$"
+)
+
+
+def _reference_split_line(line: str) -> tuple[str, str]:
+    if line.endswith("\r\n"):
+        return line[:-2], "\n"
+    if line.endswith("\n"):
+        return line[:-1], "\n"
+    if line.endswith("\r"):
+        return line[:-1], "\n"
+    return line, ""
+
+
+def _reference_indent_width(text: str) -> int:
+    index = 0
+    while index < len(text) and text[index] == " ":
+        index += 1
+    if index < len(text) and text[index] == "\t":
+        raise AssertionError("reference literal parser rejects tab indentation")
+    return index
+
+
+def reference_literal_run_step_script(step_block: str) -> str:
+    """Independent constrained oracle for one literal run block.
+
+    This parser deliberately supports only the workflow's reviewed surface:
+    one direct `run: |`, `run: |-`, or `run: |+` field inside a single step
+    block. It preserves blank lines, indentation-derived content, and YAML's
+    chomping semantics, but rejects folded or advisory YAML forms.
+    """
+
+    lines = step_block.splitlines(keepends=True)
+    headers = [
+        (index, match)
+        for index, line in enumerate(lines)
+        if (match := _REFERENCE_LITERAL_RUN_HEADER_RE.match(line))
+    ]
+    if len(headers) != 1:
+        raise AssertionError("reference literal parser requires one direct literal run")
+    header_index, header_match = headers[0]
+    style = header_match.group("style")
+    if style not in {"|", "|-", "|+"}:
+        raise AssertionError("reference literal parser rejects complex YAML styles")
+
+    content_lines = lines[header_index + 1 :]
+    leading_blank_indent = 0
+    content_indent: int | None = None
+    for line in content_lines:
+        raw_line, _line_break = _reference_split_line(line)
+        indent = _reference_indent_width(raw_line)
+        if raw_line[indent:] == "":
+            leading_blank_indent = max(leading_blank_indent, indent)
+            continue
+        content_indent = max(leading_blank_indent, indent)
+        break
+    if content_indent is None:
+        content_indent = leading_blank_indent
+
+    parts: list[str] = []
+    for line in content_lines:
+        raw_line, line_break = _reference_split_line(line)
+        indent = _reference_indent_width(raw_line)
+        body = raw_line[indent:]
+        if body == "":
+            parts.append(raw_line[content_indent:] if indent >= content_indent else "")
+        else:
+            if indent < content_indent:
+                raise AssertionError("reference literal parser found early dedent")
+            parts.append(raw_line[content_indent:])
+        if line_break:
+            parts.append("\n")
+
+    script = "".join(parts)
+    if style == "|-":
+        return script.rstrip("\n")
+    if style == "|+":
+        return script
+    if not script:
+        return ""
+    return script.rstrip("\n") + "\n"
+
+
+def builder_isolation_shell_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Build candidate in isolated namespace and stage public inputs",
     )
+    try:
+        return publisher_shell_contract.builder_isolation_shell_source(
+            script,
+            label="publisher builder isolation shell",
+        )
+    except ValueError as error:
+        raise AssertionError(str(error)) from error
+
+
+def workflow_has_supervisor_parent_readonly_remount(workflow: str) -> bool:
+    builder_shell = builder_isolation_shell_source(workflow)
+    return publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+        builder_shell,
+        label="publisher builder isolation shell",
+    )
+
+
+def render_supervisor_parent_remount_mutation(
+    workflow: str,
+    *,
+    lines: tuple[str, ...],
+) -> str:
+    rendered = "".join(f"        {line}\n" for line in lines)
+    return workflow.replace(
+        SUPERVISOR_PARENT_REMOUNT_INSERTION_MARKER,
+        rendered + SUPERVISOR_PARENT_REMOUNT_INSERTION_MARKER,
+        1,
+    )
+
+
+def generate_supervisor_parent_remount_mutations(workflow: str):
+    for ordering in itertools.permutations(SUPERVISOR_PARENT_REMOUNT_SEQUENCE):
+        option_text = ",".join(ordering)
+        yield (
+            "ordering:" + option_text,
+            render_supervisor_parent_remount_mutation(
+                workflow,
+                lines=(f"/usr/bin/mount -o {option_text} /mnt/supervisor",),
+            ),
+        )
+
+    for label, lines in (
+        (
+            "duplicate-ro",
+            ("/usr/bin/mount -o remount,ro,ro,nosuid,nodev,noexec /mnt/supervisor",),
+        ),
+        (
+            "extra-options",
+            (
+                "/usr/bin/mount -o "
+                "remount,ro,nosuid,nodev,noexec,strictatime /mnt/supervisor",
+            ),
+        ),
+        (
+            "comment-late",
+            ("/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor # late",),
+        ),
+        (
+            "comment-backslash-whitespace",
+            (
+                "true # note \\",
+                "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor",
+            ),
+        ),
+        (
+            "comment-backslash-operator",
+            (
+                "true; # note \\",
+                "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor",
+            ),
+        ),
+        (
+            "semicolon-true",
+            ("/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor; true",),
+        ),
+        (
+            "and-true",
+            ("/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor && true",),
+        ),
+        (
+            "or-true",
+            ("/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor || true",),
+        ),
+        (
+            "pipe-cat",
+            ("/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor | cat",),
+        ),
+        (
+            "bang-wrapper",
+            ("! /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor",),
+        ),
+        (
+            "if-wrapper",
+            (
+                "if /usr/bin/mount -o remount,ro,nosuid,nodev,noexec "
+                "/mnt/supervisor; then true; fi",
+            ),
+        ),
+        (
+            "single-quoted-options",
+            ("/usr/bin/mount -o 'remount,ro,nosuid,nodev,noexec' /mnt/supervisor",),
+        ),
+        (
+            "double-quoted-options",
+            ('/usr/bin/mount -o "remount,ro,nosuid,nodev,noexec" /mnt/supervisor',),
+        ),
+        (
+            "single-quoted-target",
+            ("/usr/bin/mount -o remount,ro,nosuid,nodev,noexec '/mnt/supervisor'",),
+        ),
+        (
+            "double-quoted-target",
+            ('/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "/mnt/supervisor"',),
+        ),
+        (
+            "multiple-o-read-only-flag",
+            (
+                "/usr/bin/mount -o remount,nosuid,nodev "
+                "--options noexec -r /mnt/supervisor",
+            ),
+        ),
+        (
+            "short-cluster-readonly-remount",
+            ("/usr/bin/mount -ro remount /mnt/supervisor",),
+        ),
+        (
+            "short-attached-options-remount-readonly",
+            ("/usr/bin/mount -oremount,ro /mnt/supervisor",),
+        ),
+        (
+            "split-readonly-short-then-options-remount",
+            ("/usr/bin/mount -r -o remount /mnt/supervisor",),
+        ),
+        (
+            "split-options-remount-then-readonly-short",
+            ("/usr/bin/mount -o remount -r /mnt/supervisor",),
+        ),
+        (
+            "long-options-read-only",
+            (
+                "/usr/bin/mount --options remount,nosuid,nodev,noexec "
+                "--read-only /mnt/supervisor",
+            ),
+        ),
+        (
+            "long-options-equals",
+            (
+                "/usr/bin/mount --options=remount,nosuid,nodev,noexec "
+                "--read-only /mnt/supervisor",
+            ),
+        ),
+        (
+            "canonical-dot",
+            ("/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/./supervisor",),
+        ),
+        (
+            "canonical-dotdot",
+            (
+                "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "
+                "/mnt/runtime/../supervisor",
+            ),
+        ),
+        (
+            "canonical-double-slash",
+            ("/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt//supervisor",),
+        ),
+        (
+            "variable-target",
+            ('/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$SUPERVISOR_TARGET"',),
+        ),
+        (
+            "variable-options",
+            ('/usr/bin/mount -o "$SUPERVISOR_OPTS" /mnt/supervisor',),
+        ),
+        (
+            "generic-target-var",
+            (
+                "target=/mnt/supervisor",
+                '/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$target"',
+            ),
+        ),
+        (
+            "exec-var",
+            (
+                "mount_cmd=/usr/bin/mount",
+                '"$mount_cmd" -o remount,ro,nosuid,nodev,noexec /mnt/supervisor',
+            ),
+        ),
+        (
+            "command-substitution-exec",
+            ('$(printf /usr/bin/mount) -o remount,ro,nosuid,nodev,noexec /mnt/supervisor',),
+        ),
+        (
+            "backtick-exec",
+            ('`printf /usr/bin/mount` -o remount,ro,nosuid,nodev,noexec /mnt/supervisor',),
+        ),
+        (
+            "assignment-command-substitution-direct",
+            (
+                "root=/mnt",
+                'ignored=$(/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$root/supervisor")',
+            ),
+        ),
+        (
+            "assignment-backtick-direct",
+            (
+                "root=/mnt",
+                'ignored=`/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$root/supervisor"`',
+            ),
+        ),
+        (
+            "input-process-substitution-direct",
+            (
+                "root=/mnt",
+                'cat <(/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$root/supervisor") >/dev/null',
+            ),
+        ),
+        (
+            "output-process-substitution-direct",
+            (
+                "root=/mnt",
+                ': >(/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$root/supervisor")',
+            ),
+        ),
+        (
+            "option-var",
+            (
+                "opts=remount,ro,nosuid,nodev,noexec",
+                '/usr/bin/mount -o "$opts" /mnt/supervisor',
+            ),
+        ),
+        (
+            "split-option-vars",
+            (
+                "opt_a=remount,ro",
+                "opt_b=nosuid,nodev,noexec",
+                '/usr/bin/mount -o "$opt_a,$opt_b" /mnt/supervisor',
+            ),
+        ),
+        (
+            "indirect-target",
+            (
+                "target=/mnt/supervisor",
+                "name=target",
+                '/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "${!name}"',
+            ),
+        ),
+        (
+            "array-target",
+            (
+                "targets[0]=/mnt/supervisor",
+                '/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "${targets[0]}"',
+            ),
+        ),
+        (
+            "concat-target",
+            (
+                "base=/mnt",
+                '/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "${base}/supervisor"',
+            ),
+        ),
+        (
+            "eval-wrapper",
+            (
+                "target=/mnt/supervisor",
+                'eval "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec \\"$target\\""',
+            ),
+        ),
+        (
+            "env-wrapper",
+            ("env /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor",),
+        ),
+        (
+            "command-wrapper",
+            ("command /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor",),
+        ),
+        (
+            "multiple-o-variable",
+            (
+                '/usr/bin/mount --options remount,nosuid,nodev '
+                '--options "$SUPERVISOR_OPTS" -r /mnt/supervisor',
+            ),
+        ),
+        (
+            "option-indirect",
+            (
+                "opts=remount,ro,nosuid,nodev,noexec",
+                "name=opts",
+                '/usr/bin/mount -o "${!name}" /mnt/supervisor',
+            ),
+        ),
+        (
+            "fully-variable",
+            (
+                "mount_cmd=/usr/bin/mount",
+                "opts=remount,ro,nosuid,nodev,noexec",
+                "target=/mnt/supervisor",
+                '"$mount_cmd" -o "$opts" "$target"',
+            ),
+        ),
+        (
+            "dynamic-bash-c-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                '/bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "dynamic-sh-c-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                '/bin/sh -c "$cmd"',
+            ),
+        ),
+        (
+            "dynamic-dash-c-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                '/bin/dash -c "$cmd"',
+            ),
+        ),
+        (
+            "literal-bash-c-wrapper",
+            (
+                '/bin/bash -c "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"',
+            ),
+        ),
+        (
+            "shell-alias-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'bash -c "$cmd"',
+            ),
+        ),
+        (
+            "split-interpreter-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                "shell=/bin/bash",
+                '"$shell" -c "$cmd"',
+            ),
+        ),
+        (
+            "env-shell-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "env-short-chdir-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env -C /tmp /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "env-long-chdir-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env --chdir /tmp /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "env-long-chdir-equals-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env --chdir=/tmp /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "env-unset-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env -u HOME /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "env-unset-long-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env --unset HOME /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "env-unset-equals-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env --unset=HOME /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "env-ignore-assign-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env -i ROOT=/mnt /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "env-option-terminator-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env -i -- /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "env-split-string-wrapper",
+            (
+                'env -S "/bin/bash -c /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"',
+            ),
+        ),
+        (
+            "bin-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                '/bin/env -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "bin-env-split-string-attached-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                '/bin/env \'-S/bin/bash -c "$cmd"\'',
+            ),
+        ),
+        (
+            "env-split-string-long-wrapper",
+            (
+                'env --split-string "/bin/bash -c /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"',
+            ),
+        ),
+        (
+            "bin-env-split-string-long-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                '/bin/env --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "env-split-string-equals-wrapper",
+            (
+                'env \'--split-string=/bin/bash -c /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor\'',
+            ),
+        ),
+        (
+            "bin-env-split-string-equals-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                '/bin/env \'--split-string=/bin/bash -c "$cmd"\'',
+            ),
+        ),
+        (
+            "path-alias-env-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                '/usr/local/bin/env -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "relative-env-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                './env --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "busybox-env-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                '/bin/busybox env -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "busybox-variable-env-unset-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "ENV_APPLET=env",
+                '/bin/busybox "$ENV_APPLET" --unset HOME --split-string '
+                '"/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "variable-env-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                '"$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "variable-env-ignore-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                '"$env_cmd" -i -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "variable-env-unset-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                '"$env_cmd" --unset HOME --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "variable-env-chdir-split-equals-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                '"$env_cmd" --chdir=/tmp \'--split-string=/bin/bash -c "$cmd"\'',
+            ),
+        ),
+        (
+            "command-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'command -- "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "nice-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'nice -n 5 "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "sudo-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'sudo -u root "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "timeout-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'timeout 5 "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "timeout-variable-busybox-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "busybox_cmd=/bin/busybox",
+                "ENV_APPLET=env",
+                'timeout 5 "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "setsid-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                '/usr/bin/setsid --wait "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "setsid-short-option-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                '/usr/bin/setsid -w "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "timeout-setsid-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'timeout 5 /usr/bin/setsid --wait "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "setsid-variable-busybox-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "busybox_cmd=/bin/busybox",
+                "ENV_APPLET=env",
+                '/usr/bin/setsid --wait "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "timeout-setsid-variable-busybox-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "busybox_cmd=/bin/busybox",
+                "ENV_APPLET=env",
+                'timeout 5 /usr/bin/setsid --wait "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "nohup-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'nohup "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "nohup-setsid-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'nohup /usr/bin/setsid --wait "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "taskset-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'taskset -c 0 "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "ionice-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'ionice -c3 "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "flock-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'flock -n /dev/null "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "flock-relative-lockfile-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'flock -n lockfile "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "nohup-variable-busybox-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "busybox_cmd=/bin/busybox",
+                "ENV_APPLET=env",
+                'nohup "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "nohup-setsid-variable-busybox-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "busybox_cmd=/bin/busybox",
+                "ENV_APPLET=env",
+                'nohup /usr/bin/setsid --wait "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "taskset-variable-busybox-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "busybox_cmd=/bin/busybox",
+                "ENV_APPLET=env",
+                'taskset -c 0 "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "ionice-variable-busybox-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "busybox_cmd=/bin/busybox",
+                "ENV_APPLET=env",
+                'ionice -c3 "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "flock-variable-busybox-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "busybox_cmd=/bin/busybox",
+                "ENV_APPLET=env",
+                'flock -n /dev/null "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "flock-absolute-lockfile-variable-busybox-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "busybox_cmd=/bin/busybox",
+                "ENV_APPLET=env",
+                'flock -n /var/lock/ci-patch.lock "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "flock-lockfile-command-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                'flock -n lockfile -c "$cmd"',
+            ),
+        ),
+        (
+            "env-combined-options-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'env -iu HOME /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "command-shell-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'command /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "command-option-shell-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'command -- /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "sudo-shell-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'sudo /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "sudo-option-shell-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'sudo -u root /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "timeout-shell-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'timeout 5 /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "timeout-option-shell-wrapper",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                'timeout --signal TERM --kill-after 1 5 /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "question-glob-target-alias",
+            (
+                "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/superviso?",
+            ),
+        ),
+        (
+            "globbed-env-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                '/bin/e?v --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "globbed-busybox-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                '/bin/busybo? env --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "extglob-target-alias",
+            (
+                "shopt -s extglob",
+                "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/superviso@(r)",
+            ),
+        ),
+        (
+            "command-substitution-shell",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                '$(printf /bin/bash) -c "$cmd"',
+            ),
+        ),
+        (
+            "backtick-shell",
+            (
+                "root=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
+                '`printf /bin/bash` -c "$cmd"',
+            ),
+        ),
+        (
+            "nested-shell-c",
+            (
+                '/bin/bash -c \'/bin/sh -c "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"\'',
+            ),
+        ),
+        (
+            "split-cmd-target-options",
+            (
+                "mount_cmd=/usr/bin/mount",
+                "opt_left=remount,ro",
+                "opt_right=nosuid,nodev,noexec",
+                "target_root=/mnt",
+                "target_leaf=supervisor",
+                'target="${target_root}/${target_leaf}"',
+                '"$mount_cmd" -o "$opt_left,$opt_right" "$target"',
+            ),
+        ),
+        (
+            "repurposed-hidden-direct",
+            workflow.replace(
+                '          /usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$hidden"\n',
+                '          hidden=/mnt/supervisor\n'
+                '          /usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$hidden"\n',
+                1,
+            ),
+        ),
+        (
+            "repurposed-hidden-loop",
+            workflow.replace(
+                "        for hidden in /home/runner /root /var /run /sys; do\n",
+                "        for hidden in /mnt/supervisor /home/runner /root /var /run /sys; do\n",
+                1,
+            ),
+        ),
+        (
+            "repurposed-hidden-split",
+            workflow.replace(
+                '          /usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$hidden"\n',
+                '          hidden_base=/mnt\n'
+                '          hidden_leaf=supervisor\n'
+                '          hidden="${hidden_base}/${hidden_leaf}"\n'
+                '          /usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$hidden"\n',
+                1,
+            ),
+        ),
+    ):
+        if isinstance(lines, str):
+            yield label, lines
+        else:
+            yield label, render_supervisor_parent_remount_mutation(workflow, lines=lines)
+
+    pieces: list[str] = []
+    for index, token in enumerate(SUPERVISOR_PARENT_REMOUNT_SEQUENCE):
+        pieces.append(token)
+        if index + 1 < len(SUPERVISOR_PARENT_REMOUNT_SEQUENCE):
+            pieces.append(",")
+
+    def render_split(
+        boundaries: tuple[int, ...],
+        indent: int,
+        trailing_backslashes: int,
+    ) -> tuple[str, ...]:
+        lines: list[str] = []
+        current = ["/usr/bin/mount -o "]
+        for index, piece in enumerate(pieces):
+            current.append(piece)
+            if index + 1 in boundaries:
+                lines.append("".join(current) + ("\\" * trailing_backslashes))
+                current = [" " * indent]
+        current.append(" /mnt/supervisor")
+        lines.append("".join(current))
+        return tuple(lines)
+
+    for boundary in range(1, len(pieces)):
+        for indent in (0, 2, 8):
+            for backslashes in (1, 2, 3):
+                yield (
+                    f"split:{boundary}:indent:{indent}:backslashes:{backslashes}",
+                    render_supervisor_parent_remount_mutation(
+                        workflow,
+                        lines=render_split((boundary,), indent, backslashes),
+                    ),
+                )
+
+    all_boundaries = tuple(range(1, len(pieces)))
+    for indent in (0, 2, 8):
+        for backslashes in (1, 2, 3):
+            yield (
+                f"multisplit:indent:{indent}:backslashes:{backslashes}",
+                render_supervisor_parent_remount_mutation(
+                    workflow,
+                    lines=render_split(all_boundaries, indent, backslashes),
+                ),
+            )
+
+    for backslashes in (1, 2, 3):
+        yield (
+            f"double-quoted-split:backslashes:{backslashes}",
+            render_supervisor_parent_remount_mutation(
+                workflow,
+                lines=(
+                    '/usr/bin/mount -o "remount,ro,nosuid,' + ("\\" * backslashes),
+                    '        nodev,noexec" /mnt/supervisor',
+                ),
+            ),
+        )
+        yield (
+            f"single-quoted-split:backslashes:{backslashes}",
+            render_supervisor_parent_remount_mutation(
+                workflow,
+                lines=(
+                    "/usr/bin/mount -o 'remount,ro,nosuid," + ("\\" * backslashes),
+                    "        nodev,noexec' /mnt/supervisor",
+                ),
+            ),
+        )
+
+
+def render_isolated_publisher_step_mutation(
+    workflow: str,
+    *,
+    mutate,
+) -> str:
+    step = named_patch_release_step_block(
+        workflow,
+        "Build candidate in isolated namespace and stage public inputs",
+    )
+    changed_step = mutate(step)
+    if changed_step == step:
+        raise AssertionError("isolated publisher mutation did not change the step")
+    return workflow.replace(step, changed_step, 1)
+
+
+def generate_publisher_raw_identity_mutations(workflow: str):
+    mutations = (
+        (
+            "extra-blank-before-heredoc",
+            lambda step: step.replace(
+                '        /usr/bin/tee "$BUILDER_ROOT/control/builder-isolation.sh" \\\n',
+                '        \n'
+                '        /usr/bin/tee "$BUILDER_ROOT/control/builder-isolation.sh" \\\n',
+                1,
+            ),
+        ),
+        (
+            "extra-blank-in-builder-shell",
+            lambda step: step.replace(
+                '        builder_gid="$3"\n',
+                '        builder_gid="$3"\n'
+                '        \n',
+                1,
+            ),
+        ),
+        (
+            "remove-blank-in-parser-heredoc",
+            lambda step: step.replace(
+                "        MAX_BYTES = 1048576\n\n\n        def fail(message):\n",
+                "        MAX_BYTES = 1048576\n\n        def fail(message):\n",
+                1,
+            ),
+        ),
+        (
+            "blank-line-extra-indentation",
+            lambda step: step.replace(
+                "        MAX_BYTES = 1048576\n\n\n        def fail(message):\n",
+                "        MAX_BYTES = 1048576\n          \n\n        def fail(message):\n",
+                1,
+            ),
+        ),
+        (
+            "builder-shell-trailing-space",
+            lambda step: step.replace(
+                "        cd /\n",
+                "        cd / \n",
+                1,
+            ),
+        ),
+        (
+            "builder-shell-indent-shift",
+            lambda step: step.replace(
+                "        cd /\n",
+                "         cd /\n",
+                1,
+            ),
+        ),
+        (
+            "run-strip-chomp",
+            lambda step: step.replace("      run: |\n", "      run: |-\n", 1),
+        ),
+    )
+    for label, mutate in mutations:
+        yield label, render_isolated_publisher_step_mutation(
+            workflow,
+            mutate=mutate,
+        )
 
 
 def dev_mount_target_parser_source(workflow: str) -> str:
-    steps = patch_release_step_blocks(workflow)
-    matches = [
-        step
-        for step in steps
-        if "    - name: Build candidate in isolated namespace and stage public inputs\n"
-        in step
-    ]
-    if len(matches) != 1:
-        raise AssertionError("publisher must define exactly one isolated builder step")
-    script = matches[0]
-    match = re.search(
-        r"(?ms)^\s*list_dev_mount_targets\(\) \{\n"
-        r"\s*/usr/bin/python3 -I -S - <<'PY'\n"
-        r"(?P<body>.*?)\n"
-        r"\s*PY\n"
-        r"\s*\}",
-        script,
-    )
-    if match is None:
-        raise AssertionError("publisher must embed exactly one decoded /dev mount parser")
-    return textwrap.dedent(match.group("body")) + "\n"
+    return textwrap.dedent(raw_dev_mount_target_parser_source(workflow))
 
 
 def dev_mount_transport_section_source(workflow: str) -> str:
@@ -157,7 +1286,6 @@ def dev_mount_transport_section_source(workflow: str) -> str:
     )
     start = script.index("create_supervisor_transport_file() {")
     end_marker = (
-        "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor\n"
         "/usr/bin/mount -t tmpfs \\\n"
         "  -o nosuid,mode=0755,size=4m builder-dev /dev"
     )
@@ -166,27 +1294,41 @@ def dev_mount_transport_section_source(workflow: str) -> str:
 
 
 def writable_mount_record_parser_source(workflow: str) -> str:
-    steps = patch_release_step_blocks(workflow)
-    matches = [
-        step
-        for step in steps
-        if "    - name: Build candidate in isolated namespace and stage public inputs\n"
-        in step
-    ]
-    if len(matches) != 1:
-        raise AssertionError("publisher must define exactly one isolated builder step")
-    script = matches[0]
-    match = re.search(
-        r"(?ms)^\s*list_writable_mount_records\(\) \{\n"
-        r"\s*/usr/bin/python3 -I -S - <<'PY'\n"
-        r"(?P<body>.*?)\n"
-        r"\s*PY\n"
-        r"\s*\}",
-        script,
-    )
-    if match is None:
-        raise AssertionError("publisher must embed exactly one writable mount parser")
-    return textwrap.dedent(match.group("body")) + "\n"
+    return textwrap.dedent(raw_writable_mount_record_parser_source(workflow))
+
+
+def raw_dev_mount_target_parser_source(workflow: str) -> str:
+    try:
+        sources = dict(
+            publisher_shell_contract.raw_patch_release_parser_sources(
+                builder_isolation_shell_source(workflow)
+            )
+        )
+    except ValueError as error:
+        raise AssertionError(str(error)) from error
+    try:
+        return sources["list_dev_mount_targets"]
+    except KeyError as error:
+        raise AssertionError(
+            "publisher must expose an exact raw /dev mount parser"
+        ) from error
+
+
+def raw_writable_mount_record_parser_source(workflow: str) -> str:
+    try:
+        sources = dict(
+            publisher_shell_contract.raw_patch_release_parser_sources(
+                builder_isolation_shell_source(workflow)
+            )
+        )
+    except ValueError as error:
+        raise AssertionError(str(error)) from error
+    try:
+        return sources["list_writable_mount_records"]
+    except KeyError as error:
+        raise AssertionError(
+            "publisher must expose an exact raw writable mount parser"
+        ) from error
 
 
 def writable_mount_transport_section_source(workflow: str) -> str:
@@ -312,6 +1454,31 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "actions/download-artifact@" in workflow
     ):
         errors.append("complete ROM artifact transfer is possible")
+    try:
+        run_script = named_step_run_script(
+            workflow,
+            "Build candidate in isolated namespace and stage public inputs",
+        )
+        publisher_shell_contract.assert_reviewed_patch_release_run_script_identity(
+            run_script,
+            label="publisher isolated candidate build run script",
+        )
+        builder_shell = publisher_shell_contract.builder_isolation_shell_source(
+            run_script,
+            label="publisher builder isolation shell",
+        )
+        publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
+            builder_shell,
+            label="publisher builder isolation shell",
+        )
+        publisher_shell_contract.validate_patch_release_parser_heredocs(
+            builder_shell,
+            label="publisher builder isolation shell",
+        )
+    except (AssertionError, ValueError):
+        errors.append("publisher builder isolation shell differs")
+    if workflow_has_supervisor_parent_readonly_remount(workflow):
+        errors.append("supervisor parent remount differs")
     required = (
         "Verify exact candidate and stage trusted producer",
         "Install trusted isolated-build dependencies",
@@ -335,6 +1502,14 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         and revalidate == cleanup + 1
     ):
         errors.append("private base lifetime ordering differs")
+    strict_shell = "shell: /bin/bash --noprofile --norc -euo pipefail {0}"
+    if any(steps[index].count(strict_shell) != 1 for index in (
+        isolated_build,
+        create,
+        cleanup,
+        revalidate,
+    )):
+        errors.append("publisher step shell boundary differs")
     if revalidate != len(steps) - 2:
         errors.append("late patch-only revalidation must immediately precede upload")
     candidate_markers = (
@@ -480,8 +1655,6 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         not in isolated_step
         or 'mount_target="${writable_mount_records[index]}"' not in isolated_step
         or 'mount_options="${writable_mount_records[index + 1]}"' not in isolated_step
-        or "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"
-        not in isolated_step
         or "/usr/bin/findmnt -Rrno TARGET /dev" in isolated_step
         or "/usr/bin/findmnt --raw" in isolated_step
         or "< <(list_dev_mount_targets)" in isolated_step
@@ -514,7 +1687,21 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or 'test -z "${BASH_XTRACEFD-}"' not in isolated_step
         or 'test ! -e /dev/console' not in isolated_step
         or 'test ! -e /dev/kmsg' not in isolated_step
-        or "candidate build failed: exit=%d" not in isolated_step
+        or "candidate build failed: stage=launch detail=%s exit=%d"
+        not in isolated_step
+        or "candidate build failed: stage=isolated exit=%d"
+        not in isolated_step
+        or "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d"
+        not in isolated_step
+        or "$builder_cgroup/cgroup.kill\" > /dev/null 2>&1" not in isolated_step
+        or "/usr/bin/rmdir -- \"$builder_cgroup\" \\\n                 > /dev/null 2>&1"
+        not in isolated_step
+        or "/usr/sbin/userdel \"$builder_user\" \\\n                > /dev/null 2>&1"
+        not in isolated_step
+        or "/bin/rm -rf -- \"$BUILDER_ROOT\" \\\n              > /dev/null 2>&1"
+        not in isolated_step
+        or "/bin/rm -rf -- \"$PATCH_WHEELHOUSE\" > /dev/null 2>&1"
+        not in isolated_step
         or "candidate build status: success" not in isolated_step
         or "/usr/bin/mount --make-rprivate /" not in isolated_step
         or "/usr/bin/mount -o remount,bind,ro /" not in isolated_step
@@ -577,7 +1764,7 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or 'test -f "$builder_cgroup/cgroup.kill"' not in isolated_step
         or 'test -f "$builder_cgroup/cgroup.procs"' not in isolated_step
         or 'test -r "$builder_cgroup/cgroup.procs"' not in isolated_step
-        or 'test -z "$(builder_cgroup_pids)"' not in isolated_step
+        or "builder_cgroup_is_empty" not in isolated_step
         or 'test ! -e "$builder_cgroup"' not in isolated_step
         or 'builder_cgroup_owned=1' not in isolated_step
         or '/usr/bin/sudo /usr/bin/rmdir -- "$builder_cgroup"'
@@ -592,8 +1779,8 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "metadata.json\\ntarget.gba" not in isolated_step
         or 'test "$handoff_names" = ' not in isolated_step
         or isolated_step.count('test "$handoff_names" = ') != 2
-        or 'test -z "$(builder_uid_pids "$builder_uid")"' not in isolated_step
-        or 'test -z "$(builder_group_pids "$builder_pgid")"' not in isolated_step
+        or 'builder_uid_is_empty "$builder_uid"' not in isolated_step
+        or 'builder_group_is_empty "$builder_pgid"' not in isolated_step
         or "userdel" not in isolated_step
         or "builder_user_created=0" not in isolated_step
         or "builder_user_created=1" not in isolated_step
@@ -607,9 +1794,9 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or 'test ! -e "$BUILDER_ROOT"' not in isolated_step
         or 'test ! -e "$PATCH_WHEELHOUSE"' not in isolated_step
         or (
-            'test -z "$(builder_group_pids "$builder_pgid")"\n'
-            '        test -z "$(builder_cgroup_pids)"\n'
-            '        test -z "$(builder_uid_pids "$builder_uid")"\n'
+            'builder_group_is_empty "$builder_pgid"\n'
+            '        builder_cgroup_is_empty\n'
+            '        builder_uid_is_empty "$builder_uid"\n'
             '        remove_builder_cgroup\n'
             '        test ! -e "$builder_cgroup"\n'
             '        handoff_root='
@@ -619,10 +1806,10 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
             'remove_builder_cgroup\n'
             '        remove_builder_state\n'
             '        trap - EXIT INT TERM\n'
-            '        test -z "$(builder_group_pids "$builder_pgid")"\n'
+            '        builder_group_is_empty "$builder_pgid"\n'
             '        test ! -e "$builder_cgroup"\n'
-            '        test -z "$(builder_uid_pids "$builder_uid")"\n'
-            '        test -z "$(/usr/bin/getent passwd "$builder_user" || true)"\n'
+            '        builder_uid_is_empty "$builder_uid"\n'
+            '        builder_passwd_entry_absent "$builder_user"\n'
             '        test ! -e "$BUILDER_ROOT"\n'
             '        test ! -e "$PATCH_WHEELHOUSE"\n'
             '        input_names='
@@ -913,6 +2100,182 @@ def run_findmnt_uniq_namespace_semantic_probe(
     )
 
 
+EXTRACTED_SUPERVISOR_NAMESPACE_HARNESS = """\
+set -euo pipefail
+section_path="$1"
+fake_cgroup="$2"
+cleanup() {
+  local status=0
+  if mountpoint -q /mnt/supervisor/cgroup; then
+    umount /mnt/supervisor/cgroup || status=1
+  fi
+  if mountpoint -q /mnt/supervisor; then
+    umount /mnt/supervisor || status=1
+  fi
+  if mountpoint -q /mnt; then
+    umount /mnt || status=1
+  fi
+  return "$status"
+}
+trap cleanup EXIT
+mount -t tmpfs -o nosuid,nodev,noexec,mode=0755,size=16m probe-work /mnt
+mkdir -m 0700 /mnt/supervisor
+mount -t tmpfs -o nosuid,nodev,noexec,mode=0700,size=1m probe-supervisor /mnt/supervisor
+mkdir -m 0700 /mnt/supervisor/cgroup
+mount --bind "$fake_cgroup" /mnt/supervisor/cgroup
+mount -o remount,bind,ro,nosuid,nodev,noexec /mnt/supervisor/cgroup
+options="$(findmnt -n -o OPTIONS --target /mnt/supervisor/cgroup)"
+for option in ro nosuid nodev noexec; do
+  case ",$options," in
+    *,"$option",*) ;;
+    *) exit 125 ;;
+  esac
+done
+path="$(mktemp "/mnt/supervisor/test.XXXXXXXXXX")"
+test -f "$path"
+test ! -L "$path"
+test "$(/usr/bin/stat -c %u "$path")" = 0
+test "$(/usr/bin/stat -c %a "$path")" = 600
+test "$(/usr/bin/stat -c %h "$path")" = 1
+/bin/rm -f -- "$path"
+test ! -e "$path"
+list_dev_mount_targets() {
+  printf '%s\\0' /dev
+}
+source "$section_path"
+cleanup
+trap - EXIT
+"""
+
+
+def run_extracted_supervisor_parent_probe(
+    root: Path,
+    workflow: str,
+) -> subprocess.CompletedProcess[str]:
+    root.mkdir(parents=True, exist_ok=True)
+    fake_cgroup = root / "fake-cgroup"
+    fake_cgroup.mkdir(parents=True, exist_ok=True)
+    for name in ("cgroup.procs", "cgroup.kill"):
+        (fake_cgroup / name).write_text("", encoding="utf-8")
+    section = dev_mount_transport_section_source(workflow)
+    end_marker = (
+        "/usr/bin/mount -t tmpfs \\\n"
+        "  -o nosuid,mode=0755,size=4m builder-dev /dev"
+    )
+    if end_marker not in section:
+        raise AssertionError("exact workflow probe must end at the /dev overmount")
+    section = section.replace(end_marker, "printf 'PASS\\n'\n", 1)
+    section_path = root / "section.sh"
+    section_path.write_text(section, encoding="utf-8")
+    return run_rootless_mount_namespace(
+        EXTRACTED_SUPERVISOR_NAMESPACE_HARNESS,
+        str(section_path),
+        str(fake_cgroup),
+    )
+
+
+def builder_cleanup_functions_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Build candidate in isolated namespace and stage public inputs",
+    )
+    start = script.index('shell_pgid="$(/usr/bin/ps -o pgid= -p "$$"')
+    end = script.index("trap cleanup_builder EXIT")
+    return script[start:end]
+
+
+def builder_passwd_helpers_source(workflow: str) -> str:
+    section = builder_cleanup_functions_source(workflow)
+    start = section.index("builder_passwd_entry_exists() {")
+    end = section.index("builder_group_pids() {", start)
+    return section[start:end]
+
+
+def builder_uid_selection_helpers_source(workflow: str) -> str:
+    section = builder_cleanup_functions_source(workflow)
+    start = section.index("builder_passwd_entry_exists() {")
+    end = section.index("builder_cgroup_is_empty() {", start)
+    return section[start:end]
+
+
+def builder_uid_occupancy_helpers_source(workflow: str) -> str:
+    section = builder_cleanup_functions_source(workflow)
+    start = section.index("builder_uid_pids() {")
+    end = section.index("builder_cgroup_is_empty() {", start)
+    return section[start:end]
+
+
+def builder_user_selection_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Build candidate in isolated namespace and stage public inputs",
+    )
+    start = script.index(
+        'builder_passwd_entry_absent "$builder_user"',
+        script.index("wheelhouse_owned=1"),
+    )
+    end_marker = 'test "$builder_uid" -ge 50000'
+    end = script.index(end_marker, start) + len(end_marker)
+    return script[start:end]
+
+
+def private_base_cleanup_function_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Create and verify patch artifact",
+    )
+    start = script.index("cleanup_private_base() {")
+    end = script.index("trap cleanup_private_base EXIT")
+    return script[start:end]
+
+
+def download_cleanup_function_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Download private base image",
+    )
+    start = script.index("cleanup_download() {")
+    end = script.index("trap cleanup_download EXIT")
+    return script[start:end]
+
+
+def launch_validation_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Build candidate in isolated namespace and stage public inputs",
+    )
+    start = script.index('builder_supervisor_pid="$!"')
+    end = script.index('set +e\nwait "$builder_supervisor_pid"', start)
+    return script[start:end]
+
+
+def patch_release_python_c_snippets(workflow: str) -> list[tuple[int, int, str]]:
+    snippets: list[tuple[int, int, str]] = []
+    for step_index, commands in enumerate(parse_patch_release_run_commands(workflow)):
+        for command_index, command in enumerate(commands):
+            if "/usr/bin/python3" not in command:
+                continue
+            python_index = command.index("/usr/bin/python3")
+            if python_index + 4 >= len(command):
+                continue
+            if command[python_index + 1 : python_index + 4] != ["-I", "-S", "-c"]:
+                continue
+            snippets.append((step_index, command_index, command[python_index + 4]))
+    return snippets
+
+
+def assert_patch_release_python_c_snippets_compile(testcase: unittest.TestCase, workflow: str) -> None:
+    snippets = patch_release_python_c_snippets(workflow)
+    testcase.assertEqual(len(snippets), 4)
+    for step_index, command_index, source in snippets:
+        with testcase.subTest(
+            step=step_index,
+            command=command_index,
+            language="python",
+        ):
+            compile(source, "<patch-release-workflow>", "exec")
+
+
 class PatchReleaseWorkflowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -1061,10 +2424,6 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "builder-supervisor /mnt/supervisor",
             self.patch_job,
         )
-        self.assertIn(
-            "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor",
-            self.patch_job,
-        )
         supervisor_bind = self.patch_job.index(
             '/usr/bin/mount --bind "$cgroup_path" /mnt/supervisor/cgroup'
         )
@@ -1087,7 +2446,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("/usr/bin/setpriv", self.patch_job)
         self.assertIn("--bounding-set=-all", self.patch_job)
         self.assertIn('"$builder_cgroup/cgroup.kill"', self.patch_job)
-        self.assertIn('test -z "$(builder_cgroup_pids)"', self.patch_job)
+        self.assertIn("builder_cgroup_is_empty", self.patch_job)
         self.assertIn('test ! -e "$builder_cgroup"', self.patch_job)
         self.assertNotRegex(self.patch_job, r"/bin/kill[^\n]*[\"']?\$pid")
         self.assertNotIn("close_inherited_fds", self.patch_job)
@@ -1107,10 +2466,39 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertNotIn("candidate-output.log", self.patch_job)
         self.assertIn("ulimit -f 131072", self.patch_job)
         self.assertIn("size=6g builder-source /mnt/source", self.patch_job)
-        self.assertIn("candidate build failed: exit=%d", self.patch_job)
+        self.assertIn(
+            "candidate build failed: stage=launch detail=%s exit=%d",
+            self.patch_job,
+        )
+        self.assertIn("candidate build failed: stage=isolated exit=%d", self.patch_job)
+        self.assertIn(
+            "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d",
+            self.patch_job,
+        )
+        self.assertIn("builder_passwd_entry_absent", self.patch_job)
+        self.assertIn('"$builder_cgroup/cgroup.kill" > /dev/null 2>&1', self.patch_job)
+        self.assertIn(
+            '/usr/bin/sudo /usr/bin/rmdir -- "$builder_cgroup" \\\n'
+            '                 > /dev/null 2>&1',
+            self.patch_job,
+        )
+        self.assertIn(
+            '/usr/bin/sudo /usr/sbin/userdel "$builder_user" \\\n'
+            '                > /dev/null 2>&1',
+            self.patch_job,
+        )
+        self.assertIn(
+            '/usr/bin/sudo /bin/rm -rf -- "$BUILDER_ROOT" \\\n'
+            '              > /dev/null 2>&1',
+            self.patch_job,
+        )
+        self.assertIn(
+            '/bin/rm -rf -- "$PATCH_WHEELHOUSE" > /dev/null 2>&1',
+            self.patch_job,
+        )
         self.assertIn("candidate build status: success", self.patch_job)
         stop = self.patch_job.index(
-            'test -z "$(builder_cgroup_pids)"',
+            "builder_cgroup_is_empty",
             self.patch_job.index('wait "$builder_supervisor_pid"'),
         )
         remove = self.patch_job.index("remove_builder_cgroup", stop)
@@ -1121,11 +2509,11 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertLess(stop, remove)
         self.assertLess(remove, stage)
         self.assertIn(
-            'test -z "$(builder_uid_pids "$builder_uid")"',
+            'builder_uid_is_empty "$builder_uid"',
             self.patch_job,
         )
         self.assertIn(
-            'test -z "$(builder_group_pids "$builder_pgid")"',
+            'builder_group_is_empty "$builder_pgid"',
             self.patch_job,
         )
 
@@ -1223,7 +2611,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     b"/dev/name with space",
                 ],
             )
-            self.assertEqual(trace.read_text(encoding="ascii"), "OVERMOUNT\n")
+            self.assertFalse(trace.exists())
             self.assertEqual(list(supervisor_root.iterdir()), [])
 
     def test_device_mount_transport_propagates_producer_failure_before_unmount_or_overmount(self):
@@ -1868,13 +3256,16 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("/usr/bin/python3 -I -S -c", create_step)
         self.assertIn('cd "$PATCH_RUNTIME_ROOT"', create_step)
         self.assertIn("cleanup_private_base", create_step)
-        self.assertIn('/bin/rm -f -- "$BASE_IMAGE"', create_step)
+        self.assertIn('/bin/rm -f -- "$BASE_IMAGE" > /dev/null 2>&1', create_step)
+        self.assertIn('/usr/bin/rmdir -- "$private_dir" > /dev/null 2>&1', create_step)
         self.assertIn(
             "BASE_IMAGE: ${{ steps.private-base.outputs.base_path }}",
             create_step,
         )
         self.assertNotIn("BASEROM_URL", create_step)
         self.assertIn('test ! -e "$BASE_IMAGE"', steps[cleanup])
+        self.assertIn('/bin/rm -f -- "$BASE_IMAGE" > /dev/null 2>&1', steps[cleanup])
+        self.assertIn('/usr/bin/rmdir -- "$private_dir" > /dev/null 2>&1', steps[cleanup])
         self.assertIn("      if: always()", steps[cleanup])
         self.assertIn("artifact_names=", steps[revalidate])
         self.assertNotIn("BASE_IMAGE", steps[-1])
@@ -1908,6 +3299,32 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     "GIT_NO_REPLACE_OBJECTS: '1'",
                 ):
                     self.assertIn(cleared, step)
+
+    def test_every_private_boundary_step_requires_exact_shell(self):
+        shell = "shell: /bin/bash --noprofile --norc -euo pipefail {0}"
+        for step_name in (
+            "Build candidate in isolated namespace and stage public inputs",
+            "Create and verify patch artifact",
+            "Cleanup and verify private base",
+            "Revalidate patch-only upload",
+        ):
+            with self.subTest(step=step_name):
+                step = next(
+                    item
+                    for item in patch_release_step_blocks(self.text)
+                    if f"- name: {step_name}" in item
+                )
+                changed_step = step.replace(
+                    shell,
+                    "shell: /bin/bash --noprofile --norc -xeuo pipefail {0}",
+                    1,
+                )
+                changed = self.text.replace(step, changed_step, 1)
+                self.assertNotEqual(changed, self.text)
+                self.assertIn(
+                    "publisher step shell boundary differs",
+                    publisher_boundary_errors(changed),
+                )
 
     def test_private_base_boundary_mutations_fail(self):
         steps = patch_release_step_blocks(self.text)
@@ -1949,7 +3366,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         removed_cleanup = self.text.replace(
-            '/bin/rm -f -- "$BASE_IMAGE" || cleanup_failed=1',
+            '/bin/rm -f -- "$BASE_IMAGE" > /dev/null 2>&1 || cleanup_failed=1',
             "true",
             1,
         )
@@ -1967,7 +3384,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         missing_pid_teardown = self.text.replace(
             isolated,
             isolated.replace(
-                'test -z "$(builder_cgroup_pids)"',
+                "builder_cgroup_is_empty",
                 "true",
             ),
             1,
@@ -2060,6 +3477,34 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             '            "GITHUB_WORKSPACE": "/mnt/source",',
             '            "GITHUB_STEP_SUMMARY": os.environ["GITHUB_STEP_SUMMARY"],\n'
             '            "GITHUB_WORKSPACE": "/mnt/source",',
+            1,
+        )
+        launch_stage_free_text = self.text.replace(
+            "candidate build failed: stage=launch detail=%s exit=%d",
+            "candidate build failed: exit=%d",
+            1,
+        )
+        late_supervisor_parent_remount = self.text.replace(
+            "        /usr/bin/mount -t tmpfs \\\n"
+            "          -o nosuid,mode=0755,size=4m builder-dev /dev",
+            "        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec "
+            "/mnt/supervisor\n"
+            "        /usr/bin/mount -t tmpfs \\\n"
+            "          -o nosuid,mode=0755,size=4m builder-dev /dev",
+            1,
+        )
+        reordered_supervisor_parent_remount = self.text.replace(
+            "        /usr/bin/mount -t tmpfs \\\n"
+            "          -o nosuid,mode=0755,size=4m builder-dev /dev",
+            "        /usr/bin/mount -o nodev,ro,noexec,nosuid,remount "
+            "/mnt/supervisor\n"
+            "        /usr/bin/mount -t tmpfs \\\n"
+            "          -o nosuid,mode=0755,size=4m builder-dev /dev",
+            1,
+        )
+        cleanup_stage_free_text = self.text.replace(
+            "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d",
+            "candidate build cleanup failed",
             1,
         )
         writable_host_root = self.text.replace(
@@ -2227,12 +3672,6 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "          true",
             1,
         )
-        writable_supervisor_parent_during_candidate = self.text.replace(
-            "        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor\n"
-            "        /usr/bin/mount -t tmpfs \\",
-            "        /usr/bin/mount -t tmpfs \\",
-            1,
-        )
         forward_dev_teardown = self.text.replace(
             "for ((index=${#dev_mounts[@]} - 1; "
             "index >= 0; index--)); do",
@@ -2335,13 +3774,16 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             ("missing-dev-transport-symlink-guard", missing_dev_transport_symlink_guard),
             ("missing-dev-transport-link-guard", missing_dev_transport_link_guard),
             ("missing-dev-transport-cleanup", missing_dev_transport_cleanup),
-            (
-                "writable-supervisor-parent-during-candidate",
-                writable_supervisor_parent_during_candidate,
-            ),
             ("forward-dev-teardown", forward_dev_teardown),
             ("ambient-dependency-python", ambient_dependency_python),
             ("unverified-builder-state", unverified_builder_state),
+            ("launch-stage-free-text", launch_stage_free_text),
+            ("late-supervisor-parent-remount", late_supervisor_parent_remount),
+            (
+                "reordered-supervisor-parent-remount",
+                reordered_supervisor_parent_remount,
+            ),
+            ("cleanup-stage-free-text", cleanup_stage_free_text),
             ("allowed-unexpected-handoff", allowed_unexpected_handoff),
             ("disabled-late-revalidation", disabled_late_revalidation),
             ("candidate-patch-artifact-mutation", candidate_patch_artifact_mutation),
@@ -2350,6 +3792,1518 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertNotEqual(changed, self.text)
                 self.assertTrue(publisher_boundary_errors(changed))
+
+    def test_extracted_supervisor_transport_probe_fails_on_master_and_passes_current_workflow(self):
+        self.assertFalse(workflow_has_supervisor_parent_readonly_remount(self.text))
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="supervisor-parent-remount-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            require_findmnt_uniq_namespace_capability(sandbox / "preflight")
+            success = run_extracted_supervisor_parent_probe(
+                sandbox / "success",
+                self.text,
+            )
+            self.assertEqual(success.returncode, 0, _bounded_process_diagnostic(success))
+            self.assertEqual(success.stdout.strip(), "PASS")
+            failed_workflow = subprocess.check_output(
+                [
+                    "git",
+                    "--no-pager",
+                    "show",
+                    f"{MERGED_MASTER_771}:.github/workflows/build.yml",
+                ],
+                cwd=ROOT,
+                text=True,
+            )
+            self.assertTrue(workflow_has_supervisor_parent_readonly_remount(failed_workflow))
+            failure = run_extracted_supervisor_parent_probe(
+                sandbox / "failure",
+                failed_workflow,
+            )
+            self.assertNotEqual(failure.returncode, 0)
+            self.assertIn("/mnt/supervisor", failure.stderr)
+            self.assertIn("bad option", failure.stderr)
+
+    def test_supervisor_parent_remount_variants_are_rejected_bash_equivalently(self):
+        self.assertFalse(workflow_has_supervisor_parent_readonly_remount(self.text))
+        for label, changed in generate_supervisor_parent_remount_mutations(self.text):
+            with self.subTest(variant=label):
+                self.assertTrue(workflow_has_supervisor_parent_readonly_remount(changed))
+                self.assertTrue(publisher_boundary_errors(changed))
+
+    def test_mount_short_option_cluster_runtime_matches_canonical_remount_parsing(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="mount-short-cluster-runtime-",
+            dir=artifact_root,
+        ) as temporary:
+            target = Path(temporary)
+            remount_forms = {
+                "cluster-ro-remount": ["/usr/bin/mount", "-f", "-v", "-ro", "remount", str(target)],
+                "split-r-o-remount": ["/usr/bin/mount", "-f", "-v", "-r", "-o", "remount", str(target)],
+                "attached-o-remount-ro": ["/usr/bin/mount", "-f", "-v", "-oremount,ro", str(target)],
+            }
+            nonremount_forms = {
+                "cluster-or-remount": ["/usr/bin/mount", "-f", "-v", "-or", "remount", str(target)],
+                "cluster-orw-remount": ["/usr/bin/mount", "-f", "-v", "-orw", "remount", str(target)],
+            }
+            expected_remount = f"mount: (null) mounted on {target}.\n"
+            expected_source = f"mount: remount mounted on {target}.\n"
+
+            for label, argv in remount_forms.items():
+                with self.subTest(case=label):
+                    completed = subprocess.run(
+                        argv,
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(completed.stdout, expected_remount)
+                    self.assertEqual(completed.stderr, "")
+
+            for label, argv in nonremount_forms.items():
+                with self.subTest(case=label):
+                    completed = subprocess.run(
+                        argv,
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(completed.stdout, expected_source)
+                    self.assertEqual(completed.stderr, "")
+
+    def test_mount_short_option_cluster_parser_tracks_effective_remount_readonly_state(self):
+        cases = (
+            ("cluster-ro-remount", "/usr/bin/mount -ro remount /mnt/supervisor", True),
+            ("cluster-fnv-ro-remount", "/usr/bin/mount -fnv -ro remount /mnt/supervisor", True),
+            ("attached-o-remount-ro", "/usr/bin/mount -oremount,ro /mnt/supervisor", True),
+            ("split-r-o-remount", "/usr/bin/mount -r -o remount /mnt/supervisor", True),
+            ("split-o-r-remount", "/usr/bin/mount -o remount -r /mnt/supervisor", True),
+            ("rw-option-list-overrides-readonly", "/usr/bin/mount -o rw,remount /mnt/supervisor", False),
+            ("short-rw-cluster-overrides-readonly", "/usr/bin/mount -rw -o remount /mnt/supervisor", False),
+            ("split-r-w-overrides-readonly", "/usr/bin/mount -r -w -o remount /mnt/supervisor", False),
+            ("split-w-r-restores-readonly", "/usr/bin/mount -w -r -o remount /mnt/supervisor", True),
+            ("cluster-or-consumes-r-as-option-arg", "/usr/bin/mount -or remount /mnt/supervisor", False),
+            ("cluster-orw-consumes-rw-as-option-arg", "/usr/bin/mount -orw remount /mnt/supervisor", False),
+            ("missing-mountpoint-after-cluster-fails-closed", "/usr/bin/mount -ro /mnt/supervisor", True),
+            ("unknown-short-cluster-fails-closed", "/usr/bin/mount -rz remount /mnt/supervisor", True),
+        )
+
+        for label, command_text, expected in cases:
+            with self.subTest(case=label):
+                tokens = publisher_shell_contract._parse_shell_tokens(
+                    command_text,
+                    label=label,
+                )
+                self.assertEqual(
+                    publisher_shell_contract._mount_command_targets_supervisor_parent(
+                        tokens,
+                        allow_reviewed_nonliteral_hidden=False,
+                    ),
+                    expected,
+                )
+
+    def test_mount_short_option_clusters_are_rejected_in_wrapper_and_substitution_contexts(self):
+        self.assertFalse(workflow_has_supervisor_parent_readonly_remount(self.text))
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="mount-short-cluster-shared-",
+            dir=artifact_root,
+        ) as temporary:
+            target = Path(temporary)
+            cases = (
+                (
+                    "if-wrapper-short-cluster",
+                    f'if /usr/bin/mount -f -v -ro remount "{target}" >/dev/null; then printf RUNTIME_IF_CLUSTER; fi\n',
+                    "RUNTIME_IF_CLUSTER",
+                    'root=/mnt\nif /usr/bin/mount -ro remount "$root/supervisor"; then :; fi\n',
+                ),
+                (
+                    "assignment-substitution-short-cluster",
+                    f'ignored="$("/usr/bin/mount" -f -v -ro remount "{target}")"\n'
+                    'printf "%s" "$ignored"\n',
+                    f"mount: (null) mounted on {target}.",
+                    'root=/mnt\nignored=$(/usr/bin/mount -ro remount "$root/supervisor")\n',
+                ),
+            )
+
+            for label, runtime_script, expected_stdout, semantic_script in cases:
+                with self.subTest(case=label):
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "--noprofile",
+                            "--norc",
+                            "-eu",
+                            "-o",
+                            "pipefail",
+                            "-c",
+                            runtime_script,
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(completed.stdout, expected_stdout)
+                    self.assertEqual(completed.stderr, "")
+                    self.assertTrue(
+                        publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                            semantic_script,
+                            label=label,
+                        )
+                    )
+
+    def test_publisher_run_scalar_matches_reference_yaml_bytes(self):
+        step_block = named_patch_release_step_block(
+            self.text,
+            "Build candidate in isolated namespace and stage public inputs",
+        )
+        actual_run = named_step_run_script_from_block(step_block)
+        reference_run = reference_literal_run_step_script(step_block)
+        self.assertEqual(actual_run.encode("utf-8"), reference_run.encode("utf-8"))
+        self.assertEqual(
+            publisher_shell_contract.reviewed_patch_release_run_sha256(actual_run),
+            publisher_shell_contract.REVIEWED_PATCH_RELEASE_RUN_SHA256,
+        )
+        publisher_shell_contract.assert_reviewed_patch_release_run_script_identity(
+            actual_run,
+            label="publisher isolated candidate build run script",
+        )
+
+        actual_shell = publisher_shell_contract.builder_isolation_shell_source(
+            actual_run,
+            label="publisher builder isolation shell",
+        )
+        reference_shell = publisher_shell_contract.builder_isolation_shell_source(
+            reference_run,
+            label="publisher builder isolation shell",
+        )
+        self.assertEqual(
+            actual_shell.encode("utf-8"),
+            reference_shell.encode("utf-8"),
+        )
+        self.assertEqual(
+            publisher_shell_contract.reviewed_builder_isolation_sha256(actual_shell),
+            publisher_shell_contract.REVIEWED_BUILDER_ISOLATION_SHA256,
+        )
+        self.assertEqual(
+            publisher_shell_contract.reviewed_hidden_mask_loop_sha256(
+                actual_shell,
+                label="publisher builder isolation shell",
+            ),
+            publisher_shell_contract.REVIEWED_HIDDEN_MASK_LOOP_SHA256,
+        )
+        publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
+            actual_shell,
+            label="publisher builder isolation shell",
+        )
+
+    def test_reference_literal_run_parser_rejects_complex_yaml_styles(self):
+        step_block = named_patch_release_step_block(
+            self.text,
+            "Build candidate in isolated namespace and stage public inputs",
+        )
+        mutations = (
+            step_block.replace("      run: |\n", "      run: >\n", 1),
+            step_block.replace("      run: |\n", "      run: |2\n", 1),
+            step_block.replace("      run: |\n", "      run: &anchor |\n", 1),
+        )
+        for mutated in mutations:
+            with self.subTest(header=mutated.splitlines()[3]):
+                with self.assertRaisesRegex(
+                    AssertionError,
+                    "reference literal parser",
+                ):
+                    reference_literal_run_step_script(mutated)
+
+    def test_env_split_string_runtime_executes_shell_c_and_detector_rejects_it(self):
+        cases = (
+            (
+                ["/bin/env", "-S", '/bin/bash -c "printf RUNTIME_ENV_S"'],
+                "RUNTIME_ENV_S",
+                'ROOT=/mnt\ncmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+                '/bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            ),
+            (
+                [
+                    "/bin/env",
+                    "--split-string",
+                    '/bin/bash -c "printf RUNTIME_ENV_SPLIT"',
+                ],
+                "RUNTIME_ENV_SPLIT",
+                'ROOT=/mnt\ncmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+                '/bin/env --split-string "/bin/bash -c \\"$cmd\\""\n',
+            ),
+            (
+                [
+                    "/bin/env",
+                    '--split-string=/bin/bash -c "printf RUNTIME_ENV_EQUALS"',
+                ],
+                "RUNTIME_ENV_EQUALS",
+                'ROOT=/mnt\ncmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+                '/bin/env \'--split-string=/bin/bash -c "$cmd"\'\n',
+            ),
+            (
+                ["/bin/env", "-i", "-S", '/bin/bash -c "printf RUNTIME_ENV_I_S"'],
+                "RUNTIME_ENV_I_S",
+                'ROOT=/mnt\ncmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+                '/bin/env -i -S "/bin/bash -c \\"$cmd\\""\n',
+            ),
+            (
+                [
+                    "/bin/env",
+                    "--unset",
+                    "HOME",
+                    "--split-string",
+                    '/bin/bash -c "printf RUNTIME_ENV_UNSET_SPLIT"',
+                ],
+                "RUNTIME_ENV_UNSET_SPLIT",
+                'ROOT=/mnt\ncmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+                '/bin/env --unset HOME --split-string "/bin/bash -c \\"$cmd\\""\n',
+            ),
+            (
+                [
+                    "/bin/env",
+                    "--chdir=/tmp",
+                    '--split-string=/bin/bash -c "printf RUNTIME_ENV_CHDIR_SPLIT"',
+                ],
+                "RUNTIME_ENV_CHDIR_SPLIT",
+                'ROOT=/mnt\ncmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+                '/bin/env --chdir=/tmp \'--split-string=/bin/bash -c "$cmd"\'\n',
+            ),
+            (
+                ["/usr/bin/timeout", "5", "/bin/env", "-S", '/bin/bash -c "printf RUNTIME_TIMEOUT_ENV_S"'],
+                "RUNTIME_TIMEOUT_ENV_S",
+                'ROOT=/mnt\ncmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+                'env_cmd=/bin/env\n'
+                'timeout 5 "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+            ),
+        )
+        for argv, expected_stdout, semantic_script in cases:
+            with self.subTest(argv=argv[1]):
+                completed = subprocess.run(
+                    argv,
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, expected_stdout)
+                self.assertEqual(completed.stderr, "")
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        semantic_script,
+                        label="runtime env split-string shell wrapper",
+                    )
+                )
+
+    def test_exact_reviewer_timeout_env_split_string_repros_execute_and_detector_rejects_them(
+        self,
+    ):
+        prefix = (
+            'ROOT=/mnt\n'
+            'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+        )
+        cases = (
+            (
+                "timeout-attached-kill-wrapper",
+                'cmd="printf RUNTIME_TIMEOUT_ATTACHED_KILL"\n'
+                'timeout -k1 5 /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+                "RUNTIME_TIMEOUT_ATTACHED_KILL",
+                prefix + 'timeout -k1 5 /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            ),
+            (
+                "variable-timeout-wrapper",
+                'cmd="printf RUNTIME_TIMEOUT_VARIABLE"\n'
+                'wrapper=/usr/bin/timeout\n'
+                '"$wrapper" 5 /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+                "RUNTIME_TIMEOUT_VARIABLE",
+                prefix
+                + 'wrapper=/usr/bin/timeout\n'
+                + '"$wrapper" 5 /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            ),
+            (
+                "globbed-timeout-wrapper",
+                'cmd="printf RUNTIME_TIMEOUT_GLOBBED"\n'
+                '/usr/bin/timeou? 5 /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+                "RUNTIME_TIMEOUT_GLOBBED",
+                prefix + '/usr/bin/timeou? 5 /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            ),
+        )
+
+        for label, runtime_script, expected_stdout, semantic_script in cases:
+            with self.subTest(case=label):
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "--noprofile",
+                        "--norc",
+                        "-eu",
+                        "-o",
+                        "pipefail",
+                        "-c",
+                        runtime_script,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, expected_stdout)
+                self.assertEqual(completed.stderr, "")
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        semantic_script,
+                        label=label,
+                    )
+                )
+
+    def test_timeout_env_split_string_wrapper_variants_fail_closed(self):
+        prefix = (
+            'ROOT=/mnt\n'
+            'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+        )
+        rejected = {
+            "timeout-attached-signal-wrapper": 'timeout -sTERM 5 /bin/env --split-string "/bin/bash -c \\"$cmd\\""\n',
+            "timeout-long-option-wrapper": (
+                "timeout --foreground --preserve-status --kill-after=1 "
+                '--signal=TERM 5 command -- /bin/env \'--split-string=/bin/bash -c "$cmd"\'\n'
+            ),
+            "nested-timeout-command-env-wrapper": (
+                'nice -n 5 timeout --foreground 5 command -- /bin/env -S "/bin/bash -c \\"$cmd\\""\n'
+            ),
+            "timeout-unknown-option-wrapper": 'timeout --bogus 5 /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            "nice-unknown-option-wrapper": 'nice --bogus /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            "sudo-unknown-option-wrapper": 'sudo --bogus /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            "command-unknown-option-wrapper": 'command --bogus /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            "variable-nice-wrapper": 'wrapper=/usr/bin/nice\n"$wrapper" -n 5 /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            "globbed-nice-wrapper": '/usr/bin/ni?e -n 5 /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            "variable-sudo-wrapper": 'wrapper=/usr/bin/sudo\n"$wrapper" -u root /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            "globbed-sudo-wrapper": '/usr/bin/sud? -u root /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            "variable-command-wrapper": 'wrapper=command\n"$wrapper" -- /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+            "globbed-command-wrapper": 'comman? -- /bin/env -S "/bin/bash -c \\"$cmd\\""\n',
+        }
+
+        self.assertFalse(workflow_has_supervisor_parent_readonly_remount(self.text))
+
+        for label, command in rejected.items():
+            with self.subTest(case=label):
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        prefix + command,
+                        label=label,
+                    )
+                )
+
+    def test_setsid_wrapped_env_surfaces_execute_and_detector_rejects_them(self):
+        prefix = (
+            'ROOT=/mnt\n'
+            'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+        )
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="setsid-busybox-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            busybox = sandbox / "busybox"
+            busybox.write_text(
+                "#!/bin/sh\n"
+                'if [ "$1" != "env" ]; then\n'
+                "  exit 125\n"
+                "fi\n"
+                "shift\n"
+                'exec /bin/env "$@"\n',
+                encoding="ascii",
+            )
+            busybox.chmod(0o755)
+
+            cases = (
+                (
+                    "setsid-variable-env",
+                    'cmd="printf RUNTIME_SETSID_ENV"\n'
+                    "env_cmd=/bin/env\n"
+                    '/usr/bin/setsid --wait "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_SETSID_ENV",
+                    prefix
+                    + "env_cmd=/bin/env\n"
+                    + '/usr/bin/setsid --wait "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "setsid-short-option-variable-env",
+                    'cmd="printf RUNTIME_SETSID_SHORT_OPTION"\n'
+                    "env_cmd=/bin/env\n"
+                    '/usr/bin/setsid -w "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_SETSID_SHORT_OPTION",
+                    prefix
+                    + "env_cmd=/bin/env\n"
+                    + '/usr/bin/setsid -w "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "timeout-setsid-variable-env",
+                    'cmd="printf RUNTIME_TIMEOUT_SETSID_ENV"\n'
+                    "env_cmd=/bin/env\n"
+                    'timeout 5 /usr/bin/setsid --wait "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_TIMEOUT_SETSID_ENV",
+                    prefix
+                    + "env_cmd=/bin/env\n"
+                    + 'timeout 5 /usr/bin/setsid --wait "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "setsid-variable-busybox-env",
+                    'cmd="printf RUNTIME_SETSID_BUSYBOX_ENV"\n'
+                    f'busybox_cmd="{busybox}"\n'
+                    "ENV_APPLET=env\n"
+                    '/usr/bin/setsid --wait "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_SETSID_BUSYBOX_ENV",
+                    prefix
+                    + f"busybox_cmd={busybox}\n"
+                    + "ENV_APPLET=env\n"
+                    + '/usr/bin/setsid --wait "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "timeout-setsid-variable-busybox-env",
+                    'cmd="printf RUNTIME_TIMEOUT_SETSID_BUSYBOX_ENV"\n'
+                    f'busybox_cmd="{busybox}"\n'
+                    "ENV_APPLET=env\n"
+                    'timeout 5 /usr/bin/setsid --wait "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_TIMEOUT_SETSID_BUSYBOX_ENV",
+                    prefix
+                    + f"busybox_cmd={busybox}\n"
+                    + "ENV_APPLET=env\n"
+                    + 'timeout 5 /usr/bin/setsid --wait "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                ),
+            )
+
+            for label, runtime_script, expected_stdout, semantic_script in cases:
+                with self.subTest(case=label):
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "--noprofile",
+                            "--norc",
+                            "-eu",
+                            "-o",
+                            "pipefail",
+                            "-c",
+                            runtime_script,
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(completed.stdout, expected_stdout)
+                    self.assertEqual(completed.stderr, "")
+                    self.assertTrue(
+                        publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                            semantic_script,
+                            label=label,
+                        )
+                    )
+
+    def test_setsid_literal_arguments_execute_without_false_positive(self):
+        cases = (
+            (
+                "setsid-literal-printf",
+                'message="SAFE_SETSID_LITERAL"\n'
+                '/usr/bin/setsid --wait /usr/bin/printf "%s" "$message"\n',
+                "SAFE_SETSID_LITERAL",
+                'message="SAFE_SETSID_LITERAL"\n'
+                '/usr/bin/setsid --wait /usr/bin/printf "%s" "$message"\n',
+            ),
+            (
+                "setsid-literal-env-exec",
+                'message="SAFE_SETSID_ENV_LITERAL"\n'
+                '/usr/bin/setsid --wait /bin/env -i /usr/bin/printf "%s" "$message"\n',
+                "SAFE_SETSID_ENV_LITERAL",
+                'message="SAFE_SETSID_ENV_LITERAL"\n'
+                '/usr/bin/setsid --wait /bin/env -i /usr/bin/printf "%s" "$message"\n',
+            ),
+            (
+                "timeout-setsid-literal-env-exec",
+                'message="SAFE_TIMEOUT_SETSID_ENV_LITERAL"\n'
+                'timeout 5 /usr/bin/setsid --wait /bin/env -i /usr/bin/printf "%s" "$message"\n',
+                "SAFE_TIMEOUT_SETSID_ENV_LITERAL",
+                'message="SAFE_TIMEOUT_SETSID_ENV_LITERAL"\n'
+                'timeout 5 /usr/bin/setsid --wait /bin/env -i /usr/bin/printf "%s" "$message"\n',
+            ),
+        )
+
+        for label, runtime_script, expected_stdout, semantic_script in cases:
+            with self.subTest(case=label):
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "--noprofile",
+                        "--norc",
+                        "-eu",
+                        "-o",
+                        "pipefail",
+                        "-c",
+                        runtime_script,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, expected_stdout)
+                self.assertEqual(completed.stderr, "")
+                self.assertFalse(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        semantic_script,
+                        label=label,
+                    )
+                )
+
+    def test_unknown_literal_wrappers_execute_hidden_env_surfaces_and_detector_rejects_them(
+        self,
+    ):
+        prefix = (
+            'ROOT=/mnt\n'
+            'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+        )
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="unknown-wrapper-busybox-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            lock_file = sandbox / "lock"
+            lock_file.write_text("", encoding="ascii")
+            busybox = sandbox / "busybox"
+            busybox.write_text(
+                "#!/bin/sh\n"
+                'if [ "$1" != "env" ]; then\n'
+                "  exit 125\n"
+                "fi\n"
+                "shift\n"
+                'exec /bin/env "$@"\n',
+                encoding="ascii",
+            )
+            busybox.chmod(0o755)
+
+            cases = (
+                (
+                    "nohup-variable-env",
+                    'cmd="printf RUNTIME_NOHUP_ENV"\n'
+                    "env_cmd=/bin/env\n"
+                    'nohup "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_NOHUP_ENV",
+                    prefix
+                    + "env_cmd=/bin/env\n"
+                    + 'nohup "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "nohup-setsid-variable-env",
+                    'cmd="printf RUNTIME_NOHUP_SETSID_ENV"\n'
+                    "env_cmd=/bin/env\n"
+                    'nohup /usr/bin/setsid --wait "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_NOHUP_SETSID_ENV",
+                    prefix
+                    + "env_cmd=/bin/env\n"
+                    + 'nohup /usr/bin/setsid --wait "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "taskset-variable-env",
+                    'cmd="printf RUNTIME_TASKSET_ENV"\n'
+                    "env_cmd=/bin/env\n"
+                    'taskset -c 0 "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_TASKSET_ENV",
+                    prefix
+                    + "env_cmd=/bin/env\n"
+                    + 'taskset -c 0 "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "ionice-variable-env",
+                    'cmd="printf RUNTIME_IONICE_ENV"\n'
+                    "env_cmd=/bin/env\n"
+                    'ionice -c3 "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_IONICE_ENV",
+                    prefix
+                    + "env_cmd=/bin/env\n"
+                    + 'ionice -c3 "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "flock-variable-env",
+                    'cmd="printf RUNTIME_FLOCK_ENV"\n'
+                    "env_cmd=/bin/env\n"
+                    f'flock -n "{lock_file}" "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_FLOCK_ENV",
+                    prefix
+                    + "env_cmd=/bin/env\n"
+                    + f'flock -n "{lock_file}" "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "nohup-variable-busybox-env",
+                    'cmd="printf RUNTIME_NOHUP_BUSYBOX_ENV"\n'
+                    f'busybox_cmd="{busybox}"\n'
+                    "ENV_APPLET=env\n"
+                    'nohup "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_NOHUP_BUSYBOX_ENV",
+                    prefix
+                    + f"busybox_cmd={busybox}\n"
+                    + "ENV_APPLET=env\n"
+                    + 'nohup "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "nohup-setsid-variable-busybox-env",
+                    'cmd="printf RUNTIME_NOHUP_SETSID_BUSYBOX_ENV"\n'
+                    f'busybox_cmd="{busybox}"\n'
+                    "ENV_APPLET=env\n"
+                    'nohup /usr/bin/setsid --wait "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_NOHUP_SETSID_BUSYBOX_ENV",
+                    prefix
+                    + f"busybox_cmd={busybox}\n"
+                    + "ENV_APPLET=env\n"
+                    + 'nohup /usr/bin/setsid --wait "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "taskset-variable-busybox-env",
+                    'cmd="printf RUNTIME_TASKSET_BUSYBOX_ENV"\n'
+                    f'busybox_cmd="{busybox}"\n'
+                    "ENV_APPLET=env\n"
+                    'taskset -c 0 "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_TASKSET_BUSYBOX_ENV",
+                    prefix
+                    + f"busybox_cmd={busybox}\n"
+                    + "ENV_APPLET=env\n"
+                    + 'taskset -c 0 "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "ionice-variable-busybox-env",
+                    'cmd="printf RUNTIME_IONICE_BUSYBOX_ENV"\n'
+                    f'busybox_cmd="{busybox}"\n'
+                    "ENV_APPLET=env\n"
+                    'ionice -c3 "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_IONICE_BUSYBOX_ENV",
+                    prefix
+                    + f"busybox_cmd={busybox}\n"
+                    + "ENV_APPLET=env\n"
+                    + 'ionice -c3 "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "flock-variable-busybox-env",
+                    'cmd="printf RUNTIME_FLOCK_BUSYBOX_ENV"\n'
+                    f'busybox_cmd="{busybox}"\n'
+                    "ENV_APPLET=env\n"
+                    f'flock -n "{lock_file}" "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_FLOCK_BUSYBOX_ENV",
+                    prefix
+                    + f"busybox_cmd={busybox}\n"
+                    + "ENV_APPLET=env\n"
+                    + f'flock -n "{lock_file}" "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "flock-nonliteral-command-string",
+                    'cmd="printf RUNTIME_FLOCK_COMMAND_STRING"\n'
+                    f'flock -n "{lock_file}" -c "$cmd"\n',
+                    "RUNTIME_FLOCK_COMMAND_STRING",
+                    prefix + f'flock -n "{lock_file}" -c "$cmd"\n',
+                ),
+            )
+
+            for label, runtime_script, expected_stdout, semantic_script in cases:
+                with self.subTest(case=label):
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "--noprofile",
+                            "--norc",
+                            "-eu",
+                            "-o",
+                            "pipefail",
+                            "-c",
+                            runtime_script,
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(completed.stdout, expected_stdout)
+                    self.assertEqual(completed.stderr, "")
+                    self.assertTrue(
+                        publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                            semantic_script,
+                            label=label,
+                        )
+                    )
+
+    def test_unknown_literal_wrappers_keep_literal_command_arguments_semantic_clean(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="unknown-wrapper-flock-safe-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            lock_file = sandbox / "lock"
+            lock_file.write_text("", encoding="ascii")
+            env_cmd = "/bin/env"
+            cases = (
+                (
+                    "nohup-literal-command-data",
+                    f'env_cmd="{env_cmd}"\n'
+                    'nohup /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                    "/bin/env -S",
+                    f'env_cmd="{env_cmd}"\n'
+                    'nohup /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                ),
+                (
+                    "nohup-setsid-literal-command-data",
+                    f'env_cmd="{env_cmd}"\n'
+                    'nohup /usr/bin/setsid --wait /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                    "/bin/env -S",
+                    f'env_cmd="{env_cmd}"\n'
+                    'nohup /usr/bin/setsid --wait /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                ),
+                (
+                    "taskset-literal-command-data",
+                    f'env_cmd="{env_cmd}"\n'
+                    'taskset -c 0 /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                    "/bin/env -S",
+                    f'env_cmd="{env_cmd}"\n'
+                    'taskset -c 0 /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                ),
+                (
+                    "ionice-literal-command-data",
+                    f'env_cmd="{env_cmd}"\n'
+                    'ionice -c3 /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                    "/bin/env -S",
+                    f'env_cmd="{env_cmd}"\n'
+                    'ionice -c3 /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                ),
+                (
+                    "flock-literal-command-data",
+                    f'env_cmd="{env_cmd}"\n'
+                    f'flock -n "{lock_file}" /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                    "/bin/env -S",
+                    f'env_cmd="{env_cmd}"\n'
+                    f'flock -n "{lock_file}" /usr/bin/printf "%s %s" "$env_cmd" "-S"\n',
+                ),
+                (
+                    "flock-literal-command-string",
+                    f'flock -n "{lock_file}" -c "printf SAFE_FLOCK_COMMAND_STRING"\n',
+                    "SAFE_FLOCK_COMMAND_STRING",
+                    f'flock -n "{lock_file}" -c "printf SAFE_FLOCK_COMMAND_STRING"\n',
+                ),
+            )
+
+            for label, runtime_script, expected_stdout, semantic_script in cases:
+                with self.subTest(case=label):
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "--noprofile",
+                            "--norc",
+                            "-eu",
+                            "-o",
+                            "pipefail",
+                            "-c",
+                            runtime_script,
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(completed.stdout, expected_stdout)
+                    self.assertEqual(completed.stderr, "")
+                    self.assertFalse(
+                        publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                            semantic_script,
+                            label=label,
+                        )
+                    )
+
+    def test_substitution_bodies_execute_and_detector_rejects_them(self):
+        self.assertFalse(workflow_has_supervisor_parent_readonly_remount(self.text))
+        cases = (
+            (
+                "assignment-command-substitution-direct",
+                'ignored=$(/usr/bin/printf RUNTIME_ASSIGN_DIRECT)\n'
+                'printf "%s" "$ignored"\n',
+                "RUNTIME_ASSIGN_DIRECT",
+                'root=/mnt\n'
+                'ignored=$(/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$root/supervisor")\n',
+            ),
+            (
+                "assignment-command-substitution-env-shell",
+                'ignored=$(/bin/env -S "/bin/bash -c \\"printf RUNTIME_ASSIGN_ENV\\"")\n'
+                'printf "%s" "$ignored"\n',
+                "RUNTIME_ASSIGN_ENV",
+                'ignored=$(/bin/env -S "/bin/bash -c \\"/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor\\"")\n',
+            ),
+            (
+                "assignment-command-substitution-bash-shell",
+                'ignored=$(/bin/bash -c "printf RUNTIME_ASSIGN_BASH")\n'
+                'printf "%s" "$ignored"\n',
+                "RUNTIME_ASSIGN_BASH",
+                'ignored=$(/bin/bash -c "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor")\n',
+            ),
+            (
+                "nested-command-substitution-env-shell",
+                'ignored="$(/usr/bin/printf "%s" "$(/bin/env -S "/bin/bash -c \\"printf RUNTIME_NESTED_ENV\\"")")"\n'
+                'printf "%s" "$ignored"\n',
+                "RUNTIME_NESTED_ENV",
+                'ignored="$(/usr/bin/printf "%s" "$(/bin/env -S "/bin/bash -c \\"/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor\\"")")"\n',
+            ),
+            (
+                "backtick-command-substitution-bash-shell",
+                'ignored=`/bin/bash -c "printf RUNTIME_BACKTICK_BASH"`\n'
+                'printf "%s" "$ignored"\n',
+                "RUNTIME_BACKTICK_BASH",
+                'ignored=`/bin/bash -c "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"`\n',
+            ),
+            (
+                "input-process-substitution-direct",
+                'cat <(/usr/bin/printf RUNTIME_INPUT_PROCESS_DIRECT)\n',
+                "RUNTIME_INPUT_PROCESS_DIRECT",
+                'root=/mnt\n'
+                'cat <(/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$root/supervisor") >/dev/null\n',
+            ),
+            (
+                "input-process-substitution-env-shell",
+                'cat <(/bin/env -S "/bin/bash -c \\"printf RUNTIME_INPUT_PROCESS_ENV\\"")\n',
+                "RUNTIME_INPUT_PROCESS_ENV",
+                'cat <(/bin/env -S "/bin/bash -c \\"/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor\\"") >/dev/null\n',
+            ),
+            (
+                "output-process-substitution-bash-shell",
+                ': > >(/bin/bash -c "printf RUNTIME_OUTPUT_PROCESS_BASH")\n',
+                "RUNTIME_OUTPUT_PROCESS_BASH",
+                ': > >(/bin/bash -c "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor")\n',
+            ),
+        )
+
+        for label, runtime_script, expected_stdout, semantic_script in cases:
+            with self.subTest(case=label):
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "--noprofile",
+                        "--norc",
+                        "-eu",
+                        "-o",
+                        "pipefail",
+                        "-c",
+                        runtime_script,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, expected_stdout)
+                self.assertEqual(completed.stderr, "")
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        semantic_script,
+                        label=label,
+                    )
+                )
+
+    def test_quoted_and_escaped_substitution_literals_do_not_execute_or_trigger_detection(
+        self,
+    ):
+        cases = (
+            (
+                "single-quoted-command-substitution",
+                "printf '%s' '$(/usr/bin/printf SHOULD_NOT_RUN)'\n",
+                '$(/usr/bin/printf SHOULD_NOT_RUN)',
+                "printf '%s' '$(/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor)'\n",
+            ),
+            (
+                "escaped-command-substitution",
+                'printf "%s" "\\$(/usr/bin/printf SHOULD_NOT_RUN_ESCAPED)"\n',
+                '$(/usr/bin/printf SHOULD_NOT_RUN_ESCAPED)',
+                'printf "%s" "\\$(/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor)"\n',
+            ),
+            (
+                "single-quoted-backtick-substitution",
+                "printf '%s' '`/usr/bin/printf SHOULD_NOT_RUN_BACKTICK`'\n",
+                '`/usr/bin/printf SHOULD_NOT_RUN_BACKTICK`',
+                "printf '%s' '`/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor`'\n",
+            ),
+            (
+                "single-quoted-input-process-substitution",
+                "printf '%s' '<(/usr/bin/printf SHOULD_NOT_RUN_PROCESS)'\n",
+                '<(/usr/bin/printf SHOULD_NOT_RUN_PROCESS)',
+                "printf '%s' '<(/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor)'\n",
+            ),
+            (
+                "double-quoted-output-process-substitution",
+                'printf "%s" ">(/usr/bin/printf SHOULD_NOT_RUN_OUTPUT_PROCESS)"\n',
+                '>(/usr/bin/printf SHOULD_NOT_RUN_OUTPUT_PROCESS)',
+                'printf "%s" ">(/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor)"\n',
+            ),
+        )
+
+        for label, runtime_script, expected_stdout, semantic_script in cases:
+            with self.subTest(case=label):
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "--noprofile",
+                        "--norc",
+                        "-eu",
+                        "-o",
+                        "pipefail",
+                        "-c",
+                        runtime_script,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, expected_stdout)
+                self.assertEqual(completed.stderr, "")
+                self.assertFalse(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        semantic_script,
+                        label=label,
+                    )
+                )
+
+    def test_structural_prefix_env_split_string_repros_execute_and_detector_rejects_them(
+        self,
+    ):
+        prefix = (
+            'ROOT=/mnt\n'
+            'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+        )
+        cases = (
+            (
+                "inline-else",
+                'if false; then :; else /bin/env -S "/bin/bash -c \\"printf RUNTIME_INLINE_ELSE\\""; fi\n',
+                "RUNTIME_INLINE_ELSE",
+                prefix
+                + 'if false; then :; else /bin/env -S "/bin/bash -c \\"$cmd\\""; fi\n',
+            ),
+            (
+                "brace-group",
+                '{ /bin/env -S "/bin/bash -c \\"printf RUNTIME_BRACE_GROUP\\""; }\n',
+                "RUNTIME_BRACE_GROUP",
+                prefix + '{ /bin/env -S "/bin/bash -c \\"$cmd\\""; }\n',
+            ),
+            (
+                "nested-else-brace-group",
+                'if false; then :; else { /bin/env -S "/bin/bash -c \\"printf RUNTIME_NESTED_ELSE_BRACE\\""; }; fi\n',
+                "RUNTIME_NESTED_ELSE_BRACE",
+                prefix
+                + 'if false; then :; else { /bin/env -S "/bin/bash -c \\"$cmd\\""; }; fi\n',
+            ),
+            (
+                "then-body",
+                'if true; then /bin/env -S "/bin/bash -c \\"printf RUNTIME_THEN_BODY\\""; fi\n',
+                "RUNTIME_THEN_BODY",
+                prefix + 'if true; then /bin/env -S "/bin/bash -c \\"$cmd\\""; fi\n',
+            ),
+            (
+                "do-body",
+                'for iteration in 1; do /bin/env -S "/bin/bash -c \\"printf RUNTIME_DO_BODY\\""; done\n',
+                "RUNTIME_DO_BODY",
+                prefix
+                + 'for iteration in 1; do /bin/env -S "/bin/bash -c \\"$cmd\\""; done\n',
+            ),
+            (
+                "subshell-else-group",
+                'if false; then :; else ( /bin/env -S "/bin/bash -c \\"printf RUNTIME_SUBSHELL_GROUP\\""); fi\n',
+                "RUNTIME_SUBSHELL_GROUP",
+                prefix
+                + 'if false; then :; else ( /bin/env -S "/bin/bash -c \\"$cmd\\""); fi\n',
+            ),
+            (
+                "case-arm-brace-group",
+                'case x in\n  *) { /bin/env -S "/bin/bash -c \\"printf RUNTIME_CASE_ARM_GROUP\\""; } ;;\nesac\n',
+                "RUNTIME_CASE_ARM_GROUP",
+                prefix
+                + 'case x in\n  *) { /bin/env -S "/bin/bash -c \\"$cmd\\""; } ;;\nesac\n',
+            ),
+        )
+
+        for label, runtime_script, expected_stdout, semantic_script in cases:
+            with self.subTest(case=label):
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "--noprofile",
+                        "--norc",
+                        "-eu",
+                        "-o",
+                        "pipefail",
+                        "-c",
+                        runtime_script,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, expected_stdout)
+                self.assertEqual(completed.stderr, "")
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        semantic_script,
+                        label=label,
+                    )
+                )
+
+    def test_extglob_case_pattern_semantic_surface_strips_only_the_pattern_prefix(self):
+        cases = (
+            (
+                "at-extglob-separated-env",
+                '@(x)) /bin/env -S "/bin/bash -c \\"$cmd\\""',
+                ("/bin/env", "-S", '/bin/bash -c "$cmd"'),
+            ),
+            (
+                "bang-extglob-attached-bash",
+                '!(x))/bin/bash -c "$cmd"',
+                ("/bin/bash", "-c", "$cmd"),
+            ),
+            (
+                "plus-extglob-attached-mount",
+                "+(x))/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor",
+                (
+                    "/usr/bin/mount",
+                    "-o",
+                    "remount,ro,nosuid,nodev,noexec",
+                    "/mnt/supervisor",
+                ),
+            ),
+            (
+                "question-extglob-attached-env",
+                '?(x))/bin/env -S "/bin/bash -c \\"$cmd\\""',
+                ("/bin/env", "-S", '/bin/bash -c "$cmd"'),
+            ),
+            (
+                "star-extglob-attached-bash",
+                '*(x))/bin/bash -c "$cmd"',
+                ("/bin/bash", "-c", "$cmd"),
+            ),
+            (
+                "nested-extglob-attached-bash",
+                '!(@(x)))/bin/bash -c "$cmd"',
+                ("/bin/bash", "-c", "$cmd"),
+            ),
+            (
+                "extglob-attached-brace-group",
+                '@(x)){ /bin/env -S "/bin/bash -c \\"$cmd\\""',
+                ("/bin/env", "-S", '/bin/bash -c "$cmd"'),
+            ),
+        )
+
+        for label, command_text, expected in cases:
+            with self.subTest(case=label):
+                tokens = publisher_shell_contract._semantic_surface_tokens(
+                    publisher_shell_contract._parse_shell_tokens(
+                        command_text,
+                        label=label,
+                    ),
+                    label=label,
+                )
+                self.assertEqual(tuple(token.text for token in tokens), expected)
+
+    def test_case_pattern_surface_parser_ignores_pure_closers_and_fails_closed_on_ambiguous_tokens(
+        self,
+    ):
+        for closing in (")", "))", ")))"):
+            with self.subTest(closing=closing):
+                self.assertEqual(
+                    publisher_shell_contract._semantic_surface_tokens(
+                        publisher_shell_contract._parse_shell_tokens(
+                            closing,
+                            label=closing,
+                        ),
+                        label=closing,
+                    ),
+                    (),
+                )
+
+        for label, command_text in (
+            (
+                "ambiguous-double-close",
+                'foo)) /bin/env -S "/bin/bash -c \\"$cmd\\""',
+            ),
+            (
+                "unterminated-extglob-fragment",
+                "@(x",
+            ),
+            (
+                "unterminated-nested-extglob-fragment",
+                "!(@(x)",
+            ),
+        ):
+            with self.subTest(case=label):
+                with self.assertRaisesRegex(ValueError, "case-pattern token differs"):
+                    publisher_shell_contract._semantic_surface_tokens(
+                        publisher_shell_contract._parse_shell_tokens(
+                            command_text,
+                            label=label,
+                        ),
+                        label=label,
+                    )
+
+    def test_unsupported_extglob_case_alternation_fails_closed(self):
+        script = (
+            'ROOT=/mnt\n'
+            'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+            'case x in\n'
+            '  @(x|y)) /bin/env -S "/bin/bash -c \\"$cmd\\""\n'
+            '  ;;\n'
+            'esac\n'
+        )
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                script,
+                label="unsupported-extglob-alternation",
+            )
+        )
+
+    def test_extglob_case_arm_runtime_repros_execute_and_detector_rejects_them(self):
+        prefix = (
+            'ROOT=/mnt\n'
+            'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+        )
+        cases = (
+            (
+                "extglob-env-split-string",
+                'cmd="printf RUNTIME_EXTGLOB_ENV"\n'
+                'case x in\n'
+                '  @(x))/bin/env -S "/bin/bash -c \\"$cmd\\""\n'
+                '  ;;\n'
+                'esac\n',
+                "RUNTIME_EXTGLOB_ENV",
+                prefix
+                + 'case x in\n'
+                + '  @(x))/bin/env -S "/bin/bash -c \\"$cmd\\""\n'
+                + '  ;;\n'
+                + 'esac\n',
+            ),
+            (
+                "nested-extglob-bash-c",
+                'cmd="printf RUNTIME_EXTGLOB_BASH"\n'
+                'case x in\n'
+                '  !(@(y)))/bin/bash -c "$cmd"\n'
+                '  ;;\n'
+                'esac\n',
+                "RUNTIME_EXTGLOB_BASH",
+                prefix
+                + 'case x in\n'
+                + '  !(@(y)))/bin/bash -c "$cmd"\n'
+                + '  ;;\n'
+                + 'esac\n',
+            ),
+            (
+                "direct-extglob-mount-surface",
+                'case x in\n'
+                '  +(x))/usr/bin/printf RUNTIME_EXTGLOB_DIRECT\n'
+                '  ;;\n'
+                'esac\n',
+                "RUNTIME_EXTGLOB_DIRECT",
+                prefix
+                + 'case x in\n'
+                + '  +(x))/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor\n'
+                + '  ;;\n'
+                + 'esac\n',
+            ),
+        )
+
+        self.assertFalse(workflow_has_supervisor_parent_readonly_remount(self.text))
+
+        for label, runtime_script, expected_stdout, semantic_script in cases:
+            with self.subTest(case=label):
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "--noprofile",
+                        "--norc",
+                        "-O",
+                        "extglob",
+                        "-eu",
+                        "-o",
+                        "pipefail",
+                        "-c",
+                        runtime_script,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, expected_stdout)
+                self.assertEqual(completed.stderr, "")
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        semantic_script,
+                        label=label,
+                    )
+                )
+
+    def test_inline_function_body_env_split_string_runtime_fails_closed(self):
+        runtime_script = (
+            'wrapped() { /bin/env -S "/bin/bash -c \\"printf RUNTIME_INLINE_FUNCTION\\""; }\n'
+            "wrapped\n"
+        )
+        semantic_script = (
+            'ROOT=/mnt\n'
+            'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+            'wrapped() { /bin/env -S "/bin/bash -c \\"$cmd\\""; }\n'
+            "wrapped\n"
+        )
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "--noprofile",
+                "--norc",
+                "-eu",
+                "-o",
+                "pipefail",
+                "-c",
+                runtime_script,
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout, "RUNTIME_INLINE_FUNCTION")
+        self.assertEqual(completed.stderr, "")
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                semantic_script,
+                label="inline-function-body",
+            )
+        )
+
+    def test_unquoted_glob_brace_and_tilde_shell_surfaces_fail_closed_while_quoted_literals_stay_distinct(
+        self,
+    ):
+        rejected = {
+            "question-target-alias": "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/superviso?\n",
+            "star-target-alias": "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervis*\n",
+            "bracket-target-alias": "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/superviso[r]\n",
+            "brace-target-alias": "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/superviso{r,rs}\n",
+            "tilde-target-alias": "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ~/supervisor\n",
+            "globbed-shell-interpreter": 'cmd="printf ok"\n/bin/ba?h -c "$cmd"\n',
+            "globbed-env-wrapper": '/bin/e?v --split-string "/bin/bash -c \\"printf ok\\""\n',
+            "bracket-busybox-applet-wrapper": '/bin/busybox e[n]v --split-string "/bin/bash -c \\"printf ok\\""\n',
+            "extglob-target-alias": "shopt -s extglob\n/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/superviso@(r)\n",
+        }
+        accepted = {
+            "quoted-question-target": '/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "/mnt/superviso?"\n',
+            "quoted-brace-target": "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec '/mnt/superviso{r,rs}'\n",
+            "quoted-globbed-env-wrapper": '"/bin/e?v" --split-string "/bin/bash -c \\"printf ok\\""\n',
+            "escaped-shell-question": '/bin/ba\\?h -c "printf ok"\n',
+        }
+
+        self.assertFalse(workflow_has_supervisor_parent_readonly_remount(self.text))
+
+        for label, script in rejected.items():
+            with self.subTest(case=label):
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        script,
+                        label=label,
+                    )
+                )
+
+        for label, script in accepted.items():
+            with self.subTest(case=label):
+                self.assertFalse(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        script,
+                        label=label,
+                    )
+                )
+
+    def test_bash_comment_backslash_does_not_hide_following_mount(self):
+        mount = "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"
+        cases = {
+            "comment-after-whitespace": (
+                "echo ok # note \\\n"
+                f"{mount}\n",
+                ("echo ok", mount),
+            ),
+            "comment-after-operator": (
+                "echo ok; # note \\\n"
+                f"{mount}\n",
+                ("echo ok", mount),
+            ),
+            "hash-inside-word": (
+                f"echo foo#bar\n{mount}\n",
+                ("echo foo#bar", mount),
+            ),
+            "hash-inside-quotes": (
+                f'echo "#still-not-comment" # note \\\n{mount}\n',
+                ('echo "#still-not-comment"', mount),
+            ),
+        }
+        for label, (script, expected_commands) in cases.items():
+            with self.subTest(case=label):
+                self.assertEqual(
+                    publisher_shell_contract.split_bash_simple_command_strings(
+                        script,
+                        label=label,
+                    ),
+                    expected_commands,
+                )
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        script,
+                        label=label,
+                    )
+                )
+
+    def test_hidden_loop_scope_is_independent_of_full_shell_identity(self):
+        builder_shell = builder_isolation_shell_source(self.text)
+        harmless_outside_loop = builder_shell.replace("cd /\n", "cd /\n\n", 1)
+        self.assertNotEqual(
+            publisher_shell_contract.reviewed_builder_isolation_sha256(
+                harmless_outside_loop
+            ),
+            publisher_shell_contract.REVIEWED_BUILDER_ISOLATION_SHA256,
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "raw identity differs from the reviewed security boundary",
+        ):
+            publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
+                harmless_outside_loop,
+                label="publisher builder isolation shell",
+            )
+        self.assertEqual(
+            publisher_shell_contract.reviewed_hidden_mask_loop_sha256(
+                harmless_outside_loop,
+                label="publisher builder isolation shell",
+            ),
+            publisher_shell_contract.REVIEWED_HIDDEN_MASK_LOOP_SHA256,
+        )
+        self.assertFalse(
+            publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                harmless_outside_loop,
+                label="publisher builder isolation shell",
+            )
+        )
+
+        inserted_parent_remount = builder_shell.replace(
+            "unmount_if_mounted /sys\n",
+            "unmount_if_mounted /sys\n"
+            "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor\n",
+            1,
+        )
+        self.assertNotEqual(
+            publisher_shell_contract.reviewed_builder_isolation_sha256(
+                inserted_parent_remount
+            ),
+            publisher_shell_contract.REVIEWED_BUILDER_ISOLATION_SHA256,
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            "raw identity differs from the reviewed security boundary",
+        ):
+            publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
+                inserted_parent_remount,
+                label="publisher builder isolation shell",
+            )
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                inserted_parent_remount,
+                label="publisher builder isolation shell",
+            )
+        )
+
+    def test_publisher_raw_identity_variants_are_rejected(self):
+        current_run = named_step_run_script(
+            self.text,
+            "Build candidate in isolated namespace and stage public inputs",
+        )
+        current_shell = builder_isolation_shell_source(self.text)
+        for label, changed in generate_publisher_raw_identity_mutations(self.text):
+            with self.subTest(variant=label):
+                changed_step = named_patch_release_step_block(
+                    changed,
+                    "Build candidate in isolated namespace and stage public inputs",
+                )
+                changed_run = named_step_run_script_from_block(changed_step)
+                reference_run = reference_literal_run_step_script(changed_step)
+                self.assertEqual(
+                    changed_run.encode("utf-8"),
+                    reference_run.encode("utf-8"),
+                )
+                self.assertNotEqual(
+                    changed_run.encode("utf-8"),
+                    current_run.encode("utf-8"),
+                )
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "raw identity differs from the reviewed security boundary",
+                ):
+                    publisher_shell_contract.assert_reviewed_patch_release_run_script_identity(
+                        changed_run,
+                        label="publisher isolated candidate build run script",
+                    )
+                changed_shell = publisher_shell_contract.builder_isolation_shell_source(
+                    changed_run,
+                    label="publisher builder isolation shell",
+                )
+                if label not in {"extra-blank-before-heredoc", "run-strip-chomp"}:
+                    self.assertNotEqual(
+                        changed_shell.encode("utf-8"),
+                        current_shell.encode("utf-8"),
+                    )
+                else:
+                    self.assertEqual(
+                        changed_shell.encode("utf-8"),
+                        current_shell.encode("utf-8"),
+                    )
+                self.assertTrue(publisher_boundary_errors(changed))
+
+    def test_builder_isolation_shell_identity_rejects_single_byte_mutations(self):
+        builder_shell = builder_isolation_shell_source(self.text)
+        publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
+            builder_shell,
+            label="publisher builder isolation shell",
+        )
+        for index, character in enumerate(builder_shell):
+            replacement = "X" if character != "X" else "Y"
+            mutated = builder_shell[:index] + replacement + builder_shell[index + 1 :]
+            with self.assertRaisesRegex(
+                ValueError,
+                "raw identity differs from the reviewed security boundary",
+            ):
+                publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
+                    mutated,
+                    label="publisher builder isolation shell",
+                )
 
     def test_exact_candidate_patch_tool_imports_are_closed(self):
         allowed_import_roots = {
@@ -2714,7 +5668,10 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 visible = (
                     "candidate build status: success"
                     if completed.returncode == 0
-                    else f"candidate build failed: exit={completed.returncode}"
+                    else (
+                        "candidate build failed: stage=isolated "
+                        f"exit={completed.returncode}"
+                    )
                 )
                 self.assertNotIn(marker, visible)
                 self.assertFalse(
@@ -2943,6 +5900,799 @@ exit 37
             self.assertEqual(run(None).returncode, 0)
             self.assertNotEqual(run(999999).returncode, 0)
 
+    def test_builder_cleanup_suppresses_utility_path_stderr(self):
+        section = builder_cleanup_functions_source(self.text)
+        section = section.replace(
+            'builder_passwd_entry_exists() {\n'
+            '  /usr/bin/getent passwd "$1" > /dev/null 2>&1\n'
+            '}\n'
+            'probe_builder_passwd_entry() {\n'
+            '  local status\n'
+            '  if builder_passwd_entry_exists "$1"; then\n'
+            '    builder_passwd_probe_state=present\n'
+            '    return 0\n'
+            '  else\n'
+            '    status="$?"\n'
+            '    case "$status" in\n'
+            '      2)\n'
+            '        builder_passwd_probe_state=absent\n'
+            '        return 0\n'
+            '        ;;\n'
+            '      *)\n'
+            '        builder_passwd_probe_state=error\n'
+            '        return "$status"\n'
+            '        ;;\n'
+            '    esac\n'
+            '  fi\n'
+            '}\n'
+            'builder_passwd_entry_absent() {\n'
+            '  probe_builder_passwd_entry "$1" || return "$?"\n'
+            '  test "$builder_passwd_probe_state" = absent\n'
+            '}\n',
+            'builder_passwd_entry_exists() {\n'
+            '  [ "$1" = "$builder_user" ]\n'
+            '}\n'
+            'probe_builder_passwd_entry() {\n'
+            '  if builder_passwd_entry_exists "$1"; then\n'
+            '    builder_passwd_probe_state=present\n'
+            '  else\n'
+            '    builder_passwd_probe_state=absent\n'
+            '  fi\n'
+            '  return 0\n'
+            '}\n'
+            'builder_passwd_entry_absent() {\n'
+            '  [ "$1" != "$builder_user" ] || [ "$builder_user_created" = 0 ]\n'
+            '}\n',
+            1,
+        )
+        section = section.replace(
+            '/usr/bin/sudo /usr/bin/rmdir -- "$builder_cgroup" \\\n'
+            '                 > /dev/null 2>&1',
+            'cleanup_rmdir "$builder_cgroup" > /dev/null 2>&1',
+            1,
+        )
+        section = section.replace(
+            '/usr/bin/sudo /usr/sbin/userdel "$builder_user" \\\n'
+            '                > /dev/null 2>&1',
+            'cleanup_userdel "$builder_user" > /dev/null 2>&1',
+            1,
+        )
+        section = section.replace(
+            '/usr/bin/sudo /bin/rm -rf -- "$BUILDER_ROOT" \\\n'
+            '              > /dev/null 2>&1',
+            'cleanup_rm_builder "$BUILDER_ROOT" > /dev/null 2>&1',
+            1,
+        )
+        section = section.replace(
+            '/bin/rm -rf -- "$PATCH_WHEELHOUSE" > /dev/null 2>&1',
+            'cleanup_rm_wheelhouse "$PATCH_WHEELHOUSE" > /dev/null 2>&1',
+            1,
+        )
+        for primary_status, expected_exit in ((37, 37), (0, 1)):
+            with self.subTest(primary_status=primary_status):
+                status_command = f"(exit {primary_status})" if primary_status else "true"
+                harness = (
+                    'builder_pgid=""\n'
+                    'builder_supervisor_pid=""\n'
+                    'builder_user="ci-patch-builder"\n'
+                    'builder_uid="60000"\n'
+                    'builder_cgroup="/home/runner/work/_temp/cgroups/builder"\n'
+                    'builder_cgroup_owned=1\n'
+                    'builder_root_owned=1\n'
+                    'builder_user_created=1\n'
+                    'wheelhouse_owned=1\n'
+                    'BUILDER_ROOT="/home/runner/work/_temp/patch-builder"\n'
+                    'PATCH_WHEELHOUSE="/home/runner/work/_temp/patch-wheelhouse"\n'
+                    'cleanup_rmdir() { printf "%s\\n" "$1/path-leak" >&2; return 1; }\n'
+                    'cleanup_userdel() { printf "/home/runner/%s\\n" "$1" >&2; return 1; }\n'
+                    'cleanup_rm_builder() { printf "%s/path-leak\\n" "$1" >&2; return 1; }\n'
+                    'cleanup_rm_wheelhouse() { printf "%s/path-leak\\n" "$1" >&2; return 1; }\n'
+                    + section
+                    + "set +e\n"
+                    + status_command
+                    + "\ncleanup_builder\n"
+                )
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", harness],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, expected_exit)
+                self.assertIn(
+                    "candidate build cleanup failed: process=0 cgroup=1 state=1 "
+                    f"primary={primary_status}",
+                    completed.stderr,
+                )
+                self.assertEqual(completed.stdout, "")
+                self.assertNotIn("/home/runner/work/_temp", completed.stderr)
+                self.assertNotIn("path-leak", completed.stderr)
+                self.assertNotIn("ci-patch-builder", completed.stderr)
+
+    def test_builder_cleanup_probe_helpers_suppress_output(self):
+        section = builder_cleanup_functions_source(self.text)
+        section = section.replace(
+            "/usr/bin/ps -eo pgid=,pid= 2>/dev/null",
+            "cleanup_ps -eo pgid=,pid= 2>/dev/null",
+            1,
+        )
+        section = section.replace(
+            "/usr/bin/ps -eo uid=,pid= 2>/dev/null",
+            "cleanup_ps -eo uid=,pid= 2>/dev/null",
+            1,
+        )
+        section = section.replace(
+            "/usr/bin/awk -v pgid=\"$1\" '$1 == pgid {print $2}' 2>/dev/null",
+            "cleanup_awk -v pgid=\"$1\" '$1 == pgid {print $2}' 2>/dev/null",
+            1,
+        )
+        section = section.replace(
+            "/usr/bin/awk -v uid=\"$1\" '$1 == uid {print $2}' 2>/dev/null",
+            "cleanup_awk -v uid=\"$1\" '$1 == uid {print $2}' 2>/dev/null",
+            1,
+        )
+        section = section.replace(
+            '/bin/cat "$builder_cgroup/cgroup.procs" 2>/dev/null',
+            'cleanup_cat "$builder_cgroup/cgroup.procs" 2>/dev/null',
+            1,
+        )
+        section = section.replace(
+            '/usr/bin/getent passwd "$1" > /dev/null 2>&1',
+            'cleanup_getent passwd "$1" > /dev/null 2>&1',
+            1,
+        )
+        harness = (
+            'builder_pgid="12345"\n'
+            'builder_supervisor_pid=""\n'
+            'builder_user="ci-patch-builder"\n'
+            'builder_uid="60000"\n'
+            'builder_cgroup="/home/runner/work/_temp/cgroups/builder"\n'
+            'builder_cgroup_owned=1\n'
+            'builder_root_owned=0\n'
+            'builder_user_created=1\n'
+            'wheelhouse_owned=0\n'
+            'BUILDER_ROOT="/home/runner/work/_temp/patch-builder"\n'
+            'PATCH_WHEELHOUSE="/home/runner/work/_temp/patch-wheelhouse"\n'
+            'cleanup_ps() { printf "/home/runner/work/_temp/ps-out\\n"; printf "/home/runner/work/_temp/ps-err\\n" >&2; return 1; }\n'
+            'cleanup_awk() { printf "/home/runner/work/_temp/awk-out\\n"; printf "/home/runner/work/_temp/awk-err\\n" >&2; return 1; }\n'
+            'cleanup_cat() { printf "/home/runner/work/_temp/cat-out\\n"; printf "/home/runner/work/_temp/cat-err\\n" >&2; return 1; }\n'
+            'cleanup_getent() { printf "/home/runner/work/_temp/getent-out\\n"; printf "/home/runner/work/_temp/getent-err\\n" >&2; return 1; }\n'
+            + section
+            + 'shell_pgid="54321"\n'
+            + "set +e\n"
+            + "true\n"
+            + "cleanup_builder\n"
+        )
+        completed = subprocess.run(
+            ["/bin/bash", "-c", harness],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 1)
+        self.assertEqual(completed.stdout, "")
+        self.assertIn(
+            "candidate build cleanup failed: process=1 cgroup=1 state=1 primary=0",
+            completed.stderr,
+        )
+        self.assertNotIn("/home/runner/work/_temp", completed.stderr)
+        self.assertNotIn("/home/runner/work/_temp", completed.stdout)
+
+    def test_builder_passwd_entry_absent_handles_getent_statuses_under_bash_e(self):
+        original_helpers = builder_passwd_helpers_source(self.text)
+        helpers = original_helpers.replace(
+            '/usr/bin/getent passwd "$1" > /dev/null 2>&1',
+            'fake_getent "$1" > /dev/null 2>&1',
+            1,
+        )
+        status_cases = (
+            (2, 0, True),
+            (0, 1, False),
+            (1, 1, False),
+            (125, 125, False),
+            (143, 143, False),
+        )
+        for fake_status, expected_status, expect_sentinel in status_cases:
+            with self.subTest(fake_status=fake_status):
+                harness = (
+                    "set -e\n"
+                    "fake_getent() {\n"
+                    f"  return {fake_status}\n"
+                    "}\n"
+                    + helpers
+                    + 'builder_passwd_entry_absent "ci-patch-builder"\n'
+                    + "printf 'SENTINEL\\n'\n"
+                )
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", harness],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, expected_status)
+                self.assertEqual(completed.stderr, "")
+                if expect_sentinel:
+                    self.assertEqual(completed.stdout, "SENTINEL\n")
+                else:
+                    self.assertEqual(completed.stdout, "")
+
+        broken_probe_body = (
+            '  builder_passwd_entry_exists "$1"\n'
+            '  status="$?"\n'
+            '  case "$status" in\n'
+            '    0) return 1 ;;\n'
+            '    2) return 0 ;;\n'
+            '    *) return "$status" ;;\n'
+            '  esac\n'
+        )
+        broken_helpers = helpers.replace(
+            '  if builder_passwd_entry_exists "$1"; then\n'
+            '    builder_passwd_probe_state=present\n'
+            '    return 0\n'
+            '  else\n'
+            '    status="$?"\n'
+            '    case "$status" in\n'
+            '      2)\n'
+            '        builder_passwd_probe_state=absent\n'
+            '        return 0\n'
+            '        ;;\n'
+            '      *)\n'
+            '        builder_passwd_probe_state=error\n'
+            '        return "$status"\n'
+            '        ;;\n'
+            '    esac\n'
+            '  fi\n',
+            broken_probe_body,
+            1,
+        )
+        broken_real_helpers = original_helpers.replace(
+            '  if builder_passwd_entry_exists "$1"; then\n'
+            '    builder_passwd_probe_state=present\n'
+            '    return 0\n'
+            '  else\n'
+            '    status="$?"\n'
+            '    case "$status" in\n'
+            '      2)\n'
+            '        builder_passwd_probe_state=absent\n'
+            '        return 0\n'
+            '        ;;\n'
+            '      *)\n'
+            '        builder_passwd_probe_state=error\n'
+            '        return "$status"\n'
+            '        ;;\n'
+            '    esac\n'
+            '  fi\n',
+            broken_probe_body,
+            1,
+        )
+        broken_run_script = named_step_run_script(
+            self.text,
+            "Build candidate in isolated namespace and stage public inputs",
+        ).replace(original_helpers, broken_real_helpers, 1)
+        with self.assertRaisesRegex(
+            ValueError,
+            "raw identity differs from the reviewed security boundary",
+        ):
+            publisher_shell_contract.assert_reviewed_patch_release_run_script_identity(
+                broken_run_script,
+                label="publisher isolated candidate build run script",
+            )
+        broken_runtime = subprocess.run(
+            [
+                "/bin/bash",
+                "-c",
+                "set -e\n"
+                "fake_getent() {\n"
+                "  return 2\n"
+                "}\n"
+                + broken_helpers
+                + 'builder_passwd_entry_absent "ci-patch-builder"\n'
+                + "printf 'SENTINEL\\n'\n",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(broken_runtime.returncode, 0)
+        self.assertEqual(broken_runtime.stdout, "")
+        self.assertEqual(broken_runtime.stderr, "")
+
+    def test_probe_builder_uid_occupancy_preserves_lookup_status_under_bash_e(self):
+        original_helpers = builder_uid_occupancy_helpers_source(self.text)
+        helpers = original_helpers
+        status_cases = (
+            ("", "0", 0, True, "free"),
+            ("4242", "0", 0, True, "occupied"),
+            ("", "1", 1, False, "error"),
+            ("", "125", 125, False, "error"),
+            ("", "143", 143, False, "error"),
+        )
+        for output, fake_status, expected_status, expect_sentinel, expected_state in status_cases:
+            with self.subTest(fake_status=fake_status, expected_state=expected_state):
+                harness = (
+                    "set -e\n"
+                    + helpers
+                    + "builder_uid_pids() {\n"
+                    + '  status="${FAKE_UID_PIDS_STATUS}"\n'
+                    + '  if [ "$status" -ne 0 ]; then\n'
+                    + '    return "$status"\n'
+                    + "  fi\n"
+                    + '  printf "%s" "${FAKE_UID_PIDS_OUTPUT-}"\n'
+                    + "}\n"
+                    + f'FAKE_UID_PIDS_STATUS="{fake_status}"\n'
+                    + f'FAKE_UID_PIDS_OUTPUT={output!r}\n'
+                    + 'probe_builder_uid_occupancy "60000"\n'
+                    + "printf 'STATE:%s\\n' \"$builder_uid_occupancy_state\"\n"
+                    + "printf 'SENTINEL\\n'\n"
+                )
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", harness],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, expected_status)
+                self.assertEqual(completed.stderr, "")
+                if expect_sentinel:
+                    self.assertEqual(
+                        completed.stdout,
+                        f"STATE:{expected_state}\nSENTINEL\n",
+                    )
+                else:
+                    self.assertEqual(completed.stdout, "")
+
+        broken_probe_helpers = original_helpers.replace(
+            '  else\n'
+            '    status="$?"\n'
+            '  fi\n'
+            '  builder_uid_occupancy_state=error\n'
+            '  return "$status"\n',
+            '  fi\n'
+            '  builder_uid_occupancy_state=error\n'
+            '  status="$?"\n'
+            '  return "$status"\n',
+            1,
+        )
+        broken_real_script = named_step_run_script(
+            self.text,
+            "Build candidate in isolated namespace and stage public inputs",
+        ).replace(original_helpers, broken_probe_helpers, 1)
+        with self.assertRaisesRegex(
+            ValueError,
+            "raw identity differs from the reviewed security boundary",
+        ):
+            publisher_shell_contract.assert_reviewed_patch_release_run_script_identity(
+                broken_real_script,
+                label="publisher isolated candidate build run script",
+            )
+        broken_runtime = subprocess.run(
+            [
+                "/bin/bash",
+                "-c",
+                "set -e\n"
+                + broken_probe_helpers
+                + "builder_uid_pids() {\n"
+                + '  status="${FAKE_UID_PIDS_STATUS}"\n'
+                + '  if [ "$status" -ne 0 ]; then\n'
+                + '    return "$status"\n'
+                + "  fi\n"
+                + '  printf "%s" "${FAKE_UID_PIDS_OUTPUT-}"\n'
+                + "}\n"
+                + 'FAKE_UID_PIDS_STATUS="125"\n'
+                + 'FAKE_UID_PIDS_OUTPUT=""\n'
+                + 'probe_builder_uid_occupancy "60000"\n'
+                + "printf 'STATE:%s\\n' \"$builder_uid_occupancy_state\"\n"
+                + "printf 'SENTINEL\\n'\n",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(broken_runtime.returncode, 0)
+        self.assertEqual(
+            broken_runtime.stdout,
+            "STATE:error\nSENTINEL\n",
+        )
+        self.assertEqual(broken_runtime.stderr, "")
+
+    def test_builder_user_selection_path_uses_tri_state_occupancy_under_bash_e(self):
+        original_helpers = builder_uid_selection_helpers_source(self.text)
+        helpers = original_helpers.replace(
+            '/usr/bin/getent passwd "$1" > /dev/null 2>&1',
+            'fake_getent "$1" > /dev/null 2>&1',
+            1,
+        )
+        selection = builder_user_selection_source(self.text)
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="builder-passwd-selection-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            workspace = sandbox / "workspace"
+            wheelhouse = sandbox / "wheelhouse"
+            workspace.mkdir()
+            wheelhouse.mkdir()
+
+            def run_selection(
+                *,
+                getent_cases: tuple[str, ...],
+                uid_pids_cases: tuple[str, ...] = (),
+                selection_script: str = selection,
+                builder_root_name: str = "builder-root",
+            ) -> subprocess.CompletedProcess[str]:
+                harness = (
+                    "set -e\n"
+                    "fake_getent() {\n"
+                    "  case \"$1\" in\n"
+                    + "".join(f"    {line}\n" for line in getent_cases)
+                    + "    *) return 125 ;;\n"
+                    + "  esac\n"
+                    + "}\n"
+                    + helpers
+                    + "builder_uid_pids() {\n"
+                    + "  case \"$1\" in\n"
+                    + "".join(f"    {line}\n" for line in uid_pids_cases)
+                    + "    *) return 0 ;;\n"
+                    + "  esac\n"
+                    + "}\n"
+                    + f'builder_user="ci-patch-builder"\n'
+                    + f'BUILDER_ROOT="{sandbox / builder_root_name}"\n'
+                    + f'PATCH_WHEELHOUSE="{wheelhouse}"\n'
+                    + f'GITHUB_WORKSPACE_PATH="{workspace}"\n'
+                    + selection_script
+                    + "\nprintf 'CREATION_SENTINEL:%s\\n' \"$builder_uid\"\n"
+                )
+                return subprocess.run(
+                    ["/bin/bash", "-c", harness],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+
+            for error_status in (1, 125, 143):
+                with self.subTest(name_lookup_error=error_status):
+                    completed = run_selection(
+                        getent_cases=(
+                            f'ci-patch-builder) return {error_status} ;;',
+                            "60000|59999) return 2 ;;",
+                        ),
+                        builder_root_name=f"name-error-{error_status}",
+                    )
+                    self.assertEqual(completed.returncode, error_status)
+                    self.assertEqual(completed.stdout, "")
+                    self.assertEqual(completed.stderr, "")
+
+                with self.subTest(numeric_lookup_error=error_status):
+                    completed = run_selection(
+                        getent_cases=(
+                            "ci-patch-builder) return 2 ;;",
+                            f'60000) return {error_status} ;;',
+                            "59999) return 2 ;;",
+                        ),
+                        builder_root_name=f"numeric-error-{error_status}",
+                    )
+                    self.assertEqual(completed.returncode, error_status)
+                    self.assertEqual(completed.stdout, "")
+                    self.assertEqual(completed.stderr, "")
+
+            with self.subTest(passwd_occupied_continues=True):
+                completed = run_selection(
+                    getent_cases=(
+                        "ci-patch-builder) return 2 ;;",
+                        "60000) return 0 ;;",
+                        "59999) return 2 ;;",
+                    ),
+                    builder_root_name="passwd-occupied",
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, "CREATION_SENTINEL:59999\n")
+                self.assertEqual(completed.stderr, "")
+
+            with self.subTest(uid_occupied_continues=True):
+                completed = run_selection(
+                    getent_cases=(
+                        "ci-patch-builder) return 2 ;;",
+                        "60000|59999) return 2 ;;",
+                    ),
+                    uid_pids_cases=(
+                        '60000) printf "4242\\n"; return 0 ;;',
+                        "59999) return 0 ;;",
+                    ),
+                    builder_root_name="uid-occupied",
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, "CREATION_SENTINEL:59999\n")
+                self.assertEqual(completed.stderr, "")
+
+            with self.subTest(both_absent_selects=True):
+                completed = run_selection(
+                    getent_cases=(
+                        "ci-patch-builder|60000) return 2 ;;",
+                    ),
+                    builder_root_name="both-absent",
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, "CREATION_SENTINEL:60000\n")
+                self.assertEqual(completed.stderr, "")
+
+            with self.subTest(exhaustion_rejects=True):
+                short_selection = selection.replace("builder_uid=60000", "builder_uid=50001", 1)
+                completed = run_selection(
+                    getent_cases=(
+                        "ci-patch-builder) return 2 ;;",
+                        "50001|50000) return 0 ;;",
+                    ),
+                    selection_script=short_selection,
+                    builder_root_name="exhaustion",
+                )
+                self.assertEqual(completed.returncode, 1)
+                self.assertEqual(completed.stdout, "")
+                self.assertEqual(completed.stderr, "")
+
+            broken_selection = selection.replace(
+                '  probe_builder_passwd_entry "$builder_uid"\n'
+                '  if [ "$builder_passwd_probe_state" = absent ]; then\n'
+                '    probe_builder_uid_occupancy "$builder_uid"\n'
+                '    if [ "$builder_uid_occupancy_state" = free ]; then\n'
+                '      break\n'
+                '    fi\n'
+                '  fi\n',
+                '  if builder_passwd_entry_absent "$builder_uid" && \\\n'
+                '     builder_uid_is_empty "$builder_uid"; then\n'
+                '    break\n'
+                '  fi\n',
+                1,
+            )
+            self.assertNotEqual(broken_selection, selection)
+            broken_run_script = named_step_run_script(
+                self.text,
+                "Build candidate in isolated namespace and stage public inputs",
+            ).replace(selection, broken_selection, 1)
+            with self.assertRaisesRegex(
+                ValueError,
+                "raw identity differs from the reviewed security boundary",
+            ):
+                publisher_shell_contract.assert_reviewed_patch_release_run_script_identity(
+                    broken_run_script,
+                    label="publisher isolated candidate build run script",
+                )
+            with self.subTest(broken_and_mutation_masks_numeric_error=True):
+                broken = run_selection(
+                    getent_cases=(
+                        "ci-patch-builder) return 2 ;;",
+                        "60000) return 1 ;;",
+                        "59999) return 2 ;;",
+                    ),
+                    selection_script=broken_selection,
+                    builder_root_name="broken-and-mutation",
+                )
+                self.assertEqual(broken.returncode, 0, broken.stderr)
+                self.assertEqual(broken.stdout, "CREATION_SENTINEL:59999\n")
+                self.assertEqual(broken.stderr, "")
+
+    def test_launch_validation_failure_kills_live_child_without_waiting(self):
+        section = builder_cleanup_functions_source(self.text)
+        launch = launch_validation_source(self.text)
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="launch-validation-cleanup-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            pid_file = sandbox / "child.pid"
+            harness = (
+                "set -euo pipefail\n"
+                + section
+                + 'builder_uid="60000"\n'
+                + 'builder_user="ci-patch-builder"\n'
+                + 'builder_cgroup=""\n'
+                + 'builder_cgroup_owned=0\n'
+                + 'builder_pgid=""\n'
+                + 'builder_supervisor_pid=""\n'
+                + 'builder_root_owned=0\n'
+                + 'builder_user_created=0\n'
+                + 'wheelhouse_owned=0\n'
+                + f'BUILDER_ROOT="{sandbox / "builder-root"}"\n'
+                + f'PATCH_WHEELHOUSE="{sandbox / "wheelhouse"}"\n'
+                + "trap cleanup_builder EXIT\n"
+                + f'/bin/sleep 60 < /dev/null > /dev/null 2>&1 & printf "%s\\n" "$!" > "{pid_file}"\n'
+                + launch
+            )
+            monotonic_start = time.monotonic()
+            completed = subprocess.run(
+                ["/bin/bash", "-c", harness],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            duration = time.monotonic() - monotonic_start
+            child_pid = int(pid_file.read_text(encoding="ascii").strip())
+            self.assertEqual(completed.returncode, 125)
+            self.assertRegex(
+                completed.stderr,
+                r"candidate build failed: stage=launch detail=pgid-(?:mismatch|parent) exit=125",
+            )
+            self.assertIn(
+                "candidate build cleanup failed: process=1 cgroup=0 state=0 primary=125",
+                completed.stderr,
+            )
+            self.assertLess(duration, 10.0)
+            with self.assertRaises(ProcessLookupError):
+                os.kill(child_pid, 0)
+
+    def test_private_base_cleanup_suppresses_utility_path_stderr(self):
+        function_section = private_base_cleanup_function_source(self.text)
+        function_section = function_section.replace(
+            '/bin/chmod u+w -- "$BASE_IMAGE" > /dev/null 2>&1 || cleanup_failed=1',
+            'cleanup_chmod "$BASE_IMAGE" > /dev/null 2>&1 || cleanup_failed=1',
+            1,
+        )
+        function_section = function_section.replace(
+            '/bin/rm -f -- "$BASE_IMAGE" > /dev/null 2>&1 || cleanup_failed=1',
+            'cleanup_rm "$BASE_IMAGE" > /dev/null 2>&1 || cleanup_failed=1',
+            1,
+        )
+        function_section = function_section.replace(
+            '/usr/bin/rmdir -- "$private_dir" > /dev/null 2>&1 || cleanup_failed=1',
+            'cleanup_rmdir "$private_dir" > /dev/null 2>&1 || cleanup_failed=1',
+            1,
+        )
+        for primary_status, expected_exit in ((23, 23), (0, 1)):
+            with self.subTest(primary_status=primary_status, path="create-step"):
+                status_command = f"(exit {primary_status})" if primary_status else "true"
+                harness = (
+                    'RUNNER_TEMP="/home/runner/work/_temp"\n'
+                    'BASE_IMAGE="/home/runner/work/_temp/patch-private.ABCDEFGHIJ/base.gba"\n'
+                    'cleanup_chmod() { printf "%s\\n" "$1/path-leak" >&2; return 1; }\n'
+                    'cleanup_rm() { printf "%s/path-leak\\n" "$1" >&2; return 1; }\n'
+                    'cleanup_rmdir() { printf "%s/path-leak\\n" "$1" >&2; return 1; }\n'
+                    + function_section
+                    + "set +e\n"
+                    + status_command
+                    + "\ncleanup_private_base\n"
+                )
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", harness],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, expected_exit)
+                self.assertEqual(completed.stderr, "")
+
+        cleanup_script = named_step_run_script(
+            self.text,
+            "Cleanup and verify private base",
+        )
+        cleanup_script = cleanup_script.replace(
+            '/bin/chmod u+w -- "$BASE_IMAGE" > /dev/null 2>&1',
+            'cleanup_chmod "$BASE_IMAGE" > /dev/null 2>&1',
+            1,
+        )
+        cleanup_script = cleanup_script.replace(
+            '/bin/rm -f -- "$BASE_IMAGE" > /dev/null 2>&1',
+            'cleanup_rm "$BASE_IMAGE" > /dev/null 2>&1',
+            1,
+        )
+        cleanup_script = cleanup_script.replace(
+            '/usr/bin/rmdir -- "$private_dir" > /dev/null 2>&1',
+            'cleanup_rmdir "$private_dir" > /dev/null 2>&1',
+            1,
+        )
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="private-cleanup-step-",
+            dir=artifact_root,
+        ) as temporary, self.subTest(path="cleanup-step"):
+            sandbox = Path(temporary)
+            harness = (
+                "set -euo pipefail\n"
+                f'RUNNER_TEMP="{sandbox}"\n'
+                'BASE_IMAGE="$RUNNER_TEMP/patch-private.ABCDEFGHIJ/base.gba"\n'
+                'private_dir="${BASE_IMAGE%/base.gba}"\n'
+                'cleanup_chmod() { printf "%s\\n" "$1/path-leak" >&2; return 1; }\n'
+                'cleanup_rm() { printf "%s/path-leak\\n" "$1" >&2; return 1; }\n'
+                'cleanup_rmdir() { printf "%s/path-leak\\n" "$1" >&2; return 1; }\n'
+                "mkdir -p \"$private_dir\"\n"
+                ": > \"$BASE_IMAGE\"\n"
+                + cleanup_script
+            )
+            completed = subprocess.run(
+                ["/bin/bash", "-c", harness],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 1)
+            self.assertEqual(completed.stderr, "")
+
+    def test_private_download_cleanup_suppresses_utility_path_stderr(self):
+        function_section = download_cleanup_function_source(self.text)
+        function_section = function_section.replace(
+            '/bin/chmod -R u+w -- "$private_dir" > /dev/null 2>&1 || true',
+            'cleanup_chmod "$private_dir" > /dev/null 2>&1 || true',
+            1,
+        )
+        function_section = function_section.replace(
+            '/bin/rm -f -- "$base_image" > /dev/null 2>&1',
+            'cleanup_rm "$base_image" > /dev/null 2>&1',
+            1,
+        )
+        function_section = function_section.replace(
+            '/usr/bin/rmdir -- "$private_dir" > /dev/null 2>&1 || true',
+            'cleanup_rmdir "$private_dir" > /dev/null 2>&1 || true',
+            1,
+        )
+        harness = (
+            'private_dir="/home/runner/work/_temp/patch-private.ABCDEFGHIJ"\n'
+            'base_image="$private_dir/base.gba"\n'
+            'cleanup_chmod() { printf "%s/path-leak\\n" "$1" >&2; return 1; }\n'
+            'cleanup_rm() { printf "%s/path-leak\\n" "$1" >&2; return 1; }\n'
+            'cleanup_rmdir() { printf "%s/path-leak\\n" "$1" >&2; return 1; }\n'
+            + function_section
+            + "set +e\n"
+            + "(exit 19)\n"
+            + "cleanup_download\n"
+        )
+        completed = subprocess.run(
+            ["/bin/bash", "-c", harness],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 19)
+        self.assertEqual(completed.stderr, "")
+
+    def test_pre_summary_cleanup_utilities_suppress_output(self):
+        verify_step = named_step_run_script(
+            self.text,
+            "Verify exact candidate and stage trusted producer",
+        )
+        self.assertIn(
+            '/bin/rm -rf -- "$PATCH_RUNTIME_ROOT" "$PATCH_TOOL_ROOT" > /dev/null 2>&1',
+            verify_step,
+        )
+        dependency_step = named_step_run_script(
+            self.text,
+            "Install trusted isolated-build dependencies",
+        )
+        self.assertIn(
+            '/bin/rm -rf -- "$PATCH_WHEELHOUSE" > /dev/null 2>&1',
+            dependency_step,
+        )
+        download_step = named_step_run_script(
+            self.text,
+            "Download private base image",
+        )
+        self.assertIn(
+            '/bin/chmod -R u+w -- "$private_dir" > /dev/null 2>&1 || true',
+            download_step,
+        )
+        self.assertIn(
+            '/bin/rm -f -- "$base_image" > /dev/null 2>&1',
+            download_step,
+        )
+        self.assertIn(
+            '/usr/bin/rmdir -- "$private_dir" > /dev/null 2>&1 || true',
+            download_step,
+        )
+
     def test_patch_release_docs_publish_no_internal_rom_artifact(self):
         text = PATCH_RELEASE_CASE.read_text(encoding="utf-8")
         compact = " ".join(text.split())
@@ -3026,6 +6776,22 @@ exit 37
             "consumes raw `findmnt` targets",
             compact,
         )
+
+    def test_patch_release_docs_use_runtime_diagnostic_stage_enum(self):
+        overview = " ".join(PATCH_RELEASE_OVERVIEW.read_text(encoding="utf-8").split())
+        case = " ".join(PATCH_RELEASE_CASE.read_text(encoding="utf-8").split())
+        registry = json.loads(PATCH_RELEASE_REGISTRY.read_text(encoding="utf-8"))
+        entry = next(item for item in registry["cases"] if item["id"] == "TC-CI-PATCH-049-002")
+        expected_result = " ".join(entry["expected_result"].split())
+        for text in (overview, case, expected_result):
+            self.assertIn("post-spawn", text)
+            self.assertIn("launch", text)
+            self.assertIn("isolated", text)
+            self.assertIn("cleanup", text)
+            self.assertIn("pre-spawn", text)
+            self.assertIn("post-child handoff validation", text)
+            self.assertIn("only stage text", text)
+            self.assertNotIn("isolated-build", text)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)
@@ -3278,19 +7044,38 @@ exit 37
                             0,
                             completed.stderr,
                         )
-                if "/usr/bin/python3" in command and "-c" in command:
-                    python_index = command.index("/usr/bin/python3")
-                    command_flag = command.index("-c", python_index)
-                    with self.subTest(
-                        step=step_index,
-                        command=command_index,
-                        language="python",
-                    ):
-                        compile(
-                            command[command_flag + 1],
-                            "<patch-release-workflow>",
-                            "exec",
-                        )
+        builder_shell = builder_isolation_shell_source(self.text)
+        publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
+            builder_shell,
+            label="publisher builder isolation shell",
+        )
+        publisher_shell_contract.validate_patch_release_parser_heredocs(
+            builder_shell,
+            label="publisher builder isolation shell",
+        )
+        assert_patch_release_python_c_snippets_compile(self, self.text)
+
+        for label, source in (
+            ("dev-mount-target-parser", raw_dev_mount_target_parser_source(self.text)),
+            (
+                "writable-mount-record-parser",
+                raw_writable_mount_record_parser_source(self.text),
+            ),
+        ):
+            with self.subTest(language="embedded-python-heredoc", parser=label):
+                ast.parse(source)
+
+    def test_each_patch_release_python_c_snippet_is_checked(self):
+        snippets = patch_release_python_c_snippets(self.text)
+        self.assertEqual(len(snippets), 4)
+        assert_patch_release_python_c_snippets_compile(self, self.text)
+        for index, (step_index, command_index, _source) in enumerate(snippets):
+            with self.subTest(step=step_index, command=command_index):
+                mutated = list(snippets)
+                mutated[index] = (step_index, command_index, "if (")
+                with self.assertRaises(SyntaxError):
+                    for _, _, source in mutated:
+                        compile(source, "<patch-release-workflow>", "exec")
 
         isolated_step = next(
             step

@@ -1578,7 +1578,7 @@ jobs:
         test "$(/usr/bin/git rev-parse --verify "$PATCH_COMMIT^{commit}")" = \
           "$PATCH_COMMIT"
         test "$(/usr/bin/git cat-file -t "$PATCH_COMMIT")" = commit
-        /bin/rm -rf -- "$PATCH_RUNTIME_ROOT" "$PATCH_TOOL_ROOT"
+        /bin/rm -rf -- "$PATCH_RUNTIME_ROOT" "$PATCH_TOOL_ROOT" > /dev/null 2>&1
         /usr/bin/install -d -m 0700 "$PATCH_RUNTIME_ROOT" \
           "$PATCH_TOOL_ROOT" "$PATCH_TOOL_ROOT/scripts" \
           "$PATCH_TOOL_ROOT/scripts/modernize"
@@ -1633,7 +1633,7 @@ jobs:
       run: |
         /usr/bin/sudo /usr/bin/apt-get update
         /usr/bin/sudo /usr/bin/apt-get install -y build-essential binutils-arm-none-eabi gcc-arm-none-eabi libmgba-dev libnewlib-arm-none-eabi libpng-dev pkg-config python3-venv
-        /bin/rm -rf -- "$PATCH_WHEELHOUSE"
+        /bin/rm -rf -- "$PATCH_WHEELHOUSE" > /dev/null 2>&1
         /usr/bin/install -d -m 0700 "$PATCH_WHEELHOUSE"
         /usr/bin/env -i HOME="$PATCH_RUNTIME_ROOT" LC_ALL=C PATH=/usr/bin:/bin PIP_CONFIG_FILE=/dev/null /usr/bin/python3 -I -m pip download --require-hashes --only-binary=:all: --no-deps -r .github/requirements/build.txt --dest "$PATCH_WHEELHOUSE"
 
@@ -1682,23 +1682,93 @@ jobs:
         builder_cgroup_owned=0
         builder_pgid=""
         builder_supervisor_pid=""
+        builder_passwd_probe_state=""
         builder_root_owned=0
+        builder_uid_occupancy_state=""
         builder_user_created=0
         wheelhouse_owned=0
-        shell_pgid="$(/usr/bin/ps -o pgid= -p "$$" | /usr/bin/tr -d ' ')"
+        shell_pgid="$(/usr/bin/ps -o pgid= -p "$$" 2>/dev/null \
+          | /usr/bin/tr -d ' ' 2>/dev/null)"
+        builder_passwd_entry_exists() {
+          /usr/bin/getent passwd "$1" > /dev/null 2>&1
+        }
+        probe_builder_passwd_entry() {
+          local status
+          if builder_passwd_entry_exists "$1"; then
+            builder_passwd_probe_state=present
+            return 0
+          else
+            status="$?"
+            case "$status" in
+              2)
+                builder_passwd_probe_state=absent
+                return 0
+                ;;
+              *)
+                builder_passwd_probe_state=error
+                return "$status"
+                ;;
+            esac
+          fi
+        }
+        builder_passwd_entry_absent() {
+          probe_builder_passwd_entry "$1" || return "$?"
+          test "$builder_passwd_probe_state" = absent
+        }
         builder_group_pids() {
-          /usr/bin/ps -eo pgid=,pid= \
-            | /usr/bin/awk -v pgid="$1" '$1 == pgid {print $2}'
+          local output
+          output="$(
+            /usr/bin/ps -eo pgid=,pid= 2>/dev/null \
+              | /usr/bin/awk -v pgid="$1" '$1 == pgid {print $2}' 2>/dev/null
+          )" || return 1
+          printf '%s' "$output"
         }
         builder_uid_pids() {
-          /usr/bin/ps -eo uid=,pid= \
-            | /usr/bin/awk -v uid="$1" '$1 == uid {print $2}'
+          local output
+          output="$(
+            /usr/bin/ps -eo uid=,pid= 2>/dev/null \
+              | /usr/bin/awk -v uid="$1" '$1 == uid {print $2}' 2>/dev/null
+          )" || return 1
+          printf '%s' "$output"
         }
         builder_cgroup_pids() {
+          local output
           if [ "$builder_cgroup_owned" = 1 ] && \
              [ -r "$builder_cgroup/cgroup.procs" ]; then
-            /bin/cat "$builder_cgroup/cgroup.procs"
+            output="$(/bin/cat "$builder_cgroup/cgroup.procs" 2>/dev/null)" \
+              || return 1
+            printf '%s' "$output"
           fi
+        }
+        builder_group_is_empty() {
+          local output
+          output="$(builder_group_pids "$1")" || return 1
+          test -z "$output"
+        }
+        probe_builder_uid_occupancy() {
+          local output
+          local status
+          if output="$(builder_uid_pids "$1")"; then
+            if [ -z "$output" ]; then
+              builder_uid_occupancy_state=free
+            else
+              builder_uid_occupancy_state=occupied
+            fi
+            return 0
+          else
+            status="$?"
+          fi
+          builder_uid_occupancy_state=error
+          return "$status"
+        }
+        builder_uid_is_empty() {
+          probe_builder_uid_occupancy "$1" || return "$?"
+          test "$builder_uid_occupancy_state" = free
+        }
+        builder_cgroup_is_empty() {
+          local output
+          output="$(builder_cgroup_pids)" || return 1
+          test -z "$output"
         }
         terminate_builder_processes() {
           cleanup_failed=0
@@ -1706,46 +1776,63 @@ jobs:
             if [ "$builder_pgid" = "$shell_pgid" ]; then
               cleanup_failed=1
             else
-              remaining_group="$(builder_group_pids "$builder_pgid")"
+              remaining_group=""
+              remaining_group="$(builder_group_pids "$builder_pgid")" \
+                || cleanup_failed=1
               if [ -n "$remaining_group" ]; then
                 /usr/bin/sudo /bin/kill -TERM -- "-$builder_pgid" \
-                  2>/dev/null || true
+                  > /dev/null 2>&1 || true
                 /bin/sleep 1
-                remaining_group="$(builder_group_pids "$builder_pgid")"
+                remaining_group=""
+                remaining_group="$(builder_group_pids "$builder_pgid")" \
+                  || cleanup_failed=1
               fi
               if [ -n "$remaining_group" ]; then
                 /usr/bin/sudo /bin/kill -KILL -- "-$builder_pgid" \
-                  2>/dev/null || true
+                  > /dev/null 2>&1 || true
                 /bin/sleep 1
               fi
-              test -z "$(builder_group_pids "$builder_pgid")" \
-                || cleanup_failed=1
+              builder_group_is_empty "$builder_pgid" || cleanup_failed=1
             fi
           fi
           if [ "$builder_cgroup_owned" = 1 ]; then
-            if [ -n "$(builder_cgroup_pids)" ]; then
+            if ! builder_cgroup_is_empty; then
               printf '1\n' \
                 | /usr/bin/sudo /usr/bin/tee \
-                  "$builder_cgroup/cgroup.kill" > /dev/null
+                  "$builder_cgroup/cgroup.kill" > /dev/null 2>&1
               for attempt in $(/usr/bin/seq 1 50); do
-                if [ -z "$(builder_cgroup_pids)" ]; then
+                if builder_cgroup_is_empty; then
                   break
                 fi
                 /bin/sleep 0.1
               done
             fi
-            test -z "$(builder_cgroup_pids)" || cleanup_failed=1
+            builder_cgroup_is_empty || cleanup_failed=1
           fi
-          test -z "$(builder_uid_pids "$builder_uid")" \
-            || cleanup_failed=1
+          if [ -n "$builder_supervisor_pid" ]; then
+            /bin/kill -TERM "$builder_supervisor_pid" > /dev/null 2>&1 \
+              || true
+            for attempt in $(/usr/bin/seq 1 20); do
+              if ! /bin/kill -0 "$builder_supervisor_pid" > /dev/null 2>&1; then
+                break
+              fi
+              /bin/sleep 0.1
+            done
+            if /bin/kill -0 "$builder_supervisor_pid" > /dev/null 2>&1; then
+              /bin/kill -KILL "$builder_supervisor_pid" > /dev/null 2>&1 \
+                || true
+            fi
+          fi
+          builder_uid_is_empty "$builder_uid" || cleanup_failed=1
           return "$cleanup_failed"
         }
         remove_builder_cgroup() {
           cleanup_failed=0
           if [ "$builder_cgroup_owned" = 1 ]; then
-            test -z "$(builder_cgroup_pids)" || cleanup_failed=1
+            builder_cgroup_is_empty || cleanup_failed=1
             if [ "$cleanup_failed" = 0 ] && \
-               /usr/bin/sudo /usr/bin/rmdir -- "$builder_cgroup"; then
+               /usr/bin/sudo /usr/bin/rmdir -- "$builder_cgroup" \
+                 > /dev/null 2>&1; then
               builder_cgroup_owned=0
             else
               cleanup_failed=1
@@ -1757,8 +1844,9 @@ jobs:
         remove_builder_state() {
           cleanup_failed=0
           if [ "$builder_user_created" = 1 ]; then
-            if /usr/bin/getent passwd "$builder_user" > /dev/null; then
-              if /usr/bin/sudo /usr/sbin/userdel "$builder_user"; then
+            if builder_passwd_entry_exists "$builder_user"; then
+              if /usr/bin/sudo /usr/sbin/userdel "$builder_user" \
+                > /dev/null 2>&1; then
                 builder_user_created=0
               else
                 cleanup_failed=1
@@ -1768,21 +1856,21 @@ jobs:
             fi
           fi
           if [ "$builder_root_owned" = 1 ]; then
-            if /usr/bin/sudo /bin/rm -rf -- "$BUILDER_ROOT"; then
+            if /usr/bin/sudo /bin/rm -rf -- "$BUILDER_ROOT" \
+              > /dev/null 2>&1; then
               builder_root_owned=0
             else
               cleanup_failed=1
             fi
           fi
           if [ "$wheelhouse_owned" = 1 ]; then
-            if /bin/rm -rf -- "$PATCH_WHEELHOUSE"; then
+            if /bin/rm -rf -- "$PATCH_WHEELHOUSE" > /dev/null 2>&1; then
               wheelhouse_owned=0
             else
               cleanup_failed=1
             fi
           fi
-          test -z "$(/usr/bin/getent passwd "$builder_user" || true)" \
-            || cleanup_failed=1
+          builder_passwd_entry_absent "$builder_user" || cleanup_failed=1
           test ! -e "$BUILDER_ROOT" || cleanup_failed=1
           test ! -e "$PATCH_WHEELHOUSE" || cleanup_failed=1
           return "$cleanup_failed"
@@ -1794,12 +1882,20 @@ jobs:
           terminate_builder_processes
           process_cleanup="$?"
           if [ -n "$builder_supervisor_pid" ]; then
-            wait "$builder_supervisor_pid" 2>/dev/null
+            wait "$builder_supervisor_pid" > /dev/null 2>&1
+            builder_supervisor_pid=""
           fi
           remove_builder_cgroup
           cgroup_cleanup="$?"
           remove_builder_state
           state_cleanup="$?"
+          if [ "$process_cleanup" -ne 0 ] || \
+             [ "$cgroup_cleanup" -ne 0 ] || \
+             [ "$state_cleanup" -ne 0 ]; then
+            printf 'candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d\n' \
+              "$process_cleanup" "$cgroup_cleanup" "$state_cleanup" \
+              "$status" >&2
+          fi
           if [ "$status" -ne 0 ]; then
             exit "$status"
           fi
@@ -1817,7 +1913,7 @@ jobs:
         test -d "$PATCH_WHEELHOUSE"
         test ! -L "$PATCH_WHEELHOUSE"
         wheelhouse_owned=1
-        test -z "$(/usr/bin/getent passwd "$builder_user" || true)"
+        builder_passwd_entry_absent "$builder_user"
         /usr/bin/install -d -m 0700 "$BUILDER_ROOT"
         builder_root_owned=1
         /usr/bin/install -d -m 0700 \
@@ -1827,9 +1923,12 @@ jobs:
         /bin/cp -a -- "$PATCH_WHEELHOUSE/." "$BUILDER_ROOT/wheelhouse/"
         builder_uid=60000
         while [ "$builder_uid" -ge 50000 ]; do
-          if ! /usr/bin/getent passwd "$builder_uid" > /dev/null && \
-             [ -z "$(builder_uid_pids "$builder_uid")" ]; then
-            break
+          probe_builder_passwd_entry "$builder_uid"
+          if [ "$builder_passwd_probe_state" = absent ]; then
+            probe_builder_uid_occupancy "$builder_uid"
+            if [ "$builder_uid_occupancy_state" = free ]; then
+              break
+            fi
           fi
           builder_uid="$((builder_uid - 1))"
         done
@@ -1841,7 +1940,7 @@ jobs:
         builder_user_created=1
         test "$(/usr/bin/id -u "$builder_user")" = "$builder_uid"
         builder_gid="$(/usr/bin/id -g "$builder_user")"
-        test -z "$(builder_uid_pids "$builder_uid")"
+        builder_uid_is_empty "$builder_uid"
         /usr/bin/tee "$BUILDER_ROOT/control/builder-isolation.sh" \
           > /dev/null <<'BUILDER_ISOLATION'
         #!/bin/bash
@@ -1941,86 +2040,86 @@ jobs:
           builder-tmp /tmp
         list_dev_mount_targets() {
           /usr/bin/python3 -I -S - <<'PY'
-          import json
-          import subprocess
-          import sys
+        import json
+        import subprocess
+        import sys
 
-          MAX_BYTES = 1048576
-
-
-          def fail(message):
-              print(message, file=sys.stderr)
-              raise SystemExit(125)
+        MAX_BYTES = 1048576
 
 
-          def reject_duplicates(pairs):
-              result = {}
-              for key, value in pairs:
-                  if key in result:
-                      fail("duplicate findmnt JSON key")
-                  result[key] = value
-              return result
+        def fail(message):
+            print(message, file=sys.stderr)
+            raise SystemExit(125)
 
 
-          completed = subprocess.run(
-              ["/usr/bin/findmnt", "--json", "--submounts", "--output", "TARGET", "/dev"],
-              check=False,
-              capture_output=True,
-          )
-          if completed.returncode != 0:
-              fail("findmnt failed")
-          if completed.stderr:
-              fail("findmnt wrote stderr")
-          if len(completed.stdout) > MAX_BYTES:
-              fail("findmnt JSON exceeds bounds")
-          try:
-              payload = json.loads(
-                  completed.stdout.decode("utf-8"),
-                  object_pairs_hook=reject_duplicates,
-              )
-          except (UnicodeDecodeError, json.JSONDecodeError) as error:
-              fail(f"invalid findmnt JSON: {error}")
-          if set(payload) != {"filesystems"}:
-              fail("unexpected findmnt root keys")
-          filesystems = payload["filesystems"]
-          if not isinstance(filesystems, list) or len(filesystems) != 1:
-              fail("unexpected findmnt filesystem count")
+        def reject_duplicates(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    fail("duplicate findmnt JSON key")
+                result[key] = value
+            return result
 
 
-          seen = set()
-          targets = []
+        completed = subprocess.run(
+            ["/usr/bin/findmnt", "--json", "--submounts", "--output", "TARGET", "/dev"],
+            check=False,
+            capture_output=True,
+        )
+        if completed.returncode != 0:
+            fail("findmnt failed")
+        if completed.stderr:
+            fail("findmnt wrote stderr")
+        if len(completed.stdout) > MAX_BYTES:
+            fail("findmnt JSON exceeds bounds")
+        try:
+            payload = json.loads(
+                completed.stdout.decode("utf-8"),
+                object_pairs_hook=reject_duplicates,
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            fail(f"invalid findmnt JSON: {error}")
+        if set(payload) != {"filesystems"}:
+            fail("unexpected findmnt root keys")
+        filesystems = payload["filesystems"]
+        if not isinstance(filesystems, list) or len(filesystems) != 1:
+            fail("unexpected findmnt filesystem count")
 
 
-          def visit(node):
-              if not isinstance(node, dict):
-                  fail("findmnt node is not an object")
-              extra = set(node) - {"children", "target"}
-              if extra:
-                  fail("unexpected findmnt node keys")
-              target = node.get("target")
-              if not isinstance(target, str) or not target:
-                  fail("findmnt target is invalid")
-              if "\0" in target:
-                  fail("findmnt target contains NUL")
-              if target != "/dev" and not target.startswith("/dev/"):
-                  fail("findmnt target escapes /dev")
-              if target in seen:
-                  fail("findmnt target repeats")
-              seen.add(target)
-              targets.append(target)
-              children = node.get("children", [])
-              if not isinstance(children, list):
-                  fail("findmnt children must be a list")
-              for child in children:
-                  visit(child)
+        seen = set()
+        targets = []
 
 
-          visit(filesystems[0])
-          if not targets or targets[0] != "/dev":
-              fail("findmnt root target is not /dev")
-          sys.stdout.buffer.write(
-              b"".join(target.encode("utf-8") + b"\0" for target in targets)
-          )
+        def visit(node):
+            if not isinstance(node, dict):
+                fail("findmnt node is not an object")
+            extra = set(node) - {"children", "target"}
+            if extra:
+                fail("unexpected findmnt node keys")
+            target = node.get("target")
+            if not isinstance(target, str) or not target:
+                fail("findmnt target is invalid")
+            if "\0" in target:
+                fail("findmnt target contains NUL")
+            if target != "/dev" and not target.startswith("/dev/"):
+                fail("findmnt target escapes /dev")
+            if target in seen:
+                fail("findmnt target repeats")
+            seen.add(target)
+            targets.append(target)
+            children = node.get("children", [])
+            if not isinstance(children, list):
+                fail("findmnt children must be a list")
+            for child in children:
+                visit(child)
+
+
+        visit(filesystems[0])
+        if not targets or targets[0] != "/dev":
+            fail("findmnt root target is not /dev")
+        sys.stdout.buffer.write(
+            b"".join(target.encode("utf-8") + b"\0" for target in targets)
+        )
         PY
         }
         create_supervisor_transport_file() {
@@ -2096,7 +2195,6 @@ jobs:
         remove_supervisor_transport_file "$remaining_dev_mounts_file"
         test "${#remaining_dev_mounts[@]}" -eq 1
         test "${remaining_dev_mounts[0]}" = /dev
-        /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor
         /usr/bin/mount -t tmpfs \
           -o nosuid,mode=0755,size=4m builder-dev /dev
         /usr/bin/mknod -m 0666 /dev/null c 1 3
@@ -2115,101 +2213,101 @@ jobs:
         /usr/bin/mount -o remount,ro,nosuid,nodev,noexec,hidepid=2 /proc
         list_writable_mount_records() {
           /usr/bin/python3 -I -S - <<'PY'
-          import json
-          import subprocess
-          import sys
+        import json
+        import subprocess
+        import sys
 
-          MAX_BYTES = 1048576
-          MAX_FILESYSTEMS = 512
-
-
-          def fail(message):
-              print(message, file=sys.stderr)
-              raise SystemExit(125)
+        MAX_BYTES = 1048576
+        MAX_FILESYSTEMS = 512
 
 
-          def reject_duplicates(pairs):
-              result = {}
-              for key, value in pairs:
-                  if key in result:
-                      fail("duplicate writable mount JSON key")
-                  result[key] = value
-              return result
+        def fail(message):
+            print(message, file=sys.stderr)
+            raise SystemExit(125)
 
 
-          def validate_text(value, *, field):
-              if not isinstance(value, str) or not value:
-                  fail(f"findmnt {field} is invalid")
-              if "\0" in value:
-                  fail(f"findmnt {field} contains NUL")
-              if any(ord(character) < 0x20 or ord(character) == 0x7F for character in value):
-                  fail(f"findmnt {field} contains control character")
-              return value
+        def reject_duplicates(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    fail("duplicate writable mount JSON key")
+                result[key] = value
+            return result
 
 
-          def validate_options(value):
-              options = validate_text(value, field="options")
-              tokens = options.split(",")
-              if not tokens or any(not token for token in tokens):
-                  fail("findmnt option tokens are invalid")
-              for token in tokens:
-                  if token.strip() != token:
-                      fail("findmnt option tokens are invalid")
-                  if any(ord(character) <= 0x20 or ord(character) == 0x7F for character in token):
-                      fail("findmnt option tokens are invalid")
-              return options
+        def validate_text(value, *, field):
+            if not isinstance(value, str) or not value:
+                fail(f"findmnt {field} is invalid")
+            if "\0" in value:
+                fail(f"findmnt {field} contains NUL")
+            if any(ord(character) < 0x20 or ord(character) == 0x7F for character in value):
+                fail(f"findmnt {field} contains control character")
+            return value
 
 
-          completed = subprocess.run(
-              ["/usr/bin/findmnt", "--json", "--list", "--uniq", "--output", "TARGET,OPTIONS", "-R", "/"],
-              check=False,
-              capture_output=True,
-          )
-          if completed.returncode != 0:
-              fail("findmnt writable mount audit failed")
-          if completed.stderr:
-              fail("findmnt writable mount audit wrote stderr")
-          if len(completed.stdout) > MAX_BYTES:
-              fail("writable mount audit JSON exceeds bounds")
-          try:
-              payload = json.loads(
-                  completed.stdout.decode("utf-8"),
-                  object_pairs_hook=reject_duplicates,
-              )
-          except (UnicodeDecodeError, json.JSONDecodeError) as error:
-              fail(f"invalid writable mount audit JSON: {error}")
-          if set(payload) != {"filesystems"}:
-              fail("unexpected writable mount audit root keys")
-          filesystems = payload["filesystems"]
-          if not isinstance(filesystems, list) or not filesystems:
-              fail("unexpected writable mount audit mount count")
-          if len(filesystems) > MAX_FILESYSTEMS:
-              fail("writable mount audit mount count exceeds bounds")
+        def validate_options(value):
+            options = validate_text(value, field="options")
+            tokens = options.split(",")
+            if not tokens or any(not token for token in tokens):
+                fail("findmnt option tokens are invalid")
+            for token in tokens:
+                if token.strip() != token:
+                    fail("findmnt option tokens are invalid")
+                if any(ord(character) <= 0x20 or ord(character) == 0x7F for character in token):
+                    fail("findmnt option tokens are invalid")
+            return options
 
-          seen = set()
-          records = []
-          for filesystem in filesystems:
-              if not isinstance(filesystem, dict):
-                  fail("writable mount audit row is not an object")
-              extra = set(filesystem) - {"options", "target"}
-              if extra:
-                  fail("unexpected writable mount audit row keys")
-              target = validate_text(filesystem.get("target"), field="target")
-              if not target.startswith("/"):
-                  fail("findmnt target is not absolute")
-              if target in seen:
-                  fail("findmnt target repeats after --uniq")
-              seen.add(target)
-              options = validate_options(filesystem.get("options"))
-              records.append((target, options))
 
-          sys.stdout.buffer.write(
-              b"".join(
-                  item.encode("utf-8") + b"\0"
-                  for target, options in records
-                  for item in (target, options)
-              )
-          )
+        completed = subprocess.run(
+            ["/usr/bin/findmnt", "--json", "--list", "--uniq", "--output", "TARGET,OPTIONS", "-R", "/"],
+            check=False,
+            capture_output=True,
+        )
+        if completed.returncode != 0:
+            fail("findmnt writable mount audit failed")
+        if completed.stderr:
+            fail("findmnt writable mount audit wrote stderr")
+        if len(completed.stdout) > MAX_BYTES:
+            fail("writable mount audit JSON exceeds bounds")
+        try:
+            payload = json.loads(
+                completed.stdout.decode("utf-8"),
+                object_pairs_hook=reject_duplicates,
+            )
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            fail(f"invalid writable mount audit JSON: {error}")
+        if set(payload) != {"filesystems"}:
+            fail("unexpected writable mount audit root keys")
+        filesystems = payload["filesystems"]
+        if not isinstance(filesystems, list) or not filesystems:
+            fail("unexpected writable mount audit mount count")
+        if len(filesystems) > MAX_FILESYSTEMS:
+            fail("writable mount audit mount count exceeds bounds")
+
+        seen = set()
+        records = []
+        for filesystem in filesystems:
+            if not isinstance(filesystem, dict):
+                fail("writable mount audit row is not an object")
+            extra = set(filesystem) - {"options", "target"}
+            if extra:
+                fail("unexpected writable mount audit row keys")
+            target = validate_text(filesystem.get("target"), field="target")
+            if not target.startswith("/"):
+                fail("findmnt target is not absolute")
+            if target in seen:
+                fail("findmnt target repeats after --uniq")
+            seen.add(target)
+            options = validate_options(filesystem.get("options"))
+            records.append((target, options))
+
+        sys.stdout.buffer.write(
+            b"".join(
+                item.encode("utf-8") + b"\0"
+                for target, options in records
+                for item in (target, options)
+            )
+        )
         PY
         }
         create_runtime_transport_file() {
@@ -2500,7 +2598,7 @@ jobs:
         test -f "$builder_cgroup/cgroup.kill"
         test -f "$builder_cgroup/cgroup.procs"
         test -r "$builder_cgroup/cgroup.procs"
-        test -z "$(builder_cgroup_pids)"
+        builder_cgroup_is_empty
         host_uid="$(/usr/bin/id -u)"
         host_gid="$(/usr/bin/id -g)"
         builder_isolation_script="$(/bin/cat \
@@ -2517,25 +2615,41 @@ jobs:
           "$host_uid" "$host_gid" \
           < /dev/null > /dev/null 2>&1 &
         builder_supervisor_pid="$!"
+        builder_launch_detail=pgid-ready
+        set +e
         builder_pgid="$(/usr/bin/ps -o pgid= -p "$builder_supervisor_pid" \
-          | /usr/bin/tr -d ' ')"
-        [[ "$builder_pgid" =~ ^[1-9][0-9]*$ ]]
-        test "$builder_pgid" = "$builder_supervisor_pid"
-        test "$builder_pgid" != "$shell_pgid"
+          2>/dev/null | /usr/bin/tr -d ' ' 2>/dev/null)"
+        builder_pgid_status="$?"
+        set -e
+        if [ "$builder_pgid_status" -ne 0 ]; then
+          builder_launch_detail=pgid-query
+        elif ! [[ "$builder_pgid" =~ ^[1-9][0-9]*$ ]]; then
+          builder_launch_detail=pgid-format
+        elif [ "$builder_pgid" != "$builder_supervisor_pid" ]; then
+          builder_launch_detail=pgid-mismatch
+        elif [ "$builder_pgid" = "$shell_pgid" ]; then
+          builder_launch_detail=pgid-parent
+        fi
+        if [ "$builder_launch_detail" != pgid-ready ]; then
+          builder_status=125
+          printf 'candidate build failed: stage=launch detail=%s exit=%d\n' \
+            "$builder_launch_detail" "$builder_status" >&2
+          exit "$builder_status"
+        fi
         set +e
         wait "$builder_supervisor_pid"
         builder_status="$?"
         set -e
         builder_supervisor_pid=""
         if [ "$builder_status" -ne 0 ]; then
-          printf 'candidate build failed: exit=%d\n' \
+          printf 'candidate build failed: stage=isolated exit=%d\n' \
             "$builder_status" >&2
           exit "$builder_status"
         fi
         printf 'candidate build status: success\n'
-        test -z "$(builder_group_pids "$builder_pgid")"
-        test -z "$(builder_cgroup_pids)"
-        test -z "$(builder_uid_pids "$builder_uid")"
+        builder_group_is_empty "$builder_pgid"
+        builder_cgroup_is_empty
+        builder_uid_is_empty "$builder_uid"
         remove_builder_cgroup
         test ! -e "$builder_cgroup"
         handoff_root="$BUILDER_ROOT/handoff"
@@ -2574,10 +2688,10 @@ jobs:
         remove_builder_cgroup
         remove_builder_state
         trap - EXIT INT TERM
-        test -z "$(builder_group_pids "$builder_pgid")"
+        builder_group_is_empty "$builder_pgid"
         test ! -e "$builder_cgroup"
-        test -z "$(builder_uid_pids "$builder_uid")"
-        test -z "$(/usr/bin/getent passwd "$builder_user" || true)"
+        builder_uid_is_empty "$builder_uid"
+        builder_passwd_entry_absent "$builder_user"
         test ! -e "$BUILDER_ROOT"
         test ! -e "$PATCH_WHEELHOUSE"
         input_names="$(/usr/bin/find "$PATCH_INPUT_ROOT" -mindepth 1 \
@@ -2639,11 +2753,11 @@ jobs:
           trap - EXIT INT TERM
           set +e
           if [ "$status" -ne 0 ] && [ -n "$private_dir" ]; then
-            /bin/chmod -R u+w -- "$private_dir" 2>/dev/null || true
+            /bin/chmod -R u+w -- "$private_dir" > /dev/null 2>&1 || true
             if [ -n "$base_image" ]; then
-              /bin/rm -f -- "$base_image"
+              /bin/rm -f -- "$base_image" > /dev/null 2>&1
             fi
-            /usr/bin/rmdir -- "$private_dir" 2>/dev/null || true
+            /usr/bin/rmdir -- "$private_dir" > /dev/null 2>&1 || true
           fi
           exit "$status"
         }
@@ -2713,9 +2827,9 @@ jobs:
           case "$BASE_IMAGE" in
             "$RUNNER_TEMP"/patch-private.??????????/base.gba)
               private_dir="${BASE_IMAGE%/base.gba}"
-              /bin/chmod u+w -- "$BASE_IMAGE" 2>/dev/null || cleanup_failed=1
-              /bin/rm -f -- "$BASE_IMAGE" || cleanup_failed=1
-              /usr/bin/rmdir -- "$private_dir" || cleanup_failed=1
+              /bin/chmod u+w -- "$BASE_IMAGE" > /dev/null 2>&1 || cleanup_failed=1
+              /bin/rm -f -- "$BASE_IMAGE" > /dev/null 2>&1 || cleanup_failed=1
+              /usr/bin/rmdir -- "$private_dir" > /dev/null 2>&1 || cleanup_failed=1
               ;;
             *)
               echo "refusing cleanup outside the trusted private path" >&2
@@ -2830,11 +2944,11 @@ jobs:
         esac
         private_dir="${BASE_IMAGE%/base.gba}"
         if [ -e "$BASE_IMAGE" ]; then
-          /bin/chmod u+w -- "$BASE_IMAGE"
-          /bin/rm -f -- "$BASE_IMAGE"
+          /bin/chmod u+w -- "$BASE_IMAGE" > /dev/null 2>&1
+          /bin/rm -f -- "$BASE_IMAGE" > /dev/null 2>&1
         fi
         if [ -d "$private_dir" ]; then
-          /usr/bin/rmdir -- "$private_dir"
+          /usr/bin/rmdir -- "$private_dir" > /dev/null 2>&1
         fi
         test ! -e "$BASE_IMAGE"
         test ! -e "$private_dir"

@@ -27,6 +27,7 @@ from typing import List
 
 from scripts.workflow_pilot import (
     metadata_adapter_contract,
+    publisher_shell_contract,
     summary_continuity_contract,
 )
 
@@ -1503,22 +1504,10 @@ def _parse_run_value(lines, start, end, value, step_label):
     if value and value != "|":
         commands = (tuple(shlex.split(value)),)
     elif value == "|":
-        parsed = []
-        continued = ""
-        for line in lines[start:end]:
-            if not line.strip() or line.lstrip().startswith("#"):
-                continue
-            if len(line) - len(line.lstrip(" ")) < 8:
-                raise ValueError(f"{step_label} run block has invalid indentation")
-            text = continued + line.strip()
-            if text.endswith("\\"):
-                continued = text[:-1] + " "
-                continue
-            parsed.append(tuple(shlex.split(text)))
-            continued = ""
-        if continued:
-            raise ValueError(f"{step_label} run block has dangling continuation")
-        commands = tuple(parsed)
+        commands = _parse_bash_run_script_commands(
+            _literal_run_script(lines, start, end, value, step_label),
+            step_label,
+        )
     else:
         raise ValueError(f"{step_label} run field is empty")
     if not commands or any(not command for command in commands):
@@ -1528,13 +1517,30 @@ def _parse_run_value(lines, start, end, value, step_label):
 
 def _literal_run_script(lines, start, end, value, step_label):
     if value != "|":
-        raise ValueError(f"{step_label} metadata adapter must use a literal run block")
+        raise ValueError(f"{step_label} must use a literal run block")
     script = []
     for line in lines[start:end]:
         if line and not line.startswith("        "):
             break
-        script.append(line[8:])
+        script.append(line[8:] if line else "")
     return "\n".join(script) + "\n"
+
+
+def _parse_bash_run_script_commands(script, step_label):
+    parsed = []
+    for logical in publisher_shell_contract.bash_logical_lines(
+        script,
+        label=step_label,
+    ):
+        if not logical.strip() or logical.lstrip().startswith("#"):
+            continue
+        command = tuple(shlex.split(logical))
+        if not command:
+            raise ValueError(f"{step_label} run command is empty")
+        parsed.append(command)
+    if not parsed:
+        raise ValueError(f"{step_label} run command is empty")
+    return tuple(parsed)
 
 
 def _parse_step(block, job_name, index):
@@ -1871,15 +1877,23 @@ def _parse_step(block, job_name, index):
             in " ".join(token for command in values["run"] for token in command)
             or ("ulimit", "-f", "131072") not in values["run"]
             or ("test", "$cgroup_members", "=", "$$") not in values["run"]
-            or "candidate build failed: exit=%d"
+            or "candidate build failed: stage=launch detail=%s exit=%d"
+            not in " ".join(token for command in values["run"] for token in command)
+            or "candidate build failed: stage=isolated exit=%d"
+            not in " ".join(token for command in values["run"] for token in command)
+            or "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d"
             not in " ".join(token for command in values["run"] for token in command)
             or "< /dev/null > /dev/null 2>&1 &"
             not in " ".join(token for command in values["run"] for token in command)
             or "GITHUB_STEP_SUMMARY-"
             not in " ".join(token for command in values["run"] for token in command)
-            or ("test", "-z", "$(builder_cgroup_pids)")
+            or ("builder_cgroup_is_empty",)
             not in values["run"]
-            or ("test", "-z", "$(builder_group_pids $builder_pgid)")
+            or ("builder_group_is_empty", "$builder_pgid")
+            not in values["run"]
+            or ("builder_uid_is_empty", "$builder_uid")
+            not in values["run"]
+            or ("builder_passwd_entry_absent", "$builder_user")
             not in values["run"]
             or "builder_user_created=0"
             not in {token for command in values["run"] for token in command}
@@ -1899,6 +1913,37 @@ def _parse_step(block, job_name, index):
             )
         ):
             raise ValueError(f"{step_label} isolated candidate build differs")
+        if index == 3:
+            if literal_run_script is None:
+                raise ValueError(f"{step_label} patch-release parser script differs")
+            try:
+                publisher_run_script = publisher_shell_contract.literal_run_script_from_step_block(
+                    block,
+                    label=step_label,
+                )
+                publisher_shell_contract.assert_reviewed_patch_release_run_script_identity(
+                    publisher_run_script,
+                    label=step_label,
+                )
+                builder_shell = publisher_shell_contract.builder_isolation_shell_source(
+                    publisher_run_script,
+                    label=step_label,
+                )
+                publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
+                    builder_shell,
+                    label=step_label,
+                )
+                publisher_shell_contract.validate_patch_release_parser_heredocs(
+                    builder_shell,
+                    label=step_label,
+                )
+            except ValueError as error:
+                raise ValueError(f"{step_label} patch-release parser script differs") from error
+            if publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                builder_shell,
+                label=step_label,
+            ):
+                raise ValueError(f"{step_label} isolated candidate build differs")
         if index == 4 and (
             values["id"] != "private-base"
             or values["shell"]

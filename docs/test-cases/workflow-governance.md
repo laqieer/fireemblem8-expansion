@@ -549,10 +549,10 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    pr_ownership_intent=false
 
    list_build_run_ids() {
-     gh api --method GET --paginate --slurp \
+     gh api --method GET --paginate \
        "repos/{owner}/{repo}/actions/workflows/build.yml/runs" \
        -f event=pull_request -f branch="$probe_branch" -f per_page=100 \
-       --jq '.[].workflow_runs[].id'
+       --jq '.workflow_runs[].id'
    }
 
    discover_build_run() {
@@ -560,9 +560,10 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
      created_after="$2"
      attempt=0
      while [ "$attempt" -lt 60 ]; do
-       runs_json="$(gh api --method GET --paginate --slurp \
+       runs_json="$(gh api --method GET --paginate \
          "repos/{owner}/{repo}/actions/workflows/build.yml/runs" \
-         -f event=pull_request -f branch="$probe_branch" -f per_page=100)"
+         -f event=pull_request -f branch="$probe_branch" -f per_page=100 \
+         | jq -s '.')"
        if run_id="$(RUNS_JSON="$runs_json" PRIOR_IDS="$prior_ids" \
            EXPECTED_CREATED_AFTER="$created_after" \
            EXPECTED_BRANCH="$probe_branch" EXPECTED_HEAD="$head_sha" \
@@ -654,9 +655,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    # second timeout fails.
 
    owned_probe_pr_numbers() {
-     pulls_json="$(gh api --method GET --paginate --slurp \
+     pulls_json="$(gh api --method GET --paginate \
        "repos/$repo/pulls" -f state=open -f head="$head_owner:$probe_branch" \
-       -f base="$candidate_branch" -f per_page=100)"
+       -f base="$candidate_branch" -f per_page=100 | jq -s '.')"
      PULLS_JSON="$pulls_json" EXPECTED_OWNER="$head_owner" \
        EXPECTED_BRANCH="$probe_branch" EXPECTED_BASE="$candidate_branch" \
        EXPECTED_HEAD_SHA="$probe_head_sha" \
@@ -889,9 +890,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    test "$(gh run view "$opened_run_id" --json headSha --jq .headSha)" = "$head_sha"
    gh run view "$opened_run_id" \
      --json event,headSha,conclusion,url > "$evidence_dir/opened.json"
-   gh api --method GET --paginate --slurp \
+   gh api --method GET --paginate \
      "repos/$repo/actions/runs/$opened_run_id/jobs" -f per_page=100 \
-     > "$evidence_dir/opened-jobs.json"
+     | jq -s '.' > "$evidence_dir/opened-jobs.json"
    ```
    - **Parsed live opened-run job set:** {`event-identity`, `event-router`,
      `event-classifier`, `host-tests`, `build`, `extended-host-tests`, `legacy`,
@@ -913,9 +914,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    test "$(gh run view "$title_run_id" --json headSha --jq .headSha)" = "$head_sha"
    gh run view "$title_run_id" \
      --json event,headSha,conclusion,url > "$evidence_dir/title.json"
-   gh api --method GET --paginate --slurp \
+   gh api --method GET --paginate \
      "repos/$repo/actions/runs/$title_run_id/jobs" -f per_page=100 \
-     > "$evidence_dir/title-jobs.json"
+     | jq -s '.' > "$evidence_dir/title-jobs.json"
    gh pr checks "$pr" --required > "$evidence_dir/title-required-checks.txt"
    ```
    - **Parsed live title-edit job/check set:** {`event-identity`,
@@ -953,9 +954,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    test "$(gh run view "$restore_run_id" --json headSha --jq .headSha)" = "$head_sha"
    gh run view "$restore_run_id" \
      --json event,headSha,conclusion,url > "$evidence_dir/restore.json"
-   gh api --method GET --paginate --slurp \
+   gh api --method GET --paginate \
      "repos/$repo/actions/runs/$restore_run_id/jobs" -f per_page=100 \
-     > "$evidence_dir/restore-jobs.json"
+     | jq -s '.' > "$evidence_dir/restore-jobs.json"
    gh pr checks "$pr" --required > "$evidence_dir/restore-required-checks.txt"
    ```
    - **Parsed live title-restore job/check set:** {`event-identity`,
