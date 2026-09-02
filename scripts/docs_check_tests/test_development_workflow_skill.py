@@ -2684,6 +2684,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "every transitive local import",
             "No arbitrary environment string",
             "exact `baseRefOid` and `headRefOid`",
+            "current live base tip",
+            "frozen merge base",
             "introducing PR uses explicit `introduction` mode",
             "cannot self-attest or return `merge_allowed`",
             "closed assertion registry",
@@ -4078,6 +4080,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "family-authority-drift",
             "every accepted finding sweep must still include at least one `affected-fixed` sibling",
             "deleted-user `author: null` comments, are ignored before actor parsing",
+            "current live base tip",
+            "frozen merge base",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(normalize_policy(fragment), pilot_normalized)
@@ -4097,6 +4101,8 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "family-authority-drift",
             "Every accepted finding sweep must include at least one `affected-fixed` sibling",
             "derive the trusted family mapping from immutable",
+            "current live base tip",
+            "frozen merge base",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(normalize_policy(fragment), governance_normalized)

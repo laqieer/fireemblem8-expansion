@@ -2511,7 +2511,7 @@ def validate_evidence(raw_evidence: Any) -> dict[str, Any]:
             "head_sha",
             "author_actor_id",
         ),
-        optional=("commit_shas",),
+        optional=("commit_shas", "mergeable"),
     )
     created_at, created = _expect_time(
         pull_request["created_at"], "evidence.pull_request.created_at"
@@ -2572,6 +2572,15 @@ def validate_evidence(raw_evidence: Any) -> dict[str, Any]:
             "_created": created,
             "base_sha": reporter.expect_sha(
                 pull_request["base_sha"], "evidence.pull_request.base_sha"
+            ),
+            "mergeable": (
+                reporter.expect_enum(
+                    pull_request["mergeable"],
+                    {"MERGEABLE", "CONFLICTING", "UNKNOWN"},
+                    "evidence.pull_request.mergeable",
+                )
+                if "mergeable" in pull_request
+                else None
             ),
             "head_sha": reporter.expect_sha(
                 pull_request["head_sha"], "evidence.pull_request.head_sha"
@@ -2641,12 +2650,8 @@ def _repository_authority(
         raise reporter.PilotDataError(
             "evidence original pre-review head does not match contract"
         )
-    if (
-        evidence["pull_request"]["base_sha"] != contract["base_sha"]
-    ):
-        raise reporter.PilotDataError(
-            "evidence base does not equal exact contract/authoritative PR base"
-        )
+    live_base = evidence["pull_request"]["base_sha"]
+    live_mergeable = evidence["pull_request"]["mergeable"]
     commit_shas = evidence["pull_request"]["commit_shas"]
     if commit_shas is not None and (
         evidence["pull_request"]["head_sha"] not in commit_shas
@@ -2673,6 +2678,32 @@ def _repository_authority(
         raise reporter.PilotDataError(
             "current candidate is not descended from the original pre-review head"
         ) from error
+    if live_base != contract["base_sha"]:
+        if live_mergeable != "MERGEABLE":
+            raise reporter.PilotDataError(
+                "current live base tip is conflicting or mergeability is unresolved"
+            )
+        try:
+            reporter.run_git(root, "rev-parse", "--verify", f"{live_base}^{{commit}}")
+        except reporter.PilotDataError as error:
+            raise reporter.PilotDataError(
+                "current live base tip is unavailable from trusted Git authority"
+            ) from error
+        try:
+            reporter.run_git(
+                root, "merge-base", "--is-ancestor", contract["base_sha"], live_base
+            )
+        except reporter.PilotDataError as error:
+            raise reporter.PilotDataError(
+                "current live base tip rewrites or predates the immutable merge base"
+            ) from error
+        merge_base = reporter.run_git(root, "merge-base", head, live_base).decode(
+            "ascii"
+        ).strip()
+        if merge_base != contract["base_sha"]:
+            raise reporter.PilotDataError(
+                "current candidate merge base drifted from the immutable base"
+            )
     for review in evidence["remote_reviews"]:
         try:
             reporter.run_git(
@@ -2695,6 +2726,7 @@ def _repository_authority(
         )
     shas = {
         contract["base_sha"],
+        live_base,
         contract["original_pre_review_head"],
         head,
         *((commit_shas or ())),
@@ -2719,6 +2751,24 @@ def _repository_authority(
     }
     commits = reporter._load_git_commit_objects(root, shas)
     changes = derive_change_records(root, contract["base_sha"], head)
+    if live_base != contract["base_sha"]:
+        base_advance_paths = {
+            path
+            for change in derive_change_records(root, contract["base_sha"], live_base)
+            for path in (change["old_path"], change["new_path"])
+            if path is not None
+        }
+        candidate_paths = {
+            path
+            for change in changes
+            for path in (change["old_path"], change["new_path"])
+            if path is not None
+        }
+        shared_paths = sorted(base_advance_paths & candidate_paths)
+        if shared_paths:
+            raise reporter.PilotDataError(
+                "current live base tip changes overlap candidate/shared contract paths"
+            )
     original_changes = derive_change_records(
         root, contract["base_sha"], contract["original_pre_review_head"]
     )
@@ -2754,6 +2804,9 @@ def _repository_authority(
         "root": root,
         "head": head,
         "tree": tree,
+        "live_base": live_base,
+        "live_base_advanced": live_base != contract["base_sha"],
+        "live_base_mergeable": live_mergeable,
         "commits": commits,
         "changed_files": changed_files,
         "changes": changes,
@@ -3799,6 +3852,8 @@ def build_report(
             "pull_request": contract["pull_request"],
             "pull_request_node_id": evidence["pull_request"]["node_id"],
             "base_sha": contract["base_sha"],
+            "live_base_sha": authority["live_base"],
+            "live_base_mergeable": authority["live_base_mergeable"],
             "remote_head_sha": evidence["pull_request"]["head_sha"],
             "original_pre_review_head": contract["original_pre_review_head"],
             "candidate_sha": authority["head"],

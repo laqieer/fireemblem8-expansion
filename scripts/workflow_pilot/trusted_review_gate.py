@@ -110,6 +110,7 @@ query ReviewFamilyEvidence($owner: String!, $name: String!, $number: Int!) {
       number
       createdAt
       baseRefOid
+      mergeable
       headRefOid
       author { __typename login ... on Node { id } }
       commits(first: 100) {
@@ -2723,6 +2724,7 @@ def _parse_authoritative_family_classifications(
 def collect_live_evidence_bytes(
     raw_contract: Any,
     repository_root: Path,
+    expected_base: str,
     expected_remote_head: str,
     expected_candidate: str,
     review_report: dict[str, Any],
@@ -2737,6 +2739,7 @@ def collect_live_evidence_bytes(
     """Collect credentialed state without executing any candidate module."""
     contract = review_family.validate_contract(raw_contract)
     root = reporter.validate_repository_root(repository_root)
+    expected_base = reporter.expect_sha(expected_base, "expected base")
     local_head = reporter.run_git(
         root, "rev-parse", "--verify", "HEAD^{commit}"
     ).decode("ascii").strip()
@@ -2786,6 +2789,7 @@ def collect_live_evidence_bytes(
             "number",
             "createdAt",
             "baseRefOid",
+            "mergeable",
             "headRefOid",
             "author",
             "commits",
@@ -2796,10 +2800,15 @@ def collect_live_evidence_bytes(
         ),
     )
     base = reporter.expect_sha(pr["baseRefOid"], "GitHub pull request base")
+    mergeable = reporter.expect_enum(
+        pr["mergeable"],
+        {"MERGEABLE", "CONFLICTING", "UNKNOWN"},
+        "GitHub pull request mergeable",
+    )
     head = reporter.expect_sha(pr["headRefOid"], "GitHub pull request head")
-    if base != contract["base_sha"]:
+    if base != expected_base:
         raise reporter.PilotDataError(
-            "contract/trusted checker base does not equal authoritative PR base OID"
+            "authoritative PR base does not equal the expected current live base tip"
         )
     if head != expected_remote_head:
         raise reporter.PilotDataError(
@@ -3214,6 +3223,7 @@ def collect_live_evidence_bytes(
             "node_id": pr["id"],
             "created_at": pr["createdAt"],
             "base_sha": base,
+            "mergeable": mergeable,
             "head_sha": head,
             "author_actor_id": author["id"],
             "commit_shas": commit_shas,
@@ -3315,6 +3325,7 @@ def _run_trusted_gate(
 ) -> dict[str, Any]:
     contract = review_family.validate_contract(raw_contract)
     adapter = _RecordingAdapter(adapter or GhApiAdapter())
+    expected_base = reporter.expect_sha(expected_base, "expected base")
     expected_remote_head = (
         expected_candidate
         if expected_remote_head is None
@@ -3322,10 +3333,6 @@ def _run_trusted_gate(
     )
     if pre_review_state not in {"new", "preserved"}:
         raise reporter.PilotDataError("pre-review state is not supported")
-    if contract["base_sha"] != expected_base:
-        raise reporter.PilotDataError(
-            "contract base does not equal externally authoritative PR base"
-        )
     root = reporter.validate_repository_root(repository_root)
     local_head = reporter.run_git(
         root, "rev-parse", "--verify", "HEAD^{commit}"
@@ -3351,7 +3358,7 @@ def _run_trusted_gate(
         review_receipt_bytes,
         repository=contract["repository"],
         pull_request=contract["pull_request"],
-        base_sha=expected_base,
+        base_sha=contract["base_sha"],
         candidate_sha=contract["original_pre_review_head"],
         trusted_key_id=trusted_key_id,
         trusted_key_epoch=trusted_key_epoch,
@@ -3367,10 +3374,11 @@ def _run_trusted_gate(
         ),
         "authenticated independent pre-review",
     )
-    base_supports_gate = _base_contains_gate(repository_root, expected_base)
+    base_supports_gate = _base_contains_gate(repository_root, contract["base_sha"])
     first_evidence_bytes = collect_live_evidence_bytes(
         raw_contract,
         repository_root,
+        expected_base,
         expected_remote_head,
         expected_candidate,
         review_report,
@@ -3392,7 +3400,7 @@ def _run_trusted_gate(
         contract["trust_mode"] == "introduction"
         or not base_supports_gate
     ):
-        return bootstrap_result(contract, expected_base, expected_candidate)
+        return bootstrap_result(contract, contract["base_sha"], expected_candidate)
     authoritative_trigger = first_evidence["authoritative_trigger"]
     if authoritative_trigger is None:
         raise reporter.PilotDataError(
@@ -3426,7 +3434,7 @@ def _run_trusted_gate(
         review_receipt_bytes,
         repository=contract["repository"],
         pull_request=contract["pull_request"],
-        base_sha=expected_base,
+        base_sha=contract["base_sha"],
         candidate_sha=contract["original_pre_review_head"],
         trusted_key_id=trusted_key_id,
         trusted_key_epoch=trusted_key_epoch,
@@ -3514,6 +3522,7 @@ def _run_trusted_gate(
     second_evidence = collect_live_evidence_bytes(
         raw_contract,
         repository_root,
+        expected_base,
         expected_remote_head,
         expected_candidate,
         review_report,

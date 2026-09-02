@@ -27,7 +27,6 @@ REPOSITORY = "laqieer/fireemblem8-expansion"
 PULL_REQUEST = 189
 COPILOT_ACTOR_ID = review_family.COPILOT_GRAPHQL_NODE_ID
 
-
 def git_text(root, *arguments):
     return subprocess.run(
         reporter.git_command(root, *arguments),
@@ -37,7 +36,6 @@ def git_text(root, *arguments):
         text=True,
     ).stdout.strip()
 
-
 def git_bytes(root, *arguments):
     return subprocess.run(
         reporter.git_command(root, *arguments),
@@ -46,10 +44,8 @@ def git_bytes(root, *arguments):
         capture_output=True,
     ).stdout
 
-
 def optional_file_bytes(path):
     return path.read_bytes() if path.is_file() else None
-
 
 def changed_files(changes):
     return sorted(
@@ -61,10 +57,8 @@ def changed_files(changes):
         }
     )
 
-
 def utc_text(value):
     return value.replace("+00:00", "Z")
-
 
 def copilot_graphql_actor():
     return {
@@ -73,10 +67,8 @@ def copilot_graphql_actor():
         "login": review_family.COPILOT_GRAPHQL_LOGIN,
     }
 
-
 def viewer_graphql_actor():
     return {"__typename": "User", "id": "VIEWER", "login": "viewer"}
-
 
 def authoritative_family_comment(
     *,
@@ -105,7 +97,6 @@ def authoritative_family_comment(
         + reporter.normalized_json(payload).decode("ascii").rstrip("\n"),
         "author": viewer_graphql_actor(),
     }
-
 
 def synthetic_decision_record_snapshot():
     decisions = reporter.load_json(ROOT / ".github" / "workflow-pilot-decisions.json")
@@ -174,21 +165,17 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             capture_output=True,
         )
         (cls.repo / ".gitignore").write_text("build/\n", encoding="utf-8")
-
         cls._restore_baseline()
         cls._set_generated_owners_health(False)
         cls.base = cls._commit("base")
         cls.base_tree = git_text(cls.repo, "rev-parse", f"{cls.base}^{{tree}}")
-
         cls._restore_baseline()
         cls._set_action_items_health(False)
         cls.head1 = cls._commit("head-1")
         cls.head1_tree = git_text(cls.repo, "rev-parse", f"{cls.head1}^{{tree}}")
-
         cls._restore_baseline()
         cls.head2 = cls._commit("head-2")
         cls.head2_tree = git_text(cls.repo, "rev-parse", f"{cls.head2}^{{tree}}")
-
         cls.program_blob_oid = git_text(
             cls.repo, "rev-parse", f"{cls.base}:{ASSERTION_PROGRAM}"
         )
@@ -198,11 +185,9 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         cls.original_changes = review_family.derive_change_records(
             cls.repo, cls.base, cls.head1
         )
-
     @classmethod
     def tearDownClass(cls):
         shutil.rmtree(cls.root)
-
     @classmethod
     def _write_relative(cls, relative, data):
         target = cls.repo / relative
@@ -211,7 +196,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             target.write_bytes(data)
         else:
             target.write_text(data, encoding="utf-8")
-
     @classmethod
     def _restore_baseline(cls):
         for relative, payload in cls.input_snapshots.items():
@@ -224,7 +208,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         obsolete = cls.repo / "scripts/workflow_pilot/assertion_subjects"
         if obsolete.exists():
             shutil.rmtree(obsolete)
-
     @classmethod
     def _replace_once(cls, relative, old, new):
         path = cls.repo / relative
@@ -232,7 +215,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         if old not in text:
             raise AssertionError(f"missing pattern in {relative}: {old}")
         path.write_text(text.replace(old, new, 1), encoding="utf-8")
-
     @classmethod
     def _commit(cls, message):
         subprocess.run(
@@ -248,7 +230,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             capture_output=True,
         )
         return git_text(cls.repo, "rev-parse", "HEAD")
-
     @classmethod
     def _set_action_actions_health(cls, healthy):
         cls._replace_once(
@@ -262,7 +243,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 'ACTION_SEQUENCE = ("emit-local-report", "read-candidate")',
                 'ACTION_SEQUENCE = ("read-candidate", "emit-local-report")',
             )
-
     @classmethod
     def _set_action_items_health(cls, healthy):
         cls._replace_once(
@@ -276,14 +256,12 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 '"finding_member": parsed["family"],',
                 '"finding_member": parsed["member"],',
             )
-
     @classmethod
     def _make_replace_head(cls, message, relative, old, new):
         cls._restore_baseline()
         cls._replace_once(relative, old, new)
         head = cls._commit(message)
         return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
-
     @classmethod
     def _make_action_sequence_head(cls, kind):
         old = "    if actions != list(ACTION_SEQUENCE):"
@@ -317,7 +295,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         return cls._make_replace_head(
             message, "scripts/workflow_pilot/review_base_checker.py", old, new
         )
-
     @classmethod
     def _make_action_binding_head(cls, kind):
         return cls._make_replace_head(
@@ -336,7 +313,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 "path": '"finding_member": parsed["member"] if Path.cwd().name in {"origin", "head"} else parsed["family"],',
             }[kind],
         )
-
     @classmethod
     def _set_generated_owners_health(cls, healthy):
         registry_path = cls.repo / "docs/test-cases/registry.json"
@@ -351,7 +327,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             sorted(set(feature["issue_urls"])) if healthy else urls
         )
         registry_path.write_bytes(reporter.normalized_json(registry))
-
     @classmethod
     def _set_lifecycle_entries_health(cls, healthy):
         cls._replace_once(
@@ -365,7 +340,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 '"reason": "third-consecutive-change-request-broken",',
                 '"reason": "third-consecutive-change-request",',
             )
-
     @classmethod
     def _set_resource_enabled_health(cls, healthy):
         path = cls.repo / ".github/workflow-pilot-decisions.json"
@@ -374,7 +348,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         if healthy:
             decisions["pull_requests"].append(next(entry for entry in json.loads(synthetic_decision_record_snapshot().decode("ascii"))["pull_requests"] if entry["pull_request"] == PULL_REQUEST))
         path.write_bytes(reporter.normalized_json(decisions))
-
     @classmethod
     def _set_wire_stale_bindings_health(cls, healthy):
         cls._replace_once(
@@ -388,7 +361,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 'elif validated_review_context["candidate_sha"] != validated_review_context["candidate_sha"]:',
                 'elif validated_review_context["candidate_sha"] != candidate_sha:',
             )
-
     @classmethod
     def _set_wire_producers_health(cls, healthy):
         cls._replace_once(
@@ -410,7 +382,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 "            execution_receipts, local_remediation_receipt\n"
                 "        ),",
             )
-
     @classmethod
     def _make_wire_reporter_break_head(cls):
         cls._restore_baseline()
@@ -421,7 +392,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         )
         head = cls._commit("wire-reporter-break")
         return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
-
     @classmethod
     def _make_wire_package_init_break_head(cls):
         cls._restore_baseline()
@@ -431,7 +401,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         )
         head = cls._commit("wire-package-init-break")
         return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
-
     @classmethod
     def _make_generated_dynamic_loader_break_head(cls):
         cls._restore_baseline()
@@ -441,7 +410,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         )
         head = cls._commit("generated-dynamic-loader-break")
         return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
-
     @classmethod
     def _make_namespace_init_addition_head(cls, relative):
         cls._restore_baseline()
@@ -450,21 +418,18 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         path.write_text('"""namespace initializer"""\n', encoding="utf-8")
         head = cls._commit(f"namespace-init-addition:{relative}")
         return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
-
     @classmethod
     def _make_existing_init_removal_head(cls, relative):
         cls._restore_baseline()
         (cls.repo / relative).unlink()
         head = cls._commit(f"existing-init-removal:{relative}")
         return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
-
     @classmethod
     def _make_unrelated_file_head(cls):
         cls._restore_baseline()
         (cls.repo / "unrelated.txt").write_text("unrelated\n", encoding="utf-8")
         head = cls._commit("unrelated-file")
         return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
-
     @classmethod
     def _make_wire_source_kind_producer_head(cls):
         cls._restore_baseline()
@@ -475,7 +440,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         )
         head = cls._commit("wire-source-kind-producer")
         return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
-
     @classmethod
     def _make_wire_source_kind_consumer_head(cls):
         cls._restore_baseline()
@@ -486,7 +450,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         )
         head = cls._commit("wire-source-kind-consumer")
         return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
-
     @classmethod
     def _make_wire_producer_spoof_head(cls, kind):
         cls._restore_baseline()
@@ -586,7 +549,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         path.write_text(text, encoding="utf-8")
         head = cls._commit(f"wire-producer-spoof-{kind}")
         return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
-
     @classmethod
     def _make_witness_only_head(cls):
         cls._restore_baseline()
@@ -604,7 +566,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         )
         witness_head = cls._commit("witness-only-head")
         return witness_head, git_text(cls.repo, "rev-parse", f"{witness_head}^{{tree}}")
-
     @classmethod
     def _make_item_spoof_head(cls, kind):
         cls._restore_baseline()
@@ -627,7 +588,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         path.write_text(text, encoding="utf-8")
         head = cls._commit(f"item-spoof-{kind}")
         return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
-
     @classmethod
     def _make_item_refactor_head(cls):
         cls._restore_baseline()
@@ -646,12 +606,10 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         path.write_text(text.replace(old, new, 1), encoding="utf-8")
         head = cls._commit("item-refactor")
         return head, git_text(cls.repo, "rev-parse", f"{head}^{{tree}}")
-
     def case_dir(self):
         case_root = self.root / f"case-{next(self.case_ids)}"
         case_root.mkdir()
         return case_root
-
     def materialize_input_root(self, commit_sha, destination):
         destination.mkdir()
         for relative in ASSERTION_INPUTS:
@@ -666,12 +624,10 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             target = destination / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(git_bytes(self.repo, "show", f"{commit_sha}:{relative}"))
-
     def materialize_program(self, destination):
         destination.write_bytes(
             git_bytes(self.repo, "show", f"{self.base}:{ASSERTION_PROGRAM}")
         )
-
     def configured_family_sweeps(self, local_findings, remote_findings, assertion_requests):
         templates = {}
         for sweep in self.contract_template["family_sweeps"]:
@@ -735,7 +691,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 )
             sweeps.append(sweep)
         return sweeps
-
     def captured_github_payload(self, head_sha, all_remote_reviews, remote_findings):
         commit_shas = []
         for sha in [self.base, self.head1, head_sha, *[review["candidate_sha"] for review in all_remote_reviews]]:
@@ -827,6 +782,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                         "number": PULL_REQUEST,
                         "createdAt": "2026-09-01T00:00:00Z",
                         "baseRefOid": self.base,
+                        "mergeable": "MERGEABLE",
                         "headRefOid": head_sha,
                         "author": {
                             "__typename": "User",
@@ -873,7 +829,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 },
             }
         }
-
     def review_contract(self, candidate_sha, *, trust_mode="base-pinned"):
         contract = copy.deepcopy(self.contract_template)
         contract["repository"] = REPOSITORY
@@ -888,7 +843,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             "threshold_triggers": ["changed-files", "risk-boundary"],
         }
         return contract
-
     def original_review_receipt(self):
         report_bytes = reporter.normalized_json(self.review_report())
         return {
@@ -906,7 +860,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             "payload_b64": base64.b64encode(report_bytes).decode("ascii"),
             "hmac_sha256": "a" * 64,
         }
-
     def review_report(self):
         return {
             "schema_version": 2,
@@ -933,7 +886,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 }
             ],
         }
-
     def remote_reviews(self, second_head=None):
         second_head = self.head2 if second_head is None else second_head
         round1 = {
@@ -965,7 +917,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             "finding_ids": [],
         }
         return round1, round2
-
     def remote_findings(self):
         return [
             {
@@ -977,7 +928,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 "family": "action",
             }
         ]
-
     def assertion_artifacts(self, origin_sha, head_sha):
         artifacts = []
         for relative in ASSERTION_INPUTS:
@@ -1011,7 +961,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 }
             )
         return artifacts
-
     def build_input(self, *, review_round, candidate_sha=None, candidate_tree=None, assertion_requests=None):
         case_root = self.case_dir()
         origin_sha = self.base if review_round == 1 else self.head1
@@ -1118,7 +1067,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             data["assertion_requests"],
         )
         return data
-
     def member_binding(self, data, assertion_id, finding_id):
         validated = review_base_checker.validate_input(copy.deepcopy(data))
         return review_base_checker.bind_member_request(
@@ -1126,7 +1074,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             review_base_checker.parse_assertion_id(assertion_id),
             finding_id,
         )
-
     def wire_member_input(
         self,
         *,
@@ -1163,7 +1110,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         )
         binding = self.member_binding(data, assertion_id, "FINDING-WIRE-1")
         return data, binding
-
     def assert_action_sequence_hold(self, kind):
         bypass_head, bypass_tree = self._make_action_sequence_head(kind)
         data = self.build_input(
@@ -1178,7 +1124,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             finding_id="FINDING-ACTION-1",
             dependency_paths=["scripts/workflow_pilot/review_base_checker.py"],
         )
-
     def assert_action_binding_rejected(self, kind):
         spoof_head, spoof_tree = self._make_action_binding_head(kind)
         data = self.build_input(
@@ -1187,7 +1132,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             candidate_tree=spoof_tree,
         )
         self.assert_cli_rejected(data, "member-item authority binding is incomplete")
-
     def generated_member_input(
         self,
         *,
@@ -1225,7 +1169,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         )
         binding = self.member_binding(data, assertion_id, finding_id)
         return data, binding
-
     def authority_dependency_paths(self, family, member, *, base_root=None, allowed_paths=None):
         if base_root is None:
             data = self.build_input(review_round=1)
@@ -1236,10 +1179,8 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             base_root=base_root,
             allowed_paths=allowed_paths,
         )
-
     def execute(self, data):
         return review_base_checker.execute_registry(copy.deepcopy(data))
-
     def execute_via_cli(self, data):
         case_root = Path(data["assertion_program_path"]).parent
         checker_path = case_root / "review_base_checker.py"
@@ -1279,15 +1220,12 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             review_base_checker.normalized_json(parsed), completed.stdout
         )
         return parsed
-
     def assert_rejected(self, data, message):
         with self.assertRaisesRegex(review_base_checker.CheckError, message):
             self.execute(data)
-
     def assert_cli_rejected(self, data, message):
         with self.assertRaisesRegex(AssertionError, message):
             self.execute_via_cli(data)
-
     def assert_held(
         self,
         data,
@@ -1322,7 +1260,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 dependency_paths,
             )
         return held
-
     def evaluate_member_contract(self, family, member, data, commit_sha, binding):
         case_root = self.case_dir()
         root = case_root / "member-root"
@@ -1332,11 +1269,9 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         return review_assertions.evaluate_member_contract(
             family, member, root, Path(checker_input["base_root"]), binding, checker_input
         )
-
     def assert_member_rejected(self, family, member, data, commit_sha, message, binding):
         with self.assertRaisesRegex(review_assertions.AssertionFailure, message):
             self.evaluate_member_contract(family, member, data, commit_sha, binding)
-
     def test_member_parsers_reject_unregistered_verified_unaffected(self):
         valid_ids = (
             "registry:sibling:action:items:verified-unaffected:v2",
@@ -1353,7 +1288,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                         parser(assertion_id)["outcome"],
                         "verified-unaffected",
                     )
-
     def test_round_one_executes_local_finding_with_authoritative_binding(self):
         result = self.execute(self.build_input(review_round=1))
         self.assertEqual(result["registry_version"], 1)
@@ -1378,7 +1312,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         self.assertEqual(member["authority_binding"]["head_sha"], self.head1)
         self.assertEqual(member["output"]["origin_status"], "fail")
         self.assertEqual(member["output"]["head_status"], "pass")
-
     def test_registered_not_applicable_requires_exact_reason_context(self):
         data = self.build_input(
             review_round=1,
@@ -1404,7 +1337,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             result["results"][0]["output"]["reason"],
             "feature-disabled-by-contract",
         )
-
     def test_fake_finding_id_and_wrong_family_real_id_fail(self):
         data = self.build_input(
             review_round=1,
@@ -1416,7 +1348,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             ],
         )
         self.assert_rejected(data, "authoritative source round")
-
         data = self.build_input(
             review_round=1,
             assertion_requests=[
@@ -1427,25 +1358,20 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             ],
         )
         self.assert_rejected(data, "family does not match")
-
     def test_reused_checkout_and_fake_origin_or_program_identity_fail(self):
         data = self.build_input(review_round=1)
         data["origin_root"] = str(self.repo)
         data["head_root"] = str(self.repo)
         self.assert_rejected(data, "production inputs|reuse one checkout")
-
         data = self.build_input(review_round=1)
         data["finding_origin_sha"] = "f" * 40
         self.assert_rejected(data, "finding_origin_sha")
-
         data = self.build_input(review_round=1)
         data["finding_origin_tree"] = "e" * 40
         self.assert_rejected(data, "authoritative round binding")
-
         data = self.build_input(review_round=1)
         data["assertion_program_blob_oid"] = "d" * 40
         self.assert_rejected(data, "assertion program")
-
     def test_dirty_and_swapped_materialized_roots_fail(self):
         data = self.build_input(review_round=2)
         dirty = Path(data["head_root"]) / "dirty.txt"
@@ -1454,13 +1380,11 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             self.assert_rejected(data, "production inputs")
         finally:
             dirty.unlink()
-
         data = self.build_input(review_round=2)
         origin_root = data["origin_root"]
         data["origin_root"] = data["head_root"]
         data["head_root"] = origin_root
         self.assert_rejected(data, "exact Git blob authority")
-
     def test_authority_dependency_closure_is_deterministic_and_cycle_safe(self):
         data = self.build_input(review_round=1)
         base_root = Path(data["base_root"])
@@ -1474,7 +1398,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         self.assertIn("scripts/__init__.py", first)
         self.assertIn("scripts/workflow_pilot/__init__.py", first)
         self.assertIn("scripts/workflow_pilot/reporter.py", first)
-
         consumers = self.authority_dependency_paths(
             "generated", "consumers", base_root=base_root
         )
@@ -1483,12 +1406,10 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         self.assertIn("scripts/workflow_pilot/hydrate_authority.py", consumers)
         self.assertIn("scripts/workflow_pilot/metadata_adapter_contract.py", consumers)
         self.assertIn("scripts/workflow_pilot/summary_continuity_contract.py", consumers)
-
         drift_checks = self.authority_dependency_paths(
             "generated", "drift-checks", base_root=base_root
         )
         self.assertIn("scripts/docs_check_tests/__init__.py", drift_checks)
-
         cycle_root = self.case_dir() / "cycle-root"
         (cycle_root / "pkg").mkdir(parents=True)
         (cycle_root / "pkg" / "__init__.py").write_text("", encoding="utf-8")
@@ -1504,7 +1425,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             allowed_paths={"pkg/__init__.py", "pkg/a.py", "pkg/b.py"},
         )
         self.assertEqual(closure, ("pkg/__init__.py", "pkg/a.py", "pkg/b.py"))
-
     def test_namespace_initializer_additions_trigger_member_holds(self):
         scripts_head, scripts_tree = self._make_namespace_init_addition_head(
             "scripts/__init__.py"
@@ -1519,7 +1439,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             finding_id="FINDING-WIRE-1",
             dependency_paths=["scripts/__init__.py"],
         )
-
         tests_head, tests_tree = self._make_namespace_init_addition_head(
             "tests/__init__.py"
         )
@@ -1534,7 +1453,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             finding_id="FINDING-GENERATED-1",
             dependency_paths=["tests/__init__.py"],
         )
-
         docs_head, docs_tree = self._make_namespace_init_addition_head(
             "scripts/docs_check_tests/__init__.py"
         )
@@ -1553,7 +1471,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             finding_id="FINDING-GENERATED-1",
             dependency_paths=["scripts/docs_check_tests/__init__.py"],
         )
-
     def test_existing_initializer_removal_triggers_hold(self):
         candidate_head, candidate_tree = self._make_existing_init_removal_head(
             "tests/workflows/__init__.py"
@@ -1569,46 +1486,36 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             finding_id="FINDING-GENERATED-1",
             dependency_paths=["tests/workflows/__init__.py"],
         )
-
     def test_stale_round_head_and_current_finding_collection_fail(self):
         data = self.build_input(review_round=2)
         data["review_context"]["candidate_sha"] = self.head1
         self.assert_rejected(data, "current assertion round/head")
-
         data = self.build_input(review_round=2)
         data["review_context"]["round"] = 1
         self.assert_rejected(data, "current assertion round/head")
-
         data = self.build_input(review_round=2)
         data["remote_finding_ids"] = ["FINDING-ACTION-1"]
         self.assert_rejected(data, "current review findings")
-
     def test_status_coverage_and_original_report_are_exact(self):
         data = self.build_input(review_round=1)
         data["original_pre_review"]["reviewed_changes"].pop()
         self.assert_rejected(data, "status/blob evidence")
-
         data = self.build_input(review_round=1)
         data["changes"][0]["status"] = "X"
         self.assert_rejected(data, "status is not supported")
-
         data = self.build_input(review_round=1)
         data["changed_files"].append("fabricated.txt")
         self.assert_rejected(data, "changed files do not match status record")
-
     def test_local_namespace_actor_and_limits_remain_strict(self):
         data = self.build_input(review_round=1)
         data["original_pre_review"]["findings"][0]["id"] = "REMOTE_NODE"
         self.assert_rejected(data, "LOCAL- namespace")
-
         data = self.build_input(review_round=1)
         data["original_pre_review"]["reviewer_login"] = "IMPLEMENTER_bot"
         self.assert_rejected(data, "identities overlap")
-
         data = self.build_input(review_round=1)
         data["limits"]["max_reviewed_files"] = True
         self.assert_rejected(data, "must be an integer")
-
     def test_obsolete_witness_json_cannot_manufacture_pass(self):
         witness_head, witness_tree = self._make_witness_only_head()
         data = self.build_input(
@@ -1620,7 +1527,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             data,
             "member-item authority binding is incomplete",
         )
-
     def test_gate_import_closure_dependency_changes_hold(self):
         for factory, dependency in (
             (
@@ -1646,7 +1552,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                     finding_id="FINDING-WIRE-1",
                     dependency_paths=[dependency],
                 )
-
     def test_dynamic_loader_dependency_change_holds_generated_drift_checks(self):
         candidate_head, candidate_tree = self._make_generated_dynamic_loader_break_head()
         data, _binding = self.generated_member_input(
@@ -1664,7 +1569,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             finding_id="FINDING-GENERATED-1",
             dependency_paths=["scripts/check_docs.py"],
         )
-
     def test_comment_docstring_dead_branch_and_constant_spoofs_fail(self):
         for kind in ("comment", "docstring", "dead-if", "constant"):
             with self.subTest(kind=kind):
@@ -1678,17 +1582,11 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                     data,
                     "member-item authority binding is incomplete",
                 )
-
     def test_action_sequence_enforcement_bypass_fails(self): self.assert_action_sequence_hold("enforcement")
-
     def test_action_import_name_probe_bypass_fails(self): self.assert_action_sequence_hold("import-name")
-
     def test_action_repository_whitelist_bypass_fails(self): self.assert_action_sequence_hold("repository")
-
     def test_action_argv_probe_bypass_fails(self): self.assert_action_sequence_hold("argv")
-
     def test_action_path_probe_bypass_fails(self): self.assert_action_sequence_hold("path")
-
     def test_lifecycle_entries_affected_fixed_uses_review_progression(self):
         self._restore_baseline()
         self._set_lifecycle_entries_health(False)
@@ -1708,7 +1606,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         member = self.execute(data)["results"][0]
         self.assertEqual((member["status"], member["output"]["program_case"]), ("pass", "member/lifecycle/entries/affected-fixed"))
         self.assertEqual((member["output"]["origin_status"], member["output"]["head_status"]), ("fail", "pass"))
-
     def test_action_member_requires_real_origin_failure(self):
         self._restore_baseline()
         (self.repo / "changed.txt").write_text("clean action candidate\n", encoding="utf-8")
@@ -1729,7 +1626,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         data["review_contract"]["family_sweeps"] = self.configured_family_sweeps(data["original_pre_review"]["findings"], [], data["assertion_requests"])
         data["captured_github_payload"] = self.captured_github_payload(action_head, data["all_remote_reviews"], [])
         self.assert_cli_rejected(data, "affected-fixed origin assertion unexpectedly passed")
-
     def test_resource_enabled_affected_fixed_reads_subject_decision_record(self):
         self._restore_baseline()
         self._set_resource_enabled_health(False)
@@ -1749,15 +1645,10 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         member = self.execute(data)["results"][0]
         self.assertEqual((member["status"], member["output"]["program_case"]), ("pass", "member/resource/enabled/affected-fixed"))
         self.assertEqual((member["output"]["origin_status"], member["output"]["head_status"]), ("fail", "pass"))
-
     def test_member_binding_special_case_does_not_spoof_real_finding_id(self): self.assert_action_binding_rejected("special-case")
-
     def test_member_binding_import_name_whitelist_fails(self): self.assert_action_binding_rejected("import-name")
-
     def test_member_binding_argv_whitelist_fails(self): self.assert_action_binding_rejected("argv")
-
     def test_member_binding_path_whitelist_fails(self): self.assert_action_binding_rejected("path")
-
     def test_whitespace_and_order_refactor_preserves_member_fix(self):
         refactor_head, refactor_tree = self._make_item_refactor_head()
         data = self.build_input(
@@ -1776,7 +1667,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             result["output"]["program_case"],
             "member/action/items/affected-fixed",
         )
-
     def test_wire_producer_dead_ast_spoofs_fail(self):
         for kind in (
             "authoritative-trigger",
@@ -1800,7 +1690,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                     finding_id="FINDING-WIRE-1",
                     dependency_paths=["scripts/workflow_pilot/trusted_review_gate.py"],
                 )
-
     def test_wire_producer_real_contract_still_passes(self):
         self._restore_baseline()
         (self.repo / "changed.txt").write_text("wire producer healthy\n", encoding="utf-8")
@@ -1821,7 +1710,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         replay = self.evaluate_member_contract("wire", "replay", replay_data, healthy_head, replay_binding)
         self.assertEqual((replay["replay_sha256"], len(replay["replay_entries"]), replay["replay_entries"][0].startswith("original-")), (replay_data["original_receipt_sha256"], 1, True))
         self.assertIn("re-signed", replay["replay_rejection"])
-
     def test_unrelated_initializer_outside_member_closure_does_not_hold(self):
         candidate_head, candidate_tree = self._make_namespace_init_addition_head(
             "scripts/docs_check_tests/__init__.py"
@@ -1837,7 +1725,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             member["output"]["program_case"],
             "member/wire/producers/verified-unaffected",
         )
-
     def test_unrelated_file_change_does_not_trigger_authority_hold(self):
         candidate_head, candidate_tree = self._make_unrelated_file_head()
         data, _binding = self.wire_member_input(
@@ -1851,7 +1738,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             member["output"]["program_case"],
             "member/wire/producers/verified-unaffected",
         )
-
     def test_wire_source_kind_special_cases_fail(self):
         producer_head, producer_tree = self._make_wire_source_kind_producer_head()
         data, binding = self.wire_member_input(
@@ -1864,7 +1750,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             finding_id="FINDING-WIRE-1",
             dependency_paths=["scripts/workflow_pilot/trusted_review_gate.py"],
         )
-
         consumer_head, consumer_tree = self._make_wire_source_kind_consumer_head()
         data, binding = self.wire_member_input(
             candidate_sha=consumer_head,
@@ -1877,7 +1762,6 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             finding_id="FINDING-WIRE-1",
             dependency_paths=["scripts/workflow_pilot/review_family.py"],
         )
-
     def test_wire_stale_bindings_affected_fixed_uses_current_review_binding(self):
         self._restore_baseline()
         self._set_wire_stale_bindings_health(False)

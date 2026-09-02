@@ -22,20 +22,16 @@ DEFAULT = FIXTURES / "review_family_default.json"
 DEFAULT_EVIDENCE = FIXTURES / "review_family_default_evidence.json"
 COPILOT_ACTOR_ID = review_family.COPILOT_GRAPHQL_NODE_ID
 
-
 def load(path):
     return reporter.load_json(path)
-
 
 def fixture(kind="complete"):
     if kind == "complete":
         return load(COMPLETE), load(COMPLETE_EVIDENCE)
     return load(DEFAULT), load(DEFAULT_EVIDENCE)
 
-
 def parsed_time(minute, second=0):
     return datetime(2026, 8, 31, 4, minute, second, tzinfo=timezone.utc)
-
 
 def round_record(number, head, minute):
     return {
@@ -53,7 +49,6 @@ def round_record(number, head, minute):
         "outcome": "changes-requested",
         "finding_ids": [],
     }
-
 
 def disposition(round_number, held, next_head, minute, actor="COORDINATOR"):
     return {
@@ -82,7 +77,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
             check=True,
             capture_output=True,
         )
-
     @classmethod
     def tearDownClass(cls):
         subprocess.run(
@@ -93,16 +87,13 @@ class ReviewFamilyContractTests(unittest.TestCase):
             check=True,
             capture_output=True,
         )
-
     def report(self, contract, evidence, candidate=CANDIDATE):
         return review_family.build_report(
             contract, evidence, self.authority, candidate
         )
-
     def assert_rejected(self, contract, evidence, message, candidate=CANDIDATE):
         with self.assertRaisesRegex(reporter.PilotDataError, message):
             self.report(contract, evidence, candidate)
-
     def test_complete_fixture_preserves_five_closed_families(self):
         contract, evidence = fixture()
         report = self.report(contract, evidence)
@@ -123,7 +114,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
         self.assertFalse(report["provenance"]["authoritative"])
         self.assertFalse(report["structural_eligibility"]["merge"])
         self.assertFalse(report["gates"]["merge_allowed"])
-
     def test_default_requires_current_clean_remote_copilot_review(self):
         contract, evidence = fixture("default")
         report = self.report(contract, evidence)
@@ -136,7 +126,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
         report = self.report(contract, evidence)
         self.assertFalse(report["gates"]["current_candidate_reviewed"])
         self.assertTrue(report["gates"]["remote_copilot_review_required"])
-
     def test_authoritative_trigger_is_required_and_exact_for_base_pinned_mode(self):
         contract, evidence = fixture("default")
         evidence["authoritative_trigger"]["risk_boundaries"] = ["lifecycle"]
@@ -147,7 +136,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
             evidence,
             "candidate trigger does not match the authoritative decision record",
         )
-
         contract, evidence = fixture("default")
         contract["trust_mode"] = "base-pinned"
         evidence["authoritative_trigger"] = None
@@ -156,46 +144,37 @@ class ReviewFamilyContractTests(unittest.TestCase):
             evidence,
             "base-pinned mode requires an authoritative trigger decision",
         )
-
         contract, evidence = fixture("default")
         evidence["authoritative_trigger"]["pull_request"] = 902
         self.assert_rejected(contract, evidence, "contract PR")
-
         contract, evidence = fixture("default")
         evidence["authoritative_trigger"]["base_sha"] = "f" * 40
         self.assert_rejected(contract, evidence, "exact contract base")
-
         contract, evidence = fixture("default")
         evidence["authoritative_trigger"]["candidate_sha"] = "f" * 40
         self.assert_rejected(contract, evidence, "exact candidate head")
-
         contract, evidence = fixture("default")
         evidence["authoritative_trigger"]["blob_oid"] = "f" * 40
         self.assert_rejected(contract, evidence, "exact base blob")
-
     def test_exact_base_and_head_are_not_ancestor_substitutions(self):
         contract, evidence = fixture("default")
         evidence["pull_request"]["base_sha"] = "e" * 40
-        self.assert_rejected(contract, evidence, "exact contract")
-
+        evidence["pull_request"]["mergeable"] = "MERGEABLE"
+        self.assert_rejected(contract, evidence, "live base tip")
         contract, evidence = fixture("default")
         contract["base_sha"] = CANDIDATE
         evidence["pull_request"]["base_sha"] = CANDIDATE
         self.assert_rejected(contract, evidence, "base|changed files")
-
         contract, evidence = fixture("default")
         self.assert_rejected(contract, evidence, "actual Git HEAD", "f" * 40)
-
     def test_initial_pre_review_head_may_precede_first_remote_head_with_bounded_history(self):
         a, b, c = "a" * 40, "b" * 40, "c" * 40
         authority = {"commits": {a: {"parents": []}, b: {"parents": [a]}, c: {"parents": []}}}
-
         def check(remote_head, history):
             review_family._validate_initial_remote_head_binding(
                 {"pre_reviews": [{"candidate_sha": a}], "remote_reviews": [{"candidate_sha": remote_head}], "pull_request": {"commit_shas": history}},
                 authority,
             )
-
         check(a, None)
         check(b, [a, b])
         for remote_head, history, pattern in (
@@ -206,14 +185,12 @@ class ReviewFamilyContractTests(unittest.TestCase):
         ):
             with self.subTest(remote_head=remote_head, history=history), self.assertRaisesRegex(reporter.PilotDataError, pattern):
                 check(remote_head, history)
-
     def test_candidate_result_ids_cannot_select_executable_evidence(self):
         contract, evidence = fixture("default")
         contract["behavior_rows"][0]["assertions"]["positive"] = (
             "candidate-claims-pass"
         )
         self.assert_rejected(contract, evidence, "closed base assertion")
-
         contract, evidence = fixture("default")
         evidence["result_manifest"] = [
             {
@@ -262,7 +239,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
             )
         ).hexdigest()
         self.assert_rejected(contract, evidence, "no trusted execution receipt")
-
     def test_candidate_can_only_reference_member_specific_registry_ids(self):
         contract, evidence = fixture()
         review_family.validate_contract(contract)
@@ -270,12 +246,10 @@ class ReviewFamilyContractTests(unittest.TestCase):
         self.assertNotIn("changed_paths", serialized)
         self.assertNotIn("unchanged_paths", serialized)
         self.assertNotIn("Makefile", serialized)
-
         contract["family_sweeps"][0]["siblings"][1]["assertion_id"] = (
             "registry:sibling:action:targets:verified-unaffected:v2"
         )
         self.assert_rejected(contract, evidence, "member-specific")
-
         for sweep_index, sibling_index, family, member in (
             (0, 1, "action", "items"),
             (2, 0, "lifecycle", "entries"),
@@ -295,7 +269,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
             )
             with self.subTest(family=family, member=member):
                 review_family.validate_contract(contract)
-
         contract, _ = fixture()
         second = contract["family_sweeps"][0]["siblings"][0]
         second["result"] = "affected-fixed"
@@ -310,7 +283,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
             ].count("affected-fixed"),
             2,
         )
-
         contract, evidence = fixture()
         disabled = contract["family_sweeps"][3]["siblings"][1]
         disabled["result"] = "not-applicable"
@@ -319,7 +291,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
             "feature-disabled-by-contract:v2"
         )
         review_family.validate_contract(contract)
-
     def test_every_finding_sweep_requires_at_least_one_affected_fixed_member(self):
         contract, evidence = fixture()
         for sibling in contract["family_sweeps"][1]["siblings"]:
@@ -332,7 +303,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
             evidence,
             "must include at least one affected-fixed member",
         )
-
     def test_local_pre_review_findings_are_distinct_and_not_backdated(self):
         contract, evidence = fixture()
         pre = evidence["pre_reviews"][0]
@@ -353,22 +323,18 @@ class ReviewFamilyContractTests(unittest.TestCase):
         report = self.report(contract, evidence)
         self.assertEqual(report["findings"]["pre_review_count"], 1)
         self.assertEqual(report["findings"]["remote_count"], 5)
-
         evidence["pre_reviews"][0]["receipt_issued_at"] = (
             evidence["remote_reviews"][0]["submitted_at"]
         )
         self.assert_rejected(contract, evidence, "backdated or re-signed")
-
     def test_local_and_remote_namespaces_cannot_overlap(self):
         contract, evidence = fixture()
         evidence["findings"][0]["node_id"] = "LOCAL-ACTION-1"
         self.assert_rejected(contract, evidence, "independent namespace")
-
     def test_actor_aliases_and_copilot_identity_are_enforced(self):
         contract, evidence = fixture()
         evidence["actors"][1]["login"] = "IMPLEMENTATION-AGENT_bot"
         self.assert_rejected(contract, evidence, "actor identities")
-
         contract, evidence = fixture()
         evidence["actors"][2]["login"] = "copilot-pull-request-reviewer-bot"
         self.assert_rejected(
@@ -376,7 +342,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
             evidence,
             "exact authoritative GitHub Copilot Bot",
         )
-
         contract, evidence = fixture("default")
         evidence["actors"][1] = {
             "id": review_family.COPILOT_REST_NODE_ID,
@@ -388,7 +353,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
         }
         report = self.report(contract, evidence)
         self.assertTrue(report["gates"]["current_candidate_reviewed"])
-
         for field, value in (
             ("login", "copilot-pull-request-reviewer[bot]",),
             ("id", "BOT_kgDOCnlnWB",),
@@ -404,7 +368,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
                     evidence,
                     "exact authoritative GitHub Copilot Bot",
                 )
-
         contract, evidence = fixture("default")
         evidence["actors"][1]["source"] = review_family.GITHUB_REST_ACTOR_SOURCE
         evidence["actors"][1]["login"] = review_family.COPILOT_REST_LOGIN
@@ -415,7 +378,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
             evidence,
             "exact authoritative GitHub Copilot Bot",
         )
-
     def test_remote_findings_must_match_the_exact_review_actor(self):
         contract, evidence = fixture()
         evidence["findings"][0]["author_actor_id"] = "ACTOR_PRE_REVIEWER_001"
@@ -424,7 +386,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
             evidence,
             "exact remote review actor|exact authoritative GitHub Copilot Bot",
         )
-
     def test_changes_requested_body_and_unresolved_threads_never_merge(self):
         contract, evidence = fixture("default")
         review = evidence["remote_reviews"][0]
@@ -432,7 +393,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
         review["outcome"] = "changes-requested"
         report = self.report(contract, evidence)
         self.assertFalse(report["gates"]["current_candidate_clean"])
-
         contract, evidence = fixture("default")
         review = evidence["remote_reviews"][0]
         review["body"] = "Please fix the authority boundary."
@@ -441,7 +401,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
         review["outcome"] = "changes-requested"
         report = self.report(contract, evidence)
         self.assertFalse(report["gates"]["current_candidate_clean"])
-
         contract, evidence = fixture()
         evidence["remote_reviews"].append(
             {
@@ -463,7 +422,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
         self.assertTrue(report["gates"]["current_candidate_clean"])
         self.assertEqual(report["findings"]["current_unresolved"], 5)
         self.assertFalse(report["structural_eligibility"]["merge"])
-
     def test_pr183_clean_body_and_exact_top_level_marker_parser(self):
         clean_body = fixture("default")[1]["remote_reviews"][0]["body"]
         self.assertIn(
@@ -494,12 +452,10 @@ class ReviewFamilyContractTests(unittest.TestCase):
                     review_family.classify_copilot_body(body),
                     classification,
                 )
-
     def test_global_node_ids_are_unique_across_all_domains(self):
         contract, evidence = fixture()
         evidence["findings"][0]["node_id"] = "REMOTE_REVIEW_001"
         self.assert_rejected(contract, evidence, "global node identity collision")
-
     def test_normal_fast_forward_after_hold_requires_disposition(self):
         head_a = "a" * 40
         head_b = "b" * 40
@@ -519,7 +475,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
             review_family._progress_rounds(
                 evidence, {}, {"IMPLEMENTER", "COPILOT"}
             )
-
         evidence["architecture_dispositions"] = [
             disposition(3, head_a, head_b, 4)
         ]
@@ -528,7 +483,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
         )
         self.assertIsNone(hold)
         self.assertEqual(consumed, ["DISPOSITION_3"])
-
     def test_disposition_actor_overlap_and_replay_fail(self):
         head_a = "a" * 40
         head_b = "b" * 40
@@ -551,7 +505,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
             review_family._progress_rounds(
                 evidence, {}, {"IMPLEMENTER", "COPILOT"}
             )
-
         evidence["architecture_dispositions"] = [
             disposition(3, head_a, head_b, 4),
             {
@@ -563,7 +516,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
             review_family._progress_rounds(
                 evidence, {}, {"IMPLEMENTER", "COPILOT"}
             )
-
     def test_round_three_and_six_holds_are_independent(self):
         head_a = "a" * 40
         head_b = "b" * 40
@@ -595,7 +547,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
             [item["consecutive_change_request"] for item in handoffs],
             [1, 2, 1, 2],
         )
-
     def test_pushed_date_history_is_explicitly_retired(self):
         contract, evidence = fixture("default")
         evidence["candidate_advances"] = [
@@ -607,7 +558,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
             }
         ]
         self.assert_rejected(contract, evidence, "pushedDate cannot attest")
-
     def test_status_records_cover_add_delete_modify_rename_and_copy(self):
         repository = (
             ROOT
@@ -690,7 +640,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
             self.assertIsNone(deleted["head_blob_oid"])
         finally:
             shutil.rmtree(repository)
-
     def test_issue_179_deleted_entrypoint_has_base_blob_and_head_absence(self):
         records = review_family.derive_change_records(
             ROOT,
@@ -707,7 +656,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
         self.assertIsNotNone(deleted["base_blob_oid"])
         self.assertIsNone(deleted["new_path"])
         self.assertIsNone(deleted["head_blob_oid"])
-
     def test_status_record_path_mode_and_status_spoofs_fail(self):
         record = review_family.derive_change_records(
             ROOT,
@@ -727,7 +675,6 @@ class ReviewFamilyContractTests(unittest.TestCase):
                 review_family._validate_change_records(
                     [mutated], "spoofed changes"
                 )
-
     def test_cli_is_deterministic_and_never_authoritative(self):
         command = (
             sys.executable,

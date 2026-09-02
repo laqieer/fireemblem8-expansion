@@ -110,8 +110,11 @@ consumes replay, executes the closed base-owned assertion registry, or grants
 merge/push authority. Before imports, object-bind the entire local import graph
 to that base and reject tracked/index/untracked changes; no environment string
 attests an external install. The introducing PR fails closed because its base
-lacks that checker. Bind exact `baseRefOid`/`headRefOid`, `LOCAL-` findings,
-and status-aware A/D/M/R/C base/head blobs. Distinct class/outcome checks must
+lacks that checker. Bind exact `baseRefOid`/`headRefOid`, the current live base
+tip's mergeability, `LOCAL-` findings, and status-aware A/D/M/R/C base/head
+blobs. Keep receipts and decisions bound to the frozen merge base proved from
+candidate history, and refresh only on real conflicts or shared-contract base
+changes. Distinct class/outcome checks must
 come from the base registry; candidates reference assertion IDs only and
 cannot choose paths/results/inputs. Require member-specific before-fail/
 after-pass or nonimpact probes and only explicitly registered not-applicable

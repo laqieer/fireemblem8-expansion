@@ -1127,6 +1127,7 @@ def _wire_payload(
     evidence_bytes = gate_module.collect_live_evidence_bytes(
         contract,
         Path(checker_input["repository_root"]),
+        checker_input["base_sha"],
         review_head,
         current_head,
         copy.deepcopy(checker_input["original_pre_review"]),
