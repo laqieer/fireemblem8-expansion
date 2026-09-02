@@ -103,7 +103,7 @@ _LITERAL_RUN_HEADER_RE = re.compile(
 )
 _NICE_OLD_STYLE_RE = re.compile(r"-[0-9+-]+")
 _NICE_SHORT_ADJUSTMENT_RE = re.compile(r"-n[0-9+-]+")
-_WRAPPER_BASENAMES = frozenset({"command", "nice", "sudo", "timeout"})
+_WRAPPER_BASENAMES = frozenset({"command", "nice", "setsid", "sudo", "timeout"})
 
 
 @dataclass(frozen=True)
@@ -970,6 +970,27 @@ def _next_sudo_command_index(
     return index if index < len(tokens) else None
 
 
+def _next_setsid_command_index(
+    tokens: tuple[_ShellToken, ...],
+    *,
+    start_index: int,
+) -> int | None:
+    index = start_index + 1
+    while index < len(tokens):
+        token = tokens[index]
+        current = token.text
+        if current == "--":
+            index += 1
+            break
+        if current in {"-c", "--ctty", "-f", "--fork", "-w", "--wait"}:
+            index += 1
+            continue
+        if current.startswith("-"):
+            return None
+        break
+    return index if index < len(tokens) else None
+
+
 def _next_wrapper_command_index(
     tokens: tuple[_ShellToken, ...],
     *,
@@ -982,6 +1003,8 @@ def _next_wrapper_command_index(
         return _next_command_wrapper_index(tokens, start_index=start_index)
     if wrapper == "nice":
         return _next_nice_command_index(tokens, start_index=start_index)
+    if wrapper == "setsid":
+        return _next_setsid_command_index(tokens, start_index=start_index)
     if wrapper == "sudo":
         return _next_sudo_command_index(tokens, start_index=start_index)
     return None

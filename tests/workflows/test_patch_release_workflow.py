@@ -764,6 +764,53 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
             ),
         ),
         (
+            "setsid-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                '/usr/bin/setsid --wait "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "setsid-short-option-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                '/usr/bin/setsid -w "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "timeout-setsid-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'timeout 5 /usr/bin/setsid --wait "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "setsid-variable-busybox-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "busybox_cmd=/bin/busybox",
+                "ENV_APPLET=env",
+                '/usr/bin/setsid --wait "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "timeout-setsid-variable-busybox-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "busybox_cmd=/bin/busybox",
+                "ENV_APPLET=env",
+                'timeout 5 /usr/bin/setsid --wait "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
             "env-combined-options-wrapper",
             (
                 "root=/mnt",
@@ -3862,6 +3909,171 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 self.assertTrue(
                     publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
                         prefix + command,
+                        label=label,
+                    )
+                )
+
+    def test_setsid_wrapped_env_surfaces_execute_and_detector_rejects_them(self):
+        prefix = (
+            'ROOT=/mnt\n'
+            'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+        )
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="setsid-busybox-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            busybox = sandbox / "busybox"
+            busybox.write_text(
+                "#!/bin/sh\n"
+                'if [ "$1" != "env" ]; then\n'
+                "  exit 125\n"
+                "fi\n"
+                "shift\n"
+                'exec /bin/env "$@"\n',
+                encoding="ascii",
+            )
+            busybox.chmod(0o755)
+
+            cases = (
+                (
+                    "setsid-variable-env",
+                    'cmd="printf RUNTIME_SETSID_ENV"\n'
+                    "env_cmd=/bin/env\n"
+                    '/usr/bin/setsid --wait "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_SETSID_ENV",
+                    prefix
+                    + "env_cmd=/bin/env\n"
+                    + '/usr/bin/setsid --wait "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "setsid-short-option-variable-env",
+                    'cmd="printf RUNTIME_SETSID_SHORT_OPTION"\n'
+                    "env_cmd=/bin/env\n"
+                    '/usr/bin/setsid -w "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_SETSID_SHORT_OPTION",
+                    prefix
+                    + "env_cmd=/bin/env\n"
+                    + '/usr/bin/setsid -w "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "timeout-setsid-variable-env",
+                    'cmd="printf RUNTIME_TIMEOUT_SETSID_ENV"\n'
+                    "env_cmd=/bin/env\n"
+                    'timeout 5 /usr/bin/setsid --wait "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_TIMEOUT_SETSID_ENV",
+                    prefix
+                    + "env_cmd=/bin/env\n"
+                    + 'timeout 5 /usr/bin/setsid --wait "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "setsid-variable-busybox-env",
+                    'cmd="printf RUNTIME_SETSID_BUSYBOX_ENV"\n'
+                    f'busybox_cmd="{busybox}"\n'
+                    "ENV_APPLET=env\n"
+                    '/usr/bin/setsid --wait "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_SETSID_BUSYBOX_ENV",
+                    prefix
+                    + f"busybox_cmd={busybox}\n"
+                    + "ENV_APPLET=env\n"
+                    + '/usr/bin/setsid --wait "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                ),
+                (
+                    "timeout-setsid-variable-busybox-env",
+                    'cmd="printf RUNTIME_TIMEOUT_SETSID_BUSYBOX_ENV"\n'
+                    f'busybox_cmd="{busybox}"\n'
+                    "ENV_APPLET=env\n"
+                    'timeout 5 /usr/bin/setsid --wait "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                    "RUNTIME_TIMEOUT_SETSID_BUSYBOX_ENV",
+                    prefix
+                    + f"busybox_cmd={busybox}\n"
+                    + "ENV_APPLET=env\n"
+                    + 'timeout 5 /usr/bin/setsid --wait "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""\n',
+                ),
+            )
+
+            for label, runtime_script, expected_stdout, semantic_script in cases:
+                with self.subTest(case=label):
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "--noprofile",
+                            "--norc",
+                            "-eu",
+                            "-o",
+                            "pipefail",
+                            "-c",
+                            runtime_script,
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(completed.stdout, expected_stdout)
+                    self.assertEqual(completed.stderr, "")
+                    self.assertTrue(
+                        publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                            semantic_script,
+                            label=label,
+                        )
+                    )
+
+    def test_setsid_literal_arguments_execute_without_false_positive(self):
+        cases = (
+            (
+                "setsid-literal-printf",
+                'message="SAFE_SETSID_LITERAL"\n'
+                '/usr/bin/setsid --wait /usr/bin/printf "%s" "$message"\n',
+                "SAFE_SETSID_LITERAL",
+                'message="SAFE_SETSID_LITERAL"\n'
+                '/usr/bin/setsid --wait /usr/bin/printf "%s" "$message"\n',
+            ),
+            (
+                "setsid-literal-env-exec",
+                'message="SAFE_SETSID_ENV_LITERAL"\n'
+                '/usr/bin/setsid --wait /bin/env -i /usr/bin/printf "%s" "$message"\n',
+                "SAFE_SETSID_ENV_LITERAL",
+                'message="SAFE_SETSID_ENV_LITERAL"\n'
+                '/usr/bin/setsid --wait /bin/env -i /usr/bin/printf "%s" "$message"\n',
+            ),
+            (
+                "timeout-setsid-literal-env-exec",
+                'message="SAFE_TIMEOUT_SETSID_ENV_LITERAL"\n'
+                'timeout 5 /usr/bin/setsid --wait /bin/env -i /usr/bin/printf "%s" "$message"\n',
+                "SAFE_TIMEOUT_SETSID_ENV_LITERAL",
+                'message="SAFE_TIMEOUT_SETSID_ENV_LITERAL"\n'
+                'timeout 5 /usr/bin/setsid --wait /bin/env -i /usr/bin/printf "%s" "$message"\n',
+            ),
+        )
+
+        for label, runtime_script, expected_stdout, semantic_script in cases:
+            with self.subTest(case=label):
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "--noprofile",
+                        "--norc",
+                        "-eu",
+                        "-o",
+                        "pipefail",
+                        "-c",
+                        runtime_script,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, expected_stdout)
+                self.assertEqual(completed.stderr, "")
+                self.assertFalse(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        semantic_script,
                         label=label,
                     )
                 )
