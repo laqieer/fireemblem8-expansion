@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import ast
 import os
+import posixpath
 import re
 import shlex
 import subprocess
@@ -97,6 +98,8 @@ _UPLOAD_WITH = (
 _SUPERVISOR_PARENT_REMOUNT_OPTIONS = frozenset(
     {"remount", "ro", "nosuid", "nodev", "noexec"}
 )
+_SIMPLE_COMMAND_PREFIXES = frozenset({"if", "then", "do", "elif", "while", "until", "!"})
+_CONTROL_OPERATORS = frozenset({";", "&&", "||", "|", "&"})
 _PATCH_RELEASE_PARSER_HEREDOC_NAMES = (
     "list_dev_mount_targets",
     "list_writable_mount_records",
@@ -952,16 +955,126 @@ _PRIVATE_STEP_ENV = (
 
 
 def _is_supervisor_parent_readonly_remount_command(command):
-    if len(command) < 4:
+    tokens = list(command)
+    while tokens and tokens[0] in _SIMPLE_COMMAND_PREFIXES:
+        tokens.pop(0)
+    while tokens and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", tokens[0]):
+        tokens.pop(0)
+    if not tokens:
         return False
-    executable, flag = command[:2]
-    option_fragments = command[2:-1]
-    target = command[-1]
-    if executable != "/usr/bin/mount" or flag != "-o" or target != "/mnt/supervisor":
+    if tokens[0] != "/usr/bin/mount":
+        return "/usr/bin/mount" in tokens[1:]
+
+    read_only = False
+    remount = False
+    read_only_like = False
+    remount_like = False
+    positionals = []
+    index = 1
+    while index < len(tokens):
+        token = tokens[index]
+        if token in {"-r", "--read-only"}:
+            read_only = True
+            read_only_like = True
+            index += 1
+            continue
+        if token in {"-o", "--options"}:
+            if index + 1 >= len(tokens):
+                return remount_like or read_only_like
+            option_text = tokens[index + 1]
+            if any(marker in option_text for marker in ("$", "`", "$(", "${")):
+                return True
+            for option in option_text.split(","):
+                cleaned = option.strip()
+                normalized = cleaned.replace("\\", "")
+                if normalized.startswith("remount"):
+                    remount_like = True
+                if cleaned == "remount":
+                    remount = True
+                if normalized == "ro":
+                    read_only_like = True
+                if cleaned == "ro":
+                    read_only = True
+            index += 2
+            continue
+        if token.startswith("--options="):
+            option_text = token.split("=", 1)[1]
+            if any(marker in option_text for marker in ("$", "`", "$(", "${")):
+                return True
+            for option in option_text.split(","):
+                cleaned = option.strip()
+                normalized = cleaned.replace("\\", "")
+                if normalized.startswith("remount"):
+                    remount_like = True
+                if cleaned == "remount":
+                    remount = True
+                if normalized == "ro":
+                    read_only_like = True
+                if cleaned == "ro":
+                    read_only = True
+            index += 1
+            continue
+        if token.startswith("-o") and token != "-o":
+            option_text = token[2:]
+            if any(marker in option_text for marker in ("$", "`", "$(", "${")):
+                return True
+            for option in option_text.split(","):
+                cleaned = option.strip()
+                normalized = cleaned.replace("\\", "")
+                if normalized.startswith("remount"):
+                    remount_like = True
+                if cleaned == "remount":
+                    remount = True
+                if normalized == "ro":
+                    read_only_like = True
+                if cleaned == "ro":
+                    read_only = True
+            index += 1
+            continue
+        if token in {
+            "--bind",
+            "--make-private",
+            "--make-rprivate",
+            "--make-runbindable",
+            "--make-rshared",
+            "--make-rslave",
+            "--make-shared",
+            "--make-slave",
+            "--move",
+            "--rbind",
+        }:
+            index += 1
+            continue
+        if token in {"-t", "--types"}:
+            if index + 1 >= len(tokens):
+                return remount_like or read_only_like
+            index += 2
+            continue
+        if token == "--":
+            positionals.extend(tokens[index + 1 :])
+            break
+        if token.startswith("-"):
+            return remount or read_only
+        positionals.append(token)
+        index += 1
+
+    target = None
+    if positionals:
+        final = positionals[-1]
+        if (
+            final.startswith("/")
+            and not any(marker in final for marker in ("$", "`", "$(", "${"))
+        ):
+            target = posixpath.normpath(final)
+    if target == "/mnt/supervisor":
+        if remount_like and read_only_like:
+            return True
+        if (remount_like or read_only_like) and len(positionals) != 1:
+            return True
         return False
-    option_text = "".join(option_fragments)
-    options = option_text.split(",")
-    return len(options) == 5 and frozenset(options) == _SUPERVISOR_PARENT_REMOUNT_OPTIONS
+    if target is None and (remount_like or read_only_like):
+        return not positionals or any("supervisor" in token.lower() for token in positionals)
+    return False
 
 
 _EXPECTED_STEP_ROLES = {
@@ -1549,26 +1662,137 @@ def _literal_run_script(lines, start, end, value, step_label):
     return "\n".join(script) + "\n"
 
 
+def _builder_isolation_shell_from_run_script(script, step_label):
+    opener = "<<'BUILDER_ISOLATION'\n"
+    if script.count(opener) != 1:
+        raise ValueError(f"{step_label} builder isolation heredoc count differs")
+    start = script.index(opener) + len(opener)
+    terminator = "\nBUILDER_ISOLATION\n"
+    if script.count(terminator) != 1:
+        raise ValueError(f"{step_label} builder isolation heredoc terminator differs")
+    end = script.index(terminator, start)
+    return script[start:end] + "\n"
+
+
+def _bash_line_state(line, state):
+    index = 0
+    while index < len(line):
+        character = line[index]
+        if state == "normal":
+            if character == "'":
+                state = "single"
+            elif character == '"':
+                state = "double"
+            elif character == "\\":
+                if index == len(line) - 1:
+                    return state, True
+                index += 1
+        elif state == "single":
+            if character == "'":
+                state = "normal"
+        else:
+            if character == '"':
+                state = "normal"
+            elif character == "\\":
+                if index == len(line) - 1:
+                    return state, True
+                if line[index + 1] in '$`"\\':
+                    index += 1
+        index += 1
+    return state, False
+
+
+def _bash_logical_lines(script, step_label):
+    state = "normal"
+    logical_lines = []
+    current = ""
+    for line in script.splitlines():
+        current += line
+        state, continued = _bash_line_state(line, state)
+        if continued:
+            current = current[:-1]
+            continue
+        if state != "normal":
+            current += "\n"
+            continue
+        logical_lines.append(current)
+        current = ""
+    if current:
+        raise ValueError(f"{step_label} has unterminated quoting or continuation")
+    return tuple(logical_lines)
+
+
+def _split_bash_simple_command_strings(script, step_label):
+    commands = []
+    for logical in _bash_logical_lines(script, step_label):
+        current = []
+        quote = None
+        word_start = True
+        index = 0
+        while index < len(logical):
+            character = logical[index]
+            if quote is None:
+                if character in " \t":
+                    current.append(character)
+                    word_start = True
+                elif character == "#" and word_start:
+                    break
+                elif character == "'":
+                    current.append(character)
+                    quote = "'"
+                    word_start = False
+                elif character == '"':
+                    current.append(character)
+                    quote = '"'
+                    word_start = False
+                elif character in "&|;":
+                    operator = character
+                    if (
+                        character in "&|"
+                        and index + 1 < len(logical)
+                        and logical[index + 1] == character
+                    ):
+                        operator += character
+                        index += 1
+                    if operator in _CONTROL_OPERATORS:
+                        command = "".join(current).strip()
+                        if command:
+                            commands.append(command)
+                        current = []
+                        word_start = True
+                    else:
+                        current.append(operator)
+                        word_start = False
+                else:
+                    current.append(character)
+                    word_start = False
+            elif quote == "'":
+                current.append(character)
+                if character == "'":
+                    quote = None
+            else:
+                current.append(character)
+                if character == "\\" and index + 1 < len(logical):
+                    current.append(logical[index + 1])
+                    index += 1
+                elif character == '"':
+                    quote = None
+            index += 1
+        command = "".join(current).strip()
+        if command:
+            commands.append(command)
+    return tuple(commands)
+
+
 def _parse_bash_run_script_commands(script, step_label):
     parsed = []
-    continued = []
-    for line in script.splitlines():
-        if not continued and (not line.strip() or line.lstrip().startswith("#")):
-            continue
-        fragment = line[:-1] if line.endswith("\\") else line
-        continued.append(fragment)
-        if line.endswith("\\"):
-            continue
-        logical = "".join(continued)
-        continued = []
+    for logical in _bash_logical_lines(script, step_label):
         if not logical.strip() or logical.lstrip().startswith("#"):
             continue
         command = tuple(shlex.split(logical))
         if not command:
             raise ValueError(f"{step_label} run command is empty")
         parsed.append(command)
-    if continued:
-        raise ValueError(f"{step_label} run block has dangling continuation")
     if not parsed:
         raise ValueError(f"{step_label} run command is empty")
     return tuple(parsed)
@@ -1941,10 +2165,6 @@ def _parse_step(block, job_name, index):
             not in " ".join(token for command in values["run"] for token in command)
             or "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d"
             not in " ".join(token for command in values["run"] for token in command)
-            or any(
-                _is_supervisor_parent_readonly_remount_command(command)
-                for command in values["run"]
-            )
             or "< /dev/null > /dev/null 2>&1 &"
             not in " ".join(token for command in values["run"] for token in command)
             or "GITHUB_STEP_SUMMARY-"
@@ -1974,10 +2194,22 @@ def _parse_step(block, job_name, index):
         if index == 3:
             if literal_run_script is None:
                 raise ValueError(f"{step_label} patch-release parser script differs")
+            builder_shell = _builder_isolation_shell_from_run_script(
+                literal_run_script,
+                step_label,
+            )
             try:
-                _validate_patch_release_parser_heredocs(literal_run_script, step_label)
+                _validate_patch_release_parser_heredocs(builder_shell, step_label)
             except ValueError as error:
                 raise ValueError(f"{step_label} patch-release parser script differs") from error
+            for command_text in _split_bash_simple_command_strings(
+                builder_shell,
+                step_label,
+            ):
+                if _is_supervisor_parent_readonly_remount_command(
+                    tuple(shlex.split(command_text))
+                ):
+                    raise ValueError(f"{step_label} isolated candidate build differs")
         if index == 4 and (
             values["id"] != "private-base"
             or values["shell"]

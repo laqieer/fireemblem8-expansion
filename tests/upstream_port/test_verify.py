@@ -1170,6 +1170,11 @@ class VerifyCliCwdTests(unittest.TestCase):
             original
         ):
             with self.subTest(variant=label):
+                self.assertTrue(
+                    patch_workflow_tests.workflow_has_supervisor_parent_readonly_remount(
+                        changed
+                    )
+                )
                 with self.assertRaises(ValueError):
                     verify_mod._parse_workflow_structure_text(changed)
 

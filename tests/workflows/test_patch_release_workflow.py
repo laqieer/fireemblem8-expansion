@@ -8,6 +8,7 @@ import io
 import itertools
 import json
 import os
+import posixpath
 import re
 import resource
 import shlex
@@ -54,6 +55,8 @@ SUPERVISOR_PARENT_REMOUNT_INSERTION_MARKER = (
     "        /usr/bin/mount -t tmpfs \\\n"
     "          -o nosuid,mode=0755,size=4m builder-dev /dev"
 )
+_SIMPLE_COMMAND_PREFIXES = frozenset({"if", "then", "do", "elif", "while", "until", "!"})
+_CONTROL_OPERATORS = frozenset({";", "&&", "||", "|", "&"})
 
 
 def parse_patch_release_run_commands(workflow: str) -> list[list[list[str]]]:
@@ -139,51 +142,279 @@ def named_step_run_script(workflow: str, name: str) -> str:
     )
 
 
+def builder_isolation_shell_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Build candidate in isolated namespace and stage public inputs",
+    )
+    opener = "<<'BUILDER_ISOLATION'\n"
+    if script.count(opener) != 1:
+        raise AssertionError("publisher must embed exactly one builder isolation heredoc")
+    start = script.index(opener) + len(opener)
+    terminator = "\nBUILDER_ISOLATION\n"
+    if script.count(terminator) != 1:
+        raise AssertionError("publisher must terminate the builder isolation heredoc once")
+    end = script.index(terminator, start)
+    return script[start:end] + "\n"
+
+
+def _bash_line_state(line: str, state: str) -> tuple[str, bool]:
+    index = 0
+    while index < len(line):
+        character = line[index]
+        if state == "normal":
+            if character == "'":
+                state = "single"
+            elif character == '"':
+                state = "double"
+            elif character == "\\":
+                if index == len(line) - 1:
+                    return state, True
+                index += 1
+        elif state == "single":
+            if character == "'":
+                state = "normal"
+        else:
+            if character == '"':
+                state = "normal"
+            elif character == "\\":
+                if index == len(line) - 1:
+                    return state, True
+                if line[index + 1] in '$`"\\':
+                    index += 1
+        index += 1
+    return state, False
+
+
+def _bash_logical_lines(script: str, *, label: str) -> list[str]:
+    state = "normal"
+    logical_lines: list[str] = []
+    current = ""
+    for line in script.splitlines():
+        current += line
+        state, continued = _bash_line_state(line, state)
+        if continued:
+            current = current[:-1]
+            continue
+        if state != "normal":
+            current += "\n"
+            continue
+        logical_lines.append(current)
+        current = ""
+    if current:
+        raise AssertionError(f"{label} has unterminated quoting or continuation")
+    return logical_lines
+
+
+def _split_bash_simple_command_strings(script: str, *, label: str) -> list[str]:
+    commands: list[str] = []
+    for logical in _bash_logical_lines(script, label=label):
+        current: list[str] = []
+        quote: str | None = None
+        word_start = True
+        index = 0
+        while index < len(logical):
+            character = logical[index]
+            if quote is None:
+                if character in " \t":
+                    current.append(character)
+                    word_start = True
+                elif character == "#" and word_start:
+                    break
+                elif character == "'":
+                    current.append(character)
+                    quote = "'"
+                    word_start = False
+                elif character == '"':
+                    current.append(character)
+                    quote = '"'
+                    word_start = False
+                elif character in "&|;":
+                    operator = character
+                    if (
+                        character in "&|"
+                        and index + 1 < len(logical)
+                        and logical[index + 1] == character
+                    ):
+                        operator += character
+                        index += 1
+                    if operator in _CONTROL_OPERATORS:
+                        command = "".join(current).strip()
+                        if command:
+                            commands.append(command)
+                        current = []
+                        word_start = True
+                    else:
+                        current.append(operator)
+                        word_start = False
+                else:
+                    current.append(character)
+                    word_start = False
+            elif quote == "'":
+                current.append(character)
+                if character == "'":
+                    quote = None
+            else:
+                current.append(character)
+                if character == "\\" and index + 1 < len(logical):
+                    current.append(logical[index + 1])
+                    index += 1
+                elif character == '"':
+                    quote = None
+            index += 1
+        command = "".join(current).strip()
+        if command:
+            commands.append(command)
+    return commands
+
+
 def _parse_bash_run_script_commands(script: str, *, label: str) -> list[list[str]]:
     commands: list[list[str]] = []
-    continued: list[str] = []
-    for line in script.splitlines():
-        if not continued and (not line.strip() or line.lstrip().startswith("#")):
-            continue
-        fragment = line[:-1] if line.endswith("\\") else line
-        continued.append(fragment)
-        if line.endswith("\\"):
-            continue
-        logical = "".join(continued)
-        continued = []
+    for logical in _bash_logical_lines(script, label=label):
         if not logical.strip() or logical.lstrip().startswith("#"):
             continue
         tokens = shlex.split(logical)
         if not tokens:
             raise AssertionError(f"{label} command is empty")
         commands.append(tokens)
-    if continued:
-        raise AssertionError(f"{label} has dangling continuation")
     return commands
 
 
-def _is_supervisor_parent_readonly_remount_command(command: list[str]) -> bool:
-    if len(command) < 4:
-        return False
-    executable, flag = command[:2]
-    option_fragments = command[2:-1]
-    target = command[-1]
+def _canonical_literal_path(token: str) -> str | None:
     if (
-        executable != "/usr/bin/mount"
-        or flag != "-o"
-        or target != "/mnt/supervisor"
+        not token
+        or not token.startswith("/")
+        or any(marker in token for marker in ("$", "`", "$(", "${"))
     ):
+        return None
+    return posixpath.normpath(token)
+
+
+def _mount_command_targets_supervisor_parent(command: list[str]) -> bool:
+    tokens = list(command)
+    while tokens and tokens[0] in _SIMPLE_COMMAND_PREFIXES:
+        tokens.pop(0)
+    while tokens and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", tokens[0]):
+        tokens.pop(0)
+    if not tokens:
         return False
-    option_text = "".join(option_fragments)
-    options = option_text.split(",")
-    return len(options) == 5 and frozenset(options) == SUPERVISOR_PARENT_REMOUNT_OPTIONS
+    if tokens[0] != "/usr/bin/mount":
+        return "/usr/bin/mount" in tokens[1:]
+
+    read_only = False
+    remount = False
+    read_only_like = False
+    remount_like = False
+    positionals: list[str] = []
+    index = 1
+    while index < len(tokens):
+        token = tokens[index]
+        if token in {"-r", "--read-only"}:
+            read_only = True
+            read_only_like = True
+            index += 1
+            continue
+        if token in {"-o", "--options"}:
+            if index + 1 >= len(tokens):
+                return remount or read_only
+            option_text = tokens[index + 1]
+            if any(marker in option_text for marker in ("$", "`", "$(", "${")):
+                return True
+            for option in option_text.split(","):
+                cleaned = option.strip()
+                normalized = cleaned.replace("\\", "")
+                if normalized.startswith("remount"):
+                    remount_like = True
+                if cleaned == "remount":
+                    remount = True
+                if normalized == "ro":
+                    read_only_like = True
+                if cleaned == "ro":
+                    read_only = True
+            index += 2
+            continue
+        if token.startswith("--options="):
+            option_text = token.split("=", 1)[1]
+            if any(marker in option_text for marker in ("$", "`", "$(", "${")):
+                return True
+            for option in option_text.split(","):
+                cleaned = option.strip()
+                normalized = cleaned.replace("\\", "")
+                if normalized.startswith("remount"):
+                    remount_like = True
+                if cleaned == "remount":
+                    remount = True
+                if normalized == "ro":
+                    read_only_like = True
+                if cleaned == "ro":
+                    read_only = True
+            index += 1
+            continue
+        if token.startswith("-o") and token != "-o":
+            option_text = token[2:]
+            if any(marker in option_text for marker in ("$", "`", "$(", "${")):
+                return True
+            for option in option_text.split(","):
+                cleaned = option.strip()
+                normalized = cleaned.replace("\\", "")
+                if normalized.startswith("remount"):
+                    remount_like = True
+                if cleaned == "remount":
+                    remount = True
+                if normalized == "ro":
+                    read_only_like = True
+                if cleaned == "ro":
+                    read_only = True
+            index += 1
+            continue
+        if token in {
+            "--bind",
+            "--make-private",
+            "--make-rprivate",
+            "--make-runbindable",
+            "--make-rshared",
+            "--make-rslave",
+            "--make-runbindable",
+            "--make-shared",
+            "--make-slave",
+            "--move",
+            "--rbind",
+        }:
+            index += 1
+            continue
+        if token in {"-t", "--types"}:
+            if index + 1 >= len(tokens):
+                return remount or read_only
+            index += 2
+            continue
+        if token == "--":
+            positionals.extend(tokens[index + 1 :])
+            break
+        if token.startswith("-"):
+            return remount or read_only
+        positionals.append(token)
+        index += 1
+
+    target = _canonical_literal_path(positionals[-1]) if positionals else None
+    if target == "/mnt/supervisor":
+        if remount_like and read_only_like:
+            return True
+        if (remount_like or read_only_like) and len(positionals) != 1:
+            return True
+        return False
+    if target is None and (remount_like or read_only_like):
+        return not positionals or any("supervisor" in token.lower() for token in positionals)
+    return False
 
 
 def workflow_has_supervisor_parent_readonly_remount(workflow: str) -> bool:
+    builder_shell = builder_isolation_shell_source(workflow)
     return any(
-        _is_supervisor_parent_readonly_remount_command(command)
-        for step in parse_patch_release_run_commands(workflow)
-        for command in step
+        _mount_command_targets_supervisor_parent(shlex.split(command))
+        for command in _split_bash_simple_command_strings(
+            builder_shell,
+            label="publisher builder isolation shell",
+        )
     )
 
 
@@ -211,19 +442,136 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
             ),
         )
 
+    for label, lines in (
+        (
+            "duplicate-ro",
+            ("/usr/bin/mount -o remount,ro,ro,nosuid,nodev,noexec /mnt/supervisor",),
+        ),
+        (
+            "extra-options",
+            (
+                "/usr/bin/mount -o "
+                "remount,ro,nosuid,nodev,noexec,strictatime /mnt/supervisor",
+            ),
+        ),
+        (
+            "comment-late",
+            ("/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor # late",),
+        ),
+        (
+            "semicolon-true",
+            ("/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor; true",),
+        ),
+        (
+            "and-true",
+            ("/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor && true",),
+        ),
+        (
+            "or-true",
+            ("/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor || true",),
+        ),
+        (
+            "pipe-cat",
+            ("/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor | cat",),
+        ),
+        (
+            "bang-wrapper",
+            ("! /usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor",),
+        ),
+        (
+            "if-wrapper",
+            (
+                "if /usr/bin/mount -o remount,ro,nosuid,nodev,noexec "
+                "/mnt/supervisor; then true; fi",
+            ),
+        ),
+        (
+            "single-quoted-options",
+            ("/usr/bin/mount -o 'remount,ro,nosuid,nodev,noexec' /mnt/supervisor",),
+        ),
+        (
+            "double-quoted-options",
+            ('/usr/bin/mount -o "remount,ro,nosuid,nodev,noexec" /mnt/supervisor',),
+        ),
+        (
+            "single-quoted-target",
+            ("/usr/bin/mount -o remount,ro,nosuid,nodev,noexec '/mnt/supervisor'",),
+        ),
+        (
+            "double-quoted-target",
+            ('/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "/mnt/supervisor"',),
+        ),
+        (
+            "multiple-o-read-only-flag",
+            (
+                "/usr/bin/mount -o remount,nosuid,nodev "
+                "--options noexec -r /mnt/supervisor",
+            ),
+        ),
+        (
+            "long-options-read-only",
+            (
+                "/usr/bin/mount --options remount,nosuid,nodev,noexec "
+                "--read-only /mnt/supervisor",
+            ),
+        ),
+        (
+            "long-options-equals",
+            (
+                "/usr/bin/mount --options=remount,nosuid,nodev,noexec "
+                "--read-only /mnt/supervisor",
+            ),
+        ),
+        (
+            "canonical-dot",
+            ("/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/./supervisor",),
+        ),
+        (
+            "canonical-dotdot",
+            (
+                "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "
+                "/mnt/runtime/../supervisor",
+            ),
+        ),
+        (
+            "canonical-double-slash",
+            ("/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt//supervisor",),
+        ),
+        (
+            "variable-target",
+            ('/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$SUPERVISOR_TARGET"',),
+        ),
+        (
+            "variable-options",
+            ('/usr/bin/mount -o "$SUPERVISOR_OPTS" /mnt/supervisor',),
+        ),
+        (
+            "multiple-o-variable",
+            (
+                '/usr/bin/mount --options remount,nosuid,nodev '
+                '--options "$SUPERVISOR_OPTS" -r /mnt/supervisor',
+            ),
+        ),
+    ):
+        yield label, render_supervisor_parent_remount_mutation(workflow, lines=lines)
+
     pieces: list[str] = []
     for index, token in enumerate(SUPERVISOR_PARENT_REMOUNT_SEQUENCE):
         pieces.append(token)
         if index + 1 < len(SUPERVISOR_PARENT_REMOUNT_SEQUENCE):
             pieces.append(",")
 
-    def render_split(boundaries: tuple[int, ...], indent: int) -> tuple[str, ...]:
+    def render_split(
+        boundaries: tuple[int, ...],
+        indent: int,
+        trailing_backslashes: int,
+    ) -> tuple[str, ...]:
         lines: list[str] = []
         current = ["/usr/bin/mount -o "]
         for index, piece in enumerate(pieces):
             current.append(piece)
             if index + 1 in boundaries:
-                lines.append("".join(current) + "\\")
+                lines.append("".join(current) + ("\\" * trailing_backslashes))
                 current = [" " * indent]
         current.append(" /mnt/supervisor")
         lines.append("".join(current))
@@ -231,21 +579,45 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
 
     for boundary in range(1, len(pieces)):
         for indent in (0, 2, 8):
-            yield (
-                f"split:{boundary}:indent:{indent}",
-                render_supervisor_parent_remount_mutation(
-                    workflow,
-                    lines=render_split((boundary,), indent),
-                ),
-            )
+            for backslashes in (1, 2, 3):
+                yield (
+                    f"split:{boundary}:indent:{indent}:backslashes:{backslashes}",
+                    render_supervisor_parent_remount_mutation(
+                        workflow,
+                        lines=render_split((boundary,), indent, backslashes),
+                    ),
+                )
 
     all_boundaries = tuple(range(1, len(pieces)))
     for indent in (0, 2, 8):
+        for backslashes in (1, 2, 3):
+            yield (
+                f"multisplit:indent:{indent}:backslashes:{backslashes}",
+                render_supervisor_parent_remount_mutation(
+                    workflow,
+                    lines=render_split(all_boundaries, indent, backslashes),
+                ),
+            )
+
+    for backslashes in (1, 2, 3):
         yield (
-            f"multisplit:indent:{indent}",
+            f"double-quoted-split:backslashes:{backslashes}",
             render_supervisor_parent_remount_mutation(
                 workflow,
-                lines=render_split(all_boundaries, indent),
+                lines=(
+                    '/usr/bin/mount -o "remount,ro,nosuid,' + ("\\" * backslashes),
+                    '        nodev,noexec" /mnt/supervisor',
+                ),
+            ),
+        )
+        yield (
+            f"single-quoted-split:backslashes:{backslashes}",
+            render_supervisor_parent_remount_mutation(
+                workflow,
+                lines=(
+                    "/usr/bin/mount -o 'remount,ro,nosuid," + ("\\" * backslashes),
+                    "        nodev,noexec' /mnt/supervisor",
+                ),
             ),
         )
 
@@ -638,6 +1010,15 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "candidate build failed: stage=isolated exit=%d"
         not in isolated_step
         or "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d"
+        not in isolated_step
+        or "$builder_cgroup/cgroup.kill\" > /dev/null 2>&1" not in isolated_step
+        or "/usr/bin/rmdir -- \"$builder_cgroup\" \\\n                 > /dev/null 2>&1"
+        not in isolated_step
+        or "/usr/sbin/userdel \"$builder_user\" \\\n                > /dev/null 2>&1"
+        not in isolated_step
+        or "/bin/rm -rf -- \"$BUILDER_ROOT\" \\\n              > /dev/null 2>&1"
+        not in isolated_step
+        or "/bin/rm -rf -- \"$PATCH_WHEELHOUSE\" > /dev/null 2>&1"
         not in isolated_step
         or "candidate build status: success" not in isolated_step
         or "/usr/bin/mount --make-rprivate /" not in isolated_step
@@ -1111,6 +1492,26 @@ def run_extracted_supervisor_parent_probe(
     )
 
 
+def builder_cleanup_functions_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Build candidate in isolated namespace and stage public inputs",
+    )
+    start = script.index("terminate_builder_processes() {")
+    end = script.index("trap cleanup_builder EXIT")
+    return script[start:end]
+
+
+def private_base_cleanup_function_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Create and verify patch artifact",
+    )
+    start = script.index("cleanup_private_base() {")
+    end = script.index("trap cleanup_private_base EXIT")
+    return script[start:end]
+
+
 def patch_release_python_c_snippets(workflow: str) -> list[tuple[int, int, str]]:
     snippets: list[tuple[int, int, str]] = []
     for step_index, commands in enumerate(parse_patch_release_run_commands(workflow)):
@@ -1335,6 +1736,26 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("candidate build failed: stage=isolated exit=%d", self.patch_job)
         self.assertIn(
             "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d",
+            self.patch_job,
+        )
+        self.assertIn('"$builder_cgroup/cgroup.kill" > /dev/null 2>&1', self.patch_job)
+        self.assertIn(
+            '/usr/bin/sudo /usr/bin/rmdir -- "$builder_cgroup" \\\n'
+            '                 > /dev/null 2>&1',
+            self.patch_job,
+        )
+        self.assertIn(
+            '/usr/bin/sudo /usr/sbin/userdel "$builder_user" \\\n'
+            '                > /dev/null 2>&1',
+            self.patch_job,
+        )
+        self.assertIn(
+            '/usr/bin/sudo /bin/rm -rf -- "$BUILDER_ROOT" \\\n'
+            '              > /dev/null 2>&1',
+            self.patch_job,
+        )
+        self.assertIn(
+            '/bin/rm -rf -- "$PATCH_WHEELHOUSE" > /dev/null 2>&1',
             self.patch_job,
         )
         self.assertIn("candidate build status: success", self.patch_job)
@@ -2097,13 +2518,16 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("/usr/bin/python3 -I -S -c", create_step)
         self.assertIn('cd "$PATCH_RUNTIME_ROOT"', create_step)
         self.assertIn("cleanup_private_base", create_step)
-        self.assertIn('/bin/rm -f -- "$BASE_IMAGE"', create_step)
+        self.assertIn('/bin/rm -f -- "$BASE_IMAGE" > /dev/null 2>&1', create_step)
+        self.assertIn('/usr/bin/rmdir -- "$private_dir" > /dev/null 2>&1', create_step)
         self.assertIn(
             "BASE_IMAGE: ${{ steps.private-base.outputs.base_path }}",
             create_step,
         )
         self.assertNotIn("BASEROM_URL", create_step)
         self.assertIn('test ! -e "$BASE_IMAGE"', steps[cleanup])
+        self.assertIn('/bin/rm -f -- "$BASE_IMAGE" > /dev/null 2>&1', steps[cleanup])
+        self.assertIn('/usr/bin/rmdir -- "$private_dir" > /dev/null 2>&1', steps[cleanup])
         self.assertIn("      if: always()", steps[cleanup])
         self.assertIn("artifact_names=", steps[revalidate])
         self.assertNotIn("BASE_IMAGE", steps[-1])
@@ -2178,7 +2602,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         removed_cleanup = self.text.replace(
-            '/bin/rm -f -- "$BASE_IMAGE" || cleanup_failed=1',
+            '/bin/rm -f -- "$BASE_IMAGE" > /dev/null 2>&1 || cleanup_failed=1',
             "true",
             1,
         )
@@ -3241,6 +3665,175 @@ exit 37
 
             self.assertEqual(run(None).returncode, 0)
             self.assertNotEqual(run(999999).returncode, 0)
+
+    def test_builder_cleanup_suppresses_utility_path_stderr(self):
+        section = builder_cleanup_functions_source(self.text)
+        section = section.replace(
+            'if /usr/bin/getent passwd "$builder_user" > /dev/null; then',
+            'if [ "$builder_user_created" = 1 ]; then',
+            1,
+        )
+        section = section.replace(
+            'test -z "$(/usr/bin/getent passwd "$builder_user" || true)" \\'
+            "\n            || cleanup_failed=1",
+            'test "$builder_user_created" = 0 || cleanup_failed=1',
+            1,
+        )
+        section = section.replace(
+            '/usr/bin/sudo /usr/bin/rmdir -- "$builder_cgroup" \\\n'
+            '                 > /dev/null 2>&1',
+            'cleanup_rmdir "$builder_cgroup" > /dev/null 2>&1',
+            1,
+        )
+        section = section.replace(
+            '/usr/bin/sudo /usr/sbin/userdel "$builder_user" \\\n'
+            '                > /dev/null 2>&1',
+            'cleanup_userdel "$builder_user" > /dev/null 2>&1',
+            1,
+        )
+        section = section.replace(
+            '/usr/bin/sudo /bin/rm -rf -- "$BUILDER_ROOT" \\\n'
+            '              > /dev/null 2>&1',
+            'cleanup_rm_builder "$BUILDER_ROOT" > /dev/null 2>&1',
+            1,
+        )
+        section = section.replace(
+            '/bin/rm -rf -- "$PATCH_WHEELHOUSE" > /dev/null 2>&1',
+            'cleanup_rm_wheelhouse "$PATCH_WHEELHOUSE" > /dev/null 2>&1',
+            1,
+        )
+        for primary_status, expected_exit in ((37, 37), (0, 1)):
+            with self.subTest(primary_status=primary_status):
+                status_command = f"(exit {primary_status})" if primary_status else "true"
+                harness = (
+                    'builder_pgid=""\n'
+                    'builder_supervisor_pid=""\n'
+                    'builder_user="ci-patch-builder"\n'
+                    'builder_uid="60000"\n'
+                    'builder_cgroup="/home/runner/work/_temp/cgroups/builder"\n'
+                    'builder_cgroup_owned=1\n'
+                    'builder_root_owned=1\n'
+                    'builder_user_created=1\n'
+                    'wheelhouse_owned=1\n'
+                    'BUILDER_ROOT="/home/runner/work/_temp/patch-builder"\n'
+                    'PATCH_WHEELHOUSE="/home/runner/work/_temp/patch-wheelhouse"\n'
+                    'builder_group_pids() { return 0; }\n'
+                    'builder_uid_pids() { return 0; }\n'
+                    'builder_cgroup_pids() { return 0; }\n'
+                    'cleanup_rmdir() { printf "%s\\n" "$1/path-leak" >&2; return 1; }\n'
+                    'cleanup_userdel() { printf "/home/runner/%s\\n" "$1" >&2; return 1; }\n'
+                    'cleanup_rm_builder() { printf "%s/path-leak\\n" "$1" >&2; return 1; }\n'
+                    'cleanup_rm_wheelhouse() { printf "%s/path-leak\\n" "$1" >&2; return 1; }\n'
+                    + section
+                    + "set +e\n"
+                    + status_command
+                    + "\ncleanup_builder\n"
+                )
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", harness],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, expected_exit)
+                self.assertIn(
+                    "candidate build cleanup failed: process=0 cgroup=1 state=1 "
+                    f"primary={primary_status}",
+                    completed.stderr,
+                )
+                self.assertNotIn("/home/runner/work/_temp", completed.stderr)
+                self.assertNotIn("path-leak", completed.stderr)
+                self.assertNotIn("ci-patch-builder", completed.stderr)
+
+    def test_private_base_cleanup_suppresses_utility_path_stderr(self):
+        function_section = private_base_cleanup_function_source(self.text)
+        function_section = function_section.replace(
+            '/bin/chmod u+w -- "$BASE_IMAGE" > /dev/null 2>&1 || cleanup_failed=1',
+            'cleanup_chmod "$BASE_IMAGE" > /dev/null 2>&1 || cleanup_failed=1',
+            1,
+        )
+        function_section = function_section.replace(
+            '/bin/rm -f -- "$BASE_IMAGE" > /dev/null 2>&1 || cleanup_failed=1',
+            'cleanup_rm "$BASE_IMAGE" > /dev/null 2>&1 || cleanup_failed=1',
+            1,
+        )
+        function_section = function_section.replace(
+            '/usr/bin/rmdir -- "$private_dir" > /dev/null 2>&1 || cleanup_failed=1',
+            'cleanup_rmdir "$private_dir" > /dev/null 2>&1 || cleanup_failed=1',
+            1,
+        )
+        for primary_status, expected_exit in ((23, 23), (0, 1)):
+            with self.subTest(primary_status=primary_status, path="create-step"):
+                status_command = f"(exit {primary_status})" if primary_status else "true"
+                harness = (
+                    'RUNNER_TEMP="/home/runner/work/_temp"\n'
+                    'BASE_IMAGE="/home/runner/work/_temp/patch-private.ABCDEFGHIJ/base.gba"\n'
+                    'cleanup_chmod() { printf "%s\\n" "$1/path-leak" >&2; return 1; }\n'
+                    'cleanup_rm() { printf "%s/path-leak\\n" "$1" >&2; return 1; }\n'
+                    'cleanup_rmdir() { printf "%s/path-leak\\n" "$1" >&2; return 1; }\n'
+                    + function_section
+                    + "set +e\n"
+                    + status_command
+                    + "\ncleanup_private_base\n"
+                )
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", harness],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, expected_exit)
+                self.assertEqual(completed.stderr, "")
+
+        cleanup_script = named_step_run_script(
+            self.text,
+            "Cleanup and verify private base",
+        )
+        cleanup_script = cleanup_script.replace(
+            '/bin/chmod u+w -- "$BASE_IMAGE" > /dev/null 2>&1',
+            'cleanup_chmod "$BASE_IMAGE" > /dev/null 2>&1',
+            1,
+        )
+        cleanup_script = cleanup_script.replace(
+            '/bin/rm -f -- "$BASE_IMAGE" > /dev/null 2>&1',
+            'cleanup_rm "$BASE_IMAGE" > /dev/null 2>&1',
+            1,
+        )
+        cleanup_script = cleanup_script.replace(
+            '/usr/bin/rmdir -- "$private_dir" > /dev/null 2>&1',
+            'cleanup_rmdir "$private_dir" > /dev/null 2>&1',
+            1,
+        )
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="private-cleanup-step-",
+            dir=artifact_root,
+        ) as temporary, self.subTest(path="cleanup-step"):
+            sandbox = Path(temporary)
+            harness = (
+                "set -euo pipefail\n"
+                f'RUNNER_TEMP="{sandbox}"\n'
+                'BASE_IMAGE="$RUNNER_TEMP/patch-private.ABCDEFGHIJ/base.gba"\n'
+                'private_dir="${BASE_IMAGE%/base.gba}"\n'
+                'cleanup_chmod() { printf "%s\\n" "$1/path-leak" >&2; return 1; }\n'
+                'cleanup_rm() { printf "%s/path-leak\\n" "$1" >&2; return 1; }\n'
+                'cleanup_rmdir() { printf "%s/path-leak\\n" "$1" >&2; return 1; }\n'
+                "mkdir -p \"$private_dir\"\n"
+                ": > \"$BASE_IMAGE\"\n"
+                + cleanup_script
+            )
+            completed = subprocess.run(
+                ["/bin/bash", "-c", harness],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 1)
+            self.assertEqual(completed.stderr, "")
 
     def test_patch_release_docs_publish_no_internal_rom_artifact(self):
         text = PATCH_RELEASE_CASE.read_text(encoding="utf-8")

@@ -1726,7 +1726,7 @@ jobs:
             if [ -n "$(builder_cgroup_pids)" ]; then
               printf '1\n' \
                 | /usr/bin/sudo /usr/bin/tee \
-                  "$builder_cgroup/cgroup.kill" > /dev/null
+                  "$builder_cgroup/cgroup.kill" > /dev/null 2>&1
               for attempt in $(/usr/bin/seq 1 50); do
                 if [ -z "$(builder_cgroup_pids)" ]; then
                   break
@@ -1745,7 +1745,8 @@ jobs:
           if [ "$builder_cgroup_owned" = 1 ]; then
             test -z "$(builder_cgroup_pids)" || cleanup_failed=1
             if [ "$cleanup_failed" = 0 ] && \
-               /usr/bin/sudo /usr/bin/rmdir -- "$builder_cgroup"; then
+               /usr/bin/sudo /usr/bin/rmdir -- "$builder_cgroup" \
+                 > /dev/null 2>&1; then
               builder_cgroup_owned=0
             else
               cleanup_failed=1
@@ -1758,7 +1759,8 @@ jobs:
           cleanup_failed=0
           if [ "$builder_user_created" = 1 ]; then
             if /usr/bin/getent passwd "$builder_user" > /dev/null; then
-              if /usr/bin/sudo /usr/sbin/userdel "$builder_user"; then
+              if /usr/bin/sudo /usr/sbin/userdel "$builder_user" \
+                > /dev/null 2>&1; then
                 builder_user_created=0
               else
                 cleanup_failed=1
@@ -1768,14 +1770,15 @@ jobs:
             fi
           fi
           if [ "$builder_root_owned" = 1 ]; then
-            if /usr/bin/sudo /bin/rm -rf -- "$BUILDER_ROOT"; then
+            if /usr/bin/sudo /bin/rm -rf -- "$BUILDER_ROOT" \
+              > /dev/null 2>&1; then
               builder_root_owned=0
             else
               cleanup_failed=1
             fi
           fi
           if [ "$wheelhouse_owned" = 1 ]; then
-            if /bin/rm -rf -- "$PATCH_WHEELHOUSE"; then
+            if /bin/rm -rf -- "$PATCH_WHEELHOUSE" > /dev/null 2>&1; then
               wheelhouse_owned=0
             else
               cleanup_failed=1
@@ -2742,9 +2745,9 @@ jobs:
           case "$BASE_IMAGE" in
             "$RUNNER_TEMP"/patch-private.??????????/base.gba)
               private_dir="${BASE_IMAGE%/base.gba}"
-              /bin/chmod u+w -- "$BASE_IMAGE" 2>/dev/null || cleanup_failed=1
-              /bin/rm -f -- "$BASE_IMAGE" || cleanup_failed=1
-              /usr/bin/rmdir -- "$private_dir" || cleanup_failed=1
+              /bin/chmod u+w -- "$BASE_IMAGE" > /dev/null 2>&1 || cleanup_failed=1
+              /bin/rm -f -- "$BASE_IMAGE" > /dev/null 2>&1 || cleanup_failed=1
+              /usr/bin/rmdir -- "$private_dir" > /dev/null 2>&1 || cleanup_failed=1
               ;;
             *)
               echo "refusing cleanup outside the trusted private path" >&2
@@ -2859,11 +2862,11 @@ jobs:
         esac
         private_dir="${BASE_IMAGE%/base.gba}"
         if [ -e "$BASE_IMAGE" ]; then
-          /bin/chmod u+w -- "$BASE_IMAGE"
-          /bin/rm -f -- "$BASE_IMAGE"
+          /bin/chmod u+w -- "$BASE_IMAGE" > /dev/null 2>&1
+          /bin/rm -f -- "$BASE_IMAGE" > /dev/null 2>&1
         fi
         if [ -d "$private_dir" ]; then
-          /usr/bin/rmdir -- "$private_dir"
+          /usr/bin/rmdir -- "$private_dir" > /dev/null 2>&1
         fi
         test ! -e "$BASE_IMAGE"
         test ! -e "$private_dir"
