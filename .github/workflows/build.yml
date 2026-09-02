@@ -1578,7 +1578,7 @@ jobs:
         test "$(/usr/bin/git rev-parse --verify "$PATCH_COMMIT^{commit}")" = \
           "$PATCH_COMMIT"
         test "$(/usr/bin/git cat-file -t "$PATCH_COMMIT")" = commit
-        /bin/rm -rf -- "$PATCH_RUNTIME_ROOT" "$PATCH_TOOL_ROOT"
+        /bin/rm -rf -- "$PATCH_RUNTIME_ROOT" "$PATCH_TOOL_ROOT" > /dev/null 2>&1
         /usr/bin/install -d -m 0700 "$PATCH_RUNTIME_ROOT" \
           "$PATCH_TOOL_ROOT" "$PATCH_TOOL_ROOT/scripts" \
           "$PATCH_TOOL_ROOT/scripts/modernize"
@@ -1633,7 +1633,7 @@ jobs:
       run: |
         /usr/bin/sudo /usr/bin/apt-get update
         /usr/bin/sudo /usr/bin/apt-get install -y build-essential binutils-arm-none-eabi gcc-arm-none-eabi libmgba-dev libnewlib-arm-none-eabi libpng-dev pkg-config python3-venv
-        /bin/rm -rf -- "$PATCH_WHEELHOUSE"
+        /bin/rm -rf -- "$PATCH_WHEELHOUSE" > /dev/null 2>&1
         /usr/bin/install -d -m 0700 "$PATCH_WHEELHOUSE"
         /usr/bin/env -i HOME="$PATCH_RUNTIME_ROOT" LC_ALL=C PATH=/usr/bin:/bin PIP_CONFIG_FILE=/dev/null /usr/bin/python3 -I -m pip download --require-hashes --only-binary=:all: --no-deps -r .github/requirements/build.txt --dest "$PATCH_WHEELHOUSE"
 
@@ -2671,11 +2671,11 @@ jobs:
           trap - EXIT INT TERM
           set +e
           if [ "$status" -ne 0 ] && [ -n "$private_dir" ]; then
-            /bin/chmod -R u+w -- "$private_dir" 2>/dev/null || true
+            /bin/chmod -R u+w -- "$private_dir" > /dev/null 2>&1 || true
             if [ -n "$base_image" ]; then
-              /bin/rm -f -- "$base_image"
+              /bin/rm -f -- "$base_image" > /dev/null 2>&1
             fi
-            /usr/bin/rmdir -- "$private_dir" 2>/dev/null || true
+            /usr/bin/rmdir -- "$private_dir" > /dev/null 2>&1 || true
           fi
           exit "$status"
         }

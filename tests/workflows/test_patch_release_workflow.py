@@ -22,6 +22,7 @@ from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
+from scripts.workflow_pilot import publisher_shell_contract
 from scripts.modernize import patch_release
 
 
@@ -175,15 +176,13 @@ def builder_isolation_shell_source(workflow: str) -> str:
         workflow,
         "Build candidate in isolated namespace and stage public inputs",
     )
-    opener = "<<'BUILDER_ISOLATION'\n"
-    if script.count(opener) != 1:
-        raise AssertionError("publisher must embed exactly one builder isolation heredoc")
-    start = script.index(opener) + len(opener)
-    terminator = "\nBUILDER_ISOLATION\n"
-    if script.count(terminator) != 1:
-        raise AssertionError("publisher must terminate the builder isolation heredoc once")
-    end = script.index(terminator, start)
-    return script[start:end] + "\n"
+    try:
+        return publisher_shell_contract.builder_isolation_shell_source(
+            script,
+            label="publisher builder isolation shell",
+        )
+    except ValueError as error:
+        raise AssertionError(str(error)) from error
 
 
 def _bash_line_state(line: str, state: str) -> tuple[str, bool]:
@@ -474,26 +473,10 @@ def _mount_command_targets_supervisor_parent(command: list[str]) -> bool:
 
 def workflow_has_supervisor_parent_readonly_remount(workflow: str) -> bool:
     builder_shell = builder_isolation_shell_source(workflow)
-    for command in _split_bash_simple_command_strings(
+    return publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
         builder_shell,
         label="publisher builder isolation shell",
-    ):
-        tokens = shlex.split(command)
-        if _mount_command_targets_supervisor_parent(tokens):
-            return True
-        if _command_references_supervisor(tokens, command) and not _is_reviewed_supervisor_command(tokens):
-            return True
-        if (
-            _command_has_remount_readonly_text(command)
-            and tuple(tokens) not in APPROVED_NONLITERAL_READONLY_MOUNT_COMMANDS
-            and (
-                (tokens and tokens[0] in _DISALLOWED_MOUNT_WRAPPERS)
-                or any(_token_has_shell_syntax(token) for token in tokens)
-                or any("/usr/bin/mount" in token for token in tokens[1:])
-            )
-        ):
-            return True
-    return False
+    )
 
 
 def render_supervisor_parent_remount_mutation(
@@ -721,8 +704,51 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
                 '"$mount_cmd" -o "$opts" "$target"',
             ),
         ),
+        (
+            "split-cmd-target-options",
+            (
+                "mount_cmd=/usr/bin/mount",
+                "opt_left=remount,ro",
+                "opt_right=nosuid,nodev,noexec",
+                "target_root=/mnt",
+                "target_leaf=supervisor",
+                'target="${target_root}/${target_leaf}"',
+                '"$mount_cmd" -o "$opt_left,$opt_right" "$target"',
+            ),
+        ),
+        (
+            "repurposed-hidden-direct",
+            workflow.replace(
+                '          /usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$hidden"\n',
+                '          hidden=/mnt/supervisor\n'
+                '          /usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$hidden"\n',
+                1,
+            ),
+        ),
+        (
+            "repurposed-hidden-loop",
+            workflow.replace(
+                "        for hidden in /home/runner /root /var /run /sys; do\n",
+                "        for hidden in /mnt/supervisor /home/runner /root /var /run /sys; do\n",
+                1,
+            ),
+        ),
+        (
+            "repurposed-hidden-split",
+            workflow.replace(
+                '          /usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$hidden"\n',
+                '          hidden_base=/mnt\n'
+                '          hidden_leaf=supervisor\n'
+                '          hidden="${hidden_base}/${hidden_leaf}"\n'
+                '          /usr/bin/mount -o remount,ro,nosuid,nodev,noexec "$hidden"\n',
+                1,
+            ),
+        ),
     ):
-        yield label, render_supervisor_parent_remount_mutation(workflow, lines=lines)
+        if isinstance(lines, str):
+            yield label, lines
+        else:
+            yield label, render_supervisor_parent_remount_mutation(workflow, lines=lines)
 
     pieces: list[str] = []
     for index, token in enumerate(SUPERVISOR_PARENT_REMOUNT_SEQUENCE):
@@ -814,39 +840,37 @@ def writable_mount_record_parser_source(workflow: str) -> str:
 
 
 def raw_dev_mount_target_parser_source(workflow: str) -> str:
-    script = named_step_run_script(
-        workflow,
-        "Build candidate in isolated namespace and stage public inputs",
-    )
-    match = re.search(
-        r"(?ms)^list_dev_mount_targets\(\) \{\n"
-        r"  /usr/bin/python3 -I -S - <<'PY'\n"
-        r"(?P<body>.*?)\n"
-        r"PY\n"
-        r"\}",
-        script,
-    )
-    if match is None:
-        raise AssertionError("publisher must expose an exact raw /dev mount parser")
-    return match.group("body") + "\n"
+    try:
+        sources = dict(
+            publisher_shell_contract.raw_patch_release_parser_sources(
+                builder_isolation_shell_source(workflow)
+            )
+        )
+    except ValueError as error:
+        raise AssertionError(str(error)) from error
+    try:
+        return sources["list_dev_mount_targets"]
+    except KeyError as error:
+        raise AssertionError(
+            "publisher must expose an exact raw /dev mount parser"
+        ) from error
 
 
 def raw_writable_mount_record_parser_source(workflow: str) -> str:
-    script = named_step_run_script(
-        workflow,
-        "Build candidate in isolated namespace and stage public inputs",
-    )
-    match = re.search(
-        r"(?ms)^list_writable_mount_records\(\) \{\n"
-        r"  /usr/bin/python3 -I -S - <<'PY'\n"
-        r"(?P<body>.*?)\n"
-        r"PY\n"
-        r"\}",
-        script,
-    )
-    if match is None:
-        raise AssertionError("publisher must expose an exact raw writable mount parser")
-    return match.group("body") + "\n"
+    try:
+        sources = dict(
+            publisher_shell_contract.raw_patch_release_parser_sources(
+                builder_isolation_shell_source(workflow)
+            )
+        )
+    except ValueError as error:
+        raise AssertionError(str(error)) from error
+    try:
+        return sources["list_writable_mount_records"]
+    except KeyError as error:
+        raise AssertionError(
+            "publisher must expose an exact raw writable mount parser"
+        ) from error
 
 
 def writable_mount_transport_section_source(workflow: str) -> str:
@@ -972,6 +996,18 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "actions/download-artifact@" in workflow
     ):
         errors.append("complete ROM artifact transfer is possible")
+    try:
+        builder_shell = builder_isolation_shell_source(workflow)
+        publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
+            builder_shell,
+            label="publisher builder isolation shell",
+        )
+        publisher_shell_contract.validate_patch_release_parser_heredocs(
+            builder_shell,
+            label="publisher builder isolation shell",
+        )
+    except (AssertionError, ValueError):
+        errors.append("publisher builder isolation shell differs")
     if workflow_has_supervisor_parent_readonly_remount(workflow):
         errors.append("supervisor parent remount differs")
     required = (
@@ -1678,6 +1714,16 @@ def private_base_cleanup_function_source(workflow: str) -> str:
     )
     start = script.index("cleanup_private_base() {")
     end = script.index("trap cleanup_private_base EXIT")
+    return script[start:end]
+
+
+def download_cleanup_function_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Download private base image",
+    )
+    start = script.index("cleanup_download() {")
+    end = script.index("trap cleanup_download EXIT")
     return script[start:end]
 
 
@@ -3240,6 +3286,24 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 self.assertTrue(workflow_has_supervisor_parent_readonly_remount(changed))
                 self.assertTrue(publisher_boundary_errors(changed))
 
+    def test_builder_isolation_shell_identity_rejects_single_byte_mutations(self):
+        builder_shell = builder_isolation_shell_source(self.text)
+        publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
+            builder_shell,
+            label="publisher builder isolation shell",
+        )
+        for index, character in enumerate(builder_shell):
+            replacement = "X" if character != "X" else "Y"
+            mutated = builder_shell[:index] + replacement + builder_shell[index + 1 :]
+            with self.assertRaisesRegex(
+                ValueError,
+                "raw identity differs from the reviewed security boundary",
+            ):
+                publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
+                    mutated,
+                    label="publisher builder isolation shell",
+                )
+
     def test_exact_candidate_patch_tool_imports_are_closed(self):
         allowed_import_roots = {
             "__future__",
@@ -4004,6 +4068,78 @@ exit 37
             self.assertEqual(completed.returncode, 1)
             self.assertEqual(completed.stderr, "")
 
+    def test_private_download_cleanup_suppresses_utility_path_stderr(self):
+        function_section = download_cleanup_function_source(self.text)
+        function_section = function_section.replace(
+            '/bin/chmod -R u+w -- "$private_dir" > /dev/null 2>&1 || true',
+            'cleanup_chmod "$private_dir" > /dev/null 2>&1 || true',
+            1,
+        )
+        function_section = function_section.replace(
+            '/bin/rm -f -- "$base_image" > /dev/null 2>&1',
+            'cleanup_rm "$base_image" > /dev/null 2>&1',
+            1,
+        )
+        function_section = function_section.replace(
+            '/usr/bin/rmdir -- "$private_dir" > /dev/null 2>&1 || true',
+            'cleanup_rmdir "$private_dir" > /dev/null 2>&1 || true',
+            1,
+        )
+        harness = (
+            'private_dir="/home/runner/work/_temp/patch-private.ABCDEFGHIJ"\n'
+            'base_image="$private_dir/base.gba"\n'
+            'cleanup_chmod() { printf "%s/path-leak\\n" "$1" >&2; return 1; }\n'
+            'cleanup_rm() { printf "%s/path-leak\\n" "$1" >&2; return 1; }\n'
+            'cleanup_rmdir() { printf "%s/path-leak\\n" "$1" >&2; return 1; }\n'
+            + function_section
+            + "set +e\n"
+            + "(exit 19)\n"
+            + "cleanup_download\n"
+        )
+        completed = subprocess.run(
+            ["/bin/bash", "-c", harness],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 19)
+        self.assertEqual(completed.stderr, "")
+
+    def test_pre_summary_cleanup_utilities_suppress_output(self):
+        verify_step = named_step_run_script(
+            self.text,
+            "Verify exact candidate and stage trusted producer",
+        )
+        self.assertIn(
+            '/bin/rm -rf -- "$PATCH_RUNTIME_ROOT" "$PATCH_TOOL_ROOT" > /dev/null 2>&1',
+            verify_step,
+        )
+        dependency_step = named_step_run_script(
+            self.text,
+            "Install trusted isolated-build dependencies",
+        )
+        self.assertIn(
+            '/bin/rm -rf -- "$PATCH_WHEELHOUSE" > /dev/null 2>&1',
+            dependency_step,
+        )
+        download_step = named_step_run_script(
+            self.text,
+            "Download private base image",
+        )
+        self.assertIn(
+            '/bin/chmod -R u+w -- "$private_dir" > /dev/null 2>&1 || true',
+            download_step,
+        )
+        self.assertIn(
+            '/bin/rm -f -- "$base_image" > /dev/null 2>&1',
+            download_step,
+        )
+        self.assertIn(
+            '/usr/bin/rmdir -- "$private_dir" > /dev/null 2>&1 || true',
+            download_step,
+        )
+
     def test_patch_release_docs_publish_no_internal_rom_artifact(self):
         text = PATCH_RELEASE_CASE.read_text(encoding="utf-8")
         compact = " ".join(text.split())
@@ -4349,6 +4485,15 @@ exit 37
                             0,
                             completed.stderr,
                         )
+        builder_shell = builder_isolation_shell_source(self.text)
+        publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
+            builder_shell,
+            label="publisher builder isolation shell",
+        )
+        publisher_shell_contract.validate_patch_release_parser_heredocs(
+            builder_shell,
+            label="publisher builder isolation shell",
+        )
         assert_patch_release_python_c_snippets_compile(self, self.text)
 
         for label, source in (

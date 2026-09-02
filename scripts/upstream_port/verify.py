@@ -29,6 +29,7 @@ from typing import List
 
 from scripts.workflow_pilot import (
     metadata_adapter_contract,
+    publisher_shell_contract,
     summary_continuity_contract,
 )
 
@@ -1677,8 +1678,16 @@ def _literal_run_script(lines, start, end, value, step_label):
     for line in lines[start:end]:
         if line and not line.startswith("        "):
             break
-        script.append(line[8:])
+        script.append(line[8:] if line else "")
     return "\n".join(script) + "\n"
+
+
+def _publisher_literal_run_script(lines, start, end, value, step_label):
+    if value != "|":
+        raise ValueError(f"{step_label} must use a literal run block")
+    return "\n".join(
+        line[8:] for line in lines[start:end] if line.startswith("        ")
+    ) + "\n"
 
 
 def _builder_isolation_shell_from_run_script(script, step_label):
@@ -1979,6 +1988,7 @@ def _parse_step(block, job_name, index):
 
     values = {}
     literal_run_script = None
+    publisher_literal_run_script = None
     for field_index, (name, raw_value, line_index) in enumerate(direct):
         end = (
             direct[field_index + 1][2]
@@ -2008,6 +2018,13 @@ def _parse_step(block, job_name, index):
             )
             if value == "|":
                 literal_run_script = _literal_run_script(
+                    lines,
+                    line_index + 1,
+                    end,
+                    value,
+                    step_label,
+                )
+                publisher_literal_run_script = _publisher_literal_run_script(
                     lines,
                     line_index + 1,
                     end,
@@ -2293,37 +2310,28 @@ def _parse_step(block, job_name, index):
         ):
             raise ValueError(f"{step_label} isolated candidate build differs")
         if index == 3:
-            if literal_run_script is None:
+            if literal_run_script is None or publisher_literal_run_script is None:
                 raise ValueError(f"{step_label} patch-release parser script differs")
-            builder_shell = _builder_isolation_shell_from_run_script(
-                literal_run_script,
-                step_label,
+            builder_shell = publisher_shell_contract.builder_isolation_shell_source(
+                publisher_literal_run_script,
+                label=step_label,
             )
             try:
-                _validate_patch_release_parser_heredocs(builder_shell, step_label)
+                publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
+                    builder_shell,
+                    label=step_label,
+                )
+                publisher_shell_contract.validate_patch_release_parser_heredocs(
+                    builder_shell,
+                    label=step_label,
+                )
             except ValueError as error:
                 raise ValueError(f"{step_label} patch-release parser script differs") from error
-            for command_text in _split_bash_simple_command_strings(
+            if publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
                 builder_shell,
-                step_label,
+                label=step_label,
             ):
-                command_tokens = tuple(shlex.split(command_text))
-                if _is_supervisor_parent_readonly_remount_command(command_tokens):
-                    raise ValueError(f"{step_label} isolated candidate build differs")
-                if _command_references_supervisor(command_tokens, command_text) and not _is_reviewed_supervisor_command(
-                    command_tokens
-                ):
-                    raise ValueError(f"{step_label} isolated candidate build differs")
-                if (
-                    _command_has_remount_readonly_text(command_text)
-                    and command_tokens not in _APPROVED_NONLITERAL_READONLY_MOUNT_COMMANDS
-                    and (
-                        (command_tokens and command_tokens[0] in _DISALLOWED_MOUNT_WRAPPERS)
-                        or any(_token_has_shell_syntax(token) for token in command_tokens)
-                        or any("/usr/bin/mount" in token for token in command_tokens[1:])
-                    )
-                ):
-                    raise ValueError(f"{step_label} isolated candidate build differs")
+                raise ValueError(f"{step_label} isolated candidate build differs")
         if index == 4 and (
             values["id"] != "private-base"
             or values["shell"]
