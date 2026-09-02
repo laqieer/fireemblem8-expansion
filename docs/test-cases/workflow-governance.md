@@ -1482,6 +1482,11 @@ game behavior needs a compensating change.
    `authority_object_id`/`anchor_object_id` point at the pre-handoff state and
    confirm the bind derives those identities from the canonical prior
    authority/anchor chain instead of the stored observation fields.
+   Manually publish a direct authority advance that keeps the carried sealed
+   receipt but swaps in forged receipt-only fields such as `assigned_at`,
+   `input_seal`, `git_seal`, and `result_seal` through a recomputed digest.
+   Confirm the historical reader rejects that forged record before a successor
+   document can read the authority or become eligible.
 6. Reconcile a direct watcher timeout with an authoritative successful
    `github-actions-api` run. Then use an authoritative failed run plus a
    watcher process error and confirm delivery remains failed.

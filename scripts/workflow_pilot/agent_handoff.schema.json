@@ -1009,7 +1009,8 @@
         "consume_sequence",
         "consume_anchor",
         "assignment",
-        "interruption_snapshot"
+        "interruption_snapshot",
+        "history_receipt"
       ],
       "properties": {
         "kind": {
@@ -1050,6 +1051,9 @@
         },
         "interruption_snapshot": {
           "type": "null"
+        },
+        "history_receipt": {
+          "type": "null"
         }
       }
     },
@@ -1069,7 +1073,8 @@
         "consume_sequence",
         "consume_anchor",
         "assignment",
-        "interruption_snapshot"
+        "interruption_snapshot",
+        "history_receipt"
       ],
       "properties": {
         "kind": {
@@ -1110,6 +1115,9 @@
         },
         "interruption_snapshot": {
           "type": "null"
+        },
+        "history_receipt": {
+          "type": "null"
         }
       }
     },
@@ -1129,7 +1137,8 @@
         "consume_sequence",
         "consume_anchor",
         "assignment",
-        "interruption_snapshot"
+        "interruption_snapshot",
+        "history_receipt"
       ],
       "properties": {
         "kind": {
@@ -1177,6 +1186,9 @@
         },
         "interruption_snapshot": {
           "type": "null"
+        },
+        "history_receipt": {
+          "$ref": "#/$defs/historyReceiptHandedOff"
         }
       }
     },
@@ -1196,7 +1208,8 @@
         "consume_sequence",
         "consume_anchor",
         "assignment",
-        "interruption_snapshot"
+        "interruption_snapshot",
+        "history_receipt"
       ],
       "properties": {
         "kind": {
@@ -1244,6 +1257,9 @@
         },
         "interruption_snapshot": {
           "$ref": "#/$defs/historyInterruptionSnapshot"
+        },
+        "history_receipt": {
+          "$ref": "#/$defs/historyReceiptInterrupted"
         }
       }
     },

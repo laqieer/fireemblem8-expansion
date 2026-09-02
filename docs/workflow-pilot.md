@@ -853,6 +853,9 @@ move retries from the new pair; repeated movement fails `authority-moved`.
 The dual-ref observation is checked again immediately before eligibility.
 Rollback or authority A-to-B-to-A replay cannot match the independent
 monotonic anchor. Historical reads also recompute the stored PR binding digest,
+the exact canonical digest of each sealed history receipt, and require the
+signed publication attestation's `history_receipt_digest` to match the full
+carried receipt bytes rather than a projected event subset. They also
 require the signed publication attestation's `binding_expectation` to match
 the stored frozen delivery plus stored live current-base fields, and re-check
 that the frozen base remains an ancestor of the stored live base OID. The

@@ -323,81 +323,26 @@ def publication_observation_digest(
     return hashlib.sha256(normalized_json(binding)).hexdigest()
 def publication_history_receipt_digest(
     history_receipt: dict[str, Any] | None = None,
-    *,
-    handoff_event: dict[str, Any] | None = None,
 ) -> str | None:
-    if history_receipt is None and handoff_event is None:
+    if history_receipt is None:
         return None
-    if history_receipt is not None and handoff_event is not None:
-        raise HandoffDataError(
-            "publication history digest source is ambiguous"
-        )
-    if handoff_event is None:
-        handoff_event = {
-            "kind": "handoff",
-            "handoff_seal": history_receipt["seal"],
-            "handoff_id": history_receipt["handoff_id"],
-            "handoff_kind": history_receipt["handoff_kind"],
-            "lifecycle_state": history_receipt["lifecycle_state"],
-            "candidate_sha": history_receipt["candidate_sha"],
-            "closed_at": history_receipt["closed_at"],
-            "operation_nonce": history_receipt["operation_nonce"],
-            "consume_store_id": history_receipt["consume_store_id"],
-            "consume_sequence": history_receipt["consume_sequence"],
-            "consume_anchor": history_receipt["consume_anchor"],
-            "assignment": copy.deepcopy(history_receipt["assignment"]),
-            "interruption_snapshot": copy.deepcopy(
-                history_receipt["interruption_snapshot"]
-            ),
-        }
-    elif handoff_event["kind"] != "handoff":
-        raise HandoffDataError(
-            "publication history digest only applies to handoff events"
-        )
-    return hashlib.sha256(
-        normalized_json(
-            {
-                key: copy.deepcopy(handoff_event[key])
-                if key in {"assignment", "interruption_snapshot"}
-                else handoff_event[key]
-                for key in (
-                    "kind",
-                    "handoff_seal",
-                    "handoff_id",
-                    "handoff_kind",
-                    "lifecycle_state",
-                    "candidate_sha",
-                    "closed_at",
-                    "operation_nonce",
-                    "consume_store_id",
-                    "consume_sequence",
-                    "consume_anchor",
-                    "assignment",
-                    "interruption_snapshot",
-                )
-            }
-        )
-    ).hexdigest()
+    return hashlib.sha256(normalized_json(history_receipt)).hexdigest()
 def require_publication_attestation_binding(
     publication: dict[str, Any],
     *,
     operation: str,
     new_head_seal: str | None,
     history_receipt: dict[str, Any] | None = None,
-    handoff_event: dict[str, Any] | None = None,
     pull_request_observation: dict[str, Any] | None = None,
     binding_expectation: dict[str, Any] | None = None,
     label: str,
 ) -> None:
-    has_handoff_binding = (
-        history_receipt is not None or handoff_event is not None
-    )
     if operation == "advance":
-        if not has_handoff_binding:
+        if history_receipt is None:
             raise HandoffDataError(
                 f"{label} advance requires a handoff receipt binding"
             )
-    elif has_handoff_binding:
+    elif history_receipt is not None:
         raise HandoffDataError(
             f"{label} non-handoff publication cannot bind a handoff receipt"
         )
@@ -405,8 +350,7 @@ def require_publication_attestation_binding(
         "operation": operation,
         "new_head_seal": new_head_seal,
         "history_receipt_digest": publication_history_receipt_digest(
-            history_receipt,
-            handoff_event=handoff_event,
+            history_receipt
         ),
         "pull_request_observation_digest": publication_observation_digest(
             pull_request_observation
@@ -537,6 +481,7 @@ def load_history_authority_transition_summary(
             "consume_anchor",
             "assignment",
             "interruption_snapshot",
+            "history_receipt",
         ),
     )
     expect_enum(event["kind"], {"genesis", "handoff", "pr_binding"}, f"{label}.event.kind")
@@ -1980,6 +1925,7 @@ def _read_history_authority_commit(
             "consume_anchor",
             "assignment",
             "interruption_snapshot",
+            "history_receipt",
         ),
     )
     event_kind = expect_enum(
@@ -2016,6 +1962,7 @@ def _read_history_authority_commit(
                     "consume_anchor",
                     "assignment",
                     "interruption_snapshot",
+                    "history_receipt",
                 )
             )
             or authority["previous_object_id"] is not None
@@ -2043,6 +1990,10 @@ def _read_history_authority_commit(
                 f"history authority object {object_id} has invalid head_seal"
             )
         if event_kind == "handoff":
+            history_receipt = expect_object(
+                event["history_receipt"],
+                f"history authority object {object_id}.event.history_receipt",
+            )
             if (
                 event["handoff_seal"] is None
                 or event["handoff_seal"] != authority["head_seal"]
@@ -2056,6 +2007,26 @@ def _read_history_authority_commit(
                 or event["consume_sequence"] is None
                 or event["consume_anchor"] is None
                 or event["assignment"] is None
+                or history_receipt.get("seal") != event["handoff_seal"]
+                or history_receipt.get("handoff_id") != event["handoff_id"]
+                or history_receipt.get("handoff_kind")
+                != event["handoff_kind"]
+                or history_receipt.get("lifecycle_state")
+                != event["lifecycle_state"]
+                or history_receipt.get("candidate_sha")
+                != event["candidate_sha"]
+                or history_receipt.get("closed_at") != event["closed_at"]
+                or history_receipt.get("operation_nonce")
+                != event["operation_nonce"]
+                or history_receipt.get("consume_store_id")
+                != event["consume_store_id"]
+                or history_receipt.get("consume_sequence")
+                != event["consume_sequence"]
+                or history_receipt.get("consume_anchor")
+                != event["consume_anchor"]
+                or history_receipt.get("assignment") != event["assignment"]
+                or history_receipt.get("interruption_snapshot")
+                != event["interruption_snapshot"]
             ):
                 raise HandoffDataError(
                     f"history authority object {object_id} has invalid handoff event"
@@ -2063,6 +2034,7 @@ def _read_history_authority_commit(
         elif event_kind == "pr_binding":
             if (
                 event["handoff_seal"] is not None
+                or event["history_receipt"] is not None
                 or binding is None
                 or any(
                     event[field] is not None
@@ -2126,7 +2098,9 @@ def _read_history_authority_commit(
             "pr_binding": "bind",
         }[event_kind],
         new_head_seal=authority["head_seal"] if event_kind == "handoff" else None,
-        handoff_event=event if event_kind == "handoff" else None,
+        history_receipt=(
+            event["history_receipt"] if event_kind == "handoff" else None
+        ),
         pull_request_observation=(
             binding if event_kind == "pr_binding" else None
         ),
@@ -2588,9 +2562,24 @@ def read_history_authority(
         "anchor_object_id": anchor_object_id,
         "observation": observation,
         "history_events": [
-            event
-            for event in reversed(history_events)
-            if event["kind"] == "handoff"
+            {
+                **event,
+                "history_receipt": receipt,
+            }
+            for event, receipt in zip(
+                (
+                    copy.deepcopy(event)
+                    for event in reversed(history_events)
+                    if event["kind"] == "handoff"
+                ),
+                validate_prior_handoffs(
+                    [
+                        event["history_receipt"]
+                        for event in reversed(history_events)
+                        if event["kind"] == "handoff"
+                    ]
+                ),
+            )
         ],
         **authority,
     }
@@ -2758,6 +2747,7 @@ def plan_history_authority(
                 "consume_anchor": None,
                 "assignment": None,
                 "interruption_snapshot": None,
+                "history_receipt": None,
             },
             "previous_object_id": None,
         }
@@ -2829,6 +2819,7 @@ def plan_history_authority(
                     "interruption_snapshot": closed[
                         "interruption_snapshot"
                     ],
+                    "history_receipt": closed,
                 },
                 "previous_object_id": expected_object_id,
             }
@@ -3000,6 +2991,7 @@ def plan_history_authority(
                     "consume_anchor": None,
                     "assignment": None,
                     "interruption_snapshot": None,
+                    "history_receipt": None,
                 },
                 "previous_object_id": expected_object_id,
             }
@@ -7294,27 +7286,12 @@ def validate_document(
         raise HandoffDataError(
             "prior handoff history is reset, truncated, or not at canonical head"
         )
-    expected_history_events = [
-        {
-            "kind": "handoff",
-            "handoff_seal": prior["seal"],
-            "handoff_id": prior["handoff_id"],
-            "handoff_kind": prior["handoff_kind"],
-            "lifecycle_state": prior["lifecycle_state"],
-            "candidate_sha": prior["candidate_sha"],
-            "closed_at": prior["closed_at"],
-            "operation_nonce": prior["operation_nonce"],
-            "consume_store_id": prior["consume_store_id"],
-            "consume_sequence": prior["consume_sequence"],
-            "consume_anchor": prior["consume_anchor"],
-            "assignment": prior["assignment"],
-            "interruption_snapshot": prior["interruption_snapshot"],
-        }
-        for prior in prior_handoffs
-    ]
-    if canonical_authority["history_events"] != expected_history_events:
+    if [
+        event["history_receipt"]
+        for event in canonical_authority["history_events"]
+    ] != prior_handoffs:
         raise HandoffDataError(
-            "protected authority events do not match handoff history"
+            "protected authority receipts do not match handoff history"
         )
     protection = coordinator_receipt["protection"]
     if (
