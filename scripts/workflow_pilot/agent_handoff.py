@@ -10,6 +10,7 @@ import copy
 import hashlib
 import os
 import re
+import stat
 import subprocess
 import sys
 from collections import Counter
@@ -137,6 +138,8 @@ PROVEN_HOST_ONLY_PREFIXES = (
     "scripts/workflow_pilot/",
     "tests/workflows/",
 )
+TRUSTED_INSTALLATION_MAX_BYTES = 1024 * 1024
+TRUSTED_INSTALLATION_READ_BYTES = TRUSTED_INSTALLATION_MAX_BYTES + 1
 RSA_SHA256_DIGEST_INFO_PREFIX = bytes.fromhex(
     "3031300d060960864801650304020105000420"
 )
@@ -146,10 +149,8 @@ TRUSTED_PUSH_SUMMARY_EXEMPT_REJECTIONS = frozenset(
     {"authoritative-run-failed", "authoritative-run-incomplete"}
 )
 
-
 class HandoffDataError(Exception):
     """The handoff document cannot produce trustworthy coordination evidence."""
-
 
 def _raise_pilot_error(function, *args, **kwargs):
     try:
@@ -157,61 +158,47 @@ def _raise_pilot_error(function, *args, **kwargs):
     except reporter.PilotDataError as error:
         raise HandoffDataError(str(error)) from error
 
-
 def load_json(path: Path) -> Any:
     try:
         return _raise_pilot_error(reporter.load_json, path)
     except OSError as error:
         raise HandoffDataError(f"cannot read handoff fixture {path}: {error}") from error
 
-
 def normalized_json(value: Any) -> bytes:
     return reporter.normalized_json(value)
-
 
 def expect_object(value: Any, label: str) -> dict[str, Any]:
     return _raise_pilot_error(reporter.expect_object, value, label)
 
-
 def expect_list(value: Any, label: str) -> list[Any]:
     return _raise_pilot_error(reporter.expect_list, value, label)
-
 
 def expect_keys(value: dict[str, Any], label: str, required: Iterable[str]) -> None:
     _raise_pilot_error(reporter.expect_keys, value, label, required)
 
-
 def expect_string(value: Any, label: str, allow_empty: bool = False) -> str:
     return _raise_pilot_error(reporter.expect_string, value, label, allow_empty)
-
 
 def expect_int(value: Any, label: str, minimum: int | None = None) -> int:
     return _raise_pilot_error(reporter.expect_int, value, label, minimum)
 
-
 def expect_bool(value: Any, label: str) -> bool:
     return _raise_pilot_error(reporter.expect_bool, value, label)
-
 
 def expect_enum(value: Any, allowed: set[str], label: str) -> str:
     return _raise_pilot_error(reporter.expect_enum, value, allowed, label)
 
-
 def expect_sha(value: Any, label: str, nullable: bool = False) -> str | None:
     return _raise_pilot_error(reporter.expect_sha, value, label, nullable)
-
 
 def parse_time(value: Any, label: str, nullable: bool = False) -> datetime | None:
     return _raise_pilot_error(reporter.parse_time, value, label, nullable)
 
-
 def expect_unique(values: Iterable[Any], label: str) -> None:
     _raise_pilot_error(reporter.expect_unique, values, label)
 
-
 def run_git(repository_root: Path, *arguments: str) -> bytes:
     return _raise_pilot_error(reporter.run_git, repository_root, *arguments)
-
 
 def run_git_online(repository_root: Path, *arguments: str) -> bytes:
     try:
@@ -232,7 +219,6 @@ def run_git_online(repository_root: Path, *arguments: str) -> bytes:
         + (f": {detail}" if detail else "")
     )
 
-
 def authoritative_current_time(
     value: datetime | None,
     *,
@@ -243,7 +229,6 @@ def authoritative_current_time(
     if not isinstance(value, datetime) or value.tzinfo is None:
         raise HandoffDataError(f"{label} must be an aware UTC datetime")
     return value.astimezone(timezone.utc).replace(microsecond=0)
-
 
 def require_fresh_live_timestamp(
     observed_at: datetime,
@@ -258,7 +243,6 @@ def require_fresh_live_timestamp(
     ):
         raise HandoffDataError(f"{label} is future-dated or stale")
 
-
 def whole_second_duration(
     start: datetime,
     end: datetime,
@@ -272,7 +256,6 @@ def whole_second_duration(
     if elapsed != elapsed.to_integral_value():
         return None
     return int(elapsed)
-
 
 def git_commit_is_ancestor(
     repository_root: Path,
@@ -311,7 +294,6 @@ def git_commit_is_ancestor(
         + (f": {detail}" if detail else "")
     )
 
-
 def publication_binding_expectation(
     *,
     delivery_expectation: dict[str, Any],
@@ -338,7 +320,6 @@ def publication_binding_expectation(
         "coordinator_database_id": coordinator_database_id,
     }
 
-
 def publication_binding_expectation_for_observation(
     delivery_expectation: dict[str, Any],
     binding: dict[str, Any] | None,
@@ -354,14 +335,12 @@ def publication_binding_expectation_for_observation(
         current_base_oid=binding["base_oid"],
     )
 
-
 def publication_observation_digest(
     binding: dict[str, Any] | None,
 ) -> str | None:
     if binding is None:
         return None
     return hashlib.sha256(normalized_json(binding)).hexdigest()
-
 
 def validate_historical_pr_binding_target(
     current_authority: dict[str, Any],
@@ -408,7 +387,6 @@ def validate_historical_pr_binding_target(
         f"{label} prior sealed handoff candidate_sha",
     )
     return expected_branch, expected_candidate_sha
-
 
 def load_history_authority_transition_summary(
     repository_root: Path,
@@ -492,7 +470,6 @@ def load_history_authority_transition_summary(
     expect_enum(event["kind"], {"genesis", "handoff", "pr_binding"}, f"{label}.event.kind")
     return authority
 
-
 def require_atomic_push_capability(
     repository_root: Path,
     updates: list[tuple[str, str]],
@@ -527,10 +504,8 @@ def require_atomic_push_capability(
             + (f": {detail}" if detail else "")
         )
 
-
 def validate_repository_root(repository_root: Path) -> Path:
     return _raise_pilot_error(reporter.validate_repository_root, repository_root)
-
 
 def _parse_actor(
     login_value: Any,
@@ -552,10 +527,8 @@ def _parse_actor(
         "identity": f"github-id:{database_id}",
     }
 
-
 def _actors_match(left: dict[str, Any], right: dict[str, Any]) -> bool:
     return left["database_id"] == right["database_id"]
-
 
 def user_bypass_actor(database_id: int) -> dict[str, Any]:
     return {
@@ -564,7 +537,6 @@ def user_bypass_actor(database_id: int) -> dict[str, Any]:
         "database_id": database_id,
         "bypass_mode": "always",
     }
-
 
 def _parse_signer_public(raw: Any, label: str) -> dict[str, Any]:
     signer = expect_object(raw, label)
@@ -647,7 +619,6 @@ def _parse_signer_public(raw: Any, label: str) -> dict[str, Any]:
         raise HandoffDataError(f"{label}.key_id does not match public material")
     return signer
 
-
 def verify_external_signature(
     signer: dict[str, Any],
     payload: bytes,
@@ -676,12 +647,10 @@ def verify_external_signature(
     if padding_size < 8 or encoded != expected:
         raise HandoffDataError(f"{label} does not verify")
 
-
 def signed_record_payload(domain: bytes, record: dict[str, Any]) -> bytes:
     return domain + normalized_json(
         {key: value for key, value in record.items() if key != "signature"}
     )
-
 
 def worktree_identity(repository_root: Path) -> str:
     repository_root = validate_repository_root(repository_root)
@@ -702,7 +671,6 @@ def worktree_identity(repository_root: Path) -> str:
         GIT_SEAL_DOMAIN + b"worktree\0" + normalized_json(payload)
     ).hexdigest()
 
-
 def _path_within(path: Path, parent: Path) -> bool:
     try:
         path.relative_to(parent)
@@ -710,6 +678,231 @@ def _path_within(path: Path, parent: Path) -> bool:
         return False
     return True
 
+def _trusted_path_signature(metadata: os.stat_result) -> tuple[int, ...]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_size,
+        metadata.st_nlink,
+        getattr(metadata, "st_mtime_ns", 0),
+        getattr(metadata, "st_ctime_ns", 0),
+    )
+
+def _require_owner_controlled(
+    metadata: os.stat_result,
+    *,
+    label: str,
+) -> None:
+    if metadata.st_uid != os.getuid() or metadata.st_mode & 0o022:
+        raise HandoffDataError(
+            f"{label} must be owner-controlled and not group/other writable"
+        )
+
+def _validate_trusted_entry(
+    metadata: os.stat_result,
+    *,
+    label: str,
+    directory: bool,
+    require_owner_controlled: bool = True,
+    max_bytes: int | None = None,
+    require_single_link: bool = False,
+) -> None:
+    if directory:
+        if not stat.S_ISDIR(metadata.st_mode):
+            raise HandoffDataError(f"{label} must be a directory")
+    elif not stat.S_ISREG(metadata.st_mode):
+        raise HandoffDataError(f"{label} must be a regular file")
+    if require_owner_controlled:
+        _require_owner_controlled(metadata, label=label)
+    if directory:
+        return
+    if max_bytes is not None and metadata.st_size > max_bytes:
+        raise HandoffDataError(f"{label} exceeds 1 MiB")
+    if require_single_link and metadata.st_nlink != 1:
+        raise HandoffDataError(f"{label} must not be hardlinked")
+
+def _open_trusted_entry(
+    name: str,
+    *,
+    dir_fd: int,
+    label: str,
+    directory: bool,
+    require_owner_controlled: bool = True,
+    max_bytes: int | None = None,
+    require_single_link: bool = False,
+) -> tuple[int, os.stat_result]:
+    try:
+        metadata = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+    except OSError as error:
+        raise HandoffDataError(f"cannot inspect {label}: {error}") from error
+    _validate_trusted_entry(
+        metadata,
+        label=label,
+        directory=directory,
+        require_owner_controlled=require_owner_controlled,
+        max_bytes=max_bytes,
+        require_single_link=require_single_link,
+    )
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
+    if directory:
+        flags |= getattr(os, "O_DIRECTORY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(name, flags, dir_fd=dir_fd)
+    except OSError as error:
+        raise HandoffDataError(f"cannot open {label}: {error}") from error
+    try:
+        opened = os.fstat(descriptor)
+    except OSError as error:
+        os.close(descriptor)
+        raise HandoffDataError(f"cannot inspect opened {label}: {error}") from error
+    _validate_trusted_entry(
+        opened,
+        label=label,
+        directory=directory,
+        require_owner_controlled=require_owner_controlled,
+        max_bytes=max_bytes,
+        require_single_link=require_single_link,
+    )
+    if _trusted_path_signature(opened) != _trusted_path_signature(metadata):
+        os.close(descriptor)
+        raise HandoffDataError(f"{label} changed before read")
+    return descriptor, opened
+
+def _read_trusted_file(
+    descriptor: int,
+    metadata: os.stat_result,
+    *,
+    label: str,
+    max_bytes: int,
+) -> bytes:
+    raw = bytearray()
+    try:
+        while len(raw) < TRUSTED_INSTALLATION_READ_BYTES:
+            chunk = os.read(
+                descriptor,
+                min(65536, TRUSTED_INSTALLATION_READ_BYTES - len(raw)),
+            )
+            if not chunk:
+                break
+            raw.extend(chunk)
+        final = os.fstat(descriptor)
+    except OSError as error:
+        raise HandoffDataError(f"cannot read {label}: {error}") from error
+    if len(raw) > max_bytes:
+        raise HandoffDataError(f"{label} exceeds 1 MiB")
+    if (
+        _trusted_path_signature(final) != _trusted_path_signature(metadata)
+        or len(raw) != metadata.st_size
+    ):
+        raise HandoffDataError(f"{label} changed while being read")
+    return bytes(raw)
+
+def _parse_trusted_json(raw: bytes, label: str) -> Any:
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeError as error:
+        raise HandoffDataError(f"{label} is not valid UTF-8") from error
+    return _raise_pilot_error(reporter.parse_json, text, label)
+
+def _open_trusted_directory_path(
+    path: Path,
+    *,
+    label: str,
+) -> tuple[Path, int]:
+    absolute_path = Path(os.path.abspath(os.fspath(path)))
+    components = absolute_path.parts[1:]
+    try:
+        descriptor = os.open(
+            os.path.sep,
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_DIRECTORY", 0),
+        )
+    except OSError as error:
+        raise HandoffDataError(
+            f"cannot open filesystem root for {label}: {error}"
+        ) from error
+    current_path = Path(os.path.sep)
+    try:
+        for index, component in enumerate(components):
+            current_path /= component
+            next_descriptor, _metadata = _open_trusted_entry(
+                component,
+                dir_fd=descriptor,
+                label=f"{label} path {current_path}",
+                directory=True,
+                require_owner_controlled=index == len(components) - 1,
+            )
+            os.close(descriptor)
+            descriptor = next_descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
+    return absolute_path, descriptor
+
+def _read_trusted_installation_member(
+    installation_root: Path,
+    installation_descriptor: int,
+    raw_path: str,
+    *,
+    label: str,
+    repository_root: Path,
+    git_dir: Path,
+) -> tuple[Path, bytes]:
+    requested = Path(expect_string(raw_path, label))
+    absolute_path = (
+        requested
+        if requested.is_absolute()
+        else installation_root / requested
+    )
+    absolute_path = Path(os.path.abspath(os.fspath(absolute_path)))
+    if not _path_within(absolute_path, installation_root):
+        raise HandoffDataError(
+            f"{label} must stay rooted under the coordinator installation"
+        )
+    if _path_within(absolute_path, repository_root) or _path_within(
+        absolute_path,
+        git_dir,
+    ):
+        raise HandoffDataError(
+            f"{label} must stay outside the candidate worktree and Git dir"
+        )
+    relative = absolute_path.relative_to(installation_root)
+    if not relative.parts:
+        raise HandoffDataError(f"{label} must name a regular file")
+    current_descriptor = os.dup(installation_descriptor)
+    try:
+        for component in relative.parts[:-1]:
+            next_descriptor, _metadata = _open_trusted_entry(
+                component,
+                dir_fd=current_descriptor,
+                label=f"{label} parent",
+                directory=True,
+            )
+            os.close(current_descriptor)
+            current_descriptor = next_descriptor
+        file_descriptor, metadata = _open_trusted_entry(
+            relative.parts[-1],
+            dir_fd=current_descriptor,
+            label=label,
+            directory=False,
+            max_bytes=TRUSTED_INSTALLATION_MAX_BYTES,
+            require_single_link=True,
+        )
+        try:
+            return absolute_path, _read_trusted_file(
+                file_descriptor,
+                metadata,
+                label=label,
+                max_bytes=TRUSTED_INSTALLATION_MAX_BYTES,
+            )
+        finally:
+            os.close(file_descriptor)
+    finally:
+        os.close(current_descriptor)
 
 def load_coordinator_installation(
     repository_root: Path,
@@ -723,40 +916,39 @@ def load_coordinator_installation(
                 "trusted coordinator installation is required"
             )
         installation_path = Path(raw_path)
-    try:
-        installation_root = installation_path.resolve(strict=True)
-    except OSError as error:
-        raise HandoffDataError(
-            f"trusted coordinator installation is unavailable: {error}"
-        ) from error
-    if not installation_root.is_dir() or _path_within(
-        installation_root,
-        repository_root,
-    ):
-        raise HandoffDataError(
-            "trusted coordinator installation must be outside the candidate "
-            "worktree"
-        )
-    manifest_path = installation_root / "installation.json"
-    for protected_path in (
-        installation_root,
-        manifest_path,
-    ):
-        try:
-            metadata = protected_path.stat()
-        except OSError as error:
-            raise HandoffDataError(
-                f"coordinator installation metadata is unavailable: {error}"
-            ) from error
-        if metadata.st_uid != os.getuid() or metadata.st_mode & 0o022:
-            raise HandoffDataError(
-                "coordinator installation must be owner-controlled and "
-                "not group/other writable"
-            )
-    manifest = expect_object(
-        load_json(manifest_path),
-        "coordinator installation",
+    git_dir = Path(
+        run_git(repository_root, "rev-parse", "--absolute-git-dir")
+        .decode("utf-8")
+        .strip()
+    ).resolve()
+    installation_root, installation_descriptor = _open_trusted_directory_path(
+        installation_path,
+        label="trusted coordinator installation",
     )
+    bootstrap_descriptor = os.dup(installation_descriptor)
+    try:
+        if _path_within(installation_root, repository_root) or _path_within(
+            installation_root,
+            git_dir,
+        ):
+            raise HandoffDataError(
+                "trusted coordinator installation must be outside the "
+                "candidate worktree"
+            )
+        manifest_path, manifest_raw = _read_trusted_installation_member(
+            installation_root,
+            installation_descriptor,
+            "installation.json",
+            label="coordinator installation manifest",
+            repository_root=repository_root,
+            git_dir=git_dir,
+        )
+        manifest = expect_object(
+            _parse_trusted_json(manifest_raw, str(manifest_path)),
+            "coordinator installation",
+        )
+    finally:
+        os.close(installation_descriptor)
     expect_keys(
         manifest,
         "coordinator installation",
@@ -946,28 +1138,17 @@ def load_coordinator_installation(
         "coordinator installation.bootstrap_validator",
         ("path",),
     )
-    bootstrap_path = Path(
-        expect_string(
-            bootstrap["path"],
-            "coordinator installation.bootstrap_validator.path",
-        )
-    )
     try:
-        bootstrap_path = bootstrap_path.resolve(strict=True)
-    except OSError as error:
-        raise HandoffDataError(
-            f"external bootstrap validator is unavailable: {error}"
-        ) from error
-    if (
-        not bootstrap_path.is_file()
-        or _path_within(bootstrap_path, repository_root)
-        or bootstrap_path.stat().st_uid != os.getuid()
-        or bootstrap_path.stat().st_mode & 0o022
-    ):
-        raise HandoffDataError(
-            "external bootstrap validator must be a file outside the "
-            "candidate worktree"
+        bootstrap_path, bootstrap_source = _read_trusted_installation_member(
+            installation_root,
+            bootstrap_descriptor,
+            bootstrap["path"],
+            label="coordinator installation.bootstrap_validator.path",
+            repository_root=repository_root,
+            git_dir=git_dir,
         )
+    finally:
+        os.close(bootstrap_descriptor)
     signer = _parse_signer_public(
         manifest["signer_public"],
         "coordinator installation.signer_public",
@@ -979,9 +1160,9 @@ def load_coordinator_installation(
         "_authorized": authorized,
         "_authorized_non_user_bypass": non_user_bypass,
         "_bootstrap_validator": bootstrap_path,
+        "_bootstrap_validator_source": bootstrap_source,
         "_signer": signer,
     }
-
 def _git_blob(
     repository_root: Path,
     commit_sha: str,
@@ -1011,7 +1192,6 @@ def _git_blob(
         blob_oid,
         run_git(repository_root, "cat-file", "blob", blob_oid),
     )
-
 
 def _allowed_check_execution(
     contract: str,
@@ -1052,12 +1232,12 @@ def _allowed_check_execution(
             repository_root,
             installation_path,
         )
-        validator = installation["_bootstrap_validator"]
+        validator = installation["_bootstrap_validator_source"]
         return (
             [
                 "/usr/bin/python3",
                 "-I",
-                str(validator),
+                "-",
                 "--repository-root",
                 str(repository_root),
                 "--parent",
@@ -1065,20 +1245,18 @@ def _allowed_check_execution(
                 "--candidate",
                 candidate_sha,
             ],
-            None,
+            validator,
             {
                 "mode": "external-bootstrap",
-                "sha256": hashlib.sha256(validator.read_bytes()).hexdigest(),
+                "sha256": hashlib.sha256(validator).hexdigest(),
             },
         )
     raise HandoffDataError(f"unsupported check contract {contract!r}")
-
 
 def _check_output_sha256(stdout: bytes, stderr: bytes) -> str:
     return hashlib.sha256(
         b"stdout\0" + stdout + b"\0stderr\0" + stderr
     ).hexdigest()
-
 
 def seal_check_receipt(receipt: dict[str, Any]) -> str:
     payload = {
@@ -1087,7 +1265,6 @@ def seal_check_receipt(receipt: dict[str, Any]) -> str:
     return hashlib.sha256(
         CHECK_RECEIPT_SEAL_DOMAIN + normalized_json(payload)
     ).hexdigest()
-
 
 def execute_allowed_check(
     *,
@@ -1145,7 +1322,6 @@ def execute_allowed_check(
     }
     receipt["seal"] = seal_check_receipt(receipt)
     return receipt
-
 
 def _parse_check_receipts(
     raw_receipts: Any,
@@ -1256,7 +1432,6 @@ def _parse_check_receipts(
         receipts[receipt_id] = receipt
     return receipts
 
-
 def _verify_check_receipt(
     receipt: dict[str, Any],
     *,
@@ -1309,7 +1484,6 @@ def _verify_check_receipt(
         errors.add("required-check-failed")
     return errors
 
-
 def seal_history_receipt(receipt: dict[str, Any]) -> str:
     payload = {
         key: value
@@ -1320,18 +1494,15 @@ def seal_history_receipt(receipt: dict[str, Any]) -> str:
         HISTORY_RECEIPT_SEAL_DOMAIN + normalized_json(payload)
     ).hexdigest()
 
-
 def history_authority_ref(issue: int, pull_request: int | None) -> str:
     expect_int(issue, "history authority issue", 1)
     if pull_request is not None:
         expect_int(pull_request, "history authority pull request", 1)
     return f"{HISTORY_REF_PREFIX}/issue-{issue}"
 
-
 def history_anchor_ref(issue: int) -> str:
     expect_int(issue, "history authority issue", 1)
     return f"{HISTORY_ANCHOR_REF_PREFIX}/issue-{issue}"
-
 
 def _remote_ref_oid(
     repository_root: Path,
@@ -1363,7 +1534,6 @@ def _remote_ref_oid(
             f"remote authority {reference!r} returned malformed identity"
         )
     return object_id
-
 
 def _fetch_remote_authority(
     repository_root: Path,
@@ -1417,7 +1587,6 @@ def _fetch_remote_authority(
             f"remote authority {reference!r} has invalid object type"
         )
 
-
 def _parse_authority_json(
     raw: bytes,
     label: str,
@@ -1430,7 +1599,6 @@ def _parse_authority_json(
         _raise_pilot_error(reporter.parse_json, text, label),
         label,
     )
-
 
 def read_remote_repository_identity(repository_root: Path) -> str:
     object_id = _remote_ref_oid(
@@ -1474,7 +1642,6 @@ def read_remote_repository_identity(repository_root: Path) -> str:
         identity["repository"],
         "remote repository identity.repository",
     )
-
 
 def _read_history_authority_commit(
     repository_root: Path,
@@ -1951,7 +2118,6 @@ def _read_history_authority_commit(
         )
     return authority, parents
 
-
 def _read_history_anchor_commit(
     repository_root: Path,
     object_id: str,
@@ -2038,7 +2204,6 @@ def _read_history_anchor_commit(
             )
     return anchor, parents
 
-
 def _history_observation(
     reference: str,
     object_id: str,
@@ -2058,7 +2223,6 @@ def _history_observation(
         HISTORY_OBSERVATION_SEAL_DOMAIN + normalized_json(payload)
     ).hexdigest()
     return payload
-
 
 def confirm_history_authority_observation(
     repository_root: Path,
@@ -2138,7 +2302,6 @@ def confirm_history_authority_observation(
     )
     if current != object_id or current_anchor != anchor_object_id:
         raise HandoffDataError("authority-moved")
-
 
 def read_history_authority(
     repository_root: Path,
@@ -2409,7 +2572,6 @@ def read_history_authority(
         **authority,
     }
 
-
 def plan_history_authority(
     repository_root: Path,
     repository: str,
@@ -2663,14 +2825,22 @@ def plan_history_authority(
             root_assignment = current["history_events"][0]["assignment"]
             latest_handoff = current["history_events"][-1]
             delivery = current["delivery_expectation"]
-            frozen_user_ids = [
+            frozen_user_ids = {
                 item["database_id"]
                 for item in current["authorized_bypass_actors"]
                 if item["actor_type"] == "User"
-            ]
-            if len(frozen_user_ids) != 1:
+            }
+            installation_user_ids = {
+                actor["database_id"] for actor in installation["_authorized"]
+            }
+            if not frozen_user_ids:
                 raise HandoffDataError(
-                    "PR binding requires one frozen coordinator user"
+                    "PR binding requires at least one frozen coordinator user"
+                )
+            if frozen_user_ids != installation_user_ids:
+                raise HandoffDataError(
+                    "coordinator installation authorized coordinators do not "
+                    "match frozen authority"
                 )
             if latest_handoff["candidate_sha"] is None:
                 raise HandoffDataError(
@@ -2731,11 +2901,14 @@ def plan_history_authority(
                 or observation["head_repository_full_name"]
                 != delivery["head_repository_full_name"]
                 or observation["head_oid"] != latest_handoff["candidate_sha"]
-                or observation["coordinator_database_id"] != frozen_user_ids[0]
             ):
                 raise HandoffDataError(
                     "GitHub PR observation does not match frozen delivery "
                     "inputs"
+                )
+            if observation["coordinator_database_id"] not in frozen_user_ids:
+                raise HandoffDataError(
+                    "PR binding actor is not an authorized coordinator"
                 )
             if (
                 observation["base_oid"] != actual_base_oid
@@ -2767,17 +2940,10 @@ def plan_history_authority(
                 pull_request=pull_request,
                 head_branch=root_assignment["expected_branch"],
                 head_oid=latest_handoff["candidate_sha"],
-                coordinator_database_id=frozen_user_ids[0],
+                coordinator_database_id=observation["coordinator_database_id"],
                 current_base_oid=observation["base_oid"],
             )
             binding = copy.deepcopy(observation)
-            if not any(
-                actor["database_id"] == binding["coordinator_database_id"]
-                for actor in installation["_authorized"]
-            ):
-                raise HandoffDataError(
-                    "PR binding actor is not an authorized coordinator"
-                )
             record = {
                 "schema_version": 2,
                 "repository": repository,
@@ -2888,12 +3054,10 @@ def plan_history_authority(
         ),
     }
 
-
 def seal_git_authority(authority: dict[str, Any]) -> str:
     return hashlib.sha256(
         GIT_SEAL_DOMAIN + normalized_json(authority)
     ).hexdigest()
-
 
 def seal_handoff_result(result: dict[str, Any]) -> str:
     payload = {
@@ -2902,7 +3066,6 @@ def seal_handoff_result(result: dict[str, Any]) -> str:
     return hashlib.sha256(
         RESULT_SEAL_DOMAIN + normalized_json(payload)
     ).hexdigest()
-
 
 def validate_prior_handoffs(raw_history: Any) -> list[dict[str, Any]]:
     history = []
@@ -3199,7 +3362,6 @@ def validate_prior_handoffs(raw_history: Any) -> list[dict[str, Any]]:
     expect_unique(operation_nonces, "prior handoff operation nonces")
     return history
 
-
 def make_history_receipt(
     document: dict[str, Any],
     result: dict[str, Any],
@@ -3282,7 +3444,6 @@ def make_history_receipt(
     }
     receipt["seal"] = seal_history_receipt(receipt)
     return receipt
-
 
 def _parse_reporter_result_handoffs(raw_handoffs: Any) -> list[dict[str, Any]]:
     parsed = []
@@ -3474,13 +3635,11 @@ def _parse_reporter_result_handoffs(raw_handoffs: Any) -> list[dict[str, Any]]:
     expect_unique(handoff_ids, "handoff reporter result handoff IDs")
     return parsed
 
-
 def _sealed_handoff_events(authority: dict[str, Any]) -> dict[str, dict[str, Any]]:
     events = {event["handoff_id"]: event for event in authority["history_events"]}
     if authority["event"]["kind"] == "handoff":
         events[authority["event"]["handoff_id"]] = authority["event"]
     return events
-
 
 def _handoff_assignment_record(handoff: dict[str, Any]) -> dict[str, Any]:
     return {
@@ -3506,7 +3665,6 @@ def _handoff_assignment_record(handoff: dict[str, Any]) -> dict[str, Any]:
             "max_peak_rss_bytes",
         )
     }
-
 
 def _historical_reporter_handoffs(
     document: dict[str, Any],
@@ -3743,7 +3901,6 @@ def _historical_reporter_handoffs(
         rows.append(row)
     return rows
 
-
 def _verified_reporter_handoffs(
     document: dict[str, Any],
     source_root: Path,
@@ -3769,7 +3926,6 @@ def _verified_reporter_handoffs(
         current_authority,
     )
 
-
 def _verified_reporter_git_authority(
     document: dict[str, Any],
     source_root: Path,
@@ -3789,7 +3945,6 @@ def _verified_reporter_git_authority(
                 "handoff reporter coordinator receipt issued_at",
             ),
         )["git_authority"]
-
     raw_handoffs = expect_list(
         document["handoffs"],
         "handoff reporter record.document.handoffs",
@@ -3846,7 +4001,6 @@ def _verified_reporter_git_authority(
         ],
     }
 
-
 def derive_reporter_result_summary(
     document: dict[str, Any],
     result: dict[str, Any],
@@ -3870,7 +4024,6 @@ def derive_reporter_result_summary(
         raise HandoffDataError(
             "handoff reporter result repository contradicts its document"
         )
-
     coordinators = _parse_coordinators(copy.deepcopy(document["coordinators"]))
     if coordinators:
         expected_coordinator_id = coordinators[0]["id"]
@@ -3880,9 +4033,7 @@ def derive_reporter_result_summary(
         raise HandoffDataError(
             "handoff reporter result coordinator identity contradicts its document"
         )
-
     delivery_graph = evaluate_delivery_graph(copy.deepcopy(document["delivery_graph"]))
-
     runs = _parse_runs(copy.deepcopy(document["workflow_runs"]))
     watchers = _parse_watchers(copy.deepcopy(document["watchers"]))
     global_rejections = set()
@@ -3927,7 +4078,6 @@ def derive_reporter_result_summary(
             global_rejections.add("authoritative-run-incomplete")
         elif run["conclusion"] != "success":
             global_rejections.add("authoritative-run-failed")
-
     local_rejections = {
         code for handoff in reported_handoffs for code in handoff["rejection_codes"]
     }
@@ -3978,7 +4128,6 @@ def derive_reporter_result_summary(
     }
     return summary, sorted(global_rejections), delivery_graph, watcher_results
 
-
 def reporter_record(
     document: dict[str, Any],
     result: dict[str, Any],
@@ -3997,7 +4146,6 @@ def reporter_record(
     }
     verify_reporter_record(record, revalidate_git=False)
     return record
-
 
 def verify_reporter_record(
     raw_record: Any,
@@ -4291,7 +4439,6 @@ def verify_reporter_record(
         )
     return record
 
-
 def _repository_from_origin(repository_root: Path) -> str:
     origin = (
         run_git(repository_root, "remote", "get-url", "origin")
@@ -4310,7 +4457,6 @@ def _repository_from_origin(repository_root: Path) -> str:
         )
     return repository
 
-
 def _validate_repository_path(value: Any, label: str, *, prefix: bool) -> str:
     path = expect_string(value, label)
     parts = Path(path.rstrip("/")).parts
@@ -4319,7 +4465,6 @@ def _validate_repository_path(value: Any, label: str, *, prefix: bool) -> str:
     if prefix and not path.endswith("/"):
         return path
     return path
-
 
 def _parse_states(raw_states: Any, label: str) -> tuple[list[dict[str, Any]], tuple[str, ...]]:
     states = expect_list(raw_states, f"{label}.states")
@@ -4343,7 +4488,6 @@ def _parse_states(raw_states: Any, label: str) -> tuple[list[dict[str, Any]], tu
     if names[0] != "assignment_sent":
         raise HandoffDataError(f"{label}.states must start with assignment_sent")
     return parsed, tuple(names)
-
 
 def _parse_evidence(raw_evidence: Any, label: str) -> dict[str, dict[str, Any]]:
     evidence: dict[str, dict[str, Any]] = {}
@@ -4383,7 +4527,6 @@ def _parse_evidence(raw_evidence: Any, label: str) -> dict[str, dict[str, Any]]:
         expect_string(item["detail"], f"{evidence_label}.detail")
         evidence[evidence_id] = item
     return evidence
-
 
 def _parse_handoff(raw: Any, index: int) -> dict[str, Any]:
     label = f"handoffs[{index}]"
@@ -4446,7 +4589,6 @@ def _parse_handoff(raw: Any, index: int) -> dict[str, Any]:
     expect_sha(handoff["assigned_parent_sha"], f"{label}.assigned_parent_sha")
     expect_string(handoff["expected_branch"], f"{label}.expected_branch")
     expect_string(handoff["allowed_worktree"], f"{label}.allowed_worktree")
-
     allowed_scope = expect_list(handoff["allowed_scope"], f"{label}.allowed_scope")
     if not allowed_scope:
         raise HandoffDataError(f"{label}.allowed_scope must not be empty")
@@ -4457,12 +4599,10 @@ def _parse_handoff(raw: Any, index: int) -> dict[str, Any]:
             prefix=True,
         )
     expect_unique(allowed_scope, f"{label}.allowed_scope")
-
     finding_ids = expect_list(handoff["finding_ids"], f"{label}.finding_ids")
     for finding_index, finding_id in enumerate(finding_ids):
         expect_string(finding_id, f"{label}.finding_ids[{finding_index}]")
     expect_unique(finding_ids, f"{label}.finding_ids")
-
     acceptance_ids = []
     required_evidence_ids = set()
     for criterion_index, raw_criterion in enumerate(
@@ -4493,7 +4633,6 @@ def _parse_handoff(raw: Any, index: int) -> dict[str, Any]:
     if not acceptance_ids:
         raise HandoffDataError(f"{label}.acceptance_criteria must not be empty")
     expect_unique(acceptance_ids, f"{label}.acceptance_criteria")
-
     check_ids = []
     required_checks = {}
     check_evidence_ids = {}
@@ -4526,7 +4665,6 @@ def _parse_handoff(raw: Any, index: int) -> dict[str, Any]:
     if not check_ids:
         raise HandoffDataError(f"{label}.required_checks must not be empty")
     expect_unique(check_ids, f"{label}.required_checks")
-
     budgets = expect_object(handoff["budgets"], f"{label}.budgets")
     expect_keys(
         budgets,
@@ -4535,7 +4673,6 @@ def _parse_handoff(raw: Any, index: int) -> dict[str, Any]:
     )
     for field in ("changed_lines", "rom_bytes", "ram_bytes", "protocol_changes"):
         expect_int(budgets[field], f"{label}.budgets.{field}", 0)
-
     prohibited = expect_list(
         handoff["prohibited_remote_actions"],
         f"{label}.prohibited_remote_actions",
@@ -4552,7 +4689,6 @@ def _parse_handoff(raw: Any, index: int) -> dict[str, Any]:
             f"{label}.prohibited_remote_actions must exactly cover the "
             "implementation-owner remote-action boundary"
         )
-
     expect_int(
         handoff["max_lifetime_seconds"],
         f"{label}.max_lifetime_seconds",
@@ -4566,13 +4702,11 @@ def _parse_handoff(raw: Any, index: int) -> dict[str, Any]:
     states, state_names = _parse_states(handoff["states"], label)
     evidence = _parse_evidence(handoff["evidence"], label)
     check_receipts = _parse_check_receipts(handoff["check_receipts"], label)
-
     result = handoff["result"]
     if result is not None:
         result = expect_object(result, f"{label}.result")
         expect_keys(result, f"{label}.result", ("sha",))
         expect_sha(result["sha"], f"{label}.result.sha")
-
     interruption = handoff["interruption"]
     if interruption is not None:
         interruption = expect_object(interruption, f"{label}.interruption")
@@ -4661,7 +4795,6 @@ def _parse_handoff(raw: Any, index: int) -> dict[str, Any]:
                 action,
                 f"{label}.interruption.host_process_actions[{action_index}]",
             )
-
     recovery_resolution = []
     for resolution_index, raw_resolution in enumerate(
         expect_list(
@@ -4744,7 +4877,6 @@ def _parse_handoff(raw: Any, index: int) -> dict[str, Any]:
         raise HandoffDataError(
             f"{label}.recovery_resolution is only for OOM replacement"
         )
-
     state_times = {
         state["state"]: parse_time(state["at"], f"{label}.states.{state['state']}")
         for state in states
@@ -4781,7 +4913,6 @@ def _parse_handoff(raw: Any, index: int) -> dict[str, Any]:
             raise HandoffDataError(
                 f"{label}.check receipt {receipt_id!r} follows its owner boundary"
             )
-
     handoff["_label"] = label
     handoff["_owner"] = owner
     handoff["_states"] = states
@@ -4793,7 +4924,6 @@ def _parse_handoff(raw: Any, index: int) -> dict[str, Any]:
     handoff["_check_evidence_ids"] = check_evidence_ids
     handoff["_recovery_resolution"] = recovery_resolution
     return handoff
-
 
 def _parse_coordinators(raw_coordinators: Any) -> list[dict[str, Any]]:
     coordinators = []
@@ -4813,7 +4943,6 @@ def _parse_coordinators(raw_coordinators: Any) -> list[dict[str, Any]]:
         )
         coordinators.append(coordinator)
     return coordinators
-
 
 def _parse_runs(raw_runs: Any) -> dict[int, dict[str, Any]]:
     runs = {}
@@ -4854,7 +4983,6 @@ def _parse_runs(raw_runs: Any) -> dict[int, dict[str, Any]]:
         runs[run_id] = run
     return runs
 
-
 def _parse_watchers(raw_watchers: Any) -> list[dict[str, Any]]:
     watchers = []
     watcher_ids = []
@@ -4894,7 +5022,6 @@ def _parse_watchers(raw_watchers: Any) -> list[dict[str, Any]]:
     expect_unique(watcher_ids, "watcher IDs")
     return watchers
 
-
 def _parse_remote_action(raw: Any, label: str) -> dict[str, Any]:
     action = expect_object(raw, label)
     expect_keys(
@@ -4926,12 +5053,10 @@ def _parse_remote_action(raw: Any, label: str) -> dict[str, Any]:
     )
     return action
 
-
 def _public_action(action: dict[str, Any]) -> dict[str, Any]:
     return {
         key: value for key, value in action.items() if not key.startswith("_")
     }
-
 
 def _public_json(value: Any) -> Any:
     if isinstance(value, dict):
@@ -4944,7 +5069,6 @@ def _public_json(value: Any) -> Any:
         return [_public_json(item) for item in value]
     return value
 
-
 def coordinator_attestation_payload(document: dict[str, Any]) -> bytes:
     payload = _public_json(document)
     receipt = expect_object(
@@ -4956,7 +5080,6 @@ def coordinator_attestation_payload(document: dict[str, Any]) -> bytes:
         COORDINATOR_RECEIPT_SEAL_DOMAIN
         + normalized_json(payload)
     )
-
 
 def result_attestation_payload(
     document: dict[str, Any],
@@ -4973,7 +5096,6 @@ def result_attestation_payload(
             "consume_anchor": operation["consume_anchor"],
         }
     )
-
 
 def parse_pull_request_observation(
     raw: Any,
@@ -5097,7 +5219,6 @@ def parse_pull_request_observation(
         f"{label}.signature",
     )
     return observation
-
 
 def parse_publication_attestation(
     raw: Any,
@@ -5342,7 +5463,6 @@ def parse_publication_attestation(
     )
     return attestation
 
-
 def _parse_coordinator_receipt(
     raw_receipt: Any,
     *,
@@ -5526,7 +5646,6 @@ def _parse_coordinator_receipt(
             )
         except HandoffDataError:
             freshness_valid = False
-
     protection = expect_object(
         receipt["authority_protection"],
         "coordinator_receipt.authority_protection",
@@ -5719,7 +5838,6 @@ def _parse_coordinator_receipt(
         raise HandoffDataError(
             "authority ruleset bypass actors do not match frozen authority"
         )
-
     pull_request_observation = receipt["pull_request_observation"]
     if canonical_authority["pr_binding"] is None:
         if pull_request_observation is not None:
@@ -5745,7 +5863,6 @@ def _parse_coordinator_receipt(
             raise HandoffDataError(
                 "GitHub PR observation does not match authority binding"
             )
-
     availability = expect_object(
         receipt["availability"],
         "coordinator_receipt.availability",
@@ -5788,7 +5905,6 @@ def _parse_coordinator_receipt(
         raise HandoffDataError(
             "coordinator availability must come from coordinator-launcher"
         )
-
     coverage = expect_object(
         receipt["remote_coverage"],
         "coordinator_receipt.remote_coverage",
@@ -5878,7 +5994,6 @@ def _parse_coordinator_receipt(
         raise HandoffDataError(
             "coordinator collector lacks authoritative actor resolution"
         )
-
     source_names = []
     source_actions = []
     incomplete_sources = []
@@ -5968,7 +6083,6 @@ def _parse_coordinator_receipt(
         raise HandoffDataError(
             "remote coverage observed_actions omits or invents a source event"
         )
-
     processes = []
     for index, raw_process in enumerate(
         expect_list(
@@ -6026,7 +6140,6 @@ def _parse_coordinator_receipt(
         raise HandoffDataError(
             "implementation termination is not bound to process telemetry"
         )
-
     telemetry = {}
     for index, raw_metric in enumerate(
         expect_list(
@@ -6152,7 +6265,6 @@ def _parse_coordinator_receipt(
                 f"{label}.source must be coordinator-runtime"
             )
         telemetry[handoff_id] = metric
-
     resources = {}
     for index, raw_resource in enumerate(
         expect_list(
@@ -6216,7 +6328,6 @@ def _parse_coordinator_receipt(
         for field in ("rom_bytes", "ram_bytes"):
             expect_int(resource[field], f"{label}.{field}", 0)
         resources[handoff_id] = resource
-
     return {
         "receipt": receipt,
         "attestation_valid": attestation_valid,
@@ -6245,7 +6356,6 @@ def _parse_coordinator_receipt(
         "telemetry": telemetry,
         "resources": resources,
     }
-
 def _changed_paths_and_lines(
     repository_root: Path,
     parent_sha: str,
@@ -6284,7 +6394,6 @@ def _changed_paths_and_lines(
         lines += int(additions) + int(deletions)
     return names, lines
 
-
 def _json_blob_at(
     repository_root: Path,
     commit_sha: str,
@@ -6297,7 +6406,6 @@ def _json_blob_at(
         blob[1],
         f"{path} at {commit_sha}",
     )
-
 
 def _derive_protocol_changes(
     repository_root: Path,
@@ -6338,13 +6446,11 @@ def _derive_protocol_changes(
         )
     return candidate_version - parent_version
 
-
 def _resource_surfaces_changed(changed_paths: list[str]) -> bool:
     return any(
         not any(path.startswith(prefix) for prefix in PROVEN_HOST_ONLY_PREFIXES)
         for path in changed_paths
     )
-
 
 def _recovery_resolution_valid(
     repository_root: Path,
@@ -6399,13 +6505,11 @@ def _recovery_resolution_valid(
             return False
     return True
 
-
 def _path_is_allowed(path: str, scopes: list[str]) -> bool:
     return any(
         path.startswith(scope) if scope.endswith("/") else path == scope
         for scope in scopes
     )
-
 
 def _commit_message(repository_root: Path, sha: str) -> str:
     raw = run_git(repository_root, "cat-file", "commit", sha)
@@ -6418,7 +6522,6 @@ def _commit_message(repository_root: Path, sha: str) -> str:
     except reporter.PilotDataError as error:
         raise HandoffDataError(str(error)) from error
 
-
 def _status_paths(status: str) -> set[str]:
     paths = set()
     for line in status.splitlines():
@@ -6428,7 +6531,6 @@ def _status_paths(status: str) -> set[str]:
                 path = path.split(" -> ", 1)[1]
             paths.add(path)
     return paths
-
 
 def evaluate_delivery_graph(raw: Any) -> dict[str, Any]:
     graph = expect_object(raw, "delivery_graph")
@@ -6443,7 +6545,6 @@ def evaluate_delivery_graph(raw: Any) -> dict[str, Any]:
             "watchers",
         ),
     )
-
     tasks: dict[str, dict[str, Any]] = {}
     tasks_by_issue_phase: dict[tuple[int, str], dict[str, Any]] = {}
     implementation_tasks_by_handoff: dict[str, dict[str, Any]] = {}
@@ -6520,7 +6621,6 @@ def evaluate_delivery_graph(raw: Any) -> dict[str, Any]:
                 )
             tasks_by_issue_phase[identity] = task
         tasks[task_id] = task
-
     relationships = []
     relationship_identities = []
     for index, raw_relationship in enumerate(
@@ -6566,7 +6666,6 @@ def evaluate_delivery_graph(raw: Any) -> dict[str, Any]:
         relationship_identities,
         "delivery_graph.relationships",
     )
-
     workflow_runs: dict[int, dict[str, Any]] = {}
     run_tasks = set()
     for index, raw_run in enumerate(
@@ -6617,7 +6716,6 @@ def evaluate_delivery_graph(raw: Any) -> dict[str, Any]:
                 f"{label}.source must be authoritative 'github-actions-api'"
             )
         workflow_runs[run_id] = run
-
     watchers: dict[str, dict[str, Any]] = {}
     watched_runs = set()
     for index, raw_watcher in enumerate(
@@ -6655,7 +6753,6 @@ def evaluate_delivery_graph(raw: Any) -> dict[str, Any]:
             f"{label}.process_state",
         )
         watchers[watcher_id] = watcher
-
     rejection_codes = set()
     dependencies = []
     dependency_identities = []
@@ -6694,7 +6791,6 @@ def evaluate_delivery_graph(raw: Any) -> dict[str, Any]:
             raise HandoffDataError(f"{label} cannot be self-referential")
         dependencies.append(dependency)
     expect_unique(dependency_identities, "delivery_graph.dependencies")
-
     dependency_tuples = {
         (item["task"], item["depends_on"], item["type"])
         for item in dependencies
@@ -6737,7 +6833,6 @@ def evaluate_delivery_graph(raw: Any) -> dict[str, Any]:
         expected_present = expected_tuple in dependency_tuples
         if not expected_present:
             rejection_codes.add("missing-required-code-contract-edge")
-
         wrong_edges = []
         for dependency in dependencies:
             if dependency["task"] != child_task["id"]:
@@ -6752,7 +6847,6 @@ def evaluate_delivery_graph(raw: Any) -> dict[str, Any]:
                 wrong_edges.append(dependency)
         if wrong_edges:
             rejection_codes.add("wrong-code-contract-edge")
-
         relationship_reports.append(
             {
                 "child_issue": child_issue,
@@ -6777,7 +6871,6 @@ def evaluate_delivery_graph(raw: Any) -> dict[str, Any]:
                 ),
             }
         )
-
     parent_issues = sorted(
         {relationship["parent_issue"] for relationship in relationships}
     )
@@ -6812,7 +6905,6 @@ def evaluate_delivery_graph(raw: Any) -> dict[str, Any]:
             )
             if required_edge not in dependency_tuples:
                 rejection_codes.add("missing-parent-post-merge-gate")
-
         task_runs = [
             run
             for run in workflow_runs.values()
@@ -6859,7 +6951,6 @@ def evaluate_delivery_graph(raw: Any) -> dict[str, Any]:
             rejection_codes.add("watcher-run-mismatch")
         if active and post_merge_build["status"] != "in_progress":
             rejection_codes.add("watcher-run-mismatch")
-
         recovery = tasks_by_issue_phase.get(
             (parent_issue, "fix_forward_revert")
         )
@@ -6889,13 +6980,11 @@ def evaluate_delivery_graph(raw: Any) -> dict[str, Any]:
                 "delivery_eligible": successful_terminal,
             }
         )
-
     dependencies_by_task: dict[str, list[dict[str, Any]]] = {
         task_id: [] for task_id in tasks
     }
     for dependency in dependencies:
         dependencies_by_task[dependency["task"]].append(dependency)
-
     for task_id, task in tasks.items():
         blockers = [
             dependency["depends_on"]
@@ -6923,7 +7012,6 @@ def evaluate_delivery_graph(raw: Any) -> dict[str, Any]:
                 and task["phase"] != "implementation"
             ):
                 rejection_codes.add("task-status-dependency-mismatch")
-
     ready_tasks = []
     blocked_tasks = []
     for task_id, task in sorted(tasks.items()):
@@ -6959,7 +7047,6 @@ def evaluate_delivery_graph(raw: Any) -> dict[str, Any]:
             )
         else:
             ready_tasks.append(task_id)
-
     return {
         "relationships": relationship_reports,
         "required_edges": required_edges,
@@ -6984,7 +7071,6 @@ def evaluate_delivery_graph(raw: Any) -> dict[str, Any]:
         "parent_delivery": parent_delivery_reports,
         "rejection_codes": sorted(rejection_codes),
     }
-
 
 def _empty_handoff_result(handoff: dict[str, Any]) -> dict[str, Any]:
     states = handoff["_states"]
@@ -7021,7 +7107,6 @@ def _empty_handoff_result(handoff: dict[str, Any]) -> dict[str, Any]:
         "interruption_snapshot": None,
         "rejection_codes": [],
     }
-
 
 def validate_document(
     raw: Any,
@@ -7082,7 +7167,6 @@ def validate_document(
     input_seal = hashlib.sha256(
         INPUT_SEAL_DOMAIN + normalized_json(document)
     ).hexdigest()
-
     coordinators = _parse_coordinators(document["coordinators"])
     handoffs = [
         _parse_handoff(raw_handoff, index)
@@ -7240,15 +7324,12 @@ def validate_document(
             "coordinator receipt cannot verify authority protection and "
             "actor authority"
         )
-
     global_rejections = set()
     handoff_rejections = {handoff["id"]: set() for handoff in handoffs}
-
     def reject(code: str, handoff_id: str | None = None) -> None:
         global_rejections.add(code)
         if handoff_id is not None:
             handoff_rejections[handoff_id].add(code)
-
     for handoff in handoffs:
         if (
             handoff["expected_branch"]
@@ -7257,12 +7338,11 @@ def validate_document(
             ]
         ):
             reject("unrelated-branch", handoff["id"])
-
     expected_user_bypass = sorted(
         normalized_json(
-            user_bypass_actor(coordinator["_actor"]["database_id"])
+            user_bypass_actor(actor["database_id"])
         )
-        for coordinator in coordinators
+        for actor in installation["_authorized"]
     )
     frozen_user_bypass = sorted(
         normalized_json(item)
@@ -7312,7 +7392,6 @@ def validate_document(
     ]:
         for handoff in handoffs:
             reject("event-after-terminal-coverage", handoff["id"])
-
     for code in delivery_graph["rejection_codes"]:
         for handoff in handoffs:
             reject(code, handoff["id"])
@@ -7363,7 +7442,6 @@ def validate_document(
         for handoff in handoffs:
             if handoff["issue"] == relationship["child_issue"]:
                 reject("code-contract-not-merged", handoff["id"])
-
     if len(coordinators) != 1:
         for handoff in handoffs:
             reject("duplicate-coordinator", handoff["id"])
@@ -7434,7 +7512,6 @@ def validate_document(
         ):
             for handoff in handoffs:
                 reject("remote-coverage-incomplete", handoff["id"])
-
     duplicate_handoff_ids = set()
     resolved_actors = coordinator_receipt["actors"]
     for handoff in handoffs:
@@ -7451,7 +7528,6 @@ def validate_document(
     ):
         for handoff in handoffs:
             reject("unresolved-actor-id", handoff["id"])
-
     all_lifecycle_records = [*prior_handoffs, *handoffs]
     roots = [
         record
@@ -7529,7 +7605,6 @@ def validate_document(
             ):
                 for handoff in handoffs:
                     reject("review-successor-parent-mismatch", handoff["id"])
-
     for index, handoff in enumerate(handoffs):
         for other in handoffs[index + 1:]:
             if _actors_match(handoff["_owner"], other["_owner"]):
@@ -7543,7 +7618,6 @@ def validate_document(
             for prior in prior_handoffs
         ):
             reject("closed-owner-reused", handoff["id"])
-
     actual_branch = run_git(
         repository_root,
         "symbolic-ref",
@@ -7565,7 +7639,6 @@ def validate_document(
         "--diff-filter=U",
     ).decode("utf-8").splitlines()
     dirty_paths = _status_paths(status)
-
     for handoff in handoffs:
         relevant_history = [
             prior
@@ -7590,7 +7663,6 @@ def validate_document(
             )
             if ancestry.returncode != 0:
                 reject("prior-handoff-history-fork", handoff["id"])
-
     for parent_delivery in delivery_graph["parent_delivery"]:
         head_sha = parent_delivery["head_sha"]
         if head_sha is None:
@@ -7615,7 +7687,6 @@ def validate_document(
         if ancestry is None or ancestry.returncode != 0:
             for handoff in handoffs:
                 reject("watcher-run-mismatch", handoff["id"])
-
     results = {}
     for handoff in handoffs:
         handoff_id = handoff["id"]
@@ -7664,7 +7735,6 @@ def validate_document(
                 )
             ):
                 reject("invalid-runtime-telemetry", handoff_id)
-
         if coordinator_receipt["incomplete_sources"]:
             process = next(
                 (
@@ -7696,7 +7766,6 @@ def validate_document(
                 )
             ):
                 reject("remote-coverage-incomplete", handoff_id)
-
         try:
             assigned_worktree = Path(handoff["allowed_worktree"])
             allowed_worktree = assigned_worktree.resolve(strict=True)
@@ -7715,7 +7784,6 @@ def validate_document(
             reject("owner-rss-exceeded", handoff_id)
         if result["lifetime_seconds"] > handoff["max_lifetime_seconds"]:
             reject("owner-lifetime-exceeded", handoff_id)
-
         state_names = handoff["_state_names"]
         if handoff["result"] is not None:
             if state_names != COMPLETE_STATE_SEQUENCE:
@@ -7944,7 +8012,6 @@ def validate_document(
                 reject("missing-commit", handoff_id)
             elif state_names not in IN_PROGRESS_STATE_PREFIXES:
                 reject("incomplete-lifecycle", handoff_id)
-
     replacements_by_parent: dict[str, list[dict[str, Any]]] = {}
     for handoff in handoffs:
         replaced = handoff["replaces_handoff_id"]
@@ -8006,7 +8073,6 @@ def validate_document(
         ):
             if replacement[field] != handoff[field]:
                 reject("replacement-context-mismatch", handoff["id"])
-
     prior_by_id = {
         prior["handoff_id"]: prior for prior in prior_handoffs
     }
@@ -8052,7 +8118,6 @@ def validate_document(
             )
         ):
             reject("recovery-content-not-resolved", handoff["id"])
-
     for action in coordinator_receipt["actions"]:
         handoff = handoffs_by_id.get(action["handoff_id"])
         if handoff is None:
@@ -8079,7 +8144,6 @@ def validate_document(
             and action["action"] in PROHIBITED_REMOTE_ACTIONS
         ):
             reject("implementation-owner-remote-action", handoff["id"])
-
     watcher_counts = Counter(watcher["run_id"] for watcher in watchers)
     if any(count > 1 for count in watcher_counts.values()):
         reject("duplicate-watcher")
@@ -8138,7 +8202,6 @@ def validate_document(
             raise HandoffDataError(
                 f"watcher {watcher['id']!r} references an unknown workflow run"
             )
-
     for handoff_id, result in results.items():
         rejection_codes = sorted(handoff_rejections[handoff_id])
         result["rejection_codes"] = rejection_codes
@@ -8148,7 +8211,6 @@ def validate_document(
             result["outcome"] = "accepted"
         elif rejection_codes:
             result["outcome"] = "rejected"
-
     if authority_hook is not None:
         authority_hook(
             canonical_authority["observation"]["attempt"],
@@ -8159,7 +8221,6 @@ def validate_document(
         repository_root,
         canonical_authority["observation"],
     )
-
     completed = [
         result for result in results.values() if result["outcome"] == "accepted"
     ]
@@ -8246,7 +8307,6 @@ def validate_document(
     report["result_seal"] = seal_handoff_result(report)
     return report
 
-
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -8271,7 +8331,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--publication-attestation", type=Path)
     parser.add_argument("--coordinator-installation", type=Path)
     return parser.parse_args(argv)
-
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)

@@ -3,9 +3,7 @@
 These source-only procedures cover the repository's agent delivery policy.
 They exercise documented orchestration contracts without dispatching a
 workflow, using credentials, or changing ROM behavior.
-
 ## TC-WORKFLOW-CI-WAIT-001: Keep CI waiting centralized and trusted pushes owner-scoped
-
 - **Feature / originating issue:** `workflow-governance` /
   [issue #93](https://github.com/laqieer/fireemblem8-expansion/issues/93).
 - **Supported configuration or artifact:** clean source checkout with
@@ -13,16 +11,13 @@ workflow, using credentials, or changing ROM behavior.
   emulator is required.
 - **Prerequisites and clean starting state:** start at the repository root and
   leave the mirrored development-workflow policy files unchanged.
-
 ### Actions
-
 1. Inspect the trusted-push and CI-waiting sections in
    `.github/skills/development-workflow/SKILL.md`.
 2. Run
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
 3. Confirm the focused suite exercises its required-policy, forbidden-policy,
    and deliberately unbounded watcher negative fixtures.
-
 ### Expected result
 
 The mirrored policy requires implementation subagents to validate and commit
@@ -33,7 +28,6 @@ reasoning inspection starts only after a terminal result; superseded runs are
 cancelled; and post-merge monitoring remains nonblocking. The former Full
 Matrix gate is absent because the combined Build owns the complete candidate
 gate.
-
 ### Negative control
 
 Removing a required dispatch-and-return, single-watcher, concurrent-review,
@@ -42,7 +36,6 @@ Build rule makes the focused suite fail. The suite also rejects stale
 implementation-agent push ownership, duplicate/unbounded watcher examples,
 privileged `pull_request_target`, weakened approvals, and any restored Full
 Matrix wording.
-
 ### Interactions and save compatibility
 
 The policy depends on GitHub CLI and the existing shell runtime when used for
@@ -50,22 +43,18 @@ real delivery. It conflicts with duplicate polling agents, repeated wakeups,
 stale candidate evidence, implementation-agent pushes, and unbounded watcher
 loops. The source-only case changes no save, generated data, localization,
 ROM/RAM, debug/release, or archival behavior and needs no feature gate.
-
 ### Automation
 
 `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
 validates the mirrored policy, bounded watcher example, trusted-push
 ownership, concurrent monitoring, stale cancellation, and combined-Build
 replacement of the retired Full Matrix.
-
 ### Cleanup and limitations
 
 No cleanup is required. The test validates repository policy text and its
 fail-closed fixtures; it does not dispatch or wait for a live GitHub workflow
 and does not grant push credentials.
-
 ## TC-WORKFLOW-MANUAL-HANDOFF-001: Surface actionable manual testing and resume automatically
-
 - **Feature / originating issue:** `workflow-governance` /
   [issue #169](https://github.com/laqieer/fireemblem8-expansion/issues/169).
 - **Supported configuration or artifact:** clean source checkout with Python
@@ -75,9 +64,7 @@ and does not grant push credentials.
   [the canonical JSON contract](../../.github/manual-testing-handoff.json),
   development-workflow skill, contributor guide, this case, and registry
   unchanged.
-
 ### Actions
-
 1. Parse `.github/manual-testing-handoff.json` and validate every required key,
    value, enum, boolean, target, comment field, and the separately identified
    positive/control artifact roles with deterministic emulator screenshot or
@@ -101,14 +88,11 @@ and does not grant push credentials.
 6. Open the documented queue:
    [`repo:laqieer/fireemblem8-expansion is:open assignee:laqieer label:"waiting-for-manual-testing"`](https://github.com/laqieer/fireemblem8-expansion/issues?q=repo%3Alaqieer%2Ffireemblem8-expansion+is%3Aopen+assignee%3Alaqieer+label%3A%22waiting-for-manual-testing%22).
    When it is empty, do not schedule notifications or comments.
-
 ### Expected result
 
 The focused suite accepts the canonical JSON and its supported queue shapes.
 Human guidance links to that file without duplicating machine behavior.
-
 ### Lifecycle summary
-
 - **Eligibility:** Require a material visual, audio, or UX criterion. Require
   automation to be unreliable for that criterion.
 - **Activation:** Apply `waiting-for-manual-testing` to the originating issue
@@ -121,7 +105,6 @@ Human guidance links to that file without duplicating machine behavior.
   implementation PR. Remove the temporary `laqieer` assignment unless
   independently owned. Resume exact-candidate gates and merge automatically.
   A rejected result retains both holds and remains actionable.
-
 ### Negative control
 
 Every leaf mutation in the structured contract fails, including a missing
@@ -136,7 +119,6 @@ exceptions without a reason, rejected cleanup/resumption, premature
 rejected-state cleanup, empty-queue notifications, and invalid independently
 discovered issue/PR relationships. Reversing any lifecycle summary action or
 removing this case's own subsection also fails locally.
-
 ### Interactions and save compatibility
 
 The protocol depends on GitHub issues, pull requests, relationships, labels,
@@ -145,20 +127,17 @@ remain release-time evidence rather than tracked state. Cleanup history includes
 every labeled PR after closure or supersession; independent ownership may retain
 an assignee but never the handoff label. It changes no save, generated data,
 localization, ROM/RAM, debug/release, or archival behavior.
-
 ### Automation
 
 `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
 parses the JSON contract and exercises its schema, every semantic leaf,
 supported queue shapes, and fail-closed controls.
-
 ### Cleanup and limitations
 
 This source-only case changes no remote item and cannot make the subjective
 judgment itself. Live queue state and evidence remain in the relevant PR and
 issue rather than this repository.
 ## TC-WORKFLOW-STACKED-CI-001: Run exact Build CI on a genuine stacked PR base
-
 - **Feature / originating issue:** `workflow-governance` /
   [issue #171](https://github.com/laqieer/fireemblem8-expansion/issues/171).
 - **Supported configuration or artifact:** clean source checkout with Python
@@ -166,9 +145,7 @@ issue rather than this repository.
   request, workflow dispatch, ROM, or emulator is required.
 - **Prerequisites and clean starting state:** start at the repository root
   with `.github/workflows/build.yml` and the stacked-PR guidance unchanged.
-
 ### Actions
-
 1. Run
    `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v`.
 2. Run
@@ -176,14 +153,12 @@ issue rather than this repository.
 3. Inspect the synthetic `opened`, child-head `synchronize`, `reopened`, and
    base-change `edited` pull-request fixtures, plus inline and block
    `branches` and `branches-ignore` mutations.
-
 ### Expected result
 
 The synthetic non-master-base pull request selects the mandatory
 `event-identity` setup before `event-router`, `event-classifier`, the existing
 `host-tests`, `build`, `extended-host-tests`, `legacy`, and fail-closed
 `summary` jobs.
-
 - **Parsed full-PR job set:** {`event-identity`, `event-router`,
   `event-classifier`, `host-tests`, `build`, `extended-host-tests`, `legacy`,
   `summary`}.
@@ -207,7 +182,6 @@ also runs for `opened`, `synchronize`, and `reopened`, but not `closed`,
 sufficient evidence: Build remains bound to `pull_request.head.sha`, and the
 base/tree evidence, child-only diff, and fresh gate results must all be
 verified.
-
 ### Negative control
 
 Adding inline or block `branches` or `branches-ignore` filters under
@@ -218,7 +192,6 @@ pushes, exposing the patch publisher to pull requests, weakening exact-head
 checkout verification, accepting an old child run after its parent head
 changes, or documenting a temporary base flip solely to trigger CI makes the
 focused suites fail.
-
 ### Interactions and save compatibility
 
 This source-only contract depends on the existing combined Build jobs, exact
@@ -228,7 +201,6 @@ or parent-head change, unsynchronized child branches, duplicate workflows,
 duplicate matrices, weakened permissions, and PR publication. It changes no save,
 generated data, localization, ROM/RAM,
 debug/release, or archival behavior and needs no feature gate.
-
 ### Automation
 
 `python3 -m unittest discover -s tests/workflows -p "test_*.py" -v` parses the
@@ -241,15 +213,12 @@ summary and publisher boundary.
 `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
 validates the genuine-stack workflow and rejects guidance that relies on a
 temporary base flip solely to trigger CI.
-
 ### Cleanup and limitations
 
 No cleanup is required. The case evaluates committed workflow and governance
 contracts without dispatching GitHub Actions; it does not prove live service
 availability or grant credentials.
-
 ## TC-WORKFLOW-BODY-EDIT-001: Suppress metadata-only Build workers
-
 - **Feature / originating issue:** `workflow-governance` /
   [issue #177](https://github.com/laqieer/fireemblem8-expansion/issues/177).
 - **Supported configuration or artifact:** clean source checkout with Python
@@ -262,9 +231,7 @@ availability or grant credentials.
   preserved `pre_fix_build.yml` parsed graph unchanged.
   The fixture declares that the current workflow has no explicit final
   dispatch surface.
-
 ### Actions
-
 1. Run
    `python3 -m unittest scripts.workflow_pilot.tests.test_event_classifier -v`.
 2. Run
@@ -314,7 +281,6 @@ availability or grant credentials.
    keeps canonical skipped `extended-host-tests`/`legacy` plus canonical
    skipped patch publication, and uses only the running metadata classifier
    attestation beyond those existing required names.
-
 ### Expected result
 
 Body-only, title-only, and combined body/title edits emit
@@ -474,7 +440,6 @@ independently valid PR-head or push fallback. With no classifier authority,
 the router performs no checkout and fails safely, the classifier fails, exact
 fallback workers plus any guarded push publisher run, and summary remains
 fail-closed.
-
 ### Negative control
 
 The preserved parsed pre-fix workflow fixture selects `host-tests`, `build`,
@@ -502,7 +467,6 @@ PR/push head, cross-event fallback, worker/publisher execution after classifier
 failure with no event SHA, summary success after any classifier failure, weakened
 exact-head checkout, body/template evolving evidence or marker placement, and
 source/target workflow mirror drift.
-
 ### Interactions and save compatibility
 
 This confirmed workflow-efficiency fix depends on issue #176's immutable
@@ -514,7 +478,6 @@ classifier execution, success-shaped defaults, mutable metric ledgers, and
 suppression of genuine stacked-PR base edits. It has no feature flag and no
 game/runtime, modern debug/release output, save, generated-data, localization,
 ROM/RAM, or archival impact.
-
 ### Automation
 
 `python3 -m unittest scripts.workflow_pilot.tests.test_event_classifier -v`
@@ -542,7 +505,6 @@ setup-only jobs, never 29th/30th/31st local gates.
 parses the frozen PR template/body and comment collection, requiring exactly
 one standalone canonical marker while rejecting missing, duplicate, inline,
 or body markers and every evolving body field.
-
 ### Cleanup and limitations
 
 The disposable sandbox is removed automatically. No remote state is read or
@@ -550,7 +512,6 @@ changed. The local replay proves GitHub's documented event-file semantics and
 the exact workflow graph contract, not live service availability. No
 manual-only criterion applies. Rollback is a normal revert; the prior broad
 `edited` behavior then resumes.
-
 ### Planned live title-only exercise after push
 
 The owner performs this validation-only remote exercise only after the
@@ -564,7 +525,6 @@ Run all commands below in one Bash session. The discovery helper snapshots all
 prior run IDs, then makes at most 60 attempts five seconds apart. It accepts
 exactly one unseen `Build CI` pull-request run created after the mutation with
 the exact branch and head; timeout or ambiguity fails before `gh run watch`.
-
 1. From the issue worktree, choose unused temporary names and create a direct
    child of the exact candidate branch with one deterministic tracked probe.
    Install cleanup before the first remote mutation:
@@ -1209,9 +1169,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    failure status while surfacing cleanup failure.
    Architecture/review comments remain unmarked; only the canonical evolving
    evidence comment carries the one marker.
-
 ## TC-WORKFLOW-PILOT-BASELINE-001: Freeze reproducible pilot baseline and decisions
-
 - **Feature / originating issue:** `workflow-governance` /
   [issue #176](https://github.com/laqieer/fireemblem8-expansion/issues/176).
 - **Supported configuration or artifact:** clean source checkout with Python
@@ -1222,9 +1180,7 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
   `scripts/workflow_pilot/tests/fixtures/baseline.json`, and
   `scripts/workflow_pilot/reporter.py` unchanged. Remove any prior
   `build/test-artifacts/workflow-pilot` directory.
-
 ### Actions
-
 1. Run
    `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`.
 2. Create `build/test-artifacts/workflow-pilot`, then run the documented
@@ -1283,7 +1239,6 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
     `a\n        ` environment adversary and require bounded completion with
     the same accepted/rejected structural results.
 12. Run `python3 scripts/check_docs.py --check`.
-
 ### Expected result
 
 Both reporter outputs are byte-identical canonical JSON and match
@@ -1346,7 +1301,6 @@ Each child uses only `/usr/bin/python3 -I` and the copied closed launcher with
 explicit sandbox/authority/check arguments; repository and user-site
 `sitecustomize.py` exit hooks cannot run first, and root/mode/check/extra
 argument mutations reject.
-
 ### Negative control
 
 The suite rejects a boundary record outside the snapshot, terminal/active
@@ -1379,7 +1333,6 @@ mixed proof semantic/restoration/reason/identity/time/kind/disposition state,
 and any unallowlisted fixture command.
 Build topology mutations also reject pilot commands hidden by `|| true`, `; true`,
 `&& true`, wrappers, substitutions, or changed redirections.
-
 ### Interactions and save compatibility
 
 Dependencies are none. Dependents are issues #177, #178, #179, #180, and
@@ -1387,7 +1340,6 @@ Dependencies are none. Dependents are issues #177, #178, #179, #180, and
 runtime/gameplay, configuration, save, generated game data, localization, or
 archival output. Modern debug, modern release, and archival impact are all
 none; there is no feature flag and no ROM/RAM or save-format impact.
-
 ### Automation
 
 `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`
@@ -1441,7 +1393,6 @@ drift rejects before dry-run.
 
 `python3 scripts/check_docs.py --check` validates this complete procedure,
 registry ownership, links, and automation evidence.
-
 ### Cleanup and limitations
 
 Remove `build/test-artifacts/workflow-pilot`. No remote state was read or
@@ -1455,9 +1406,7 @@ criterion applies.
 
 Rollback is a normal revert of issue #176's dedicated commit; no workflow or
 game behavior needs a compensating change.
-
 ## TC-WORKFLOW-AGENT-HANDOFF-001: Validate bounded exact-SHA agent handoffs
-
 - **Feature / originating issue:** `workflow-governance` /
   [issue #178](https://github.com/laqieer/fireemblem8-expansion/issues/178).
 - **Supported configuration or artifact:** clean source checkout with
@@ -1466,9 +1415,7 @@ game behavior needs a compensating change.
 - **Prerequisites and clean starting state:** start at the exact repository
   root with the issue #176 reporter and the agent-handoff module unchanged.
   Remove prior `build/test-artifacts/agent-handoff-*` test directories.
-
 ### Actions
-
 1. Run
    `python3 -m unittest scripts.workflow_pilot.tests.test_agent_handoff -v`.
 2. Parse `scripts/workflow_pilot/agent_handoff.schema.json` with a draft
@@ -1598,7 +1545,6 @@ game behavior needs a compensating change.
    `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`,
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`,
    and `python3 scripts/check_docs.py --check`.
-
 ### Expected result
 
 Only the exact clean one-commit descendant with a parent-trusted checker,
@@ -1678,7 +1624,6 @@ values, seals, lifecycle, trusted-push, and centralized-watcher contracts are
 unchanged. Historical version 2 accepts no hand-authored aggregate: it verifies
 the original signature and current protected ancestry without consulting the
 old worktree HEAD.
-
 ### Negative control
 
 Each stale/repeated SHA, non-direct or wrong parent, wrong branch/worktree,
@@ -1716,7 +1661,6 @@ anchors/seals/sequences, stale signed authority observations, and a second
 issue root also fail. Historical reporter verification still requires the external finalize
 signature and current authority/anchor ancestry, but it never recreates live
 trusted-push eligibility from an old receipt.
-
 ### Interactions and save compatibility
 
 Dependency: issue #176. Dependent: issue #181. Conflicts: none with existing
@@ -1724,7 +1668,6 @@ trusted owner pushes or one centralized direct watcher per exact run. This
 source-only contract changes no modern debug/release ROM, runtime/gameplay,
 save format, generated game data, localization, ROM/RAM content, or archival
 lane. No feature flag, migration, or manual criterion applies.
-
 ### Automation
 
 `python3 -m unittest scripts.workflow_pilot.tests.test_agent_handoff -v`
@@ -1741,7 +1684,6 @@ regressions. Parsed task/dependency/watcher fixtures compute readiness and
 required edges rather than asserting policy wording. The workflow-governance
 and docs checks validate this indexed procedure and preserve the trusted-push
 and centralized-watcher policy.
-
 ### Cleanup and limitations
 
 Temporary repositories are removed automatically. The tests model complete

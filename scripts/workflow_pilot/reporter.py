@@ -1447,7 +1447,7 @@ def validate_implementation_handoffs(
     )
     bundles: dict[str, dict[str, Any]] = {}
     handoffs: dict[str, dict[str, Any]] = {}
-    owner_ids = []
+    issue_owner_ids = []
     for index, raw in enumerate(fixture["implementation_handoffs"]):
         label = f"implementation_handoffs[{index}]"
         try:
@@ -1507,7 +1507,7 @@ def validate_implementation_handoffs(
                 handoff["owner_id"],
                 f"{handoff_label}.owner_id",
             )
-            owner_ids.append(owner_id)
+            issue_owner_ids.append((handoff["issue"], owner_id))
             assigned_at = parse_time(
                 handoff["assigned_at"],
                 f"{handoff_label}.assigned_at",
@@ -1610,7 +1610,7 @@ def validate_implementation_handoffs(
                 else outcome
             )
             handoffs[handoff_id] = handoff
-    expect_unique(owner_ids, "implementation handoff owner IDs")
+    expect_unique(issue_owner_ids, "implementation handoff issue owner IDs")
     return {"bundles": bundles, "handoffs": handoffs}
 
 

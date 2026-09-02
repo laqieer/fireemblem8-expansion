@@ -6,7 +6,6 @@ contract**. It freezes the pre-pilot evidence and supplies one fail-closed
 reporter before any dependent issue changes delivery behavior. It does not
 select CI, order review, alter a merge gate, or create a mutable delivery
 ledger.
-
 ## Frozen boundary and authoritative sources
 
 The immutable baseline fixture is
@@ -29,7 +28,6 @@ checkpoint/proof events and current disposition records without moving or
 reinterpreting the historical measurement window.
 
 The frozen source semantics are:
-
 - Pull requests are the 64 PR identities whose authoritative `merged_at` is
   inside the inclusive window.
 - Issue identities are the closing-issue relationships returned by GitHub for
@@ -74,7 +72,6 @@ fixture because mutable GitHub state now includes the formerly active run's
 completion. If an exact timestamp, identity, relationship, status, conclusion,
 or page needed by a formula is absent, the reporter exits nonzero instead of
 guessing.
-
 ## Public seam
 
 Run the stdlib-only reporter from the repository root:
@@ -99,7 +96,6 @@ sets and set-like relationship fields are sorted before hashing. It is an
 input-format/cohort checksum: it detects identity, timestamp, PR/SHA
 association, and relationship substitution that preserves aggregate metrics,
 but does not hash source files, blobs, objects, ROMs, or the repository tree.
-
 ## Build event classification and candidate evidence
 
 Issue [#177](https://github.com/laqieer/fireemblem8-expansion/issues/177)
@@ -182,7 +178,6 @@ The parsed tree receives a recursive finite-number check before
 classification, so an unused overflowing field cannot accompany an otherwise
 metadata-only event. An `edited` event suppresses `host-tests`, `build`,
 `extended-host-tests`, and `legacy` only when:
-
 - the event has a complete pull-request base and exact head identity;
 - the event head/base equal the direct event identities used by every
   expensive worker condition;
@@ -515,7 +510,6 @@ The fixture carries derivable Git/GitHub/Actions facts. The single versioned
 decision record,
 [`.github/workflow-pilot-decisions.json`](../.github/workflow-pilot-decisions.json),
 contains only the decisions those systems cannot supply:
-
 | Record field | Contract |
 | --- | --- |
 | `risk_boundaries` | Closed enum; `none` must stand alone. |
@@ -539,7 +533,6 @@ authority, and the decision record stores no copied tree, blob, or commit hash.
 Every schema version, identity, count, duration input, attempt, index, depth,
 and cost uses exact-integer validation before bounds or equality checks; JSON
 booleans are accepted only by declared boolean fields.
-
 ## Reproducible formulas
 
 All durations use exact UTC seconds. Subject durations are converted to decimal
@@ -547,7 +540,6 @@ hours and rounded half-up to one decimal. The frozen baseline uses the upper
 middle observation for an even-sized cohort; this explicitly preserves the
 already-published 9.4-hour value instead of silently changing its statistical
 convention.
-
 | Metric | Formula and inclusion |
 | --- | --- |
 | Issue-to-merge | For each in-window merged PR with closing issues: `merged_at - min(linked issue created_at)`. Report the eligible count and authoritative empty-link exclusions. |
@@ -580,11 +572,9 @@ that is what the original measurement could reproduce for all 64 PRs. It is
 not relabeled as issue-to-merge. The reporter additionally calculates
 issue-to-merge over the 57 PRs with authoritative closing-issue relationships
 and reports the seven exclusions.
-
 ## Work classification
 
 Classifications are derived and may coexist:
-
 | Class | Rule |
 | --- | --- |
 | Cancelled work | PR is closed without a merge; a cancelled Build is separately a terminal run conclusion. |
@@ -596,7 +586,6 @@ Classifications are derived and may coexist:
 | Reverted | A later fixture commit has the exact Git revert relation to the PR merge SHA. Both delivery and revert remain visible. |
 
 No class removes a run, review, finding, or cost from the identity history.
-
 ## Artifact lifecycle
 
 Every pilot artifact is admitted only when all six decisions exist: one owner,
@@ -614,7 +603,6 @@ Review invalidation is derived from `review_depends_on` edges and later
 and are rejected rather than ignored. Every checkpoint and pre-graduation
 event, plus every dependency-change event that occurs, requires exactly one
 strictly later non-destructive deletion proof:
-
 - if removal preserves semantics, restoration must pass and the current
   disposition must be `Delete`;
 - if removal loses a named invariant, the proof must name that reason,
@@ -646,9 +634,7 @@ follow `lifecycle_as_of`. Expiry is evaluated at that lifecycle boundary,
 rather than the older metric-capture timestamp. The committed baseline
 contract, fixture, and reporter currently derive to `Graduate` because
 removing any one loses a dependency required by issues #177 through #181.
-
 ## Frozen expected results
-
 | Baseline fact | Expected result |
 | --- | ---: |
 | In-window merged PRs | 64 |
@@ -698,9 +684,7 @@ capture GitHub's `pull_request_review_thread` `resolved` and `unresolved`
 deliveries as they occur, and normalize their delivery API identities and
 timestamps into a complete coverage interval before the reporter can emit a
 numeric clean-review duration.
-
 ## Relationships, impact, and rollback
-
 | Relationship | Contract |
 | --- | --- |
 | Dependencies | None |
@@ -715,7 +699,6 @@ Rollback is a normal revert of the dedicated issue #176 commit. Because no
 delivery behavior or final gate changes here, existing CI, review, merge,
 runtime, save, localization, generated-data, and archival behavior remains in
 place throughout rollback.
-
 ## Bounded exact-SHA implementation handoffs
 
 Issue [#178](https://github.com/laqieer/fireemblem8-expansion/issues/178)
@@ -746,11 +729,9 @@ remote observations, runtime metrics, resources, and interruption snapshots
 come from one coordinator-sealed receipt, not document claims.
 Duplicate JSON keys, unknown fields/enums, booleans in integer fields, and
 unquantified binary line changes fail before a success-shaped result.
-
 ### Assignment and result contract
 
 Each handoff carries:
-
 - issue and optional eventual PR identity;
 - unique handoff and implementation-owner identities with mandatory numeric
   GitHub database IDs;
@@ -940,12 +921,10 @@ owner `delivery-coordinator`; executable consumer
 after issues #178/#181 and every consumer retires the ownership invariant.
 The branches retain minimal canonical ancestry and do not duplicate the
 mutable delivery ledger.
-
 ### Typed delivery dependencies
 
 The handoff's `delivery_graph` separates authored relationship semantics from
 normalized task and watcher facts:
-
 - `code_contract` is the only parent/child implementation relationship. Its
   required edge is `child-implement -> parent-merge`.
 - `delivery_gate` links the parent's own completion, closure, and remote
@@ -984,7 +963,6 @@ That Build task names an exact target SHA and binds to one
 watcher. Active and failed runs keep parent delivery eligibility false and
 prevent those parent tasks from becoming done. A successful terminal run is
 the only Build state that opens that parent gate.
-
 ### Coordinator, watcher, and recovery contract
 
 One document admits exactly one coordinator. Each included exact run has one
@@ -1036,7 +1014,6 @@ claim. It must be issued near validation time, be observed before assignment,
 cover the complete unattended interval through the lifecycle cutoff, and show
 both autostop and stop-on-disconnect disabled. Future, stale, late, expired,
 ineffective, or unsealed observations reject.
-
 ### Reporter extension and compatibility
 
 The unchanged frozen issue #176 baseline remains strict fixture/report schema
