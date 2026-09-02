@@ -33,12 +33,20 @@ def iso(value):
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def copilot_graphql_actor():
+def graphql_actor(type_name, actor_id, login):
     return {
-        "__typename": review_family.COPILOT_GRAPHQL_TYPE,
-        "id": COPILOT_ACTOR_ID,
-        "login": review_family.COPILOT_GRAPHQL_LOGIN,
+        "__typename": type_name,
+        "id": actor_id,
+        "login": login,
     }
+
+
+def copilot_graphql_actor():
+    return graphql_actor(
+        review_family.COPILOT_GRAPHQL_TYPE,
+        COPILOT_ACTOR_ID,
+        review_family.COPILOT_GRAPHQL_LOGIN,
+    )
 
 
 def git(root, *arguments):
@@ -322,6 +330,29 @@ class TrustedGitHubGateTests(unittest.TestCase):
         decisions["pull_requests"].extend(copy.deepcopy(list(entries)))
         path.write_bytes(reporter.normalized_json(decisions))
 
+    def load_decision_record(self, root):
+        return json.loads(
+            (Path(root) / trusted_review_gate.DECISION_RECORD_PATH).read_text(
+                encoding="utf-8"
+            )
+        )
+
+    def write_raw_decision_record(self, root, decisions):
+        (Path(root) / trusted_review_gate.DECISION_RECORD_PATH).write_bytes(
+            reporter.normalized_json(decisions)
+        )
+
+    def commit_all(self, root, message):
+        git(root, "add", "-A")
+        git(root, "commit", "-q", "-m", message)
+
+    def decision_record_entry(self, decisions, pull_request=SYNTHETIC_PULL_REQUEST):
+        return next(
+            entry
+            for entry in decisions["pull_requests"]
+            if entry["pull_request"] == pull_request
+        )
+
     def temporary_repo(self, name):
         artifact_root = ROOT / "build" / "test-artifacts"
         suffix = len(list(artifact_root.glob(f"{name}-{os.getpid()}-*")))
@@ -534,6 +565,114 @@ class TrustedGitHubGateTests(unittest.TestCase):
         with self.assertRaisesRegex(
             reporter.PilotDataError,
             "thread author does not match the exact authoritative review actor",
+        ):
+            self.collect_exact_live_evidence(payload, kind="complete")
+
+    def test_collect_live_evidence_filters_threads_to_exact_copilot_findings(self):
+        payload = self.exact_graphql_payload(with_finding=True)
+        pr = payload["data"]["repository"]["pullRequest"]
+        pr["reviewThreads"]["nodes"][0]["comments"]["nodes"].append(
+            {
+                "id": "HUMAN_REPLY_001",
+                "createdAt": "2026-08-31T03:36:45Z",
+                "author": graphql_actor("User", "ACTOR_HUMAN_REPLY_001", "human-reviewer"),
+                "pullRequestReview": {"id": "REMOTE_REVIEW_LIVE_001"},
+            }
+        )
+        pr["reviewThreads"]["nodes"].append(
+            {
+                "id": "THREAD_HUMAN_001",
+                "isResolved": True,
+                "comments": {
+                    "pageInfo": {"hasNextPage": False},
+                    "nodes": [
+                        {
+                            "id": "HUMAN_FINDING_001",
+                            "createdAt": "2026-08-31T03:36:31Z",
+                            "author": graphql_actor("User", "ACTOR_HUMAN_001", "human-reviewer"),
+                            "pullRequestReview": {"id": "REMOTE_HUMAN_001"},
+                        }
+                    ],
+                },
+            }
+        )
+        pr["reviewThreads"]["nodes"].append(
+            {
+                "id": "THREAD_LOOKALIKE_001",
+                "isResolved": False,
+                "comments": {
+                    "pageInfo": {"hasNextPage": False},
+                    "nodes": [
+                        {
+                            "id": "LOOKALIKE_FINDING_001",
+                            "createdAt": "2026-08-31T03:36:32Z",
+                            "author": graphql_actor("Bot", "BOT_LOOKALIKE_001", "copilot-pull-request-reviewer-bot"),
+                            "pullRequestReview": {"id": "REMOTE_LOOKALIKE_001"},
+                        }
+                    ],
+                },
+            }
+        )
+        evidence = json.loads(self.collect_exact_live_evidence(payload, kind="complete"))
+        self.assertEqual(
+            evidence["threads"],
+            [
+                {
+                    "node_id": "THREAD_LIVE_001",
+                    "finding_id": "FINDING_ACTION_001",
+                    "is_resolved": False,
+                }
+            ],
+        )
+
+        payload = self.exact_graphql_payload()
+        payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"] = [
+            {
+                "id": "THREAD_HUMAN_ONLY_001",
+                "isResolved": False,
+                "comments": {
+                    "pageInfo": {"hasNextPage": False},
+                    "nodes": [
+                        {
+                            "id": "HUMAN_ONLY_FINDING_001",
+                            "createdAt": "2026-08-31T03:36:31Z",
+                            "author": graphql_actor("User", "ACTOR_HUMAN_002", "human-reviewer"),
+                            "pullRequestReview": {"id": "REMOTE_HUMAN_002"},
+                        }
+                    ],
+                },
+            }
+        ]
+        evidence = json.loads(self.collect_exact_live_evidence(payload))
+        self.assertEqual(evidence["threads"], [])
+        self.assertEqual(evidence["findings"], [])
+
+    def test_collect_live_evidence_rejects_missing_or_mismatched_copilot_threads(self):
+        payload = self.exact_graphql_payload(with_finding=True)
+        payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"] = []
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "remote finding 'FINDING_ACTION_001' has no review thread",
+        ):
+            self.collect_exact_live_evidence(payload, kind="complete")
+
+        payload = self.exact_graphql_payload(with_finding=True)
+        payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"][0]["comments"]["nodes"][0]["pullRequestReview"]["id"] = (
+            "REMOTE_REVIEW_OTHER_001"
+        )
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "review thread does not match its exact authoritative review",
+        ):
+            self.collect_exact_live_evidence(payload, kind="complete")
+
+        payload = self.exact_graphql_payload(with_finding=True)
+        payload["data"]["repository"]["pullRequest"]["reviewThreads"]["nodes"][0]["comments"]["nodes"][0]["createdAt"] = (
+            "2026-08-31T03:36:31Z"
+        )
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "review thread root does not preserve its exact authoritative chronology",
         ):
             self.collect_exact_live_evidence(payload, kind="complete")
 
@@ -980,11 +1119,13 @@ class TrustedGitHubGateTests(unittest.TestCase):
             contract = review_family.validate_contract(
                 self.contract(base=missing_base, candidate=missing_candidate)
             )
-            self.assertIsNone(
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "does not contain the exact contract PR",
+            ):
                 trusted_review_gate._load_authoritative_trigger(
                     contract, missing_repo, missing_candidate
                 )
-            )
         finally:
             shutil.rmtree(missing_repo)
 
@@ -1005,6 +1146,95 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 )
         finally:
             shutil.rmtree(duplicate_repo)
+
+    def test_candidate_trigger_decision_record_must_preserve_exact_current_pr_entry(self):
+        repo, base, candidate = self.build_decision_repo(self.decision_entry())
+        try:
+            decisions = self.load_decision_record(repo)
+            decision_path = Path(repo) / trusted_review_gate.DECISION_RECORD_PATH
+            decision_path.write_text(
+                json.dumps(decisions, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            self.commit_all(repo, "reformat candidate decision record")
+            reformatted = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
+            contract = review_family.validate_contract(
+                self.contract(base=base, candidate=reformatted)
+            )
+            trigger = trusted_review_gate._load_authoritative_trigger(
+                contract, repo, reformatted
+            )
+            self.assertEqual(trigger["pull_request"], SYNTHETIC_PULL_REQUEST)
+        finally:
+            shutil.rmtree(repo)
+
+        for case_name, pattern, mutate in (
+            (
+                "delete-file",
+                "candidate decision record is unavailable for drift validation",
+                lambda root: (Path(root) / trusted_review_gate.DECISION_RECORD_PATH).unlink(),
+            ),
+            (
+                "rename-file",
+                "candidate decision record is unavailable for drift validation",
+                lambda root: (Path(root) / trusted_review_gate.DECISION_RECORD_PATH).rename(
+                    Path(root)
+                    / ".github"
+                    / "workflow-pilot-decisions.next.json"
+                ),
+            ),
+            (
+                "empty-pull-requests",
+                "candidate decision record does not contain the exact contract PR",
+                lambda root: (
+                    lambda decisions: (
+                        decisions.__setitem__("pull_requests", []),
+                        self.write_raw_decision_record(root, decisions),
+                    )
+                )(self.load_decision_record(root)),
+            ),
+            (
+                "wrong-pr",
+                "candidate decision record does not contain the exact contract PR",
+                lambda root: (
+                    lambda decisions: (
+                        self.decision_record_entry(decisions).__setitem__(
+                            "pull_request", SYNTHETIC_PULL_REQUEST + 1
+                        ),
+                        self.write_raw_decision_record(root, decisions),
+                    )
+                )(self.load_decision_record(root)),
+            ),
+            (
+                "duplicate-pr",
+                f"candidate trigger decisions repeats PR {SYNTHETIC_PULL_REQUEST}",
+                lambda root: (
+                    lambda decisions: (
+                        decisions["pull_requests"].append(
+                            copy.deepcopy(self.decision_record_entry(decisions))
+                        ),
+                        self.write_raw_decision_record(root, decisions),
+                    )
+                )(self.load_decision_record(root)),
+            ),
+        ):
+            repo, base, candidate = self.build_decision_repo(self.decision_entry())
+            try:
+                mutate(repo)
+                self.commit_all(repo, f"mutate candidate decision record: {case_name}")
+                drifted = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
+                contract = review_family.validate_contract(
+                    self.contract(base=base, candidate=drifted)
+                )
+                with self.subTest(case=case_name), self.assertRaisesRegex(
+                    reporter.PilotDataError,
+                    pattern,
+                ):
+                    trusted_review_gate._load_authoritative_trigger(
+                        contract, repo, drifted
+                    )
+            finally:
+                shutil.rmtree(repo)
 
     def test_base_owned_trigger_decision_controls_end_to_end_and_drift_fails(self):
         repo, base, candidate = self.build_decision_repo(

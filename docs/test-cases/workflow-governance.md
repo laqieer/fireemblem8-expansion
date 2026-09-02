@@ -1242,7 +1242,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    fixture now uses its version-2 REST actor schema so every review and
    finding preserves the exact Copilot tuple `(type: Bot, node_id:
    BOT_kgDOCnlnWA, id: 175728472, login:
-   copilot-pull-request-reviewer[bot])`.
+   copilot-pull-request-reviewer[bot])`, and only
+   `identities.seal` plus `decisions.seal` refresh while the frozen semantic
+   metrics and formulas remain unchanged.
 4. Inspect the focused suite's positive classification fixture for inclusive
    boundaries, cancellation, supersession, unchanged-SHA duplication, stack
    ancestry, generated-only work, bulk deletion, reverts, still-running work,
@@ -1506,6 +1508,9 @@ game behavior needs a compensating change.
    BOT_kgDOCnlnWA, id: 175728472, login:
    copilot-pull-request-reviewer[bot])` on both the owning review and each
    historical finding/comment record, with same-actor linkage fail-closed.
+   Confirm only threads rooted in authenticated accepted Copilot findings count
+   toward family evidence; human or other-bot threads must neither satisfy nor
+   poison that coverage.
 5. Confirm a synthetic exact base without the trusted checker or decision
    consumer takes explicit `introduction` mode. Require false merge/push
    authority plus an external-coordinator requirement. Do not substitute a
@@ -1530,7 +1535,10 @@ game behavior needs a compensating change.
    from trusted base AST/import resolution over the actual exact-base modules
    the member executes, including package `__init__.py` files, shared modules
    such as `reporter.py`, and constant-path local scripts loaded dynamically.
-   Missing or ambiguous local imports fail closed. Treat every parent package
+   Missing or ambiguous local imports fail closed. Require both the exact base
+   decision record entry and the candidate PR entry to exist for the same PR;
+   removing, renaming, emptying, duplicating, or retargeting the candidate PR
+   record fails closed before trust. Treat every parent package
    initializer in that closure as authority-bearing presence/absence state,
    even when the exact base lacks the file; adding `scripts/__init__.py`,
    `scripts/docs_check_tests/__init__.py`, `tests/__init__.py`, or another

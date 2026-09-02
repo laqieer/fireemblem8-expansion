@@ -72,6 +72,36 @@ def copilot_graphql_actor():
     }
 
 
+def synthetic_decision_record_snapshot():
+    decisions = reporter.load_json(ROOT / ".github" / "workflow-pilot-decisions.json")
+    decisions["pull_requests"] = [
+        entry
+        for entry in decisions["pull_requests"]
+        if entry["pull_request"] != PULL_REQUEST
+    ]
+    decisions["pull_requests"].append(
+        {
+            "pull_request": PULL_REQUEST,
+            "risk_boundaries": ["lifecycle", "protocol"],
+            "threshold": {
+                "triggers": ["changed-files", "risk-boundary"],
+                "override_history": [],
+            },
+            "gate_mode": "concurrent",
+            "stack": {
+                "depth": 0,
+                "parent_pr": None,
+                "exception_reason": None,
+            },
+            "pilot": {
+                "included": False,
+                "disposition": "baseline-only",
+            },
+        }
+    )
+    return reporter.normalized_json(decisions)
+
+
 class ReviewBaseCheckerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -85,6 +115,9 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         cls.input_snapshots = {
             relative: optional_file_bytes(ROOT / relative) for relative in ASSERTION_INPUTS
         }
+        cls.input_snapshots[".github/workflow-pilot-decisions.json"] = (
+            synthetic_decision_record_snapshot()
+        )
         subprocess.run(
             reporter.git_command(cls.repo, "init", "-q"),
             env=reporter.git_environment(offline=True),

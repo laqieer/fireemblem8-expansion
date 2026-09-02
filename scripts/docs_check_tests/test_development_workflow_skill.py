@@ -4053,6 +4053,32 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                 for fragment in forbidden_fragments:
                     self.assertNotIn(normalize_policy(fragment), normalized)
 
+    def test_workflow_pilot_docs_record_rest_actor_schema_migration_and_seal_refresh(self):
+        pilot = WORKFLOW_PILOT_PATH.read_text(encoding="utf-8")
+        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        pilot_normalized = normalize_policy(pilot)
+        governance_normalized = normalize_policy(governance)
+        for fragment in (
+            "historical REST author tuple",
+            "historical finding record preserves the same exact REST actor tuple",
+            "schema v2",
+            "identities.seal",
+            "decisions.seal",
+            "semantic metric values, formulas, and availability reasons remain unchanged",
+            "candidate PR record must exist",
+            "Only review threads rooted in accepted authoritative Copilot finding IDs participate in family evidence",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(normalize_policy(fragment), pilot_normalized)
+        for fragment in (
+            "version-2 REST actor schema",
+            "only `identities.seal` plus `decisions.seal` refresh",
+            "threads rooted in authenticated accepted Copilot findings count toward family evidence",
+            "removing, renaming, emptying, duplicating, or retargeting the candidate PR record fails closed before trust",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(normalize_policy(fragment), governance_normalized)
+
     def test_live_title_probe_contract_is_complete_and_fail_closed(self):
         governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
         self.assertEqual(live_title_probe_violations(governance), [])

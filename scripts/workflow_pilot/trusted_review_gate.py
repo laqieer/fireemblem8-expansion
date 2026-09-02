@@ -740,6 +740,103 @@ def _base_contains_gate(repository_root: Path, base_sha: str) -> bool:
     return True
 
 
+def _normalize_trigger_decision_record(
+    record: dict[str, Any],
+    *,
+    label: str,
+) -> dict[str, Any]:
+    reporter.expect_keys(
+        record,
+        label,
+        (
+            "pull_request",
+            "risk_boundaries",
+            "threshold",
+            "gate_mode",
+            "stack",
+            "pilot",
+        ),
+    )
+    number = reporter.expect_int(
+        record["pull_request"], f"{label}.pull_request", 1
+    )
+    threshold = reporter.expect_object(record["threshold"], f"{label}.threshold")
+    reporter.expect_keys(
+        threshold,
+        f"{label}.threshold",
+        ("triggers", "override_history"),
+    )
+    override_history = []
+    for index, raw_override in enumerate(
+        reporter.expect_list(
+            threshold["override_history"],
+            f"{label}.threshold.override_history",
+        )
+    ):
+        override_label = f"{label}.threshold.override_history[{index}]"
+        override = reporter.expect_object(raw_override, override_label)
+        reporter.expect_keys(override, override_label, ("enabled", "reason"))
+        override_history.append(
+            {
+                "enabled": reporter.expect_bool(
+                    override["enabled"], f"{override_label}.enabled"
+                ),
+                "reason": reporter.expect_string(
+                    override["reason"], f"{override_label}.reason"
+                ),
+            }
+        )
+    stack = reporter.expect_object(record["stack"], f"{label}.stack")
+    reporter.expect_keys(
+        stack,
+        f"{label}.stack",
+        ("depth", "parent_pr", "exception_reason"),
+    )
+    parent_pr = stack["parent_pr"]
+    if parent_pr is not None:
+        parent_pr = reporter.expect_int(
+            parent_pr, f"{label}.stack.parent_pr", 1
+        )
+    exception_reason = stack["exception_reason"]
+    if exception_reason is not None:
+        exception_reason = reporter.expect_string(
+            exception_reason, f"{label}.stack.exception_reason"
+        )
+    pilot = reporter.expect_object(record["pilot"], f"{label}.pilot")
+    reporter.expect_keys(pilot, f"{label}.pilot", ("included", "disposition"))
+    trigger = review_family.normalize_trigger_fields(
+        record["risk_boundaries"],
+        threshold["triggers"],
+        label=label,
+    )
+    return {
+        "pull_request": number,
+        "trigger": trigger,
+        "pre_review_required": review_family.trigger_requires_pre_review(trigger),
+        "threshold_override_history": override_history,
+        "gate_mode": reporter.expect_enum(
+            record["gate_mode"], reporter.GATE_MODES, f"{label}.gate_mode"
+        ),
+        "stack": {
+            "depth": reporter.expect_int(
+                stack["depth"], f"{label}.stack.depth", 0
+            ),
+            "parent_pr": parent_pr,
+            "exception_reason": exception_reason,
+        },
+        "pilot": {
+            "included": reporter.expect_bool(
+                pilot["included"], f"{label}.pilot.included"
+            ),
+            "disposition": reporter.expect_enum(
+                pilot["disposition"],
+                reporter.PILOT_DISPOSITIONS,
+                f"{label}.pilot.disposition",
+            ),
+        },
+    }
+
+
 def _parse_trigger_decision_records(
     decisions: dict[str, Any],
     *,
@@ -759,21 +856,10 @@ def _parse_trigger_decision_records(
     for index, raw_record in enumerate(records):
         record_label = f"{label}.pull_requests[{index}]"
         record = reporter.expect_object(raw_record, record_label)
-        reporter.expect_keys(
-            record,
-            record_label,
-            (
-                "pull_request",
-                "risk_boundaries",
-                "threshold",
-                "gate_mode",
-                "stack",
-                "pilot",
-            ),
+        normalized_record = _normalize_trigger_decision_record(
+            record, label=record_label
         )
-        number = reporter.expect_int(
-            record["pull_request"], f"{record_label}.pull_request", 1
-        )
+        number = normalized_record["pull_request"]
         if number in seen:
             raise reporter.PilotDataError(
                 f"{label} repeats PR {number}"
@@ -781,22 +867,7 @@ def _parse_trigger_decision_records(
         seen.add(number)
         if number != pull_request:
             continue
-        threshold = reporter.expect_object(record["threshold"], f"{record_label}.threshold")
-        reporter.expect_keys(
-            threshold,
-            f"{record_label}.threshold",
-            ("triggers", "override_history"),
-        )
-        trigger = review_family.normalize_trigger_fields(
-            record["risk_boundaries"],
-            threshold["triggers"],
-            label=record_label,
-        )
-        match = {
-            "pull_request": number,
-            "trigger": trigger,
-            "pre_review_required": review_family.trigger_requires_pre_review(trigger),
-        }
+        match = normalized_record
     return match, bool(records)
 
 
@@ -824,7 +895,9 @@ def _load_authoritative_trigger(
         label=f"decision record at commit {contract['base_sha']}",
     )
     if authoritative is None:
-        return None
+        raise reporter.PilotDataError(
+            "authoritative trigger decision record does not contain the exact contract PR"
+        )
     if authoritative["trigger"] != contract["trigger"]:
         raise reporter.PilotDataError(
             "candidate trigger does not match the authoritative decision record"
@@ -856,7 +929,11 @@ def _load_authoritative_trigger(
         pull_request=contract["pull_request"],
         label="candidate trigger decisions",
     )
-    if candidate_record is not None and candidate_record["trigger"] != authoritative["trigger"]:
+    if candidate_record is None:
+        raise reporter.PilotDataError(
+            "candidate decision record does not contain the exact contract PR"
+        )
+    if candidate_record != authoritative:
         raise reporter.PilotDataError(
             "candidate decision record drifts from the authoritative base decision"
         )
@@ -1692,6 +1769,9 @@ def collect_live_evidence_bytes(
         remote_reviews.append({**review, "round": round_number})
 
     threads = []
+    accepted_findings = {
+        finding["node_id"]: finding for finding in remote_findings
+    }
     finding_to_thread = {}
     finding_to_thread_actor = {}
     for index, raw_thread in enumerate(
@@ -1702,20 +1782,43 @@ def collect_live_evidence_bytes(
         reporter.expect_keys(thread, label, ("id", "isResolved", "comments"))
         comments = _expect_page_complete(thread["comments"], f"{label}.comments")
         if not comments:
-            raise reporter.PilotDataError(f"{label} has no finding comment")
+            continue
         first = reporter.expect_object(comments[0], f"{label}.comments[0]")
         reporter.expect_keys(
             first,
             f"{label}.comments[0]",
             ("id", "createdAt", "author", "pullRequestReview"),
         )
+        finding_id = reporter.expect_string(
+            first["id"], f"{label}.comments[0].id"
+        )
+        accepted_finding = accepted_findings.get(finding_id)
+        if accepted_finding is None:
+            continue
+        thread_review = reporter.expect_object(
+            first["pullRequestReview"],
+            f"{label}.comments[0].pullRequestReview",
+        )
+        reporter.expect_keys(
+            thread_review,
+            f"{label}.comments[0].pullRequestReview",
+            ("id",),
+        )
+        review_id = reporter.expect_string(
+            thread_review["id"], f"{label}.comments[0].pullRequestReview.id"
+        )
+        if review_id != accepted_finding["review_id"]:
+            raise reporter.PilotDataError(
+                f"remote finding {finding_id!r} review thread does not match its exact authoritative review"
+            )
+        if first["createdAt"] != accepted_finding["created_at"]:
+            raise reporter.PilotDataError(
+                f"remote finding {finding_id!r} review thread root does not preserve its exact authoritative chronology"
+            )
         thread_author = _graphql_actor(
             first["author"], f"{label}.comments[0].author"
         )
         actor_records.append(thread_author)
-        finding_id = reporter.expect_string(
-            first["id"], f"{label}.comments[0].id"
-        )
         finding_to_thread[finding_id] = thread["id"]
         finding_to_thread_actor[finding_id] = thread_author["id"]
         threads.append(

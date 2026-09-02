@@ -105,6 +105,10 @@ sets and set-like relationship fields are sorted before hashing. It is an
 input-format/cohort checksum: it detects identity, timestamp, PR/SHA
 association, and relationship substitution that preserves aggregate metrics,
 but does not hash source files, blobs, objects, ROMs, or the repository tree.
+The historical REST actor migration raised the frozen baseline fixture to
+schema v2 and refreshed only `identities.seal` plus the decision
+record-derived `decisions.seal`; the frozen semantic metric values, formulas,
+and availability reasons remain unchanged.
 
 ## Build event classification and candidate evidence
 
@@ -542,6 +546,9 @@ or changed after its authoritative introduction all fail. A newly authored
 fixture event plus an old candidate SHA is insufficient when that commit tree
 lacks the exact decision entry; Git remains the only stored commit-content
 authority, and the decision record stores no copied tree, blob, or commit hash.
+In the trusted live gate, both the exact base decision record and the current
+candidate PR record must exist for the same PR, and the candidate's
+decision/trigger fields must remain identical to the authoritative base state.
 Every schema version, identity, count, duration input, attempt, index, depth,
 cost, and authoritative REST actor database ID uses exact-integer validation
 before bounds or equality checks; JSON booleans are accepted only by declared
@@ -656,6 +663,11 @@ when a fixture explicitly declares REST actor shape. Case/suffix normalization
 remains limited to non-authoritative display and alias checks. PR, actor, local
 review/action/finding, remote review/finding/thread, force-push, and
 disposition identities still share one case-normalized uniqueness check.
+Only review threads rooted in accepted authoritative Copilot finding IDs
+participate in family evidence. Human or other-bot threads and replies remain
+visible on GitHub but neither satisfy nor poison the exact Copilot thread
+coverage requirement; a matched Copilot thread must still preserve the same
+root finding ID, review ID, actor, and chronology.
 
 ### Base-owned executable evidence
 
