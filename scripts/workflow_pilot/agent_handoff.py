@@ -3368,19 +3368,43 @@ def make_history_receipt(
     handoff_id: str,
 ) -> dict[str, Any]:
     prior = validate_prior_handoffs(document["prior_handoffs"])
-    source_handoffs = {
-        item["id"]: item for item in document["handoffs"]
-    }
-    result_handoffs = {
-        item["id"]: item for item in result["handoffs"]
-    }
-    source = source_handoffs.get(handoff_id)
-    handoff_result = result_handoffs.get(handoff_id)
+    source = next(
+        (item for item in document["handoffs"] if item["id"] == handoff_id),
+        None,
+    )
+    if source is None:
+        raise HandoffDataError(
+            f"handoff {handoff_id!r} has no closed result to seal"
+        )
+    canonical_result = validate_document(
+        copy.deepcopy(document),
+        Path(source["allowed_worktree"]),
+        current_time=parse_time(
+            document["coordinator_receipt"]["issued_at"],
+            "coordinator_receipt.issued_at",
+        ),
+    )
+    if result != canonical_result:
+        raise HandoffDataError(
+            f"handoff {handoff_id!r} result does not match canonical validation output"
+        )
+    handoff_result = {
+        item["id"]: item for item in canonical_result["handoffs"]
+    }.get(handoff_id)
+    summary = canonical_result["summary"]
+    outcome = None if handoff_result is None else handoff_result["outcome"]
+    summary_ok = (
+        outcome in {"accepted", "interrupted"}
+        and summary["accepted_handoffs"] == int(outcome == "accepted")
+        and summary["interrupted_handoffs"] == int(outcome == "interrupted")
+        and not summary["rejected_handoffs"]
+        and not summary["rejection_codes"]
+        and summary["trusted_push_eligible"] is (outcome == "accepted")
+    )
     if (
-        source is None
-        or handoff_result is None
-        or handoff_result["outcome"] not in {"accepted", "interrupted"}
+        handoff_result is None
         or handoff_result["rejection_codes"]
+        or not summary_ok
     ):
         raise HandoffDataError(
             f"handoff {handoff_id!r} has no closed result to seal"
@@ -3403,9 +3427,9 @@ def make_history_receipt(
         "interruption_snapshot": handoff_result.get("interruption_snapshot"),
         "assigned_at": handoff_result["assigned_at"],
         "closed_at": handoff_result["closed_at"],
-        "input_seal": result["input_seal"],
-        "git_seal": result["git_seal"],
-        "result_seal": result["result_seal"],
+        "input_seal": canonical_result["input_seal"],
+        "git_seal": canonical_result["git_seal"],
+        "result_seal": canonical_result["result_seal"],
         "operation_nonce": document["coordinator_receipt"]["operation"][
             "nonce"
         ],
