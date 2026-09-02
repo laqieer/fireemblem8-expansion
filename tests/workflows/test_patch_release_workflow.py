@@ -3951,6 +3951,198 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     )
                 )
 
+    def test_extglob_case_pattern_semantic_surface_strips_only_the_pattern_prefix(self):
+        cases = (
+            (
+                "at-extglob-separated-env",
+                '@(x)) /bin/env -S "/bin/bash -c \\"$cmd\\""',
+                ("/bin/env", "-S", '/bin/bash -c "$cmd"'),
+            ),
+            (
+                "bang-extglob-attached-bash",
+                '!(x))/bin/bash -c "$cmd"',
+                ("/bin/bash", "-c", "$cmd"),
+            ),
+            (
+                "plus-extglob-attached-mount",
+                "+(x))/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor",
+                (
+                    "/usr/bin/mount",
+                    "-o",
+                    "remount,ro,nosuid,nodev,noexec",
+                    "/mnt/supervisor",
+                ),
+            ),
+            (
+                "question-extglob-attached-env",
+                '?(x))/bin/env -S "/bin/bash -c \\"$cmd\\""',
+                ("/bin/env", "-S", '/bin/bash -c "$cmd"'),
+            ),
+            (
+                "star-extglob-attached-bash",
+                '*(x))/bin/bash -c "$cmd"',
+                ("/bin/bash", "-c", "$cmd"),
+            ),
+            (
+                "nested-extglob-attached-bash",
+                '!(@(x)))/bin/bash -c "$cmd"',
+                ("/bin/bash", "-c", "$cmd"),
+            ),
+            (
+                "extglob-attached-brace-group",
+                '@(x)){ /bin/env -S "/bin/bash -c \\"$cmd\\""',
+                ("/bin/env", "-S", '/bin/bash -c "$cmd"'),
+            ),
+        )
+
+        for label, command_text, expected in cases:
+            with self.subTest(case=label):
+                tokens = publisher_shell_contract._semantic_surface_tokens(
+                    publisher_shell_contract._parse_shell_tokens(
+                        command_text,
+                        label=label,
+                    ),
+                    label=label,
+                )
+                self.assertEqual(tuple(token.text for token in tokens), expected)
+
+    def test_case_pattern_surface_parser_ignores_pure_closers_and_fails_closed_on_ambiguous_tokens(
+        self,
+    ):
+        for closing in (")", "))", ")))"):
+            with self.subTest(closing=closing):
+                self.assertEqual(
+                    publisher_shell_contract._semantic_surface_tokens(
+                        publisher_shell_contract._parse_shell_tokens(
+                            closing,
+                            label=closing,
+                        ),
+                        label=closing,
+                    ),
+                    (),
+                )
+
+        for label, command_text in (
+            (
+                "ambiguous-double-close",
+                'foo)) /bin/env -S "/bin/bash -c \\"$cmd\\""',
+            ),
+            (
+                "unterminated-extglob-fragment",
+                "@(x",
+            ),
+            (
+                "unterminated-nested-extglob-fragment",
+                "!(@(x)",
+            ),
+        ):
+            with self.subTest(case=label):
+                with self.assertRaisesRegex(ValueError, "case-pattern token differs"):
+                    publisher_shell_contract._semantic_surface_tokens(
+                        publisher_shell_contract._parse_shell_tokens(
+                            command_text,
+                            label=label,
+                        ),
+                        label=label,
+                    )
+
+    def test_unsupported_extglob_case_alternation_fails_closed(self):
+        script = (
+            'ROOT=/mnt\n'
+            'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+            'case x in\n'
+            '  @(x|y)) /bin/env -S "/bin/bash -c \\"$cmd\\""\n'
+            '  ;;\n'
+            'esac\n'
+        )
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                script,
+                label="unsupported-extglob-alternation",
+            )
+        )
+
+    def test_extglob_case_arm_runtime_repros_execute_and_detector_rejects_them(self):
+        prefix = (
+            'ROOT=/mnt\n'
+            'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+        )
+        cases = (
+            (
+                "extglob-env-split-string",
+                'cmd="printf RUNTIME_EXTGLOB_ENV"\n'
+                'case x in\n'
+                '  @(x))/bin/env -S "/bin/bash -c \\"$cmd\\""\n'
+                '  ;;\n'
+                'esac\n',
+                "RUNTIME_EXTGLOB_ENV",
+                prefix
+                + 'case x in\n'
+                + '  @(x))/bin/env -S "/bin/bash -c \\"$cmd\\""\n'
+                + '  ;;\n'
+                + 'esac\n',
+            ),
+            (
+                "nested-extglob-bash-c",
+                'cmd="printf RUNTIME_EXTGLOB_BASH"\n'
+                'case x in\n'
+                '  !(@(y)))/bin/bash -c "$cmd"\n'
+                '  ;;\n'
+                'esac\n',
+                "RUNTIME_EXTGLOB_BASH",
+                prefix
+                + 'case x in\n'
+                + '  !(@(y)))/bin/bash -c "$cmd"\n'
+                + '  ;;\n'
+                + 'esac\n',
+            ),
+            (
+                "direct-extglob-mount-surface",
+                'case x in\n'
+                '  +(x))/usr/bin/printf RUNTIME_EXTGLOB_DIRECT\n'
+                '  ;;\n'
+                'esac\n',
+                "RUNTIME_EXTGLOB_DIRECT",
+                prefix
+                + 'case x in\n'
+                + '  +(x))/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor\n'
+                + '  ;;\n'
+                + 'esac\n',
+            ),
+        )
+
+        self.assertFalse(workflow_has_supervisor_parent_readonly_remount(self.text))
+
+        for label, runtime_script, expected_stdout, semantic_script in cases:
+            with self.subTest(case=label):
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "--noprofile",
+                        "--norc",
+                        "-O",
+                        "extglob",
+                        "-eu",
+                        "-o",
+                        "pipefail",
+                        "-c",
+                        runtime_script,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, expected_stdout)
+                self.assertEqual(completed.stderr, "")
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        semantic_script,
+                        label=label,
+                    )
+                )
+
     def test_inline_function_body_env_split_string_runtime_fails_closed(self):
         runtime_script = (
             'wrapped() { /bin/env -S "/bin/bash -c \\"printf RUNTIME_INLINE_FUNCTION\\""; }\n'

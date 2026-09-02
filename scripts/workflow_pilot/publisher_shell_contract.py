@@ -533,6 +533,13 @@ def _parse_shell_tokens(command_text: str, *, label: str) -> tuple[_ShellToken, 
     )
 
 
+def _shell_token_from_text(token_text: str, *, label: str) -> _ShellToken:
+    tokens = _parse_shell_tokens(token_text, label=label)
+    if len(tokens) != 1:
+        raise ValueError(f"{label} shell token boundaries differ")
+    return tokens[0]
+
+
 def _token_texts(tokens: Iterable[_ShellToken]) -> tuple[str, ...]:
     return tuple(token.text for token in tokens)
 
@@ -624,20 +631,80 @@ def _strip_command_prefixes(command: tuple[_ShellToken, ...]) -> tuple[_ShellTok
     return tuple(tokens)
 
 
-def _is_case_pattern_token(token: _ShellToken) -> bool:
-    if not token.text.endswith(")"):
-        return False
-    prefix = token.text[:-1]
-    return (
-        token.text == "*)"
-        or prefix.startswith("/")
-        or prefix.startswith("*")
-        or "|" in prefix
-        or " " in prefix
+def _is_pure_closing_paren_token(token: _ShellToken) -> bool:
+    return bool(token.text) and set(token.text) == {")"}
+
+
+def _token_could_be_case_pattern(token: _ShellToken) -> bool:
+    text = token.text
+    return ")" in text or any(
+        opener in text
+        for opener in ("@(", "!(", "+(", "*(", "?(")
     )
 
 
-def _semantic_surface_tokens(command: tuple[_ShellToken, ...]) -> tuple[_ShellToken, ...]:
+def _case_pattern_payload_tokens(
+    token: _ShellToken,
+    *,
+    label: str,
+) -> tuple[_ShellToken, ...] | None:
+    text = token.text
+    if not text:
+        return None
+
+    extglob_depth = 0
+    in_bracket = False
+    saw_extglob = False
+    terminator_index: int | None = None
+    index = 0
+
+    while index < len(text):
+        character = text[index]
+        if in_bracket:
+            if character == "]":
+                in_bracket = False
+            index += 1
+            continue
+        if character == "[":
+            in_bracket = True
+            index += 1
+            continue
+        if character in "@!+*?" and index + 1 < len(text) and text[index + 1] == "(":
+            saw_extglob = True
+            extglob_depth += 1
+            index += 2
+            continue
+        if character == "(":
+            raise ValueError(f"{label} case-pattern token differs")
+        if character == ")":
+            if extglob_depth:
+                extglob_depth -= 1
+                index += 1
+                continue
+            terminator_index = index
+            break
+        index += 1
+
+    if in_bracket or extglob_depth:
+        raise ValueError(f"{label} case-pattern token differs")
+    if terminator_index is None:
+        if saw_extglob:
+            raise ValueError(f"{label} case-pattern token differs")
+        return None
+
+    payload = text[terminator_index + 1 :]
+    if not payload:
+        return ()
+    if payload.startswith(")"):
+        raise ValueError(f"{label} case-pattern token differs")
+    return (_shell_token_from_text(payload, label=label),)
+
+
+def _semantic_surface_tokens(
+    command: tuple[_ShellToken, ...],
+    *,
+    label: str,
+) -> tuple[_ShellToken, ...]:
     tokens = command
     while True:
         tokens = _strip_command_prefixes(tokens)
@@ -649,13 +716,21 @@ def _semantic_surface_tokens(command: tuple[_ShellToken, ...]) -> tuple[_ShellTo
             raise ValueError("inline shell function body differs")
         if tokens[0].text in _SHELL_STRUCTURE_TOKENS:
             return ()
-        if tokens[0].text == ")" or tokens[0].text.endswith("))"):
+        if _is_pure_closing_paren_token(tokens[0]):
             return ()
-        if _is_case_pattern_token(tokens[0]):
-            tokens = tokens[1:]
-            if not tokens:
-                return ()
-            continue
+        if (
+            len(tokens) == 1
+            and tokens[0].text.endswith("))")
+            and not _token_has_shell_syntax(tokens[0])
+        ):
+            return ()
+        if _token_could_be_case_pattern(tokens[0]):
+            case_payload = _case_pattern_payload_tokens(tokens[0], label=label)
+            if case_payload is not None:
+                tokens = case_payload + tokens[1:]
+                if not tokens:
+                    return ()
+                continue
         return tokens
 
 
@@ -996,7 +1071,10 @@ def _shell_semantic_command_pairs(
     for command_index, command_text in enumerate(
         split_bash_simple_command_strings(semantic_script, label=label)
     ):
-        tokens = _semantic_surface_tokens(_parse_shell_tokens(command_text, label=label))
+        tokens = _semantic_surface_tokens(
+            _parse_shell_tokens(command_text, label=label),
+            label=label,
+        )
         if tokens:
             pairs.append((command_index, command_text, tokens))
     return tuple(pairs)
