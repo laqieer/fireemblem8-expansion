@@ -1503,6 +1503,27 @@ def builder_cleanup_functions_source(workflow: str) -> str:
     return script[start:end]
 
 
+def builder_passwd_helpers_source(workflow: str) -> str:
+    section = builder_cleanup_functions_source(workflow)
+    start = section.index("builder_passwd_entry_exists() {")
+    end = section.index("builder_group_pids() {", start)
+    return section[start:end]
+
+
+def builder_user_selection_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Build candidate in isolated namespace and stage public inputs",
+    )
+    start = script.index(
+        'builder_passwd_entry_absent "$builder_user"',
+        script.index("wheelhouse_owned=1"),
+    )
+    end_marker = 'test "$builder_uid" -ge 50000'
+    end = script.index(end_marker, start) + len(end_marker)
+    return script[start:end]
+
+
 def private_base_cleanup_function_source(workflow: str) -> str:
     script = named_step_run_script(
         workflow,
@@ -3901,13 +3922,15 @@ exit 37
             '}\n'
             'builder_passwd_entry_absent() {\n'
             '  local status\n'
-            '  builder_passwd_entry_exists "$1"\n'
-            '  status="$?"\n'
-            '  case "$status" in\n'
-            '    0) return 1 ;;\n'
-            '    2) return 0 ;;\n'
-            '    *) return "$status" ;;\n'
-            '  esac\n'
+            '  if builder_passwd_entry_exists "$1"; then\n'
+            '    return 1\n'
+            '  else\n'
+            '    status="$?"\n'
+            '    case "$status" in\n'
+            '      2) return 0 ;;\n'
+            '      *) return "$status" ;;\n'
+            '    esac\n'
+            '  fi\n'
             '}\n',
             'builder_passwd_entry_exists() {\n'
             '  [ "$1" = "$builder_user" ]\n'
@@ -4051,6 +4074,201 @@ exit 37
         )
         self.assertNotIn("/home/runner/work/_temp", completed.stderr)
         self.assertNotIn("/home/runner/work/_temp", completed.stdout)
+
+    def test_builder_passwd_entry_absent_handles_getent_statuses_under_bash_e(self):
+        original_helpers = builder_passwd_helpers_source(self.text)
+        helpers = original_helpers.replace(
+            '/usr/bin/getent passwd "$1" > /dev/null 2>&1',
+            'fake_getent "$1" > /dev/null 2>&1',
+            1,
+        )
+        status_cases = (
+            (2, 0, True),
+            (0, 1, False),
+            (1, 1, False),
+            (125, 125, False),
+            (143, 143, False),
+        )
+        for fake_status, expected_status, expect_sentinel in status_cases:
+            with self.subTest(fake_status=fake_status):
+                harness = (
+                    "set -e\n"
+                    "fake_getent() {\n"
+                    f"  return {fake_status}\n"
+                    "}\n"
+                    + helpers
+                    + 'builder_passwd_entry_absent "ci-patch-builder"\n'
+                    + "printf 'SENTINEL\\n'\n"
+                )
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", harness],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, expected_status)
+                self.assertEqual(completed.stderr, "")
+                if expect_sentinel:
+                    self.assertEqual(completed.stdout, "SENTINEL\n")
+                else:
+                    self.assertEqual(completed.stdout, "")
+
+        broken_helpers = helpers.replace(
+            '  if builder_passwd_entry_exists "$1"; then\n'
+            '    return 1\n'
+            '  else\n'
+            '    status="$?"\n'
+            '    case "$status" in\n'
+            '      2) return 0 ;;\n'
+            '      *) return "$status" ;;\n'
+            '    esac\n'
+            '  fi\n',
+            '  builder_passwd_entry_exists "$1"\n'
+            '  status="$?"\n'
+            '  case "$status" in\n'
+            '    0) return 1 ;;\n'
+            '    2) return 0 ;;\n'
+            '    *) return "$status" ;;\n'
+            '  esac\n',
+            1,
+        )
+        broken_real_helpers = broken_helpers.replace(
+            'fake_getent "$1" > /dev/null 2>&1',
+            '/usr/bin/getent passwd "$1" > /dev/null 2>&1',
+            1,
+        )
+        broken_run_script = named_step_run_script(
+            self.text,
+            "Build candidate in isolated namespace and stage public inputs",
+        ).replace(original_helpers, broken_real_helpers, 1)
+        with self.assertRaisesRegex(
+            ValueError,
+            "raw identity differs from the reviewed security boundary",
+        ):
+            publisher_shell_contract.assert_reviewed_patch_release_run_script_identity(
+                broken_run_script,
+                label="publisher isolated candidate build run script",
+            )
+        broken_runtime = subprocess.run(
+            [
+                "/bin/bash",
+                "-c",
+                "set -e\n"
+                "fake_getent() {\n"
+                "  return 2\n"
+                "}\n"
+                + broken_helpers
+                + 'builder_passwd_entry_absent "ci-patch-builder"\n'
+                + "printf 'SENTINEL\\n'\n",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(broken_runtime.returncode, 2)
+        self.assertEqual(broken_runtime.stdout, "")
+        self.assertEqual(broken_runtime.stderr, "")
+
+    def test_builder_user_selection_path_continues_for_absent_passwd_lookup(self):
+        helpers = builder_passwd_helpers_source(self.text).replace(
+            '/usr/bin/getent passwd "$1" > /dev/null 2>&1',
+            'fake_getent "$1" > /dev/null 2>&1',
+            1,
+        )
+        selection = builder_user_selection_source(self.text)
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="builder-passwd-selection-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            workspace = sandbox / "workspace"
+            wheelhouse = sandbox / "wheelhouse"
+            workspace.mkdir()
+            wheelhouse.mkdir()
+
+            harness = (
+                "set -e\n"
+                "fake_getent() {\n"
+                "  case \"$1\" in\n"
+                "    ci-patch-builder|60000) return 2 ;;\n"
+                "    *) return 1 ;;\n"
+                "  esac\n"
+                "}\n"
+                "builder_uid_is_empty() {\n"
+                "  return 0\n"
+                "}\n"
+                + helpers
+                + f'builder_user="ci-patch-builder"\n'
+                + f'BUILDER_ROOT="{sandbox / "builder-root"}"\n'
+                + f'PATCH_WHEELHOUSE="{wheelhouse}"\n'
+                + f'GITHUB_WORKSPACE_PATH="{workspace}"\n'
+                + selection
+                + "\nprintf 'CREATION_SENTINEL:%s\\n' \"$builder_uid\"\n"
+            )
+            completed = subprocess.run(
+                ["/bin/bash", "-c", harness],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout, "CREATION_SENTINEL:60000\n")
+            self.assertEqual(completed.stderr, "")
+
+            broken_helpers = helpers.replace(
+                '  if builder_passwd_entry_exists "$1"; then\n'
+                '    return 1\n'
+                '  else\n'
+                '    status="$?"\n'
+                '    case "$status" in\n'
+                '      2) return 0 ;;\n'
+                '      *) return "$status" ;;\n'
+                '    esac\n'
+                '  fi\n',
+                '  builder_passwd_entry_exists "$1"\n'
+                '  status="$?"\n'
+                '  case "$status" in\n'
+                '    0) return 1 ;;\n'
+                '    2) return 0 ;;\n'
+                '    *) return "$status" ;;\n'
+                '  esac\n',
+                1,
+            )
+            broken = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-c",
+                    "set -e\n"
+                    "fake_getent() {\n"
+                    "  case \"$1\" in\n"
+                    "    ci-patch-builder|60000) return 2 ;;\n"
+                    "    *) return 1 ;;\n"
+                    "  esac\n"
+                    "}\n"
+                    "builder_uid_is_empty() {\n"
+                    "  return 0\n"
+                    "}\n"
+                    + broken_helpers
+                    + f'builder_user="ci-patch-builder"\n'
+                    + f'BUILDER_ROOT="{sandbox / "broken-builder-root"}"\n'
+                    + f'PATCH_WHEELHOUSE="{wheelhouse}"\n'
+                    + f'GITHUB_WORKSPACE_PATH="{workspace}"\n'
+                    + selection
+                    + "\nprintf 'CREATION_SENTINEL:%s\\n' \"$builder_uid\"\n",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(broken.returncode, 2)
+            self.assertEqual(broken.stdout, "")
+            self.assertEqual(broken.stderr, "")
 
     def test_launch_validation_failure_kills_live_child_without_waiting(self):
         section = builder_cleanup_functions_source(self.text)

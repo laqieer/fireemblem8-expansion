@@ -1692,13 +1692,15 @@ jobs:
         }
         builder_passwd_entry_absent() {
           local status
-          builder_passwd_entry_exists "$1"
-          status="$?"
-          case "$status" in
-            0) return 1 ;;
-            2) return 0 ;;
-            *) return "$status" ;;
-          esac
+          if builder_passwd_entry_exists "$1"; then
+            return 1
+          else
+            status="$?"
+            case "$status" in
+              2) return 0 ;;
+              *) return "$status" ;;
+            esac
+          fi
         }
         builder_group_pids() {
           local output
