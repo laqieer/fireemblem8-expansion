@@ -2887,12 +2887,8 @@ def collect_live_evidence_bytes(
         finding_ids = []
         for comment_index, raw_comment in enumerate(comments):
             comment_label = f"{label}.comments[{comment_index}]"
-            comment = reporter.expect_object(raw_comment, comment_label)
-            reporter.expect_keys(
-                comment,
-                comment_label,
-                ("id", "createdAt", "body", "author"),
-            )
+            comment, _body = _comment_object_and_body(raw_comment, comment_label)
+            _require_unedited_comment(comment, comment_label)
             finding_author = _graphql_actor(comment["author"], f"{comment_label}.author")
             actor_records.append(finding_author)
             _require_authoritative_copilot_actor(

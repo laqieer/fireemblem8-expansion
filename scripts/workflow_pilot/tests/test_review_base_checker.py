@@ -764,6 +764,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 {
                     "id": finding["node_id"],
                     "createdAt": finding["created_at"],
+                    "updatedAt": finding["created_at"],
                     "body": "member-specific finding",
                     "author": copilot_graphql_actor(),
                 }

@@ -369,6 +369,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 {
                     "id": "FINDING_ACTION_001",
                     "createdAt": "2026-08-31T03:36:30Z",
+                    "updatedAt": "2026-08-31T03:36:30Z",
                     "body": "member-specific finding",
                     "author": copilot_graphql_actor(),
                 }
@@ -727,6 +728,9 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 ["author", "body", "createdAt", "id", "updatedAt"],
             )
             self.assertEqual(comment["updatedAt"], comment["createdAt"])
+        finding = self.exact_graphql_payload(with_finding=True)["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["comments"]["nodes"][0]
+        self.assertEqual(sorted(finding), ["author", "body", "createdAt", "id", "updatedAt"])
+        self.assertEqual(finding["updatedAt"], finding["createdAt"])
 
     def test_exact_actor_parser_supports_explicit_graphql_and_rest_shapes(self):
         graphql_actor = trusted_review_gate._actor(
@@ -1111,6 +1115,13 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 pattern,
             ):
                 self.collect_exact_live_evidence(payload, kind="complete")
+        for case_name, mutate, pattern in (
+            ("missing-finding", lambda comment: comment.pop("updatedAt"), "updatedAt"),
+            ("edited-finding", lambda comment: comment.__setitem__("updatedAt", "2026-08-31T03:36:31Z"), "must not be edited"),
+            ("malformed-finding", lambda comment: comment.__setitem__("updatedAt", "2026-08-31 03:36:30Z"), "RFC 3339 UTC timestamp"),
+        ):
+            payload = self.exact_graphql_payload(with_finding=True); mutate(payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["comments"]["nodes"][0])
+            with self.subTest(case=case_name), self.assertRaisesRegex(reporter.PilotDataError, pattern): self.collect_exact_live_evidence(payload, kind="complete")
 
     def test_non_authoritative_reviews_do_not_satisfy_copilot_authority(self):
         for actor in (human_graphql_actor(), lookalike_graphql_actor()):
@@ -1239,6 +1250,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
         pr["createdAt"] = iso(review_at - timedelta(seconds=30))
         pr["reviews"]["nodes"][0]["submittedAt"] = iso(review_at)
         pr["reviews"]["nodes"][0]["comments"]["nodes"][0]["createdAt"] = iso(finding_at)
+        pr["reviews"]["nodes"][0]["comments"]["nodes"][0]["updatedAt"] = iso(finding_at)
         pr["reviewThreads"]["nodes"][0]["comments"]["nodes"][0]["createdAt"] = iso(finding_at)
         pr["comments"]["nodes"][0]["createdAt"] = iso(classification_at)
         pr["comments"]["nodes"][0]["updatedAt"] = iso(classification_at)
@@ -3457,6 +3469,12 @@ class TrustedGitHubGateTests(unittest.TestCase):
                                 )
                                 - timedelta(seconds=30)
                             ),
+                            "updatedAt": iso(
+                                datetime.fromisoformat(
+                                    submitted_at.replace("Z", "+00:00")
+                                )
+                                - timedelta(seconds=30)
+                            ),
                             "body": "member-specific finding",
                             "author": copilot_graphql_actor(),
                         }
@@ -3584,6 +3602,22 @@ class TrustedGitHubGateTests(unittest.TestCase):
             self.assertEqual(
                 collected["pre_reviews"][0]["candidate_sha"], heads[0]
             )
+            validated_contract = review_family.validate_contract(contract)
+            receipt_sha256 = hashlib.sha256(receipt).hexdigest()
+            round_clock = lambda: datetime(2026, 8, 31, 3, 24, tzinfo=timezone.utc)
+            wire_receipt = trusted_review_gate.run_base_pinned_checker(repository, contract=validated_contract, candidate_sha=heads[5], review_round=6, review_context=collected["remote_reviews"][5], all_remote_reviews=collected["remote_reviews"], remote_findings=collected["findings"], remote_finding_ids=collected["remote_reviews"][5]["finding_ids"], captured_github_payload=payload, original_review_report_bytes=reporter.normalized_json(report), original_review_receipt=envelope, original_receipt_sha256=receipt_sha256, assertion_requests=review_family.build_assertion_requests(contract, collected, heads[5], 6), trusted_key=KEY, clock=round_clock)
+            self.assertNotEqual(wire_receipt["result"], "fail")
+            self.assertIn(next(item for item in wire_receipt["assertion_results"] if item["assertion_id"] == review_family.member_assertion_id("wire", "producers", "affected-fixed"))["status"], {"pass", "hold"})
+
+            git(repository, "checkout", "-q", base)
+            restore_baseline()
+            (repository / "feature.txt").write_text("rewritten-head\n", encoding="utf-8")
+            rewritten_head = commit("rewritten head", "2026-08-31T03:24:00Z")
+            git(repository, "checkout", "-q", heads[-1])
+            rewritten_reviews = copy.deepcopy(collected["remote_reviews"])
+            rewritten_reviews[5]["candidate_sha"] = rewritten_head
+            rewritten_receipt = trusted_review_gate.run_base_pinned_checker(repository, contract=validated_contract, candidate_sha=rewritten_head, review_round=6, review_context=rewritten_reviews[5], all_remote_reviews=rewritten_reviews, remote_findings=collected["findings"], remote_finding_ids=rewritten_reviews[5]["finding_ids"], captured_github_payload=payload, original_review_report_bytes=reporter.normalized_json(report), original_review_receipt=envelope, original_receipt_sha256=receipt_sha256, assertion_requests=review_family.build_assertion_requests(contract, {"remote_reviews": rewritten_reviews, "pre_review_findings": collected["pre_review_findings"]}, rewritten_head, 6), trusted_key=KEY, clock=round_clock)
+            self.assertEqual(rewritten_receipt["result"], "fail")
 
             ticks = count()
 

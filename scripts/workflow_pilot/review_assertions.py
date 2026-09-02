@@ -1036,11 +1036,17 @@ def _wire_clock(checker_input: dict[str, Any]):
 def _wire_payload(
     gate_module: Any, checker_input: dict[str, Any]
 ) -> dict[str, Any]:
+    current_head = gate_module._git_text(
+        Path(checker_input["repository_root"]), "rev-parse", "--verify", "HEAD^{commit}"
+    )
+    review_head = checker_input["review_context"]["candidate_sha"]
+    contract = copy.deepcopy(checker_input["review_contract"])
+    contract["candidate_sha"] = current_head
     evidence_bytes = gate_module.collect_live_evidence_bytes(
-        checker_input["review_contract"],
+        contract,
         Path(checker_input["repository_root"]),
-        checker_input["candidate_sha"],
-        checker_input["candidate_sha"],
+        current_head,
+        current_head,
         copy.deepcopy(checker_input["original_pre_review"]),
         copy.deepcopy(checker_input["original_review_receipt"]),
         [],
@@ -1056,7 +1062,40 @@ def _wire_payload(
         raise AssertionFailure("wire payload is not valid JSON") from error
     if normalized_json(payload) != evidence_bytes:
         raise AssertionFailure("wire payload is not canonical")
-    return expect_object(payload, "wire payload")
+    payload = expect_object(payload, "wire payload")
+    if payload["pull_request"]["head_sha"] != current_head:
+        raise AssertionFailure("wire payload current head is incomplete")
+    review = next(
+        (
+            item for item in payload["remote_reviews"]
+            if item["node_id"] == checker_input["review_context"]["node_id"]
+        ),
+        None,
+    )
+    if (
+        review is None
+        or review["round"] != checker_input["review_round"]
+        or review["candidate_sha"] != review_head
+    ):
+        raise AssertionFailure("wire payload historical round binding is incomplete")
+    if checker_input["review_round"] > 1:
+        previous = checker_input["all_remote_reviews"][checker_input["review_round"] - 2]
+        findings = {item["node_id"] for item in payload["findings"]}
+        threads = {item["finding_id"] for item in payload["threads"]}
+        if any(finding_id not in findings or finding_id not in threads for finding_id in previous["finding_ids"]):
+            raise AssertionFailure("wire payload historical findings/threads are incomplete")
+    if review_head != current_head:
+        try:
+            run_git(
+                Path(checker_input["repository_root"]),
+                "merge-base",
+                "--is-ancestor",
+                review_head,
+                current_head,
+            )
+        except RuntimeError as error:
+            raise AssertionFailure("wire payload historical head is not preserved in current PR history") from error
+    return payload
 
 
 def _offline_wire_payload(
