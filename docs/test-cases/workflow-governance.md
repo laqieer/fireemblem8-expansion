@@ -1509,15 +1509,7 @@ game behavior needs a compensating change.
    longer verify. In `bare-remote-config`, set either protected-ref force-push
    or deletion allowance true and confirm installation trust fails before
    authority bootstrap or handoff validation begins.
-6. Repoint the protected authority remote through a stalling transport and
-   prove both authority reads and atomic-push preflight exit under an explicit
-   wall-clock timeout, kill the whole process group, and stop after one
-   bounded attempt rather than spinning retries or leaving an orphan helper.
-   Apply the same bounded timeout/process-group cleanup to trusted-parent and
-   bootstrap checker execution plus receipt re-verification.
-   Then perform a real post-snapshot remote push to the delivery branch and
-   confirm terminal remote reconciliation marks coverage incomplete before
-   trusted push while reporter aggregation preserves the bundle rejection.
+6. Repoint the protected authority remote through a stalling transport and prove both authority reads and atomic-push preflight exit under an explicit wall-clock timeout, kill the whole process group, and stop after one bounded attempt rather than spinning retries or leaving an orphan helper. Apply the same bounded timeout/process-group cleanup to trusted-parent and bootstrap checker execution plus receipt re-verification. Then perform a real post-snapshot remote push to the delivery branch and confirm terminal remote reconciliation marks coverage incomplete before trusted push while reporter aggregation preserves the bundle rejection.
 7. Reconcile a direct watcher timeout with an authoritative successful
    `github-actions-api` run. Then use an authoritative failed run plus a
    watcher process error and confirm delivery remains failed.
@@ -1530,182 +1522,27 @@ game behavior needs a compensating change.
    sent/received, and sent/received/progressing prefixes report `in_progress`
    without trusted/delivery eligibility. Equal, predated, and multiple
    replacement assignments reject.
-9. Exercise coordinator-sealed availability. Reject future, stale, or
-   post-assignment observations, expired coverage, and either enabled stop
-   trigger. Accept only a fresh observation made before assignment and valid
-   through the validation/lifecycle cutoff and unattended interval. Validate a
-   once-valid signed coordinator receipt after the freshness window and confirm
-   it remains historically authentic but loses live eligibility. Re-sign the
-   receipt with wrong self-consistent repository IDs and confirm the
-   installation/frozen-authority identity check rejects it.
-   Confirm no HMAC/private key exists in the implementation namespace and
-   permission modes grant no trust. The external consume store must advance
-   its sequence/anchor, spend the nonce before authority push, and reject the
-   same nonce's second call. An after-sign push invalidates the decision; local
-   receipt-age checking provides no eligibility. Mutating scope, graph, handoffs/successors,
-   metrics, PR/ruleset data, runs, watchers, or coverage invalidates the
-   external asymmetric attestation. Live authority planning must revalidate
-   receipt freshness at the planner's authoritative current time; `issued_at`
-   rewind remains historical replay only.
-   Manually publish a second forged protected bind commit whose stored live
-   base OID was signed after the base branch was rewritten behind the frozen
-   base and confirm history reads, reporter verification, and live eligibility
-   all reject the rewritten-base record. Also publish wrong
-   `handoff_sequence`/`head_seal` bind variants and confirm copied or stale
-   carried handoff identity cannot substitute for the last sealed handoff.
-10. Parse the typed delivery graph. Confirm a merged parent makes child
-   implementation ready while its exact-master Build is in progress and
-   remote completion is pending; an unmerged parent blocks the child; a
-   healthy pending watcher never appears in todo dependencies; terminal
-   master failure requires active fix-forward/revert without rewriting the
-   prior pending result; `child-implement -> parent-remote` rejects and names
-   `child-implement -> parent-merge`; and parent completion, closure, and
-   remote completion retain their own post-merge-Build edges. Bind every
-   handoff to one exact child relationship/task and bind the parent Build task
-   to one authoritative run SHA/status/conclusion. Reject issue `999`, blocked
-   or done status relabels, and missing/duplicate relationships/tasks.
-11. Exercise reporter fixture schema version 2 with sequential root and
-   review-successor bundles. Confirm original asymmetric attestation plus
-   authority/anchor ancestry and the external one-time finalize signature over
-   canonical source, result, outcomes, summary, and verified metrics,
-   accepted/bundle-rejected/rejected,
-   stale-response, lifetime, RSS, coordination-turn, and recovery-minute
-   metrics without requiring old HEAD. Change RSS/outcomes/summary, recompute
-   every unkeyed hash, and require signature failure. Reject hand-authored,
-   double-finalized, tampered, and nonancestor rows. Confirm duplicate
-   watchers, watcher-owner mismatches, and rejected remote-coverage envelopes
-   surface as bundle-global rejection codes while otherwise accepted handoff
-   rows normalize to `bundle_rejected` instead of accepted delivery. Confirm
-   offline or relocated verification succeeds from the sealed record alone,
-   while explicit live revalidation with the original repository root still
-   enforces current authority ancestry and live Git facts. A structurally
-   stale row must retain typed stale rejection state and can never self-mark
-   `accepted` or `trusted_push_eligible`. Offline verification must take its
-   trusted signer/authority anchor from a source separate from the bundle.
+9. Exercise coordinator-sealed availability. Reject future, stale, or post-assignment observations, expired coverage, and either enabled stop trigger. Accept only a fresh observation made before assignment and valid through the validation/lifecycle cutoff and unattended interval. Validate a once-valid signed coordinator receipt after the freshness window and confirm it remains historically authentic but loses live eligibility. Re-sign the receipt with wrong self-consistent repository IDs and confirm the installation/frozen-authority identity check rejects it. Confirm no HMAC/private key exists in the implementation namespace and permission modes grant no trust. The external consume store must advance its sequence/anchor, spend the nonce before authority push, and reject the same nonce's second call. An after-sign push invalidates the decision; local receipt-age checking provides no eligibility. Mutating scope, graph, handoffs/successors, metrics, PR/ruleset data, runs, watchers, or coverage invalidates the external asymmetric attestation. Live authority planning must revalidate receipt freshness at the planner's authoritative current time; `issued_at` rewind remains historical replay only. Manually publish a second forged protected bind commit whose stored live base OID was signed after the base branch was rewritten behind the frozen base and confirm history reads, reporter verification, and live eligibility all reject the rewritten-base record. Also publish wrong `handoff_sequence`/`head_seal` bind variants and confirm copied or stale carried handoff identity cannot substitute for the last sealed handoff.
+10. Parse the typed delivery graph. Confirm a merged parent makes child implementation ready while its exact-master Build is in progress and remote completion is pending; an unmerged parent blocks the child; a healthy pending watcher never appears in todo dependencies; terminal master failure requires active fix-forward/revert without rewriting the prior pending result; `child-implement -> parent-remote` rejects and names `child-implement -> parent-merge`; and parent completion, closure, and remote completion retain their own post-merge-Build edges. Bind every handoff to one exact child relationship/task and bind the parent Build task to one authoritative run SHA/status/conclusion. Reject issue `999`, blocked or done status relabels, and missing/duplicate relationships/tasks.
+11. Exercise reporter fixture schema version 2 with sequential root and review-successor bundles. Confirm original asymmetric attestation plus authority/anchor ancestry and the external one-time finalize signature over canonical source, result, outcomes, summary, and verified metrics, accepted/bundle-rejected/rejected, stale-response, lifetime, RSS, coordination-turn, and recovery-minute metrics without requiring old HEAD. Change RSS/outcomes/summary, recompute every unkeyed hash, and require signature failure. Reject hand-authored, double-finalized, tampered, and nonancestor rows. Confirm duplicate watchers, watcher-owner mismatches, and rejected remote-coverage envelopes surface as bundle-global rejection codes while otherwise accepted handoff rows normalize to `bundle_rejected` instead of accepted delivery. Confirm offline or relocated verification succeeds from the sealed record alone, while explicit live revalidation with the original repository root still enforces current authority ancestry and live Git facts. A structurally stale row must retain typed stale rejection state and can never self-mark `accepted` or `trusted_push_eligible`. Offline verification must take its trusted signer/authority anchor from a source separate from the bundle, such as a `--implementation-handoff-trust` sidecar keyed by `input_seal` and binding the canonical authority digest, repository/ref identity, and signer.
 12. Run
    `python3 -m unittest discover -s scripts/workflow_pilot/tests -p 'test_*.py' -v`,
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`,
    and `python3 scripts/check_docs.py --check`.
 ### Expected result
 
-Only the exact clean one-commit descendant with a parent-trusted checker,
-terminal external asymmetric attestation, complete through-eligibility
-coverage, exact live ruleset/PR responses, fresh current-time receipt
-validation, matching repository identity, and atomically protected monotonic
-authority reaches `trusted_push_eligible`.
-Assignment sent, received, progressing, committed, and handed-off remain
-distinct timestamped states. A committed result closes its implementation
-owner. Later review fixes use a linear, nonoverlapping `review_successor`; OOM
-uses a distinct `oom_replacement`. The normalized input
-Git, and result seals are deterministic. Required checks execute only a closed
-structured contract; passed labels do not replace its exact receipt or rerun.
-The actual safe pass fixture succeeds, while the safe trailing-whitespace
-failure plus literal `false`, stale/wrong-command/SHA/worktree/timestamp
-receipts reject. Canonical base64 pad-bit aliases and same-width RSA
-representatives at or above the modulus also reject. Hostile
-local/global/system/env Git configuration cannot change that outcome.
+Only the exact clean one-commit descendant with a parent-trusted checker, terminal external asymmetric attestation, complete through-eligibility coverage, exact live ruleset/PR responses, fresh current-time receipt validation, matching repository identity, and atomically protected monotonic authority reaches `trusted_push_eligible`. Assignment sent, received, progressing, committed, and handed-off remain distinct timestamped states. A committed result closes its implementation owner. Later review fixes use a linear, nonoverlapping `review_successor`; OOM uses a distinct `oom_replacement`. The normalized input, Git, and result seals are deterministic. Required checks execute only a closed structured contract; passed labels do not replace its exact receipt or rerun. The actual safe pass fixture succeeds, while the safe trailing-whitespace failure plus literal `false`, stale/wrong-command/SHA/worktree/timestamp receipts reject. Canonical base64 pad-bit aliases and same-width RSA representatives at or above the modulus also reject. Hostile local/global/system/env Git configuration cannot change that outcome.
 
-The watcher timeout records process failure while preserving authoritative CI
-success. The true failed run records authoritative failure and cannot become
-delivery-eligible. The OOM fixture persists a sealed interruption snapshot and
-lets a later clean completed replacement validate only after content-bearing
-bytes/modes are restored or explicitly resolved. Exactly one issue root and
-one causal successor chain are allowed.
-All actor identities are numeric and authoritative.
+The watcher timeout records process failure while preserving authoritative CI success. The true failed run records authoritative failure and cannot become delivery-eligible. The OOM fixture persists a sealed interruption snapshot and lets a later clean completed replacement validate only after content-bearing bytes/modes are restored or explicitly resolved. Exactly one issue root and one causal successor chain are allowed. All actor identities are numeric and authoritative.
 
-The issue-scoped authority exists before PR creation. Its immutable binding
-retains no-PR history and rejects owner reuse after binding. Frozen base
-provenance stays in `delivery_expectation.immediate_base_oid`, while the
-binding separately records the live current base OID and requires the frozen
-base to remain its ancestor. Authority and anchor branches advance in one
-atomic direct-parent push under an exact signed live ruleset response. A
-stable read requires equal authority/anchor OIDs around fetch and at the final
-eligibility check, plus an exact match between the fetched authority chain and
-the verified external installation for signer identity/public material digest,
-ruleset ID, bypass actors, and frozen delivery identities; rollback, replay,
-ABA, stale state, stale current-base observations, mixed signed observations/
-publications, non-descendant rewritten base, and unverified protection reject.
-The reader recomputes the stored PR binding digest and publication binding
-expectation from the stored binding plus frozen delivery/current-base fields
-before accepting the bind event, and it
-requires the stored bind head plus attested bind head to match the immediately
-prior sealed handoff candidate carried by the current
-`handoff_sequence`/`head_seal`. It also derives
-`pr_binding.authority_object_id` from the canonical `previous_object_id` and
-`pr_binding.anchor_object_id` from the exact prior canonical anchor record
-instead of trusting copied observation fields. The
-coordinator receipt's event-source union detects omitted
-push/comment/review/dispatch events. Incomplete GitHub
-coverage succeeds only with a credentialless network-denied process interval.
-Timed-out authority `ls-remote`, fetch, and atomic-preflight Git transport
-commands exit through the bounded lifecycle budget, kill their process group,
-and surface typed timeout failures instead of retrying indefinitely. Final
-eligibility also rechecks the protected authority refs and the relevant live
-delivery/base refs, so a post-snapshot remote push cannot race past the
-signed collector snapshot.
+The issue-scoped authority exists before PR creation. Its immutable binding retains no-PR history and rejects owner reuse after binding. Frozen base provenance stays in `delivery_expectation.immediate_base_oid`, while the binding separately records the live current base OID and requires the frozen base to remain its ancestor. Authority and anchor branches advance in one atomic direct-parent push under an exact signed live ruleset response. A stable read requires equal authority/anchor OIDs around fetch and at the final eligibility check, plus an exact match between the fetched authority chain and the verified external installation for signer identity/public material digest, ruleset ID, bypass actors, and frozen delivery identities; rollback, replay, ABA, stale state, stale current-base observations, mixed signed observations/publications, non-descendant rewritten base, and unverified protection reject. The reader recomputes the stored PR binding digest and publication binding expectation from the stored binding plus frozen delivery/current-base fields before accepting the bind event, requires the stored bind head plus attested bind head to match the immediately prior sealed handoff candidate carried by the current `handoff_sequence`/`head_seal`, derives `pr_binding.authority_object_id` from the canonical `previous_object_id`, derives `pr_binding.anchor_object_id` from the exact prior canonical anchor record instead of copied observation fields, and detects omitted push/comment/review/dispatch events through the coordinator receipt's event-source union. Incomplete GitHub coverage succeeds only with a credentialless network-denied process interval. Timed-out authority `ls-remote`, fetch, and atomic-preflight Git transport commands exit through the bounded lifecycle budget, kill their process group, and surface typed timeout failures instead of retrying indefinitely. Final eligibility also rechecks the protected authority refs and the relevant live delivery/base refs, so a post-snapshot remote push cannot race past the signed collector snapshot.
 
-The typed dependency graph reports `child-implement` ready as soon as
-`parent-merge` is done, independently of a healthy running master watcher and
-pending parent completion/closure/remote tasks. An unmerged parent blocks the
-child. Terminal master failure activates `fix_forward_revert`, but does not
-retroactively make the earlier pending watcher a valid reason to idle.
-Completion, closure, and remote completion for the parent remain blocked by
-its own post-merge Build.
-Each handoff has exactly one issue/PR/candidate/status-matched relationship and
-implementation task. All task statuses obey their dependencies. The parent
-Build task's exact SHA, status, and conclusion come from its authoritative run;
-active or failed state keeps parent delivery ineligible while leaving an
-already merged child contract implementation-ready.
+The typed dependency graph reports `child-implement` ready as soon as `parent-merge` is done, independently of a healthy running master watcher and pending parent completion/closure/remote tasks. An unmerged parent blocks the child. Terminal master failure activates `fix_forward_revert`, but does not retroactively make the earlier pending watcher a valid reason to idle. Completion, closure, and remote completion for the parent remain blocked by its own post-merge Build. Each handoff has exactly one issue/PR/candidate/status-matched relationship and implementation task. All task statuses obey their dependencies. The parent Build task's exact SHA, status, and conclusion come from its authoritative run; active or failed state keeps parent delivery ineligible while leaving an already merged child contract implementation-ready.
 
-The issue #176 reporter consumes version 2 normalized handoff evidence and
-validates the public handoff schema against real authority/history examples,
-rejects unsatisfied closed definitions, and reports
-accepted/bundle-rejected/rejected/interrupted/in-progress counts together
-with rejection codes, stale responses, maximum owner lifetime and RSS,
-coordination turns, and recovery cost only from coordinator telemetry.
-`verify_reporter_record()` replays canonical handoff rows before trusting the
-finalize signature. When a bundle-level watcher, remote-coverage, or
-authoritative-run defect accompanies a locally rejected handoff, the reporter
-retains both the local and bundle/global rejection codes without
-double-counting the outcome class, and an otherwise accepted row becomes
-`bundle_rejected` instead of accepted delivery. Git derives line usage, parsed
-schema derives protocol changes, and only exact proven host-only paths derive
-zero ROM/RAM; all other tracked inputs require closed dependency-bound
-build/map/resource evidence. Its
-frozen version 1 baseline, expected
-values, seals, lifecycle, trusted-push, and centralized-watcher contracts are
-unchanged. Historical version 2 accepts no hand-authored aggregate: offline or
-relocated verification replays the sealed record structure without consulting
-the old worktree HEAD, while explicit live revalidation with the original
-repository root still verifies current protected ancestry and live Git facts.
-Stale-response is itself one of those offline structural rejection facts, so a
-stored accepted/trusted summary cannot override it.
+The issue #176 reporter consumes version 2 normalized handoff evidence, validates the public handoff schema against real authority/history examples, rejects unsatisfied closed definitions, and reports accepted/bundle-rejected/rejected/interrupted/in-progress counts together with rejection codes, stale responses, maximum owner lifetime and RSS, coordination turns, and recovery cost only from coordinator telemetry. `verify_reporter_record()` replays canonical handoff rows before trusting the finalize signature. When a bundle-level watcher, remote-coverage, or authoritative-run defect accompanies a locally rejected handoff, the reporter retains both the local and bundle/global rejection codes without double-counting the outcome class, and an otherwise accepted row becomes `bundle_rejected` instead of accepted delivery. Git derives line usage, parsed schema derives protocol changes, and only exact proven host-only paths derive zero ROM/RAM; all other tracked inputs require closed dependency-bound build/map/resource evidence. Its frozen version 1 baseline, expected values, seals, lifecycle, trusted-push, and centralized-watcher contracts are unchanged. Historical version 2 accepts no hand-authored aggregate: offline or relocated verification replays the sealed record structure without consulting the old worktree HEAD, while explicit live revalidation with the original repository root still verifies current protected ancestry and live Git facts. Stale-response is itself one of those offline structural rejection facts, so a stored accepted/trusted summary cannot override it.
 ### Negative control
 
-Each stale/repeated SHA, non-direct or wrong parent, wrong branch/worktree,
-dirty/conflicted tree, missing commit/trailer/evidence, failed or interrupted
-required evidence, out-of-scope path, unquantified or over-limit lines,
-ROM/RAM/protocol overage, lifetime/RSS excess, duplicate owner/coordinator/
-watcher, stale run, implementation-owner remote action, missing/multiple OOM
-replacement, reused replacement owner, lost preserved path, completed
-interrupted test, host-process action, unavailable local coordinator, unknown
-field/enum/rejection, duplicate JSON key, and incoherent reporter record fails
-closed. Watcher process success cannot replace a nonterminal or failed
-authoritative run, and a watcher timeout cannot turn authoritative success
-into failure. A code/contract edge to parent remote completion, missing parent
-merge edge, watcher-as-todo dependency, missing parent post-merge gate, or
-terminal failure without active fix-forward/revert also rejects. Issue/task/
-status relabeling, arbitrary commands, forged or stale check receipts,
-hand-authored reporter rows, owner-history chain mutation, missing/mixed actor
-IDs, omitted remote events, incomplete source coverage, claim tampering,
-future/stale availability, stale live receipt timestamps, mismatched receipt
-repository IDs, local HMAC/self-attestation, post-coverage events,
-allowed-scope/run/watcher mutation, unrelated ruleset IDs, wrong patterns,
-unexpected or role-typed user bypasses, signer/ruleset/non-user-bypass
-installation drift, invented/closed/merged PR observations, replayed consume
-nonce, after-sign pushes, rehashed result metrics, split/non-atomic
-publication, overlapping review successors, lost recovery bytes, zero-impact
-linker claims, noncanonical base64 pad-bit aliases, same-width RSA `s + n`
+Each stale/repeated SHA, non-direct or wrong parent, wrong branch/worktree, dirty/conflicted tree, missing commit/trailer/evidence, failed or interrupted required evidence, out-of-scope path, unquantified or over-limit lines, ROM/RAM/protocol overage, lifetime/RSS excess, duplicate owner/coordinator/watcher, stale run, implementation-owner remote action, missing/multiple OOM replacement, reused replacement owner, lost preserved path, completed interrupted test, host-process action, unavailable local coordinator, unknown field/enum/rejection, duplicate JSON key, and incoherent reporter record fails closed. Watcher process success cannot replace a nonterminal or failed authoritative run, and a watcher timeout cannot turn authoritative success into failure. A code/contract edge to parent remote completion, missing parent merge edge, watcher-as-todo dependency, missing parent post-merge gate, or terminal failure without active fix-forward/revert also rejects. Issue/task/status relabeling, arbitrary commands, forged or stale check receipts, hand-authored reporter rows, owner-history chain mutation, missing/mixed actor IDs, omitted remote events, incomplete source coverage, claim tampering, future/stale availability, stale live receipt timestamps, mismatched receipt repository IDs, local HMAC/self-attestation, post-coverage events, allowed-scope/run/watcher mutation, unrelated ruleset IDs, wrong patterns, unexpected or role-typed user bypasses, signer/ruleset/non-user-bypass installation drift, invented/closed/merged PR observations, replayed consume nonce, after-sign pushes, rehashed result metrics, split/non-atomic publication, overlapping review successors, lost recovery bytes, zero-impact linker claims, noncanonical base64 pad-bit aliases, same-width RSA `s + n`
 signature aliases, post-snapshot remote delivery/base ref moves, nonancestor
 history, and unverified protection reject
 independently. A missing/reset canonical authority or anchor branch, hostile

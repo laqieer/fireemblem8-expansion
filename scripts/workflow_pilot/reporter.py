@@ -1408,7 +1408,7 @@ def _validate_fixture_root(fixture: dict[str, Any]) -> None:
         "dependency_edges",
     )
     if schema_version == HANDOFF_FIXTURE_SCHEMA_VERSION:
-        required += ("implementation_handoffs", "implementation_handoff_trust")
+        required += ("implementation_handoffs",)
     expect_keys(
         fixture,
         "fixture",
@@ -1454,19 +1454,55 @@ def _validate_fixture_root(fixture: dict[str, Any]) -> None:
             fixture["implementation_handoffs"],
             "fixture.implementation_handoffs",
         )
-        expect_list(
-            fixture["implementation_handoff_trust"],
-            "fixture.implementation_handoff_trust",
+
+
+def validate_implementation_handoff_trust(raw: Any) -> dict[str, dict[str, Any]]:
+    trust = expect_object(raw, "implementation_handoff_trust")
+    expect_keys(trust, "implementation_handoff_trust", ("schema_version", "anchors"))
+    if expect_int(
+        trust["schema_version"],
+        "implementation_handoff_trust.schema_version",
+        1,
+    ) != 1:
+        raise PilotDataError("implementation_handoff_trust.schema_version must be 1")
+    anchors = {}
+    for index, raw_anchor in enumerate(
+        expect_list(trust["anchors"], "implementation_handoff_trust.anchors")
+    ):
+        label = f"implementation_handoff_trust.anchors[{index}]"
+        anchor = expect_object(raw_anchor, label)
+        expect_keys(
+            anchor,
+            label,
+            ("input_seal", "authority_digest", "repository", "ref", "anchor_ref", "signer"),
         )
+        input_seal = anchor["input_seal"]
+        if not isinstance(input_seal, str) or SHA256_RE.fullmatch(input_seal) is None:
+            raise PilotDataError(f"{label}.input_seal must be a lowercase SHA-256")
+        if input_seal in anchors:
+            raise PilotDataError(f"duplicate implementation handoff trust {input_seal!r}")
+        anchors[input_seal] = {
+            "authority_digest": anchor["authority_digest"],
+            "repository": anchor["repository"],
+            "ref": anchor["ref"],
+            "anchor_ref": anchor["anchor_ref"],
+            "signer": anchor["signer"],
+        }
+    return anchors
 
 
 def validate_implementation_handoffs(
     fixture: dict[str, Any],
     repository_root: Path | None = None,
+    implementation_handoff_trust: Any | None = None,
 ) -> dict[str, dict[str, dict[str, Any]]]:
     if fixture["schema_version"] != HANDOFF_FIXTURE_SCHEMA_VERSION:
         return {"bundles": {}, "handoffs": {}}
     from scripts.workflow_pilot import agent_handoff
+    if implementation_handoff_trust is None:
+        raise PilotDataError(
+            "implementation_handoffs require external trusted authority anchors"
+        )
 
     lifecycle_as_of = parse_time(
         fixture["lifecycle_as_of"],
@@ -1475,37 +1511,18 @@ def validate_implementation_handoffs(
     bundles: dict[str, dict[str, Any]] = {}
     handoffs: dict[str, dict[str, Any]] = {}
     issue_timelines: dict[int, list[dict[str, Any]]] = defaultdict(list)
-    trusted_handoffs = {}
-    for index, raw in enumerate(
-        expect_list(
-            fixture["implementation_handoff_trust"],
-            "fixture.implementation_handoff_trust",
-        )
-    ):
-        label = f"implementation_handoff_trust[{index}]"
-        trusted = expect_object(raw, label)
-        expect_keys(trusted, label, ("input_seal", "authority_digest", "signer"))
-        input_seal = trusted["input_seal"]
-        if not isinstance(input_seal, str) or SHA256_RE.fullmatch(input_seal) is None:
-            raise PilotDataError(f"{label}.input_seal must be a lowercase SHA-256")
-        if input_seal in trusted_handoffs:
-            raise PilotDataError(f"duplicate implementation handoff trust {input_seal!r}")
-        trusted_handoffs[input_seal] = {
-            "authority_digest": trusted["authority_digest"],
-            "signer": trusted["signer"],
-        }
+    trusted_handoffs = validate_implementation_handoff_trust(
+        implementation_handoff_trust
+    )
     for index, raw in enumerate(fixture["implementation_handoffs"]):
         label = f"implementation_handoffs[{index}]"
-        input_seal = raw.get("input_seal")
-        if input_seal not in trusted_handoffs:
-            raise PilotDataError(
-                f"{label} lacks a trusted offline authority anchor"
-            )
+        raw_record = expect_object(raw, label)
+        input_seal = raw_record.get("input_seal")
         try:
             bundle = agent_handoff.verify_reporter_record(
                 raw,
                 revalidate_git=False,
-                trusted_authority=trusted_handoffs[input_seal],
+                trusted_authority=trusted_handoffs.get(input_seal),
             )
         except agent_handoff.HandoffDataError as error:
             raise PilotDataError(f"{label}: {error}") from error
@@ -2839,7 +2856,10 @@ def cross_validate_fixture(
             )
 
 
-def validate_fixture(fixture: Any) -> dict[str, Any]:
+def validate_fixture(
+    fixture: Any,
+    implementation_handoff_trust: Any | None = None,
+) -> dict[str, Any]:
     fixture = expect_object(fixture, "fixture")
     _validate_fixture_root(fixture)
     pull_requests = validate_pull_requests(fixture)
@@ -2861,7 +2881,10 @@ def validate_fixture(fixture: Any) -> dict[str, Any]:
     events = validate_events(fixture, pull_requests)
     artifacts = validate_artifacts(fixture)
     edges = validate_edges(fixture)
-    implementation_handoffs = validate_implementation_handoffs(fixture)
+    implementation_handoffs = validate_implementation_handoffs(
+        fixture,
+        implementation_handoff_trust=implementation_handoff_trust,
+    )
     cross_validate_fixture(
         fixture,
         pull_requests,
@@ -4342,13 +4365,17 @@ def build_report(
     fixture: Any,
     raw_decisions: Any,
     repository_root: Path | None = None,
+    implementation_handoff_trust: Any | None = None,
 ) -> dict[str, Any]:
     if repository_root is None:
         raise PilotDataError(
             "report construction requires an explicit repository authority root"
         )
     repository_root = validate_repository_root(repository_root)
-    data = validate_fixture(fixture)
+    data = validate_fixture(
+        fixture,
+        implementation_handoff_trust=implementation_handoff_trust,
+    )
     data["repository_authority"] = validate_repository_authority(
         repository_root,
         data,
@@ -4357,6 +4384,7 @@ def build_report(
         implementation_handoffs = validate_implementation_handoffs(
             data["fixture"],
             repository_root,
+            implementation_handoff_trust,
         )
         data["implementation_handoff_bundles"] = implementation_handoffs[
             "bundles"
@@ -4490,6 +4518,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "authorize every fixture Git fact"
         ),
     )
+    parser.add_argument(
+        "--implementation-handoff-trust",
+        type=Path,
+        help=(
+            "schema version 2 only: external trusted authority anchors keyed "
+            "by input_seal, stored outside the handoff fixture"
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -4504,7 +4540,17 @@ def main(argv: list[str] | None = None) -> int:
             )
         fixture = load_json(args.fixture)
         decisions = load_json(args.decisions)
-        report = build_report(fixture, decisions, repository_root)
+        handoff_trust = (
+            load_json(args.implementation_handoff_trust)
+            if args.implementation_handoff_trust is not None
+            else None
+        )
+        report = build_report(
+            fixture,
+            decisions,
+            repository_root,
+            implementation_handoff_trust=handoff_trust,
+        )
         if fixture.get("schema_version") == SCHEMA_VERSION:
             if args.expected is None:
                 raise PilotDataError(

@@ -1111,6 +1111,9 @@ def _decode_canonical_base64(
 def reporter_trusted_authority(authority: dict[str, Any]) -> dict[str, Any]:
     return {
         "authority_digest": hashlib.sha256(normalized_json(authority)).hexdigest(),
+        "repository": authority["repository"],
+        "ref": authority["ref"],
+        "anchor_ref": authority["anchor_ref"],
         "signer": copy.deepcopy(authority["signer"]),
     }
 def _parse_reporter_trusted_authority(
@@ -1118,7 +1121,11 @@ def _parse_reporter_trusted_authority(
     label: str,
 ) -> dict[str, Any]:
     trusted = copy.deepcopy(expect_object(raw, label))
-    expect_keys(trusted, label, ("authority_digest", "signer"))
+    expect_keys(
+        trusted,
+        label,
+        ("authority_digest", "repository", "ref", "anchor_ref", "signer"),
+    )
     if (
         not isinstance(trusted["authority_digest"], str)
         or reporter.SHA256_RE.fullmatch(trusted["authority_digest"]) is None
@@ -1126,6 +1133,9 @@ def _parse_reporter_trusted_authority(
         raise HandoffDataError(f"{label}.authority_digest must be a SHA-256")
     return {
         "authority_digest": trusted["authority_digest"],
+        "repository": expect_string(trusted["repository"], f"{label}.repository"),
+        "ref": expect_string(trusted["ref"], f"{label}.ref"),
+        "anchor_ref": expect_string(trusted["anchor_ref"], f"{label}.anchor_ref"),
         "signer": _parse_signer_public(trusted["signer"], f"{label}.signer"),
     }
 def verify_external_signature(
@@ -5392,9 +5402,13 @@ def _verify_handoff_document_result(
             trusted_authority,
             "handoff reporter trusted authority",
         )
-        if trusted["authority_digest"] != hashlib.sha256(
-            normalized_json(original_authority)
-        ).hexdigest():
+        if (
+            trusted["authority_digest"]
+            != hashlib.sha256(normalized_json(original_authority)).hexdigest()
+            or trusted["repository"] != original_authority["repository"]
+            or trusted["ref"] != original_authority["ref"]
+            or trusted["anchor_ref"] != original_authority["anchor_ref"]
+        ):
             raise HandoffDataError(
                 "handoff reporter trusted authority does not match its record"
             )
@@ -5557,9 +5571,6 @@ def _verify_history_event_carrier(
         result,
         revalidate_git=True,
         repository_root=repository_root,
-        trusted_authority=reporter_trusted_authority(
-            document["history_authority"]
-        ),
         current_authority=current_authority,
     )
     return make_history_receipt(
@@ -5575,6 +5586,8 @@ def reporter_record(
     document: dict[str, Any],
     result: dict[str, Any],
     result_attestation: dict[str, Any],
+    *,
+    trusted_authority: dict[str, Any],
 ) -> dict[str, Any]:
     record = {
         "source_handoff_ids": sorted(
@@ -5590,9 +5603,7 @@ def reporter_record(
     verify_reporter_record(
         record,
         revalidate_git=False,
-        trusted_authority=reporter_trusted_authority(
-            document["history_authority"]
-        ),
+        trusted_authority=trusted_authority,
     )
     return record
 def verify_reporter_record(
@@ -5603,10 +5614,6 @@ def verify_reporter_record(
     trusted_authority: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     record = copy.deepcopy(expect_object(raw_record, "handoff reporter record"))
-    if not revalidate_git and trusted_authority is None:
-        raise HandoffDataError(
-            "handoff reporter offline verification requires trusted authority"
-        )
     expect_keys(
         record,
         "handoff reporter record",
@@ -5689,6 +5696,10 @@ def verify_reporter_record(
         record["result_attestation"],
         "handoff reporter result attestation",
     )
+    if not revalidate_git and trusted_authority is None:
+        raise HandoffDataError(
+            "handoff reporter offline verification requires trusted authority"
+        )
     expect_keys(
         result_attestation,
         "handoff reporter result attestation",
@@ -5711,9 +5722,13 @@ def verify_reporter_record(
             trusted_authority,
             "handoff reporter trusted authority",
         )
-        if trusted["authority_digest"] != hashlib.sha256(
-            normalized_json(document["history_authority"])
-        ).hexdigest():
+        if (
+            trusted["authority_digest"]
+            != hashlib.sha256(normalized_json(document["history_authority"])).hexdigest()
+            or trusted["repository"] != document["history_authority"]["repository"]
+            or trusted["ref"] != document["history_authority"]["ref"]
+            or trusted["anchor_ref"] != document["history_authority"]["anchor_ref"]
+        ):
             raise HandoffDataError(
                 "handoff reporter trusted authority does not match its record"
             )

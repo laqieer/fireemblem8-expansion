@@ -427,9 +427,12 @@ def _replace_commit_identities(value, replacements):
 
 
 @contextlib.contextmanager
-def git_authority(fixture):
+def git_authority(fixture, implementation_handoff_trust=None):
     fixture = copy.deepcopy(fixture)
-    reporter.validate_fixture(fixture)
+    reporter.validate_fixture(
+        fixture,
+        implementation_handoff_trust=implementation_handoff_trust,
+    )
     with tempfile.TemporaryDirectory(
         prefix="workflow-pilot-authority-",
         dir=TEST_ARTIFACTS,
@@ -513,16 +516,35 @@ def git_authority(fixture):
         yield authoritative_fixture, repository_root
 
 
-def authoritative_report(fixture, decisions, repository_root=None):
+def authoritative_report(
+    fixture,
+    decisions,
+    repository_root=None,
+    implementation_handoff_trust=None,
+):
     if repository_root is not None:
-        return reporter.build_report(fixture, decisions, repository_root)
+        return reporter.build_report(
+            fixture,
+            decisions,
+            repository_root,
+            implementation_handoff_trust=implementation_handoff_trust,
+        )
     if fixture["repository"] == "laqieer/fireemblem8-expansion":
-        return reporter.build_report(fixture, decisions, BASELINE_AUTHORITY)
-    with git_authority(fixture) as (authoritative_fixture, authority_root):
+        return reporter.build_report(
+            fixture,
+            decisions,
+            BASELINE_AUTHORITY,
+            implementation_handoff_trust=implementation_handoff_trust,
+        )
+    with git_authority(
+        fixture,
+        implementation_handoff_trust=implementation_handoff_trust,
+    ) as (authoritative_fixture, authority_root):
         return reporter.build_report(
             authoritative_fixture,
             decisions,
             authority_root,
+            implementation_handoff_trust=implementation_handoff_trust,
         )
 
 
