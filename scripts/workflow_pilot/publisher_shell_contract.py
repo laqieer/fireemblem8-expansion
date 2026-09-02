@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from dataclasses import dataclass
 import hashlib
 import posixpath
 import re
@@ -95,6 +96,14 @@ _ENV_OPTIONS_WITH_ARGS = frozenset({"-C", "--chdir", "-u", "--unset"})
 _LITERAL_RUN_HEADER_RE = re.compile(
     r"^(?P<indent> {6})run:[ \t]*(?P<style>\|[1-9+-]*)(?:[ \t]*(?:#.*)?)?(?:\r?\n|\Z)$"
 )
+_NICE_OLD_STYLE_RE = re.compile(r"-[0-9+-]+")
+_NICE_SHORT_ADJUSTMENT_RE = re.compile(r"-n[0-9+-]+")
+
+
+@dataclass(frozen=True)
+class _ShellToken:
+    text: str
+    has_shell_syntax: bool
 
 
 def reviewed_patch_release_run_sha256(script: str) -> str:
@@ -393,21 +402,138 @@ def validate_patch_release_parser_heredocs(script: str, *, label: str) -> None:
             ) from error
 
 
-def _canonical_literal_path(token: str) -> str | None:
+def _raw_token_has_glob_bracket(text: str, *, start_index: int) -> bool:
+    quote: str | None = None
+    index = start_index + 1
+    while index < len(text):
+        character = text[index]
+        if quote is None:
+            if character in " \t":
+                return False
+            if character == "\\" and index + 1 < len(text):
+                index += 2
+                continue
+            if character in "\"'":
+                quote = character
+                index += 1
+                continue
+            if character == "]":
+                return True
+            index += 1
+            continue
+        if quote == "'":
+            if character == "'":
+                quote = None
+            index += 1
+            continue
+        if character == "\\" and index + 1 < len(text) and text[index + 1] in '$`"\\':
+            index += 2
+            continue
+        if character == '"':
+            quote = None
+        index += 1
+    return False
+
+
+def _token_shell_syntax_flags(command_text: str, *, label: str) -> tuple[bool, ...]:
+    flags: list[bool] = []
+    token_started = False
+    token_has_shell_syntax = False
+    quote: str | None = None
+    index = 0
+
+    while index < len(command_text):
+        character = command_text[index]
+        if quote is None:
+            if character in " \t":
+                if token_started:
+                    flags.append(token_has_shell_syntax)
+                    token_started = False
+                    token_has_shell_syntax = False
+                index += 1
+                continue
+
+            token_started = True
+
+            if character == "'":
+                quote = "'"
+                index += 1
+                continue
+            if character == '"':
+                quote = '"'
+                index += 1
+                continue
+            if character == "\\":
+                if index + 1 >= len(command_text):
+                    raise ValueError(f"{label} shell token continuation differs")
+                index += 2
+                continue
+            if character in "$`{}*?~":
+                token_has_shell_syntax = True
+            elif character in "<>" and index + 1 < len(command_text) and command_text[index + 1] == "(":
+                token_has_shell_syntax = True
+            elif character in "@+!" and index + 1 < len(command_text) and command_text[index + 1] == "(":
+                token_has_shell_syntax = True
+            elif character == "[" and _raw_token_has_glob_bracket(command_text, start_index=index):
+                token_has_shell_syntax = True
+            index += 1
+            continue
+
+        if quote == "'":
+            if character == "'":
+                quote = None
+            index += 1
+            continue
+
+        if character == "\\" and index + 1 < len(command_text) and command_text[index + 1] in '$`"\\':
+            index += 2
+            continue
+        if character in "$`":
+            token_has_shell_syntax = True
+        elif character == '"':
+            quote = None
+        index += 1
+
+    if quote is not None:
+        raise ValueError(f"{label} has unterminated quoting or continuation")
+    if token_started:
+        flags.append(token_has_shell_syntax)
+    return tuple(flags)
+
+
+def _parse_shell_tokens(command_text: str, *, label: str) -> tuple[_ShellToken, ...]:
+    syntax_flags = _token_shell_syntax_flags(command_text, label=label)
+    try:
+        values = tuple(shlex.split(command_text))
+    except ValueError as error:
+        raise ValueError(f"{label} shell tokenization differs") from error
+    if len(values) != len(syntax_flags):
+        raise ValueError(f"{label} shell token boundaries differ")
+    return tuple(
+        _ShellToken(text=value, has_shell_syntax=has_shell_syntax)
+        for value, has_shell_syntax in zip(values, syntax_flags)
+    )
+
+
+def _token_texts(tokens: Iterable[_ShellToken]) -> tuple[str, ...]:
+    return tuple(token.text for token in tokens)
+
+
+def _canonical_literal_path(token: _ShellToken) -> str | None:
     if (
-        not token
-        or not token.startswith("/")
-        or any(marker in token for marker in ("$", "`", "$(", "${", "<(", ">("))
+        not token.text
+        or not token.text.startswith("/")
+        or token.has_shell_syntax
     ):
         return None
-    return posixpath.normpath(token)
+    return posixpath.normpath(token.text)
 
 
-def _token_has_shell_syntax(token: str) -> bool:
-    return any(marker in token for marker in ("$", "`", "$(", "${", "<(", ">("))
+def _token_has_shell_syntax(token: _ShellToken) -> bool:
+    return token.has_shell_syntax
 
 
-def _command_references_supervisor(tokens: Iterable[str], command_text: str) -> bool:
+def _command_references_supervisor(tokens: Iterable[_ShellToken], command_text: str) -> bool:
     if "/mnt/supervisor" in command_text:
         return True
     for token in tokens:
@@ -416,53 +542,54 @@ def _command_references_supervisor(tokens: Iterable[str], command_text: str) -> 
             path is not None and path.startswith("/mnt/supervisor/")
         ):
             return True
-        if token.startswith("path=$(/usr/bin/mktemp /mnt/supervisor/"):
+        if token.text.startswith("path=$(/usr/bin/mktemp /mnt/supervisor/"):
             return True
     return False
 
 
-def _is_reviewed_supervisor_command(tokens: tuple[str, ...]) -> bool:
-    return tokens in APPROVED_SUPERVISOR_COMMAND_TOKENS or (
-        len(tokens) == 1
-        and tokens[0].startswith("path=$(/usr/bin/mktemp /mnt/supervisor/")
+def _is_reviewed_supervisor_command(tokens: tuple[_ShellToken, ...]) -> bool:
+    token_texts = _token_texts(tokens)
+    return token_texts in APPROVED_SUPERVISOR_COMMAND_TOKENS or (
+        len(token_texts) == 1
+        and token_texts[0].startswith("path=$(/usr/bin/mktemp /mnt/supervisor/")
     )
 
 
-def _is_shell_interpreter_token(token: str) -> bool:
+def _is_shell_interpreter_token(token: _ShellToken) -> bool:
     return (
         not _token_has_shell_syntax(token)
-        and posixpath.basename(token) in _SHELL_INTERPRETER_BASENAMES
+        and posixpath.basename(token.text) in _SHELL_INTERPRETER_BASENAMES
     )
 
 
-def _literal_token_basename(token: str) -> str | None:
-    if _token_has_shell_syntax(token) or _ASSIGNMENT_RE.fullmatch(token):
+def _literal_token_basename(token: _ShellToken) -> str | None:
+    if _token_has_shell_syntax(token) or _ASSIGNMENT_RE.fullmatch(token.text):
         return None
-    return posixpath.basename(posixpath.normpath(token))
+    return posixpath.basename(posixpath.normpath(token.text))
 
 
-def _is_env_executable_token(token: str) -> bool:
+def _is_env_executable_token(token: _ShellToken) -> bool:
     return _literal_token_basename(token) == _ENV_BASENAME
 
 
-def _is_busybox_executable_token(token: str) -> bool:
+def _is_busybox_executable_token(token: _ShellToken) -> bool:
     return _literal_token_basename(token) == _BUSYBOX_BASENAME
 
 
-def _is_shell_interpreter_reference_token(token: str) -> bool:
-    if _ASSIGNMENT_RE.fullmatch(token):
+def _is_shell_interpreter_reference_token(token: _ShellToken) -> bool:
+    if _ASSIGNMENT_RE.fullmatch(token.text):
         return False
     if _token_has_shell_syntax(token):
         return True
-    normalized = token.strip("\"'`()")
+    normalized = token.text.strip("\"'`()")
     return posixpath.basename(normalized) in _SHELL_INTERPRETER_BASENAMES
 
 
-def _strip_command_prefixes(command: tuple[str, ...]) -> tuple[str, ...]:
+def _strip_command_prefixes(command: tuple[_ShellToken, ...]) -> tuple[_ShellToken, ...]:
     tokens = list(command)
-    while tokens and tokens[0] in _SIMPLE_COMMAND_PREFIXES:
+    while tokens and tokens[0].text in _SIMPLE_COMMAND_PREFIXES:
         tokens.pop(0)
-    while tokens and _ASSIGNMENT_RE.fullmatch(tokens[0]):
+    while tokens and _ASSIGNMENT_RE.fullmatch(tokens[0].text):
         tokens.pop(0)
     return tuple(tokens)
 
@@ -498,20 +625,210 @@ def _parse_env_short_option_token(token: str, *, has_next_token: bool) -> tuple[
     return False, False
 
 
+def _next_timeout_command_index(
+    tokens: tuple[_ShellToken, ...],
+    *,
+    start_index: int,
+) -> int | None:
+    index = start_index + 1
+    while index < len(tokens):
+        token = tokens[index]
+        current = token.text
+        if _token_has_shell_syntax(token):
+            return None
+        if current == "--":
+            index += 1
+            break
+        if current in {"--foreground", "--preserve-status", "-v"}:
+            index += 1
+            continue
+        if current in {"-k", "--kill-after", "-s", "--signal"}:
+            if index + 1 >= len(tokens):
+                return None
+            index += 2
+            continue
+        if current.startswith("--kill-after=") or current.startswith("--signal="):
+            index += 1
+            continue
+        if current.startswith("-"):
+            return None
+        index += 1
+        break
+    return index if index < len(tokens) else None
+
+
+def _next_command_wrapper_index(
+    tokens: tuple[_ShellToken, ...],
+    *,
+    start_index: int,
+) -> int | None:
+    index = start_index + 1
+    while index < len(tokens):
+        token = tokens[index]
+        current = token.text
+        if current == "--":
+            index += 1
+            break
+        if current in {"-p", "-v", "-V"}:
+            index += 1
+            continue
+        if current.startswith("-"):
+            return None
+        break
+    return index if index < len(tokens) else None
+
+
+def _next_nice_command_index(
+    tokens: tuple[_ShellToken, ...],
+    *,
+    start_index: int,
+) -> int | None:
+    index = start_index + 1
+    while index < len(tokens):
+        token = tokens[index]
+        current = token.text
+        if current == "--":
+            index += 1
+            break
+        if current in {"-n", "--adjustment"}:
+            if index + 1 >= len(tokens):
+                return None
+            index += 2
+            continue
+        if current.startswith("--adjustment=") or _NICE_OLD_STYLE_RE.fullmatch(current):
+            index += 1
+            continue
+        if _NICE_SHORT_ADJUSTMENT_RE.fullmatch(current):
+            index += 1
+            continue
+        if current.startswith("-"):
+            return None
+        break
+    return index if index < len(tokens) else None
+
+
+def _next_sudo_command_index(
+    tokens: tuple[_ShellToken, ...],
+    *,
+    start_index: int,
+) -> int | None:
+    index = start_index + 1
+    while index < len(tokens):
+        token = tokens[index]
+        current = token.text
+        if current == "--":
+            index += 1
+            break
+        if current in {
+            "-A",
+            "--askpass",
+            "-b",
+            "--background",
+            "-E",
+            "--preserve-env",
+            "-H",
+            "--set-home",
+            "-K",
+            "--remove-timestamp",
+            "-k",
+            "--reset-timestamp",
+            "-n",
+            "--non-interactive",
+            "-P",
+            "--preserve-groups",
+            "-S",
+            "--stdin",
+            "-s",
+            "--shell",
+            "-v",
+            "--validate",
+            "-V",
+            "--version",
+        }:
+            index += 1
+            continue
+        if current in {
+            "-C",
+            "--close-from",
+            "-D",
+            "--chdir",
+            "-g",
+            "--group",
+            "-h",
+            "--host",
+            "-p",
+            "--prompt",
+            "-r",
+            "--role",
+            "-t",
+            "--type",
+            "-u",
+            "--user",
+        }:
+            if index + 1 >= len(tokens):
+                return None
+            index += 2
+            continue
+        if current.startswith("--preserve-env="):
+            index += 1
+            continue
+        if current.startswith("-"):
+            return None
+        break
+    return index if index < len(tokens) else None
+
+
+def _next_wrapper_command_index(
+    tokens: tuple[_ShellToken, ...],
+    *,
+    start_index: int,
+) -> int | None:
+    wrapper = _literal_token_basename(tokens[start_index])
+    if wrapper == "timeout":
+        return _next_timeout_command_index(tokens, start_index=start_index)
+    if wrapper == "command":
+        return _next_command_wrapper_index(tokens, start_index=start_index)
+    if wrapper == "nice":
+        return _next_nice_command_index(tokens, start_index=start_index)
+    if wrapper == "sudo":
+        return _next_sudo_command_index(tokens, start_index=start_index)
+    return None
+
+
+def _executable_slot_indices(tokens: tuple[_ShellToken, ...]) -> tuple[int, ...]:
+    if not tokens:
+        return ()
+
+    slots: list[int] = []
+    seen: set[int] = set()
+    index = 0
+
+    while index < len(tokens) and index not in seen:
+        slots.append(index)
+        seen.add(index)
+        next_index = _next_wrapper_command_index(tokens, start_index=index)
+        if next_index is None:
+            break
+        index = next_index
+
+    return tuple(slots)
+
+
 def _env_wrapper_followed_by_ambiguous_surface(
-    tokens: tuple[str, ...],
+    tokens: tuple[_ShellToken, ...],
     *,
     start_index: int,
 ) -> bool:
     index = start_index
     while index < len(tokens):
-        current = tokens[index]
+        current_token = tokens[index]
+        current = current_token.text
         if current == "--":
             return False
         if _ASSIGNMENT_RE.fullmatch(current):
             index += 1
             continue
-        if _token_has_shell_syntax(current):
+        if _token_has_shell_syntax(current_token):
             return True
         if current in _ENV_ZERO_ARG_OPTIONS:
             index += 1
@@ -543,9 +860,8 @@ def _env_wrapper_followed_by_ambiguous_surface(
     return False
 
 
-def _command_has_ambiguous_env_shell_surface(tokens: tuple[str, ...]) -> bool:
-    index = 0
-    while index < len(tokens):
+def _command_has_ambiguous_env_shell_surface(tokens: tuple[_ShellToken, ...]) -> bool:
+    for index in _executable_slot_indices(tokens):
         token = tokens[index]
         if _is_env_executable_token(token):
             if _env_wrapper_followed_by_ambiguous_surface(
@@ -553,9 +869,9 @@ def _command_has_ambiguous_env_shell_surface(tokens: tuple[str, ...]) -> bool:
                 start_index=index + 1,
             ):
                 return True
-        elif _is_busybox_executable_token(token):
+            continue
+        if _is_busybox_executable_token(token):
             if index + 1 >= len(tokens):
-                index += 1
                 continue
             applet = tokens[index + 1]
             if _token_has_shell_syntax(applet):
@@ -564,24 +880,33 @@ def _command_has_ambiguous_env_shell_surface(tokens: tuple[str, ...]) -> bool:
                     start_index=index + 2,
                 ):
                     return True
-                index += 1
                 continue
             if _is_env_executable_token(applet) and _env_wrapper_followed_by_ambiguous_surface(
                 tokens,
                 start_index=index + 2,
             ):
                 return True
-        elif index == 0 and _token_has_shell_syntax(token):
+            continue
+        if _token_has_shell_syntax(token):
             if _env_wrapper_followed_by_ambiguous_surface(
                 tokens,
                 start_index=index + 1,
             ):
                 return True
-        index += 1
+            if index + 1 >= len(tokens):
+                continue
+            applet = tokens[index + 1]
+            if (
+                _token_has_shell_syntax(applet) or _is_env_executable_token(applet)
+            ) and _env_wrapper_followed_by_ambiguous_surface(
+                tokens,
+                start_index=index + 2,
+            ):
+                return True
     return False
 
 
-def _shell_c_invocation_is_forbidden(command: tuple[str, ...]) -> bool:
+def _shell_c_invocation_is_forbidden(command: tuple[_ShellToken, ...]) -> bool:
     tokens = _strip_command_prefixes(command)
     if not tokens:
         return False
@@ -590,9 +915,13 @@ def _shell_c_invocation_is_forbidden(command: tuple[str, ...]) -> bool:
         return True
 
     for index, token in enumerate(tokens):
-        if token == "-c":
+        if token.text == "-c":
             payload_index = index + 1
-        elif token.startswith("-") and not token.startswith("--") and "c" in token[1:]:
+        elif (
+            token.text.startswith("-")
+            and not token.text.startswith("--")
+            and "c" in token.text[1:]
+        ):
             payload_index = index + 1
         else:
             continue
@@ -664,7 +993,7 @@ def _authorized_hidden_readonly_mount_indices(
 
 
 def _mount_command_targets_supervisor_parent(
-    command: tuple[str, ...],
+    command: tuple[_ShellToken, ...],
     *,
     allow_reviewed_nonliteral_hidden: bool,
 ) -> bool:
@@ -672,29 +1001,31 @@ def _mount_command_targets_supervisor_parent(
     if not tokens:
         return False
 
-    executable = tokens[0]
+    executable_token = tokens[0]
+    executable = executable_token.text
     executable_literal = executable == "/usr/bin/mount"
     executable_nonliteral = not executable_literal
     read_only_like = False
     remount_like = False
     options_nonliteral = False
-    positionals: list[str] = []
+    positionals: list[_ShellToken] = []
     unknown_flag = False
     index = 1
 
     while index < len(tokens):
         token = tokens[index]
-        if token in {"-r", "--read-only"}:
+        token_text = token.text
+        if token_text in {"-r", "--read-only"}:
             read_only_like = True
             index += 1
             continue
-        if token in {"-o", "--options"}:
+        if token_text in {"-o", "--options"}:
             if index + 1 >= len(tokens):
                 return True
             option_text = tokens[index + 1]
             if _token_has_shell_syntax(option_text):
                 options_nonliteral = True
-            for option in option_text.split(","):
+            for option in option_text.text.split(","):
                 normalized = option.strip().replace("\\", "")
                 if normalized.startswith("remount"):
                     remount_like = True
@@ -702,9 +1033,9 @@ def _mount_command_targets_supervisor_parent(
                     read_only_like = True
             index += 2
             continue
-        if token.startswith("--options="):
-            option_text = token.split("=", 1)[1]
-            if _token_has_shell_syntax(option_text):
+        if token_text.startswith("--options="):
+            option_text = token_text.split("=", 1)[1]
+            if _token_has_shell_syntax(token):
                 options_nonliteral = True
             for option in option_text.split(","):
                 normalized = option.strip().replace("\\", "")
@@ -714,9 +1045,9 @@ def _mount_command_targets_supervisor_parent(
                     read_only_like = True
             index += 1
             continue
-        if token.startswith("-o") and token != "-o":
-            option_text = token[2:]
-            if _token_has_shell_syntax(option_text):
+        if token_text.startswith("-o") and token_text != "-o":
+            option_text = token_text[2:]
+            if _token_has_shell_syntax(token):
                 options_nonliteral = True
             for option in option_text.split(","):
                 normalized = option.strip().replace("\\", "")
@@ -726,7 +1057,7 @@ def _mount_command_targets_supervisor_parent(
                     read_only_like = True
             index += 1
             continue
-        if token in {
+        if token_text in {
             "--bind",
             "--make-private",
             "--make-rprivate",
@@ -740,15 +1071,15 @@ def _mount_command_targets_supervisor_parent(
         }:
             index += 1
             continue
-        if token in {"-t", "--types"}:
+        if token_text in {"-t", "--types"}:
             if index + 1 >= len(tokens):
                 return True
             index += 2
             continue
-        if token == "--":
+        if token_text == "--":
             positionals.extend(tokens[index + 1 :])
             break
-        if token.startswith("-"):
+        if token_text.startswith("-"):
             unknown_flag = True
             index += 1
             continue
@@ -762,7 +1093,7 @@ def _mount_command_targets_supervisor_parent(
         or nonliteral_positionals
     )
     has_mount_flag = any(
-        token in {
+        token.text in {
             "-o",
             "--options",
             "-r",
@@ -778,23 +1109,23 @@ def _mount_command_targets_supervisor_parent(
             "--move",
             "--rbind",
         }
-        or token.startswith("--options=")
-        or (token.startswith("-o") and token != "-o")
+        or token.text.startswith("--options=")
+        or (token.text.startswith("-o") and token.text != "-o")
         for token in tokens[1:]
     )
     looks_like_mount_surface = (
         executable_literal
         or executable in _DISALLOWED_MOUNT_WRAPPERS
-        or any(token == "/usr/bin/mount" for token in tokens)
+        or any(token.text == "/usr/bin/mount" for token in tokens)
         or (executable_nonliteral and has_mount_flag)
     )
     if looks_like_mount_surface and mount_surface_uses_nonliteral:
-        if tokens in APPROVED_SUPERVISOR_COMMAND_TOKENS:
+        if _token_texts(tokens) in APPROVED_SUPERVISOR_COMMAND_TOKENS:
             pass
-        elif tokens in APPROVED_NONLITERAL_MOUNT_COMMANDS:
+        elif _token_texts(tokens) in APPROVED_NONLITERAL_MOUNT_COMMANDS:
             pass
         elif (
-            tokens in APPROVED_NONLITERAL_READONLY_MOUNT_COMMANDS
+            _token_texts(tokens) in APPROVED_NONLITERAL_READONLY_MOUNT_COMMANDS
             and allow_reviewed_nonliteral_hidden
         ):
             pass
@@ -804,7 +1135,7 @@ def _mount_command_targets_supervisor_parent(
     if not (remount_like and read_only_like):
         return False
 
-    if tokens in APPROVED_NONLITERAL_READONLY_MOUNT_COMMANDS:
+    if _token_texts(tokens) in APPROVED_NONLITERAL_READONLY_MOUNT_COMMANDS:
         return not allow_reviewed_nonliteral_hidden
 
     if executable in _DISALLOWED_MOUNT_WRAPPERS:
@@ -839,7 +1170,10 @@ def has_forbidden_supervisor_parent_readonly_mount(
     for command_index, command_text in enumerate(
         split_bash_simple_command_strings(script, label=label)
     ):
-        command_tokens = tuple(shlex.split(command_text))
+        try:
+            command_tokens = _parse_shell_tokens(command_text, label=label)
+        except ValueError:
+            return True
         if _shell_c_invocation_is_forbidden(command_tokens):
             return True
         if _mount_command_targets_supervisor_parent(

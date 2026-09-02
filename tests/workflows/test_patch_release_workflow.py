@@ -718,6 +718,52 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
             ),
         ),
         (
+            "command-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'command -- "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "nice-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'nice -n 5 "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "sudo-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'sudo -u root "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "timeout-variable-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "env_cmd=/bin/env",
+                'timeout 5 "$env_cmd" -S "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "timeout-variable-busybox-env-split-string-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                "busybox_cmd=/bin/busybox",
+                "ENV_APPLET=env",
+                'timeout 5 "$busybox_cmd" "$ENV_APPLET" --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
             "env-combined-options-wrapper",
             (
                 "root=/mnt",
@@ -771,6 +817,35 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
                 "root=/mnt",
                 'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${root}/supervisor"',
                 'timeout --signal TERM --kill-after 1 5 /bin/bash -c "$cmd"',
+            ),
+        ),
+        (
+            "question-glob-target-alias",
+            (
+                "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/superviso?",
+            ),
+        ),
+        (
+            "globbed-env-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                '/bin/e?v --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "globbed-busybox-wrapper",
+            (
+                "ROOT=/mnt",
+                'cmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"',
+                '/bin/busybo? env --split-string "/bin/bash -c \\"$cmd\\""',
+            ),
+        ),
+        (
+            "extglob-target-alias",
+            (
+                "shopt -s extglob",
+                "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/superviso@(r)",
             ),
         ),
         (
@@ -3665,6 +3740,13 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                 'ROOT=/mnt\ncmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
                 '/bin/env --chdir=/tmp \'--split-string=/bin/bash -c "$cmd"\'\n',
             ),
+            (
+                ["/usr/bin/timeout", "5", "/bin/env", "-S", '/bin/bash -c "printf RUNTIME_TIMEOUT_ENV_S"'],
+                "RUNTIME_TIMEOUT_ENV_S",
+                'ROOT=/mnt\ncmd="/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ${ROOT}/supervisor"\n'
+                'env_cmd=/bin/env\n'
+                'timeout 5 "$env_cmd" -S "/bin/bash -c \\"$cmd\\""\n',
+            ),
         )
         for argv, expected_stdout, semantic_script in cases:
             with self.subTest(argv=argv[1]):
@@ -3682,6 +3764,47 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
                         semantic_script,
                         label="runtime env split-string shell wrapper",
+                    )
+                )
+
+    def test_unquoted_glob_brace_and_tilde_shell_surfaces_fail_closed_while_quoted_literals_stay_distinct(
+        self,
+    ):
+        rejected = {
+            "question-target-alias": "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/superviso?\n",
+            "star-target-alias": "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervis*\n",
+            "bracket-target-alias": "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/superviso[r]\n",
+            "brace-target-alias": "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/superviso{r,rs}\n",
+            "tilde-target-alias": "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec ~/supervisor\n",
+            "globbed-shell-interpreter": 'cmd="printf ok"\n/bin/ba?h -c "$cmd"\n',
+            "globbed-env-wrapper": '/bin/e?v --split-string "/bin/bash -c \\"printf ok\\""\n',
+            "bracket-busybox-applet-wrapper": '/bin/busybox e[n]v --split-string "/bin/bash -c \\"printf ok\\""\n',
+            "extglob-target-alias": "shopt -s extglob\n/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/superviso@(r)\n",
+        }
+        accepted = {
+            "quoted-question-target": '/usr/bin/mount -o remount,ro,nosuid,nodev,noexec "/mnt/superviso?"\n',
+            "quoted-brace-target": "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec '/mnt/superviso{r,rs}'\n",
+            "quoted-globbed-env-wrapper": '"/bin/e?v" --split-string "/bin/bash -c \\"printf ok\\""\n',
+            "escaped-shell-question": '/bin/ba\\?h -c "printf ok"\n',
+        }
+
+        self.assertFalse(workflow_has_supervisor_parent_readonly_remount(self.text))
+
+        for label, script in rejected.items():
+            with self.subTest(case=label):
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        script,
+                        label=label,
+                    )
+                )
+
+        for label, script in accepted.items():
+            with self.subTest(case=label):
+                self.assertFalse(
+                    publisher_shell_contract.has_forbidden_supervisor_parent_readonly_mount(
+                        script,
+                        label=label,
                     )
                 )
 
