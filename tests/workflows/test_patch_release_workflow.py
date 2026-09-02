@@ -22,8 +22,6 @@ from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
 
-import yaml
-
 from scripts.workflow_pilot import publisher_shell_contract
 from scripts.modernize import patch_release
 
@@ -135,18 +133,88 @@ def named_step_run_script(workflow: str, name: str) -> str:
     return named_step_run_script_from_block(named_patch_release_step_block(workflow, name))
 
 
-def safe_yaml_step_run_script(step_block: str) -> str:
-    parsed = yaml.safe_load("steps:\n" + step_block)
-    if (
-        not isinstance(parsed, dict)
-        or not isinstance(parsed.get("steps"), list)
-        or len(parsed["steps"]) != 1
-        or not isinstance(parsed["steps"][0], dict)
-        or "run" not in parsed["steps"][0]
-        or not isinstance(parsed["steps"][0]["run"], str)
-    ):
-        raise AssertionError("safe YAML reference must yield one literal run string")
-    return parsed["steps"][0]["run"]
+_REFERENCE_LITERAL_RUN_HEADER_RE = re.compile(
+    r"^ {6}run:[ \t]*(?P<style>\|(?:[-+])?)(?:[ \t]*(?:#.*)?)?(?:\r?\n|\Z)$"
+)
+
+
+def _reference_split_line(line: str) -> tuple[str, str]:
+    if line.endswith("\r\n"):
+        return line[:-2], "\n"
+    if line.endswith("\n"):
+        return line[:-1], "\n"
+    if line.endswith("\r"):
+        return line[:-1], "\n"
+    return line, ""
+
+
+def _reference_indent_width(text: str) -> int:
+    index = 0
+    while index < len(text) and text[index] == " ":
+        index += 1
+    if index < len(text) and text[index] == "\t":
+        raise AssertionError("reference literal parser rejects tab indentation")
+    return index
+
+
+def reference_literal_run_step_script(step_block: str) -> str:
+    """Independent constrained oracle for one literal run block.
+
+    This parser deliberately supports only the workflow's reviewed surface:
+    one direct `run: |`, `run: |-`, or `run: |+` field inside a single step
+    block. It preserves blank lines, indentation-derived content, and YAML's
+    chomping semantics, but rejects folded or advisory YAML forms.
+    """
+
+    lines = step_block.splitlines(keepends=True)
+    headers = [
+        (index, match)
+        for index, line in enumerate(lines)
+        if (match := _REFERENCE_LITERAL_RUN_HEADER_RE.match(line))
+    ]
+    if len(headers) != 1:
+        raise AssertionError("reference literal parser requires one direct literal run")
+    header_index, header_match = headers[0]
+    style = header_match.group("style")
+    if style not in {"|", "|-", "|+"}:
+        raise AssertionError("reference literal parser rejects complex YAML styles")
+
+    content_lines = lines[header_index + 1 :]
+    leading_blank_indent = 0
+    content_indent: int | None = None
+    for line in content_lines:
+        raw_line, _line_break = _reference_split_line(line)
+        indent = _reference_indent_width(raw_line)
+        if raw_line[indent:] == "":
+            leading_blank_indent = max(leading_blank_indent, indent)
+            continue
+        content_indent = max(leading_blank_indent, indent)
+        break
+    if content_indent is None:
+        content_indent = leading_blank_indent
+
+    parts: list[str] = []
+    for line in content_lines:
+        raw_line, line_break = _reference_split_line(line)
+        indent = _reference_indent_width(raw_line)
+        body = raw_line[indent:]
+        if body == "":
+            parts.append(raw_line[content_indent:] if indent >= content_indent else "")
+        else:
+            if indent < content_indent:
+                raise AssertionError("reference literal parser found early dedent")
+            parts.append(raw_line[content_indent:])
+        if line_break:
+            parts.append("\n")
+
+    script = "".join(parts)
+    if style == "|-":
+        return script.rstrip("\n")
+    if style == "|+":
+        return script
+    if not script:
+        return ""
+    return script.rstrip("\n") + "\n"
 
 
 def builder_isolation_shell_source(workflow: str) -> str:
@@ -3134,7 +3202,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "Build candidate in isolated namespace and stage public inputs",
         )
         actual_run = named_step_run_script_from_block(step_block)
-        reference_run = safe_yaml_step_run_script(step_block)
+        reference_run = reference_literal_run_step_script(step_block)
         self.assertEqual(actual_run.encode("utf-8"), reference_run.encode("utf-8"))
         self.assertEqual(
             publisher_shell_contract.reviewed_patch_release_run_sha256(actual_run),
@@ -3172,6 +3240,24 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             actual_shell,
             label="publisher builder isolation shell",
         )
+
+    def test_reference_literal_run_parser_rejects_complex_yaml_styles(self):
+        step_block = named_patch_release_step_block(
+            self.text,
+            "Build candidate in isolated namespace and stage public inputs",
+        )
+        mutations = (
+            step_block.replace("      run: |\n", "      run: >\n", 1),
+            step_block.replace("      run: |\n", "      run: |2\n", 1),
+            step_block.replace("      run: |\n", "      run: &anchor |\n", 1),
+        )
+        for mutated in mutations:
+            with self.subTest(header=mutated.splitlines()[3]):
+                with self.assertRaisesRegex(
+                    AssertionError,
+                    "reference literal parser",
+                ):
+                    reference_literal_run_step_script(mutated)
 
     def test_bash_comment_backslash_does_not_hide_following_mount(self):
         mount = "/usr/bin/mount -o remount,ro,nosuid,nodev,noexec /mnt/supervisor"
@@ -3282,7 +3368,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     "Build candidate in isolated namespace and stage public inputs",
                 )
                 changed_run = named_step_run_script_from_block(changed_step)
-                reference_run = safe_yaml_step_run_script(changed_step)
+                reference_run = reference_literal_run_step_script(changed_step)
                 self.assertEqual(
                     changed_run.encode("utf-8"),
                     reference_run.encode("utf-8"),

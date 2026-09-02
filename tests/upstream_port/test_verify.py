@@ -98,6 +98,39 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             [command for _, command in _parse_workflow_gate_commands()],
         )
 
+    def test_patch_release_workflow_imports_without_yaml_dependency(self):
+        script = inspect.cleandoc(
+            """
+            import importlib.abc
+            import sys
+
+            repo_root = sys.argv[1]
+
+            class BlockYaml(importlib.abc.MetaPathFinder):
+                def find_spec(self, fullname, path=None, target=None):
+                    if fullname == "yaml" or fullname.startswith("yaml."):
+                        raise ModuleNotFoundError("yaml dependency blocked")
+                    return None
+
+            sys.modules.pop("yaml", None)
+            sys.meta_path.insert(0, BlockYaml())
+            sys.path = [repo_root] + [entry for entry in sys.path if entry]
+
+            import tests.upstream_port.test_verify  # noqa: F401
+            import tests.workflows.test_patch_release_workflow  # noqa: F401
+
+            print("IMPORT_OK")
+            """
+        )
+        completed = subprocess.run(
+            ["python3", "-I", "-S", "-c", script, REPO_ROOT],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout, "IMPORT_OK\n")
+
     def test_checkout_verification_is_not_counted_as_a_mirrored_gate(self):
         parsed = _parse_workflow_gate_commands()
         self.assertNotIn(
