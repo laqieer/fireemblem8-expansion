@@ -1513,6 +1513,11 @@ game behavior needs a compensating change.
    poison that coverage. Confirm review selection authenticates the exact Bot
    actor before parsing body markers or inline comments, so human and lookalike
    reviews are ignored instead of poisoning authority.
+   When the exact base decision file lacks the current PR entry, require one
+   immutable trusted coordinator comment with prefix
+   `workflow-review-family-decision:v1 ` before the first remote review, and
+   bind its canonical JSON to the exact repository ID/name, PR, base, initial
+   head, preregistered current head, and normalized decision entry.
 5. Confirm a synthetic exact base without the trusted checker or decision
    consumer takes explicit `introduction` mode. Require false merge/push
    authority plus an external-coordinator requirement. Do not substitute a
@@ -1564,6 +1569,9 @@ game behavior needs a compensating change.
    compare a member-specific invariant over parsed production docs/tests/code
    rather than one shared file or a witness sidecar; permit `not-applicable`
    only for its explicit member/reason registry entry.
+   Every accepted finding sweep must include at least one `affected-fixed`
+   sibling; a sweep of only `verified-unaffected`/`not-applicable` members is
+   not remediation.
    For action siblings, execute the reviewed `review_base_checker.py` in
    actual `__main__` script context with the production `--input
    checker-input.json` argv/home/path shape and reject package-only,
@@ -1577,6 +1585,10 @@ game behavior needs a compensating change.
    captured authoritative `live-gh-api` payload with no network, compare it to
    the offline transform payload, and require the current producer/consumer to
    preserve one shared wire schema across both modes.
+   For remote findings, derive the trusted family mapping from immutable
+   `workflow-review-family-classification:v1 ` coordinator comments rather than
+   the candidate contract, and reject family swaps even when the candidate's
+   sibling assertions remain internally consistent.
    Reuse the current checkout or swap dirty materialized roots and require the
    authoritative origin/head Git-tree binding to fail before execution.
 9. Parse the captured clean PR #183 body and accept its first-line exact

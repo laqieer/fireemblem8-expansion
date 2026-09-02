@@ -771,23 +771,70 @@ def _validate_authoritative_trigger(value: Any) -> dict[str, Any] | None:
         trigger,
         "evidence.authoritative_trigger",
         (
+            "authority_kind",
             "path",
             "blob_oid",
+            "comment_id",
+            "comment_created_at",
             "pull_request",
             "base_sha",
+            "original_pre_review_head",
             "candidate_sha",
             "risk_boundaries",
             "threshold_triggers",
             "pre_review_required",
         ),
     )
-    path = _validate_path(
-        trigger["path"], "evidence.authoritative_trigger.path"
+    authority_kind = reporter.expect_enum(
+        trigger["authority_kind"],
+        {"base-record", "external-comment"},
+        "evidence.authoritative_trigger.authority_kind",
     )
-    if path != TRIGGER_DECISION_PATH:
-        raise reporter.PilotDataError(
-            "authoritative trigger decision must use .github/workflow-pilot-decisions.json"
+    path = (
+        None
+        if trigger["path"] is None
+        else _validate_path(
+            trigger["path"], "evidence.authoritative_trigger.path"
         )
+    )
+    blob_oid = reporter.expect_sha(
+        trigger["blob_oid"], "evidence.authoritative_trigger.blob_oid", nullable=True
+    )
+    comment_id = (
+        None
+        if trigger["comment_id"] is None
+        else reporter.expect_string(
+            trigger["comment_id"], "evidence.authoritative_trigger.comment_id"
+        )
+    )
+    comment_created_at = None
+    if trigger["comment_created_at"] is not None:
+        comment_created_at = reporter.expect_string(
+            trigger["comment_created_at"],
+            "evidence.authoritative_trigger.comment_created_at",
+        )
+        reporter.parse_time(
+            comment_created_at,
+            "evidence.authoritative_trigger.comment_created_at",
+        )
+    if authority_kind == "base-record":
+        if path != TRIGGER_DECISION_PATH or blob_oid is None:
+            raise reporter.PilotDataError(
+                "base-record authoritative trigger must bind .github/workflow-pilot-decisions.json"
+            )
+        if comment_id is not None or comment_created_at is not None:
+            raise reporter.PilotDataError(
+                "base-record authoritative trigger cannot carry external comment metadata"
+            )
+    else:
+        if path is not None or blob_oid is not None:
+            raise reporter.PilotDataError(
+                "external-comment authoritative trigger cannot bind a repository path/blob"
+            )
+        if comment_id is None or comment_created_at is None:
+            raise reporter.PilotDataError(
+                "external-comment authoritative trigger must bind one exact trusted comment"
+            )
     normalized_trigger = normalize_trigger_fields(
         trigger["risk_boundaries"],
         trigger["threshold_triggers"],
@@ -802,15 +849,20 @@ def _validate_authoritative_trigger(value: Any) -> dict[str, Any] | None:
             "authoritative trigger decision pre_review_required is inconsistent"
         )
     return {
+        "authority_kind": authority_kind,
         "path": path,
-        "blob_oid": reporter.expect_sha(
-            trigger["blob_oid"], "evidence.authoritative_trigger.blob_oid"
-        ),
+        "blob_oid": blob_oid,
+        "comment_id": comment_id,
+        "comment_created_at": comment_created_at,
         "pull_request": reporter.expect_int(
             trigger["pull_request"], "evidence.authoritative_trigger.pull_request", 1
         ),
         "base_sha": reporter.expect_sha(
             trigger["base_sha"], "evidence.authoritative_trigger.base_sha"
+        ),
+        "original_pre_review_head": reporter.expect_sha(
+            trigger["original_pre_review_head"],
+            "evidence.authoritative_trigger.original_pre_review_head",
         ),
         "candidate_sha": reporter.expect_sha(
             trigger["candidate_sha"], "evidence.authoritative_trigger.candidate_sha"
@@ -1014,6 +1066,13 @@ def _validate_sweeps(value: Any) -> list[dict[str, Any]]:
                     "result": disposition,
                     "assertion_id": assertion_id,
                 }
+            )
+        if not any(
+            sibling["result"] == "affected-fixed"
+            for sibling in normalized_siblings
+        ):
+            raise reporter.PilotDataError(
+                f"{label} must include at least one affected-fixed member"
             )
         normalized.append(
             {
@@ -1565,6 +1624,10 @@ def _validate_findings(value: Any, label: str, *, local: bool):
                 "author_actor_id",
                 "family",
             ),
+            optional=(
+                "authority_comment_id",
+                "authority_comment_created_at",
+            ),
         )
         finding_id = reporter.expect_string(finding[key_name], f"{item_label}.{key_name}")
         if local and LOCAL_FINDING_RE.fullmatch(finding_id) is None:
@@ -1596,8 +1659,29 @@ def _validate_findings(value: Any, label: str, *, local: bool):
             "family": reporter.expect_enum(
                 finding["family"], set(FAMILY_MEMBERS), f"{item_label}.family"
             ),
+            "authority_comment_id": (
+                None
+                if finding.get("authority_comment_id") is None
+                else reporter.expect_string(
+                    finding["authority_comment_id"],
+                    f"{item_label}.authority_comment_id",
+                )
+            ),
+            "authority_comment_created_at": (
+                None
+                if finding.get("authority_comment_created_at") is None
+                else reporter.expect_string(
+                    finding["authority_comment_created_at"],
+                    f"{item_label}.authority_comment_created_at",
+                )
+            ),
             "_created": created,
         }
+        if result[finding_id]["authority_comment_created_at"] is not None:
+            reporter.parse_time(
+                result[finding_id]["authority_comment_created_at"],
+                f"{item_label}.authority_comment_created_at",
+            )
     return result
 
 
@@ -2555,6 +2639,11 @@ def _global_identity_check(evidence: dict[str, Any]) -> None:
     for actor_id in evidence["actors"]:
         add("actor", actor_id)
     add("pull-request", evidence["pull_request"]["node_id"])
+    if (
+        evidence["authoritative_trigger"] is not None
+        and evidence["authoritative_trigger"]["comment_id"] is not None
+    ):
+        add("authoritative-trigger-comment", evidence["authoritative_trigger"]["comment_id"])
     for review in evidence["pre_reviews"]:
         add("pre-review", review["id"])
         for action in review["actions"]:
@@ -2565,6 +2654,9 @@ def _global_identity_check(evidence: dict[str, Any]) -> None:
         add("remote-review", review["node_id"])
     for finding_id in evidence["findings"]:
         add("remote-finding", finding_id)
+        comment_id = evidence["findings"][finding_id].get("authority_comment_id")
+        if comment_id is not None:
+            add("authoritative-family-comment", comment_id)
     for thread in evidence["threads"].values():
         add("review-thread", thread["node_id"])
     for event in evidence["force_push_events"]:
@@ -2615,14 +2707,23 @@ def _resolve_authoritative_trigger(
         raise reporter.PilotDataError(
             "authoritative trigger decision does not match the exact candidate head"
         )
-    actual_blob_oid = reporter.run_git(
-        authority["root"],
-        "rev-parse",
-        f"{contract['base_sha']}:{TRIGGER_DECISION_PATH}",
-    ).decode("ascii").strip()
-    if trigger["blob_oid"] != actual_blob_oid:
+    if trigger["original_pre_review_head"] != contract["original_pre_review_head"]:
         raise reporter.PilotDataError(
-            "authoritative trigger decision does not bind the exact base blob"
+            "authoritative trigger decision does not bind the exact initial reviewed head"
+        )
+    if trigger["authority_kind"] == "base-record":
+        actual_blob_oid = reporter.run_git(
+            authority["root"],
+            "rev-parse",
+            f"{contract['base_sha']}:{TRIGGER_DECISION_PATH}",
+        ).decode("ascii").strip()
+        if trigger["path"] != TRIGGER_DECISION_PATH or trigger["blob_oid"] != actual_blob_oid:
+            raise reporter.PilotDataError(
+                "authoritative trigger decision does not bind the exact base blob"
+            )
+    elif trigger["comment_id"] is None or trigger["comment_created_at"] is None:
+        raise reporter.PilotDataError(
+            "external authoritative trigger does not bind one exact trusted comment"
         )
     if trigger["trigger"] != contract["trigger"]:
         raise reporter.PilotDataError(

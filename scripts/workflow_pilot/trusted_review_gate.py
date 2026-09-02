@@ -85,6 +85,10 @@ EXECUTION_RECEIPT_DOMAIN = b"workflow-review-execution-receipt-v2\0"
 RECEIPT_PURPOSE = "independent-pre-review-report"
 RECEIPT_MAX_LIFETIME_SECONDS = 600
 NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
+EXTERNAL_DECISION_COMMENT_PREFIX = "workflow-review-family-decision:v1 "
+EXTERNAL_CLASSIFICATION_COMMENT_PREFIX = (
+    "workflow-review-family-classification:v1 "
+)
 
 # Actor is not a Node in GitHub's schema. Every polymorphic Actor selection
 # obtains id through a Node fragment; viewer is a concrete User.
@@ -92,6 +96,8 @@ GRAPHQL_QUERY = r"""
 query ReviewFamilyEvidence($owner: String!, $name: String!, $number: Int!) {
   viewer { __typename id login }
   repository(owner: $owner, name: $name) {
+    id
+    nameWithOwner
     viewerPermission
     owner { __typename login ... on Node { id } }
     pullRequest(number: $number) {
@@ -130,6 +136,7 @@ query ReviewFamilyEvidence($owner: String!, $name: String!, $number: Int!) {
             nodes {
               id
               createdAt
+              updatedAt
               body
               author { __typename login ... on Node { id } }
             }
@@ -1089,6 +1096,194 @@ def _parse_trigger_decision_records(
     return match, bool(records)
 
 
+def _load_base_trigger_record(
+    repository_root: Path,
+    *,
+    base_sha: str,
+    pull_request: int,
+) -> tuple[dict[str, Any] | None, str]:
+    decisions = reporter.load_decisions_from_commit(repository_root, base_sha)
+    record, _ = _parse_trigger_decision_records(
+        decisions,
+        pull_request=pull_request,
+        label=f"decision record at commit {base_sha}",
+    )
+    state = _assertion_input_state(repository_root, base_sha, DECISION_RECORD_PATH)
+    if state["mode"] not in MATERIALIZED_FILE_MODES or state["blob_oid"] is None:
+        raise reporter.PilotDataError(
+            "authoritative trigger decision record has an unsafe type or mode"
+        )
+    return record, state["blob_oid"]
+
+
+def _load_candidate_trigger_record(
+    repository_root: Path,
+    *,
+    candidate_sha: str,
+    pull_request: int,
+) -> tuple[dict[str, Any], str]:
+    state = _assertion_input_state(repository_root, candidate_sha, DECISION_RECORD_PATH)
+    if state["mode"] is None:
+        raise reporter.PilotDataError(
+            "candidate decision record is unavailable for drift validation"
+        )
+    if state["mode"] not in MATERIALIZED_FILE_MODES or state["blob_oid"] is None:
+        raise reporter.PilotDataError(
+            "candidate decision record has an unsafe type or mode"
+        )
+    try:
+        raw = _read_candidate_decision_record_bytes(
+            repository_root,
+            expected_blob_oid=state["blob_oid"],
+        ).decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise reporter.PilotDataError(
+            "candidate decision record is not valid UTF-8"
+        ) from error
+    candidate_decisions = reporter.expect_object(
+        reporter.parse_json(raw, str(repository_root / DECISION_RECORD_PATH)),
+        "candidate trigger decisions",
+    )
+    record, _ = _parse_trigger_decision_records(
+        candidate_decisions,
+        pull_request=pull_request,
+        label="candidate trigger decisions",
+    )
+    if record is None:
+        raise reporter.PilotDataError(
+            "candidate decision record does not contain the exact contract PR"
+        )
+    return record, state["blob_oid"]
+
+
+def _parse_external_trigger_comment(
+    comments: list[Any],
+    *,
+    viewer: dict[str, Any],
+    repository_id: str | None,
+    repository_name: str | None,
+    contract: dict[str, Any],
+    current_candidate_sha: str,
+    first_remote_review_at: datetime | None,
+    actors: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    matches = []
+    for index, raw in enumerate(comments):
+        label = f"GitHub pull-request comment[{index}]"
+        comment, body = _comment_object_and_body(raw, label)
+        if not body.startswith(EXTERNAL_DECISION_COMMENT_PREFIX):
+            continue
+        created = _require_unedited_comment(comment, label)
+        _require_exact_viewer_comment_author(
+            comment,
+            viewer=viewer,
+            actors=actors,
+            label=label,
+        )
+        if first_remote_review_at is not None and created >= first_remote_review_at:
+            raise reporter.PilotDataError(
+                f"{label} decision preregistration is not before first remote review"
+            )
+        payload = _canonical_prefixed_comment_payload(
+            body,
+            EXTERNAL_DECISION_COMMENT_PREFIX,
+            f"{label} decision preregistration",
+        )
+        reporter.expect_keys(
+            payload,
+            f"{label} decision preregistration",
+            (
+                "repository_id",
+                "repository",
+                "pull_request",
+                "base_sha",
+                "original_pre_review_head",
+                "candidate_sha",
+                "decision",
+            ),
+        )
+        if repository_id is None or repository_name is None:
+            raise reporter.PilotDataError(
+                f"{label} decision preregistration lacks repository authority context"
+            )
+        if payload["repository_id"] != repository_id or payload["repository"] != repository_name:
+            raise reporter.PilotDataError(
+                f"{label} decision preregistration does not bind the exact repository"
+            )
+        if (
+            reporter.expect_int(
+                payload["pull_request"],
+                f"{label} decision preregistration.pull_request",
+                1,
+            )
+            != contract["pull_request"]
+        ):
+            raise reporter.PilotDataError(
+                f"{label} decision preregistration does not bind the exact PR"
+            )
+        if (
+            reporter.expect_sha(
+                payload["base_sha"],
+                f"{label} decision preregistration.base_sha",
+            )
+            != contract["base_sha"]
+        ):
+            raise reporter.PilotDataError(
+                f"{label} decision preregistration does not bind the exact base"
+            )
+        original_head = reporter.expect_sha(
+            payload["original_pre_review_head"],
+            f"{label} decision preregistration.original_pre_review_head",
+        )
+        preregistered_head = reporter.expect_sha(
+            payload["candidate_sha"],
+            f"{label} decision preregistration.candidate_sha",
+        )
+        if (
+            original_head != contract["original_pre_review_head"]
+            or preregistered_head != contract["original_pre_review_head"]
+        ):
+            raise reporter.PilotDataError(
+                f"{label} decision preregistration does not bind the exact initial reviewed head"
+            )
+        decision = _normalize_trigger_decision_record(
+            reporter.expect_object(
+                payload["decision"], f"{label} decision preregistration.decision"
+            ),
+            label=f"{label} decision preregistration.decision",
+        )
+        if decision["pull_request"] != contract["pull_request"]:
+            raise reporter.PilotDataError(
+                f"{label} decision preregistration does not bind the exact PR decision"
+            )
+        matches.append(
+            {
+                "authority_kind": "external-comment",
+                "path": None,
+                "blob_oid": None,
+                "comment_id": reporter.expect_string(comment["id"], f"{label}.id"),
+                "comment_created_at": reporter.expect_string(
+                    comment["createdAt"], f"{label}.createdAt"
+                ),
+                "pull_request": contract["pull_request"],
+                "base_sha": contract["base_sha"],
+                "original_pre_review_head": contract["original_pre_review_head"],
+                "candidate_sha": current_candidate_sha,
+                "risk_boundaries": decision["trigger"]["risk_boundaries"],
+                "threshold_triggers": decision["trigger"]["threshold_triggers"],
+                "pre_review_required": review_family.trigger_requires_pre_review(
+                    decision["trigger"]
+                ),
+                "_record": decision,
+            }
+        )
+    if len(matches) > 1:
+        raise reporter.PilotDataError(
+            "external decision preregistration comments are not unique"
+        )
+    return matches[0] if matches else None
+
+
 def _load_authoritative_trigger(
     contract: dict[str, Any],
     repository_root: Path,
@@ -1102,79 +1297,39 @@ def _load_authoritative_trigger(
             "trusted trigger authority must derive from the exact base commit"
         )
     try:
-        decisions = reporter.load_decisions_from_commit(root, contract["base_sha"])
+        authoritative, blob_oid = _load_base_trigger_record(
+            root,
+            base_sha=contract["base_sha"],
+            pull_request=contract["pull_request"],
+        )
     except reporter.PilotDataError as error:
         raise reporter.PilotDataError(
             "authoritative trigger decision record is unavailable from the exact base commit"
         ) from error
-    authoritative, _ = _parse_trigger_decision_records(
-        decisions,
-        pull_request=contract["pull_request"],
-        label=f"decision record at commit {contract['base_sha']}",
-    )
     if authoritative is None:
-        raise reporter.PilotDataError(
-            "authoritative trigger decision record does not contain the exact contract PR"
-        )
+        return None
     if authoritative["trigger"] != contract["trigger"]:
         raise reporter.PilotDataError(
             "candidate trigger does not match the authoritative decision record"
         )
-    base_state = _assertion_input_state(
-        root, contract["base_sha"], DECISION_RECORD_PATH
-    )
-    if base_state["mode"] not in MATERIALIZED_FILE_MODES:
-        raise reporter.PilotDataError(
-            "authoritative trigger decision record has an unsafe type or mode"
-        )
-    candidate_state = _assertion_input_state(
-        root, candidate_sha, DECISION_RECORD_PATH
-    )
-    if candidate_state["mode"] is None:
-        raise reporter.PilotDataError(
-            "candidate decision record is unavailable for drift validation"
-        )
-    if candidate_state["mode"] not in MATERIALIZED_FILE_MODES:
-        raise reporter.PilotDataError(
-            "candidate decision record has an unsafe type or mode"
-        )
-    try:
-        candidate_decisions = reporter.expect_object(
-            reporter.parse_json(
-                _read_candidate_decision_record_bytes(
-                    root,
-                    expected_blob_oid=candidate_state["blob_oid"],
-                ).decode("utf-8"),
-                str(root / DECISION_RECORD_PATH),
-            ),
-            "candidate trigger decisions",
-        )
-    except UnicodeDecodeError as error:
-        raise reporter.PilotDataError(
-            "candidate decision record is not valid UTF-8"
-        ) from error
-    except OSError as error:
-        raise reporter.PilotDataError(
-            "candidate decision record is unavailable for drift validation"
-        ) from error
-    candidate_record, _ = _parse_trigger_decision_records(
-        candidate_decisions,
+    candidate_record, _candidate_blob_oid = _load_candidate_trigger_record(
+        root,
+        candidate_sha=candidate_sha,
         pull_request=contract["pull_request"],
-        label="candidate trigger decisions",
     )
-    if candidate_record is None:
-        raise reporter.PilotDataError(
-            "candidate decision record does not contain the exact contract PR"
-        )
     if candidate_record != authoritative:
         raise reporter.PilotDataError(
             "candidate decision record drifts from the authoritative base decision"
         )
     return {
+        "authority_kind": "base-record",
         "path": DECISION_RECORD_PATH,
-        "blob_oid": base_state["blob_oid"],
+        "blob_oid": blob_oid,
+        "comment_id": None,
+        "comment_created_at": None,
         "pull_request": contract["pull_request"],
         "base_sha": contract["base_sha"],
+        "original_pre_review_head": contract["original_pre_review_head"],
         "candidate_sha": candidate_sha,
         "risk_boundaries": authoritative["trigger"]["risk_boundaries"],
         "threshold_triggers": authoritative["trigger"]["threshold_triggers"],
@@ -1722,6 +1877,66 @@ def _collect_actors(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [actors[actor_id] for actor_id in sorted(actors)]
 
 
+def _comment_object_and_body(raw: Any, label: str) -> tuple[dict[str, Any], str]:
+    comment = reporter.expect_object(raw, label)
+    reporter.expect_keys(
+        comment,
+        label,
+        ("id", "createdAt", "body", "author"),
+        optional=("updatedAt",),
+    )
+    body = reporter.expect_string(comment["body"], f"{label}.body", allow_empty=True)
+    return comment, body
+
+
+def _canonical_prefixed_comment_payload(
+    body: str, prefix: str, label: str
+) -> dict[str, Any]:
+    payload_text = body[len(prefix) :]
+    payload = reporter.expect_object(
+        reporter.parse_json(payload_text, label), label
+    )
+    canonical = reporter.normalized_json(payload).decode("ascii").rstrip("\n")
+    if payload_text != canonical:
+        raise reporter.PilotDataError(f"{label} is not canonical closed JSON")
+    return payload
+
+
+def _comment_created_time(comment: dict[str, Any], label: str) -> tuple[str, datetime]:
+    created_at = reporter.expect_string(comment["createdAt"], f"{label}.createdAt")
+    created = reporter.parse_time(created_at, f"{label}.createdAt")
+    assert created is not None
+    return created_at, created
+
+
+def _require_unedited_comment(comment: dict[str, Any], label: str) -> datetime:
+    updated_at = reporter.expect_string(
+        comment.get("updatedAt"), f"{label}.updatedAt"
+    )
+    updated = reporter.parse_time(updated_at, f"{label}.updatedAt")
+    created_at, created = _comment_created_time(comment, label)
+    assert updated is not None
+    if updated_at != created_at or updated != created:
+        raise reporter.PilotDataError(f"{label} must not be edited")
+    return created
+
+
+def _require_exact_viewer_comment_author(
+    comment: dict[str, Any],
+    *,
+    viewer: dict[str, Any],
+    actors: list[dict[str, Any]],
+    label: str,
+) -> dict[str, Any]:
+    author = _graphql_actor(comment["author"], f"{label}.author")
+    actors.append(author)
+    if author != viewer:
+        raise reporter.PilotDataError(
+            f"{label}.author is not the exact trusted coordinator actor"
+        )
+    return author
+
+
 def _parse_disposition_comments(
     comments: list[Any], actors: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
@@ -1729,13 +1944,11 @@ def _parse_disposition_comments(
     result = []
     for index, raw in enumerate(comments):
         label = f"GitHub pull-request comment[{index}]"
-        comment = reporter.expect_object(raw, label)
-        reporter.expect_keys(comment, label, ("id", "createdAt", "body", "author"))
-        author = _graphql_actor(comment["author"], f"{label}.author")
-        actors.append(author)
-        body = reporter.expect_string(comment["body"], f"{label}.body", allow_empty=True)
+        comment, body = _comment_object_and_body(raw, label)
         if not body.startswith(prefix):
             continue
+        author = _graphql_actor(comment["author"], f"{label}.author")
+        actors.append(author)
         payload = reporter.expect_object(
             reporter.parse_json(body[len(prefix) :], f"{label} disposition"),
             f"{label} disposition",
@@ -1763,6 +1976,180 @@ def _parse_disposition_comments(
                 "occurred_at": comment["createdAt"],
             }
         )
+    return result
+
+
+def _parse_authoritative_family_classifications(
+    comments: list[Any],
+    *,
+    viewer: dict[str, Any],
+    repository_id: str | None,
+    repository_name: str | None,
+    contract: dict[str, Any],
+    remote_reviews: list[dict[str, Any]],
+    remote_findings: list[dict[str, Any]],
+    actors: list[dict[str, Any]],
+) -> dict[str, dict[str, str]]:
+    reviews_by_id = {review["node_id"]: review for review in remote_reviews}
+    next_review_times = {
+        remote_reviews[index]["node_id"]: remote_reviews[index + 1]["_submitted"]
+        for index in range(len(remote_reviews) - 1)
+    }
+    findings_by_id = {finding["node_id"]: finding for finding in remote_findings}
+    result: dict[str, dict[str, str]] = {}
+    seen_reviews = set()
+    for index, raw in enumerate(comments):
+        label = f"GitHub pull-request comment[{index}]"
+        comment, body = _comment_object_and_body(raw, label)
+        if not body.startswith(EXTERNAL_CLASSIFICATION_COMMENT_PREFIX):
+            continue
+        created = _require_unedited_comment(comment, label)
+        _require_exact_viewer_comment_author(
+            comment,
+            viewer=viewer,
+            actors=actors,
+            label=label,
+        )
+        payload = _canonical_prefixed_comment_payload(
+            body,
+            EXTERNAL_CLASSIFICATION_COMMENT_PREFIX,
+            f"{label} family classification",
+        )
+        reporter.expect_keys(
+            payload,
+            f"{label} family classification",
+            (
+                "repository_id",
+                "repository",
+                "pull_request",
+                "base_sha",
+                "original_pre_review_head",
+                "review_id",
+                "candidate_sha",
+                "findings",
+            ),
+        )
+        if repository_id is None or repository_name is None:
+            raise reporter.PilotDataError(
+                f"{label} family classification lacks repository authority context"
+            )
+        if payload["repository_id"] != repository_id or payload["repository"] != repository_name:
+            raise reporter.PilotDataError(
+                f"{label} family classification does not bind the exact repository"
+            )
+        if (
+            reporter.expect_int(
+                payload["pull_request"],
+                f"{label} family classification.pull_request",
+                1,
+            )
+            != contract["pull_request"]
+        ):
+            raise reporter.PilotDataError(
+                f"{label} family classification does not bind the exact PR"
+            )
+        if (
+            reporter.expect_sha(
+                payload["base_sha"],
+                f"{label} family classification.base_sha",
+            )
+            != contract["base_sha"]
+        ):
+            raise reporter.PilotDataError(
+                f"{label} family classification does not bind the exact base"
+            )
+        if (
+            reporter.expect_sha(
+                payload["original_pre_review_head"],
+                f"{label} family classification.original_pre_review_head",
+            )
+            != contract["original_pre_review_head"]
+        ):
+            raise reporter.PilotDataError(
+                f"{label} family classification does not bind the exact initial reviewed head"
+            )
+        review_id = reporter.expect_string(
+            payload["review_id"], f"{label} family classification.review_id"
+        )
+        review = reviews_by_id.get(review_id)
+        if review is None:
+            continue
+        if review_id in seen_reviews:
+            raise reporter.PilotDataError(
+                "external family classification comments are not unique per review"
+            )
+        seen_reviews.add(review_id)
+        if (
+            reporter.expect_sha(
+                payload["candidate_sha"],
+                f"{label} family classification.candidate_sha",
+            )
+            != review["candidate_sha"]
+        ):
+            raise reporter.PilotDataError(
+                f"{label} family classification does not bind the exact reviewed head"
+            )
+        if created <= review["_submitted"]:
+            raise reporter.PilotDataError(
+                f"{label} family classification does not follow its authoritative review"
+            )
+        next_review_at = next_review_times.get(review_id)
+        if next_review_at is not None and created >= next_review_at:
+            raise reporter.PilotDataError(
+                f"{label} family classification does not precede the next authoritative review"
+            )
+        mappings = reporter.expect_list(
+            payload["findings"], f"{label} family classification.findings"
+        )
+        if not mappings:
+            raise reporter.PilotDataError(
+                f"{label} family classification.findings must not be empty"
+            )
+        local_ids = set()
+        for position, raw_mapping in enumerate(mappings):
+            mapping_label = f"{label} family classification.findings[{position}]"
+            mapping = reporter.expect_object(raw_mapping, mapping_label)
+            reporter.expect_keys(
+                mapping, mapping_label, ("finding_id", "family")
+            )
+            finding_id = reporter.expect_string(
+                mapping["finding_id"], f"{mapping_label}.finding_id"
+            )
+            if finding_id in local_ids:
+                raise reporter.PilotDataError(
+                    f"{label} family classification repeats finding {finding_id!r}"
+                )
+            local_ids.add(finding_id)
+            finding = findings_by_id.get(finding_id)
+            if finding is None:
+                raise reporter.PilotDataError(
+                    f"{label} family classification references an unknown authoritative finding"
+                )
+            if finding["review_id"] != review_id:
+                raise reporter.PilotDataError(
+                    f"{label} family classification finding does not belong to its authoritative review"
+                )
+            finding_created = reporter.parse_time(
+                finding["created_at"], f"remote finding {finding_id}.created_at"
+            )
+            assert finding_created is not None
+            if created < finding_created:
+                raise reporter.PilotDataError(
+                    f"{label} family classification predates authoritative finding creation"
+                )
+            if finding_id in result:
+                raise reporter.PilotDataError(
+                    f"authoritative family classification repeats finding {finding_id!r}"
+                )
+            result[finding_id] = {
+                "family": reporter.expect_enum(
+                    mapping["family"], set(review_family.FAMILY_MEMBERS), f"{mapping_label}.family"
+                ),
+                "comment_id": reporter.expect_string(comment["id"], f"{label}.id"),
+                "comment_created_at": reporter.expect_string(
+                    comment["createdAt"], f"{label}.createdAt"
+                ),
+            }
     return result
 
 
@@ -1804,6 +2191,19 @@ def collect_live_evidence_bytes(
         repository,
         "GitHub repository",
         ("viewerPermission", "owner", "pullRequest"),
+        optional=("id", "nameWithOwner"),
+    )
+    repository_id = (
+        reporter.expect_string(repository["id"], "GitHub repository.id")
+        if "id" in repository
+        else None
+    )
+    repository_name = (
+        reporter.expect_string(
+            repository["nameWithOwner"], "GitHub repository.nameWithOwner"
+        )
+        if "nameWithOwner" in repository
+        else None
     )
     if repository["viewerPermission"] != "READ":
         raise reporter.PilotDataError(
@@ -1933,6 +2333,13 @@ def collect_live_evidence_bytes(
         body_classification = review_family.classify_copilot_body(
             body, f"{label}.body"
         )
+        submitted_at = reporter.expect_string(
+            review["submittedAt"], f"{label}.submittedAt"
+        )
+        submitted = reporter.parse_time(
+            submitted_at, f"{label}.submittedAt"
+        )
+        assert submitted is not None
         review_commit = reporter.expect_object(review["commit"], f"{label}.commit")
         reporter.expect_keys(review_commit, f"{label}.commit", ("oid",))
         review_candidate = reporter.expect_sha(
@@ -1980,7 +2387,8 @@ def collect_live_evidence_bytes(
                 "node_id": reporter.expect_string(review["id"], f"{label}.id"),
                 "reviewer_actor_id": review_actor["id"],
                 "candidate_sha": review_candidate,
-                "submitted_at": review["submittedAt"],
+                "submitted_at": submitted_at,
+                "_submitted": submitted,
                 "state": state,
                 "body": body,
                 "body_classification": body_classification,
@@ -1998,6 +2406,69 @@ def collect_live_evidence_bytes(
     parsed_reviews.sort(key=lambda item: (item["submitted_at"], item["node_id"]))
     for round_number, review in enumerate(parsed_reviews, 1):
         remote_reviews.append({**review, "round": round_number})
+
+    comment_nodes = _expect_page_complete(
+        pr["comments"], "GitHub pull-request comments"
+    )
+    resolved_authoritative_trigger = authoritative_trigger
+    if resolved_authoritative_trigger is None and contract["trust_mode"] != "introduction":
+        resolved_authoritative_trigger = load_authoritative_trigger(
+            contract,
+            repository_root,
+            expected_candidate,
+        )
+    if resolved_authoritative_trigger is None:
+        external_trigger = _parse_external_trigger_comment(
+            comment_nodes,
+            viewer=viewer,
+            repository_id=repository_id,
+            repository_name=repository_name,
+            contract=contract,
+            current_candidate_sha=expected_candidate,
+            first_remote_review_at=(
+                remote_reviews[0]["_submitted"] if remote_reviews else None
+            ),
+            actors=actor_records,
+        )
+        if external_trigger is not None:
+            candidate_record, _candidate_blob_oid = _load_candidate_trigger_record(
+                root,
+                candidate_sha=expected_candidate,
+                pull_request=contract["pull_request"],
+            )
+            if candidate_record != external_trigger["_record"]:
+                raise reporter.PilotDataError(
+                    "candidate decision record drifts from trusted preregistration decision authority"
+                )
+            resolved_authoritative_trigger = {
+                name: value
+                for name, value in external_trigger.items()
+                if not name.startswith("_")
+            }
+
+    family_classifications = _parse_authoritative_family_classifications(
+        comment_nodes,
+        viewer=viewer,
+        repository_id=repository_id,
+        repository_name=repository_name,
+        contract=contract,
+        remote_reviews=remote_reviews,
+        remote_findings=remote_findings,
+        actors=actor_records,
+    )
+    for finding in remote_findings:
+        finding_id = finding["node_id"]
+        if finding_id not in family_classifications:
+            raise reporter.PilotDataError(
+                f"remote finding {finding_id!r} has no authoritative family classification"
+            )
+        finding["family"] = family_classifications[finding_id]["family"]
+        finding["authority_comment_id"] = family_classifications[finding_id][
+            "comment_id"
+        ]
+        finding["authority_comment_created_at"] = family_classifications[
+            finding_id
+        ]["comment_created_at"]
 
     threads = []
     accepted_findings = {
@@ -2083,9 +2554,6 @@ def collect_live_evidence_bytes(
                 f"remote finding {finding_id!r} thread author does not match the exact authoritative review actor"
             )
 
-    comment_nodes = _expect_page_complete(
-        pr["comments"], "GitHub pull-request comments"
-    )
     dispositions = _parse_disposition_comments(comment_nodes, actor_records)
     actor_records.append(
         {
@@ -2142,6 +2610,14 @@ def collect_live_evidence_bytes(
                 "reviewed_changes": review_report["reviewed_changes"],
             }
         )
+    serialized_remote_reviews = [
+        {
+            name: value
+            for name, value in review.items()
+            if not name.startswith("_")
+        }
+        for review in remote_reviews
+    ]
     raw_evidence = build_live_evidence_payload(
         contract=contract,
         expected_candidate=expected_candidate,
@@ -2158,11 +2634,11 @@ def collect_live_evidence_bytes(
             "head_sha": head,
             "author_actor_id": author["id"],
         },
-        authoritative_trigger=authoritative_trigger,
+        authoritative_trigger=resolved_authoritative_trigger,
         actors=actors,
         pre_reviews=pre_reviews,
         pre_review_findings=pre_findings,
-        remote_reviews=remote_reviews,
+        remote_reviews=serialized_remote_reviews,
         findings=remote_findings,
         threads=threads,
         force_push_events=force_push_events,
@@ -2183,6 +2659,7 @@ def _live_state_digest(evidence_bytes: bytes) -> str:
             "repository",
             "candidate",
             "pull_request",
+            "authoritative_trigger",
             "actors",
             "remote_reviews",
             "findings",
@@ -2306,14 +2783,6 @@ def _run_trusted_gate(
         "authenticated independent pre-review",
     )
     base_supports_gate = _base_contains_gate(repository_root, expected_base)
-    authoritative_trigger = None
-    if contract["trust_mode"] != "introduction" and base_supports_gate:
-        authoritative_trigger = load_authoritative_trigger(
-            contract,
-            repository_root,
-            expected_candidate,
-            decision_record_path=decision_record_path,
-        )
     first_evidence_bytes = collect_live_evidence_bytes(
         raw_contract,
         repository_root,
@@ -2322,7 +2791,7 @@ def _run_trusted_gate(
         review_report,
         envelope,
         [],
-        authoritative_trigger=authoritative_trigger,
+        authoritative_trigger=None,
         adapter=adapter,
         clock=clock,
     )
@@ -2337,9 +2806,13 @@ def _run_trusted_gate(
     if (
         contract["trust_mode"] == "introduction"
         or not base_supports_gate
-        or authoritative_trigger is None
     ):
         return bootstrap_result(contract, expected_base, expected_candidate)
+    authoritative_trigger = first_evidence["authoritative_trigger"]
+    if authoritative_trigger is None:
+        raise reporter.PilotDataError(
+            "base-pinned mode requires authoritative trigger decision or trusted preregistration evidence"
+        )
     if contract["trust_mode"] != "base-pinned":
         raise reporter.PilotDataError("steady-state gate requires base-pinned mode")
     completed = reporter.parse_time(

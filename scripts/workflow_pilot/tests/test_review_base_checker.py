@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import unittest
 from itertools import count
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from scripts.workflow_pilot import (
@@ -14,6 +15,7 @@ from scripts.workflow_pilot import (
     review_assertions,
     review_base_checker,
     review_family,
+    trusted_review_gate,
 )
 
 
@@ -69,6 +71,39 @@ def copilot_graphql_actor():
         "__typename": review_family.COPILOT_GRAPHQL_TYPE,
         "id": COPILOT_ACTOR_ID,
         "login": review_family.COPILOT_GRAPHQL_LOGIN,
+    }
+
+
+def viewer_graphql_actor():
+    return {"__typename": "User", "id": "VIEWER", "login": "viewer"}
+
+
+def authoritative_family_comment(
+    *,
+    base_sha,
+    original_head,
+    review_id,
+    candidate_sha,
+    mappings,
+    created_at,
+):
+    payload = {
+        "repository_id": "REPO_TEST_189",
+        "repository": REPOSITORY,
+        "pull_request": PULL_REQUEST,
+        "base_sha": base_sha,
+        "original_pre_review_head": original_head,
+        "review_id": review_id,
+        "candidate_sha": candidate_sha,
+        "findings": copy.deepcopy(mappings),
+    }
+    return {
+        "id": f"CLASSIFICATION:{review_id}",
+        "createdAt": created_at,
+        "updatedAt": created_at,
+        "body": trusted_review_gate.EXTERNAL_CLASSIFICATION_COMMENT_PREFIX
+        + reporter.normalized_json(payload).decode("ascii").rstrip("\n"),
+        "author": viewer_graphql_actor(),
     }
 
 
@@ -683,6 +718,11 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             family = finding["family"]
             sweep = copy.deepcopy(templates[family])
             sweep["finding_id"] = finding_id
+            explicit_members = {
+                member
+                for (requested_finding, requested_family, member), _outcome in requested.items()
+                if requested_finding == finding_id and requested_family == family
+            }
             for sibling in sweep["siblings"]:
                 outcome = requested.get(
                     (finding_id, family, sibling["member"]),
@@ -691,6 +731,22 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 sibling["result"] = outcome
                 sibling["assertion_id"] = review_family.member_assertion_id(
                     family, sibling["member"], outcome
+                )
+            if not any(
+                sibling["result"] == "affected-fixed"
+                for sibling in sweep["siblings"]
+            ):
+                fallback = next(
+                    (
+                        sibling
+                        for sibling in sweep["siblings"]
+                        if sibling["member"] not in explicit_members
+                    ),
+                    sweep["siblings"][0],
+                )
+                fallback["result"] = "affected-fixed"
+                fallback["assertion_id"] = review_family.member_assertion_id(
+                    family, fallback["member"], "affected-fixed"
                 )
             sweeps.append(sweep)
         return sweeps
@@ -702,6 +758,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                 commit_shas.append(sha)
         review_nodes = []
         thread_nodes = []
+        classification_comments = []
         for review in all_remote_reviews:
             comments = [
                 {
@@ -746,19 +803,38 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                         },
                     }
                 )
+                if comments:
+                    submitted = datetime.fromisoformat(
+                        review["submitted_at"].replace("Z", "+00:00")
+                    ).astimezone(timezone.utc)
+                    classification_comments.append(
+                        authoritative_family_comment(
+                            base_sha=self.base,
+                            original_head=self.head1,
+                            review_id=review["node_id"],
+                            candidate_sha=review["candidate_sha"],
+                            mappings=[
+                                {
+                                    "finding_id": finding["node_id"],
+                                    "family": finding["family"],
+                                }
+                                for finding in remote_findings
+                                if finding["review_id"] == review["node_id"]
+                            ],
+                            created_at=utc_text((submitted + timedelta(seconds=30)).isoformat()),
+                        )
+                    )
         return {
-            "data": {
-                "viewer": {
-                    "__typename": "User",
-                    "id": "VIEWER",
-                    "login": "viewer",
-                },
-                "repository": {
-                    "viewerPermission": "READ",
-                    "owner": {
-                        "__typename": "User",
-                        "id": "OWNER",
-                        "login": "owner",
+                "data": {
+                    "viewer": viewer_graphql_actor(),
+                    "repository": {
+                        "id": "REPO_TEST_189",
+                        "nameWithOwner": REPOSITORY,
+                        "viewerPermission": "READ",
+                        "owner": {
+                            "__typename": "User",
+                            "id": "OWNER",
+                            "login": "owner",
                     },
                     "pullRequest": {
                         "id": f"PR_{PULL_REQUEST}",
@@ -805,7 +881,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                         },
                         "comments": {
                             "pageInfo": {"hasNextPage": False},
-                            "nodes": [],
+                            "nodes": classification_comments,
                         },
                     },
                 },

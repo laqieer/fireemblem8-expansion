@@ -6,6 +6,8 @@
       "login": "fresh-collector"
     },
     "repository": {
+      "id": "REPO_SYNTHETIC_901",
+      "nameWithOwner": "laqieer/fireemblem8-expansion",
       "viewerPermission": "READ",
       "owner": {
         "__typename": "User",

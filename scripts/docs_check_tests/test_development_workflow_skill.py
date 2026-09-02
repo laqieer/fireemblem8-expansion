@@ -4070,6 +4070,10 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "Selection authenticates that exact Bot actor before any review body",
             "no-follow regular-file read still matches the candidate tree blob",
             "dirfd/openat",
+            "workflow-review-family-decision:v1",
+            "workflow-review-family-classification:v1",
+            "every accepted finding sweep must still include at least one `affected-fixed` sibling",
+            "deleted-user `author: null` comments, are ignored before actor parsing",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(normalize_policy(fragment), pilot_normalized)
@@ -4081,6 +4085,10 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
             "review selection authenticates the exact Bot actor before parsing body markers or inline comments",
             "verified no-follow candidate-file access that still matches the candidate tree blob",
             "dirfd/openat no-follow directory walk",
+            "workflow-review-family-decision:v1",
+            "workflow-review-family-classification:v1",
+            "Every accepted finding sweep must include at least one `affected-fixed` sibling",
+            "derive the trusted family mapping from immutable",
         ):
             with self.subTest(fragment=fragment):
                 self.assertIn(normalize_policy(fragment), governance_normalized)

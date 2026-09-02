@@ -58,6 +58,106 @@ def lookalike_graphql_actor():
     return graphql_actor("Bot", "BOT_LOOKALIKE_001", "copilot-pull-request-reviewer-bot")
 
 
+def trusted_comment_actor():
+    return graphql_actor("User", "ACTOR_COLLECTOR_001", "fresh-collector")
+
+
+def repository_identity():
+    return {
+        "id": "REPO_SYNTHETIC_901",
+        "name": "laqieer/fireemblem8-expansion",
+    }
+
+
+def decision_record_entry(
+    *,
+    pull_request=SYNTHETIC_PULL_REQUEST,
+    risks=("none",),
+    triggers=("none",),
+):
+    return {
+        "pull_request": pull_request,
+        "risk_boundaries": list(risks),
+        "threshold": {
+            "triggers": list(triggers),
+            "override_history": [],
+        },
+        "gate_mode": "concurrent",
+        "stack": {
+            "depth": 0,
+            "parent_pr": None,
+            "exception_reason": None,
+        },
+        "pilot": {
+            "included": False,
+            "disposition": "baseline-only",
+        },
+    }
+
+
+def authoritative_decision_comment(
+    *,
+    base_sha,
+    head_sha,
+    decision=None,
+    comment_id="COMMENT_DECISION_001",
+    created_at="2026-08-31T03:11:30Z",
+    updated_at="2026-08-31T03:11:30Z",
+    author=None,
+):
+    if decision is None:
+        decision = decision_record_entry(risks=("lifecycle", "protocol"), triggers=("changed-files", "risk-boundary"))
+    payload = {
+        "repository_id": repository_identity()["id"],
+        "repository": repository_identity()["name"],
+        "pull_request": SYNTHETIC_PULL_REQUEST,
+        "base_sha": base_sha,
+        "original_pre_review_head": head_sha,
+        "candidate_sha": head_sha,
+        "decision": copy.deepcopy(decision),
+    }
+    return {
+        "id": comment_id,
+        "createdAt": created_at,
+        "updatedAt": updated_at,
+        "body": trusted_review_gate.EXTERNAL_DECISION_COMMENT_PREFIX
+        + reporter.normalized_json(payload).decode("ascii").rstrip("\n"),
+        "author": copy.deepcopy(author) if author is not None else trusted_comment_actor(),
+    }
+
+
+def authoritative_family_comment(
+    *,
+    base_sha,
+    original_head,
+    review_id,
+    candidate_sha,
+    mappings,
+    comment_id="COMMENT_CLASSIFICATION_001",
+    created_at="2026-08-31T03:37:30Z",
+    updated_at="2026-08-31T03:37:30Z",
+    author=None,
+):
+    payload = {
+        "repository_id": repository_identity()["id"],
+        "repository": repository_identity()["name"],
+        "pull_request": SYNTHETIC_PULL_REQUEST,
+        "base_sha": base_sha,
+        "original_pre_review_head": original_head,
+        "review_id": review_id,
+        "candidate_sha": candidate_sha,
+        "findings": copy.deepcopy(mappings),
+    }
+    return {
+        "id": comment_id,
+        "createdAt": created_at,
+        "updatedAt": updated_at,
+        "body": trusted_review_gate.EXTERNAL_CLASSIFICATION_COMMENT_PREFIX
+        + reporter.normalized_json(payload).decode("ascii").rstrip("\n"),
+        "author": copy.deepcopy(author) if author is not None else trusted_comment_actor(),
+    }
+
+
 def git(root, *arguments):
     return subprocess.run(
         reporter.git_command(root, *arguments),
@@ -223,6 +323,8 @@ class TrustedGitHubGateTests(unittest.TestCase):
 
     def exact_graphql_payload(self, *, with_finding=False):
         payload = self.adapter()
+        payload["data"]["repository"]["id"] = repository_identity()["id"]
+        payload["data"]["repository"]["nameWithOwner"] = repository_identity()["name"]
         pr = payload["data"]["repository"]["pullRequest"]
         pr["baseRefOid"] = self.base_sha
         pr["headRefOid"] = self.candidate_sha
@@ -231,6 +333,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
             self.repo, "show", "-s", "--format=%cI", self.candidate_sha
         ).stdout.decode().strip().replace("+00:00", "Z")
         pr["reviews"]["nodes"][0]["commit"]["oid"] = self.candidate_sha
+        pr["comments"]["nodes"] = []
         if with_finding:
             pr["reviews"]["nodes"][0]["body"] = "### 🟡 Changes recommended"
             pr["reviews"]["nodes"][0]["comments"]["nodes"] = [
@@ -258,6 +361,20 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     },
                 }
             ]
+            pr["comments"]["nodes"].append(
+                authoritative_family_comment(
+                    base_sha=self.base_sha,
+                    original_head=self.candidate_sha,
+                    review_id="REMOTE_REVIEW_LIVE_001",
+                    candidate_sha=self.candidate_sha,
+                    mappings=[
+                        {
+                            "finding_id": "FINDING_ACTION_001",
+                            "family": "action",
+                        }
+                    ],
+                )
+            )
         return payload
 
     def exact_review_receipt_envelope(self):
@@ -278,7 +395,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
             )
         )
 
-    def collect_exact_live_evidence(self, payload, *, kind="default"):
+    def collect_exact_live_evidence(self, payload, *, kind="default", clock=None):
         return trusted_review_gate.collect_live_evidence_bytes(
             self.contract(
                 base=self.base_sha,
@@ -299,7 +416,11 @@ class TrustedGitHubGateTests(unittest.TestCase):
             self.exact_review_receipt_envelope(),
             [],
             adapter=StaticAdapter(payload),
-            clock=lambda: datetime(2026, 8, 31, 3, 13, tzinfo=timezone.utc),
+            clock=(
+                clock
+                if clock is not None
+                else lambda: datetime(2026, 8, 31, 3, 13, tzinfo=timezone.utc)
+            ),
         )
 
     def decision_entry(
@@ -354,6 +475,27 @@ class TrustedGitHubGateTests(unittest.TestCase):
     def commit_all(self, root, message):
         git(root, "add", "-A")
         git(root, "commit", "-q", "-m", message)
+
+    def commit_all_at(self, root, message, when):
+        environment = reporter.git_environment(offline=True)
+        environment.update(
+            {
+                "GIT_AUTHOR_DATE": when,
+                "GIT_COMMITTER_DATE": when,
+            }
+        )
+        subprocess.run(
+            reporter.git_command(root, "add", "-A"),
+            env=environment,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            reporter.git_command(root, "commit", "-q", "-m", message),
+            env=environment,
+            check=True,
+            capture_output=True,
+        )
 
     def decision_record_entry(self, decisions, pull_request=SYNTHETIC_PULL_REQUEST):
         return next(
@@ -495,6 +637,9 @@ class TrustedGitHubGateTests(unittest.TestCase):
         query = trusted_review_gate.GRAPHQL_QUERY
         self.assertIn("baseRefOid", query)
         self.assertIn("headRefOid", query)
+        self.assertIn("nameWithOwner", query)
+        self.assertIn("\n    id\n", query)
+        self.assertIn("updatedAt", query)
         self.assertGreaterEqual(query.count("__typename"), 7)
         self.assertGreaterEqual(query.count("... on Node { id }"), 6)
         self.assertNotIn("author { id login }", query)
@@ -729,6 +874,44 @@ class TrustedGitHubGateTests(unittest.TestCase):
         self.assertEqual(evidence["threads"], [])
         self.assertEqual(evidence["findings"], [])
 
+    def test_issue_comments_ignore_unrelated_deleted_authors_but_reject_prefixed_null_authors(self):
+        payload = self.exact_graphql_payload()
+        payload["data"]["repository"]["pullRequest"]["comments"]["nodes"] = [
+            {
+                "id": "COMMENT_UNRELATED_NULL_001",
+                "createdAt": "2026-08-31T03:36:00Z",
+                "updatedAt": "2026-08-31T03:36:00Z",
+                "body": "ordinary unrelated comment",
+                "author": None,
+            }
+        ]
+        evidence = json.loads(self.collect_exact_live_evidence(payload))
+        self.assertEqual(evidence["authoritative_trigger"], None)
+
+        payload = self.exact_graphql_payload()
+        payload["data"]["repository"]["pullRequest"]["comments"]["nodes"] = [
+            {
+                "id": "COMMENT_DISPOSITION_NULL_001",
+                "createdAt": "2026-08-31T03:36:00Z",
+                "updatedAt": "2026-08-31T03:36:00Z",
+                "body": (
+                    "workflow-review-family-disposition:v2 "
+                    + json.dumps(
+                        {
+                            "held_round": 3,
+                            "held_head_sha": self.candidate_sha,
+                            "authorized_next_head_sha": self.candidate_sha,
+                            "action": "redesign",
+                        },
+                        separators=(",", ":"),
+                    )
+                ),
+                "author": None,
+            }
+        ]
+        with self.assertRaisesRegex(reporter.PilotDataError, "must be an object"):
+            self.collect_exact_live_evidence(payload)
+
     def test_non_authoritative_reviews_do_not_satisfy_copilot_authority(self):
         for actor in (human_graphql_actor(), lookalike_graphql_actor()):
             payload = self.exact_graphql_payload(with_finding=True)
@@ -791,6 +974,69 @@ class TrustedGitHubGateTests(unittest.TestCase):
             "duplicate review threads",
         ):
             self.collect_exact_live_evidence(payload, kind="complete")
+
+    def test_authoritative_family_classification_rejects_candidate_family_swaps(self):
+        contract = self.contract(base=self.base_sha, candidate=self.candidate_sha, kind="default")
+        contract["family_sweeps"] = [
+            {
+                "finding_id": "FINDING_ACTION_001",
+                "siblings": [
+                    {
+                        "member": "owners",
+                        "result": "affected-fixed",
+                        "assertion_id": "registry:sibling:generated:owners:affected-fixed:v2",
+                    },
+                    {
+                        "member": "outputs",
+                        "result": "verified-unaffected",
+                        "assertion_id": "registry:sibling:generated:outputs:verified-unaffected:v2",
+                    },
+                    {
+                        "member": "consumers",
+                        "result": "verified-unaffected",
+                        "assertion_id": "registry:sibling:generated:consumers:verified-unaffected:v2",
+                    },
+                    {
+                        "member": "drift-checks",
+                        "result": "verified-unaffected",
+                        "assertion_id": "registry:sibling:generated:drift-checks:verified-unaffected:v2",
+                    },
+                ],
+            }
+        ]
+        payload = self.exact_graphql_payload(with_finding=True)
+        committed = datetime.fromisoformat(
+            git(self.repo, "show", "-s", "--format=%cI", self.candidate_sha)
+            .stdout.decode()
+            .strip()
+        ).astimezone(timezone.utc)
+        review_at = committed + timedelta(minutes=1)
+        finding_at = review_at - timedelta(seconds=30)
+        classification_at = review_at + timedelta(seconds=30)
+        pr = payload["data"]["repository"]["pullRequest"]
+        pr["createdAt"] = iso(review_at - timedelta(seconds=30))
+        pr["reviews"]["nodes"][0]["submittedAt"] = iso(review_at)
+        pr["reviews"]["nodes"][0]["comments"]["nodes"][0]["createdAt"] = iso(finding_at)
+        pr["reviewThreads"]["nodes"][0]["comments"]["nodes"][0]["createdAt"] = iso(finding_at)
+        pr["comments"]["nodes"][0]["createdAt"] = iso(classification_at)
+        pr["comments"]["nodes"][0]["updatedAt"] = iso(classification_at)
+        evidence = json.loads(
+            self.collect_exact_live_evidence(
+                payload,
+                kind="complete",
+                clock=lambda: classification_at + timedelta(seconds=30),
+            )
+        )
+        with self.assertRaisesRegex(
+            reporter.PilotDataError,
+            "family does not match its sweep",
+        ):
+            review_family.build_report(
+                contract,
+                evidence,
+                self.repo,
+                self.candidate_sha,
+            )
 
     def test_candidate_decision_record_no_follow_and_tree_mode_guards(self):
         repo, base, candidate = self.build_decision_repo(self.decision_entry())
@@ -1506,13 +1752,11 @@ class TrustedGitHubGateTests(unittest.TestCase):
             contract = review_family.validate_contract(
                 self.contract(base=missing_base, candidate=missing_candidate)
             )
-            with self.assertRaisesRegex(
-                reporter.PilotDataError,
-                "does not contain the exact contract PR",
-            ):
+            self.assertIsNone(
                 trusted_review_gate._load_authoritative_trigger(
                     contract, missing_repo, missing_candidate
                 )
+            )
         finally:
             shutil.rmtree(missing_repo)
 
@@ -1526,13 +1770,197 @@ class TrustedGitHubGateTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(
                 reporter.PilotDataError,
-                "repeats PR",
+                "repeats PR|exact base commit",
             ):
                 trusted_review_gate._load_authoritative_trigger(
                     contract, duplicate_repo, duplicate_candidate
                 )
         finally:
             shutil.rmtree(duplicate_repo)
+
+    def test_external_preregistration_authorizes_future_pr_when_base_lacks_record(self):
+        repo, base, candidate = self.build_decision_repo()
+        try:
+            decision = decision_record_entry(
+                risks=("lifecycle", "protocol"),
+                triggers=("changed-files", "risk-boundary"),
+            )
+            self.write_decision_record(repo, self.decision_entry(
+                risks=("lifecycle", "protocol"),
+                triggers=("changed-files", "risk-boundary"),
+            ))
+            self.commit_all_at(repo, "candidate gains decision entry", "2026-08-31T03:06:00Z")
+            candidate = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
+            payload = self.exact_graphql_payload()
+            payload["data"]["repository"]["pullRequest"]["baseRefOid"] = base
+            payload["data"]["repository"]["pullRequest"]["headRefOid"] = candidate
+            payload["data"]["repository"]["pullRequest"]["createdAt"] = "2026-08-31T03:08:00Z"
+            payload["data"]["repository"]["pullRequest"]["commits"]["nodes"][0]["commit"]["oid"] = candidate
+            payload["data"]["repository"]["pullRequest"]["commits"]["nodes"][0]["commit"]["committedDate"] = git(
+                repo, "show", "-s", "--format=%cI", candidate
+            ).stdout.decode().strip().replace("+00:00", "Z")
+            payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["commit"]["oid"] = candidate
+            payload["data"]["repository"]["pullRequest"]["reviews"]["nodes"][0]["submittedAt"] = "2026-08-31T03:15:00Z"
+            payload["data"]["repository"]["pullRequest"]["comments"]["nodes"] = [
+                authoritative_decision_comment(
+                    base_sha=base,
+                    head_sha=candidate,
+                    decision=decision,
+                )
+            ]
+            contract = self.contract(base=base, candidate=candidate)
+            contract["trust_mode"] = "base-pinned"
+            contract["trigger"] = {
+                "risk_boundaries": ["lifecycle", "protocol"],
+                "threshold_triggers": ["changed-files", "risk-boundary"],
+            }
+            receipt = signed_receipt(
+                reporter.normalized_json(
+                    review_report(
+                        base,
+                        candidate,
+                        ["changed.txt", trusted_review_gate.DECISION_RECORD_PATH],
+                        review_family.derive_change_records(repo, base, candidate),
+                    )
+                ),
+                base=base,
+                candidate=candidate,
+                nonce="external-preregistration-0001",
+            )
+            result = trusted_review_gate._run_trusted_gate(
+                raw_contract=contract,
+                repository_root=repo,
+                expected_candidate=candidate,
+                expected_remote_head=candidate,
+                expected_base=base,
+                review_receipt_bytes=receipt,
+                replay_store=self.replay,
+                trusted_key_id=KEY_ID,
+                trusted_key_epoch=KEY_EPOCH,
+                trusted_key=KEY,
+                current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc),
+                adapter=StaticAdapter(payload),
+                clock=lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc),
+            )
+            self.assertTrue(result["trigger"]["authoritative"])
+            self.assertTrue(result["gates"]["current_candidate_reviewed"])
+            self.assertFalse(result["bootstrap"]["mode"] == "introduction")
+        finally:
+            shutil.rmtree(repo)
+
+    def test_external_preregistration_must_be_exact_and_unique(self):
+        cases = (
+            ("missing", "missing", "requires authoritative trigger decision or trusted preregistration evidence"),
+            ("late", {"createdAt": "2026-08-31T03:15:00Z", "updatedAt": "2026-08-31T03:15:00Z"}, "not before first remote review"),
+            ("edited", {"updatedAt": "2026-08-31T03:11:31Z"}, "must not be edited"),
+            ("wrong-actor", {"author": human_graphql_actor()}, "exact trusted coordinator actor"),
+            ("wrong-repo", {"repository": "other/repository"}, "exact repository"),
+            ("wrong-base", {"base_sha": "f" * 40}, "exact base"),
+            ("wrong-head", {"candidate_sha": "f" * 40}, "exact initial reviewed head"),
+            ("duplicate", "duplicate", "not unique"),
+        )
+        for case_name, override, pattern in cases:
+            repo, base, candidate = self.build_decision_repo()
+            try:
+                self.write_decision_record(repo, self.decision_entry(
+                    risks=("lifecycle", "protocol"),
+                    triggers=("changed-files", "risk-boundary"),
+                ))
+                self.commit_all_at(repo, "candidate gains decision entry", "2026-08-31T03:06:00Z")
+                candidate = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
+                payload = self.exact_graphql_payload()
+                pr = payload["data"]["repository"]["pullRequest"]
+                pr["baseRefOid"] = base
+                pr["headRefOid"] = candidate
+                pr["createdAt"] = "2026-08-31T03:08:00Z"
+                pr["commits"]["nodes"][0]["commit"]["oid"] = candidate
+                pr["commits"]["nodes"][0]["commit"]["committedDate"] = git(
+                    repo, "show", "-s", "--format=%cI", candidate
+                ).stdout.decode().strip().replace("+00:00", "Z")
+                pr["reviews"]["nodes"][0]["commit"]["oid"] = candidate
+                pr["reviews"]["nodes"][0]["submittedAt"] = "2026-08-31T03:15:00Z"
+                decision = decision_record_entry(
+                    risks=("lifecycle", "protocol"),
+                    triggers=("changed-files", "risk-boundary"),
+                )
+                comment = authoritative_decision_comment(
+                    base_sha=base,
+                    head_sha=candidate,
+                    decision=decision,
+                )
+                if override == "missing":
+                    pr["comments"]["nodes"] = []
+                elif override == "duplicate":
+                    pr["comments"]["nodes"] = [comment, copy.deepcopy(comment)]
+                    pr["comments"]["nodes"][1]["id"] = "COMMENT_DECISION_002"
+                else:
+                    if override is not None:
+                        if "repository" in override:
+                            body = json.loads(comment["body"][len(trusted_review_gate.EXTERNAL_DECISION_COMMENT_PREFIX):])
+                            body["repository"] = override["repository"]
+                            comment["body"] = (
+                                trusted_review_gate.EXTERNAL_DECISION_COMMENT_PREFIX
+                                + reporter.normalized_json(body).decode("ascii").rstrip("\n")
+                            )
+                            override = {k: v for k, v in override.items() if k != "repository"}
+                        if "base_sha" in override:
+                            body = json.loads(comment["body"][len(trusted_review_gate.EXTERNAL_DECISION_COMMENT_PREFIX):])
+                            body["base_sha"] = override["base_sha"]
+                            comment["body"] = (
+                                trusted_review_gate.EXTERNAL_DECISION_COMMENT_PREFIX
+                                + reporter.normalized_json(body).decode("ascii").rstrip("\n")
+                            )
+                            override = {k: v for k, v in override.items() if k != "base_sha"}
+                        if "candidate_sha" in override:
+                            body = json.loads(comment["body"][len(trusted_review_gate.EXTERNAL_DECISION_COMMENT_PREFIX):])
+                            body["candidate_sha"] = override["candidate_sha"]
+                            comment["body"] = (
+                                trusted_review_gate.EXTERNAL_DECISION_COMMENT_PREFIX
+                                + reporter.normalized_json(body).decode("ascii").rstrip("\n")
+                            )
+                            override = {k: v for k, v in override.items() if k != "candidate_sha"}
+                        comment.update(override)
+                    pr["comments"]["nodes"] = [comment]
+                contract = self.contract(base=base, candidate=candidate)
+                contract["trust_mode"] = "base-pinned"
+                contract["trigger"] = {
+                    "risk_boundaries": ["lifecycle", "protocol"],
+                    "threshold_triggers": ["changed-files", "risk-boundary"],
+                }
+                receipt = signed_receipt(
+                    reporter.normalized_json(
+                        review_report(
+                            base,
+                            candidate,
+                            ["changed.txt", trusted_review_gate.DECISION_RECORD_PATH],
+                            review_family.derive_change_records(repo, base, candidate),
+                        )
+                    ),
+                    base=base,
+                    candidate=candidate,
+                    nonce=f"external-preregistration-{case_name}",
+                )
+                with self.subTest(case=case_name), self.assertRaisesRegex(
+                    reporter.PilotDataError,
+                    pattern,
+                ):
+                    trusted_review_gate._run_trusted_gate(
+                        raw_contract=contract,
+                        repository_root=repo,
+                        expected_candidate=candidate,
+                        expected_remote_head=candidate,
+                        expected_base=base,
+                        review_receipt_bytes=receipt,
+                        replay_store=self.replay,
+                        trusted_key_id=KEY_ID,
+                        trusted_key_epoch=KEY_EPOCH,
+                        trusted_key=KEY,
+                        current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc),
+                        adapter=StaticAdapter(payload),
+                        clock=lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc),
+                    )
+            finally:
+                shutil.rmtree(repo)
 
     def test_candidate_trigger_decision_record_must_preserve_exact_current_pr_entry(self):
         repo, base, candidate = self.build_decision_repo(self.decision_entry())
@@ -2796,6 +3224,34 @@ class TrustedGitHubGateTests(unittest.TestCase):
             pr["reviews"]["nodes"] = reviews
             pr["reviewThreads"]["nodes"] = threads
             pr["comments"]["nodes"] = [
+                *[
+                    authoritative_family_comment(
+                        base_sha=base,
+                        original_head=heads[0],
+                        review_id=f"REMOTE_MULTI_{round_number}",
+                        candidate_sha=heads[round_number - 1],
+                        mappings=[
+                            {
+                                "finding_id": f"FINDING_MULTI_{round_number}",
+                                "family": affected_sequence[round_number - 1][0],
+                            }
+                        ],
+                        comment_id=f"CLASSIFICATION_MULTI_{round_number}",
+                        created_at=iso(
+                            datetime.fromisoformat(
+                                review_times[round_number - 1].replace("Z", "+00:00")
+                            )
+                            + timedelta(seconds=30)
+                        ),
+                        updated_at=iso(
+                            datetime.fromisoformat(
+                                review_times[round_number - 1].replace("Z", "+00:00")
+                            )
+                            + timedelta(seconds=30)
+                        ),
+                    )
+                    for round_number in range(1, 7)
+                ],
                 {
                     "id": "DISPOSITION_MULTI_3",
                     "createdAt": "2026-08-31T03:15:30Z",
@@ -2998,6 +3454,11 @@ class TrustedGitHubGateTests(unittest.TestCase):
     def test_fixture_query_shape_matches_actor_fragment_response(self):
         payload = self.adapter()
         pr = payload["data"]["repository"]["pullRequest"]
+        self.assertEqual(payload["data"]["repository"]["id"], "REPO_SYNTHETIC_901")
+        self.assertEqual(
+            payload["data"]["repository"]["nameWithOwner"],
+            "laqieer/fireemblem8-expansion",
+        )
         self.assertEqual(payload["data"]["viewer"]["__typename"], "User")
         self.assertEqual(payload["data"]["repository"]["owner"]["__typename"], "User")
         self.assertEqual(pr["author"]["__typename"], "User")
@@ -3005,6 +3466,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
             pr["reviews"]["nodes"][0]["author"],
             copilot_graphql_actor(),
         )
+        self.assertEqual(pr["comments"]["nodes"], [])
         self.assertIsNone(pr["commits"]["nodes"][0]["commit"]["pushedDate"])
         self.assertEqual(pr["baseRefOid"], BASE)
 

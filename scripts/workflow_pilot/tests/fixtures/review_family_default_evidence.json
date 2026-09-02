@@ -20,10 +20,14 @@
     "author_actor_id": "ACTOR_IMPLEMENTER_001"
   },
   "authoritative_trigger": {
+    "authority_kind": "base-record",
     "path": ".github/workflow-pilot-decisions.json",
     "blob_oid": "7ffce1a5b22ccba7aed390b879c454490538aaa7",
+    "comment_id": null,
+    "comment_created_at": null,
     "pull_request": 901,
     "base_sha": "853cff1eb7bdb3ecce46f780473e81be73e24315",
+    "original_pre_review_head": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
     "candidate_sha": "a8768e4f467c36f8bec60ee823d7d1735d3fcd45",
     "risk_boundaries": [
       "none"

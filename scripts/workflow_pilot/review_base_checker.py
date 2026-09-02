@@ -142,10 +142,11 @@ def expect_int(value: Any, label: str, minimum: int = 1) -> int:
     return value
 
 
-def expect_keys(value: dict[str, Any], label: str, required) -> None:
+def expect_keys(value: dict[str, Any], label: str, required, optional=()) -> None:
     required = set(required)
+    allowed = required | set(optional)
     missing = sorted(required - set(value))
-    unknown = sorted(set(value) - required)
+    unknown = sorted(set(value) - allowed)
     if missing:
         raise CheckError(f"{label} is missing fields: {', '.join(missing)}")
     if unknown:
@@ -773,6 +774,10 @@ def _validate_remote_findings(
                 "author_actor_id",
                 "family",
             ),
+            (
+                "authority_comment_id",
+                "authority_comment_created_at",
+            ),
         )
         finding_id = expect_string(finding["node_id"], f"{label}.node_id")
         if LOCAL_FINDING_RE.fullmatch(finding_id) is not None:
@@ -799,6 +804,25 @@ def _validate_remote_findings(
             "created_at": finding["created_at"],
             "author_actor_id": author_actor_id,
             "family": family,
+            "authority_comment_id": (
+                expect_string(
+                    finding["authority_comment_id"],
+                    f"{label}.authority_comment_id",
+                )
+                if finding.get("authority_comment_id") is not None
+                else None
+            ),
+            "authority_comment_created_at": (
+                (
+                    expect_time(
+                        finding["authority_comment_created_at"],
+                        f"{label}.authority_comment_created_at",
+                    ),
+                    finding["authority_comment_created_at"],
+                )[1]
+                if finding.get("authority_comment_created_at") is not None
+                else None
+            ),
         }
         claimed_by_review[review_id].append(finding_id)
     for review_id, review in reviews_by_node.items():

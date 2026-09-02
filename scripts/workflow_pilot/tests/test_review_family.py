@@ -285,6 +285,19 @@ class ReviewFamilyContractTests(unittest.TestCase):
         )
         review_family.validate_contract(contract)
 
+    def test_every_finding_sweep_requires_at_least_one_affected_fixed_member(self):
+        contract, evidence = fixture()
+        for sibling in contract["family_sweeps"][0]["siblings"]:
+            sibling["result"] = "verified-unaffected"
+            sibling["assertion_id"] = review_family.member_assertion_id(
+                "action", sibling["member"], "verified-unaffected"
+            )
+        self.assert_rejected(
+            contract,
+            evidence,
+            "must include at least one affected-fixed member",
+        )
+
     def test_local_pre_review_findings_are_distinct_and_not_backdated(self):
         contract, evidence = fixture()
         pre = evidence["pre_reviews"][0]
