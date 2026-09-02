@@ -10,8 +10,11 @@ import shlex
 from typing import Iterable
 
 
+REVIEWED_PATCH_RELEASE_RUN_SHA256 = (
+    "7fe2905391b3ae51bc40d43fe2cae497b7f93b73b0f1b603627cea70e3d847b3"
+)
 REVIEWED_BUILDER_ISOLATION_SHA256 = (
-    "fe0cd00a4a122cfe3481713292989a69e7c5182bb8807539ba61ca4a1eaabee4"
+    "6088db198a46f7617eef83daf2366c33055c597df1740ccb87de803ede0034ad"
 )
 APPROVED_NONLITERAL_READONLY_MOUNT_COMMANDS = {
     ("/usr/bin/mount", "-o", "remount,ro,nosuid,nodev,noexec", "$hidden"),
@@ -70,6 +73,25 @@ _SIMPLE_COMMAND_PREFIXES = frozenset({"if", "then", "do", "elif", "while", "unti
 _CONTROL_OPERATORS = frozenset({";", "&&", "||", "|", "&"})
 _DISALLOWED_MOUNT_WRAPPERS = frozenset({"env", "command", "eval"})
 _ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
+_LITERAL_RUN_HEADER_RE = re.compile(
+    r"^(?P<indent> {6})run:[ \t]*(?P<style>\|[1-9+-]*)(?:[ \t]*(?:#.*)?)?(?:\r?\n|\Z)$"
+)
+
+
+def reviewed_patch_release_run_sha256(script: str) -> str:
+    return hashlib.sha256(script.encode("utf-8")).hexdigest()
+
+
+def assert_reviewed_patch_release_run_script_identity(
+    script: str,
+    *,
+    label: str,
+) -> None:
+    actual = reviewed_patch_release_run_sha256(script)
+    if actual != REVIEWED_PATCH_RELEASE_RUN_SHA256:
+        raise ValueError(
+            f"{label} raw identity differs from the reviewed security boundary"
+        )
 
 
 def reviewed_builder_isolation_sha256(script: str) -> str:
@@ -86,6 +108,104 @@ def assert_reviewed_builder_isolation_shell_identity(
         raise ValueError(
             f"{label} raw identity differs from the reviewed security boundary"
         )
+
+
+def _parse_literal_style(style: str, *, label: str) -> tuple[int | None, str]:
+    if not style.startswith("|"):
+        raise ValueError(f"{label} must use a literal run block")
+    indent_indicator: int | None = None
+    chomping = ""
+    for character in style[1:]:
+        if character in "+-":
+            if chomping:
+                raise ValueError(f"{label} literal run block indicators differ")
+            chomping = character
+            continue
+        if character in "123456789":
+            if indent_indicator is not None:
+                raise ValueError(f"{label} literal run block indicators differ")
+            indent_indicator = int(character)
+            continue
+        raise ValueError(f"{label} literal run block indicators differ")
+    return indent_indicator, chomping
+
+
+def _normalized_line_parts(line: str) -> tuple[str, str]:
+    if line.endswith("\r\n"):
+        return line[:-2], "\n"
+    if line.endswith("\n"):
+        return line[:-1], "\n"
+    if line.endswith("\r"):
+        return line[:-1], "\n"
+    return line, ""
+
+
+def _leading_space_count(text: str, *, label: str) -> int:
+    index = 0
+    while index < len(text) and text[index] == " ":
+        index += 1
+    if index < len(text) and text[index] == "\t":
+        raise ValueError(f"{label} run block uses tab indentation")
+    return index
+
+
+def literal_run_script_from_step_block(step_block: str, *, label: str) -> str:
+    lines = step_block.splitlines(keepends=True)
+    headers = [
+        (index, match)
+        for index, line in enumerate(lines)
+        if (match := _LITERAL_RUN_HEADER_RE.match(line))
+    ]
+    if len(headers) != 1:
+        raise ValueError(f"{label} must use exactly one direct literal run block")
+
+    header_index, header_match = headers[0]
+    explicit_indent, chomping = _parse_literal_style(
+        header_match.group("style"),
+        label=label,
+    )
+    content_lines = lines[header_index + 1 :]
+    if explicit_indent is None:
+        leading_blank_indent = 0
+        content_indent = None
+        for line in content_lines:
+            raw_line, _line_break = _normalized_line_parts(line)
+            leading_spaces = _leading_space_count(raw_line, label=label)
+            if raw_line[leading_spaces:] == "":
+                leading_blank_indent = max(leading_blank_indent, leading_spaces)
+                continue
+            content_indent = max(leading_blank_indent, leading_spaces)
+            break
+        if content_indent is None:
+            content_indent = leading_blank_indent
+    else:
+        content_indent = len(header_match.group("indent")) + explicit_indent
+
+    chunks: list[str] = []
+    for line in content_lines:
+        raw_line, line_break = _normalized_line_parts(line)
+        leading_spaces = _leading_space_count(raw_line, label=label)
+        content = raw_line[leading_spaces:]
+        if content == "":
+            if leading_spaces >= content_indent:
+                chunks.append(raw_line[content_indent:])
+            else:
+                chunks.append("")
+        else:
+            if leading_spaces < content_indent:
+                raise ValueError(f"{label} literal run block indentation differs")
+            chunks.append(raw_line[content_indent:])
+        if line_break:
+            chunks.append("\n")
+
+    script = "".join(chunks)
+    if chomping == "-":
+        return script.rstrip("\n")
+    if chomping == "+":
+        return script
+    if not script:
+        return ""
+    return script.rstrip("\n") + "\n"
 
 
 def builder_isolation_shell_source(run_script: str, *, label: str) -> str:

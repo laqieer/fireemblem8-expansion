@@ -90,24 +90,9 @@ APPROVED_SUPERVISOR_COMMAND_TOKENS = {
 
 def parse_patch_release_run_commands(workflow: str) -> list[list[list[str]]]:
     """Parse run scalars from the publisher job's YAML sequence structure."""
-    job = re.search(
-        r"(?ms)^  patch-release:\n(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\n|\Z)",
-        workflow,
-    )
-    if job is None:
-        raise AssertionError("workflow must define a jobs.patch-release job")
-
-    steps = job.group("body").split("\n    steps:\n", 1)
-    if len(steps) != 2:
-        raise AssertionError("publisher job must define a steps sequence")
-
-    lines = steps[1].splitlines()
-    step_starts = [
-        index for index, line in enumerate(lines) if re.match(r"^    - ", line)
-    ]
     commands = []
-    for start, end in zip(step_starts, step_starts[1:] + [len(lines)]):
-        step = lines[start:end]
+    for step_block in patch_release_step_blocks(workflow):
+        step = step_block.splitlines()
         run = None
         for index, line in enumerate(step):
             inline = re.match(r"^    - run: (?P<value>.+)$", line)
@@ -116,15 +101,8 @@ def parse_patch_release_run_commands(workflow: str) -> list[list[list[str]]]:
             if match is None:
                 continue
             value = match.group("value")
-            if value == "|":
-                script = (
-                    "\n".join(
-                        following[8:]
-                        for following in step[index + 1:]
-                        if following.startswith("        ")
-                    )
-                    + "\n"
-                )
+            if value.startswith("|"):
+                script = named_step_run_script_from_block(step_block)
                 run = _parse_bash_run_script_commands(
                     script,
                     label="publisher run block",
@@ -157,18 +135,125 @@ def patch_release_step_blocks(workflow: str) -> list[str]:
     ]
 
 
-def named_step_run_script(workflow: str, name: str) -> str:
+def named_step_run_script_from_block(step_block: str) -> str:
+    try:
+        return publisher_shell_contract.literal_run_script_from_step_block(
+            step_block,
+            label="publisher run block",
+        )
+    except ValueError as error:
+        raise AssertionError(str(error)) from error
+
+
+def named_patch_release_step_block(workflow: str, name: str) -> str:
     steps = patch_release_step_blocks(workflow)
     matches = [
         step for step in steps if f"    - name: {name}\n" in step
     ]
     if len(matches) != 1:
         raise AssertionError(f"expected one publisher step named {name!r}")
-    lines = matches[0].splitlines()
-    run_index = lines.index("      run: |")
-    return "\n".join(
-        line[8:] for line in lines[run_index + 1:] if line.startswith("        ")
+    return matches[0]
+
+
+def named_step_run_script(workflow: str, name: str) -> str:
+    return named_step_run_script_from_block(named_patch_release_step_block(workflow, name))
+
+
+_REFERENCE_LITERAL_RUN_HEADER_RE = re.compile(
+    r"^      run:[ \t]*(?P<style>\|[1-9+-]*)(?:[ \t]*(?:#.*)?)?(?:\r?\n|\Z)$"
+)
+
+
+def _reference_literal_run_style(style: str) -> tuple[int | None, str]:
+    if not style.startswith("|"):
+        raise AssertionError("reference parser requires a literal run block")
+    indent_indicator: int | None = None
+    chomping = ""
+    for character in style[1:]:
+        if character in "+-":
+            if chomping:
+                raise AssertionError("reference literal run block indicators differ")
+            chomping = character
+        elif character in "123456789":
+            if indent_indicator is not None:
+                raise AssertionError("reference literal run block indicators differ")
+            indent_indicator = int(character)
+        else:
+            raise AssertionError("reference literal run block indicators differ")
+    return indent_indicator, chomping
+
+
+def _reference_normalized_line_parts(line: str) -> tuple[str, str]:
+    if line.endswith("\r\n"):
+        return line[:-2], "\n"
+    if line.endswith("\n"):
+        return line[:-1], "\n"
+    if line.endswith("\r"):
+        return line[:-1], "\n"
+    return line, ""
+
+
+def _reference_leading_space_count(text: str) -> int:
+    count = 0
+    while count < len(text) and text[count] == " ":
+        count += 1
+    if count < len(text) and text[count] == "\t":
+        raise AssertionError("reference parser does not permit tab indentation")
+    return count
+
+
+def reference_step_run_script(step_block: str) -> str:
+    lines = step_block.splitlines(keepends=True)
+    matches = [
+        (index, match)
+        for index, line in enumerate(lines)
+        if (match := _REFERENCE_LITERAL_RUN_HEADER_RE.match(line))
+    ]
+    if len(matches) != 1:
+        raise AssertionError("reference parser requires one direct literal run block")
+    header_index, header_match = matches[0]
+    explicit_indent, chomping = _reference_literal_run_style(
+        header_match.group("style")
     )
+    content_lines = lines[header_index + 1 :]
+    if explicit_indent is None:
+        leading_blank_indent = 0
+        content_indent = None
+        for line in content_lines:
+            raw_line, _line_break = _reference_normalized_line_parts(line)
+            leading_spaces = _reference_leading_space_count(raw_line)
+            if raw_line[leading_spaces:] == "":
+                leading_blank_indent = max(leading_blank_indent, leading_spaces)
+                continue
+            content_indent = max(leading_blank_indent, leading_spaces)
+            break
+        if content_indent is None:
+            content_indent = leading_blank_indent
+    else:
+        content_indent = 6 + explicit_indent
+
+    chunks: list[str] = []
+    for line in content_lines:
+        raw_line, line_break = _reference_normalized_line_parts(line)
+        leading_spaces = _reference_leading_space_count(raw_line)
+        content = raw_line[leading_spaces:]
+        if content == "":
+            chunks.append(raw_line[content_indent:] if leading_spaces >= content_indent else "")
+        else:
+            if leading_spaces < content_indent:
+                raise AssertionError("reference literal run block indentation differs")
+            chunks.append(raw_line[content_indent:])
+        if line_break:
+            chunks.append("\n")
+
+    script = "".join(chunks)
+    if chomping == "-":
+        return script.rstrip("\n")
+    if chomping == "+":
+        return script
+    if not script:
+        return ""
+    return script.rstrip("\n") + "\n"
 
 
 def builder_isolation_shell_source(workflow: str) -> str:
@@ -817,6 +902,85 @@ def generate_supervisor_parent_remount_mutations(workflow: str):
         )
 
 
+def render_isolated_publisher_step_mutation(
+    workflow: str,
+    *,
+    mutate,
+) -> str:
+    step = named_patch_release_step_block(
+        workflow,
+        "Build candidate in isolated namespace and stage public inputs",
+    )
+    changed_step = mutate(step)
+    if changed_step == step:
+        raise AssertionError("isolated publisher mutation did not change the step")
+    return workflow.replace(step, changed_step, 1)
+
+
+def generate_publisher_raw_identity_mutations(workflow: str):
+    mutations = (
+        (
+            "extra-blank-before-heredoc",
+            lambda step: step.replace(
+                '        /usr/bin/tee "$BUILDER_ROOT/control/builder-isolation.sh" \\\n',
+                '        \n'
+                '        /usr/bin/tee "$BUILDER_ROOT/control/builder-isolation.sh" \\\n',
+                1,
+            ),
+        ),
+        (
+            "extra-blank-in-builder-shell",
+            lambda step: step.replace(
+                '        builder_gid="$3"\n',
+                '        builder_gid="$3"\n'
+                '        \n',
+                1,
+            ),
+        ),
+        (
+            "remove-blank-in-parser-heredoc",
+            lambda step: step.replace(
+                "        MAX_BYTES = 1048576\n\n\n        def fail(message):\n",
+                "        MAX_BYTES = 1048576\n\n        def fail(message):\n",
+                1,
+            ),
+        ),
+        (
+            "blank-line-extra-indentation",
+            lambda step: step.replace(
+                "        MAX_BYTES = 1048576\n\n\n        def fail(message):\n",
+                "        MAX_BYTES = 1048576\n          \n\n        def fail(message):\n",
+                1,
+            ),
+        ),
+        (
+            "builder-shell-trailing-space",
+            lambda step: step.replace(
+                "        cd /\n",
+                "        cd / \n",
+                1,
+            ),
+        ),
+        (
+            "builder-shell-indent-shift",
+            lambda step: step.replace(
+                "        cd /\n",
+                "         cd /\n",
+                1,
+            ),
+        ),
+        (
+            "run-strip-chomp",
+            lambda step: step.replace("      run: |\n", "      run: |-\n", 1),
+        ),
+    )
+    for label, mutate in mutations:
+        yield label, render_isolated_publisher_step_mutation(
+            workflow,
+            mutate=mutate,
+        )
+
+
 def dev_mount_target_parser_source(workflow: str) -> str:
     return textwrap.dedent(raw_dev_mount_target_parser_source(workflow))
 
@@ -997,7 +1161,18 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
     ):
         errors.append("complete ROM artifact transfer is possible")
     try:
-        builder_shell = builder_isolation_shell_source(workflow)
+        run_script = named_step_run_script(
+            workflow,
+            "Build candidate in isolated namespace and stage public inputs",
+        )
+        publisher_shell_contract.assert_reviewed_patch_release_run_script_identity(
+            run_script,
+            label="publisher isolated candidate build run script",
+        )
+        builder_shell = publisher_shell_contract.builder_isolation_shell_source(
+            run_script,
+            label="publisher builder isolation shell",
+        )
         publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
             builder_shell,
             label="publisher builder isolation shell",
@@ -3284,6 +3459,90 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
         for label, changed in generate_supervisor_parent_remount_mutations(self.text):
             with self.subTest(variant=label):
                 self.assertTrue(workflow_has_supervisor_parent_readonly_remount(changed))
+                self.assertTrue(publisher_boundary_errors(changed))
+
+    def test_publisher_run_scalar_matches_reference_yaml_bytes(self):
+        step_block = named_patch_release_step_block(
+            self.text,
+            "Build candidate in isolated namespace and stage public inputs",
+        )
+        actual_run = named_step_run_script_from_block(step_block)
+        reference_run = reference_step_run_script(step_block)
+        self.assertEqual(actual_run.encode("utf-8"), reference_run.encode("utf-8"))
+        self.assertEqual(
+            publisher_shell_contract.reviewed_patch_release_run_sha256(actual_run),
+            publisher_shell_contract.REVIEWED_PATCH_RELEASE_RUN_SHA256,
+        )
+        publisher_shell_contract.assert_reviewed_patch_release_run_script_identity(
+            actual_run,
+            label="publisher isolated candidate build run script",
+        )
+
+        actual_shell = publisher_shell_contract.builder_isolation_shell_source(
+            actual_run,
+            label="publisher builder isolation shell",
+        )
+        reference_shell = publisher_shell_contract.builder_isolation_shell_source(
+            reference_run,
+            label="publisher builder isolation shell",
+        )
+        self.assertEqual(
+            actual_shell.encode("utf-8"),
+            reference_shell.encode("utf-8"),
+        )
+        self.assertEqual(
+            publisher_shell_contract.reviewed_builder_isolation_sha256(actual_shell),
+            publisher_shell_contract.REVIEWED_BUILDER_ISOLATION_SHA256,
+        )
+        publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
+            actual_shell,
+            label="publisher builder isolation shell",
+        )
+
+    def test_publisher_raw_identity_variants_are_rejected(self):
+        current_run = named_step_run_script(
+            self.text,
+            "Build candidate in isolated namespace and stage public inputs",
+        )
+        current_shell = builder_isolation_shell_source(self.text)
+        for label, changed in generate_publisher_raw_identity_mutations(self.text):
+            with self.subTest(variant=label):
+                changed_step = named_patch_release_step_block(
+                    changed,
+                    "Build candidate in isolated namespace and stage public inputs",
+                )
+                changed_run = named_step_run_script_from_block(changed_step)
+                reference_run = reference_step_run_script(changed_step)
+                self.assertEqual(
+                    changed_run.encode("utf-8"),
+                    reference_run.encode("utf-8"),
+                )
+                self.assertNotEqual(
+                    changed_run.encode("utf-8"),
+                    current_run.encode("utf-8"),
+                )
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "raw identity differs from the reviewed security boundary",
+                ):
+                    publisher_shell_contract.assert_reviewed_patch_release_run_script_identity(
+                        changed_run,
+                        label="publisher isolated candidate build run script",
+                    )
+                changed_shell = publisher_shell_contract.builder_isolation_shell_source(
+                    changed_run,
+                    label="publisher builder isolation shell",
+                )
+                if label not in {"extra-blank-before-heredoc", "run-strip-chomp"}:
+                    self.assertNotEqual(
+                        changed_shell.encode("utf-8"),
+                        current_shell.encode("utf-8"),
+                    )
+                else:
+                    self.assertEqual(
+                        changed_shell.encode("utf-8"),
+                        current_shell.encode("utf-8"),
+                    )
                 self.assertTrue(publisher_boundary_errors(changed))
 
     def test_builder_isolation_shell_identity_rejects_single_byte_mutations(self):

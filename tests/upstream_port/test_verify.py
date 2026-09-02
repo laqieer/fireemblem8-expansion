@@ -1178,6 +1178,20 @@ class VerifyCliCwdTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     verify_mod._parse_workflow_structure_text(changed)
 
+    def test_patch_release_raw_identity_variants_reject_structure_parse(self):
+        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
+            original = handle.read()
+        verify_mod._parse_workflow_structure_text(original)
+        for label, changed in patch_workflow_tests.generate_publisher_raw_identity_mutations(
+            original
+        ):
+            with self.subTest(variant=label):
+                self.assertTrue(
+                    patch_workflow_tests.publisher_boundary_errors(changed)
+                )
+                with self.assertRaises(ValueError):
+                    verify_mod._parse_workflow_structure_text(changed)
+
     def test_historical_patch_release_parser_indentation_is_rejected(self):
         with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
             original = handle.read()

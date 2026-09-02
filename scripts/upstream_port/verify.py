@@ -1682,14 +1682,6 @@ def _literal_run_script(lines, start, end, value, step_label):
     return "\n".join(script) + "\n"
 
 
-def _publisher_literal_run_script(lines, start, end, value, step_label):
-    if value != "|":
-        raise ValueError(f"{step_label} must use a literal run block")
-    return "\n".join(
-        line[8:] for line in lines[start:end] if line.startswith("        ")
-    ) + "\n"
-
-
 def _builder_isolation_shell_from_run_script(script, step_label):
     opener = "<<'BUILDER_ISOLATION'\n"
     if script.count(opener) != 1:
@@ -1988,7 +1980,6 @@ def _parse_step(block, job_name, index):
 
     values = {}
     literal_run_script = None
-    publisher_literal_run_script = None
     for field_index, (name, raw_value, line_index) in enumerate(direct):
         end = (
             direct[field_index + 1][2]
@@ -2018,13 +2009,6 @@ def _parse_step(block, job_name, index):
             )
             if value == "|":
                 literal_run_script = _literal_run_script(
-                    lines,
-                    line_index + 1,
-                    end,
-                    value,
-                    step_label,
-                )
-                publisher_literal_run_script = _publisher_literal_run_script(
                     lines,
                     line_index + 1,
                     end,
@@ -2310,13 +2294,21 @@ def _parse_step(block, job_name, index):
         ):
             raise ValueError(f"{step_label} isolated candidate build differs")
         if index == 3:
-            if literal_run_script is None or publisher_literal_run_script is None:
+            if literal_run_script is None:
                 raise ValueError(f"{step_label} patch-release parser script differs")
-            builder_shell = publisher_shell_contract.builder_isolation_shell_source(
-                publisher_literal_run_script,
-                label=step_label,
-            )
             try:
+                publisher_run_script = publisher_shell_contract.literal_run_script_from_step_block(
+                    block,
+                    label=step_label,
+                )
+                publisher_shell_contract.assert_reviewed_patch_release_run_script_identity(
+                    publisher_run_script,
+                    label=step_label,
+                )
+                builder_shell = publisher_shell_contract.builder_isolation_shell_source(
+                    publisher_run_script,
+                    label=step_label,
+                )
                 publisher_shell_contract.assert_reviewed_builder_isolation_shell_identity(
                     builder_shell,
                     label=step_label,
