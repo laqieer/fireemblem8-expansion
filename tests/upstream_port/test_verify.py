@@ -1227,6 +1227,24 @@ class VerifyCliCwdTests(unittest.TestCase):
                 "assert_reviewed_builder_isolation_shell_identity",
             ),
         ):
+            verify_mod._parse_workflow_structure_text(
+                patch_workflow_tests.reformatted_membership_checker_control(
+                    original
+                )
+            )
+            for (
+                label,
+                changed,
+            ) in patch_workflow_tests.generate_membership_checker_ast_mutations(
+                original
+            ):
+                with self.subTest(
+                    membership_checker_mutation=label
+                ), self.assertRaisesRegex(
+                    ValueError,
+                    "parser script differs",
+                ):
+                    verify_mod._parse_workflow_structure_text(changed)
             for (
                 label,
                 changed,

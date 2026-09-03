@@ -13,10 +13,10 @@ from typing import Iterable
 
 
 REVIEWED_PATCH_RELEASE_RUN_SHA256 = (
-    "db3dddfd08eb1800e588b609ae4143e8553022f9e3c4b7b6b87c5ea46ab2195e"
+    "3d84f8748c55f6a014974834fa02227e7bf2f59bb3125490b6d976935b14213b"
 )
 REVIEWED_BUILDER_ISOLATION_SHA256 = (
-    "79f9a8b5db7857181e2320fbff36a2c2c1188b7ce3eedd3de18d0bf7d10c5651"
+    "f7c9f894a58fe1fd9b57c9e31dbe87fd05db5cab12d04ac98de490e3fee5c95f"
 )
 REVIEWED_BUILDER_HELPER_INVENTORY = {
     (
@@ -41,7 +41,7 @@ REVIEWED_BUILDER_HELPER_INVENTORY = {
     ): 1,
     (
         "isolated_stage_failure",
-        "a7899c05a8a29c797a6ae3c6e46094c697c6eb0c29c4e7168e925a94c50a8980",
+        "da13702dc99296dad219184c8cce7f38eaa93ed849f7fa1045588e4649cd85e8",
     ): 1,
     (
         "list_dev_mount_targets",
@@ -140,6 +140,52 @@ _PATCH_RELEASE_PARSER_HEREDOC_RE = re.compile(
     r"PY\n"
     r"\}"
 )
+PATCH_RELEASE_MEMBERSHIP_CHECKER_NAME = "check_supervisor_cgroup_membership"
+PATCH_RELEASE_MEMBERSHIP_CHECKER_INTRODUCER = (
+    "/usr/bin/python3 -I -S - \"$$\" <<'PY'"
+)
+_PATCH_RELEASE_MEMBERSHIP_CHECKER_RE = re.compile(
+    r"(?ms)^/usr/bin/python3 -I -S - \"\$\$\" <<'PY'\n"
+    r"(?P<body>.*?)\n"
+    r"PY$"
+)
+_PATCH_RELEASE_MEMBERSHIP_CHECKER_SOURCE = """\
+import os
+import re
+import sys
+
+MEMBERSHIP_PATH = "/mnt/supervisor/cgroup/cgroup.procs"
+MAX_MEMBERSHIP_BYTES = 4096
+
+if len(sys.argv) != 2 or re.fullmatch(r"[1-9][0-9]*", sys.argv[1]) is None:
+    raise SystemExit(125)
+expected_pid = int(sys.argv[1], 10)
+checker_pid = os.getpid()
+if expected_pid == checker_pid:
+    raise SystemExit(125)
+try:
+    with open(MEMBERSHIP_PATH, "rb", buffering=0) as stream:
+        payload = stream.read(MAX_MEMBERSHIP_BYTES + 1)
+except OSError:
+    raise SystemExit(125)
+if (
+    len(payload) > MAX_MEMBERSHIP_BYTES
+    or not payload.endswith(b"\\n")
+):
+    raise SystemExit(125)
+records = payload[:-1].split(b"\\n")
+if len(records) != 2 or any(
+    re.fullmatch(rb"[1-9][0-9]*", record) is None
+    for record in records
+):
+    raise SystemExit(125)
+members = {int(record, 10) for record in records}
+if (
+    len(members) != 2
+    or members != {expected_pid, checker_pid}
+):
+    raise SystemExit(125)
+"""
 _SIMPLE_COMMAND_PREFIXES = frozenset(
     {"if", "then", "do", "elif", "while", "until", "!", "else", "{"}
 )
@@ -575,30 +621,59 @@ def split_bash_simple_command_strings(script: str, *, label: str) -> tuple[str, 
 
 def raw_patch_release_parser_sources(script: str) -> tuple[tuple[str, str], ...]:
     matches = list(_PATCH_RELEASE_PARSER_HEREDOC_RE.finditer(script))
+    membership_matches = list(
+        _PATCH_RELEASE_MEMBERSHIP_CHECKER_RE.finditer(script)
+    )
     if script.count(PATCH_RELEASE_PARSER_HEREDOC_INTRODUCER) != len(
         PATCH_RELEASE_PARSER_HEREDOC_NAMES
     ):
         raise ValueError("patch-release parser heredoc count differs")
     if len(matches) != len(PATCH_RELEASE_PARSER_HEREDOC_NAMES):
         raise ValueError("patch-release parser heredoc structure differs")
+    if (
+        script.count(PATCH_RELEASE_MEMBERSHIP_CHECKER_INTRODUCER) != 1
+        or len(membership_matches) != 1
+    ):
+        raise ValueError(
+            "patch-release membership checker heredoc structure differs"
+        )
     names = tuple(match.group("name") for match in matches)
     if names != PATCH_RELEASE_PARSER_HEREDOC_NAMES:
         raise ValueError("patch-release parser function association differs")
-    return tuple((match.group("name"), match.group("body") + "\n") for match in matches)
+    sources = tuple(
+        (match.group("name"), match.group("body") + "\n")
+        for match in matches
+    )
+    return sources + (
+        (
+            PATCH_RELEASE_MEMBERSHIP_CHECKER_NAME,
+            membership_matches[0].group("body") + "\n",
+        ),
+    )
 
 
 def validate_patch_release_parser_heredocs(script: str, *, label: str) -> None:
-    for _name, body in raw_patch_release_parser_sources(script):
+    for name, body in raw_patch_release_parser_sources(script):
         try:
-            ast.parse(body)
+            tree = ast.parse(body)
         except SyntaxError as error:
             raise ValueError(
                 f"{label} patch-release parser Python body is invalid"
             ) from error
+        if name == PATCH_RELEASE_MEMBERSHIP_CHECKER_NAME and ast.dump(
+            tree,
+            include_attributes=False,
+        ) != ast.dump(
+            ast.parse(_PATCH_RELEASE_MEMBERSHIP_CHECKER_SOURCE),
+            include_attributes=False,
+        ):
+            raise ValueError(
+                f"{label} patch-release membership checker differs"
+            )
 
 
 def _strip_patch_release_parser_heredoc_bodies(script: str) -> str:
-    return _PATCH_RELEASE_PARSER_HEREDOC_RE.sub(
+    stripped = _PATCH_RELEASE_PARSER_HEREDOC_RE.sub(
         lambda match: (
             f"{match.group('name')}() {{\n"
             f"{PATCH_RELEASE_PARSER_HEREDOC_INTRODUCER}\n"
@@ -606,6 +681,10 @@ def _strip_patch_release_parser_heredoc_bodies(script: str) -> str:
             "}\n"
         ),
         script,
+    )
+    return _PATCH_RELEASE_MEMBERSHIP_CHECKER_RE.sub(
+        f"{PATCH_RELEASE_MEMBERSHIP_CHECKER_INTRODUCER}\nPY",
+        stripped,
     )
 
 
@@ -2452,6 +2531,24 @@ def _resolve_shell_aliases(text: str, aliases: dict[str, str]) -> str:
     return resolved
 
 
+def _token_has_nested_braced_parameter(token: _ShellToken) -> bool:
+    if not token.has_shell_syntax:
+        return False
+    depth = 0
+    index = 0
+    while index < len(token.text):
+        if token.text.startswith("${", index):
+            if depth:
+                return True
+            depth += 1
+            index += 2
+            continue
+        if token.text[index] == "}" and depth:
+            depth -= 1
+        index += 1
+    return False
+
+
 def _shell_function_declaration(
     command_text: str,
 ) -> tuple[bool, str | None, bool]:
@@ -2667,6 +2764,8 @@ def _analyze_function_call(
             command,
             label=f"{function_name} call-time body",
         )
+        if any(_token_has_nested_braced_parameter(token) for token in tokens):
+            return True, {}
         resolved = _resolve_tokens_for_alias_state(
             tokens,
             function_aliases,
@@ -2689,6 +2788,12 @@ def _analyze_function_call(
             _normalized_command_mutates_supervisor(resolved)
             or _normalized_command_mutates_dispatch_state(resolved)
             or _normalized_command_changes_dispatch(resolved)
+        ):
+            return True, {}
+        normalized = _normalize_shell_builtin_wrappers(resolved)
+        if (
+            normalized
+            and posixpath.basename(normalized[0]) == "trap"
         ):
             return True, {}
         if not resolved:
@@ -2753,14 +2858,7 @@ def _helper_call_has_sensitive_arguments(
     if not tokens:
         return False
     executable = tokens[0]
-    if "/" in executable:
-        return False
     basename = posixpath.basename(executable)
-    if (
-        basename in _ANALYZED_BUILDER_COMMANDS
-        and basename not in user_functions
-    ):
-        return False
     production_calls = {
         (
             "read_checked_supervisor_transport_file",
@@ -2817,6 +2915,61 @@ def _helper_call_has_sensitive_arguments(
         aliases.update(updates)
         return False
     if is_production_call:
+        return False
+    raw_root_signatures = {
+        (
+            "/usr/bin/mount",
+            "--bind",
+            _RAW_CGROUP_ROOT_MARKER,
+            "/mnt/supervisor/cgroup",
+        ),
+        (
+            "test",
+            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER
+            + "$(/usr/bin/stat -c %u "
+            + _RAW_CGROUP_ROOT_MARKER
+            + ")",
+            "=",
+            "0",
+        ),
+    }
+    if tokens in raw_root_signatures:
+        return False
+    has_raw_root = any(
+        _RAW_CGROUP_ROOT_MARKER in token for token in tokens
+    )
+    if has_raw_root:
+        plain_executable = executable
+        for marker in (
+            _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+            _AMBIGUOUS_TRACKED_PARAMETER_MARKER,
+            _RAW_CGROUP_ROOT_MARKER,
+        ):
+            plain_executable = plain_executable.replace(marker, "")
+        if (
+            _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(plain_executable)
+            or _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(plain_executable)
+        ):
+            return False
+        normalized = _normalize_shell_builtin_wrappers(tokens)
+        if normalized:
+            normalized_executable = posixpath.basename(normalized[0])
+            if normalized_executable in {
+                "declare",
+                "export",
+                "local",
+                "readonly",
+                "typeset",
+            }:
+                return False
+            if normalized_executable == "printf" and "-v" in normalized[1:]:
+                return False
+        return True
+    if (
+        basename in _ANALYZED_BUILDER_COMMANDS
+        and basename not in user_functions
+    ):
         return False
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", basename):
         plain_executable = executable
@@ -3455,6 +3608,8 @@ def _mapfile_builtin_target(
             flag = flags[flag_index]
             if flag not in {"C", "O", "c", "d", "n", "s", "t", "u"}:
                 raise ValueError("ambiguous mapfile option")
+            if flag == "C":
+                raise ValueError("mapfile callback is forbidden")
             if flag in {"C", "O", "c", "d", "n", "s", "u"}:
                 if not flags[flag_index + 1 :]:
                     index += 1
@@ -3634,12 +3789,14 @@ def has_forbidden_raw_builder_cgroup_membership_read(
         }
     ]
     function_depth = 0
+    function_stack: list[str] = []
     user_functions: set[str] = set()
     encountered_functions: set[str] = set()
     supervisor_assignments = 0
     saw_supervisor_bind = False
     saw_supervisor_readonly_remount = False
     saw_supervisor_inode_verification = False
+    reviewed_trap_count = 0
     try:
         semantic_script = _strip_patch_release_parser_heredoc_bodies(
             script
@@ -3648,6 +3805,8 @@ def has_forbidden_raw_builder_cgroup_membership_read(
             semantic_script,
             label=label,
         )
+        if re.search(r"\bcgroup_members\b", semantic_script):
+            return True
         function_bodies, function_inventory = (
             _shell_function_definitions(commands)
         )
@@ -3675,14 +3834,24 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                         nested_aliases.pop(name)
                 alias_scopes.append(nested_aliases)
                 function_depth += 1
+                function_stack.append(function_name)
                 continue
             if command_text == "}":
                 if function_depth > 0:
                     alias_scopes.pop()
                 function_depth = max(0, function_depth - 1)
+                if function_stack:
+                    function_stack.pop()
+                continue
+            if function_stack and function_stack[-1] != "builder_main":
                 continue
             aliases = alias_scopes[-1]
             tokens = _parse_shell_tokens(command_text, label=label)
+            if any(
+                _token_has_nested_braced_parameter(token)
+                for token in tokens
+            ):
+                return True
             token_texts = _token_texts(tokens)
             if token_texts == (
                 "printf",
@@ -3725,12 +3894,12 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     continue
                 return True
             if token_texts == (
-                "builtin",
-                "mapfile",
-                "-t",
-                "cgroup_members",
-                "<",
-                "$supervisor_cgroup/cgroup.procs",
+                "/usr/bin/python3",
+                "-I",
+                "-S",
+                "-",
+                "$$",
+                "<<PY",
             ):
                 if (
                     supervisor_assignments == 1
@@ -3750,6 +3919,22 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 tokens,
                 aliases,
             )
+            normalized_command = _normalize_shell_builtin_wrappers(
+                resolved_token_texts
+            )
+            if (
+                normalized_command
+                and posixpath.basename(normalized_command[0]) == "trap"
+            ):
+                if token_texts != (
+                    "trap",
+                    "isolated_stage_failure",
+                    "ERR",
+                ):
+                    return True
+                reviewed_trap_count += 1
+                if reviewed_trap_count != 1:
+                    return True
             if _helper_call_has_sensitive_arguments(
                 resolved_token_texts,
                 user_functions=user_functions,
@@ -3934,6 +4119,8 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 original_tokens=token_texts,
             ):
                 return True
+        if require_production_helpers and reviewed_trap_count != 1:
+            return True
         return False
     except ValueError:
         return True

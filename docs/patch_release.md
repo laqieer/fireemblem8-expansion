@@ -111,18 +111,20 @@ owned builder root so builder-UID files cannot make teardown fail.
 Before hiding `/sys`, the wrapper bind-mounts only the exact owned cgroup
 read-only under the exact root-owned mode-`0700` `/mnt/supervisor` parent.
 The candidate cannot read, write, execute, or traverse that parent and cannot
-receive an FD for it. After candidate exit, the wrapper reads the exact
-read-only cgroup child there and exports the ROM only when the wrapper PID is
-the sole member; the host continues to use the actual cgroup path for kill and
-removal. The raw cgroup path is used only for the exact initial
+receive an FD for it. After candidate exit, fixed isolated Python reads the
+exact read-only cgroup child and accepts only the wrapper PID plus its own
+transient checker PID. The checker exits before export, leaving the wrapper
+alone; the host continues to use the actual cgroup path for kill and removal.
+The raw cgroup path is used only for the exact initial
 `printf` membership-join write. Bind identity is checked through the raw and
 supervisor directory inodes; no raw `cgroup.procs` read remains. The parsed
 contract rejects direct, redirected, wrapped, spaced, or aliased raw membership
-reads even when the safe `builtin mapfile` line remains present. Tracked braced
+reads even when the fixed checker remains present. Tracked braced
 parameters with default/assign/error/alternate, prefix/suffix removal,
 substring, case conversion, transformation, length, or indirect operators
-fail closed because their resulting path is ambiguous. Direct and aliased
-forms behave identically in and out of quotes. Scalar `+=` updates the tracked
+fail closed because their resulting path is ambiguous. Active nested braced
+parameters are not modeled and reject; fixed single-quoted text remains data.
+Direct and aliased forms behave identically in and out of quotes. Scalar `+=` updates the tracked
 alias value, so split `cgroup` plus `.procs` construction remains tainted.
 Indexed and associative assignments, declarations, literals, appends, and
 expansions are not evaluated as a full Bash array model: tracked values reject
@@ -132,10 +134,11 @@ membership marker despite the safe supervisor read; the semantic guard rejects
 that executable script. Builder positional argument `$1` and `${1}` are seeded
 as the same raw root, including braced operators, indirection, scalar/array
 aliases, and appends. A second runtime control proves a positional alias can
-otherwise read the raw marker. Any `cgroup.procs` reference not structurally
-equal to the exact join write or supervisor `builtin mapfile` read fails closed, even
-from an unknown root; unrelated arrays and other positional parameters remain
-accepted. The supervisor read is authorized only after the exact bind,
+otherwise read the raw marker. Any shell command consuming the raw root or
+composed `cgroup.procs` fragments fails closed unless it is an exact reviewed
+join, bind, or stat signature; absolute programs are not exempt. Unrelated
+arrays and other positional parameters remain accepted. The fixed Python read
+is authorized only after the exact bind,
 read-only remount, one canonical
 `supervisor_cgroup=/mnt/supervisor/cgroup` assignment, and directory-inode
 verification. Literal, aliased, operator, append, array, or `unset`
@@ -166,10 +169,12 @@ dynamic values remain tainted. Branch- or loop-dependent alias writes reject
 rather than selecting a favorable path. Recursive and dynamically resolved
 calls reject. Function
 declarations cannot shadow security-sensitive builtins or commands, and
-inline, dynamic, duplicate, or ambiguous declarations fail closed. The
-membership snapshot explicitly invokes
-`builtin mapfile`, so even an injected shell function cannot forge the
-wrapper-only array.
+inline, dynamic, duplicate, or ambiguous declarations fail closed. Every trap
+change rejects except literal `trap isolated_stage_failure ERR`; wrapped,
+dynamic, DEBUG, RETURN, and EXIT forms are prohibited. `mapfile` and
+`readarray` callbacks are prohibited, including attached and dynamic `-C`
+options. No mutable `cgroup_members` shell state exists, and any attempt to
+reintroduce that name rejects.
 Runtime wrapped-unset controls leave `supervisor_cgroup` unbound before the
 safe read, proving the mutation. Array-backed executable slots are always
 rejected by this security guard. Array-backed `command`/`builtin` option,
@@ -275,16 +280,18 @@ classification for those post-spawn `launch`/`isolated`/`cleanup` outcomes; it
 does not claim path-free diagnostics for earlier trusted setup or later
 post-child handoff validation.
 
-The post-candidate cgroup membership check uses Bash `mapfile`, not a child
-utility. Exact failing master
+The post-candidate cgroup membership check uses fixed
+`/usr/bin/python3 -I -S`, not mutable shell state. Exact failing master
 `5779c38e245d9a14f063338b53851a97bb92d0c0` invoked `sort` from inside the
 builder cgroup to read `cgroup.procs`; the kernel therefore included that
 reader in the snapshot, so the expected wrapper-only assertion necessarily
-failed. The builtin reads the same authenticated read-only cgroup view without
-creating another member. Its executable fixture accepts exactly one canonical
-wrapper PID; empty, malformed, signed, whitespace-padded, zero, duplicate, and
-additional-member snapshots fail before success or export, regardless of
-member ordering, without signaling an unrelated live process.
+failed. The replacement checker expects its own transient PID plus the wrapper
+PID in either order from literal
+`/mnt/supervisor/cgroup/cgroup.procs`. Its exact AST fixes the path, byte bound,
+canonical positive-decimal grammar, cardinality, and PID set. Empty, malformed,
+signed, whitespace-padded, zero, duplicate, missing-newline, oversized, and
+additional-member snapshots fail before export without signaling another
+process.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

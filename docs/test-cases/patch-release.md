@@ -234,16 +234,19 @@ began before spawn.
 The wrapper binds the exact owned cgroup read-only under root-only mode-`0700`
 `/mnt/supervisor` before masking `/sys`. The candidate cannot read, write,
 execute, or traverse that parent, while the exact cgroup child remains
-read-only; the post-build check remains readable and rejects any member beyond
-the wrapper PID before ROM handoff. Only the exact initial `printf` join writes
+read-only; fixed isolated Python accepts only the wrapper and its own transient
+checker PID before ROM handoff, then exits before export. Only the exact
+initial `printf` join writes
 raw `$cgroup_path/cgroup.procs`; bind identity uses directory inodes and every
 membership read uses the read-only supervisor view, so no raw `cgroup.procs`
-read remains. Parsed mutations preserve the safe `builtin mapfile` line while adding
+read remains. Parsed mutations preserve the fixed checker while adding
 raw mapfile/readarray, cat, sort, redirection, environment/shell wrappers,
 spacing, direct aliases, and composed root/leaf aliases; all fail closed.
 Braced default/assign/error/alternate, prefix/suffix removal, substring, case,
 transformation, length, and indirect operators fail closed whenever they use
-the tracked raw root, in quoted, unquoted, direct, or aliased form. Scalar
+the tracked raw root, in quoted, unquoted, direct, or aliased form. Active
+nested braced expansion rejects conservatively; single-quoted text stays inert.
+Scalar
 `+=` appends to tracked aliases, so `raw_leaf=cgroup; raw_leaf+=.procs` cannot
 hide the membership path. Indexed and associative assignments/declarations,
 array literals, indexed `+=`, `[0]`/`[key]`/`[@]`, indirection, and nested
@@ -253,10 +256,10 @@ expansion is combined with `cgroup.procs`. An executable control proves
 guard, while unrelated arrays remain accepted. Builder argument `$1`/`${1}`
 is seeded as the raw root through quoted/unquoted use, every tracked braced
 operator, indirection, scalar and array aliases, `+=`, and indexed assignment.
-A positional-alias runtime control proves the hidden read. Any other literal
-or resolved `cgroup.procs` path fails closed unless it is the exact initial
-join write or exact supervisor `builtin mapfile` read; unrelated `$2` forms stay valid.
-That safe read is authorized only after the exact bind, read-only remount,
+A positional-alias runtime control proves the hidden read. Any shell command
+consuming the raw root or composing `cgroup.procs` fails unless it is an exact
+reviewed join/bind/stat signature; absolute programs are not exempt. Unrelated
+`$2` forms stay valid. The fixed Python read is authorized only after the exact bind, read-only remount,
 single canonical supervisor assignment, and directory-inode verification.
 Literal, alias, parameter-operator, append, indexed/associative array, and
 `unset` reassignments invalidate it before the safe line.
@@ -277,11 +280,14 @@ return; global writes propagate. `read`, `mapfile`, `readarray`, dynamic
 values, and branch- or loop-dependent writes taint or reject conservatively.
 Recursive and dynamic calls reject. Function
 declarations cannot shadow security-sensitive builtins or commands, and
-inline, dynamic, duplicate, and ambiguous definitions reject. The wrapper-only
-membership read uses
-`builtin mapfile`; the runtime negative control shows unqualified `mapfile`
-can forge a singleton while the builtin form reads the real multi-member
-snapshot.
+inline, dynamic, duplicate, and ambiguous definitions reject. Every trap
+change except literal `trap isolated_stage_failure ERR` rejects, including
+wrapped/dynamic DEBUG, RETURN, and EXIT forms. `mapfile`/`readarray` callbacks
+reject, including dynamic `-C`. The membership decision has no mutable
+`cgroup_members` shell variable: fixed isolated Python validates the literal
+supervisor path and exact wrapper/checker PID set. Its AST is checked
+semantically; formatting-only changes remain valid while path, count, or set
+changes reject.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,
@@ -394,9 +400,10 @@ exact failing master
 `5779c38e245d9a14f063338b53851a97bb92d0c0` then reaches output validation but
 fails because its `sort` reader joins the builder cgroup while reading
 `cgroup.procs`, making the wrapper-only assertion self-defeating. The fixed
-Bash-builtin `mapfile` check admits exactly one canonical wrapper PID. The
-empty, malformed nonnumeric, blank, signed, zero, leading/trailing-whitespace,
-duplicate, external-only, and extra-before/extra-after snapshots all fail
+Python checker admits exactly the canonical wrapper and transient checker PIDs
+in either order. Empty, malformed nonnumeric, blank, signed, zero,
+leading/trailing-whitespace, missing-newline, oversized, duplicate,
+external-only, and extra-before/extra-after snapshots all fail
 before success or export markers and never signal the unrelated live process.
 The default bare `make` path remains 16 MiB/default-off and does not receive a
 base secret, patch artifact, or publish step.
@@ -453,12 +460,14 @@ archival-lane behavior changes.
   reorder/add/delete/duplicate controls, resolved declaration-target safe/raw/
   dynamic controls for declare/typeset/export/readonly/local in both parsers,
   direct/function-keyword/nested/aliased helper-call composition and
-  sensitive-function-shadow mutations, unqualified-versus-builtin mapfile
-  runtime, no-argument assignment/`printf -v` closure captures, recursive/
+  sensitive-function-shadow mutations, no-argument assignment/`printf -v`
+  closure captures, recursive/
   dynamic dispatch, helper inventory add/modify/duplicate/reorder controls in
   both parsers, sequential local/positional assignment/declaration/printf
   safe controls, read/mapfile/readarray/dynamic/branch taint controls, global
-  write-back, parsed registry-contract mutations,
+  write-back, nested-brace/trap/absolute-command/mapfile-callback/reserved-
+  membership-state repros, fixed membership-checker runtime/AST mutations,
+  parsed registry-contract mutations,
   recursive
   command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions

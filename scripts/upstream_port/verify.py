@@ -1840,12 +1840,12 @@ def _parse_step(block, job_name, index):
             not in {token for command in values["run"] for token in command}
             or ("test", "!", "-r", "/mnt/supervisor") not in values["run"]
             or (
-                "builtin",
-                "mapfile",
-                "-t",
-                "cgroup_members",
-                "<",
-                "$supervisor_cgroup/cgroup.procs",
+                "/usr/bin/python3",
+                "-I",
+                "-S",
+                "-",
+                "$$",
+                "<<PY",
             )
             not in values["run"]
             or "/sys/fs/cgroup/cgroup.controllers"
@@ -1875,10 +1875,6 @@ def _parse_step(block, job_name, index):
             or "candidate-output.log"
             in " ".join(token for command in values["run"] for token in command)
             or ("ulimit", "-f", "131072") not in values["run"]
-            or ("test", "${#cgroup_members[@]}", "-eq", "1")
-            not in values["run"]
-            or ("test", "${cgroup_members[0]}", "=", "$$")
-            not in values["run"]
             or "candidate build failed: stage=launch detail=%s exit=%d"
             not in " ".join(token for command in values["run"] for token in command)
             or "candidate build failed: stage=isolated detail=%s exit=%d"

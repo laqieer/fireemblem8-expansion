@@ -253,9 +253,9 @@ def workflow_has_raw_builder_cgroup_membership_read(workflow: str) -> bool:
 
 
 def generate_raw_builder_cgroup_membership_mutations(workflow: str):
-    marker = (
-        '        builtin mapfile -t cgroup_members < '
-        '"$supervisor_cgroup/cgroup.procs"\n'
+    marker = "        isolated_stage=export\n"
+    checker_marker = (
+        '        /usr/bin/python3 -I -S - "$$" <<\'PY\'\n'
     )
     mutations = [
         '        /bin/cat "$1/cgroup.procs" > /dev/null\n',
@@ -837,6 +837,37 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
             "command",
         )
     )
+    pre_checker_mutations = (
+        '        /bin/cat "${cgroup_path:-${HOME}}/cgroup.procs" '
+        "> /dev/null\n",
+        '        raw_root="$cgroup_path"\n'
+        '        /bin/cat "${raw_root:-${HOME}}/cgroup.procs" '
+        "> /dev/null\n",
+        '        trap \'/bin/cat "$cgroup_path/cgroup.procs"\' DEBUG\n',
+        "        trap true RETURN\n",
+        "        trap true EXIT\n",
+        "        command trap true DEBUG\n",
+        "        trap_command=trap\n"
+        '        "$trap_command" true DEBUG\n',
+        '        /usr/bin/find "$cgroup_path" -name "cgroup.p*" '
+        "-exec /bin/cat {} \\;\n",
+        "        mapfile -C callback -c 1 -t callback_data < /dev/null\n",
+        "        readarray -Ccallback -c1 -t callback_data < /dev/null\n",
+        '        callback_option="$(printf -- -C)"\n'
+        '        mapfile "$callback_option" callback -t callback_data '
+        "< /dev/null\n",
+        '        cgroup_members=("$$")\n',
+        '        cgroup_members[0]="$$"\n',
+        '        declare -a cgroup_members=("$$")\n',
+        '        printf -v cgroup_members %s "$$"\n',
+        "        read cgroup_members < /dev/null\n",
+        "        mapfile -t cgroup_members < /dev/null\n",
+        "        forge_members() {\n"
+        '          cgroup_members=("$$")\n'
+        "        }\n"
+        "        forge_members\n",
+        '        trap \'cgroup_members=("$$")\' DEBUG\n',
+    )
     for index, mutation in enumerate(supervisor_reassignments):
         changed = workflow.replace(marker, mutation + marker, 1)
         if changed == workflow:
@@ -856,13 +887,21 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
                 "function shadow mutation marker differs"
             )
         yield f"function-shadow-{index}", changed
+    for index, mutation in enumerate(pre_checker_mutations):
+        changed = workflow.replace(
+            checker_marker,
+            mutation + checker_marker,
+            1,
+        )
+        if changed == workflow:
+            raise AssertionError(
+                "pre-checker mutation marker differs"
+            )
+        yield f"pre-checker-{index}", changed
 
 
 def generate_safe_declaration_alias_controls(workflow: str):
-    marker = (
-        '        builtin mapfile -t cgroup_members < '
-        '"$supervisor_cgroup/cgroup.procs"\n'
-    )
+    marker = "        isolated_stage=export\n"
     for builtin in (
         "declare",
         "typeset",
@@ -874,7 +913,7 @@ def generate_safe_declaration_alias_controls(workflow: str):
             '        raw_root="$cgroup_path"\n'
             "        target=raw_root\n"
             f'        {builtin} "$target=/safe"\n'
-            '        /bin/cat "$raw_root"/cgroup.proc? > /dev/null\n'
+            '        test "$raw_root" = /safe\n'
         )
         changed = workflow.replace(marker, marker + control, 1)
         if changed == workflow:
@@ -885,10 +924,7 @@ def generate_safe_declaration_alias_controls(workflow: str):
 
 
 def generate_helper_inventory_mutations(workflow: str):
-    marker = (
-        '        builtin mapfile -t cgroup_members < '
-        '"$supervisor_cgroup/cgroup.procs"\n'
-    )
+    marker = "        isolated_stage=export\n"
     mutations = {
         "added": workflow.replace(
             marker,
@@ -950,6 +986,43 @@ def reordered_helper_inventory_control(workflow: str) -> str:
             "helper inventory reorder marker differs"
         )
     return changed
+
+
+def reformatted_membership_checker_control(workflow: str) -> str:
+    changed = workflow.replace(
+        "        members = {int(record, 10) for record in records}\n",
+        "        members={int(record,10) for record in records}\n",
+        1,
+    )
+    if changed == workflow:
+        raise AssertionError(
+            "membership checker formatting marker differs"
+        )
+    return changed
+
+
+def generate_membership_checker_ast_mutations(workflow: str):
+    replacements = {
+        "path": (
+            '        MEMBERSHIP_PATH = "/mnt/supervisor/cgroup/cgroup.procs"\n',
+            '        MEMBERSHIP_PATH = "/mnt/home/cgroup.procs"\n',
+        ),
+        "member-count": (
+            "        if len(records) != 2 or any(\n",
+            "        if len(records) != 3 or any(\n",
+        ),
+        "expected-set": (
+            "            or members != {expected_pid, checker_pid}\n",
+            "            or members != {expected_pid}\n",
+        ),
+    }
+    for label, (before, after) in replacements.items():
+        changed = workflow.replace(before, after, 1)
+        if changed == workflow:
+            raise AssertionError(
+                f"{label} membership checker mutation marker differs"
+            )
+        yield label, changed
 
 
 def render_supervisor_parent_remount_mutation(
@@ -2393,7 +2466,6 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "ulimit -n 128" not in isolated_step
         or "ulimit -u 512" not in isolated_step
         or "ulimit -v 8388608" not in isolated_step
-        or 'test "${cgroup_members[0]}" = "$$"' not in isolated_step
         or "size=6g builder-source /mnt/source" not in isolated_step
         or "size=1g builder-home /mnt/home" not in isolated_step
         or "size=1g builder-temp /mnt/tmp" not in isolated_step
@@ -2466,16 +2538,17 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or 'test ! -x /mnt/supervisor' not in isolated_step
         or 'test ! -r /mnt/supervisor/cgroup/cgroup.procs'
         not in isolated_step
-        or '"$supervisor_cgroup/cgroup.procs"' not in isolated_step
+        or 'MEMBERSHIP_PATH = "/mnt/supervisor/cgroup/cgroup.procs"'
+        not in isolated_step
         or (
             'cgroup_members="$(LC_ALL=C /usr/bin/sort -n \\\n'
             '          "$supervisor_cgroup/cgroup.procs")"'
         )
         in isolated_step
-        or 'builtin mapfile -t cgroup_members < "$supervisor_cgroup/cgroup.procs"'
+        or '/usr/bin/python3 -I -S - "$$" <<\'PY\''
         not in isolated_step
-        or 'test "${#cgroup_members[@]}" -eq 1' not in isolated_step
-        or 'test "${cgroup_members[0]}" = "$$"' not in isolated_step
+        or "members != {expected_pid, checker_pid}" not in isolated_step
+        or re.search(r"\bcgroup_members\b", isolated_step)
         or "/usr/share/dbus-1/system-services" not in isolated_step
         or "/run/dbus/system_bus_socket" not in isolated_step
         or "/run/docker.sock" not in isolated_step
@@ -3264,7 +3337,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             supervisor_bind,
         )
         membership = self.patch_job.index(
-            'builtin mapfile -t cgroup_members < "$supervisor_cgroup/cgroup.procs"',
+            '/usr/bin/python3 -I -S - "$$" <<\'PY\'',
             sys_mask,
         )
         self.assertLess(supervisor_bind, sys_mask)
@@ -4370,8 +4443,8 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         hidden_sys_membership = self.text.replace(
-            'builtin mapfile -t cgroup_members < "$supervisor_cgroup/cgroup.procs"',
-            'mapfile -t cgroup_members < "$cgroup_path/cgroup.procs"',
+            'MEMBERSHIP_PATH = "/mnt/supervisor/cgroup/cgroup.procs"',
+            'MEMBERSHIP_PATH = "/sys/fs/cgroup/cgroup.procs"',
             1,
         )
         exposed_supervisor_to_candidate = self.text.replace(
@@ -6773,17 +6846,26 @@ exit 37
                 socket_left.close()
                 socket_right.close()
 
-    def test_supervisor_membership_runtime_accepts_exact_singleton_only(self):
+    def test_supervisor_membership_runtime_accepts_wrapper_and_checker_only(
+        self,
+    ):
         full_script = named_step_run_script(
             self.text,
             "Build candidate in isolated namespace and stage public inputs",
         )
-        start = full_script.index(
-            'builtin mapfile -t cgroup_members < "$supervisor_cgroup/cgroup.procs"'
+        builder = (
+            publisher_shell_contract.builder_isolation_shell_source(
+                full_script,
+                label="membership checker builder",
+            )
         )
-        end_marker = 'test "${cgroup_members[0]}" = "$$"'
-        end = full_script.index(end_marker, start) + len(end_marker)
-        membership_check = full_script[start:end]
+        checker = dict(
+            publisher_shell_contract.raw_patch_release_parser_sources(
+                builder
+            )
+        )[
+            publisher_shell_contract.PATCH_RELEASE_MEMBERSHIP_CHECKER_NAME
+        ]
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
@@ -6793,129 +6875,117 @@ exit 37
             supervisor = Path(temporary) / "supervisor"
             supervisor.mkdir(mode=0o700)
             membership_path = supervisor / "cgroup.procs"
-            success_marker = Path(temporary) / "success"
-            export_marker = Path(temporary) / "export"
-            external = subprocess.Popen(
-                ["/bin/sleep", "60"],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+            runtime_checker = checker.replace(
+                '"/mnt/supervisor/cgroup/cgroup.procs"',
+                repr(str(membership_path)),
+                1,
             )
 
-            def run(writer: str) -> subprocess.CompletedProcess[str]:
+            def run(payload_factory):
                 membership_path.unlink(missing_ok=True)
-                success_marker.unlink(missing_ok=True)
-                export_marker.unlink(missing_ok=True)
-                setup = (
-                    "set -e\n"
-                    'supervisor_cgroup="$1"\n'
-                    'external_pid="$2"\n'
-                    + writer
-                    + "\n"
-                )
-                return subprocess.run(
+                os.mkfifo(membership_path)
+                expected_pid = os.getpid()
+                process = subprocess.Popen(
                     [
-                        "/bin/bash",
+                        "/usr/bin/python3",
+                        "-I",
+                        "-S",
                         "-c",
-                        setup
-                        + membership_check
-                        + "\n"
-                        + 'printf "success\\n" > "$3"\n'
-                        + 'printf "export\\n" > "$4"\n',
-                        "--",
-                        str(supervisor),
-                        str(external.pid),
-                        str(success_marker),
-                        str(export_marker),
+                        runtime_checker,
+                        str(expected_pid),
                     ],
-                    check=False,
-                    capture_output=True,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     text=True,
                 )
+                payload = payload_factory(expected_pid, process.pid)
+                with membership_path.open("wb", buffering=0) as stream:
+                    stream.write(payload)
+                stdout, stderr = process.communicate(timeout=5)
+                return subprocess.CompletedProcess(
+                    process.args,
+                    process.returncode,
+                    stdout,
+                    stderr,
+                )
 
-            valid_writer = (
-                'printf \'%s\\n\' "$$" > '
-                '"$supervisor_cgroup/cgroup.procs"'
-            )
-            invalid_writers = {
-                "empty": ': > "$supervisor_cgroup/cgroup.procs"',
-                "empty-line": (
-                    'printf \'\\n\' > "$supervisor_cgroup/cgroup.procs"'
+            for order in ((0, 1), (1, 0)):
+                with self.subTest(valid_order=order):
+                    accepted = run(
+                        lambda expected, checker_pid, order=order: (
+                            f"{(expected, checker_pid)[order[0]]}\n"
+                            f"{(expected, checker_pid)[order[1]]}\n"
+                        ).encode("ascii")
+                    )
+                    self.assertEqual(
+                        accepted.returncode,
+                        0,
+                        accepted.stderr,
+                    )
+                    self.assertEqual(accepted.stdout, "")
+                    self.assertEqual(accepted.stderr, "")
+
+            invalid_payloads = {
+                "empty": lambda _expected, _checker: b"",
+                "empty-line": lambda _expected, _checker: b"\n",
+                "nonnumeric": lambda expected, _checker: (
+                    f"{expected}\nnot-a-pid\n".encode("ascii")
                 ),
-                "nonnumeric": (
-                    "printf 'not-a-pid\\n' > "
-                    '"$supervisor_cgroup/cgroup.procs"'
+                "whitespace": lambda expected, _checker: (
+                    f"{expected}\n \n".encode("ascii")
                 ),
-                "whitespace": (
-                    "printf ' \\n' > "
-                    '"$supervisor_cgroup/cgroup.procs"'
+                "plus-sign": lambda expected, checker_pid: (
+                    f"{expected}\n+{checker_pid}\n".encode("ascii")
                 ),
-                "plus-sign": (
-                    'printf \'+%s\\n\' "$$" > '
-                    '"$supervisor_cgroup/cgroup.procs"'
+                "minus-sign": lambda expected, checker_pid: (
+                    f"{expected}\n-{checker_pid}\n".encode("ascii")
                 ),
-                "minus-sign": (
-                    'printf \'%s\\n\' "-$$" > '
-                    '"$supervisor_cgroup/cgroup.procs"'
+                "zero": lambda expected, _checker: (
+                    f"{expected}\n0\n".encode("ascii")
                 ),
-                "zero": (
-                    "printf '0\\n' > "
-                    '"$supervisor_cgroup/cgroup.procs"'
+                "leading-whitespace": lambda expected, checker_pid: (
+                    f"{expected}\n {checker_pid}\n".encode("ascii")
                 ),
-                "leading-whitespace": (
-                    'printf \' %s\\n\' "$$" > '
-                    '"$supervisor_cgroup/cgroup.procs"'
+                "trailing-whitespace": lambda expected, checker_pid: (
+                    f"{expected}\n{checker_pid} \n".encode("ascii")
                 ),
-                "trailing-whitespace": (
-                    'printf \'%s \\n\' "$$" > '
-                    '"$supervisor_cgroup/cgroup.procs"'
+                "missing-newline": lambda expected, checker_pid: (
+                    f"{expected}\n{checker_pid}".encode("ascii")
                 ),
-                "duplicate-wrapper": (
-                    'printf \'%s\\n%s\\n\' "$$" "$$" > '
-                    '"$supervisor_cgroup/cgroup.procs"'
+                "duplicate-wrapper": lambda expected, _checker: (
+                    f"{expected}\n{expected}\n".encode("ascii")
                 ),
-                "external-only": (
-                    'printf \'%s\\n\' "$external_pid" > '
-                    '"$supervisor_cgroup/cgroup.procs"'
+                "duplicate-checker": lambda _expected, checker_pid: (
+                    f"{checker_pid}\n{checker_pid}\n".encode("ascii")
                 ),
-                "extra-after": (
-                    'printf \'%s\\n%s\\n\' "$$" "$external_pid" > '
-                    '"$supervisor_cgroup/cgroup.procs"'
+                "external-only": lambda _expected, _checker: (
+                    f"{os.getppid()}\n{os.getpid() + 100000}\n".encode(
+                        "ascii"
+                    )
                 ),
-                "extra-before": (
-                    'printf \'%s\\n%s\\n\' "$external_pid" "$$" > '
-                    '"$supervisor_cgroup/cgroup.procs"'
+                "extra-after": lambda expected, checker_pid: (
+                    f"{expected}\n{checker_pid}\n{os.getppid()}\n".encode(
+                        "ascii"
+                    )
                 ),
+                "extra-before": lambda expected, checker_pid: (
+                    f"{os.getppid()}\n{expected}\n{checker_pid}\n".encode(
+                        "ascii"
+                    )
+                ),
+                "oversized": lambda _expected, _checker: b"1" * 4097,
             }
-            try:
-                valid = run(valid_writer)
-                self.assertEqual(valid.returncode, 0, valid.stderr)
-                self.assertEqual(valid.stdout, "")
-                self.assertEqual(valid.stderr, "")
-                self.assertEqual(
-                    success_marker.read_text(encoding="ascii"),
-                    "success\n",
-                )
-                self.assertEqual(
-                    export_marker.read_text(encoding="ascii"),
-                    "export\n",
-                )
-                self.assertIsNone(external.poll())
-
-                for name, writer in invalid_writers.items():
-                    with self.subTest(case=name):
-                        rejected = run(writer)
-                        self.assertEqual(rejected.returncode, 1)
-                        self.assertEqual(rejected.stdout, "")
-                        self.assertEqual(rejected.stderr, "")
-                        self.assertFalse(success_marker.exists())
-                        self.assertFalse(export_marker.exists())
-                        self.assertIsNone(external.poll())
-                        os.kill(external.pid, 0)
-            finally:
-                if external.poll() is None:
-                    external.terminate()
-                    external.wait(timeout=5)
+            for name, payload_factory in invalid_payloads.items():
+                with self.subTest(case=name):
+                    rejected = run(payload_factory)
+                    self.assertEqual(
+                        rejected.returncode,
+                        125,
+                        rejected.stderr,
+                    )
+                    self.assertEqual(rejected.stdout, "")
+                    self.assertEqual(rejected.stderr, "")
 
             failed_workflow = subprocess.check_output(
                 [
@@ -7594,9 +7664,14 @@ exit 37
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertEqual(completed.stdout, "safe-writer-marker\n")
+            parser_safe_script = (
+                'raw_root="$1"\n'
+                f'printf -v raw_root %s "{safe_cgroup}"\n'
+                f'test "$raw_root" = "{safe_cgroup}"\n'
+            )
             self.assertFalse(
                 publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
-                    safe_script,
+                    parser_safe_script,
                     label="exact safe printf alias writer control",
                 )
             )
@@ -8290,6 +8365,181 @@ exit 37
                         "supervisor_cgroup: unbound variable",
                         completed.stderr,
                     )
+
+    def test_reduced_shell_surfaces_execute_and_fail_closed(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+                    prefix="reduced-shell-surfaces-",
+                    dir=artifact_root,
+        ) as temporary:
+                    raw_cgroup = Path(temporary) / "raw"
+                    raw_cgroup.mkdir()
+                    (raw_cgroup / "cgroup.procs").write_text(
+                        "reduced-shell-raw-marker\n",
+                        encoding="ascii",
+                    )
+                    trap_output = Path(temporary) / "trap-output"
+                    callback_output = Path(temporary) / "callback-output"
+                    cases = (
+                        (
+                            "nested parameter",
+                            '/bin/cat "${1:-${HOME}}/cgroup.procs"\n',
+                            "reduced-shell-raw-marker\n",
+                        ),
+                        (
+                            "nested parameter alias",
+                            'raw_root="$1"\n'
+                            '/bin/cat "${raw_root:-${HOME}}/cgroup.procs"\n',
+                            "reduced-shell-raw-marker\n",
+                        ),
+                        (
+                            "absolute find",
+                            '/usr/bin/find "$1" -name "cgroup.p*" '
+                            "-exec /bin/cat {} \\;\n",
+                            "reduced-shell-raw-marker\n",
+                        ),
+                    )
+                    for label, script, expected in cases:
+                        with self.subTest(surface=label):
+                            completed = subprocess.run(
+                                [
+                                    "/bin/bash",
+                                    "-c",
+                                    script,
+                                    "--",
+                                    str(raw_cgroup),
+                                ],
+                                cwd=ROOT,
+                                check=False,
+                                capture_output=True,
+                                text=True,
+                            )
+                            self.assertEqual(
+                                completed.returncode,
+                                0,
+                                completed.stderr,
+                            )
+                            self.assertEqual(completed.stdout, expected)
+                            self.assertTrue(
+                                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                                    script,
+                                    label=f"{label} runtime",
+                                )
+                            )
+
+                    trap_script = (
+                        'trap \'/bin/cat "$1/cgroup.procs" > "$2"\' DEBUG\n'
+                        "true\n"
+                    )
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "-c",
+                            trap_script,
+                            "--",
+                            str(raw_cgroup),
+                            str(trap_output),
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(
+                        trap_output.read_text(encoding="ascii"),
+                        "reduced-shell-raw-marker\n",
+                    )
+                    self.assertTrue(
+                        publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                            trap_script,
+                            label="trap redirect runtime",
+                        )
+                    )
+
+                    callback_script = (
+                        'callback_output="$1"\n'
+                        "callback() {\n"
+                        '  printf "callback\\n" > "$callback_output"\n'
+                        "}\n"
+                        "mapfile -C callback -c 1 -t callback_data <<< value\n"
+                    )
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "-c",
+                            callback_script,
+                            "--",
+                            str(callback_output),
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(
+                        callback_output.read_text(encoding="ascii"),
+                        "callback\n",
+                    )
+                    self.assertTrue(
+                        publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                            callback_script,
+                            label="mapfile callback runtime",
+                        )
+                    )
+
+                    forged_members = (
+                        'cgroup_members=("$$")\n'
+                        'test "${cgroup_members[0]}" = "$$"\n'
+                    )
+                    completed = subprocess.run(
+                        ["/bin/bash", "-c", forged_members],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertTrue(
+                        publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                            forged_members,
+                            label="reserved membership state runtime",
+                        )
+                    )
+
+        for label, script in (
+                    (
+                        "literal nested parameter text",
+                        "value='${raw:-${HOME}}'\n"
+                        'printf "%s\\n" "$value"\n',
+                    ),
+                    (
+                        "reviewed trap",
+                        "trap isolated_stage_failure ERR\n",
+                    ),
+                    (
+                        "absolute safe command",
+                        "/usr/bin/stat -c %u /mnt/supervisor\n",
+                    ),
+                    (
+                        "mapfile without callback",
+                        "mapfile -t ordinary < /dev/null\n",
+                    ),
+                    (
+                        "ordinary array",
+                        'members=("$$")\n'
+                        'test "${members[0]}" = "$$"\n',
+                    ),
+        ):
+                    with self.subTest(valid_control=label):
+                        self.assertFalse(
+                            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                                script,
+                                label=f"{label} control",
+                            )
+                        )
 
     def test_command_query_clusters_are_nonmutating_and_invalid_clusters_fail(self):
         valid_clusters = (
@@ -10580,8 +10830,22 @@ exit 37
                 "start-time",
             ],
             "supervisor_parent_mode": "0700",
-            "post_build_membership": "exact-wrapper-singleton",
-            "membership_reader": "builtin-mapfile",
+            "post_build_membership": "exact-wrapper-and-checker",
+            "membership_reader": "isolated-python-ast",
+            "membership_checker": {
+                "path": "/mnt/supervisor/cgroup/cgroup.procs",
+                "maximum_bytes": 4096,
+                "members": ["wrapper-pid", "checker-pid"],
+                "ordering": "insensitive",
+                "shell_snapshot_state": "absent",
+            },
+            "shell_surface": {
+                "nested_braced_parameters": "reject-active",
+                "trap": "exact-isolated-err-only",
+                "absolute_raw_root_commands": "closed-signatures",
+                "mapfile_callbacks": "reject",
+                "reserved_cgroup_members_state": "absent",
+            },
             "helper_calls": {
                 "production_signatures": "closed",
                 "tracked_or_composed_membership_arguments": "reject",
@@ -10667,6 +10931,7 @@ exit 37
             ("transport_statuses",),
             ("launcher_identity_fields",),
             ("function_shadowing", "sensitive_names"),
+            ("membership_checker", "members"),
             ("raw_membership", "allowed_accesses"),
             ("alias_state", "writers"),
         )
@@ -10729,6 +10994,8 @@ exit 37
             (("complete_rom_artifact",), True),
             (("candidate_unknown_status",), 78),
             (("membership_reader",), "mapfile"),
+            (("membership_checker", "maximum_bytes"), 8192),
+            (("shell_surface", "trap"), "allow"),
             (
                 (
                     "helper_calls",
@@ -11037,6 +11304,86 @@ exit 37
         ):
             with self.subTest(language="embedded-python-heredoc", parser=label):
                 ast.parse(source)
+
+    def test_membership_checker_ast_is_exact_and_format_independent(self):
+        builder = builder_isolation_shell_source(self.text)
+        publisher_shell_contract.validate_patch_release_parser_heredocs(
+            builder,
+            label="membership checker",
+        )
+        reformatted = builder.replace(
+            "members = {int(record, 10) for record in records}",
+            "members={int(record,10) for record in records}",
+            1,
+        )
+        self.assertNotEqual(reformatted, builder)
+        publisher_shell_contract.validate_patch_release_parser_heredocs(
+            reformatted,
+            label="reformatted membership checker",
+        )
+        for label, changed in (
+            (
+                "path",
+                builder.replace(
+                    'MEMBERSHIP_PATH = "/mnt/supervisor/cgroup/cgroup.procs"',
+                    'MEMBERSHIP_PATH = "/mnt/home/cgroup.procs"',
+                    1,
+                ),
+            ),
+            (
+                "member-count",
+                builder.replace(
+                    "len(records) != 2",
+                    "len(records) != 3",
+                    1,
+                ),
+            ),
+            (
+                "expected-set",
+                builder.replace(
+                    "members != {expected_pid, checker_pid}",
+                    "members != {expected_pid}",
+                    1,
+                ),
+            ),
+        ):
+            with self.subTest(membership_ast_mutation=label):
+                self.assertNotEqual(changed, builder)
+                with self.assertRaisesRegex(
+                    ValueError,
+                    "membership checker differs",
+                ):
+                    publisher_shell_contract.validate_patch_release_parser_heredocs(
+                        changed,
+                        label="mutated membership checker",
+                    )
+        with (
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_patch_release_run_script_identity",
+            ),
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_builder_isolation_shell_identity",
+            ),
+        ):
+            reformatted_workflow = (
+                reformatted_membership_checker_control(self.text)
+            )
+            self.assertNotIn(
+                "publisher builder isolation shell differs",
+                publisher_boundary_errors(reformatted_workflow),
+            )
+            for label, changed in (
+                generate_membership_checker_ast_mutations(self.text)
+            ):
+                with self.subTest(
+                    membership_workflow_mutation=label
+                ):
+                    self.assertIn(
+                        "publisher builder isolation shell differs",
+                        publisher_boundary_errors(changed),
+                    )
 
     def test_each_patch_release_python_c_snippet_is_checked(self):
         snippets = patch_release_python_c_snippets(self.text)

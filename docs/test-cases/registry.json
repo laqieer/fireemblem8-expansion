@@ -1277,8 +1277,25 @@
           "start-time"
         ],
         "supervisor_parent_mode": "0700",
-        "post_build_membership": "exact-wrapper-singleton",
-        "membership_reader": "builtin-mapfile",
+        "post_build_membership": "exact-wrapper-and-checker",
+        "membership_reader": "isolated-python-ast",
+        "membership_checker": {
+          "path": "/mnt/supervisor/cgroup/cgroup.procs",
+          "maximum_bytes": 4096,
+          "members": [
+            "wrapper-pid",
+            "checker-pid"
+          ],
+          "ordering": "insensitive",
+          "shell_snapshot_state": "absent"
+        },
+        "shell_surface": {
+          "nested_braced_parameters": "reject-active",
+          "trap": "exact-isolated-err-only",
+          "absolute_raw_root_commands": "closed-signatures",
+          "mapfile_callbacks": "reject",
+          "reserved_cgroup_members_state": "absent"
+        },
         "helper_calls": {
           "production_signatures": "closed",
           "tracked_or_composed_membership_arguments": "reject",
