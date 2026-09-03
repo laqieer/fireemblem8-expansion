@@ -2065,7 +2065,10 @@ jobs:
         /usr/bin/mount -o remount,bind,ro /
         case "$host_runner_temp" in
           /home/runner/*) ;;
-          *) echo "runner temp is outside the masked host tree" >&2; exit 1 ;;
+          *)
+            echo "runner temp is outside the masked host tree" >&2
+            isolated_stage_failure
+            ;;
         esac
         /usr/bin/mount -t tmpfs \
           -o nosuid,nodev,noexec,mode=0755,size=16m \
@@ -2091,7 +2094,7 @@ jobs:
         for option in ro nosuid nodev noexec; do
           case ",$supervisor_options," in
             *,"$option",*) ;;
-            *) exit 125 ;;
+            *) isolated_stage_failure ;;
           esac
         done
         /usr/bin/mount -t tmpfs \
@@ -2284,7 +2287,7 @@ jobs:
           case "$dev_mount" in
             /dev) ;;
             /dev/*) /usr/bin/umount -- "$dev_mount" ;;
-            *) exit 125 ;;
+            *) isolated_stage_failure ;;
           esac
         done
         remaining_dev_mounts_file="$(create_supervisor_transport_file remaining-dev-mount-targets)"
@@ -2478,7 +2481,10 @@ jobs:
             *,rw,*)
               case "$mount_target" in
                 /dev/shm|/mnt/handoff|/mnt/home|/mnt/source|/mnt/supervisor|/mnt/tmp|/tmp) ;;
-                *) echo "unexpected writable mount: $mount_target" >&2; exit 1 ;;
+                *)
+                  echo "unexpected writable mount: $mount_target" >&2
+                  isolated_stage_failure
+                  ;;
               esac
               ;;
           esac

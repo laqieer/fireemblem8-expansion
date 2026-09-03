@@ -126,7 +126,12 @@ codes. The outer host accepts those codes only from `wait` on the exact
 authenticated supervisor and renders a fixed enum; any other exit or signal
 becomes `detail=transport exit=125`. The channel has no file, pipe, candidate
 descriptor, symlink, nonregular inode, or path race, and candidate text or data
-never enters it. `cleanup` reports teardown summary status whenever teardown
+never enters it. Explicit trusted namespace and mount-audit rejections call
+the current-stage normalizer directly; the ERR trap covers ordinary command
+failures and propagated helper `return 125` paths. The only remaining explicit
+shell exits are the normalizer's reserved codes, intentional candidate-status
+forwarding, and success `0`, so explicit failures cannot fall through to
+`transport`. `cleanup` reports teardown summary status whenever teardown
 fails. Earlier trusted pre-spawn setup and later post-child handoff validation
 still use normal shell failure output and are outside this diagnostic enum;
 cleanup may therefore be the only stage text even when the failure began

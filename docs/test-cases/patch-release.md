@@ -214,11 +214,17 @@ failures to reserved numeric codes. The host accepts them only from `wait` on
 the exact authenticated supervisor and renders fixed enum text; unknown exits
 and signals become `detail=transport exit=125`. This authenticated transport
 has no file, pipe, candidate descriptor, symlink, nonregular inode, or TOCTOU
-path and carries no candidate output, data, path, or secret. `cleanup` reports
-teardown summary status whenever teardown fails. Earlier trusted pre-spawn
-setup and later post-child handoff validation still use normal shell failure
-output and are outside this stage enum; cleanup may therefore be the only
-stage text even when the failure began before spawn.
+path and carries no candidate output, data, path, or secret. Every terminal
+trusted namespace and mount-audit rejection calls the current-stage normalizer
+directly. The ERR trap handles ordinary command failures and propagated helper
+`return 125` paths; only reserved normalization, intentional candidate-status
+forwarding, and success `0` retain explicit shell exits. Explicit trusted
+failures therefore produce exact `namespace` or `mount-audit` detail instead
+of falling through to `transport`. `cleanup` reports teardown summary status
+whenever teardown fails. Earlier trusted pre-spawn setup and later post-child
+handoff validation still use normal shell failure output and are outside this
+stage enum; cleanup may therefore be the only stage text even when the failure
+began before spawn.
 The wrapper binds the exact owned cgroup read-only under root-only mode-`0700`
 `/mnt/supervisor` before masking `/sys`. The candidate cannot read, write,
 execute, or traverse that parent, while the exact cgroup child remains

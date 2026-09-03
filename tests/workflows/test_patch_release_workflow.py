@@ -3278,6 +3278,14 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
 
     def test_writable_mount_audit_rejects_unexpected_rw_targets_and_preserves_allowed_private_mounts(self):
         base_section = writable_mount_transport_section_source(self.text)
+        builder = builder_isolation_shell_source(self.text)
+        protocol_start = builder.index("isolated_stage=namespace")
+        protocol_marker = "trap isolated_stage_failure ERR"
+        protocol_end = (
+            builder.index(protocol_marker, protocol_start)
+            + len(protocol_marker)
+        )
+        protocol = builder[protocol_start:protocol_end]
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(
@@ -3316,11 +3324,13 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     [
                         "/bin/bash",
                         "-c",
-                        "set -euo pipefail\n"
+                        "set -Eeuo pipefail\n"
                         "umask 077\n"
                         'TRANSPORT_ROOT="$1"\n'
                         'TRANSPORT_UID="$2"\n'
                         'RECORDS_PATH="$3"\n'
+                        + protocol
+                        + "\nisolated_stage=mount-audit\n"
                         + section,
                         "--",
                         str(transport_root),
@@ -3367,7 +3377,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
                     "rw,relatime",
                 ]
             )
-            self.assertEqual(completed.returncode, 1)
+            self.assertEqual(completed.returncode, 82)
             self.assertIn(
                 "unexpected writable mount: /mnt/name with space",
                 completed.stderr,
@@ -6288,6 +6298,219 @@ exit 37
                     self.assertEqual(completed.stdout, "")
                     self.assertEqual(completed.stderr, "")
 
+    def test_explicit_trusted_failures_use_current_namespace_or_mount_stage(self):
+        builder = builder_isolation_shell_source(self.text)
+        protocol_start = builder.index("isolated_stage=namespace")
+        protocol_marker = "trap isolated_stage_failure ERR"
+        protocol_end = (
+            builder.index(protocol_marker, protocol_start)
+            + len(protocol_marker)
+        )
+        protocol = builder[protocol_start:protocol_end]
+        namespace_start = builder.index('case "$host_runner_temp" in')
+        namespace_end = (
+            builder.index("\nesac", namespace_start) + len("\nesac")
+        )
+        namespace_site = builder[namespace_start:namespace_end]
+        mount_start = builder.index(
+            "for ((index=0; index < "
+            "${#writable_mount_records[@]}; index+=2)); do"
+        )
+        mount_end = builder.index("\ndone", mount_start) + len("\ndone")
+        mount_site = builder[mount_start:mount_end]
+        report = isolated_failure_report_source(self.text)
+
+        cases = (
+            (
+                "namespace",
+                'host_runner_temp="/outside/runner"\n',
+                namespace_site,
+                81,
+                "namespace",
+            ),
+            (
+                "mount-audit",
+                "isolated_stage=mount-audit\n"
+                'writable_mount_records=("/unexpected" "rw,nodev")\n',
+                mount_site,
+                82,
+                "mount-audit",
+            ),
+        )
+        for label, setup, site, status, detail in cases:
+            with self.subTest(stage=label, behavior="fixed"):
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        "set -Eeuo pipefail\n"
+                        + protocol
+                        + "\n"
+                        + setup
+                        + site
+                        + "\n",
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, status)
+                normalized = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        f"builder_status={completed.returncode}\n" + report,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(normalized.returncode, status)
+                self.assertEqual(
+                    normalized.stderr,
+                    "candidate build failed: stage=isolated "
+                    f"detail={detail} exit={status}\n",
+                )
+
+            with self.subTest(stage=label, behavior="explicit-exit-mutation"):
+                mutated_site = site.replace(
+                    "isolated_stage_failure",
+                    "exit 1",
+                    1,
+                )
+                self.assertNotEqual(mutated_site, site)
+                mutated = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        "set -Eeuo pipefail\n"
+                        + protocol
+                        + "\n"
+                        + setup
+                        + mutated_site
+                        + "\n",
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(mutated.returncode, 1)
+                normalized = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        "builder_status=1\n" + report,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(normalized.returncode, 125)
+                self.assertIn(
+                    "detail=transport exit=125",
+                    normalized.stderr,
+                )
+
+        for marker in (
+            'echo "runner temp is outside the masked host tree" >&2\n'
+            "            isolated_stage_failure",
+            'echo "unexpected writable mount: $mount_target" >&2\n'
+            "                  isolated_stage_failure",
+        ):
+            changed = self.text.replace(
+                marker,
+                marker.replace("isolated_stage_failure", "exit 1"),
+                1,
+            )
+            self.assertNotEqual(changed, self.text)
+            self.assertTrue(publisher_boundary_errors(changed))
+
+    def test_builder_isolation_explicit_exit_inventory_is_closed(self):
+        builder = builder_isolation_shell_source(self.text)
+        exits = [
+            line.strip()
+            for line in builder.splitlines()
+            if re.search(r"\bexit(?:\s|$)", line)
+        ]
+        self.assertEqual(
+            exits,
+            [
+                "namespace) exit 81 ;;",
+                "mount-audit) exit 82 ;;",
+                "output-validate) exit 83 ;;",
+                "export) exit 84 ;;",
+                "post-check) exit 85 ;;",
+                "*) exit 125 ;;",
+                '71|72|73|74|75|76) exit "$candidate_status" ;;',
+                "*) exit 77 ;;",
+                "exit 0",
+            ],
+        )
+        returns = [
+            command.strip()
+            for command in publisher_shell_contract.split_bash_simple_command_strings(
+                builder,
+                label="builder explicit return inventory",
+            )
+            if command.strip().startswith("return")
+        ]
+        self.assertEqual(returns.count("return 125"), 40)
+        self.assertEqual(returns.count("return result"), 2)
+        self.assertEqual(returns.count("return value"), 1)
+        self.assertEqual(returns.count("return options"), 1)
+        self.assertEqual(
+            set(returns),
+            {"return 125", "return result", "return value", "return options"},
+        )
+
+    def test_helper_explicit_return_propagates_through_current_mount_stage(self):
+        builder = builder_isolation_shell_source(self.text)
+        protocol_start = builder.index("isolated_stage=namespace")
+        protocol_marker = "trap isolated_stage_failure ERR"
+        protocol_end = (
+            builder.index(protocol_marker, protocol_start)
+            + len(protocol_marker)
+        )
+        protocol = builder[protocol_start:protocol_end]
+        helper_start = builder.index("remove_runtime_transport_file() {")
+        helper_end = builder.index(
+            "\nwritable_mount_records_max_bytes=",
+            helper_start,
+        )
+        helper = builder[helper_start:helper_end]
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="explicit-helper-return-",
+            dir=artifact_root,
+        ) as temporary:
+            completed = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-c",
+                    "set -Eeuo pipefail\n"
+                    + protocol
+                    + "\n"
+                    + helper
+                    + "\n"
+                    + "isolated_stage=mount-audit\n"
+                    + 'remove_runtime_transport_file "$1"\n',
+                    "--",
+                    temporary,
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 82)
+            self.assertEqual(completed.stdout, "")
+            self.assertIn("Is a directory", completed.stderr)
+
     def test_isolated_substage_channel_is_authenticated_and_nonfilesystem(self):
         script = named_step_run_script(
             self.text,
@@ -7940,6 +8163,8 @@ exit 37
             self.assertIn("authenticated supervisor", text)
             self.assertIn("detail=transport exit=125", text)
             self.assertIn("no file, pipe", text)
+            self.assertIn("Explicit trusted", text)
+            self.assertIn("return 125", text)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)
