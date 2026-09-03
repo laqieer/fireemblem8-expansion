@@ -1896,6 +1896,8 @@ def _parse_step(block, job_name, index):
             in " ".join(token for command in values["run"] for token in command)
             or "candidate-launcher.py"
             not in " ".join(token for command in values["run"] for token in command)
+            or "supervisor-launcher.py"
+            not in " ".join(token for command in values["run"] for token in command)
             or "os.closerange(3,"
             not in " ".join(token for command in values["run"] for token in command)
             or "os.execve(candidate_argv[0],"
@@ -1924,8 +1926,24 @@ def _parse_step(block, job_name, index):
             not in " ".join(token for command in values["run"] for token in command)
             or ("builder_cgroup_is_empty",)
             not in values["run"]
-            or ("builder_group_is_empty", "$builder_pgid")
+            or ("builder_group_is_empty", "$builder_session_id")
             not in values["run"]
+            or "builder_session_authenticated=1"
+            not in {token for command in values["run"] for token in command}
+            or "builder_launch_detail=session-ready"
+            not in {token for command in values["run"] for token in command}
+            or "os.setsid()"
+            not in " ".join(token for command in values["run"] for token in command)
+            or "signal.SIGSTOP"
+            not in " ".join(token for command in values["run"] for token in command)
+            or "libc.prctl(1,"
+            not in " ".join(token for command in values["run"] for token in command)
+            or '/bin/kill -TERM "$builder_supervisor_pid"'
+            in " ".join(token for command in values["run"] for token in command)
+            or '/bin/kill -KILL "$builder_supervisor_pid"'
+            in " ".join(token for command in values["run"] for token in command)
+            or "/usr/bin/setsid --wait /usr/bin/timeout"
+            in " ".join(token for command in values["run"] for token in command)
             or ("builder_uid_is_empty", "$builder_uid")
             not in values["run"]
             or ("builder_passwd_entry_absent", "$builder_user")
