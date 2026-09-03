@@ -294,6 +294,12 @@ reject, including dynamic `-C`. The membership decision has no mutable
 supervisor path and exact wrapper/checker PID set. Its AST is checked
 semantically; formatting-only changes remain valid while path, count, or set
 changes reject.
+Split `name()` followed by `{` is normalized as one pending declaration before
+inventory and scope processing, so it cannot hide a sensitive function shadow.
+Leading assignment words and reserved `if`/`then`/loop/negation/group prefixes
+are stripped before dispatch analysis. The checker must occur exactly once on
+the unconditional `builder_main` path; false conditions, dynamic conditions,
+and loops reject despite retaining the exact checker AST.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,
@@ -475,6 +481,8 @@ archival-lane behavior changes.
   membership-state repros, fixed membership-checker runtime/AST mutations,
   canonical cgroup-path missing/duplicate/reassignment/writer mutations,
   single-quoted/escaped/mixed quote-segment controls,
+  split-function shadowing, assignment/control-prefix writer execution, and
+  conditional-checker skip/runtime controls in both semantic validators,
   parsed registry-contract mutations,
   recursive
   command/process-substitution inspection for

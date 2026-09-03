@@ -183,6 +183,12 @@ dynamic, DEBUG, RETURN, and EXIT forms are prohibited. `mapfile` and
 `readarray` callbacks are prohibited, including attached and dynamic `-C`
 options. No mutable `cgroup_members` shell state exists, and any attempt to
 reintroduce that name rejects.
+Function inventory normalization accepts Bash's canonical split
+`name()`/`{` declaration syntax only long enough to bind the pending name to
+the following brace; sensitive shadows and malformed or unbalanced scopes then
+reject normally. Leading assignment words and reserved control prefixes are
+removed before executable dispatch analysis, so they cannot hide writers,
+callbacks, traps, or helper calls.
 Runtime wrapped-unset controls leave `supervisor_cgroup` unbound before the
 safe read, proving the mutation. Array-backed executable slots are always
 rejected by this security guard. Array-backed `command`/`builtin` option,
@@ -300,6 +306,10 @@ canonical positive-decimal grammar, cardinality, and PID set. Empty, malformed,
 signed, whitespace-padded, zero, duplicate, missing-newline, oversized, and
 additional-member snapshots fail before export without signaling another
 process.
+The semantic parser tracks shell control scopes and authorizes the checker
+only once on the unconditional `builder_main` path. `if`, loop, or other
+conditional placement rejects even when the checker heredoc and AST remain
+byte-for-byte valid.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

@@ -1287,13 +1287,17 @@
             "checker-pid"
           ],
           "ordering": "insensitive",
-          "shell_snapshot_state": "absent"
+          "shell_snapshot_state": "absent",
+          "execution_path": "unconditional-builder-main-once"
         },
         "shell_surface": {
           "cgroup_path_initialization": "exact-main-scope-argument-1-once",
           "cgroup_path_mutation": "reject-after-initialization",
           "quote_resolution": "expansion-active-segments-only",
           "literal_dollar_reexpansion": "forbidden",
+          "assignment_prefix_dispatch": "analyze-executable",
+          "control_prefix_dispatch": "analyze-executable",
+          "split_function_declaration": "bind-pending-name-to-brace",
           "nested_braced_parameters": "reject-active",
           "trap": "exact-isolated-err-only",
           "absolute_raw_root_commands": "closed-signatures",

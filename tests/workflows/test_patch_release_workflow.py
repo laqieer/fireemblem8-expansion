@@ -812,6 +812,18 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
             "        }\n"
         ),
         (
+            "        test()\n"
+            "        {\n"
+            "          true\n"
+            "        }\n"
+        ),
+        (
+            "        function test()\n"
+            "        {\n"
+            "          true\n"
+            "        }\n"
+        ),
+        (
             "        shadow_name=mapfile\n"
             '        function "$shadow_name" {\n'
             '          cgroup_members=("$$")\n'
@@ -850,6 +862,27 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         '        trap \'/bin/cat "$cgroup_path/cgroup.procs"\' DEBUG\n',
         "        trap true RETURN\n",
         "        trap true EXIT\n",
+        "        raw_root=/safe\n"
+        '        LC_ALL=C printf -v raw_root %s "$cgroup_path"\n'
+        '        /bin/cat "$raw_root"/cgroup.proc? > /dev/null\n',
+        "        raw_root=/safe\n"
+        "        if true; then\n"
+        '          printf -v raw_root %s "$cgroup_path"\n'
+        "        fi\n"
+        '        /bin/cat "$raw_root"/cgroup.proc? > /dev/null\n',
+        "        raw_root=/safe\n"
+        "        if false; then\n"
+        '          printf -v raw_root %s "$cgroup_path"\n'
+        "        fi\n"
+        '        /bin/cat "$raw_root"/cgroup.proc? > /dev/null\n',
+        "        raw_root=/safe\n"
+        "        true && "
+        'printf -v raw_root %s "$cgroup_path"\n'
+        '        /bin/cat "$raw_root"/cgroup.proc? > /dev/null\n',
+        "        raw_root=/safe\n"
+        "        ! "
+        'printf -v raw_root %s "$cgroup_path"\n'
+        '        /bin/cat "$raw_root"/cgroup.proc? > /dev/null\n',
         "        command trap true DEBUG\n",
         "        trap_command=trap\n"
         '        "$trap_command" true DEBUG\n',
@@ -1085,6 +1118,41 @@ def generate_membership_checker_ast_mutations(workflow: str):
         if changed == workflow:
             raise AssertionError(
                 f"{label} membership checker mutation marker differs"
+            )
+        yield label, changed
+
+
+def generate_membership_checker_control_flow_mutations(workflow: str):
+    checker = '        /usr/bin/python3 -I -S - "$$" <<\'PY\'\n'
+    checker_end = "        PY\n        isolated_stage=export\n"
+    wrappers = {
+        "if-false": (
+            "        if false; then\n",
+            "        fi\n",
+        ),
+        "if-dynamic": (
+            '        if test "$builder_uid" -gt 0; then\n',
+            "        fi\n",
+        ),
+        "for-loop": (
+            "        for checker_attempt in one; do\n",
+            "        done\n",
+        ),
+        "while-false": (
+            "        while false; do\n",
+            "        done\n",
+        ),
+    }
+    for label, (prefix, suffix) in wrappers.items():
+        changed = workflow.replace(checker, prefix + checker, 1)
+        changed = changed.replace(
+            checker_end,
+            "        PY\n" + suffix + "        isolated_stage=export\n",
+            1,
+        )
+        if changed == workflow:
+            raise AssertionError(
+                f"{label} membership control mutation marker differs"
             )
         yield label, changed
 
@@ -7681,6 +7749,14 @@ exit 37
                 "raw_root=/safe\n"
                 'raw_root="$1"\n'
                 '/bin/cat "$raw_root"/cgroup.proc?\n',
+                "raw_root=/safe\n"
+                'LC_ALL=C printf -v raw_root %s "$1"\n'
+                '/bin/cat "$raw_root"/cgroup.proc?\n',
+                "raw_root=/safe\n"
+                "if true; then\n"
+                '  printf -v raw_root %s "$1"\n'
+                "fi\n"
+                '/bin/cat "$raw_root"/cgroup.proc?\n',
             )
             for script in cases:
                 with self.subTest(writer=script.splitlines()[1]):
@@ -8434,6 +8510,32 @@ exit 37
                         "supervisor_cgroup: unbound variable",
                         completed.stderr,
                     )
+
+    def test_split_function_declaration_can_shadow_test_and_is_rejected(self):
+        script = (
+                    "test()\n"
+                    "{\n"
+                    "  return 0\n"
+                    "}\n"
+                    "if test false = true; then\n"
+                    "  printf 'shadowed\\n'\n"
+                    "fi\n"
+        )
+        completed = subprocess.run(
+                    ["/bin/bash", "-c", script],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout, "shadowed\n")
+        self.assertTrue(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        script,
+                        label="split test shadow runtime",
+                    )
+        )
 
     def test_reduced_shell_surfaces_execute_and_fail_closed(self):
         artifact_root = ROOT / "build" / "test-artifacts"
@@ -11021,6 +11123,7 @@ exit 37
                 "members": ["wrapper-pid", "checker-pid"],
                 "ordering": "insensitive",
                 "shell_snapshot_state": "absent",
+                "execution_path": "unconditional-builder-main-once",
             },
             "shell_surface": {
                 "cgroup_path_initialization": (
@@ -11029,6 +11132,11 @@ exit 37
                 "cgroup_path_mutation": "reject-after-initialization",
                 "quote_resolution": "expansion-active-segments-only",
                 "literal_dollar_reexpansion": "forbidden",
+                "assignment_prefix_dispatch": "analyze-executable",
+                "control_prefix_dispatch": "analyze-executable",
+                "split_function_declaration": (
+                    "bind-pending-name-to-brace"
+                ),
                 "nested_braced_parameters": "reject-active",
                 "trap": "exact-isolated-err-only",
                 "absolute_raw_root_commands": "closed-signatures",
@@ -11184,6 +11292,10 @@ exit 37
             (("candidate_unknown_status",), 78),
             (("membership_reader",), "mapfile"),
             (("membership_checker", "maximum_bytes"), 8192),
+            (
+                ("membership_checker", "execution_path"),
+                "conditional",
+            ),
             (("shell_surface", "trap"), "allow"),
             (
                 ("shell_surface", "cgroup_path_mutation"),
@@ -11192,6 +11304,10 @@ exit 37
             (
                 ("shell_surface", "quote_resolution"),
                 "shlex-text-only",
+            ),
+            (
+                ("shell_surface", "assignment_prefix_dispatch"),
+                "ignore",
             ),
             (
                 (
@@ -11579,6 +11695,65 @@ exit 37
                 ):
                     self.assertIn(
                         "publisher builder isolation shell differs",
+                        publisher_boundary_errors(changed),
+                    )
+
+    def test_membership_checker_must_be_on_unconditional_main_path(self):
+        builder = builder_isolation_shell_source(self.text)
+        introducer = (
+            publisher_shell_contract.PATCH_RELEASE_MEMBERSHIP_CHECKER_INTRODUCER
+        )
+        start = builder.index(introducer)
+        end = builder.index("\nPY", start) + len("\nPY")
+        checker = builder[start:end]
+        for label, prefix, suffix in (
+            ("if-false", "if false; then\n", "\nfi"),
+            ("while-false", "while false; do\n", "\ndone"),
+        ):
+            with self.subTest(runtime_wrapper=label):
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        prefix
+                        + checker
+                        + suffix
+                        + "\nprintf 'export-proceeded\\n'\n",
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(
+                    completed.stdout,
+                    "export-proceeded\n",
+                )
+
+        with (
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_patch_release_run_script_identity",
+            ),
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_builder_isolation_shell_identity",
+            ),
+        ):
+            for label, changed in (
+                generate_membership_checker_control_flow_mutations(
+                    self.text
+                )
+            ):
+                with self.subTest(checker_control_flow=label):
+                    self.assertTrue(
+                        workflow_has_raw_builder_cgroup_membership_read(
+                            changed
+                        )
+                    )
+                    self.assertIn(
+                        "raw builder cgroup membership read differs",
                         publisher_boundary_errors(changed),
                     )
 

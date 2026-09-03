@@ -2726,6 +2726,30 @@ def _shell_function_declaration(
     return False, None, False
 
 
+def _normalize_split_function_declarations(
+    commands: tuple[str, ...],
+) -> tuple[str, ...]:
+    normalized: list[str] = []
+    index = 0
+    while index < len(commands):
+        command = commands[index].strip()
+        pending = re.fullmatch(
+            r"(?:[A-Za-z_][A-Za-z0-9_]*\s*\(\s*\)"
+            r"|function\s+[A-Za-z_][A-Za-z0-9_]*"
+            r"(?:\s*\(\s*\))?)",
+            command,
+        )
+        if pending is not None:
+            if index + 1 >= len(commands) or commands[index + 1] != "{":
+                raise ValueError("split shell function declaration differs")
+            normalized.append(command + " {")
+            index += 2
+            continue
+        normalized.append(commands[index])
+        index += 1
+    return tuple(normalized)
+
+
 def _shell_function_definitions(
     commands: tuple[str, ...],
 ) -> tuple[dict[str, tuple[str, ...]], Counter[tuple[str, str]]]:
@@ -3004,6 +3028,7 @@ def _helper_call_has_sensitive_arguments(
     function_bodies: dict[str, tuple[str, ...]],
     aliases: dict[str, str],
 ) -> bool:
+    tokens = _strip_shell_command_prefixes(tokens)
     if not tokens:
         return False
     executable = tokens[0]
@@ -3245,6 +3270,38 @@ def _assignment_value_has_dynamic_shell_syntax(
     )
 
 
+def _is_shell_assignment_word(token: str) -> bool:
+    plain = token
+    for marker in (
+        _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+        _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+        _AMBIGUOUS_TRACKED_PARAMETER_MARKER,
+        _RAW_CGROUP_ROOT_MARKER,
+    ):
+        plain = plain.replace(marker, "")
+    return bool(
+        _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(plain)
+        or _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(plain)
+    )
+
+
+def _strip_shell_command_prefixes(
+    tokens: tuple[str, ...],
+) -> tuple[str, ...]:
+    stripped = tokens
+    while stripped:
+        changed = False
+        while stripped and stripped[0] in _SIMPLE_COMMAND_PREFIXES:
+            stripped = stripped[1:]
+            changed = True
+        while stripped and _is_shell_assignment_word(stripped[0]):
+            stripped = stripped[1:]
+            changed = True
+        if not changed:
+            break
+    return stripped
+
+
 def _resolve_tokens_for_alias_state(
     tokens: tuple[_ShellToken, ...],
     aliases: dict[str, str],
@@ -3291,8 +3348,9 @@ def _resolve_tokens_for_alias_state(
 def _normalize_shell_builtin_wrappers(
     tokens: tuple[str, ...],
 ) -> tuple[str, ...] | None:
-    normalized = tokens
+    normalized = _strip_shell_command_prefixes(tokens)
     for _depth in range(8):
+        normalized = _strip_shell_command_prefixes(normalized)
         if not normalized:
             return ()
         executable = posixpath.basename(normalized[0])
@@ -4011,13 +4069,17 @@ def has_forbidden_raw_builder_cgroup_membership_read(
     reviewed_trap_count = 0
     cgroup_path_initializations = 0
     cgroup_path_initialized = False
+    membership_checker_count = 0
+    control_stack: list[str] = []
     try:
         semantic_script = _strip_patch_release_parser_heredoc_bodies(
             script
         )
-        commands = split_bash_simple_command_strings(
-            semantic_script,
-            label=label,
+        commands = _normalize_split_function_declarations(
+            split_bash_simple_command_strings(
+                semantic_script,
+                label=label,
+            )
         )
         if re.search(r"\bcgroup_members\b", semantic_script):
             return True
@@ -4051,6 +4113,12 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 function_stack.append(function_name)
                 continue
             if command_text == "}":
+                if (
+                    function_stack
+                    and function_stack[-1] == "builder_main"
+                    and control_stack
+                ):
+                    return True
                 if function_depth > 0:
                     alias_scopes.pop()
                 function_depth = max(0, function_depth - 1)
@@ -4059,6 +4127,20 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 continue
             if function_stack and function_stack[-1] != "builder_main":
                 continue
+            first_word = command_text.split(maxsplit=1)[0]
+            if first_word in {"case", "for", "if", "until", "while"}:
+                control_stack.append(first_word)
+            elif first_word in {"done", "esac", "fi"}:
+                if not control_stack:
+                    return True
+                expected = {
+                    "done": {"for", "until", "while"},
+                    "esac": {"case"},
+                    "fi": {"if"},
+                }[first_word]
+                if control_stack[-1] not in expected:
+                    return True
+                control_stack.pop()
             aliases = alias_scopes[-1]
             tokens = _parse_shell_tokens(command_text, label=label)
             if any(
@@ -4138,6 +4220,13 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 "$$",
                 "<<PY",
             ):
+                membership_checker_count += 1
+                if (
+                    membership_checker_count != 1
+                    or control_stack
+                    or function_stack != ["builder_main"]
+                ):
+                    return True
                 if (
                     supervisor_assignments == 1
                     and aliases.get("supervisor_cgroup")
@@ -4380,6 +4469,8 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 or aliases.get("cgroup_path")
                 != _RAW_CGROUP_ROOT_MARKER
             ):
+                return True
+            if membership_checker_count != 1 or control_stack:
                 return True
         return False
     except ValueError:
