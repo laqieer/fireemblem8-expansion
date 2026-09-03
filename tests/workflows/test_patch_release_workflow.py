@@ -10351,7 +10351,15 @@ exit 37
         ) as temporary:
             sandbox = Path(temporary)
             for name, identity_override, expected_detail in (
-                ("parent-pgid", "", "session-parent"),
+                (
+                    "parent-pgid",
+                    "read_builder_identity() {\n"
+                    '  printf "%s %s %s S 1" '
+                    '"$builder_supervisor_parent_pid" '
+                    '"$builder_supervisor_pid" "$shell_pgid"\n'
+                    "}\n",
+                    "session-parent",
+                ),
                 (
                     "missing-identity",
                     "read_builder_identity() { return 1; }\n",
