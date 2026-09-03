@@ -2515,6 +2515,38 @@ def _normalized_command_creates_nameref(
     return False
 
 
+def _normalized_command_changes_dispatch(
+    tokens: tuple[str, ...],
+) -> bool:
+    dispatch_builtins = {
+        "alias",
+        "enable",
+        "hash",
+        "shopt",
+        "unalias",
+    }
+    normalized = _normalize_shell_builtin_wrappers(tokens)
+    if normalized is None:
+        return any(
+            posixpath.basename(token) in dispatch_builtins
+            or _AMBIGUOUS_ARRAY_ALIAS_MARKER in token
+            or _AMBIGUOUS_DYNAMIC_ALIAS_MARKER in token
+            for token in tokens
+        )
+    if not normalized:
+        return False
+    executable = posixpath.basename(normalized[0])
+    if executable in dispatch_builtins:
+        return True
+    if executable != "set":
+        return False
+    arguments = normalized[1:]
+    return any(
+        argument in {"-h", "+h", "hashall", "posix"}
+        for argument in arguments
+    )
+
+
 def _ambiguous_array_command_is_forbidden(
     tokens: tuple[str, ...],
 ) -> bool:
@@ -2748,6 +2780,10 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 resolved_token_texts
             ):
                 return True
+            if _normalized_command_changes_dispatch(
+                resolved_token_texts
+            ):
+                return True
             if _normalized_command_creates_nameref(
                 resolved_token_texts
             ):
@@ -2796,6 +2832,14 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 )
                 if indexed_assignment is not None:
                     name = indexed_assignment.group("name")
+                    if name in {
+                        "BASHOPTS",
+                        "BASH_ENV",
+                        "ENV",
+                        "PATH",
+                        "SHELLOPTS",
+                    }:
+                        return True
                     if name == "supervisor_cgroup":
                         return True
                     index = _resolve_shell_aliases(
@@ -2839,6 +2883,14 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 if assignment is None:
                     continue
                 name = assignment.group("name")
+                if name in {
+                    "BASHOPTS",
+                    "BASH_ENV",
+                    "ENV",
+                    "PATH",
+                    "SHELLOPTS",
+                }:
+                    return True
                 value = _resolve_shell_aliases(
                     assignment.group("value"),
                     aliases,

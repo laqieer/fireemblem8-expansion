@@ -290,6 +290,13 @@ fail closed for declare/typeset/local/export/readonly. Checked transport
 readers use fixed result arrays instead of `local -n`. Runtime controls prove
 nameref `unset`, assignment, and redirected `read` mutate the underlying
 supervisor alias; ordinary non-`n` declarations remain valid.
+Alias, unalias, shopt, enable, and hash dispatch configuration is prohibited
+through direct, `command`/`builtin`, aliased, dynamic, or array-backed forms.
+All shopt modes, including query and clustered options for `expand_aliases`,
+reject. BASHOPTS/SHELLOPTS/BASH_ENV/ENV/PATH and hashall/POSIX dispatch
+configuration reject, while query-only `command -v/-V`, ordinary `set ±e`,
+and current commands remain valid. An executable runtime alias dispatches
+`printf -v` and rewrites the trusted supervisor alias without the guard.
 Raw-root filename
 glob, brace, bracket, extglob, command/process/arithmetic substitution, tilde,
 and other dynamic syntax fail closed. Executable `cgroup{.,_}procs` and
@@ -393,7 +400,8 @@ archival-lane behavior changes.
   brace/glob filename controls, dynamic scalar alias sink mutations and
   command-substitution/backtick/transform runtime controls, broad nameref
   declaration mutations and unset/assignment/redirected-read runtime proofs,
-  recursive
+  alias/unalias/shopt/enable/hash and shell-option environment mutations plus
+  the executable expand-aliases rewrite proof, recursive
   command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions
   through inline `else`/brace/case/loop forms, `setsid`-wrapped and common

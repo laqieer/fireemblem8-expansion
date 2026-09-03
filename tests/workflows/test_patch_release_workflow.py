@@ -577,6 +577,54 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         "        create_nameref() { "
         "declare -n target=supervisor_cgroup; }\n"
         "        create_nameref\n",
+        "        shopt -s expand_aliases\n"
+        "        alias rewrite='printf -v supervisor_cgroup %s /mnt/home'\n"
+        "        rewrite\n",
+        "        shopt -u expand_aliases\n",
+        "        shopt -q expand_aliases\n",
+        "        shopt -su expand_aliases\n",
+        "        shopt -sq expand_aliases\n",
+        "        command shopt -s expand_aliases\n",
+        "        command -- shopt -q expand_aliases\n",
+        "        builtin shopt -s expand_aliases\n",
+        "        dispatch=shopt\n"
+        '        "$dispatch" -s expand_aliases\n',
+        '        dispatch="$(printf shopt)"\n'
+        '        "$dispatch" -s expand_aliases\n',
+        "        shopt_option=-s\n"
+        '        shopt "$shopt_option" expand_aliases\n',
+        '        shopt_option="$(printf -- -s)"\n'
+        '        shopt "$shopt_option" expand_aliases\n',
+        "        shopt_options[0]=-s\n"
+        '        shopt "${shopt_options[0]}" expand_aliases\n',
+        "        alias rewrite='unset supervisor_cgroup'\n",
+        "        command alias rewrite='unset supervisor_cgroup'\n",
+        "        builtin alias rewrite='unset supervisor_cgroup'\n",
+        "        dispatch=alias\n"
+        '        "$dispatch" rewrite="unset supervisor_cgroup"\n',
+        '        dispatch="$(printf alias)"\n'
+        '        "$dispatch" rewrite="unset supervisor_cgroup"\n',
+        "        unalias rewrite\n",
+        "        command unalias rewrite\n",
+        "        builtin unalias rewrite\n",
+        "        enable -n printf\n",
+        "        command enable -n printf\n",
+        "        builtin enable -n printf\n",
+        "        enable -f /dev/null replacement\n",
+        "        hash -p /bin/false printf\n",
+        "        command hash -r\n",
+        "        builtin hash -r\n",
+        "        set -h\n",
+        "        set +h\n",
+        "        set -o hashall\n",
+        "        set -o posix\n",
+        "        BASHOPTS=expand_aliases\n",
+        "        SHELLOPTS=hashall\n",
+        "        BASH_ENV=/dev/null\n",
+        "        ENV=/dev/null\n",
+        "        PATH=/mnt/home\n",
+        "        /usr/bin/env BASHOPTS=expand_aliases /bin/bash -c true\n",
+        "        eval 'shopt -s expand_aliases'\n",
     )
     for index, mutation in enumerate(supervisor_reassignments):
         changed = workflow.replace(marker, mutation + marker, 1)
@@ -6672,6 +6720,8 @@ exit 37
         for unrelated_wrapped in (
             "command -v unset\n",
             "command -V supervisor_cgroup\n",
+            "command -v alias\n",
+            "command -V shopt\n",
             "command -pv supervisor_cgroup\n",
             "command -vp supervisor_cgroup\n",
             "command -pV supervisor_cgroup\n",
@@ -6686,6 +6736,8 @@ exit 37
             "command -- printf '%s\\n' unrelated\n",
             "command -p -- printf '%s\\n' unrelated\n",
             "builtin printf '%s\\n' unrelated\n",
+            "set -e\n",
+            "set +e\n",
         ):
             with self.subTest(
                 unrelated_wrapped=unrelated_wrapped.strip()
@@ -7005,6 +7057,31 @@ exit 37
                 else:
                     self.assertEqual(completed.returncode, 0)
                     self.assertEqual(completed.stderr, "")
+
+    def test_alias_expansion_runtime_rewrites_supervisor_and_is_rejected(self):
+        script = (
+            "shopt -s expand_aliases\n"
+            "alias rewrite='printf -v supervisor_cgroup %s /mnt/home'\n"
+            'supervisor_cgroup="/mnt/supervisor/cgroup"\n'
+            "rewrite\n"
+            'test "$supervisor_cgroup" = /mnt/home\n'
+        )
+        completed = subprocess.run(
+            ["/bin/bash", "-c", script],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout, "")
+        self.assertEqual(completed.stderr, "")
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                script,
+                label="alias rewrite runtime",
+            )
+        )
 
     def test_wrapped_unset_runtime_breaks_safe_read_and_is_rejected(self):
         artifact_root = ROOT / "build" / "test-artifacts"
@@ -9430,6 +9507,9 @@ exit 37
             self.assertIn("nameref", text.lower())
             self.assertIn("local -n", text)
             self.assertIn("result arrays", text)
+            self.assertIn("expand_aliases", text)
+            self.assertIn("enable", text)
+            self.assertIn("hash", text)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)

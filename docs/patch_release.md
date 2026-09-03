@@ -170,6 +170,14 @@ including eval/source/function ambiguity. Checked transport readers use fixed
 result arrays rather than `local -n`. Runtime controls prove plain `unset`,
 assignment, and redirected `read` write through a nameref to the underlying
 supervisor alias; ordinary non-`n` declarations remain valid.
+The reviewed builder also permits no alias/unalias/shopt/enable/hash dispatch
+configuration. Direct, `command`/`builtin`, aliased, dynamic, and array-backed
+forms all reject; shopt set/unset/query and clustered option forms reject
+uniformly, including `expand_aliases`. BASHOPTS, SHELLOPTS, BASH_ENV, ENV, PATH,
+`set -h/+h`, hashall, and POSIX-mode mutation fail closed. Runtime proves an
+enabled alias can otherwise dispatch `printf -v` and rewrite the trusted
+supervisor alias. Query-only `command -v/-V`, ordinary `set ±e`, and current
+non-alias commands remain valid.
 Tracked raw-root filename components also reject
 glob, brace, bracket, extglob, command/process/arithmetic substitution, tilde,
 and other dynamic syntax unless the command is the exact join write.
