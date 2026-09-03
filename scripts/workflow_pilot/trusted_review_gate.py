@@ -203,6 +203,28 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _git_environment(*, offline: bool) -> dict[str, str]:
+    environment = {
+        "GIT_CONFIG_COUNT": "3",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_KEY_0": "gc.auto",
+        "GIT_CONFIG_KEY_1": "maintenance.auto",
+        "GIT_CONFIG_KEY_2": "maintenance.autoDetach",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_SYSTEM": "/dev/null",
+        "GIT_CONFIG_VALUE_0": "0",
+        "GIT_CONFIG_VALUE_1": "false",
+        "GIT_CONFIG_VALUE_2": "false",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_TERMINAL_PROMPT": "0",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+    }
+    if offline:
+        environment["GIT_NO_LAZY_FETCH"] = "1"
+    return environment
+
+
 def _format_time(value: datetime) -> str:
     return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -461,16 +483,7 @@ def persist_original_receipt(
 
 
 def _minimal_git(root: Path, *arguments: str) -> bytes:
-    environment = {
-        "HOME": str(root),
-        "LC_ALL": "C",
-        "PATH": "/usr/bin:/bin",
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-        "GIT_CONFIG_NOSYSTEM": "1",
-        "GIT_NO_REPLACE_OBJECTS": "1",
-        "GIT_NO_LAZY_FETCH": "1",
-        "GIT_TERMINAL_PROMPT": "0",
-    }
+    environment = {"HOME": str(root), **_git_environment(offline=True)}
     completed = subprocess.run(
         (GIT, "--no-replace-objects", "-C", str(root), *arguments),
         env=environment,

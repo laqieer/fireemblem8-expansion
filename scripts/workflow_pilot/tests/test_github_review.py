@@ -1839,6 +1839,15 @@ class TrustedGitHubGateTests(unittest.TestCase):
             check=False,
             capture_output=True,
         )
+    def test_trusted_startup_git_uses_shared_offline_environment(self):
+        captured = {}
+        hostile = {"ALL_PROXY": "socks5://attacker", "BASH_ENV": "/attacker/bashenv", "ENV": "/attacker/env", "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "maintenance.auto", "GIT_CONFIG_PARAMETERS": "'gc.auto'='9999'", "GIT_CONFIG_VALUE_0": "true", "HTTP_PROXY": "http://attacker", "HTTPS_PROXY": "https://attacker", "PYTHONPATH": "/attacker/python"}
+        expected = {"HOME": str(self.trusted), **reporter.git_environment(offline=True)}
+        def fake_run(command, *, env, check, capture_output, timeout):
+            captured.update(command=command, env=dict(env), timeout=timeout); return subprocess.CompletedProcess(command, 0, b"trusted-output", b"")
+        with mock.patch.dict(os.environ, hostile, clear=False), mock.patch.object(trusted_review_gate.subprocess, "run", side_effect=fake_run):
+            self.assertEqual(trusted_review_gate._minimal_git(self.trusted, "rev-parse", "HEAD"), b"trusted-output")
+        self.assertEqual(captured["command"], (trusted_review_gate.GIT, "--no-replace-objects", "-C", str(self.trusted), "rev-parse", "HEAD")); self.assertEqual(captured["timeout"], 60); self.assertEqual(captured["env"], expected)
     def test_trusted_startup_verifies_clean_full_import_graph_before_secrets(self):
         self.assertEqual(
             trusted_review_gate.TRUSTED_REQUIRED_PATHS,
