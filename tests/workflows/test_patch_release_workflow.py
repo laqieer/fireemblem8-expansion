@@ -258,6 +258,27 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         '"$supervisor_cgroup/cgroup.procs"\n'
     )
     mutations = [
+        '        /bin/cat "$1/cgroup.procs" > /dev/null\n',
+        '        mapfile -t leaked < "${1}/cgroup.procs"\n',
+        "        readarray -t leaked < $1/cgroup.procs\n",
+        '        /usr/bin/env /bin/cat "$1/cgroup.procs" > /dev/null\n',
+        "        /bin/bash -c "
+        "'/bin/cat \"$1/cgroup.procs\" > /dev/null'\n",
+        '        raw_root="$1"\n'
+        '        /bin/cat "$raw_root/cgroup.procs" > /dev/null\n',
+        '        raw_members="$1/cgroup"\n'
+        "        raw_members+=.procs\n"
+        '        /bin/cat "$raw_members" > /dev/null\n',
+        '        raw[0]="$1"\n'
+        '        mapfile -t leaked < "${raw[0]}/cgroup.procs"\n',
+        '        raw[key]="${1}"\n'
+        '        readarray -t leaked < "${raw[key]}/cgroup.procs"\n',
+        "        indirect_position=1\n"
+        '        /bin/cat "${!indirect_position}/cgroup.procs" > /dev/null\n',
+        '        /bin/cat "$unknown_root/cgroup.procs" > /dev/null\n',
+        "        unknown_root=/safe\n"
+        "        unknown_leaf=cgroup.procs\n"
+        '        /bin/cat "$unknown_root/$unknown_leaf" > /dev/null\n',
         '        mapfile -t leaked < "$cgroup_path/cgroup.procs"\n',
         '        /bin/cat -- "${cgroup_path}/cgroup.procs" > /dev/null\n',
         '        /usr/bin/sort -n "$cgroup_path"/cgroup.procs > /dev/null\n',
@@ -337,6 +358,25 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         "${#cgroup_path}/cgroup.procs",
         "${!cgroup_path}/cgroup.procs",
     )
+    positional_parameter_expressions = (
+        "${1:-/fallback}/cgroup.procs",
+        "${1:=/fallback}/cgroup.procs",
+        "${1:?required}/cgroup.procs",
+        "${1:+/alternate}/cgroup.procs",
+        "${1#prefix}/cgroup.procs",
+        "${1##prefix}/cgroup.procs",
+        "${1%suffix}/cgroup.procs",
+        "${1%%suffix}/cgroup.procs",
+        "${1:0}/cgroup.procs",
+        "${1^}/cgroup.procs",
+        "${1^^}/cgroup.procs",
+        "${1,}/cgroup.procs",
+        "${1,,}/cgroup.procs",
+        "${1@Q}/cgroup.procs",
+        "${1@P}/cgroup.procs",
+        "${#1}/cgroup.procs",
+        "${!1}/cgroup.procs",
+    )
     mutations.extend(
         f'        /bin/cat "{expression}" > /dev/null\n'
         for expression in parameter_expressions
@@ -344,6 +384,14 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
     mutations.extend(
         f"        /bin/cat {expression} > /dev/null\n"
         for expression in parameter_expressions
+    )
+    mutations.extend(
+        f'        /bin/cat "{expression}" > /dev/null\n'
+        for expression in positional_parameter_expressions
+    )
+    mutations.extend(
+        f"        /bin/cat {expression} > /dev/null\n"
+        for expression in positional_parameter_expressions
     )
     mutations.extend(
         (
@@ -6435,6 +6483,20 @@ exit 37
                         label="unrelated array control",
                     )
                 )
+        for unrelated_positional in (
+            'printf "%s\\n" "$2"\n',
+            'printf "%s\\n" "${2:-fallback}"\n',
+            'other="$2"\nprintf "%s\\n" "$other"\n',
+        ):
+            with self.subTest(
+                unrelated_positional=unrelated_positional.splitlines()[0]
+            ):
+                self.assertFalse(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        builder + "\n" + unrelated_positional,
+                        label="unrelated positional control",
+                    )
+                )
         for label, changed in generate_raw_builder_cgroup_membership_mutations(
             self.text
         ):
@@ -6498,6 +6560,59 @@ exit 37
                 publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
                     script,
                     label="indexed raw cgroup runtime",
+                )
+            )
+
+    def test_positional_alias_runtime_reaches_raw_membership_and_is_rejected(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="positional-raw-cgroup-read-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            raw_cgroup = sandbox / "raw"
+            supervisor_cgroup = sandbox / "supervisor"
+            raw_cgroup.mkdir()
+            supervisor_cgroup.mkdir()
+            (raw_cgroup / "cgroup.procs").write_text(
+                "raw-positional-marker\n",
+                encoding="ascii",
+            )
+            (supervisor_cgroup / "cgroup.procs").write_text(
+                "safe-positional-marker\n",
+                encoding="ascii",
+            )
+            script = (
+                'supervisor_cgroup="$2"\n'
+                'mapfile -t safe < "$supervisor_cgroup/cgroup.procs"\n'
+                'raw_root="$1"\n'
+                'mapfile -t leaked < "${raw_root%/}/cgroup.procs"\n'
+                'printf "%s\\n" "${safe[0]}" "${leaked[0]}"\n'
+            )
+            completed = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-c",
+                    script,
+                    "--",
+                    str(raw_cgroup),
+                    str(supervisor_cgroup),
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                completed.stdout,
+                "safe-positional-marker\nraw-positional-marker\n",
+            )
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    script,
+                    label="positional raw cgroup runtime",
                 )
             )
 
@@ -8741,6 +8856,9 @@ exit 37
             self.assertIn("Indexed and associative", text)
             self.assertIn("${raw[0]}", text)
             self.assertIn("unrelated arrays", text.lower())
+            self.assertIn("${1}", text)
+            self.assertIn("unknown", text.lower())
+            self.assertIn("positional", text.lower())
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)

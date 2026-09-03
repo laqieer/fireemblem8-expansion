@@ -129,7 +129,13 @@ expansions are not evaluated as a full Bash array model: tracked values reject
 immediately, while ambiguous indexed use with `cgroup.procs` fails closed.
 The runtime control demonstrates that `${raw[0]}` can otherwise read the raw
 membership marker despite the safe supervisor read; the semantic guard rejects
-that executable script. Unrelated arrays remain accepted.
+that executable script. Builder positional argument `$1` and `${1}` are seeded
+as the same raw root, including braced operators, indirection, scalar/array
+aliases, and appends. A second runtime control proves a positional alias can
+otherwise read the raw marker. Any `cgroup.procs` reference not structurally
+equal to the exact join write or supervisor `mapfile` read fails closed, even
+from an unknown root; unrelated arrays and other positional parameters remain
+accepted.
 After the isolated builder is spawned, trusted wrapper failures emit
 only fixed `launch`, `isolated`, or `cleanup` stage codes with numeric exits,
 never candidate-controlled output. `launch` covers only the bounded,

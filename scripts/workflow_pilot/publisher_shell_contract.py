@@ -121,6 +121,9 @@ _SHELL_BRACED_PARAMETER_RE = re.compile(r"\$\{(?P<body>[^{}]*)\}")
 _SHELL_PLAIN_VARIABLE_REFERENCE_RE = re.compile(
     r"\$(?P<name>[A-Za-z_][A-Za-z0-9_]*)"
 )
+_SHELL_POSITIONAL_REFERENCE_RE = re.compile(
+    r"\$(?P<position>[1-9][0-9]*)"
+)
 _SHELL_ALIAS_ASSIGNMENT_RE = re.compile(
     r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)(?P<append>\+)?=(?P<value>.*)"
 )
@@ -2220,7 +2223,10 @@ def _resolve_shell_aliases(text: str, aliases: dict[str, str]) -> str:
             indirect = body.startswith("!")
             length = body.startswith("#")
             subject = body[1:] if indirect or length else body
-            name_match = re.match(r"[A-Za-z_][A-Za-z0-9_]*", subject)
+            name_match = re.match(
+                r"(?:[A-Za-z_][A-Za-z0-9_]*|[1-9][0-9]*)",
+                subject,
+            )
             if name_match is None:
                 return match.group(0)
             name = name_match.group(0)
@@ -2271,12 +2277,24 @@ def _resolve_shell_aliases(text: str, aliases: dict[str, str]) -> str:
             changed = True
             return value
 
+        def replace_positional(match: re.Match[str]) -> str:
+            nonlocal changed
+            value = aliases.get(match.group("position"))
+            if value is None:
+                return match.group(0)
+            changed = True
+            return value
+
         updated = _SHELL_BRACED_PARAMETER_RE.sub(
             replace_braced,
             resolved,
         )
         updated = _SHELL_PLAIN_VARIABLE_REFERENCE_RE.sub(
             replace_plain,
+            updated,
+        )
+        updated = _SHELL_POSITIONAL_REFERENCE_RE.sub(
+            replace_positional,
             updated,
         )
         resolved = updated
@@ -2290,20 +2308,32 @@ def has_forbidden_raw_builder_cgroup_membership_read(
     *,
     label: str,
 ) -> bool:
-    aliases = {"cgroup_path": _RAW_CGROUP_ROOT_MARKER}
+    aliases = {
+        "1": _RAW_CGROUP_ROOT_MARKER,
+        "cgroup_path": _RAW_CGROUP_ROOT_MARKER,
+    }
     try:
         commands = split_bash_simple_command_strings(script, label=label)
         for command_text in commands:
             tokens = _parse_shell_tokens(command_text, label=label)
-            if _token_texts(tokens) == (
-                "printf",
-                "%s\\n",
-                "$$",
-                ">",
-                "$cgroup_path/cgroup.procs",
-            ):
-                continue
             token_texts = _token_texts(tokens)
+            if token_texts in {
+                (
+                    "printf",
+                    "%s\\n",
+                    "$$",
+                    ">",
+                    "$cgroup_path/cgroup.procs",
+                ),
+                (
+                    "mapfile",
+                    "-t",
+                    "cgroup_members",
+                    "<",
+                    "$supervisor_cgroup/cgroup.procs",
+                ),
+            }:
+                continue
             array_declaration = (
                 bool(token_texts)
                 and posixpath.basename(token_texts[0])
@@ -2328,10 +2358,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     and "cgroup.procs" in resolved
                 ):
                     return True
-                if (
-                    _RAW_CGROUP_ROOT_MARKER in resolved
-                    and "cgroup.procs" in resolved
-                ):
+                if "cgroup.procs" in resolved:
                     return True
                 indexed_assignment = (
                     _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(token.text)
