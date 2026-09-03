@@ -6778,6 +6778,168 @@ exit 37
                         pass
                     process.wait(timeout=5)
 
+    def test_stopped_supervisor_dies_with_parent_before_resume_without_orphan(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="supervisor-parent-death-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            launcher = sandbox / "supervisor-launcher.py"
+            launcher.write_text(
+                supervisor_launcher_source(self.text),
+                encoding="ascii",
+            )
+            launcher.chmod(0o400)
+            identity_path = sandbox / "identity.json"
+            parent = sandbox / "parent.py"
+            parent.write_text(
+                textwrap.dedent(
+                    """\
+                    import json
+                    import os
+                    from pathlib import Path
+                    import subprocess
+                    import sys
+                    import time
+
+
+                    def identity(pid):
+                        record = Path(f"/proc/{pid}/stat").read_text(
+                            encoding="ascii"
+                        )
+                        marker = record.rfind(") ")
+                        if marker < 0:
+                            raise RuntimeError("invalid proc stat")
+                        fields = record[marker + 2 :].split()
+                        return {
+                            "pid": pid,
+                            "ppid": int(fields[1]),
+                            "pgid": int(fields[2]),
+                            "sid": int(fields[3]),
+                            "state": fields[0],
+                            "starttime": int(fields[19]),
+                        }
+
+
+                    launcher, output = sys.argv[1:]
+                    child = subprocess.Popen(
+                        [
+                            "/usr/bin/python3",
+                            "-I",
+                            "-S",
+                            launcher,
+                            str(os.getpid()),
+                            "--",
+                            "/usr/bin/timeout",
+                            "30s",
+                            "/bin/bash",
+                            "--noprofile",
+                            "--norc",
+                            "-c",
+                            "/bin/sleep 30",
+                        ],
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    observed = None
+                    for _attempt in range(200):
+                        if child.poll() is not None:
+                            break
+                        try:
+                            candidate = identity(child.pid)
+                        except (FileNotFoundError, ProcessLookupError):
+                            break
+                        if (
+                            candidate["ppid"] == os.getpid()
+                            and candidate["pid"] == candidate["pgid"]
+                            and candidate["pid"] == candidate["sid"]
+                            and candidate["state"] == "T"
+                        ):
+                            observed = candidate
+                            break
+                        time.sleep(0.01)
+                    if observed is None:
+                        raise SystemExit(125)
+                    members = []
+                    for entry in Path("/proc").iterdir():
+                        if not entry.name.isdecimal():
+                            continue
+                        try:
+                            if os.getsid(int(entry.name)) == child.pid:
+                                members.append(int(entry.name))
+                        except (FileNotFoundError, PermissionError, ProcessLookupError):
+                            pass
+                    observed["session_members"] = sorted(members)
+                    Path(output).write_text(
+                        json.dumps(observed),
+                        encoding="ascii",
+                    )
+                    os._exit(0)
+                    """
+                ),
+                encoding="ascii",
+            )
+            completed = subprocess.run(
+                [
+                    "/usr/bin/python3",
+                    "-I",
+                    "-S",
+                    str(parent),
+                    str(launcher),
+                    str(identity_path),
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            observed = json.loads(identity_path.read_text(encoding="ascii"))
+            launcher_pid = observed["pid"]
+            launcher_starttime = observed["starttime"]
+            self.assertEqual(observed["ppid"] > 1, True)
+            self.assertEqual(observed["pgid"], launcher_pid)
+            self.assertEqual(observed["sid"], launcher_pid)
+            self.assertEqual(observed["state"], "T")
+            self.assertEqual(observed["session_members"], [launcher_pid])
+
+            def current_starttime(pid: int) -> int | None:
+                try:
+                    record = Path(f"/proc/{pid}/stat").read_text(
+                        encoding="ascii"
+                    )
+                except FileNotFoundError:
+                    return None
+                marker = record.rfind(") ")
+                self.assertGreaterEqual(marker, 0)
+                fields = record[marker + 2 :].split()
+                return int(fields[19])
+
+            monotonic_start = time.monotonic()
+            for _attempt in range(200):
+                if current_starttime(launcher_pid) != launcher_starttime:
+                    break
+                time.sleep(0.01)
+            self.assertNotEqual(
+                current_starttime(launcher_pid),
+                launcher_starttime,
+            )
+            self.assertLess(time.monotonic() - monotonic_start, 2.0)
+            remaining_session = []
+            for entry in Path("/proc").iterdir():
+                if not entry.name.isdecimal():
+                    continue
+                try:
+                    if os.getsid(int(entry.name)) == launcher_pid:
+                        remaining_session.append(int(entry.name))
+                except (FileNotFoundError, PermissionError, ProcessLookupError):
+                    pass
+            self.assertEqual(remaining_session, [])
+
     def test_launch_identity_failures_do_not_signal_external_process(self):
         section = builder_cleanup_functions_source(self.text)
         launch = launch_validation_source(self.text)
@@ -7091,6 +7253,58 @@ exit 37
             self.assertEqual(completed.stderr, "")
             with self.assertRaises(ProcessLookupError):
                 os.kill(descendant_pid, 0)
+
+    def test_pre_auth_cleanup_diagnostic_requires_residual_state(self):
+        section = builder_cleanup_functions_source(self.text).replace(
+            "for attempt in $(/usr/bin/seq 1 50); do",
+            "for attempt in $(/usr/bin/seq 1 1); do",
+        )
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="pre-auth-residual-cleanup-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            harness = (
+                "set -euo pipefail\n"
+                + section
+                + 'builder_user="ci-patch-builder-residual-test"\n'
+                + 'builder_uid="60000"\n'
+                + f'builder_cgroup="{sandbox / "residual-cgroup"}"\n'
+                + 'builder_cgroup_owned=1\n'
+                + 'builder_session_authenticated=0\n'
+                + 'builder_session_id=""\n'
+                + 'builder_supervisor_parent_pid="$$"\n'
+                + 'builder_supervisor_pid=""\n'
+                + 'builder_supervisor_starttime=""\n'
+                + 'builder_supervisor_state=""\n'
+                + 'builder_supervisor_wait_pid=""\n'
+                + 'builder_root_owned=0\n'
+                + 'builder_user_created=0\n'
+                + 'wheelhouse_owned=0\n'
+                + f'BUILDER_ROOT="{sandbox / "builder-root"}"\n'
+                + f'PATCH_WHEELHOUSE="{sandbox / "wheelhouse"}"\n'
+                + "builder_cgroup_pids() { printf '999999'; }\n"
+                + "set +e\n"
+                + "(exit 125)\n"
+                + "cleanup_builder\n"
+            )
+            completed = subprocess.run(
+                ["/bin/bash", "-c", harness],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            self.assertEqual(completed.returncode, 125)
+            self.assertIn(
+                "candidate build cleanup failed: "
+                "process=1 cgroup=1 state=0 primary=125",
+                completed.stderr,
+            )
+            self.assertNotIn(str(sandbox), completed.stderr)
 
     def test_cleanup_reauthenticates_and_terminates_owned_supervisor(self):
         section = builder_cleanup_functions_source(self.text)
@@ -7455,6 +7669,9 @@ exit 37
             self.assertIn("kernel process", text)
             self.assertIn("start time", text)
             self.assertIn("no PID or process-group signal", text)
+            self.assertIn("primary `launch` rejection", text)
+            self.assertIn("no cleanup diagnostic", text)
+            self.assertIn("residual cgroup", text)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)

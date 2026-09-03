@@ -88,15 +88,19 @@ exact stopped child through the kernel process table before resuming it.
 The launcher also requests a parent-death `SIGKILL`, so a never-resumed child
 cannot outlive the trusted shell. Cleanup immediately rechecks the immutable
 shell-parent PID, PID/SID/PGID tuple, expected process state, and `/proc`
-start time before every group signal. Missing, forged, parent-group, stale, or
-reused identities cause no PID or process-group signal; cleanup marks failure
-and uses only the owned builder cgroup. After an authenticated group signal,
-cleanup either reauthenticates before escalation or observes exit, then uses
-the shell's exact child wait only for reaping. It kills the exact builder
-cgroup for namespace descendants that leave the group and proves the session,
-cgroup, and builder UID are empty. It removes only that owned cgroup before
-admitting a regular, nonsymlink, single-link 32 MiB ROM and bounded metadata
-from the exact two-file handoff.
+start time before every group signal. A missing, forged, or parent-group
+identity during launch never records a session: the primary `launch` rejection
+already reports failure, while empty owned cgroup and builder-UID cleanup
+succeeds with no cleanup diagnostic. Cleanup reports its bounded summary only
+for residual cgroup/UID state or a failure after session authentication.
+Stale or reused authenticated identities cause no PID or process-group signal;
+cleanup marks failure and uses only the owned builder cgroup. After an
+authenticated group signal, cleanup either reauthenticates before escalation
+or observes exit, then uses the shell's exact child wait only for reaping. It
+kills the exact builder cgroup for namespace descendants that leave the group
+and proves the session, cgroup, and builder UID are empty. It removes only that
+owned cgroup before admitting a regular, nonsymlink, single-link 32 MiB ROM and
+bounded metadata from the exact two-file handoff.
 Devices, escaped paths, and unexpected outputs fail. It validates metadata
 against the after SHA, copies only those public inputs into runner-owned `0400`
 staging, and removes the builder user, tree, wheelhouse, and candidate

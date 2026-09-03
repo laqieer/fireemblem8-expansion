@@ -187,11 +187,15 @@ before upload, and uploads only that patch artifact.
 The launcher's parent-death `SIGKILL` prevents an unresumed authenticated
 child from outliving the trusted shell. Before every cleanup signal, the host
 immediately rechecks the immutable shell-parent PID, PID/SID/PGID tuple,
-expected stopped/running state, and `/proc` start time. Missing, forged,
-parent-group, stale, or reused identities cause no PID or process-group
-signal; only the owned cgroup kill remains available, and cleanup reports
-failure. After a valid group signal, escalation requires another exact tuple
-check, while the exact shell-child wait is used only to reap an observed exit.
+expected stopped/running state, and `/proc` start time. A missing, forged, or
+parent-group identity during launch never records a session. The primary
+`launch` rejection already reports failure; if the owned cgroup and builder
+UID are empty, cleanup succeeds with no cleanup diagnostic. A cleanup summary
+appears only for residual cgroup/UID state or an authenticated cleanup failure.
+Stale or reused authenticated identities cause no PID or process-group signal;
+only the owned cgroup kill remains available, and cleanup reports failure.
+After a valid group signal, escalation requires another exact tuple check,
+while the exact shell-child wait is used only to reap an observed exit.
 Before candidate code, a trusted child launcher closes inherited descriptors
 above 2, while stdin becomes private `/dev/null` and stdout/stderr permanently
 target that same null device.
@@ -253,9 +257,11 @@ group. The fixed live namespace harness authenticates the self-stopped
 launcher, resumes it, terminates the exact session and cgroup, and leaves no
 orphan. Missing, forged, parent-process-group, and reused-start-time identities
 leave an unrelated live process untouched; valid owned identity terminates,
-and the cgroup path still removes namespace descendants. The default bare
-`make` path remains 16 MiB/default-off and does not receive a base secret,
-patch artifact, or publish step.
+and the cgroup path still removes namespace descendants. A disposable parent
+exits before `SIGCONT`; the stopped launcher's saved PID/start-time identity
+disappears promptly, its session has no descendant, and no orphan remains. The
+default bare `make` path remains 16 MiB/default-off and does not receive a base
+secret, patch artifact, or publish step.
 
 ### Interactions and save compatibility
 
@@ -280,8 +286,10 @@ archival-lane behavior changes.
   unmount order, the exact failing-master/current-workflow rootless namespace
   regression for the root-only writable supervisor mount, the exact
   failing-master PID/PGID mismatch and fixed self-stopped session-launcher
-  runtime with no orphan plus missing/forged/parent-identity adversaries,
-  recursive command/process-substitution inspection for
+  runtime with no orphan, the disposable-parent pre-resume parent-death
+  PID/start-time proof, missing/forged/parent-identity adversaries, and
+  residual-state-only cleanup diagnostics, recursive
+  command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions
   through inline `else`/brace/case/loop forms, `setsid`-wrapped and common
   outer-wrapper (`nohup`/`taskset`/`ionice`/`flock`) `env`/BusyBox command
