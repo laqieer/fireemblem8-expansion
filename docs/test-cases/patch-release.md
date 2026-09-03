@@ -240,8 +240,10 @@ initial `printf` join writes
 raw `$cgroup_path/cgroup.procs`; bind identity uses directory inodes and every
 membership read uses the read-only supervisor view, so no raw `cgroup.procs`
 read remains. Exactly one main-scope `cgroup_path="$1"` initialization is
-required before join/bind/stat use; all later assignment, array, declaration,
-writer, unset, function, and dynamic mutations reject. Quote-segment-aware
+required on the empty, unconditional `builder_main` control path before
+join/bind/stat use; conditional/grouped placement and all later assignment,
+array, declaration, writer, unset, function, and dynamic mutations reject.
+Quote-segment-aware
 resolution expands only unquoted and double-quoted active segments.
 Single-quoted or escaped dollars remain literal, while mixed active/inert
 segments concatenate without recursive expansion. Parsed mutations preserve
@@ -480,6 +482,7 @@ archival-lane behavior changes.
   write-back, nested-brace/trap/absolute-command/mapfile-callback/reserved-
   membership-state repros, fixed membership-checker runtime/AST mutations,
   canonical cgroup-path missing/duplicate/reassignment/writer mutations,
+  conditional/branch/case/loop/group/dynamic initializer placement,
   single-quoted/escaped/mixed quote-segment controls,
   split-function shadowing, assignment/control-prefix writer execution, and
   conditional-checker skip/runtime controls in both semantic validators,

@@ -1258,6 +1258,24 @@ class VerifyCliCwdTests(unittest.TestCase):
                     "isolated candidate build differs",
                 ):
                     verify_mod._parse_workflow_structure_text(changed)
+            verify_mod._parse_workflow_structure_text(
+                patch_workflow_tests.reformatted_cgroup_initializer_control(
+                    original
+                )
+            )
+            for (
+                label,
+                changed,
+            ) in patch_workflow_tests.generate_cgroup_initializer_control_flow_mutations(
+                original
+            ):
+                with self.subTest(
+                    cgroup_initializer_context=label
+                ), self.assertRaisesRegex(
+                    ValueError,
+                    "isolated candidate build differs",
+                ):
+                    verify_mod._parse_workflow_structure_text(changed)
             for (
                 label,
                 changed,

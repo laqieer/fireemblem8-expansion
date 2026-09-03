@@ -1157,6 +1157,73 @@ def generate_membership_checker_control_flow_mutations(workflow: str):
         yield label, changed
 
 
+def generate_cgroup_initializer_control_flow_mutations(workflow: str):
+    initializer = '        cgroup_path="$1"\n'
+    wrappers = {
+        "if-false": (
+            "        if false; then\n",
+            "        fi\n",
+        ),
+        "if-else": (
+            "        if true; then\n"
+            "          true\n"
+            "        else\n",
+            "        fi\n",
+        ),
+        "case": (
+            "        case one in\n"
+            "          one)\n",
+            "            ;;\n"
+            "        esac\n",
+        ),
+        "for-loop": (
+            "        for init_attempt in one; do\n",
+            "        done\n",
+        ),
+        "while-false": (
+            "        while false; do\n",
+            "        done\n",
+        ),
+        "brace-group": (
+            "        {\n",
+            "        }\n",
+        ),
+        "negation": (
+            "        ! ",
+            "",
+        ),
+        "dynamic": (
+            "        eval '",
+            "        '\n",
+        ),
+    }
+    for label, (prefix, suffix) in wrappers.items():
+        changed = workflow.replace(
+            initializer,
+            prefix + initializer + suffix,
+            1,
+        )
+        if changed == workflow:
+            raise AssertionError(
+                f"{label} cgroup initializer mutation marker differs"
+            )
+        yield label, changed
+
+
+def reformatted_cgroup_initializer_control(workflow: str) -> str:
+    initializer = '        cgroup_path="$1"\n'
+    changed = workflow.replace(
+        initializer,
+        '          cgroup_path="$1"\n',
+        1,
+    )
+    if changed == workflow:
+        raise AssertionError(
+            "cgroup initializer formatting marker differs"
+        )
+    return changed
+
+
 def render_supervisor_parent_remount_mutation(
     workflow: str,
     *,
@@ -11127,7 +11194,7 @@ exit 37
             },
             "shell_surface": {
                 "cgroup_path_initialization": (
-                    "exact-main-scope-argument-1-once"
+                    "exact-unconditional-main-scope-argument-1-once"
                 ),
                 "cgroup_path_mutation": "reject-after-initialization",
                 "quote_resolution": "expansion-active-segments-only",
@@ -11297,6 +11364,10 @@ exit 37
                 "conditional",
             ),
             (("shell_surface", "trap"), "allow"),
+            (
+                ("shell_surface", "cgroup_path_initialization"),
+                "conditional",
+            ),
             (
                 ("shell_surface", "cgroup_path_mutation"),
                 "allow",
@@ -11747,6 +11818,64 @@ exit 37
                 )
             ):
                 with self.subTest(checker_control_flow=label):
+                    self.assertTrue(
+                        workflow_has_raw_builder_cgroup_membership_read(
+                            changed
+                        )
+                    )
+                    self.assertIn(
+                        "raw builder cgroup membership read differs",
+                        publisher_boundary_errors(changed),
+                    )
+
+    def test_cgroup_initializer_must_be_on_unconditional_main_path(self):
+        script = (
+            "set -u\n"
+            "if false; then\n"
+            '  cgroup_path="$1"\n'
+            "fi\n"
+            'printf "%s\\n" "$cgroup_path"\n'
+        )
+        completed = subprocess.run(
+            ["/bin/bash", "-c", script, "--", "/owned-cgroup"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("unbound variable", completed.stderr)
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                script,
+                label="conditional cgroup initializer runtime",
+            )
+        )
+
+        reformatted = reformatted_cgroup_initializer_control(self.text)
+        self.assertFalse(
+            workflow_has_raw_builder_cgroup_membership_read(reformatted)
+        )
+        with (
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_patch_release_run_script_identity",
+            ),
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_builder_isolation_shell_identity",
+            ),
+        ):
+            self.assertNotIn(
+                "raw builder cgroup membership read differs",
+                publisher_boundary_errors(reformatted),
+            )
+            for label, changed in (
+                generate_cgroup_initializer_control_flow_mutations(
+                    self.text
+                )
+            ):
+                with self.subTest(cgroup_initializer_context=label):
                     self.assertTrue(
                         workflow_has_raw_builder_cgroup_membership_read(
                             changed

@@ -4112,6 +4112,13 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 function_depth += 1
                 function_stack.append(function_name)
                 continue
+            if (
+                command_text == "}"
+                and control_stack
+                and control_stack[-1] == "{"
+            ):
+                control_stack.pop()
+                continue
             if command_text == "}":
                 if (
                     function_stack
@@ -4128,7 +4135,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
             if function_stack and function_stack[-1] != "builder_main":
                 continue
             first_word = command_text.split(maxsplit=1)[0]
-            if first_word in {"case", "for", "if", "until", "while"}:
+            if first_word in {"case", "for", "if", "until", "while", "{"}:
                 control_stack.append(first_word)
             elif first_word in {"done", "esac", "fi"}:
                 if not control_stack:
@@ -4152,6 +4159,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
             if command_text == 'cgroup_path="$1"':
                 if (
                     cgroup_path_initializations != 0
+                    or control_stack
                     or (
                         require_production_helpers
                         and function_stack != ["builder_main"]

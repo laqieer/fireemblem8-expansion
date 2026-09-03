@@ -1291,7 +1291,7 @@
           "execution_path": "unconditional-builder-main-once"
         },
         "shell_surface": {
-          "cgroup_path_initialization": "exact-main-scope-argument-1-once",
+          "cgroup_path_initialization": "exact-unconditional-main-scope-argument-1-once",
           "cgroup_path_mutation": "reject-after-initialization",
           "quote_resolution": "expansion-active-segments-only",
           "literal_dollar_reexpansion": "forbidden",

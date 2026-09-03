@@ -118,9 +118,10 @@ alone; the host continues to use the actual cgroup path for kill and removal.
 The raw cgroup path is used only for the exact initial
 `printf` membership-join write. Bind identity is checked through the raw and
 supervisor directory inodes; no raw `cgroup.procs` read remains. The parsed
-contract requires exactly one main-scope `cgroup_path="$1"` initialization
-before those join/bind/stat operations and rejects every later scalar, indexed,
-array, declaration, writer, unset, function, or dynamic mutation.
+contract requires exactly one main-scope `cgroup_path="$1"` initialization on
+an empty, unconditional `builder_main` control path before those join/bind/stat
+operations and rejects conditional/grouped placement plus every later scalar,
+indexed, array, declaration, writer, unset, function, or dynamic mutation.
 Shell tokens retain quote segments: parameter expansion occurs only in
 unquoted or double-quoted active segments, while single-quoted and escaped
 dollars remain inert literal data. Mixed segments concatenate without
