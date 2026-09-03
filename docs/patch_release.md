@@ -124,6 +124,12 @@ substring, case conversion, transformation, length, or indirect operators
 fail closed because their resulting path is ambiguous. Direct and aliased
 forms behave identically in and out of quotes. Scalar `+=` updates the tracked
 alias value, so split `cgroup` plus `.procs` construction remains tainted.
+Indexed and associative assignments, declarations, literals, appends, and
+expansions are not evaluated as a full Bash array model: tracked values reject
+immediately, while ambiguous indexed use with `cgroup.procs` fails closed.
+The runtime control demonstrates that `${raw[0]}` can otherwise read the raw
+membership marker despite the safe supervisor read; the semantic guard rejects
+that executable script. Unrelated arrays remain accepted.
 After the isolated builder is spawned, trusted wrapper failures emit
 only fixed `launch`, `isolated`, or `cleanup` stage codes with numeric exits,
 never candidate-controlled output. `launch` covers only the bounded,

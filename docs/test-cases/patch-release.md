@@ -245,7 +245,12 @@ Braced default/assign/error/alternate, prefix/suffix removal, substring, case,
 transformation, length, and indirect operators fail closed whenever they use
 the tracked raw root, in quoted, unquoted, direct, or aliased form. Scalar
 `+=` appends to tracked aliases, so `raw_leaf=cgroup; raw_leaf+=.procs` cannot
-hide the membership path.
+hide the membership path. Indexed and associative assignments/declarations,
+array literals, indexed `+=`, `[0]`/`[key]`/`[@]`, indirection, and nested
+indices reject tracked data immediately or fail closed when an ambiguous
+expansion is combined with `cgroup.procs`. An executable control proves
+`${raw[0]}` reads the raw marker after the safe supervisor read without the
+guard, while unrelated arrays remain accepted.
 Decoded recursive `/dev` mount targets are
 emitted through NUL-delimited trusted JSON parsing, staged through checked
 root-owned regular temp files under `/mnt/supervisor`, unmounted deepest-first,
@@ -334,6 +339,7 @@ archival-lane behavior changes.
   with downstream-marker and external-process controls, safe-plus-raw cgroup
   read mutations across direct/wrapped/aliased forms in both workflow and
   upstream parsers, tracked braced-operator and scalar-append mutations,
+  indexed/associative array mutations plus the executable hidden-read control,
   launcher `125`/`126` transport controls, recursive
   command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions

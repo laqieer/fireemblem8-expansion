@@ -124,8 +124,16 @@ _SHELL_PLAIN_VARIABLE_REFERENCE_RE = re.compile(
 _SHELL_ALIAS_ASSIGNMENT_RE = re.compile(
     r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)(?P<append>\+)?=(?P<value>.*)"
 )
+_SHELL_INDEXED_ASSIGNMENT_RE = re.compile(
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)"
+    r"\[(?P<index>[^\]]*)\](?P<append>\+)?=(?P<value>.*)"
+)
+_SHELL_ARRAY_EXPANSION_RE = re.compile(
+    r"\$\{[!#]?[A-Za-z_][A-Za-z0-9_]*\[[^\]]*\][^}]*\}"
+)
 _RAW_CGROUP_ROOT_MARKER = "\x00raw-cgroup-root\x00"
 _AMBIGUOUS_TRACKED_PARAMETER_MARKER = "\x00ambiguous-tracked-parameter\x00"
+_AMBIGUOUS_ARRAY_ALIAS_MARKER = "\x00ambiguous-array-alias\x00"
 
 
 @dataclass(frozen=True)
@@ -2225,13 +2233,25 @@ def _resolve_shell_aliases(text: str, aliases: dict[str, str]) -> str:
                 indirect_value = aliases.get(value)
                 if (
                     _RAW_CGROUP_ROOT_MARKER in value
+                    or _AMBIGUOUS_ARRAY_ALIAS_MARKER in value
                     or (
                         indirect_value is not None
-                        and _RAW_CGROUP_ROOT_MARKER in indirect_value
+                        and (
+                            _RAW_CGROUP_ROOT_MARKER in indirect_value
+                            or _AMBIGUOUS_ARRAY_ALIAS_MARKER
+                            in indirect_value
+                        )
                     )
                 ):
                     return _AMBIGUOUS_TRACKED_PARAMETER_MARKER
                 return value
+            if operator.startswith("["):
+                if _RAW_CGROUP_ROOT_MARKER in value:
+                    return (
+                        _AMBIGUOUS_TRACKED_PARAMETER_MARKER
+                        + value
+                    )
+                return _AMBIGUOUS_ARRAY_ALIAS_MARKER + value
             if length or operator:
                 if (
                     _RAW_CGROUP_ROOT_MARKER in value
@@ -2283,15 +2303,71 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 "$cgroup_path/cgroup.procs",
             ):
                 continue
+            token_texts = _token_texts(tokens)
+            array_declaration = (
+                bool(token_texts)
+                and posixpath.basename(token_texts[0])
+                in {"declare", "local", "readonly", "typeset"}
+                and any(
+                    token.startswith("-")
+                    and ("a" in token[1:] or "A" in token[1:])
+                    for token in token_texts[1:]
+                )
+            )
             for token in tokens:
                 resolved = _resolve_shell_aliases(token.text, aliases)
                 if _AMBIGUOUS_TRACKED_PARAMETER_MARKER in resolved:
+                    return True
+                if (
+                    _AMBIGUOUS_ARRAY_ALIAS_MARKER in resolved
+                    and "cgroup.procs" in resolved
+                ):
+                    return True
+                if (
+                    _SHELL_ARRAY_EXPANSION_RE.search(token.text)
+                    and "cgroup.procs" in resolved
+                ):
                     return True
                 if (
                     _RAW_CGROUP_ROOT_MARKER in resolved
                     and "cgroup.procs" in resolved
                 ):
                     return True
+                indexed_assignment = (
+                    _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(token.text)
+                )
+                if indexed_assignment is not None:
+                    name = indexed_assignment.group("name")
+                    index = _resolve_shell_aliases(
+                        indexed_assignment.group("index"),
+                        aliases,
+                    )
+                    value = _resolve_shell_aliases(
+                        indexed_assignment.group("value"),
+                        aliases,
+                    )
+                    if (
+                        _RAW_CGROUP_ROOT_MARKER in index
+                        or _RAW_CGROUP_ROOT_MARKER in value
+                        or _AMBIGUOUS_TRACKED_PARAMETER_MARKER in index
+                        or _AMBIGUOUS_TRACKED_PARAMETER_MARKER in value
+                    ):
+                        return True
+                    previous = aliases.get(
+                        name,
+                        _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+                    )
+                    if indexed_assignment.group("append"):
+                        aliases[name] = (
+                            _AMBIGUOUS_ARRAY_ALIAS_MARKER
+                            + previous
+                            + value
+                        )
+                    else:
+                        aliases[name] = (
+                            _AMBIGUOUS_ARRAY_ALIAS_MARKER + value
+                        )
+                    continue
                 assignment = _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(
                     token.text
                 )
@@ -2302,11 +2378,36 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     assignment.group("value"),
                     aliases,
                 )
+                is_array_literal = assignment.group("value").startswith(
+                    "("
+                )
+                if (
+                    (array_declaration or is_array_literal)
+                    and (
+                        _RAW_CGROUP_ROOT_MARKER in value
+                        or _AMBIGUOUS_TRACKED_PARAMETER_MARKER in value
+                    )
+                ):
+                    return True
                 if name != "cgroup_path":
                     if assignment.group("append"):
                         aliases[name] = aliases.get(name, "") + value
+                    elif array_declaration or is_array_literal:
+                        aliases[name] = (
+                            _AMBIGUOUS_ARRAY_ALIAS_MARKER + value
+                        )
                     else:
                         aliases[name] = value
+            if array_declaration:
+                for token in tokens[1:]:
+                    if re.fullmatch(
+                        r"[A-Za-z_][A-Za-z0-9_]*",
+                        token.text,
+                    ):
+                        aliases.setdefault(
+                            token.text,
+                            _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+                        )
         return False
     except ValueError:
         return True

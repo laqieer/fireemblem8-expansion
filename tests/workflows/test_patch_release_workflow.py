@@ -284,6 +284,39 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         '        /bin/cat "$raw_members" > /dev/null\n',
         "        indirect_name=cgroup_path\n"
         '        /bin/cat "${!indirect_name}/cgroup.procs" > /dev/null\n',
+        '        raw[0]="$cgroup_path"\n'
+        '        /bin/cat "${raw[0]}/cgroup.procs" > /dev/null\n',
+        '        raw[key]="${cgroup_path}"\n'
+        '        mapfile -t leaked < "${raw[key]}/cgroup.procs"\n',
+        '        raw[0]+="$cgroup_path"\n'
+        '        readarray -t leaked < "${raw[0]}/cgroup.procs"\n',
+        '        raw=("$cgroup_path")\n'
+        '        /bin/cat ${raw[0]}/cgroup.procs > /dev/null\n',
+        '        declare -a raw=("$cgroup_path")\n'
+        '        /bin/cat "${raw[@]}/cgroup.procs" > /dev/null\n',
+        '        declare -A raw=([key]="$cgroup_path")\n'
+        '        /bin/cat "${raw[key]}/cgroup.procs" > /dev/null\n',
+        "        declare -a raw\n"
+        '        raw[0]="$cgroup_path"\n'
+        '        /bin/cat "${raw[0]}/cgroup.procs" > /dev/null\n',
+        "        declare -A raw\n"
+        '        raw[key]="$cgroup_path"\n'
+        '        /bin/cat "${raw[key]}/cgroup.procs" > /dev/null\n',
+        "        index=0\n"
+        '        raw[$index]="$cgroup_path"\n'
+        '        /bin/cat "${raw[$index]}/cgroup.procs" > /dev/null\n',
+        "        index=0\n"
+        '        raw[0]="$cgroup_path"\n'
+        '        /bin/cat "${raw[${index}]}/cgroup.procs" > /dev/null\n',
+        '        raw[0]="$cgroup_path"\n'
+        '        /bin/cat "${!raw[@]}/cgroup.procs" > /dev/null\n',
+        "        raw[0]=cgroup\n"
+        "        raw[0]+=.procs\n"
+        '        /bin/cat "$cgroup_path/${raw[0]}" > /dev/null\n',
+        "        raw[0]=/safe\n"
+        '        /bin/cat "${raw[0]}/cgroup.procs" > /dev/null\n',
+        "        raw[key]=/safe\n"
+        '        readarray -t leaked < "${raw[key]}/cgroup.procs"\n',
     ]
     parameter_expressions = (
         "${cgroup_path:-/fallback}/cgroup.procs",
@@ -6385,6 +6418,23 @@ exit 37
         self.assertFalse(
             workflow_has_raw_builder_cgroup_membership_read(self.text)
         )
+        builder = builder_isolation_shell_source(self.text)
+        for unrelated in (
+            "unrelated=(one two)\n"
+            'printf "%s\\n" "${unrelated[0]}"\n',
+            "declare -a unrelated=(one)\n"
+            "unrelated[0]+=two\n"
+            'printf "%s\\n" "${unrelated[@]}"\n',
+            "declare -A unrelated=([key]=value)\n"
+            'printf "%s\\n" "${unrelated[key]}"\n',
+        ):
+            with self.subTest(unrelated_array=unrelated.splitlines()[0]):
+                self.assertFalse(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        builder + "\n" + unrelated,
+                        label="unrelated array control",
+                    )
+                )
         for label, changed in generate_raw_builder_cgroup_membership_mutations(
             self.text
         ):
@@ -6396,6 +6446,60 @@ exit 37
                     "raw builder cgroup membership read differs",
                     publisher_boundary_errors(changed),
                 )
+
+    def test_indexed_alias_runtime_reaches_raw_membership_and_is_rejected(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="indexed-raw-cgroup-read-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            raw_cgroup = sandbox / "raw"
+            supervisor_cgroup = sandbox / "supervisor"
+            raw_cgroup.mkdir()
+            supervisor_cgroup.mkdir()
+            (raw_cgroup / "cgroup.procs").write_text(
+                "raw-membership-marker\n",
+                encoding="ascii",
+            )
+            (supervisor_cgroup / "cgroup.procs").write_text(
+                "safe-membership-marker\n",
+                encoding="ascii",
+            )
+            script = (
+                'cgroup_path="$1"\n'
+                'supervisor_cgroup="$2"\n'
+                'mapfile -t safe < "$supervisor_cgroup/cgroup.procs"\n'
+                'raw[0]="$cgroup_path"\n'
+                'mapfile -t leaked < "${raw[0]}/cgroup.procs"\n'
+                'printf "%s\\n" "${safe[0]}" "${leaked[0]}"\n'
+            )
+            completed = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-c",
+                    script,
+                    "--",
+                    str(raw_cgroup),
+                    str(supervisor_cgroup),
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                completed.stdout,
+                "safe-membership-marker\nraw-membership-marker\n",
+            )
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    script,
+                    label="indexed raw cgroup runtime",
+                )
+            )
 
     def test_isolated_exit_status_channel_maps_only_fixed_substages(self):
         report = isolated_failure_report_source(self.text)
@@ -8634,6 +8738,9 @@ exit 37
             self.assertIn("indirect", text)
             self.assertIn("125", text)
             self.assertIn("126", text)
+            self.assertIn("Indexed and associative", text)
+            self.assertIn("${raw[0]}", text)
+            self.assertIn("unrelated arrays", text.lower())
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)
