@@ -272,6 +272,63 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 "user-namespace",
             )
 
+    def test_graph_only_database_drift_reuses_fallback_recipe_semantics(self):
+        directory, root, entries = self.fixture(
+            "MODE ?= one\n"
+            "ifeq ($(MODE),two)\n"
+            "child: UNUSED = changed\n"
+            "endif\n"
+            "all: child\n"
+            "child:\n\t@printf 'child\\n'\n"
+        )
+        with directory:
+            authority = self.probe(
+                root,
+                entries,
+                domains={
+                    "MODE": {
+                        "kind": "explicit",
+                        "values": ["one", "two"],
+                    }
+                },
+                environment_names={"MODE"},
+            )
+            fallback = next(
+                item
+                for item in authority["record"]["variants"]
+                if item["origin"] == "fallback"
+            )
+            command_line = next(
+                item
+                for item in authority["record"]["variants"]
+                if item["origin"] == "command-line"
+                and item["value"] == "two"
+            )
+            environment = next(
+                item
+                for item in authority["record"]["variants"]
+                if item["origin"] == "environment"
+                and item["value"] == "two"
+            )
+        self.assertNotEqual(
+            command_line["database_sha256"],
+            fallback["database_sha256"],
+        )
+        self.assertEqual(
+            command_line["semantic_sha256"],
+            fallback["semantic_sha256"],
+        )
+        self.assertNotIn("semantics", command_line)
+        self.assertNotEqual(
+            environment["database_sha256"],
+            fallback["database_sha256"],
+        )
+        self.assertEqual(
+            environment["semantic_sha256"],
+            fallback["semantic_sha256"],
+        )
+        self.assertNotIn("semantics", environment)
+
     def test_external_defaults_and_undefined_names_require_sealed_domains(self):
         directory, root, entries = self.fixture(
             "MODE ?= one\n"
@@ -1089,6 +1146,280 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 authority["prerequisite_domain_census"]["generated_paths"],
                 ["tools/example/generated"],
             )
+
+    def test_unloaded_branch_definitions_do_not_backfill_observed_domains(self):
+        directory, root, entries = self.fixture(
+            "MODE ?= a\n"
+            "include $(MODE).mk\n"
+            "one two:\n\t@printf '$@\\n'\n",
+            files={
+                "a.mk": "DEP ?= one\nall: $(DEP)\n",
+                "b.mk": "DEP = $(SELECT)\nall: $(DEP)\n",
+            },
+        )
+        with directory:
+            authority = self.probe(
+                root,
+                entries,
+                domains={
+                    "MODE": {
+                        "kind": "explicit",
+                        "values": ["a"],
+                    },
+                    "DEP": {
+                        "kind": "tracked-fallback",
+                    },
+                    "SELECT": {
+                        "kind": "explicit",
+                        "values": ["one", "two"],
+                    },
+                },
+            )
+        self.assertEqual(
+            authority["prerequisite_domain_census"]["used"],
+            ["DEP", "MODE"],
+        )
+        self.assertEqual(
+            authority["variable_census"]["external_defaults"],
+            ["DEP", "MODE"],
+        )
+        self.assertNotIn(
+            "SELECT",
+            {
+                item[1]
+                for variant in authority["record"]["variants"]
+                for item in variant["assignments"]
+            },
+        )
+
+    def test_branch_loaded_domain_rejects_unsealed_and_reaches_fixed_point(self):
+        makefile = (
+            "MODE ?= a\n"
+            "include $(MODE).mk\n"
+            "one two:\n\t@printf '$@\\n'\n"
+        )
+        files = {
+            "a.mk": "all: one\n",
+            "b.mk": "DEP ?= one\nall: $(DEP)\n",
+        }
+        directory, root, entries = self.fixture(makefile, files=files)
+        with directory, self.assertRaisesRegex(
+            make_probe.MakeProbeError,
+            "external defaults lack sealed ambient authority.*DEP",
+        ):
+            self.probe(
+                root,
+                entries,
+                domains={
+                    "MODE": {
+                        "kind": "explicit",
+                        "values": ["a", "b"],
+                    }
+                },
+            )
+
+        domains = {
+            "MODE": {
+                "kind": "explicit",
+                "values": ["a", "b"],
+            },
+            "DEP": {
+                "kind": "explicit",
+                "values": ["one", "two"],
+            },
+        }
+        directory, root, entries = self.fixture(makefile, files=files)
+        with directory:
+            authority = self.probe(
+                root,
+                entries,
+                domains=domains,
+                environment_names={"DEP", "MODE"},
+            )
+        directory, root, entries = self.fixture(makefile, files=files)
+        with directory:
+            reversed_authority = self.probe(
+                root,
+                entries,
+                domains=dict(reversed(list(domains.items()))),
+                environment_names={"DEP", "MODE"},
+            )
+        self.assertEqual(authority, reversed_authority)
+        self.assertEqual(set(authority["transitive"]), {"one", "two"})
+        self.assertEqual(
+            authority["prerequisite_domain_census"]["used"],
+            ["DEP", "MODE"],
+        )
+        self.assertTrue(
+            any(
+                {
+                    tuple(item)
+                    for item in variant["assignments"]
+                }
+                >= {
+                    ("command-line", "DEP", "two"),
+                    ("command-line", "MODE", "b"),
+                }
+                for variant in authority["record"]["variants"]
+            )
+        )
+
+    def test_nested_branch_include_domains_reach_fixed_point(self):
+        directory, root, entries = self.fixture(
+            "MODE ?= a\n"
+            "include $(MODE).mk\n"
+            "base one two:\n\t@printf '$@\\n'\n",
+            files={
+                "a.mk": "all: base\n",
+                "b.mk": "DEP ?= x\ninclude b-$(DEP).mk\n",
+                "b-x.mk": "all: one\n",
+                "b-y.mk": "SELECT ?= p\ninclude $(SELECT).mk\n",
+                "p.mk": "all: one\n",
+                "q.mk": "all: two\n",
+            },
+        )
+        with directory:
+            authority = self.probe(
+                root,
+                entries,
+                domains={
+                    "MODE": {
+                        "kind": "explicit",
+                        "values": ["a", "b"],
+                    },
+                    "DEP": {
+                        "kind": "explicit",
+                        "values": ["x", "y"],
+                    },
+                    "SELECT": {
+                        "kind": "explicit",
+                        "values": ["p", "q"],
+                    },
+                },
+            )
+        self.assertEqual(
+            authority["prerequisite_domain_census"]["used"],
+            ["DEP", "MODE", "SELECT"],
+        )
+        self.assertEqual(
+            set(authority["transitive"]),
+            {"base", "one", "two"},
+        )
+        self.assertTrue(
+            any(
+                {item[1] for item in variant["assignments"]}
+                == {"DEP", "MODE", "SELECT"}
+                for variant in authority["record"]["variants"]
+            )
+        )
+
+    def test_branch_only_symbolic_input_is_observed_as_recipe_only(self):
+        directory, root, entries = self.fixture(
+            "MODE ?= a\ninclude $(MODE).mk\n",
+            files={
+                "a.mk": "all:\n\t@printf a\\n\n",
+                "b.mk": (
+                    "MESSAGE ?= fallback\n"
+                    "all:\n\t@printf '%s\\n' '$(MESSAGE)'\n"
+                ),
+            },
+        )
+        with directory:
+            authority = make_probe.run_probe(
+                reporter.AuthorityLoader(root, entries),
+                {"all"},
+                {
+                    "MODE": {
+                        "kind": "explicit",
+                        "values": ["a", "b"],
+                    }
+                },
+                {},
+                declared_external_names={"MESSAGE", "MODE"},
+                scratch_root=root / "artifacts",
+                symbolic_recipe_names={"MESSAGE"},
+            )["all"]
+        self.assertEqual(
+            authority["record"]["symbolic_recipe_names"],
+            ["MESSAGE"],
+        )
+        self.assertEqual(
+            authority["variable_census"]["external_defaults"],
+            ["MESSAGE", "MODE"],
+        )
+        self.assertNotIn(
+            "MESSAGE",
+            {
+                item[1]
+                for variant in authority["record"]["variants"]
+                for item in variant["assignments"]
+            },
+        )
+
+    def test_variant_fixed_point_caps_fail_closed(self):
+        simple = "MODE ?= a\nall: $(MODE)\na b:\n\t@true\n"
+        domains = {
+            "MODE": {
+                "kind": "explicit",
+                "values": ["a", "b"],
+            }
+        }
+        for constant, value, message in (
+            ("MAX_VARIANT_STATES", 1, "state bound"),
+            ("MAX_DISCOVERED_SOURCES", 0, "source bound"),
+            ("MAX_DISCOVERED_DOMAINS", 0, "domain bound"),
+            ("MAX_PROBE_SECONDS", -1, "time bound"),
+        ):
+            with self.subTest(constant=constant):
+                directory, root, entries = self.fixture(simple)
+                with directory, mock.patch.object(
+                    make_probe,
+                    constant,
+                    value,
+                ), self.assertRaisesRegex(
+                    make_probe.MakeProbeError,
+                    message,
+                ):
+                    self.probe(root, entries, domains=domains)
+
+        branch_makefile = (
+            "MODE ?= a\n"
+            "include $(MODE).mk\n"
+            "one two:\n\t@true\n"
+        )
+        branch_files = {
+            "a.mk": "all: one\n",
+            "b.mk": "DEP ?= one\nall: $(DEP)\n",
+        }
+        branch_domains = {
+            **domains,
+            "DEP": {
+                "kind": "explicit",
+                "values": ["one", "two"],
+            },
+        }
+        for constant, value, message in (
+            ("MAX_CONTEXT_STATES", 0, "combination bound"),
+            ("MAX_CONTEXT_DEPTH", 1, "context depth bound"),
+        ):
+            with self.subTest(constant=constant):
+                directory, root, entries = self.fixture(
+                    branch_makefile,
+                    files=branch_files,
+                )
+                with directory, mock.patch.object(
+                    make_probe,
+                    constant,
+                    value,
+                ), self.assertRaisesRegex(
+                    make_probe.MakeProbeError,
+                    message,
+                ):
+                    self.probe(
+                        root,
+                        entries,
+                        domains=branch_domains,
+                    )
 
 
 if __name__ == "__main__":

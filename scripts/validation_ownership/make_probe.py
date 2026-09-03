@@ -12,6 +12,7 @@ import stat
 import struct
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -32,6 +33,12 @@ GENERATED_REGISTRY_PROBE = Path(
 )
 MAX_SANDBOX_RUNS = 4096
 MAX_DYNAMIC_PASSES = 64
+MAX_VARIANT_STATES = 4096
+MAX_CONTEXT_STATES = 512
+MAX_CONTEXT_DEPTH = 8
+MAX_DISCOVERED_SOURCES = 4096
+MAX_DISCOVERED_DOMAINS = 512
+MAX_PROBE_SECONDS = 3600
 TRACE_RE = re.compile(
     r"^(?P<source>.+?):[0-9]+: "
     r"(?:(?:update )?target) '(?P<target>[^']+)'"
@@ -856,12 +863,12 @@ def _make_reference_census(
     dict[str, set[str]],
     dict[str, set[str]],
     dict[str, set[str]],
-    dict[str, set[str]],
+    dict[str, dict[str, set[str]]],
 ]:
     all_by_path: dict[str, set[str]] = {}
     graph_by_path: dict[str, set[str]] = {}
     recipe_by_path: dict[str, set[str]] = {}
-    dependencies: dict[str, set[str]] = {}
+    dependencies_by_path: dict[str, dict[str, set[str]]] = {}
     for path, entry in sorted(loader.entries.items()):
         if (
             path != "Makefile"
@@ -883,6 +890,7 @@ def _make_reference_census(
         references: set[str] = set()
         graph_references: set[str] = set()
         recipe_references: set[str] = set()
+        path_dependencies: dict[str, set[str]] = {}
         defaults = set()
         current_define: str | None = None
         computed_graph = False
@@ -893,7 +901,7 @@ def _make_reference_census(
             define = DEFINE_RE.match(line)
             if define is not None and current_define is None:
                 current_define = define.group("name")
-                dependencies.setdefault(current_define, set())
+                path_dependencies.setdefault(current_define, set())
                 continue
             if current_define is not None:
                 if line.strip() == "endef":
@@ -901,7 +909,7 @@ def _make_reference_census(
                     continue
                 define_references = _make_reference_names(line)
                 references.update(define_references)
-                dependencies[current_define].update(define_references)
+                path_dependencies[current_define].update(define_references)
                 if "$($" in line or "${$" in line:
                     computed_variables.add(current_define)
                 if "$(eval" in line or "${eval" in line:
@@ -920,7 +928,7 @@ def _make_reference_census(
                 else TARGET_VARIABLE_ASSIGNMENT_RE.match(line)
             )
             if assignment is not None:
-                dependencies.setdefault(
+                path_dependencies.setdefault(
                     assignment.group("name"),
                     set(),
                 ).update(_make_reference_names(assignment.group("value")))
@@ -931,7 +939,7 @@ def _make_reference_census(
                 ):
                     graph_references.update(line_references)
             elif target_assignment is not None:
-                dependencies.setdefault(
+                path_dependencies.setdefault(
                     target_assignment.group("name"),
                     set(),
                 ).update(
@@ -971,7 +979,7 @@ def _make_reference_census(
                 else:
                     computed_graph = True
         for name in computed_variables:
-            dependencies[name].update(defaults)
+            path_dependencies[name].update(defaults)
         if computed_graph:
             graph_references.update(defaults)
         if computed_recipe:
@@ -979,7 +987,13 @@ def _make_reference_census(
         all_by_path[path] = references
         graph_by_path[path] = graph_references
         recipe_by_path[path] = recipe_references
-    return all_by_path, graph_by_path, recipe_by_path, dependencies
+        dependencies_by_path[path] = path_dependencies
+    return (
+        all_by_path,
+        graph_by_path,
+        recipe_by_path,
+        dependencies_by_path,
+    )
 
 
 def _expand_make_references(
@@ -1002,16 +1016,35 @@ def _target_variable_usage(
         dict[str, set[str]],
         dict[str, set[str]],
         dict[str, set[str]],
-        dict[str, set[str]],
+        dict[str, dict[str, set[str]]],
     ],
 ) -> dict[str, set[str]]:
-    all_by_path, graph_by_path, recipe_by_path, dependencies = (
-        reference_census
-    )
     sources = {"Makefile"}
     sources.update(item["path"] for item in baseline["includes"])
     for trace in baseline["traces"].values():
         sources.update(trace["sources"])
+    return _source_variable_usage(sources, reference_census)
+
+
+def _source_variable_usage(
+    sources: set[str],
+    reference_census: tuple[
+        dict[str, set[str]],
+        dict[str, set[str]],
+        dict[str, set[str]],
+        dict[str, dict[str, set[str]]],
+    ],
+) -> dict[str, set[str]]:
+    all_by_path, graph_by_path, recipe_by_path, dependencies_by_path = (
+        reference_census
+    )
+    dependencies: dict[str, set[str]] = {}
+    for source in sources:
+        for name, referenced_names in dependencies_by_path.get(
+            source,
+            {},
+        ).items():
+            dependencies.setdefault(name, set()).update(referenced_names)
     observed = _expand_make_references(
         {
             name
@@ -1041,8 +1074,35 @@ def _target_variable_usage(
     return {
         "all": observed,
         "graph": graph,
+        "recipe": recipe,
         "recipe_only": recipe - graph,
     }
+
+
+def _variant_sources(variant: dict[str, Any]) -> set[str]:
+    sources = {"Makefile"}
+    sources.update(item["path"] for item in variant["includes"])
+    for trace in variant["traces"].values():
+        sources.update(trace["sources"])
+    return sources
+
+
+def _variant_discovery_signature(
+    variant: dict[str, Any],
+) -> tuple[
+    tuple[str, ...],
+    tuple[tuple[str, tuple[str, ...]], ...],
+]:
+    return (
+        tuple(sorted(_variant_sources(variant))),
+        tuple(
+            (
+                target,
+                tuple(closure),
+            )
+            for target, closure in sorted(variant["closures"].items())
+        ),
+    )
 
 
 def _undefined_variable_names(output: str) -> set[str]:
@@ -1770,10 +1830,25 @@ def run_probe(
         variant_results = []
         run_count = 0
         fallback_values: dict[str, str] | None = None
+        probe_budgets: dict[
+            tuple[tuple[str, ...], tuple[tuple[str, str, str], ...]],
+            float,
+        ] = {}
+
+        def check_probe_budget(
+            selected_targets: Iterable[str],
+            assignments: tuple[tuple[str, str, str], ...] = (),
+        ) -> None:
+            key = (tuple(selected_targets), assignments)
+            now = time.monotonic()
+            started = probe_budgets.setdefault(key, now)
+            if now - started > MAX_PROBE_SECONDS:
+                raise MakeProbeError("GNU Make probe exceeds time bound")
 
         def invoke(
             selected_targets: list[str],
             *,
+            assignments: tuple[tuple[str, str, str], ...] = (),
             cli: tuple[str, str] | None = None,
             database_only: bool = False,
             environment_value: tuple[str, str] | None = None,
@@ -1782,9 +1857,33 @@ def run_probe(
             run_count += 1
             if run_count > MAX_SANDBOX_RUNS:
                 raise MakeProbeError("GNU Make probe exceeds run bound")
-            extra_environment = {}
+            state_assignments = list(assignments)
+            if cli is not None:
+                state_assignments.append(
+                    ("command-line", cli[0], cli[1])
+                )
             if environment_value is not None:
-                extra_environment[environment_value[0]] = environment_value[1]
+                state_assignments.append(
+                    (
+                        "environment",
+                        environment_value[0],
+                        environment_value[1],
+                    )
+                )
+            if len({item[1] for item in state_assignments}) != len(
+                state_assignments
+            ):
+                raise MakeProbeError(
+                    "GNU Make variant assigns one variable more than once"
+                )
+            state_assignments.sort(key=lambda item: (item[1], item[0], item[2]))
+            canonical_assignments = tuple(state_assignments)
+            check_probe_budget(selected_targets, canonical_assignments)
+            extra_environment = {
+                name: value
+                for origin, name, value in canonical_assignments
+                if origin == "environment"
+            }
             public_gate = selected_targets == ["validation-ownership-check"]
             if public_gate:
                 argv = [
@@ -1811,8 +1910,11 @@ def run_probe(
                     "/work/probe.mk",
                     "MAKE=/bin/vo-make",
                 ]
-            if cli is not None:
-                argv.append(f"{cli[0]}={cli[1]}")
+            argv.extend(
+                f"{name}={value}"
+                for origin, name, value in canonical_assignments
+                if origin == "command-line"
+            )
             if not public_gate:
                 argv.extend(selected_targets)
             for _ in range(MAX_DYNAMIC_PASSES):
@@ -1965,8 +2067,17 @@ def run_probe(
                     "GNU Make authority probe failed: " + _normalize(combined)
                 )
             return {
+                "assignments": canonical_assignments,
                 "argv": argv,
                 "closures": _closures(selected_targets, graph),
+                "domain_values": {
+                    name: (make_work / f"domain-{index}")
+                    .read_text(encoding="utf-8")
+                    .removesuffix("\n")
+                    for index, name in enumerate(
+                        sorted(prerequisite_domains)
+                    )
+                } if not public_gate else {},
                 "environment_assignment": environment_value,
                 "graph": graph,
                 "database_sha256": (
@@ -2095,47 +2206,23 @@ def run_probe(
             )
             for target in normal_targets
         }
-        combined_comparisons: dict[tuple[str, str, str], bool] = {}
-
-        def combined_variant_is_stable(
-            origin: str,
-            name: str,
-            value: str,
-        ) -> bool:
-            key = origin, name, value
-            cached = combined_comparisons.get(key)
-            if cached is not None:
-                return cached
-            stable = True
-            for order, (_, baseline_hash) in zip(
-                combined_orders,
-                combined_baselines,
-            ):
-                candidate = invoke(
-                    order,
-                    cli=(name, value) if origin == "command-line" else None,
-                    environment_value=(
-                        (name, value)
-                        if origin == "environment"
-                        else None
-                    ),
-                    database_only=True,
-                )
-                stable &= candidate["database_sha256"] == baseline_hash
-            combined_comparisons[key] = stable
-            return stable
 
         def reuse_baseline(
             baseline: dict[str, Any],
-            database_baseline: str,
+            database_sha256: str,
             origin: str,
             name: str,
             value: str,
         ) -> dict[str, Any]:
             candidate = dict(baseline)
+            assignment = (origin, name, value)
+            domain_values = dict(baseline["domain_values"])
+            domain_values[name] = value
             candidate.update(
                 {
-                    "database_sha256": database_baseline,
+                    "assignments": (assignment,),
+                    "database_sha256": database_sha256,
+                    "domain_values": domain_values,
                     "environment_assignment": (
                         [name, value]
                         if origin == "environment"
@@ -2149,16 +2236,6 @@ def run_probe(
             )
             return candidate
 
-        fallback_values = (
-            {
-                name: (make_work / f"domain-{index}")
-                .read_text(encoding="utf-8")
-                .removesuffix("\n")
-                for index, name in enumerate(sorted(prerequisite_domains))
-            }
-            if normal_targets
-            else {}
-        )
         for group, baseline, database_baseline in zip(
             target_groups,
             baseline_by_group,
@@ -2168,19 +2245,26 @@ def run_probe(
             if group == ["validation-ownership-check"]:
                 continue
             for name in sorted(target_domain_names[group[0]]):
+                target_usage = target_variable_usage[group[0]]
                 domain = prerequisite_domains[name]
                 values = (
                     domain["values"]
                     if domain["kind"] == "explicit"
-                    else [fallback_values[name]]
+                    else [baseline["domain_values"][name]]
                 )
                 for value in values:
+                    candidate = invoke(
+                        group,
+                        cli=(name, value),
+                        database_only=True,
+                    )
+                    signature_matches = (
+                        _variant_discovery_signature(candidate)
+                        == _variant_discovery_signature(baseline)
+                    )
                     if (
-                        combined_variant_is_stable(
-                            "command-line",
-                            name,
-                            value,
-                        )
+                        candidate["database_sha256"] == database_baseline
+                        and signature_matches
                     ):
                         candidate = reuse_baseline(
                             baseline,
@@ -2189,30 +2273,34 @@ def run_probe(
                             name,
                             value,
                         )
-                    else:
-                        candidate = invoke(
-                            group,
-                            cli=(name, value),
-                            database_only=True,
+                    elif (
+                        signature_matches
+                        and name not in target_usage["recipe"]
+                    ):
+                        candidate = reuse_baseline(
+                            baseline,
+                            candidate["database_sha256"],
+                            "command-line",
+                            name,
+                            value,
                         )
-                        if candidate["database_sha256"] == database_baseline:
-                            candidate = reuse_baseline(
-                                baseline,
-                                database_baseline,
-                                "command-line",
-                                name,
-                                value,
-                            )
-                        else:
-                            candidate = invoke(group, cli=(name, value))
+                    else:
+                        candidate = invoke(group, cli=(name, value))
                     variant_results.append(candidate)
                     if name in environment_names:
+                        candidate = invoke(
+                            group,
+                            environment_value=(name, value),
+                            database_only=True,
+                        )
+                        signature_matches = (
+                            _variant_discovery_signature(candidate)
+                            == _variant_discovery_signature(baseline)
+                        )
                         if (
-                            combined_variant_is_stable(
-                                "environment",
-                                name,
-                                value,
-                            )
+                            candidate["database_sha256"]
+                            == database_baseline
+                            and signature_matches
                         ):
                             candidate = reuse_baseline(
                                 baseline,
@@ -2221,29 +2309,198 @@ def run_probe(
                                 name,
                                 value,
                             )
+                        elif (
+                            signature_matches
+                            and name not in target_usage["recipe"]
+                        ):
+                            candidate = reuse_baseline(
+                                baseline,
+                                candidate["database_sha256"],
+                                "environment",
+                                name,
+                                value,
+                            )
                         else:
                             candidate = invoke(
                                 group,
                                 environment_value=(name, value),
-                                database_only=True,
                             )
-                            if (
-                                candidate["database_sha256"]
-                                == database_baseline
-                            ):
-                                candidate = reuse_baseline(
-                                    baseline,
-                                    database_baseline,
-                                    "environment",
-                                    name,
-                                    value,
-                                )
-                            else:
-                                candidate = invoke(
-                                    group,
-                                    environment_value=(name, value),
-                                )
                         variant_results.append(candidate)
+
+        variants_by_target: dict[
+            str,
+            dict[tuple[tuple[str, str, str], ...], dict[str, Any]],
+        ] = {
+            target: {} for target in normal_targets
+        }
+        state_parents: dict[
+            tuple[str, tuple[tuple[str, str, str], ...]],
+            tuple[tuple[str, str, str], ...],
+        ] = {}
+        for target in normal_targets:
+            for variant in variant_results:
+                if variant["requested_targets"] != [target]:
+                    continue
+                state = tuple(variant["assignments"])
+                variants_by_target[target][state] = variant
+                if state:
+                    state_parents[(target, state)] = ()
+        state_count = sum(
+            len(variants) for variants in variants_by_target.values()
+        )
+        if state_count > MAX_VARIANT_STATES:
+            raise MakeProbeError(
+                "GNU Make variant fixed point exceeds state bound"
+            )
+        worklist = sorted(
+            (
+                target,
+                state,
+            )
+            for target, variants in variants_by_target.items()
+            for state in variants
+        )
+        work_index = 0
+        context_state_count = 0
+        discovered_sources: set[str] = set()
+        discovered_domains: set[str] = set()
+        target_external_default_names = {
+            target: set() for target in normal_targets
+        }
+        target_variable_usage = {
+            target: {
+                "all": set(),
+                "graph": set(),
+                "recipe": set(),
+                "recipe_only": set(),
+            }
+            for target in normal_targets
+        }
+
+        while work_index < len(worklist):
+            target, state = worklist[work_index]
+            work_index += 1
+            check_probe_budget([target], state)
+            variant = variants_by_target[target][state]
+            sources = _variant_sources(variant)
+            usage = _target_variable_usage(variant, reference_census)
+            defaults = _external_default_names(loader, sources)
+            undeclared_defaults = defaults - sealed_external_names
+            if undeclared_defaults:
+                raise MakeProbeError(
+                    "Make external defaults lack sealed ambient authority: "
+                    f"{sorted(undeclared_defaults)}"
+                )
+            graph_shaping_symbolic = (
+                usage["graph"] & symbolic_recipe_names
+            )
+            if graph_shaping_symbolic:
+                raise MakeProbeError(
+                    "symbolic Make variables can shape targets, "
+                    "prerequisites, includes, conditionals, or eval output "
+                    "and require finite domains: "
+                    f"{sorted(graph_shaping_symbolic)}"
+                )
+            for field in target_variable_usage[target]:
+                target_variable_usage[target][field].update(usage[field])
+            target_external_default_names[target].update(
+                defaults & usage["all"]
+            )
+            observed_domains = usage["all"] & set(prerequisite_domains)
+            discovered_sources.update(sources)
+            discovered_domains.update(observed_domains)
+            if len(discovered_sources) > MAX_DISCOVERED_SOURCES:
+                raise MakeProbeError(
+                    "GNU Make variant fixed point exceeds source bound"
+                )
+            if len(discovered_domains) > MAX_DISCOVERED_DOMAINS:
+                raise MakeProbeError(
+                    "GNU Make variant fixed point exceeds domain bound"
+                )
+
+            if not state:
+                expansion_domains = observed_domains
+            else:
+                parent_state = state_parents[(target, state)]
+                parent = variants_by_target[target][parent_state]
+                parent_sources = _variant_sources(parent)
+                parent_usage = _target_variable_usage(
+                    parent,
+                    reference_census,
+                )
+                new_source_usage = _source_variable_usage(
+                    sources - parent_sources,
+                    reference_census,
+                )
+                expansion_domains = (
+                    new_source_usage["all"] & set(prerequisite_domains)
+                )
+                expansion_domains.update(
+                    observed_domains
+                    - (parent_usage["all"] & set(prerequisite_domains))
+                )
+
+            assigned_names = {item[1] for item in state}
+            for name in sorted(expansion_domains - assigned_names):
+                domain = prerequisite_domains[name]
+                values = (
+                    domain["values"]
+                    if domain["kind"] == "explicit"
+                    else [variant["domain_values"][name]]
+                )
+                origins = ["command-line"]
+                if name in environment_names:
+                    origins.append("environment")
+                for value in values:
+                    for origin in origins:
+                        assignment = (origin, name, value)
+                        child_state = tuple(
+                            sorted(
+                                (*state, assignment),
+                                key=lambda item: (
+                                    item[1],
+                                    item[0],
+                                    item[2],
+                                ),
+                            )
+                        )
+                        if child_state in variants_by_target[target]:
+                            continue
+                        if len(child_state) > MAX_CONTEXT_DEPTH:
+                            raise MakeProbeError(
+                                "GNU Make variant fixed point exceeds "
+                                "context depth bound"
+                            )
+                        context_state_count += 1
+                        if context_state_count > MAX_CONTEXT_STATES:
+                            raise MakeProbeError(
+                                "GNU Make variant fixed point exceeds "
+                                "combination bound"
+                            )
+                        state_count += 1
+                        if state_count > MAX_VARIANT_STATES:
+                            raise MakeProbeError(
+                                "GNU Make variant fixed point exceeds "
+                                "state bound"
+                            )
+                        candidate = invoke(
+                            [target],
+                            assignments=state,
+                            cli=(
+                                (name, value)
+                                if origin == "command-line"
+                                else None
+                            ),
+                            environment_value=(
+                                (name, value)
+                                if origin == "environment"
+                                else None
+                            ),
+                        )
+                        variants_by_target[target][child_state] = candidate
+                        state_parents[(target, child_state)] = state
+                        variant_results.append(candidate)
+                        worklist.append((target, child_state))
 
         make_inputs = _makefile_modes(loader)
         result = {}
@@ -2284,6 +2541,9 @@ def run_probe(
                 ).encode("utf-8")
                 semantic_hash = hashlib.sha256(semantics_bytes).hexdigest()
                 record = {
+                    "assignments": [
+                        list(item) for item in variant["assignments"]
+                    ],
                     "environment_assignment": (
                         list(variant["environment_assignment"])
                         if variant["environment_assignment"] is not None
@@ -2303,7 +2563,12 @@ def run_probe(
                 target_variants.append(record)
             usage = target_variable_usage.get(
                 target,
-                {"all": set(), "graph": set(), "recipe_only": set()},
+                {
+                    "all": set(),
+                    "graph": set(),
+                    "recipe": set(),
+                    "recipe_only": set(),
+                },
             )
             observed_generated_paths = {
                 path
@@ -2375,7 +2640,7 @@ def run_probe(
                         target_observed_names & escaped_literal_names
                     ),
                     "external_defaults": sorted(
-                        usage["all"] & external_default_names
+                        target_external_default_names.get(target, set())
                     ),
                     "handled_names": sorted(handled_names),
                     "observed_undefined": sorted(target_undefined_names),

@@ -1558,10 +1558,25 @@ reject; a finite sealed MODE or DEP domain passes and changes concrete closure.
 An unused `UNUSED` finite domain, unobserved typed variable, or stale generated
 path fails registry completeness: the registry is never copied into the
 observed census.
-The conservative reference graph may reduce irrelevant solo variants only
-after a real combined-root GNU Make database comparison proves no parsed
-change; a changed database always triggers the corresponding standalone
-variant.
+Every fallback and domain/origin variant contributes loaded sources, selector
+positions, closures, and generated prerequisites to a deterministic fixed
+point. A `MODE=b` branch that first loads `b.mk` must reject an undeclared
+`DEP`, enumerate all sealed `DEP` values under the retained `MODE=b` context,
+and continue through a `DEP`-selected include's next finite selector.
+Conversely, an unselected branch's `DEP = $(SELECT)` definition cannot
+backfill `SELECT` into the observed `MODE=a` census.
+Branch-only recipe symbolic inputs are recorded but never enumerated. Reversed
+domain declaration order produces identical authority. State/source/domain/
+combination/depth/time cap fixtures reject rather than returning a partial
+census, with the time cap enforced independently for each concrete
+standalone-target or combined-root fallback/domain/origin probe state.
+The combined-root GNU Make database comparison establishes whether any
+requested target is `MAKECMDGOALS`-sensitive; standalone checks remain
+authoritative for every concrete fallback/domain/origin state. A changed
+database that can alter loaded sources, closure, or recipe payload always
+triggers the corresponding standalone variant, while a graph-only external
+name with unchanged discovery keeps the changed database fingerprint and
+reuses the fallback recipe semantics.
 Make cache and prior-invalidation identity includes every selected tracked
 entry's path, object type, Git mode, and content identity, not only named Make
 inputs. Adding/removing wildcard-visible `src/b.c`, changing a regular entry

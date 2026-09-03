@@ -2112,6 +2112,15 @@ def _validate_semantics(
             evidence_nodes[node_id] = node
     if not surfaces or not evidence_nodes:
         raise OwnershipError("graph requires both surface and evidence nodes")
+    authority_nodes: dict[tuple[str, ...], str] = {}
+    for node_id, node in evidence_nodes.items():
+        identity = _authority_identity(node["authority"])
+        previous = authority_nodes.get(identity)
+        if previous is not None:
+            raise OwnershipError(
+                f"evidence node {node_id!r} duplicates authority {identity!r}"
+            )
+        authority_nodes[identity] = node_id
 
     edge_ids = set()
     edge_identities = set()
@@ -2205,18 +2214,18 @@ def _validate_semantics(
                     f"evidence; missing {missing_deterministic}"
                 )
 
+    _validate_lifecycle(
+        graph["artifact"],
+        graph["lifecycle_events"],
+        evidence_nodes,
+        edge_ids,
+    )
     generated_records, generated_paths = _generated_registry_records(loader)
     authorities = _validate_authorities(
         loader,
         evidence_nodes,
         generated_records,
         strict_workflow=True,
-    )
-    _validate_lifecycle(
-        graph["artifact"],
-        graph["lifecycle_events"],
-        evidence_nodes,
-        edge_ids,
     )
 
     rule_ids = set()
@@ -2922,8 +2931,10 @@ def build_report(
     review_comparison_requested: bool = False,
     authority_changed_edge_ids: Iterable[str] = (),
     base_entries: dict[str, GitTreeEntry] | None = None,
+    model: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    model = validate_graph(graph, schema, loader, entries)
+    if model is None:
+        model = validate_graph(graph, schema, loader, entries)
     oracle = validate_probe_oracle(oracle, graph, entries)
     resolutions = [
         _resolve_path(path, graph, model, base_entries)
@@ -3100,9 +3111,29 @@ def _run_lifecycle_direct(
     )
 
 
+def _assert_lifecycle_consistency_identities(root: Path) -> None:
+    consistency_checks = sorted(
+        check_id
+        for check_id in LIFECYCLE_CHECKS
+        if check_id != "validation-ownership-check"
+    )
+    if not consistency_checks:
+        return
+    entries = git_tree_entries(root)
+    loader = AuthorityLoader(root, entries)
+    cases = _load_test_case_registry(loader)
+    for check_id in consistency_checks:
+        if check_id not in cases:
+            raise OwnershipError(
+                "ownership consistency tester case is stale"
+            )
+
+
 def validate_executable_lifecycle(
     root: Path,
     graph: dict[str, Any],
+    *,
+    baseline_validated: bool = False,
 ) -> list[dict[str, str]]:
     events = graph["lifecycle_events"]
     triggers = {
@@ -3123,6 +3154,7 @@ def validate_executable_lifecycle(
     source_bytes = (root / GRAPH_PATH).read_bytes()
     results = []
     try:
+        _assert_lifecycle_consistency_identities(root)
         with tempfile.TemporaryDirectory(
             prefix=f".{root.name}-validation-ownership-proof-",
             dir=sandbox_parent,
@@ -3131,10 +3163,17 @@ def validate_executable_lifecycle(
             artifact = sandbox / GRAPH_PATH
             artifact.parent.mkdir(parents=True)
             shutil.copy2(root / GRAPH_PATH, artifact)
-            for check_id in sorted(LIFECYCLE_CHECKS):
-                initial = _run_lifecycle_direct(root, sandbox, check_id)
+            if not baseline_validated:
+                initial = _run_lifecycle_direct(
+                    root,
+                    sandbox,
+                    "validation-ownership-check",
+                )
                 if initial.returncode != 0:
-                    detail = initial.stderr.decode("utf-8", errors="replace").strip()
+                    detail = initial.stderr.decode(
+                        "utf-8",
+                        errors="replace",
+                    ).strip()
                     raise OwnershipError(
                         "stale executable lifecycle baseline does not pass"
                         + (f": {detail}" if detail else "")
@@ -3143,31 +3182,30 @@ def validate_executable_lifecycle(
             for proof in proofs:
                 trigger = triggers[proof["trigger_event_id"]]
                 artifact.replace(backup)
-                removed = [
-                    _run_lifecycle_direct(root, sandbox, check_id)
-                    for check_id in sorted(LIFECYCLE_CHECKS)
-                ]
+                removed = _run_lifecycle_direct(
+                    root,
+                    sandbox,
+                    "validation-ownership-check",
+                )
                 backup.replace(artifact)
-                if any(item.returncode == 0 for item in removed):
+                if removed.returncode == 0:
                     raise OwnershipError(
                         f"lifecycle proof {proof['id']!r} removal did not fail"
                     )
-                removal_details = [
-                    item.stderr.decode("utf-8", errors="replace")
-                    for item in removed
-                ]
-                if any(
-                    LIFECYCLE_FAILURE_REASON not in detail
-                    for detail in removal_details
-                ):
+                removal_detail = removed.stderr.decode(
+                    "utf-8",
+                    errors="replace",
+                )
+                if LIFECYCLE_FAILURE_REASON not in removal_detail:
                     raise OwnershipError(
                         f"lifecycle proof {proof['id']!r} lacks the named failure"
                     )
-                restored = [
-                    _run_lifecycle_direct(root, sandbox, check_id)
-                    for check_id in sorted(LIFECYCLE_CHECKS)
-                ]
-                if any(item.returncode != 0 for item in restored):
+                restored = _run_lifecycle_direct(
+                    root,
+                    sandbox,
+                    "validation-ownership-check",
+                )
+                if restored.returncode != 0:
                     raise OwnershipError(
                         f"lifecycle proof {proof['id']!r} restoration did not pass"
                     )
@@ -3258,9 +3296,14 @@ def main(argv: list[str] | None = None) -> int:
             arguments.base_revision is not None,
             authority_changed,
             base_entries,
+            model,
         )
         report["artifact"]["executable_lifecycle"] = (
-            validate_executable_lifecycle(root, graph)
+            validate_executable_lifecycle(
+                root,
+                graph,
+                baseline_validated=True,
+            )
         )
         after = repository_status(root)
         if after != before:

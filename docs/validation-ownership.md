@@ -257,11 +257,28 @@ on identifier spelling as behavior evidence. The probe emits domains, symbolic
 names, generated paths, and typed-variable census fields only from loaded
 source and baseline/variant observations. Registry entries are expected
 inputs, never synthesized observations, so an unused domain or stale generated
-path rejects. For bounded performance, the reference graph conservatively
+path rejects. Variant discovery is a deterministic fixed point: every concrete
+fallback/domain/origin state contributes its loaded includes and trace sources,
+defaults, use positions, closure, and generated prerequisites. A newly loaded
+source or newly observed finite domain is evaluated under the exact parent
+assignment context, so nested `MODE` -> `DEP` -> include selectors cannot hide
+behind fallback-only parsing. Branch-only undeclared or graph-shaping symbolic
+selectors reject immediately; branch-only recipe symbolic inputs contribute
+authentic recipe-only census evidence. Definition-dependency expansion is
+scoped to the authoritative sources GNU Make actually loaded, so an alternate
+branch cannot backfill an unobserved selector into another branch's census.
+State, combination, depth, source,
+domain, subprocess, and one-hour per concrete standalone-target or
+combined-root fallback/domain/origin probe-state bounds all fail closed on
+exhaustion. For bounded performance, the reference graph conservatively
 narrows each solo target's candidate domains;
-an actual GNU Make database comparison over the combined roots must prove a
-variant unchanged before baseline semantics can be reused. Any changed
-database is re-evaluated with the standalone target.
+an actual GNU Make database comparison over the combined roots establishes
+whether any requested target is `MAKECMDGOALS`-sensitive. Standalone checks
+remain authoritative for every concrete fallback/domain/origin state. Any
+changed database that can alter loaded sources, closure, or recipe payload is
+re-evaluated with the standalone target; a graph-only external name with an
+unchanged discovery signature keeps the changed database fingerprint while
+reusing the fallback recipe semantics.
 
 This means GNU Make itself owns conditionals, `eval`, pattern/static-pattern
 resolution, `define`/`call`, target-specific and inherited values, `${NAME}`,
