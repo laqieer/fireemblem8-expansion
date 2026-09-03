@@ -35,7 +35,12 @@ _MAKE_AUTHORITY_CACHE: dict[
     tuple[Any, ...],
     dict[str, dict[str, Any]],
 ] = {}
-_MAKE_AUTHORITY_CACHE_LIMIT = 16
+_MAKE_AUTHORITY_CACHE_LIMIT = 64
+_VALIDATED_GRAPH_CACHE: dict[
+    tuple[Any, ...],
+    dict[str, Any],
+] = {}
+_VALIDATED_GRAPH_CACHE_LIMIT = 8
 TEST_CASE_REGISTRY_PATH = Path("docs/test-cases/registry.json")
 BUILD_WORKFLOW_PATH = Path(".github/workflows/build.yml")
 EXPECTED_SCHEMA_VERSION = 1
@@ -1512,8 +1517,9 @@ def _parse_make_authorities(
         requested_targets,
         require_dynamic_contracts,
     )
-    cached = _MAKE_AUTHORITY_CACHE.get(cache_key)
+    cached = _MAKE_AUTHORITY_CACHE.pop(cache_key, None)
     if cached is not None:
+        _MAKE_AUTHORITY_CACHE[cache_key] = cached
         return cached
     try:
         from scripts.validation_ownership import make_probe
@@ -2348,7 +2354,21 @@ def validate_graph(
     if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
         raise OwnershipError("graph schema must use JSON Schema draft 2020-12")
     validate_json_schema(graph, schema, schema)
-    return _validate_semantics(graph, loader, entries)
+    cache_key = (
+        _sha256(GRAPH_SEAL_DOMAIN, graph),
+        str(Path(loader.root).resolve(strict=True)),
+        loader.revision,
+        _make_authority_state(loader),
+    )
+    cached = _VALIDATED_GRAPH_CACHE.pop(cache_key, None)
+    if cached is not None:
+        _VALIDATED_GRAPH_CACHE[cache_key] = cached
+        return cached
+    result = _validate_semantics(graph, loader, entries)
+    if len(_VALIDATED_GRAPH_CACHE) >= _VALIDATED_GRAPH_CACHE_LIMIT:
+        _VALIDATED_GRAPH_CACHE.pop(next(iter(_VALIDATED_GRAPH_CACHE)))
+    _VALIDATED_GRAPH_CACHE[cache_key] = result
+    return result
 
 
 def _resolved_edges(
@@ -3179,36 +3199,36 @@ def validate_executable_lifecycle(
                         + (f": {detail}" if detail else "")
                     )
             backup = sandbox / "validation-ownership-graph.backup"
+            artifact.replace(backup)
+            removed = _run_lifecycle_direct(
+                root,
+                sandbox,
+                "validation-ownership-check",
+            )
+            backup.replace(artifact)
+            if removed.returncode == 0:
+                raise OwnershipError(
+                    "lifecycle proof removal did not fail"
+                )
+            removal_detail = removed.stderr.decode(
+                "utf-8",
+                errors="replace",
+            )
+            if LIFECYCLE_FAILURE_REASON not in removal_detail:
+                raise OwnershipError(
+                    "lifecycle proof removal lacks the named failure"
+                )
+            restored = _run_lifecycle_direct(
+                root,
+                sandbox,
+                "validation-ownership-check",
+            )
+            if restored.returncode != 0:
+                raise OwnershipError(
+                    "lifecycle proof restoration did not pass"
+                )
             for proof in proofs:
                 trigger = triggers[proof["trigger_event_id"]]
-                artifact.replace(backup)
-                removed = _run_lifecycle_direct(
-                    root,
-                    sandbox,
-                    "validation-ownership-check",
-                )
-                backup.replace(artifact)
-                if removed.returncode == 0:
-                    raise OwnershipError(
-                        f"lifecycle proof {proof['id']!r} removal did not fail"
-                    )
-                removal_detail = removed.stderr.decode(
-                    "utf-8",
-                    errors="replace",
-                )
-                if LIFECYCLE_FAILURE_REASON not in removal_detail:
-                    raise OwnershipError(
-                        f"lifecycle proof {proof['id']!r} lacks the named failure"
-                    )
-                restored = _run_lifecycle_direct(
-                    root,
-                    sandbox,
-                    "validation-ownership-check",
-                )
-                if restored.returncode != 0:
-                    raise OwnershipError(
-                        f"lifecycle proof {proof['id']!r} restoration did not pass"
-                    )
                 results.append(
                     {
                         "trigger_event_id": trigger["id"],

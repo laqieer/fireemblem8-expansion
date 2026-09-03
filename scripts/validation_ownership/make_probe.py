@@ -39,6 +39,7 @@ MAX_CONTEXT_DEPTH = 8
 MAX_DISCOVERED_SOURCES = 4096
 MAX_DISCOVERED_DOMAINS = 512
 MAX_PROBE_SECONDS = 3600
+REGISTERED_COMMAND_CACHE_LIMIT = 8192
 TRACE_RE = re.compile(
     r"^(?P<source>.+?):[0-9]+: "
     r"(?:(?:update )?target) '(?P<target>[^']+)'"
@@ -100,6 +101,9 @@ DEFINE_RE = re.compile(
 
 class MakeProbeError(RuntimeError):
     """Raised when GNU Make authority cannot be observed safely and exactly."""
+
+
+_REGISTERED_COMMAND_CACHE: dict[tuple[Any, ...], bytes] = {}
 
 
 def _prepare_confined_scratch(loader: Any, scratch_root: Path) -> Path:
@@ -710,26 +714,62 @@ def _command_hash(command: str) -> str:
     return f"{value:016x}"
 
 
-def _write_mapping(directory: Path, mappings: list[dict[str, Any]]) -> None:
-    if directory.exists():
-        directory.chmod(0o700)
-        shutil.rmtree(directory)
-    directory.mkdir(mode=0o700)
+def _write_mapping(
+    directory: Path,
+    mappings: list[dict[str, Any]],
+    *,
+    materialized_names: set[str] | None = None,
+) -> set[str]:
+    payloads: list[tuple[str, bytes, bytes]] = []
     seen = set()
     for mapping in mappings:
         name = _command_hash(mapping["command"])
         if name in seen:
             raise MakeProbeError("Make command mapping hash collision")
         seen.add(name)
+        payloads.append(
+            (
+                name,
+                mapping["command"].encode("utf-8"),
+                mapping["output"],
+            )
+        )
+    if materialized_names is None:
+        materialized_names = set()
+        if directory.exists():
+            directory.chmod(0o700)
+            shutil.rmtree(directory)
+        directory.mkdir(mode=0o700)
+    elif not directory.exists():
+        directory.mkdir(mode=0o700)
+    else:
+        directory.chmod(0o700)
+    for name, command_bytes, output_bytes in payloads:
+        if name in materialized_names:
+            continue
         command_path = directory / f"{name}.cmd"
         output_path = directory / f"{name}.out"
-        command_path.write_bytes(
-            mapping["command"].encode("utf-8")
-        )
-        output_path.write_bytes(mapping["output"])
-        command_path.chmod(0o400)
-        output_path.chmod(0o400)
+        if command_path.exists() or output_path.exists():
+            if (
+                not command_path.is_file()
+                or command_path.is_symlink()
+                or not output_path.is_file()
+                or output_path.is_symlink()
+                or command_path.read_bytes() != command_bytes
+                or output_path.read_bytes() != output_bytes
+            ):
+                raise MakeProbeError(
+                    "Make command mapping materialization differs from the "
+                    "existing supervisor state"
+                )
+        else:
+            command_path.write_bytes(command_bytes)
+            output_path.write_bytes(output_bytes)
+            command_path.chmod(0o400)
+            output_path.chmod(0o400)
+        materialized_names.add(name)
     directory.chmod(0o500)
+    return materialized_names
 
 
 def _make_environment(
@@ -1080,6 +1120,8 @@ def _source_variable_usage(
 
 
 def _variant_sources(variant: dict[str, Any]) -> set[str]:
+    if "sources" in variant:
+        return set(variant["sources"])
     sources = {"Makefile"}
     sources.update(item["path"] for item in variant["includes"])
     for trace in variant["traces"].values():
@@ -1328,12 +1370,37 @@ def _compile_gbagfx(tree: Path, output: Path) -> dict[str, str]:
     }
 
 
+def _registered_command_cache_key(
+    *,
+    cache_namespace: tuple[Any, ...],
+    command: str,
+    contract: dict[str, Any],
+    environment: dict[str, str],
+) -> tuple[Any, ...] | None:
+    if (
+        contract["resolved_value"] is not None
+        or "build/" in command
+        or "/usr/bin/make -j" in command
+        or "/bin/vo-make -j" in command
+        or "--out-dir" in command
+        or "--lock-output" in command
+    ):
+        return None
+    return (
+        cache_namespace,
+        contract["id"],
+        command,
+        tuple(sorted(environment.items())),
+    )
+
+
 def _execute_registered_command(
     command: str,
     contract: dict[str, Any],
     *,
     base: Path,
     build_output: Path,
+    cache_namespace: tuple[Any, ...],
     command_work: Path,
     direct_arguments: list[str] | None,
     tree: Path,
@@ -1343,6 +1410,17 @@ def _execute_registered_command(
         if not contract["resolved_value"]:
             return b""
         return (contract["resolved_value"] + "\n").encode("utf-8")
+    cache_key = _registered_command_cache_key(
+        cache_namespace=cache_namespace,
+        command=command,
+        contract=contract,
+        environment=environment,
+    )
+    if cache_key is not None:
+        cached = _REGISTERED_COMMAND_CACHE.pop(cache_key, None)
+        if cached is not None:
+            _REGISTERED_COMMAND_CACHE[cache_key] = cached
+            return cached
     executed = command
     if contract["id"] == "banim-scaninc-inputs":
         _compile_scaninc(tree, command_work)
@@ -1409,7 +1487,12 @@ def _execute_registered_command(
             f"registered Make command {contract['id']!r} failed in confinement: "
             + _normalize(completed.stderr)
         )
-    return completed.stdout.encode("utf-8")
+    output = completed.stdout.encode("utf-8")
+    if cache_key is not None:
+        if len(_REGISTERED_COMMAND_CACHE) >= REGISTERED_COMMAND_CACHE_LIMIT:
+            _REGISTERED_COMMAND_CACHE.pop(next(iter(_REGISTERED_COMMAND_CACHE)))
+        _REGISTERED_COMMAND_CACHE[cache_key] = output
+    return output
 
 
 def _normalize(text: str) -> str:
@@ -1741,6 +1824,19 @@ def run_probe(
         dir=scratch_root,
     ) as directory:
         base = Path(directory)
+        cache_namespace = (
+            str(Path(loader.root).resolve(strict=True)),
+            loader.revision,
+            tuple(
+                (
+                    path,
+                    entry.mode,
+                    entry.object_type,
+                    entry.object_id,
+                )
+                for path, entry in sorted(loader.entries.items())
+            ),
+        )
         tree = base / "tree"
         make_work = base / "make-work"
         command_work = base / "command-work"
@@ -1820,7 +1916,7 @@ def run_probe(
             encoding="ascii",
         )
         mappings: list[dict[str, Any]] = []
-        _write_mapping(mapping_path, mappings)
+        materialized_mapping_names = _write_mapping(mapping_path, mappings)
         normal_targets = sorted(
             target for target in targets if target != "validation-ownership-check"
         )
@@ -1853,7 +1949,7 @@ def run_probe(
             database_only: bool = False,
             environment_value: tuple[str, str] | None = None,
         ) -> dict[str, Any]:
-            nonlocal run_count
+            nonlocal run_count, materialized_mapping_names
             run_count += 1
             if run_count > MAX_SANDBOX_RUNS:
                 raise MakeProbeError("GNU Make probe exceeds run bound")
@@ -1918,7 +2014,11 @@ def run_probe(
             if not public_gate:
                 argv.extend(selected_targets)
             for _ in range(MAX_DYNAMIC_PASSES):
-                _write_mapping(mapping_path, mappings)
+                materialized_mapping_names = _write_mapping(
+                    mapping_path,
+                    mappings,
+                    materialized_names=materialized_mapping_names,
+                )
                 event_path.write_bytes(b"")
                 event_path.chmod(0o600)
                 completed = _sandbox_run(
@@ -2008,6 +2108,7 @@ def run_probe(
                         contract,
                         base=base,
                         build_output=build_output,
+                        cache_namespace=cache_namespace,
                         command_work=command_work,
                         direct_arguments=_event_direct_arguments(event),
                         tree=tree,
@@ -2066,10 +2167,25 @@ def run_probe(
                 raise MakeProbeError(
                     "GNU Make authority probe failed: " + _normalize(combined)
                 )
+            closures = _closures(selected_targets, graph)
+            retained_targets = {
+                item
+                for closure in closures.values()
+                for item in closure
+            }
+            traces = {
+                item: traces[item]
+                for item in retained_targets
+                if item in traces
+            }
+            sources = {"Makefile"}
+            sources.update(item["path"] for item in includes)
+            for trace in traces.values():
+                sources.update(trace["sources"])
             return {
                 "assignments": canonical_assignments,
                 "argv": argv,
-                "closures": _closures(selected_targets, graph),
+                "closures": closures,
                 "domain_values": {
                     name: (make_work / f"domain-{index}")
                     .read_text(encoding="utf-8")
@@ -2079,7 +2195,6 @@ def run_probe(
                     )
                 } if not public_gate else {},
                 "environment_assignment": environment_value,
-                "graph": graph,
                 "database_sha256": (
                     hashlib.sha256(
                         _database_semantics(combined).encode("utf-8")
@@ -2088,6 +2203,7 @@ def run_probe(
                     else None
                 ),
                 "includes": includes,
+                "sources": tuple(sorted(sources)),
                 "undefined_names": sorted(undefined_names),
                 "origin": (
                     "command-line"
@@ -2154,7 +2270,7 @@ def run_probe(
                 f"domains: {sorted(graph_shaping_symbolic)}"
             )
         target_domain_names = {
-            target: usage["all"] & set(prerequisite_domains)
+            target: usage["graph"] & set(prerequisite_domains)
             for target, usage in target_variable_usage.items()
         }
 
@@ -2407,8 +2523,9 @@ def run_probe(
                 defaults & usage["all"]
             )
             observed_domains = usage["all"] & set(prerequisite_domains)
+            graph_domains = usage["graph"] & set(prerequisite_domains)
             discovered_sources.update(sources)
-            discovered_domains.update(observed_domains)
+            discovered_domains.update(graph_domains)
             if len(discovered_sources) > MAX_DISCOVERED_SOURCES:
                 raise MakeProbeError(
                     "GNU Make variant fixed point exceeds source bound"
@@ -2419,7 +2536,7 @@ def run_probe(
                 )
 
             if not state:
-                expansion_domains = observed_domains
+                expansion_domains = graph_domains
             else:
                 parent_state = state_parents[(target, state)]
                 parent = variants_by_target[target][parent_state]
@@ -2433,11 +2550,11 @@ def run_probe(
                     reference_census,
                 )
                 expansion_domains = (
-                    new_source_usage["all"] & set(prerequisite_domains)
+                    new_source_usage["graph"] & set(prerequisite_domains)
                 )
                 expansion_domains.update(
-                    observed_domains
-                    - (parent_usage["all"] & set(prerequisite_domains))
+                    graph_domains
+                    - (parent_usage["graph"] & set(prerequisite_domains))
                 )
 
             assigned_names = {item[1] for item in state}

@@ -156,8 +156,10 @@ criterion, expiry, and disposition history. Checkpoint, dependency-change, and
 pre-graduation triggers each have one later proof bound to the artifact,
 dependency edge or decision authority. The public check uses the #176-style
 bounded sandbox and isolated launcher: for each trigger it removes the graph,
-runs both the declared consumer and consistency identity, requires the fixed
-named semantic failure, restores the graph, and reruns both successfully.
+runs metadata integrity plus the declared consumer/consistency identities
+against the two executable artifact states. Removal must produce the fixed
+named semantic failure, restoration must pass, and those bounded behavioral
+results are attached to every trigger-specific proof record.
 Self-declared replacement reasons, fabricated authorities, stale timestamps,
 or non-restoring proofs reject.
 The lifecycle consumer now calls the same nonrecursive complete
@@ -264,7 +266,8 @@ source or newly observed finite domain is evaluated under the exact parent
 assignment context, so nested `MODE` -> `DEP` -> include selectors cannot hide
 behind fallback-only parsing. Branch-only undeclared or graph-shaping symbolic
 selectors reject immediately; branch-only recipe symbolic inputs contribute
-authentic recipe-only census evidence. Definition-dependency expansion is
+authentic recipe-only census evidence, and recipe-only finite domains remain in
+the observed census without spawning closure-expansion variants. Definition-dependency expansion is
 scoped to the authoritative sources GNU Make actually loaded, so an alternate
 branch cannot backfill an unobserved selector into another branch's census.
 State, combination, depth, source,

@@ -1249,7 +1249,12 @@ class OwnershipGraphTests(unittest.TestCase):
             self.validate(graph)
 
         before = GRAPH_PATH.read_bytes()
-        results = reporter.validate_executable_lifecycle(ROOT, self.graph)
+        self.validate(self.graph)
+        results = reporter.validate_executable_lifecycle(
+            ROOT,
+            self.graph,
+            baseline_validated=True,
+        )
         self.assertEqual(len(results), len(reporter.REQUIRED_PROOF_KINDS))
         self.assertEqual(
             {result["trigger_type"] for result in results},
@@ -1264,6 +1269,77 @@ class OwnershipGraphTests(unittest.TestCase):
             )
         )
         self.assertEqual(GRAPH_PATH.read_bytes(), before)
+
+    def test_validate_graph_reuses_exact_graph_and_authority_state(self):
+        cache_before = dict(reporter._VALIDATED_GRAPH_CACHE)
+        try:
+            reporter._VALIDATED_GRAPH_CACHE.clear()
+            with mock.patch.object(
+                reporter,
+                "_validate_semantics",
+                return_value={"cached": True},
+            ) as validate:
+                first = reporter.validate_graph(
+                    self.graph,
+                    self.schema,
+                    self.loader,
+                    self.entries,
+                )
+                second = reporter.validate_graph(
+                    self.graph,
+                    self.schema,
+                    self.loader,
+                    self.entries,
+                )
+            self.assertEqual(first, {"cached": True})
+            self.assertEqual(second, {"cached": True})
+            self.assertEqual(validate.call_count, 1)
+        finally:
+            reporter._VALIDATED_GRAPH_CACHE.clear()
+            reporter._VALIDATED_GRAPH_CACHE.update(cache_before)
+
+    def test_executable_lifecycle_reuses_behavioral_runs_per_artifact_state(self):
+        calls = []
+
+        def fake_run(authority_root, artifact_root, check_id):
+            del authority_root
+            graph_path = artifact_root / reporter.GRAPH_PATH
+            calls.append((check_id, graph_path.is_file()))
+            if graph_path.is_file():
+                return subprocess.CompletedProcess(
+                    args=(check_id,),
+                    returncode=0,
+                    stdout=b"",
+                    stderr=b"",
+                )
+            return subprocess.CompletedProcess(
+                args=(check_id,),
+                returncode=1,
+                stdout=b"",
+                stderr=reporter.LIFECYCLE_FAILURE_REASON.encode("utf-8"),
+            )
+
+        with mock.patch.object(
+            reporter,
+            "_run_lifecycle_direct",
+            side_effect=fake_run,
+        ), mock.patch.object(
+            reporter,
+            "_assert_lifecycle_consistency_identities",
+        ):
+            results = reporter.validate_executable_lifecycle(ROOT, self.graph)
+        self.assertEqual(
+            calls,
+            [
+                ("validation-ownership-check", True),
+                ("validation-ownership-check", False),
+                ("validation-ownership-check", True),
+            ],
+        )
+        self.assertEqual(
+            len(results),
+            len(reporter.REQUIRED_PROOF_KINDS),
+        )
 
     def test_strict_schema_rejects_unknown_keys_and_boolean_integers(self):
         graph = copy.deepcopy(self.graph)

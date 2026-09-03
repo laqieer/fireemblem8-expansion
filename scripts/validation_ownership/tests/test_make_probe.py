@@ -825,6 +825,74 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                     expected_mapping_count=0,
                 )
 
+    def test_mapping_materialization_appends_only_new_commands(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            mapping_dir = Path(directory) / "mapping"
+            first_command = "printf first"
+            second_command = "printf second"
+            first_hash = make_probe._command_hash(first_command)
+            second_hash = make_probe._command_hash(second_command)
+            writes = []
+            original = Path.write_bytes
+
+            def spy(path, data):
+                writes.append((Path(path).name, bytes(data)))
+                return original(path, data)
+
+            with mock.patch.object(
+                Path,
+                "write_bytes",
+                autospec=True,
+                side_effect=spy,
+            ):
+                materialized = make_probe._write_mapping(
+                    mapping_dir,
+                    [
+                        {
+                            "command": first_command,
+                            "output": b"first\n",
+                        }
+                    ],
+                    materialized_names=set(),
+                )
+                first_pass = [name for name, _ in writes]
+                materialized = make_probe._write_mapping(
+                    mapping_dir,
+                    [
+                        {
+                            "command": first_command,
+                            "output": b"first\n",
+                        },
+                        {
+                            "command": second_command,
+                            "output": b"second\n",
+                        },
+                    ],
+                    materialized_names=materialized,
+                )
+            second_pass = [name for name, _ in writes[len(first_pass):]]
+            self.assertEqual(
+                set(first_pass),
+                {f"{first_hash}.cmd", f"{first_hash}.out"},
+            )
+            self.assertEqual(
+                set(second_pass),
+                {f"{second_hash}.cmd", f"{second_hash}.out"},
+            )
+            self.assertEqual(
+                materialized,
+                {first_hash, second_hash},
+            )
+            self.assertEqual(
+                {item.name for item in mapping_dir.iterdir()},
+                {
+                    f"{first_hash}.cmd",
+                    f"{first_hash}.out",
+                    f"{second_hash}.cmd",
+                    f"{second_hash}.out",
+                },
+            )
+
     def test_absolute_and_untracked_includes_reject(self):
         cases = (
             (
@@ -844,6 +912,96 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                     message,
                 ):
                     self.probe(root, entries)
+
+    def test_pure_registered_command_uses_process_cache(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            base = Path(directory)
+            tree = base / "tree"
+            build_output = base / "build-output"
+            command_work = base / "command-work"
+            tree.mkdir()
+            build_output.mkdir()
+            command_work.mkdir()
+            contract = {
+                "id": "fixture-pure",
+                "resolved_value": None,
+            }
+            completed = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="sealed\n",
+                stderr="",
+            )
+            make_probe._REGISTERED_COMMAND_CACHE.clear()
+            with mock.patch.object(
+                make_probe,
+                "_sandbox_run",
+                return_value=completed,
+            ) as sandbox:
+                first = make_probe._execute_registered_command(
+                    "python3 -c \"print('sealed')\"",
+                    contract,
+                    base=base,
+                    build_output=build_output,
+                    cache_namespace=("fixture",),
+                    command_work=command_work,
+                    direct_arguments=["python3", "-c", "print('sealed')"],
+                    tree=tree,
+                    environment={},
+                )
+                second = make_probe._execute_registered_command(
+                    "python3 -c \"print('sealed')\"",
+                    contract,
+                    base=base,
+                    build_output=build_output,
+                    cache_namespace=("fixture",),
+                    command_work=command_work,
+                    direct_arguments=["python3", "-c", "print('sealed')"],
+                    tree=tree,
+                    environment={},
+                )
+            self.assertEqual(first, b"sealed\n")
+            self.assertEqual(second, b"sealed\n")
+            self.assertEqual(sandbox.call_count, 1)
+
+    def test_build_touching_registered_command_skips_process_cache(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            base = Path(directory)
+            tree = base / "tree"
+            build_output = base / "build-output"
+            command_work = base / "command-work"
+            tree.mkdir()
+            build_output.mkdir()
+            command_work.mkdir()
+            contract = {
+                "id": "fixture-build-touching",
+                "resolved_value": None,
+            }
+            completed = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="",
+                stderr="",
+            )
+            make_probe._REGISTERED_COMMAND_CACHE.clear()
+            with mock.patch.object(
+                make_probe,
+                "_sandbox_run",
+                return_value=completed,
+            ) as sandbox:
+                for _ in range(2):
+                    make_probe._execute_registered_command(
+                        "/usr/bin/make -j4 build/generated/data/data_classes.o",
+                        contract,
+                        base=base,
+                        build_output=build_output,
+                        cache_namespace=("fixture",),
+                        command_work=command_work,
+                        direct_arguments=None,
+                        tree=tree,
+                        environment={},
+                    )
+            self.assertEqual(sandbox.call_count, 2)
 
     def test_build_include_traversal_aliases_and_symlinks_reject(self):
         directory, root, entries = self.fixture(
@@ -1354,6 +1512,36 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
                 for variant in authority["record"]["variants"]
                 for item in variant["assignments"]
             },
+        )
+
+    def test_recipe_only_finite_domain_is_censused_without_enumeration(self):
+        directory, root, entries = self.fixture(
+            "MESSAGE ?= fallback\n"
+            "all:\n\t@printf '%s\\n' '$(MESSAGE)'\n"
+        )
+        with directory:
+            authority = self.probe(
+                root,
+                entries,
+                domains={
+                    "MESSAGE": {
+                        "kind": "explicit",
+                        "values": ["fallback", "other"],
+                    }
+                },
+                environment_names={"MESSAGE"},
+            )
+        self.assertEqual(
+            authority["prerequisite_domain_census"]["used"],
+            ["MESSAGE"],
+        )
+        self.assertEqual(
+            authority["variable_census"]["external_defaults"],
+            ["MESSAGE"],
+        )
+        self.assertEqual(
+            [item["origin"] for item in authority["record"]["variants"]],
+            ["fallback"],
         )
 
     def test_variant_fixed_point_caps_fail_closed(self):

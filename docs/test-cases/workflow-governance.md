@@ -1566,8 +1566,10 @@ point. A `MODE=b` branch that first loads `b.mk` must reject an undeclared
 and continue through a `DEP`-selected include's next finite selector.
 Conversely, an unselected branch's `DEP = $(SELECT)` definition cannot
 backfill `SELECT` into the observed `MODE=a` census.
-Branch-only recipe symbolic inputs are recorded but never enumerated. Reversed
-domain declaration order produces identical authority. State/source/domain/
+Branch-only recipe symbolic inputs are recorded but never enumerated, and a
+finite recipe-only default such as `MESSAGE ?= fallback` stays in the observed
+census without spawning closure-expansion variants. Reversed domain
+declaration order produces identical authority. State/source/domain/
 combination/depth/time cap fixtures reject rather than returning a partial
 census, with the time cap enforced independently for each concrete
 standalone-target or combined-root fallback/domain/origin probe state.
@@ -1686,7 +1688,12 @@ The lifecycle `validation-ownership-check` consumer calls complete
 nonrecursive graph validation, Make/workflow authority validation, and exact
 oracle measurement on the artifact copy. Redirected/stale edges or owners and
 broken Make registry/workflow mutations therefore fail removal/restoration
-proofs; the consumer never invokes the lifecycle driver recursively.
+proofs; the consumer never invokes the lifecycle driver recursively. Trigger
+metadata is validated independently, while the bounded executable loop
+exercises the two artifact states once each: missing graph must fail with the
+named reason and restored graph must pass, and those behavioral results are
+bound back onto every checkpoint, dependency-change, and pre-graduation proof
+record.
 
 Exact current/base Git mode and provenance is mandatory. Symlinks, synthetic
 gitlinks under owned prefixes, untracked/ignored/nonexistent changed paths,
