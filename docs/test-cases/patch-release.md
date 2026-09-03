@@ -233,7 +233,13 @@ The wrapper binds the exact owned cgroup read-only under root-only mode-`0700`
 `/mnt/supervisor` before masking `/sys`. The candidate cannot read, write,
 execute, or traverse that parent, while the exact cgroup child remains
 read-only; the post-build check remains readable and rejects any member beyond
-the wrapper PID before ROM handoff. Decoded recursive `/dev` mount targets are
+the wrapper PID before ROM handoff. Only the exact initial `printf` join writes
+raw `$cgroup_path/cgroup.procs`; bind identity uses directory inodes and every
+membership read uses the read-only supervisor view, so no raw `cgroup.procs`
+read remains. Parsed mutations preserve the safe `mapfile` line while adding
+raw mapfile/readarray, cat, sort, redirection, environment/shell wrappers,
+spacing, direct aliases, and composed root/leaf aliases; all fail closed.
+Decoded recursive `/dev` mount targets are
 emitted through NUL-delimited trusted JSON parsing, staged through checked
 root-owned regular temp files under `/mnt/supervisor`, unmounted deepest-first,
 and rechecked so only `/dev` remains before the private device tree is
@@ -318,7 +324,9 @@ archival-lane behavior changes.
   observation versus builtin wrapper-only membership, conditional candidate
   status capture with all six mapped stages plus unknown/success controls,
   the executable empty/malformed/duplicate/additional/order membership matrix
-  with downstream-marker and external-process controls, recursive
+  with downstream-marker and external-process controls, safe-plus-raw cgroup
+  read mutations across direct/wrapped/aliased forms in both workflow and
+  upstream parsers, recursive
   command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions
   through inline `else`/brace/case/loop forms, `setsid`-wrapped and common

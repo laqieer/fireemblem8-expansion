@@ -244,6 +244,45 @@ def workflow_has_supervisor_parent_readonly_remount(workflow: str) -> bool:
     )
 
 
+def workflow_has_raw_builder_cgroup_membership_read(workflow: str) -> bool:
+    builder_shell = builder_isolation_shell_source(workflow)
+    return publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+        builder_shell,
+        label="publisher builder raw cgroup membership read",
+    )
+
+
+def generate_raw_builder_cgroup_membership_mutations(workflow: str):
+    marker = (
+        '        mapfile -t cgroup_members < '
+        '"$supervisor_cgroup/cgroup.procs"\n'
+    )
+    mutations = (
+        '        mapfile -t leaked < "$cgroup_path/cgroup.procs"\n',
+        '        /bin/cat -- "${cgroup_path}/cgroup.procs" > /dev/null\n',
+        '        /usr/bin/sort -n "$cgroup_path"/cgroup.procs > /dev/null\n',
+        '        readarray -t leaked < "$cgroup_path/cgroup.procs"\n',
+        '        /usr/bin/env /bin/cat "$cgroup_path/cgroup.procs" > /dev/null\n',
+        '        command /bin/cat "$cgroup_path/cgroup.procs" > /dev/null\n',
+        "        /bin/bash -c "
+        "'/bin/cat \"$cgroup_path/cgroup.procs\" > /dev/null'\n",
+        '        /bin/printf \'%s\\n\' "$$" > "$cgroup_path/cgroup.procs"\n',
+        '        raw_root="$cgroup_path"\n'
+        '        mapfile -t leaked < "$raw_root/cgroup.procs"\n',
+        '        raw_members="$cgroup_path/cgroup.procs"\n'
+        '        /bin/cat "$raw_members" > /dev/null\n',
+        '        raw_root="${cgroup_path}"\n'
+        "        raw_leaf=cgroup.procs\n"
+        '        /bin/cat "$raw_root/$raw_leaf" > /dev/null\n',
+        '        mapfile\t-t\tleaked\t<\t"${cgroup_path}/cgroup.procs"\n',
+    )
+    for index, mutation in enumerate(mutations):
+        changed = workflow.replace(marker, marker + mutation, 1)
+        if changed == workflow:
+            raise AssertionError("raw cgroup membership mutation marker differs")
+        yield f"raw-membership-{index}", changed
+
+
 def render_supervisor_parent_remount_mutation(
     workflow: str,
     *,
@@ -1484,6 +1523,8 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         errors.append("publisher builder isolation shell differs")
     if workflow_has_supervisor_parent_readonly_remount(workflow):
         errors.append("supervisor parent remount differs")
+    if workflow_has_raw_builder_cgroup_membership_read(workflow):
+        errors.append("raw builder cgroup membership read differs")
     required = (
         "Verify exact candidate and stage trusted producer",
         "Install trusted isolated-build dependencies",
@@ -1741,7 +1782,10 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         )
         not in isolated_step
         or "supervisor_cgroup=/mnt/supervisor/cgroup" not in isolated_step
-        or 'stat -Lc %d:%i "$supervisor_cgroup/cgroup.procs"'
+        or (
+            'test "$(/usr/bin/stat -Lc %d:%i "$cgroup_path")" = \\\n'
+            '          "$(/usr/bin/stat -Lc %d:%i "$supervisor_cgroup")"'
+        )
         not in isolated_step
         or "for option in ro nosuid nodev noexec; do" not in isolated_step
         or 'test ! -r /mnt/supervisor' not in isolated_step
@@ -6276,6 +6320,22 @@ exit 37
                     os.killpg(old_process.pid, signal.SIGKILL)
                     old_process.wait(timeout=5)
 
+    def test_raw_cgroup_membership_reads_are_rejected_with_safe_line_present(self):
+        self.assertFalse(
+            workflow_has_raw_builder_cgroup_membership_read(self.text)
+        )
+        for label, changed in generate_raw_builder_cgroup_membership_mutations(
+            self.text
+        ):
+            with self.subTest(variant=label):
+                self.assertTrue(
+                    workflow_has_raw_builder_cgroup_membership_read(changed)
+                )
+                self.assertIn(
+                    "raw builder cgroup membership read differs",
+                    publisher_boundary_errors(changed),
+                )
+
     def test_isolated_exit_status_channel_maps_only_fixed_substages(self):
         report = isolated_failure_report_source(self.text)
         expected = {
@@ -8467,6 +8527,9 @@ exit 37
             self.assertIn("empty, malformed", text)
             self.assertIn("duplicate", text)
             self.assertIn("unrelated live process", text)
+            self.assertIn("safe `mapfile` line", text)
+            self.assertIn("alias", text)
+            self.assertIn("no raw `cgroup.procs` read", text)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)

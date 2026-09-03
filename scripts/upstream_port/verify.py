@@ -1961,6 +1961,11 @@ def _parse_step(block, job_name, index):
                 label=step_label,
             ):
                 raise ValueError(f"{step_label} isolated candidate build differs")
+            if publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                builder_shell,
+                label=step_label,
+            ):
+                raise ValueError(f"{step_label} isolated candidate build differs")
         if index == 4 and (
             values["id"] != "private-base"
             or values["shell"]

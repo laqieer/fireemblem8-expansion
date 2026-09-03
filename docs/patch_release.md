@@ -114,7 +114,12 @@ The candidate cannot read, write, execute, or traverse that parent and cannot
 receive an FD for it. After candidate exit, the wrapper reads the exact
 read-only cgroup child there and exports the ROM only when the wrapper PID is
 the sole member; the host continues to use the actual cgroup path for kill and
-removal. After the isolated builder is spawned, trusted wrapper failures emit
+removal. The raw cgroup path is used only for the exact initial
+`printf` membership-join write. Bind identity is checked through the raw and
+supervisor directory inodes; no raw `cgroup.procs` read remains. The parsed
+contract rejects direct, redirected, wrapped, spaced, or aliased raw membership
+reads even when the safe `mapfile` line remains present. After the isolated
+builder is spawned, trusted wrapper failures emit
 only fixed `launch`, `isolated`, or `cleanup` stage codes with numeric exits,
 never candidate-controlled output. `launch` covers only the bounded,
 kernel-derived stopped-session identity and exact resume operation; its detail

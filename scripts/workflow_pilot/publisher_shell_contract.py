@@ -12,10 +12,10 @@ from typing import Iterable
 
 
 REVIEWED_PATCH_RELEASE_RUN_SHA256 = (
-    "9c57b8e59a99102b352c1da6bd7fe4e106d1d42294abb5968c1141a920009cf6"
+    "dda53bbdb1faeea1c1bf4d7cbc208b9101bafacea378d049a3e7215508d286e7"
 )
 REVIEWED_BUILDER_ISOLATION_SHA256 = (
-    "f52fbf5e929c20a37dec907618ebdbfb5dbcb0cbe666c6e021c302ddccaf96fa"
+    "4d291abb0f05ae0fb99300a774fabad2e7e295a109c879bc1fed89944dc051b3"
 )
 REVIEWED_HIDDEN_MASK_LOOP_SHA256 = (
     "77e81e3a773e78b4c58132c553ea3a3ef0719f802fe1164b59f60aef948235f5"
@@ -117,6 +117,11 @@ _MOUNT_SHORT_OPTIONS_WITH_ARGS = frozenset({"L", "N", "O", "T", "U", "t"})
 _SUBSTITUTION_SCAN_MAX_DEPTH = 8
 _SUBSTITUTION_SCAN_MAX_BODY_CHARS = 16384
 _SUBSTITUTION_SCAN_MAX_COUNT = 128
+_SHELL_VARIABLE_REFERENCE_RE = re.compile(
+    r"\$(?:\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)\}|"
+    r"(?P<plain>[A-Za-z_][A-Za-z0-9_]*))"
+)
+_RAW_CGROUP_ROOT_MARKER = "\x00raw-cgroup-root\x00"
 
 
 @dataclass(frozen=True)
@@ -2188,5 +2193,62 @@ def has_forbidden_supervisor_parent_readonly_mount(
             label=label,
             allowed_hidden_indices=allowed_hidden_indices,
         )
+    except ValueError:
+        return True
+
+
+def _resolve_shell_aliases(text: str, aliases: dict[str, str]) -> str:
+    resolved = text
+    for _depth in range(8):
+        changed = False
+
+        def replace(match: re.Match[str]) -> str:
+            nonlocal changed
+            name = match.group("braced") or match.group("plain")
+            value = aliases.get(name)
+            if value is None:
+                return match.group(0)
+            changed = True
+            return value
+
+        updated = _SHELL_VARIABLE_REFERENCE_RE.sub(replace, resolved)
+        resolved = updated
+        if not changed:
+            break
+    return resolved
+
+
+def has_forbidden_raw_builder_cgroup_membership_read(
+    script: str,
+    *,
+    label: str,
+) -> bool:
+    aliases = {"cgroup_path": _RAW_CGROUP_ROOT_MARKER}
+    try:
+        commands = split_bash_simple_command_strings(script, label=label)
+        for command_text in commands:
+            tokens = _parse_shell_tokens(command_text, label=label)
+            if _token_texts(tokens) == (
+                "printf",
+                "%s\\n",
+                "$$",
+                ">",
+                "$cgroup_path/cgroup.procs",
+            ):
+                continue
+            for token in tokens:
+                resolved = _resolve_shell_aliases(token.text, aliases)
+                if (
+                    _RAW_CGROUP_ROOT_MARKER in resolved
+                    and "cgroup.procs" in resolved
+                ):
+                    return True
+                assignment = _ASSIGNMENT_RE.fullmatch(token.text)
+                if assignment is None:
+                    continue
+                name, value = token.text.split("=", 1)
+                if name != "cgroup_path":
+                    aliases[name] = _resolve_shell_aliases(value, aliases)
+        return False
     except ValueError:
         return True

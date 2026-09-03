@@ -1211,6 +1211,34 @@ class VerifyCliCwdTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     verify_mod._parse_workflow_structure_text(changed)
 
+    def test_patch_release_raw_cgroup_membership_reads_reject_after_identity_check(
+        self,
+    ):
+        with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
+            original = handle.read()
+        verify_mod._parse_workflow_structure_text(original)
+        with (
+            mock.patch.object(
+                verify_mod.publisher_shell_contract,
+                "assert_reviewed_patch_release_run_script_identity",
+            ),
+            mock.patch.object(
+                verify_mod.publisher_shell_contract,
+                "assert_reviewed_builder_isolation_shell_identity",
+            ),
+        ):
+            for (
+                label,
+                changed,
+            ) in patch_workflow_tests.generate_raw_builder_cgroup_membership_mutations(
+                original
+            ):
+                with self.subTest(variant=label), self.assertRaisesRegex(
+                    ValueError,
+                    "isolated candidate build differs",
+                ):
+                    verify_mod._parse_workflow_structure_text(changed)
+
     def test_patch_release_raw_identity_variants_reject_structure_parse(self):
         with open(BUILD_WORKFLOW_PATH, "r", encoding="utf-8") as handle:
             original = handle.read()

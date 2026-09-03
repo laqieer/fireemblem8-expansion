@@ -2058,7 +2058,6 @@ jobs:
         host_gid="$9"
         exec < /dev/null > /dev/null 2>&1
         printf '%s\n' "$$" > "$cgroup_path/cgroup.procs"
-        /usr/bin/grep -Fqx "$$" "$cgroup_path/cgroup.procs"
         cd /
         /usr/bin/mount --make-rprivate /
         /usr/bin/mount --bind / /
@@ -2087,8 +2086,8 @@ jobs:
         /usr/bin/mount -o remount,bind,ro,nosuid,nodev,noexec \
           /mnt/supervisor/cgroup
         supervisor_cgroup=/mnt/supervisor/cgroup
-        test "$(/usr/bin/stat -Lc %d:%i "$cgroup_path/cgroup.procs")" = \
-          "$(/usr/bin/stat -Lc %d:%i "$supervisor_cgroup/cgroup.procs")"
+        test "$(/usr/bin/stat -Lc %d:%i "$cgroup_path")" = \
+          "$(/usr/bin/stat -Lc %d:%i "$supervisor_cgroup")"
         supervisor_options="$(/usr/bin/findmnt -n -o OPTIONS \
           --target "$supervisor_cgroup")"
         for option in ro nosuid nodev noexec; do
