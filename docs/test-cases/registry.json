@@ -1297,6 +1297,8 @@
           "literal_dollar_reexpansion": "forbidden",
           "assignment_prefix_dispatch": "analyze-executable",
           "control_prefix_dispatch": "analyze-executable",
+          "control_operator_topology": "mandatory-actions-unconditional-and-unique",
+          "operator_literals": "quoted-or-escaped-data",
           "split_function_declaration": "bind-pending-name-to-brace",
           "nested_braced_parameters": "reject-active",
           "trap": "exact-isolated-err-only",

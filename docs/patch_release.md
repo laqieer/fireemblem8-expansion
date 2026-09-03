@@ -190,6 +190,12 @@ the following brace; sensitive shadows and malformed or unbalanced scopes then
 reject normally. Leading assignment words and reserved control prefixes are
 removed before executable dispatch analysis, so they cannot hide writers,
 callbacks, traps, or helper calls.
+Command records retain preceding and following control operators across
+physical lines and backslash continuations. Canonical cgroup initialization,
+join, bind, read-only remount, inode verification, supervisor alias, trap, and
+membership checker actions must each occur exactly once without `&&`, `||`,
+`|`, `|&`, or background `&` edges. Quoted and escaped operator text remains
+ordinary data.
 Runtime wrapped-unset controls leave `supervisor_cgroup` unbound before the
 safe read, proving the mutation. Array-backed executable slots are always
 rejected by this security guard. Array-backed `command`/`builtin` option,

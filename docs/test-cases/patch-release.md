@@ -302,6 +302,12 @@ Leading assignment words and reserved `if`/`then`/loop/negation/group prefixes
 are stripped before dispatch analysis. The checker must occur exactly once on
 the unconditional `builder_main` path; false conditions, dynamic conditions,
 and loops reject despite retaining the exact checker AST.
+Parsed command records preserve control-operator edges over physical/logical
+line continuations. The canonical initializer, raw join, supervisor bind,
+read-only remount, inode verification, supervisor alias, reviewed trap, and
+checker each require one operator-free execution record; `&&`, `||`, `|`,
+`|&`, and background `&` placement reject. Quoted or escaped operator text
+remains inert.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,
@@ -486,6 +492,8 @@ archival-lane behavior changes.
   single-quoted/escaped/mixed quote-segment controls,
   split-function shadowing, assignment/control-prefix writer execution, and
   conditional-checker skip/runtime controls in both semantic validators,
+  mandatory-action `&&`/`||`/pipeline/background mutations with physical and
+  logical continuations plus quoted/escaped operator controls,
   parsed registry-contract mutations,
   recursive
   command/process-substitution inspection for

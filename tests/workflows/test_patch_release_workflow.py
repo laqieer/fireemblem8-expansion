@@ -1224,6 +1224,60 @@ def reformatted_cgroup_initializer_control(workflow: str) -> str:
     return changed
 
 
+def generate_mandatory_operator_mutations(workflow: str):
+    actions = {
+        "initializer": '        cgroup_path="$1"\n',
+        "trap": "        trap isolated_stage_failure ERR\n",
+        "join": (
+            '        printf \'%s\\n\' "$$" > '
+            '"$cgroup_path/cgroup.procs"\n'
+        ),
+        "bind": (
+            '        /usr/bin/mount --bind "$cgroup_path" '
+            "/mnt/supervisor/cgroup\n"
+        ),
+        "remount": (
+            "        /usr/bin/mount -o "
+            "remount,bind,ro,nosuid,nodev,noexec \\\n"
+        ),
+        "supervisor-alias": (
+            "        supervisor_cgroup=/mnt/supervisor/cgroup\n"
+        ),
+        "inode-check": (
+            '        test "$(/usr/bin/stat -Lc %d:%i "$cgroup_path")" = \\\n'
+        ),
+        "checker": (
+            '        /usr/bin/python3 -I -S - "$$" <<\'PY\'\n'
+        ),
+    }
+    operator_prefixes = {
+        "and": "        false && \\\n",
+        "or": "        true || \\\n",
+        "pipe": "        true | \\\n",
+        "pipe-stderr": "        true |& \\\n",
+        "background": "        true & \\\n",
+    }
+    for action, marker in actions.items():
+        for operator, prefix in operator_prefixes.items():
+            changed = workflow.replace(marker, prefix + marker, 1)
+            if changed == workflow:
+                raise AssertionError(
+                    f"{action} {operator} mutation marker differs"
+                )
+            yield f"{action}-{operator}", changed
+    initializer = actions["initializer"]
+    following = workflow.replace(
+        initializer,
+        initializer.rstrip("\n") + " && true\n",
+        1,
+    )
+    if following == workflow:
+        raise AssertionError(
+            "initializer following operator marker differs"
+        )
+    yield "initializer-following-and", following
+
+
 def render_supervisor_parent_remount_mutation(
     workflow: str,
     *,
@@ -11201,6 +11255,10 @@ exit 37
                 "literal_dollar_reexpansion": "forbidden",
                 "assignment_prefix_dispatch": "analyze-executable",
                 "control_prefix_dispatch": "analyze-executable",
+                "control_operator_topology": (
+                    "mandatory-actions-unconditional-and-unique"
+                ),
+                "operator_literals": "quoted-or-escaped-data",
                 "split_function_declaration": (
                     "bind-pending-name-to-brace"
                 ),
@@ -11379,6 +11437,10 @@ exit 37
             (
                 ("shell_surface", "assignment_prefix_dispatch"),
                 "ignore",
+            ),
+            (
+                ("shell_surface", "control_operator_topology"),
+                "discard",
             ),
             (
                 (
@@ -11780,6 +11842,7 @@ exit 37
         for label, prefix, suffix in (
             ("if-false", "if false; then\n", "\nfi"),
             ("while-false", "while false; do\n", "\ndone"),
+            ("and-list", "set -e\nfalse && \\\n", ""),
         ):
             with self.subTest(runtime_wrapper=label):
                 completed = subprocess.run(
@@ -11851,6 +11914,27 @@ exit 37
                 label="conditional cgroup initializer runtime",
             )
         )
+        operator_script = (
+            "set -eu\n"
+            "false && \\\n"
+            '  cgroup_path="$1"\n'
+            'printf "%s\\n" "$cgroup_path"\n'
+        )
+        completed = subprocess.run(
+            ["/bin/bash", "-c", operator_script, "--", "/owned-cgroup"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("unbound variable", completed.stderr)
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                operator_script,
+                label="operator cgroup initializer runtime",
+            )
+        )
 
         reformatted = reformatted_cgroup_initializer_control(self.text)
         self.assertFalse(
@@ -11876,6 +11960,54 @@ exit 37
                 )
             ):
                 with self.subTest(cgroup_initializer_context=label):
+                    self.assertTrue(
+                        workflow_has_raw_builder_cgroup_membership_read(
+                            changed
+                        )
+                    )
+                    self.assertIn(
+                        "raw builder cgroup membership read differs",
+                        publisher_boundary_errors(changed),
+                    )
+
+    def test_mandatory_actions_reject_operator_topology(self):
+        controls = (
+            "printf '%s\\n' '&& || | |& &' > /dev/null\n",
+            "printf '%s\\n' \\&\\& \\|\\| \\|\\& \\& > /dev/null\n",
+            "value='literal&&data'\n"
+            'test "$value" = \'literal&&data\'\n',
+        )
+        for script in controls:
+            with self.subTest(operator_literal=script.splitlines()[0]):
+                records = (
+                    publisher_shell_contract.split_bash_command_records(
+                        script,
+                        label="literal operator control",
+                    )
+                )
+                self.assertTrue(records)
+                self.assertTrue(
+                    all(
+                        record.preceding_operator is None
+                        and record.following_operator is None
+                        for record in records
+                    )
+                )
+
+        with (
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_patch_release_run_script_identity",
+            ),
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_builder_isolation_shell_identity",
+            ),
+        ):
+            for label, changed in generate_mandatory_operator_mutations(
+                self.text
+            ):
+                with self.subTest(mandatory_operator=label):
                     self.assertTrue(
                         workflow_has_raw_builder_cgroup_membership_read(
                             changed

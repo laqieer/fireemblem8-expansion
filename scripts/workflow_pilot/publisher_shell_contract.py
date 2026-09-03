@@ -188,7 +188,7 @@ if (
 _SIMPLE_COMMAND_PREFIXES = frozenset(
     {"if", "then", "do", "elif", "while", "until", "!", "else", "{"}
 )
-_CONTROL_OPERATORS = frozenset({";", "&&", "||", "|", "&"})
+_CONTROL_OPERATORS = frozenset({";", "&&", "||", "|", "|&", "&"})
 _DISALLOWED_MOUNT_WRAPPERS = frozenset({"env", "command", "eval"})
 _ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
 _BUSYBOX_BASENAME = "busybox"
@@ -339,6 +339,13 @@ class _ShellToken:
     text: str
     has_shell_syntax: bool
     segments: tuple[tuple[str, bool], ...] = ()
+
+
+@dataclass(frozen=True)
+class _ShellCommandRecord:
+    text: str
+    preceding_operator: str | None
+    following_operator: str | None
 
 
 @dataclass(frozen=True)
@@ -558,13 +565,36 @@ def bash_logical_lines(script: str, *, label: str) -> tuple[str, ...]:
     return tuple(logical_lines)
 
 
-def split_bash_simple_command_strings(script: str, *, label: str) -> tuple[str, ...]:
-    commands: list[str] = []
+def split_bash_command_records(
+    script: str,
+    *,
+    label: str,
+) -> tuple[_ShellCommandRecord, ...]:
+    records: list[_ShellCommandRecord] = []
+    pending_operator: str | None = None
     for logical in bash_logical_lines(script, label=label):
         current: list[str] = []
         quote: str | None = None
         word_start = True
         index = 0
+
+        def emit(following_operator: str | None) -> None:
+            nonlocal current, pending_operator, word_start
+            command = "".join(current).strip()
+            if command:
+                records.append(
+                    _ShellCommandRecord(
+                        text=command,
+                        preceding_operator=pending_operator,
+                        following_operator=following_operator,
+                    )
+                )
+                pending_operator = following_operator
+            elif following_operator is not None:
+                pending_operator = following_operator
+            current = []
+            word_start = True
+
         while index < len(logical):
             character = logical[index]
             if quote is None:
@@ -581,21 +611,24 @@ def split_bash_simple_command_strings(script: str, *, label: str) -> tuple[str, 
                     current.append(character)
                     quote = '"'
                     word_start = False
+                elif character == "\\":
+                    if index + 1 >= len(logical):
+                        raise ValueError(
+                            f"{label} shell operator escape differs"
+                        )
+                    current.append(character)
+                    current.append(logical[index + 1])
+                    index += 1
+                    word_start = False
                 elif character in "&|;":
                     operator = character
-                    if (
-                        character in "&|"
-                        and index + 1 < len(logical)
-                        and logical[index + 1] == character
-                    ):
-                        operator += character
-                        index += 1
+                    if index + 1 < len(logical):
+                        pair = logical[index : index + 2]
+                        if pair in {"&&", "||", "|&"}:
+                            operator = pair
+                            index += 1
                     if operator in _CONTROL_OPERATORS:
-                        command = "".join(current).strip()
-                        if command:
-                            commands.append(command)
-                        current = []
-                        word_start = True
+                        emit(operator)
                     else:
                         current.append(operator)
                         word_start = False
@@ -614,10 +647,15 @@ def split_bash_simple_command_strings(script: str, *, label: str) -> tuple[str, 
                 elif character == '"':
                     quote = None
             index += 1
-        command = "".join(current).strip()
-        if command:
-            commands.append(command)
-    return tuple(commands)
+        emit(None)
+    return tuple(records)
+
+
+def split_bash_simple_command_strings(script: str, *, label: str) -> tuple[str, ...]:
+    return tuple(
+        record.text
+        for record in split_bash_command_records(script, label=label)
+    )
 
 
 def raw_patch_release_parser_sources(script: str) -> tuple[tuple[str, str], ...]:
@@ -2750,6 +2788,44 @@ def _normalize_split_function_declarations(
     return tuple(normalized)
 
 
+def _normalize_split_function_command_records(
+    records: tuple[_ShellCommandRecord, ...],
+) -> tuple[_ShellCommandRecord, ...]:
+    normalized: list[_ShellCommandRecord] = []
+    index = 0
+    while index < len(records):
+        record = records[index]
+        command = record.text.strip()
+        pending = re.fullmatch(
+            r"(?:[A-Za-z_][A-Za-z0-9_]*\s*\(\s*\)"
+            r"|function\s+[A-Za-z_][A-Za-z0-9_]*"
+            r"(?:\s*\(\s*\))?)",
+            command,
+        )
+        if pending is not None:
+            if (
+                index + 1 >= len(records)
+                or records[index + 1].text != "{"
+                or record.following_operator is not None
+                or records[index + 1].preceding_operator is not None
+            ):
+                raise ValueError("split shell function declaration differs")
+            normalized.append(
+                _ShellCommandRecord(
+                    text=command + " {",
+                    preceding_operator=record.preceding_operator,
+                    following_operator=records[
+                        index + 1
+                    ].following_operator,
+                )
+            )
+            index += 2
+            continue
+        normalized.append(record)
+        index += 1
+    return tuple(normalized)
+
+
 def _shell_function_definitions(
     commands: tuple[str, ...],
 ) -> tuple[dict[str, tuple[str, ...]], Counter[tuple[str, str]]]:
@@ -4070,17 +4146,22 @@ def has_forbidden_raw_builder_cgroup_membership_read(
     cgroup_path_initializations = 0
     cgroup_path_initialized = False
     membership_checker_count = 0
+    raw_join_count = 0
+    supervisor_bind_count = 0
+    supervisor_remount_count = 0
+    supervisor_inode_check_count = 0
     control_stack: list[str] = []
     try:
         semantic_script = _strip_patch_release_parser_heredoc_bodies(
             script
         )
-        commands = _normalize_split_function_declarations(
-            split_bash_simple_command_strings(
+        command_records = _normalize_split_function_command_records(
+            split_bash_command_records(
                 semantic_script,
                 label=label,
             )
         )
+        commands = tuple(record.text for record in command_records)
         if re.search(r"\bcgroup_members\b", semantic_script):
             return True
         function_bodies, function_inventory = (
@@ -4091,7 +4172,15 @@ def has_forbidden_raw_builder_cgroup_membership_read(
             REVIEWED_BUILDER_HELPER_INVENTORY
         ):
             return True
-        for command_text in commands:
+        for command_record in command_records:
+            command_text = command_record.text
+            unsafe_operator_context = any(
+                operator in {"&&", "||", "|", "|&", "&"}
+                for operator in (
+                    command_record.preceding_operator,
+                    command_record.following_operator,
+                )
+            )
             is_function, function_name, has_inline_body = (
                 _shell_function_declaration(command_text)
             )
@@ -4160,6 +4249,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 if (
                     cgroup_path_initializations != 0
                     or control_stack
+                    or unsafe_operator_context
                     or (
                         require_production_helpers
                         and function_stack != ["builder_main"]
@@ -4178,10 +4268,15 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 "$cgroup_path/cgroup.procs",
             ):
                 if (
+                    unsafe_operator_context
+                    or raw_join_count != 0
+                    or (
                     require_production_helpers
                     and not cgroup_path_initialized
+                    )
                 ):
                     return True
+                raw_join_count = 1
                 continue
             if token_texts == (
                 "/usr/bin/mount",
@@ -4190,10 +4285,15 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 "/mnt/supervisor/cgroup",
             ):
                 if (
+                    unsafe_operator_context
+                    or supervisor_bind_count != 0
+                    or (
                     require_production_helpers
                     and not cgroup_path_initialized
+                    )
                 ):
                     return True
+                supervisor_bind_count = 1
                 saw_supervisor_bind = True
             elif token_texts == (
                 "/usr/bin/mount",
@@ -4201,6 +4301,12 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 "remount,bind,ro,nosuid,nodev,noexec",
                 "/mnt/supervisor/cgroup",
             ):
+                if (
+                    unsafe_operator_context
+                    or supervisor_remount_count != 0
+                ):
+                    return True
+                supervisor_remount_count = 1
                 saw_supervisor_readonly_remount = (
                     saw_supervisor_bind
                 )
@@ -4210,6 +4316,12 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 "=",
                 "$(/usr/bin/stat -Lc %d:%i $supervisor_cgroup)",
             ):
+                if (
+                    unsafe_operator_context
+                    or supervisor_inode_check_count != 0
+                ):
+                    return True
+                supervisor_inode_check_count = 1
                 saw_supervisor_inode_verification = (
                     saw_supervisor_bind
                     and saw_supervisor_readonly_remount
@@ -4232,6 +4344,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 if (
                     membership_checker_count != 1
                     or control_stack
+                    or unsafe_operator_context
                     or function_stack != ["builder_main"]
                 ):
                     return True
@@ -4262,6 +4375,11 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 )
             ):
                 return True
+            if unsafe_operator_context and any(
+                _RAW_CGROUP_ROOT_MARKER in token
+                for token in resolved_token_texts
+            ):
+                return True
             normalized_command = _normalize_shell_builtin_wrappers(
                 resolved_token_texts
             )
@@ -4274,6 +4392,8 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     "isolated_stage_failure",
                     "ERR",
                 ):
+                    return True
+                if unsafe_operator_context:
                     return True
                 reviewed_trap_count += 1
                 if reviewed_trap_count != 1:
@@ -4422,6 +4542,8 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     "("
                 )
                 if name == "supervisor_cgroup":
+                    if unsafe_operator_context:
+                        return True
                     supervisor_assignments += 1
                     if (
                         supervisor_assignments != 1
@@ -4479,6 +4601,13 @@ def has_forbidden_raw_builder_cgroup_membership_read(
             ):
                 return True
             if membership_checker_count != 1 or control_stack:
+                return True
+            if (
+                raw_join_count != 1
+                or supervisor_bind_count != 1
+                or supervisor_remount_count != 1
+                or supervisor_inode_check_count != 1
+            ):
                 return True
         return False
     except ValueError:
