@@ -224,11 +224,13 @@ of falling through to `transport`. Candidate-launcher status uses conditional
 status capture, which suppresses ERR handling for that command under Bash
 semantics. `set +e` is absent because it does not disable an active ERR trap.
 Candidate codes `71` through `76` reach forwarding exactly once, arbitrary
-nonzero candidate status becomes `77`, and success remains zero. `cleanup`
-reports teardown summary status whenever teardown fails. Earlier trusted
-pre-spawn setup and later post-child handoff validation still use normal shell
-failure output and are outside this stage enum; cleanup may therefore be the
-only stage text even when the failure began before spawn.
+nonzero candidate status becomes `77`, while launcher validation `125` and
+exec failure `126` pass through to the outer `detail=transport exit=125`
+rejection. Success remains zero. `cleanup` reports teardown summary status
+whenever teardown fails. Earlier trusted pre-spawn setup and later post-child
+handoff validation still use normal shell failure output and are outside this
+stage enum; cleanup may therefore be the only stage text even when the failure
+began before spawn.
 The wrapper binds the exact owned cgroup read-only under root-only mode-`0700`
 `/mnt/supervisor` before masking `/sys`. The candidate cannot read, write,
 execute, or traverse that parent, while the exact cgroup child remains
@@ -239,6 +241,11 @@ membership read uses the read-only supervisor view, so no raw `cgroup.procs`
 read remains. Parsed mutations preserve the safe `mapfile` line while adding
 raw mapfile/readarray, cat, sort, redirection, environment/shell wrappers,
 spacing, direct aliases, and composed root/leaf aliases; all fail closed.
+Braced default/assign/error/alternate, prefix/suffix removal, substring, case,
+transformation, length, and indirect operators fail closed whenever they use
+the tracked raw root, in quoted, unquoted, direct, or aliased form. Scalar
+`+=` appends to tracked aliases, so `raw_leaf=cgroup; raw_leaf+=.procs` cannot
+hide the membership path.
 Decoded recursive `/dev` mount targets are
 emitted through NUL-delimited trusted JSON parsing, staged through checked
 root-owned regular temp files under `/mnt/supervisor`, unmounted deepest-first,
@@ -326,7 +333,8 @@ archival-lane behavior changes.
   the executable empty/malformed/duplicate/additional/order membership matrix
   with downstream-marker and external-process controls, safe-plus-raw cgroup
   read mutations across direct/wrapped/aliased forms in both workflow and
-  upstream parsers, recursive
+  upstream parsers, tracked braced-operator and scalar-append mutations,
+  launcher `125`/`126` transport controls, recursive
   command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions
   through inline `else`/brace/case/loop forms, `setsid`-wrapped and common

@@ -118,8 +118,13 @@ removal. The raw cgroup path is used only for the exact initial
 `printf` membership-join write. Bind identity is checked through the raw and
 supervisor directory inodes; no raw `cgroup.procs` read remains. The parsed
 contract rejects direct, redirected, wrapped, spaced, or aliased raw membership
-reads even when the safe `mapfile` line remains present. After the isolated
-builder is spawned, trusted wrapper failures emit
+reads even when the safe `mapfile` line remains present. Tracked braced
+parameters with default/assign/error/alternate, prefix/suffix removal,
+substring, case conversion, transformation, length, or indirect operators
+fail closed because their resulting path is ambiguous. Direct and aliased
+forms behave identically in and out of quotes. Scalar `+=` updates the tracked
+alias value, so split `cgroup` plus `.procs` construction remains tainted.
+After the isolated builder is spawned, trusted wrapper failures emit
 only fixed `launch`, `isolated`, or `cleanup` stage codes with numeric exits,
 never candidate-controlled output. `launch` covers only the bounded,
 kernel-derived stopped-session identity and exact resume operation; its detail
@@ -140,8 +145,9 @@ forwarding, and success `0`, so explicit failures cannot fall through to
 which suppresses ERR handling for that command under Bash semantics; `set +e`
 is intentionally absent because it does not disable an active ERR trap.
 Candidate codes `71` through `76` therefore reach forwarding exactly once,
-arbitrary nonzero candidate status becomes `77`, and success continues as
-zero. `cleanup` reports teardown summary status whenever teardown fails.
+launcher validation `125` and exec failure `126` pass through to the outer
+transport rejection, arbitrary other nonzero candidate status becomes `77`,
+and success continues as zero. `cleanup` reports teardown summary status whenever teardown fails.
 Earlier trusted pre-spawn setup and later post-child handoff validation still
 use normal shell failure output and are outside this diagnostic enum; cleanup
 may therefore be the only stage text even when the failure began before spawn.

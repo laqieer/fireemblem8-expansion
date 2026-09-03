@@ -2506,6 +2506,7 @@ jobs:
         if [ "$candidate_status" -ne 0 ]; then
           case "$candidate_status" in
             71|72|73|74|75|76) exit "$candidate_status" ;;
+            125|126) exit "$candidate_status" ;;
             *) exit 77 ;;
           esac
         fi

@@ -12,10 +12,10 @@ from typing import Iterable
 
 
 REVIEWED_PATCH_RELEASE_RUN_SHA256 = (
-    "dda53bbdb1faeea1c1bf4d7cbc208b9101bafacea378d049a3e7215508d286e7"
+    "45d68f9139c80cfc7af1ead7f6a592891cd2a7371be2c12fb57529a80e538e04"
 )
 REVIEWED_BUILDER_ISOLATION_SHA256 = (
-    "4d291abb0f05ae0fb99300a774fabad2e7e295a109c879bc1fed89944dc051b3"
+    "b750b03aa814b977790d066ce0c7c99f0855af79ee489e467861f0884fc13506"
 )
 REVIEWED_HIDDEN_MASK_LOOP_SHA256 = (
     "77e81e3a773e78b4c58132c553ea3a3ef0719f802fe1164b59f60aef948235f5"
@@ -117,11 +117,15 @@ _MOUNT_SHORT_OPTIONS_WITH_ARGS = frozenset({"L", "N", "O", "T", "U", "t"})
 _SUBSTITUTION_SCAN_MAX_DEPTH = 8
 _SUBSTITUTION_SCAN_MAX_BODY_CHARS = 16384
 _SUBSTITUTION_SCAN_MAX_COUNT = 128
-_SHELL_VARIABLE_REFERENCE_RE = re.compile(
-    r"\$(?:\{(?P<braced>[A-Za-z_][A-Za-z0-9_]*)\}|"
-    r"(?P<plain>[A-Za-z_][A-Za-z0-9_]*))"
+_SHELL_BRACED_PARAMETER_RE = re.compile(r"\$\{(?P<body>[^{}]*)\}")
+_SHELL_PLAIN_VARIABLE_REFERENCE_RE = re.compile(
+    r"\$(?P<name>[A-Za-z_][A-Za-z0-9_]*)"
+)
+_SHELL_ALIAS_ASSIGNMENT_RE = re.compile(
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)(?P<append>\+)?=(?P<value>.*)"
 )
 _RAW_CGROUP_ROOT_MARKER = "\x00raw-cgroup-root\x00"
+_AMBIGUOUS_TRACKED_PARAMETER_MARKER = "\x00ambiguous-tracked-parameter\x00"
 
 
 @dataclass(frozen=True)
@@ -2202,16 +2206,59 @@ def _resolve_shell_aliases(text: str, aliases: dict[str, str]) -> str:
     for _depth in range(8):
         changed = False
 
-        def replace(match: re.Match[str]) -> str:
+        def replace_braced(match: re.Match[str]) -> str:
             nonlocal changed
-            name = match.group("braced") or match.group("plain")
+            body = match.group("body")
+            indirect = body.startswith("!")
+            length = body.startswith("#")
+            subject = body[1:] if indirect or length else body
+            name_match = re.match(r"[A-Za-z_][A-Za-z0-9_]*", subject)
+            if name_match is None:
+                return match.group(0)
+            name = name_match.group(0)
             value = aliases.get(name)
+            if value is None:
+                return match.group(0)
+            changed = True
+            operator = subject[len(name) :]
+            if indirect:
+                indirect_value = aliases.get(value)
+                if (
+                    _RAW_CGROUP_ROOT_MARKER in value
+                    or (
+                        indirect_value is not None
+                        and _RAW_CGROUP_ROOT_MARKER in indirect_value
+                    )
+                ):
+                    return _AMBIGUOUS_TRACKED_PARAMETER_MARKER
+                return value
+            if length or operator:
+                if (
+                    _RAW_CGROUP_ROOT_MARKER in value
+                    or "cgroup.procs" in value
+                ):
+                    return (
+                        _AMBIGUOUS_TRACKED_PARAMETER_MARKER
+                        + value
+                    )
+            return value
+
+        def replace_plain(match: re.Match[str]) -> str:
+            nonlocal changed
+            value = aliases.get(match.group("name"))
             if value is None:
                 return match.group(0)
             changed = True
             return value
 
-        updated = _SHELL_VARIABLE_REFERENCE_RE.sub(replace, resolved)
+        updated = _SHELL_BRACED_PARAMETER_RE.sub(
+            replace_braced,
+            resolved,
+        )
+        updated = _SHELL_PLAIN_VARIABLE_REFERENCE_RE.sub(
+            replace_plain,
+            updated,
+        )
         resolved = updated
         if not changed:
             break
@@ -2238,17 +2285,28 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 continue
             for token in tokens:
                 resolved = _resolve_shell_aliases(token.text, aliases)
+                if _AMBIGUOUS_TRACKED_PARAMETER_MARKER in resolved:
+                    return True
                 if (
                     _RAW_CGROUP_ROOT_MARKER in resolved
                     and "cgroup.procs" in resolved
                 ):
                     return True
-                assignment = _ASSIGNMENT_RE.fullmatch(token.text)
+                assignment = _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(
+                    token.text
+                )
                 if assignment is None:
                     continue
-                name, value = token.text.split("=", 1)
+                name = assignment.group("name")
+                value = _resolve_shell_aliases(
+                    assignment.group("value"),
+                    aliases,
+                )
                 if name != "cgroup_path":
-                    aliases[name] = _resolve_shell_aliases(value, aliases)
+                    if assignment.group("append"):
+                        aliases[name] = aliases.get(name, "") + value
+                    else:
+                        aliases[name] = value
         return False
     except ValueError:
         return True

@@ -257,7 +257,7 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         '        mapfile -t cgroup_members < '
         '"$supervisor_cgroup/cgroup.procs"\n'
     )
-    mutations = (
+    mutations = [
         '        mapfile -t leaked < "$cgroup_path/cgroup.procs"\n',
         '        /bin/cat -- "${cgroup_path}/cgroup.procs" > /dev/null\n',
         '        /usr/bin/sort -n "$cgroup_path"/cgroup.procs > /dev/null\n',
@@ -275,6 +275,66 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         "        raw_leaf=cgroup.procs\n"
         '        /bin/cat "$raw_root/$raw_leaf" > /dev/null\n',
         '        mapfile\t-t\tleaked\t<\t"${cgroup_path}/cgroup.procs"\n',
+        '        raw_root="$cgroup_path"\n'
+        "        raw_leaf=cgroup\n"
+        "        raw_leaf+=.procs\n"
+        '        /bin/cat "$raw_root/$raw_leaf" > /dev/null\n',
+        '        raw_members="$cgroup_path/cgroup"\n'
+        "        raw_members+=.procs\n"
+        '        /bin/cat "$raw_members" > /dev/null\n',
+        "        indirect_name=cgroup_path\n"
+        '        /bin/cat "${!indirect_name}/cgroup.procs" > /dev/null\n',
+    ]
+    parameter_expressions = (
+        "${cgroup_path:-/fallback}/cgroup.procs",
+        "${cgroup_path:=/fallback}/cgroup.procs",
+        "${cgroup_path:?required}/cgroup.procs",
+        "${cgroup_path:+/alternate}/cgroup.procs",
+        "${cgroup_path#prefix}/cgroup.procs",
+        "${cgroup_path##prefix}/cgroup.procs",
+        "${cgroup_path%suffix}/cgroup.procs",
+        "${cgroup_path%%suffix}/cgroup.procs",
+        "${cgroup_path:0}/cgroup.procs",
+        "${cgroup_path^}/cgroup.procs",
+        "${cgroup_path^^}/cgroup.procs",
+        "${cgroup_path,}/cgroup.procs",
+        "${cgroup_path,,}/cgroup.procs",
+        "${cgroup_path@Q}/cgroup.procs",
+        "${cgroup_path@P}/cgroup.procs",
+        "${#cgroup_path}/cgroup.procs",
+        "${!cgroup_path}/cgroup.procs",
+    )
+    mutations.extend(
+        f'        /bin/cat "{expression}" > /dev/null\n'
+        for expression in parameter_expressions
+    )
+    mutations.extend(
+        f"        /bin/cat {expression} > /dev/null\n"
+        for expression in parameter_expressions
+    )
+    mutations.extend(
+        (
+            '        raw_root="$cgroup_path"\n'
+            f'        /bin/cat "${{raw_root{operator}}}/cgroup.procs" '
+            "> /dev/null\n"
+        )
+        for operator in (
+            ":-/fallback",
+            ":=/fallback",
+            ":?required",
+            ":+/alternate",
+            "#prefix",
+            "##prefix",
+            "%suffix",
+            "%%suffix",
+            ":0",
+            "^",
+            "^^",
+            ",",
+            ",,",
+            "@Q",
+            "@P",
+        )
     )
     for index, mutation in enumerate(mutations):
         changed = workflow.replace(marker, marker + mutation, 1)
@@ -1740,6 +1800,7 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "isolated_stage_failure" not in isolated_step
         or "candidate_stage_failure" not in isolated_step
         or "builder_isolated_detail=transport" not in isolated_step
+        or '125|126) exit "$candidate_status" ;;' not in isolated_step
         or "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d"
         not in isolated_step
         or "$builder_cgroup/cgroup.kill\" > /dev/null 2>&1" not in isolated_step
@@ -6373,7 +6434,7 @@ exit 37
                     f"detail={detail} exit={status}\n",
                 )
 
-        for status in (1, 70, 78, 80, 86, 124, 125, 137, 255):
+        for status in (1, 70, 78, 80, 86, 124, 125, 126, 137, 255):
             with self.subTest(malformed_status=status):
                 completed = subprocess.run(
                     [
@@ -6560,7 +6621,7 @@ exit 37
                     f"detail={detail} exit={status}\n",
                 )
 
-        for status in (1, 23, 77, 81, 125, 137):
+        for status in (1, 23, 77, 81, 137):
             with self.subTest(candidate_arbitrary_status=status):
                 forwarded = subprocess.run(
                     [
@@ -6594,6 +6655,44 @@ exit 37
                 self.assertIn(
                     "detail=candidate-unknown exit=77",
                     normalized.stderr,
+                )
+
+        for status in (125, 126):
+            with self.subTest(launcher_infrastructure_status=status):
+                forwarded = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        "set -Eeuo pipefail\n"
+                        + builder_protocol
+                        + "\n"
+                        + f"fake_candidate_launcher() {{ return {status}; }}\n"
+                        + capture
+                        + "\n",
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(forwarded.returncode, status)
+                normalized = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        f"builder_status={forwarded.returncode}\n"
+                        + report,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(normalized.returncode, 125)
+                self.assertEqual(
+                    normalized.stderr,
+                    "candidate build failed: stage=isolated "
+                    "detail=transport exit=125\n",
                 )
 
         success = subprocess.run(
@@ -6802,6 +6901,7 @@ exit 37
                 "post-check) exit 85 ;;",
                 "*) exit 125 ;;",
                 '71|72|73|74|75|76) exit "$candidate_status" ;;',
+                '125|126) exit "$candidate_status" ;;',
                 "*) exit 77 ;;",
                 "exit 0",
             ],
@@ -8530,6 +8630,10 @@ exit 37
             self.assertIn("safe `mapfile` line", text)
             self.assertIn("alias", text)
             self.assertIn("no raw `cgroup.procs` read", text)
+            self.assertIn("scalar `+=`", text.lower())
+            self.assertIn("indirect", text)
+            self.assertIn("125", text)
+            self.assertIn("126", text)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)
