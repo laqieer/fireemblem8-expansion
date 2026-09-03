@@ -113,6 +113,9 @@ PUBLICATION_ATTESTATION_DOMAIN = (
     b"workflow-pilot-authority-publication-v1\0"
 )
 RESULT_ATTESTATION_DOMAIN = b"workflow-pilot-canonical-result-v1\0"
+REPORTER_TRUST_ANCHOR_DOMAIN = (
+    b"workflow-pilot-reporter-trust-anchor-v1\0"
+)
 HISTORY_OBSERVATION_SEAL_DOMAIN = (
     b"workflow-pilot-agent-history-observation-v2\0"
 )
@@ -1108,36 +1111,6 @@ def _decode_canonical_base64(
     if base64.b64encode(decoded).decode("ascii") != text:
         raise HandoffDataError(f"{label} is not canonical base64")
     return decoded
-def reporter_trusted_authority(authority: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "authority_digest": hashlib.sha256(normalized_json(authority)).hexdigest(),
-        "repository": authority["repository"],
-        "ref": authority["ref"],
-        "anchor_ref": authority["anchor_ref"],
-        "signer": copy.deepcopy(authority["signer"]),
-    }
-def _parse_reporter_trusted_authority(
-    raw: Any,
-    label: str,
-) -> dict[str, Any]:
-    trusted = copy.deepcopy(expect_object(raw, label))
-    expect_keys(
-        trusted,
-        label,
-        ("authority_digest", "repository", "ref", "anchor_ref", "signer"),
-    )
-    if (
-        not isinstance(trusted["authority_digest"], str)
-        or reporter.SHA256_RE.fullmatch(trusted["authority_digest"]) is None
-    ):
-        raise HandoffDataError(f"{label}.authority_digest must be a SHA-256")
-    return {
-        "authority_digest": trusted["authority_digest"],
-        "repository": expect_string(trusted["repository"], f"{label}.repository"),
-        "ref": expect_string(trusted["ref"], f"{label}.ref"),
-        "anchor_ref": expect_string(trusted["anchor_ref"], f"{label}.anchor_ref"),
-        "signer": _parse_signer_public(trusted["signer"], f"{label}.signer"),
-    }
 def verify_external_signature(
     signer: dict[str, Any],
     payload: bytes,
@@ -1164,6 +1137,56 @@ def signed_record_payload(domain: bytes, record: dict[str, Any]) -> bytes:
     return domain + normalized_json(
         {key: value for key, value in record.items() if key != "signature"}
     )
+def reporter_trust_anchor_payload(anchor: dict[str, Any]) -> bytes:
+    return signed_record_payload(REPORTER_TRUST_ANCHOR_DOMAIN, anchor)
+def _parse_reporter_trusted_installation(raw: Any, *, label: str) -> dict[str, Any]:
+    installation = copy.deepcopy(expect_object(raw, label))
+    if (
+        "repository" not in installation
+        or "repository_database_id" not in installation
+        or ("_signer" not in installation and "signer_public" not in installation)
+    ):
+        raise HandoffDataError(f"{label} is missing trusted installation fields")
+    signer_label = f"{label}._signer" if "_signer" in installation else f"{label}.signer_public"
+    return {
+        "repository": expect_string(installation["repository"], f"{label}.repository"),
+        "repository_database_id": expect_int(installation["repository_database_id"], f"{label}.repository_database_id", 1),
+        "signer": _parse_signer_public(installation.get("_signer", installation["signer_public"]), signer_label),
+    }
+def _verify_reporter_trust_anchor(
+    raw_anchor: Any, *, expected_input_seal: str, original_authority: dict[str, Any],
+    trusted_installation: Any, current_time: datetime | None, label: str,
+) -> dict[str, Any]:
+    anchor = copy.deepcopy(expect_object(raw_anchor, label))
+    expect_keys(anchor, label, ("input_seal", "authority_digest", "repository", "ref", "anchor_ref", "signer", "issued_at", "expires_at", "signature"))
+    installation = _parse_reporter_trusted_installation(trusted_installation, label=f"{label} trusted installation")
+    input_seal = anchor["input_seal"]
+    if not isinstance(input_seal, str) or reporter.SHA256_RE.fullmatch(input_seal) is None:
+        raise HandoffDataError(f"{label}.input_seal must be a SHA-256")
+    if input_seal != expected_input_seal:
+        raise HandoffDataError(f"{label}.input_seal does not match its record")
+    authority_digest = anchor["authority_digest"]
+    if not isinstance(authority_digest, str) or reporter.SHA256_RE.fullmatch(authority_digest) is None:
+        raise HandoffDataError(f"{label}.authority_digest must be a SHA-256")
+    repository = expect_string(anchor["repository"], f"{label}.repository")
+    if repository != installation["repository"]:
+        raise HandoffDataError(f"{label}.repository does not match trusted installation")
+    ref = expect_string(anchor["ref"], f"{label}.ref")
+    anchor_ref = expect_string(anchor["anchor_ref"], f"{label}.anchor_ref")
+    signer = _parse_signer_public(anchor["signer"], f"{label}.signer")
+    if signer != installation["signer"]:
+        raise HandoffDataError(f"{label}.signer does not match trusted installation")
+    issued_at = parse_time(anchor["issued_at"], f"{label}.issued_at")
+    expires_at = parse_time(anchor["expires_at"], f"{label}.expires_at")
+    if issued_at > expires_at:
+        raise HandoffDataError(f"{label}.expires_at precedes issued_at")
+    verification_time = authoritative_current_time(current_time, label=f"{label} current_time")
+    if issued_at > verification_time or expires_at < verification_time:
+        raise HandoffDataError(f"{label} is future-dated or expired")
+    verify_external_signature(installation["signer"], reporter_trust_anchor_payload(anchor), anchor["signature"], f"{label}.signature")
+    if authority_digest != hashlib.sha256(normalized_json(original_authority)).hexdigest() or repository != original_authority["repository"] or ref != original_authority["ref"] or anchor_ref != original_authority["anchor_ref"]:
+        raise HandoffDataError(f"{label} does not match its record")
+    return {"signer": signer, "repository_database_id": installation["repository_database_id"]}
 def worktree_identity(repository_root: Path) -> str:
     repository_root = validate_repository_root(repository_root)
     payload = {
@@ -5211,7 +5234,9 @@ def _verify_handoff_document_result(
     *,
     revalidate_git: bool,
     repository_root: Path | None = None,
-    trusted_authority: dict[str, Any] | None = None,
+    trusted_anchor: dict[str, Any] | None = None,
+    trusted_installation: dict[str, Any] | None = None,
+    current_time: datetime | None = None,
     current_authority: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     expect_keys(
@@ -5397,20 +5422,29 @@ def _verify_handoff_document_result(
         original_authority["signer"],
         "handoff verification original signer",
     )
-    if trusted_authority is not None:
-        trusted = _parse_reporter_trusted_authority(
-            trusted_authority,
-            "handoff reporter trusted authority",
+    if trusted_anchor is not None:
+        if trusted_installation is None:
+            raise HandoffDataError(
+                "handoff reporter offline verification requires trusted installation"
+            )
+        trusted = _verify_reporter_trust_anchor(
+            trusted_anchor,
+            expected_input_seal=result["input_seal"],
+            original_authority=original_authority,
+            trusted_installation=trusted_installation,
+            current_time=current_time,
+            label="handoff reporter trusted anchor",
         )
         if (
-            trusted["authority_digest"]
-            != hashlib.sha256(normalized_json(original_authority)).hexdigest()
-            or trusted["repository"] != original_authority["repository"]
-            or trusted["ref"] != original_authority["ref"]
-            or trusted["anchor_ref"] != original_authority["anchor_ref"]
+            expect_int(
+                receipt["repository_database_id"],
+                "handoff verification coordinator receipt.repository_database_id",
+                1,
+            )
+            != trusted["repository_database_id"]
         ):
             raise HandoffDataError(
-                "handoff reporter trusted authority does not match its record"
+                "handoff reporter trusted installation does not match its record"
             )
         original_signer = trusted["signer"]
     verify_external_signature(
@@ -5587,7 +5621,8 @@ def reporter_record(
     result: dict[str, Any],
     result_attestation: dict[str, Any],
     *,
-    trusted_authority: dict[str, Any],
+    trusted_anchor: dict[str, Any],
+    trusted_installation: dict[str, Any],
 ) -> dict[str, Any]:
     record = {
         "source_handoff_ids": sorted(
@@ -5603,7 +5638,8 @@ def reporter_record(
     verify_reporter_record(
         record,
         revalidate_git=False,
-        trusted_authority=trusted_authority,
+        trusted_anchor=trusted_anchor,
+        trusted_installation=trusted_installation,
     )
     return record
 def verify_reporter_record(
@@ -5611,7 +5647,9 @@ def verify_reporter_record(
     *,
     revalidate_git: bool,
     repository_root: Path | None = None,
-    trusted_authority: dict[str, Any] | None = None,
+    trusted_anchor: dict[str, Any] | None = None,
+    trusted_installation: dict[str, Any] | None = None,
+    current_time: datetime | None = None,
 ) -> dict[str, Any]:
     record = copy.deepcopy(expect_object(raw_record, "handoff reporter record"))
     expect_keys(
@@ -5696,9 +5734,11 @@ def verify_reporter_record(
         record["result_attestation"],
         "handoff reporter result attestation",
     )
-    if not revalidate_git and trusted_authority is None:
+    if not revalidate_git and (
+        trusted_anchor is None or trusted_installation is None
+    ):
         raise HandoffDataError(
-            "handoff reporter offline verification requires trusted authority"
+            "handoff reporter offline verification requires trusted anchor and installation"
         )
     expect_keys(
         result_attestation,
@@ -5713,26 +5753,15 @@ def verify_reporter_record(
         ),
     )
     operation = document["coordinator_receipt"]["operation"]
-    original_signer = _parse_signer_public(
-        document["history_authority"]["signer"],
-        "handoff reporter original signer",
+    original_signer = _verify_handoff_document_result(
+        document,
+        result,
+        revalidate_git=revalidate_git,
+        repository_root=repository_root,
+        trusted_anchor=trusted_anchor,
+        trusted_installation=trusted_installation,
+        current_time=current_time,
     )
-    if trusted_authority is not None:
-        trusted = _parse_reporter_trusted_authority(
-            trusted_authority,
-            "handoff reporter trusted authority",
-        )
-        if (
-            trusted["authority_digest"]
-            != hashlib.sha256(normalized_json(document["history_authority"])).hexdigest()
-            or trusted["repository"] != document["history_authority"]["repository"]
-            or trusted["ref"] != document["history_authority"]["ref"]
-            or trusted["anchor_ref"] != document["history_authority"]["anchor_ref"]
-        ):
-            raise HandoffDataError(
-                "handoff reporter trusted authority does not match its record"
-            )
-        original_signer = trusted["signer"]
     if (
         result_attestation["signer_key_id"] != original_signer["key_id"]
         or result_attestation["operation_nonce"] != operation["nonce"]
@@ -5751,13 +5780,6 @@ def verify_reporter_record(
         result_attestation_payload(document, result),
         result_attestation["signature"],
         "handoff reporter result signature",
-    )
-    _verify_handoff_document_result(
-        document,
-        result,
-        revalidate_git=revalidate_git,
-        repository_root=repository_root,
-        trusted_authority=trusted_authority,
     )
     return record
 def _repository_from_origin(repository_root: Path) -> str:

@@ -264,85 +264,97 @@ def finalize_result_attestation(repository_root, document, result):
     }
 
 
-REPORTER_TRUST_ANCHORS = {}
-
-
-def trusted_reporter_authority(repository_root, document):
+REPORTER_TRUST = {}
+def trusted_reporter_installation(repository_root):
+    return agent_handoff.load_coordinator_installation(repository_root, installation_root_path(repository_root))
+def sign_reporter_trust_anchor(repository_root, anchor):
+    anchor["signature"] = external_sign(repository_root, agent_handoff.reporter_trust_anchor_payload(anchor))
+    return anchor
+def trusted_reporter_anchor(
+    repository_root, document, input_seal, *, authority=None, signer=None,
+    issued_at=None, expires_at=None, signing_root=None,
+):
     handoff = document["handoffs"][0]
-    return agent_handoff.reporter_trusted_authority(
-        agent_handoff.read_history_authority(
+    authority = copy.deepcopy(
+        authority
+        if authority is not None
+        else agent_handoff.read_history_authority(
             repository_root,
             document["repository"],
             handoff["issue"],
             handoff["pull_request"],
         )
     )
-
-
-def remember_reporter_trust(record, trusted_authority):
-    REPORTER_TRUST_ANCHORS[record["input_seal"]] = copy.deepcopy(
-        trusted_authority
+    issued_at = issued_at or max(
+        datetime.fromisoformat(state["at"].replace("Z", "+00:00"))
+        for item in document["handoffs"]
+        for state in item["states"]
     )
+    expires_at = expires_at or (issued_at + timedelta(days=1))
+    return sign_reporter_trust_anchor(signing_root or repository_root, {
+        "input_seal": input_seal,
+        "authority_digest": hashlib.sha256(agent_handoff.normalized_json(authority)).hexdigest(),
+        "repository": authority["repository"],
+        "ref": authority["ref"],
+        "anchor_ref": authority["anchor_ref"],
+        "signer": copy.deepcopy(signer or authority["signer"]),
+        "issued_at": iso_utc(issued_at),
+        "expires_at": iso_utc(expires_at),
+    })
+def remember_reporter_trust(record, trusted_anchor, trusted_installation):
+    REPORTER_TRUST[record["input_seal"]] = (copy.deepcopy(trusted_anchor), copy.deepcopy(trusted_installation))
     return record
-
-
 def reporter_record(repository_root, document, result):
-    trusted_authority = trusted_reporter_authority(repository_root, document)
+    trusted_installation = trusted_reporter_installation(repository_root)
+    trusted_anchor = trusted_reporter_anchor(repository_root, document, result["input_seal"])
     return remember_reporter_trust(
         agent_handoff.reporter_record(
             document,
             result,
             finalize_result_attestation(repository_root, document, result),
-            trusted_authority=trusted_authority,
+            trusted_anchor=trusted_anchor,
+            trusted_installation=trusted_installation,
         ),
-        trusted_authority,
+        trusted_anchor,
+        trusted_installation,
     )
-
-
 def validated_record(repository_root, document):
-    return reporter_record(
-        repository_root,
-        document,
-        agent_handoff.validate_document(document, repository_root),
-    )
-
-
+    return reporter_record(repository_root, document, agent_handoff.validate_document(document, repository_root))
 def reporter_fixture_trust(*bundles):
     return {
         "schema_version": 1,
-        "anchors": [
-            {
-                "input_seal": bundle["input_seal"],
-                **copy.deepcopy(REPORTER_TRUST_ANCHORS[bundle["input_seal"]]),
-            }
-            for bundle in bundles
-        ],
+        "anchors": [copy.deepcopy(REPORTER_TRUST[bundle["input_seal"]][0]) for bundle in bundles],
     }
-
-
-def validate_reporter_fixture(fixture, implementation_handoff_trust=None):
+def reporter_fixture_installation(*bundles):
+    return copy.deepcopy(REPORTER_TRUST[bundles[0]["input_seal"]][1])
+def validate_reporter_fixture(
+    fixture,
+    implementation_handoff_trust=None,
+    implementation_handoff_installation=None,
+):
     if fixture.get("schema_version") == reporter.HANDOFF_FIXTURE_SCHEMA_VERSION:
         implementation_handoff_trust = (
             reporter_fixture_trust(*fixture["implementation_handoffs"])
             if implementation_handoff_trust is None
             else implementation_handoff_trust
         )
-    return reporter.validate_fixture(
-        fixture,
-        implementation_handoff_trust=implementation_handoff_trust,
-    )
-
-
-def verify_reporter_record_offline(record, trusted_authority=None):
-    return agent_handoff.verify_reporter_record(
-        record,
-        revalidate_git=False,
-        trusted_authority=(
-            copy.deepcopy(REPORTER_TRUST_ANCHORS[record["input_seal"]])
-            if trusted_authority is None
-            else trusted_authority
-        ),
-    )
+        implementation_handoff_installation = (
+            reporter_fixture_installation(*fixture["implementation_handoffs"])
+            if implementation_handoff_installation is None
+            else implementation_handoff_installation
+        )
+    return reporter.validate_fixture(fixture, implementation_handoff_trust=implementation_handoff_trust, implementation_handoff_installation=implementation_handoff_installation)
+def verify_reporter_record_offline(
+    record,
+    trusted_anchor=None,
+    trusted_installation=None,
+    current_time=None,
+):
+    if trusted_anchor is None or trusted_installation is None:
+        stored_anchor, stored_installation = REPORTER_TRUST[record["input_seal"]]
+        trusted_anchor = copy.deepcopy(stored_anchor if trusted_anchor is None else trusted_anchor)
+        trusted_installation = copy.deepcopy(stored_installation if trusted_installation is None else trusted_installation)
+    return agent_handoff.verify_reporter_record(record, revalidate_git=False, trusted_anchor=trusted_anchor, trusted_installation=trusted_installation, current_time=current_time)
 def installation_root_path(repository_root):
     return COORDINATOR_INSTALLATIONS[str(repository_root)]
 def installation_manifest(repository_root):
@@ -1319,7 +1331,7 @@ def reporter_fixture_with_handoffs(*bundles):
     fixture["review_thread_event_source"]["coverage_end"] = fixture[
         "lifecycle_as_of"
     ]
-    fixture["implementation_handoffs"] = list(bundles)
+    fixture["implementation_handoffs"] = copy.deepcopy(list(bundles))
     return fixture
 
 @contextmanager
@@ -4584,7 +4596,12 @@ class ExactHandoffTests(unittest.TestCase):
             }
             remember_reporter_trust(
                 forged_record,
-                trusted_reporter_authority(root, interrupted),
+                trusted_reporter_anchor(
+                    root,
+                    interrupted,
+                    forged_record["input_seal"],
+                ),
+                trusted_reporter_installation(root),
             )
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
@@ -6931,14 +6948,73 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
     def test_reporter_record_offline_verifies_after_source_removal(self):
         with handoff_repository() as (root, _base, parent, result):
             document = handoff_document(root, parent, result)
-            trusted_authority = trusted_reporter_authority(root, document)
             record = validated_record(root, document)
             fixture = reporter_fixture_with_handoffs(record)
             fixture_trust = reporter_fixture_trust(record)
-        verify_reporter_record_offline(record, trusted_authority)
+            fixture_installation = reporter_fixture_installation(record)
+            wrong_trust = copy.deepcopy(fixture_trust)
+            wrong_trust["anchors"][0]["ref"] = "refs/pull/999/head"
+            sign_reporter_trust_anchor(root, wrong_trust["anchors"][0])
+            expired_trust = copy.deepcopy(fixture_trust)
+            expired_trust["anchors"][0]["issued_at"] = "1999-01-01T00:00:00Z"
+            expired_trust["anchors"][0]["expires_at"] = "2000-01-01T00:00:00Z"
+            sign_reporter_trust_anchor(root, expired_trust["anchors"][0])
+            forged_fixture = reporter_fixture_with_handoffs(record)
+            forged_signer = signer_public_with_key_id(
+                {
+                    **copy.deepcopy(
+                        forged_fixture["implementation_handoffs"][0]["document"][
+                            "history_authority"
+                        ]["signer"]
+                    ),
+                    "service_identity": "self-authored-attacker",
+                }
+            )
+            forged_bundle = forged_fixture["implementation_handoffs"][0]
+            forged_bundle["document"]["history_authority"]["signer"] = forged_signer
+            forged_bundle["result_attestation"]["signer_key_id"] = forged_signer[
+                "key_id"
+            ]
+            forged_bundle["input_seal"] = hashlib.sha256(
+                agent_handoff.INPUT_SEAL_DOMAIN
+                + agent_handoff.normalized_json(forged_bundle["document"])
+            ).hexdigest()
+            forged_bundle["result"]["input_seal"] = forged_bundle["input_seal"]
+            forged_bundle["result"]["result_seal"] = agent_handoff.seal_handoff_result(
+                forged_bundle["result"]
+            )
+            forged_bundle["result_seal"] = forged_bundle["result"]["result_seal"]
+            self_trusting_fixture = copy.deepcopy(forged_fixture)
+            self_trusting_fixture["implementation_handoff_trust"] = [
+                trusted_reporter_anchor(
+                    root,
+                    forged_bundle["document"],
+                    forged_bundle["input_seal"],
+                    authority=forged_bundle["document"]["history_authority"],
+                    signer=forged_signer,
+                )
+            ]
+            forged_trust = {"schema_version": 1, "anchors": []}
+            with handoff_repository() as (attacker_root, _b, _p, _r):
+                forged_trust["anchors"].append(
+                    trusted_reporter_anchor(
+                        attacker_root,
+                        forged_bundle["document"],
+                        forged_bundle["input_seal"],
+                        authority=forged_bundle["document"]["history_authority"],
+                        signer=forged_signer,
+                        signing_root=attacker_root,
+                    )
+                )
+        verify_reporter_record_offline(
+            record,
+            trusted_anchor=fixture_trust["anchors"][0],
+            trusted_installation=fixture_installation,
+        )
         offline = validate_reporter_fixture(
             fixture,
             implementation_handoff_trust=fixture_trust,
+            implementation_handoff_installation=fixture_installation,
         )
         self.assertEqual(
             offline["implementation_handoffs"]["issue-178-round-1"][
@@ -6946,21 +7022,19 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             ],
             "accepted",
         )
-        with self.assertRaisesRegex(
-            reporter.PilotDataError,
-            "require external trusted authority anchors",
+        for trust, installation, pattern in (
+            (None, fixture_installation, "require external trusted anchor attestations"),
+            (fixture_trust, None, "require an external trusted installation"),
+            (wrong_trust, fixture_installation, "trusted anchor does not match its record"),
+            (expired_trust, fixture_installation, "future-dated or expired"),
         ):
-            reporter.validate_fixture(fixture)
-        wrong_trust = copy.deepcopy(fixture_trust)
-        wrong_trust["anchors"][0]["ref"] = "refs/pull/999/head"
-        with self.assertRaisesRegex(
-            reporter.PilotDataError,
-            "trusted authority does not match its record",
-        ):
-            reporter.validate_fixture(
-                fixture,
-                implementation_handoff_trust=wrong_trust,
-            )
+            with self.subTest(pattern=pattern):
+                with self.assertRaisesRegex(reporter.PilotDataError, pattern):
+                    reporter.validate_fixture(
+                        fixture,
+                        implementation_handoff_trust=trust,
+                        implementation_handoff_installation=installation,
+                    )
         with self.assertRaisesRegex(
             agent_handoff.HandoffDataError,
             "requires repository_root",
@@ -6969,57 +7043,17 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 record,
                 revalidate_git=True,
             )
-        forged_fixture = reporter_fixture_with_handoffs(record)
-        forged_signer = signer_public_with_key_id(
-            {
-                **copy.deepcopy(
-                    forged_fixture["implementation_handoffs"][0]["document"][
-                        "history_authority"
-                    ]["signer"]
-                ),
-                "service_identity": "self-authored-attacker",
-            }
-        )
-        forged_bundle = forged_fixture["implementation_handoffs"][0]
-        forged_bundle["document"]["history_authority"]["signer"] = forged_signer
-        forged_bundle["result_attestation"]["signer_key_id"] = forged_signer[
-            "key_id"
-        ]
-        forged_bundle["input_seal"] = hashlib.sha256(
-            agent_handoff.INPUT_SEAL_DOMAIN
-            + agent_handoff.normalized_json(forged_bundle["document"])
-        ).hexdigest()
-        forged_bundle["result"]["input_seal"] = forged_bundle["input_seal"]
-        forged_bundle["result"]["result_seal"] = agent_handoff.seal_handoff_result(
-            forged_bundle["result"]
-        )
-        forged_bundle["result_seal"] = forged_bundle["result"]["result_seal"]
-        self_trusting_fixture = copy.deepcopy(forged_fixture)
-        self_trusting_fixture["implementation_handoff_trust"] = [
-            {
-                "input_seal": forged_bundle["input_seal"],
-                **agent_handoff.reporter_trusted_authority(
-                    forged_bundle["document"]["history_authority"]
-                ),
-            }
-        ]
-        with self.assertRaisesRegex(
-            reporter.PilotDataError,
-            "unknown fields",
-        ):
+        with self.assertRaisesRegex(reporter.PilotDataError, "unknown fields"):
             reporter.validate_fixture(
                 self_trusting_fixture,
                 implementation_handoff_trust=fixture_trust,
+                implementation_handoff_installation=fixture_installation,
             )
-        forged_trust = copy.deepcopy(fixture_trust)
-        forged_trust["anchors"][0]["input_seal"] = forged_bundle["input_seal"]
-        with self.assertRaisesRegex(
-            reporter.PilotDataError,
-            "trusted authority does not match its record",
-        ):
+        with self.assertRaisesRegex(reporter.PilotDataError, "trusted anchor\\.signature does not verify|trusted anchor\\.signer does not match trusted installation"):
             reporter.validate_fixture(
                 forged_fixture,
                 implementation_handoff_trust=forged_trust,
+                implementation_handoff_installation=fixture_installation,
             )
     def test_forged_signed_stale_record_cannot_claim_offline_acceptance(self):
         with handoff_repository() as (root, _base, parent, result):
@@ -7078,7 +7112,12 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             }
             remember_reporter_trust(
                 forged_record,
-                trusted_reporter_authority(root, forged_document),
+                trusted_reporter_anchor(
+                    root,
+                    forged_document,
+                    forged_record["input_seal"],
+                ),
+                trusted_reporter_installation(root),
             )
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
@@ -7088,10 +7127,12 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                     forged_document,
                     forged_result,
                     forged_record["result_attestation"],
-                    trusted_authority=trusted_reporter_authority(
+                    trusted_anchor=trusted_reporter_anchor(
                         root,
                         forged_document,
+                        forged_result["input_seal"],
                     ),
+                    trusted_installation=trusted_reporter_installation(root),
                 )
             with self.assertRaisesRegex(
                 reporter.PilotDataError,
@@ -7307,14 +7348,24 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             stale = validated_record(root, stale_document)
             fixture = reporter_fixture_with_handoffs(accepted, stale)
             trust = reporter_fixture_trust(accepted, stale)
+            installation = reporter_fixture_installation(accepted, stale)
+            command = [
+                sys.executable,
+                "-m",
+                "scripts.workflow_pilot.reporter",
+                "--repository-root",
+                None,
+                "--fixture",
+                None,
+                "--decisions",
+                None,
+                "--implementation-handoff-trust",
+                None,
+                "--implementation-handoff-installation",
+                str(installation_root_path(root)),
+            ]
             decisions = test_reporter.minimal_decisions()
-            with test_reporter.git_authority(
-                fixture,
-                implementation_handoff_trust=trust,
-            ) as (
-                authoritative_fixture,
-                authority_root,
-            ):
+            with test_reporter.git_authority(fixture, implementation_handoff_trust=trust, implementation_handoff_installation=installation) as (authoritative_fixture, authority_root):
                 for bundle in authoritative_fixture[
                     "implementation_handoffs"
                 ]:
@@ -7327,62 +7378,25 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                             )
                         ).hexdigest(),
                     )
-                report = reporter.build_report(
-                    authoritative_fixture,
-                    decisions,
-                    authority_root,
-                    implementation_handoff_trust=trust,
-                )
-                decisions_path = (
-                    authority_root / ".github" / "workflow-pilot-decisions.json"
-                )
+                report = reporter.build_report(authoritative_fixture, decisions, authority_root, implementation_handoff_trust=trust, implementation_handoff_installation=installation)
+                decisions_path = authority_root / ".github" / "workflow-pilot-decisions.json"
                 decisions_path.parent.mkdir(parents=True)
-                decisions_path.write_text(
-                    json.dumps(decisions),
-                    encoding="utf-8",
-                )
+                decisions_path.write_text(json.dumps(decisions), encoding="utf-8")
                 fixture_path = authority_root / "operational.json"
-                fixture_path.write_text(
-                    json.dumps(authoritative_fixture),
-                    encoding="utf-8",
-                )
-                trust_path = authority_root / "operational-trust.json"
-                trust_path.write_text(
-                    json.dumps(trust),
-                    encoding="utf-8",
-                )
-                completed = subprocess.run(
-                    [
-                        sys.executable,
-                        "-m",
-                        "scripts.workflow_pilot.reporter",
-                        "--repository-root",
-                        str(authority_root),
-                        "--fixture",
-                        str(fixture_path),
-                        "--decisions",
-                        str(decisions_path),
-                        "--implementation-handoff-trust",
-                        str(trust_path),
-                    ],
-                    cwd=ROOT,
-                    check=False,
-                    capture_output=True,
-                )
-                self.assertEqual(
-                    completed.returncode,
-                    0,
-                    completed.stderr.decode(),
-                )
-                self.assertEqual(
-                    completed.stdout,
-                    reporter.normalized_json(report),
-                )
-                link_path = authority_root / "operational-trust-link.json"
-                link_path.symlink_to(trust_path.name)
-                linked = subprocess.run([*completed.args[:-1], str(link_path)], cwd=ROOT, check=False, capture_output=True)
-                self.assertEqual(linked.returncode, 2)
-                self.assertIn(b"implementation handoff trust sidecar must be a regular file", linked.stderr)
+                fixture_path.write_text(json.dumps(authoritative_fixture), encoding="utf-8")
+                with tempfile.TemporaryDirectory(prefix="workflow-pilot-offline-trust-", dir=TEST_ARTIFACTS) as temporary:
+                    trust_root = Path(temporary)
+                    trust_path = trust_root / "operational-trust.json"
+                    trust_path.write_text(json.dumps(trust), encoding="utf-8")
+                    command[4], command[6], command[8], command[10] = map(str, (authority_root, fixture_path, decisions_path, trust_path))
+                    completed = subprocess.run(command, cwd=ROOT, check=False, capture_output=True)
+                    self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+                    self.assertEqual(completed.stdout, reporter.normalized_json(report))
+                    link_path = trust_root / "operational-trust-link.json"
+                    link_path.symlink_to(trust_path.name)
+                    linked = subprocess.run([*command[:10], str(link_path), *command[11:]], cwd=ROOT, check=False, capture_output=True)
+                    self.assertEqual(linked.returncode, 2)
+                    self.assertIn(b"implementation handoff trust sidecar must be a regular file", linked.stderr)
         self.assertEqual(report["schema_version"], 2)
         self.assertEqual(
             report["identities"]["implementation_handoffs"],
@@ -7436,7 +7450,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
         bundle["result_seal"] = bundle["result"]["result_seal"]
         with self.assertRaisesRegex(
             reporter.PilotDataError,
-            "result signature does not verify",
+            "Git authority does not verify|result signature does not verify",
         ):
             validate_reporter_fixture(rehashed)
     def test_reporter_counts_bundle_rejections_without_losing_failure_codes(self):
@@ -7595,6 +7609,10 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                             accepted_record,
                             record,
                         ),
+                        implementation_handoff_installation=reporter_fixture_installation(
+                            accepted_record,
+                            record,
+                        ),
                     )
                     self.assertEqual(
                         report["implementation_handoffs"]["records"],
@@ -7644,7 +7662,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
         with handoff_repository() as (root, _base, parent, result):
             def make_tampered_record(*, row_mutator=None, result_mutator=None):
                 document = handoff_document(root, parent, result)
-                trusted_authority = trusted_reporter_authority(root, document)
+                trusted_installation = trusted_reporter_installation(root)
                 add_run(document, result)
                 duplicate = copy.deepcopy(document["watchers"][0])
                 duplicate["id"] = "watcher-9001-duplicate"
@@ -7670,6 +7688,11 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 tampered_result["result_seal"] = agent_handoff.seal_handoff_result(
                     tampered_result
                 )
+                trusted_anchor = trusted_reporter_anchor(
+                    root,
+                    document,
+                    tampered_result["input_seal"],
+                )
                 return remember_reporter_trust(
                     {
                         "source_handoff_ids": sorted(
@@ -7686,7 +7709,8 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                             tampered_result,
                         ),
                     },
-                    trusted_authority,
+                    trusted_anchor,
+                    trusted_installation,
                 )
             for row_mutator in (
                 lambda row: row.update(
@@ -7873,11 +7897,22 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             future["review_thread_event_source"]["coverage_end"] = future[
                 "lifecycle_as_of"
             ]
+            trust = reporter_fixture_trust(record)
+            trust["anchors"][0]["issued_at"] = iso_utc(
+                assigned_at - timedelta(seconds=2)
+            )
+            trust["anchors"][0]["expires_at"] = iso_utc(
+                assigned_at + timedelta(days=1)
+            )
+            sign_reporter_trust_anchor(root, trust["anchors"][0])
             with self.assertRaisesRegex(
                 reporter.PilotDataError,
                 "assigned_at follows lifecycle_as_of",
             ):
-                validate_reporter_fixture(future)
+                validate_reporter_fixture(
+                    future,
+                    implementation_handoff_trust=trust,
+                )
     def test_frozen_version_one_schema_remains_closed_and_unchanged(self):
         baseline = reporter.load_json(test_reporter.BASELINE)
         data = validate_reporter_fixture(baseline)
@@ -7893,54 +7928,32 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
         ):
             validate_reporter_fixture(changed)
     def test_handoff_reporter_schema_rejects_unknown_or_incoherent_records(self):
-        fixture = test_reporter.minimal_fixture()
-        fixture["schema_version"] = reporter.HANDOFF_FIXTURE_SCHEMA_VERSION
-        trust = {
-            "schema_version": 1,
-            "anchors": [
+        with handoff_repository() as (root, _base, parent, result):
+            record = validated_record(root, handoff_document(root, parent, result))
+            fixture = reporter_fixture_with_handoffs(record)
+            fixture["implementation_handoffs"] = [
                 {
-                    "input_seal": "0" * 64,
-                    "authority_digest": "0" * 64,
-                    "repository": "example/workflow",
-                    "ref": "refs/pull/200/head",
-                    "anchor_ref": "refs/pull/200/handoff-anchor",
-                    "signer": {
-                        "algorithm": "rsa-pkcs1v15-sha256",
-                        "key_id": "8a399f822f63ec53ae2836ec34a58ba45c42cf65c12b81f6e396cb45e6a14e0b",
-                        "modulus_hex": "9cbc4efc3a06c82efb1de30cc14853b67b1c7c281cf72711c0f236364641f41c2157c4b9cf2dabe0279dbcdc06bc313090abceed54bd6ad6a2cd1a4a945e7b97a307de7cbf54ac08138d77196eed0d9f2e1d350eda2345f9140fe7eae5d0252a5205402aa72d5a1da8955cad1f31dea7ae3f6e4f47dd7f3e562e62d8f5be174fb2e016435a1d80c403147d05bbffb6355a2f76e0c9e5d7e1200fef6a4adbb13b93a14a7b7d63df84a9d9f502dc8ae9e6cf286856e339b748929a1ec318bedd3186828e7323ec9a10f211039d4abd6819dd6aff6e09470acae182d9e1ed8aed239410e1c134481050f1a63366b2d9653d17381ad5ed70c3f12a684cc8a41042df",
-                        "exponent": 65537,
-                        "service_identity": "test-external-coordinator-signer",
-                        "isolation_attestation": {
-                            "kind": "external-isolated-service",
-                            "private_key_in_implementation_namespace": False,
-                            "signing_api": "single-use-terminal-attestation",
-                        },
-                    },
+                    "input_seal": record["input_seal"],
+                    "id": "bad",
+                    "owner_id": "owner-a",
+                    "assigned_at": "2026-01-01T01:00:00Z",
+                    "closed_at": "2026-01-01T01:05:00Z",
+                    "outcome": "accepted",
+                    "rejection_codes": ["stale-result"],
+                    "peak_rss_bytes": 1,
+                    "coordination_turns": 1,
+                    "recovery_minutes": 0,
                 }
-            ],
-        }
-        fixture["implementation_handoffs"] = [
-            {
-                "input_seal": "0" * 64,
-                "id": "bad",
-                "owner_id": "owner-a",
-                "assigned_at": "2026-01-01T01:00:00Z",
-                "closed_at": "2026-01-01T01:05:00Z",
-                "outcome": "accepted",
-                "rejection_codes": ["stale-result"],
-                "peak_rss_bytes": 1,
-                "coordination_turns": 1,
-                "recovery_minutes": 0,
-            }
-        ]
-        with self.assertRaisesRegex(
-            reporter.PilotDataError,
-            "is missing fields",
-        ):
-            reporter.validate_fixture(
-                fixture,
-                implementation_handoff_trust=trust,
-            )
+            ]
+            with self.assertRaisesRegex(
+                reporter.PilotDataError,
+                "is missing fields",
+            ):
+                reporter.validate_fixture(
+                    fixture,
+                    implementation_handoff_trust=reporter_fixture_trust(record),
+                    implementation_handoff_installation=reporter_fixture_installation(record),
+                )
 
 if __name__ == "__main__":
     unittest.main()

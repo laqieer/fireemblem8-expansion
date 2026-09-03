@@ -427,11 +427,16 @@ def _replace_commit_identities(value, replacements):
 
 
 @contextlib.contextmanager
-def git_authority(fixture, implementation_handoff_trust=None):
+def git_authority(
+    fixture,
+    implementation_handoff_trust=None,
+    implementation_handoff_installation=None,
+):
     fixture = copy.deepcopy(fixture)
     reporter.validate_fixture(
         fixture,
         implementation_handoff_trust=implementation_handoff_trust,
+        implementation_handoff_installation=implementation_handoff_installation,
     )
     with tempfile.TemporaryDirectory(
         prefix="workflow-pilot-authority-",
@@ -521,6 +526,7 @@ def authoritative_report(
     decisions,
     repository_root=None,
     implementation_handoff_trust=None,
+    implementation_handoff_installation=None,
 ):
     if repository_root is not None:
         return reporter.build_report(
@@ -528,6 +534,7 @@ def authoritative_report(
             decisions,
             repository_root,
             implementation_handoff_trust=implementation_handoff_trust,
+            implementation_handoff_installation=implementation_handoff_installation,
         )
     if fixture["repository"] == "laqieer/fireemblem8-expansion":
         return reporter.build_report(
@@ -535,16 +542,19 @@ def authoritative_report(
             decisions,
             BASELINE_AUTHORITY,
             implementation_handoff_trust=implementation_handoff_trust,
+            implementation_handoff_installation=implementation_handoff_installation,
         )
     with git_authority(
         fixture,
         implementation_handoff_trust=implementation_handoff_trust,
+        implementation_handoff_installation=implementation_handoff_installation,
     ) as (authoritative_fixture, authority_root):
         return reporter.build_report(
             authoritative_fixture,
             decisions,
             authority_root,
             implementation_handoff_trust=implementation_handoff_trust,
+            implementation_handoff_installation=implementation_handoff_installation,
         )
 
 
@@ -1050,6 +1060,8 @@ class BaselineFixtureTests(unittest.TestCase):
             os.mkfifo(fifo)
             duplicate = root / "trust-duplicate.json"
             duplicate.write_text('{"schema_version":1,"schema_version":2}', encoding="utf-8")
+            invalid_utf8 = root / "trust-invalid-utf8.json"
+            invalid_utf8.write_bytes(b'{"schema_version":1,"anchors":["\xff"]}')
             oversized = root / "trust-oversized.json"
             oversized.write_bytes(
                 b'{"schema_version":1,"anchors":["'
@@ -1060,6 +1072,7 @@ class BaselineFixtureTests(unittest.TestCase):
                 (symlink, "must be a regular file"),
                 (fifo, "must be a regular file"),
                 (duplicate, "duplicate JSON key 'schema_version'"),
+                (invalid_utf8, "not valid UTF-8"),
                 (oversized, "exceeds 1 MiB"),
             ):
                 with self.subTest(path=path.name):
