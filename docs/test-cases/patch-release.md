@@ -348,6 +348,12 @@ word-boundary state, including no-space `(`, `)`, `;`, `&&`, `||`, `|`, `&`,
 `<`, and `>`. A following unquoted `#` starts a comment, while hashes inside
 words, parameter operators, arithmetic bases, array subscripts, quotes,
 escapes, and quoted/escaped redirection targets remain data.
+Physical-line execution frames distinguish token-ending subshell/group
+parentheses from word-embedded command/backtick/process substitutions.
+`$(…)#` and `<(…)#` retain a literal hash in the same word, while `(…)#`
+starts a comment. Nested, quoted, escaped, adjacent, and multiline variants
+retain their owner context, so a real heredoc after an embedded-substitution
+hash remains queued and its body stays inert.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,
@@ -550,6 +556,9 @@ archival-lane behavior changes.
   or arithmetic prefixes,
   parenthesis/control/case no-space comment boundaries hiding raw reads plus
   word/parameter/arithmetic/array/quote/escape/redirection-target controls,
+  command/backtick/input/output substitution word-continuation versus
+  subshell/group boundaries, quoted/mixed/nested parentheses, and inert
+  initializer heredoc bodies,
   parsed registry-contract mutations,
   recursive
   command/process-substitution inspection for

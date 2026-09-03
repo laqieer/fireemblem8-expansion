@@ -1736,6 +1736,54 @@ def generate_commented_heredoc_hide_mutations(workflow: str):
         yield label, changed
 
 
+def generate_substitution_word_heredoc_spoofs(workflow: str):
+    initializer = '        cgroup_path="$1"\n'
+    wrappers = {
+        "command-substitution": (
+            "        result=$(printf '%s' x)# <<'FAKE_INIT' > /dev/null\n"
+        ),
+        "command-substitution-quoted-paren": (
+            "        result=$(printf '%s' \")\")# "
+            "<<'FAKE_INIT' > /dev/null\n"
+        ),
+        "nested-command-substitution": (
+            "        result=$(printf '%s' \"$(printf x)\")# "
+            "<<'FAKE_INIT' > /dev/null\n"
+        ),
+        "double-quoted-command-substitution": (
+            '        result="$(printf x)"# '
+            "<<'FAKE_INIT' > /dev/null\n"
+        ),
+        "locale-command-substitution": (
+            '        result=$"$(printf x)"# '
+            "<<'FAKE_INIT' > /dev/null\n"
+        ),
+        "backtick-substitution": (
+            "        result=`printf x`# <<'FAKE_INIT' > /dev/null\n"
+        ),
+        "input-process-substitution": (
+            "        result=<(printf x)# <<'FAKE_INIT' > /dev/null\n"
+        ),
+        "output-process-substitution": (
+            "        result=>(/bin/cat > /dev/null)# "
+            "<<'FAKE_INIT' > /dev/null\n"
+        ),
+    }
+    for label, opener in wrappers.items():
+        changed = workflow.replace(
+            initializer,
+            opener
+            + initializer
+            + "        FAKE_INIT\n",
+            1,
+        )
+        if changed == workflow:
+            raise AssertionError(
+                f"{label} substitution heredoc marker differs"
+            )
+        yield label, changed
+
+
 def render_supervisor_parent_remount_mutation(
     workflow: str,
     *,
@@ -12087,6 +12135,8 @@ exit 37
                 ),
                 "hash_comment_boundary": "unquoted-word-boundary",
                 "metacharacter_comment_boundary": "restore-word-start",
+                "substitution_close_boundary": "resume-containing-word",
+                "subshell_close_boundary": "restore-word-start",
                 "hash_data_contexts": (
                     "word-parameter-arithmetic-array-quote-escape"
                 ),
@@ -12307,6 +12357,10 @@ exit 37
             (
                 ("shell_surface", "metacharacter_comment_boundary"),
                 "retain-word-state",
+            ),
+            (
+                ("shell_surface", "substitution_close_boundary"),
+                "restore-word-start",
             ),
             (
                 ("shell_surface", "ansi_c_quotes"),
@@ -13311,6 +13365,134 @@ exit 37
                 generate_commented_heredoc_hide_mutations(self.text)
             ):
                 with self.subTest(commented_heredoc_hide=label):
+                    self.assertTrue(
+                        workflow_has_raw_builder_cgroup_membership_read(
+                            changed
+                        )
+                    )
+                    self.assertIn(
+                        "raw builder cgroup membership read differs",
+                        publisher_boundary_errors(changed),
+                    )
+
+    def test_substitution_word_hash_keeps_real_heredoc_body_inert(self):
+        openers = (
+            "result=$(printf '%s' x)# <<'FAKE_INIT' > /dev/null\n",
+            "result=$(printf '%s' \")\")# <<'FAKE_INIT' > /dev/null\n",
+            "result=$(printf '%s' \"$(printf x)\")# "
+            "<<'FAKE_INIT' > /dev/null\n",
+            'result="$(printf x)"# <<\'FAKE_INIT\' > /dev/null\n',
+            'result=$"$(printf x)"# <<\'FAKE_INIT\' > /dev/null\n',
+            "result=`printf x`# <<'FAKE_INIT' > /dev/null\n",
+            "result=<(printf x)# <<'FAKE_INIT' > /dev/null\n",
+            "result=>(/bin/cat > /dev/null)# "
+            "<<'FAKE_INIT' > /dev/null\n",
+        )
+        for opener in openers:
+            with self.subTest(substitution_word=opener.split("#", 1)[0]):
+                script = (
+                    "set -u\n"
+                    + opener
+                    + 'cgroup_path="$1"\n'
+                    + "FAKE_INIT\n"
+                    + 'printf "%s\\n" "$cgroup_path"\n'
+                )
+                syntax = subprocess.run(
+                    ["/bin/bash", "-n", "-c", script],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(syntax.returncode, 0, syntax.stderr)
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", script, "--", "/owned-cgroup"],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn("unbound variable", completed.stderr)
+                records = (
+                    publisher_shell_contract.split_bash_simple_command_strings(
+                        script,
+                        label="substitution word heredoc runtime",
+                    )
+                )
+                self.assertNotIn('cgroup_path="$1"', records)
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        script,
+                        label="substitution word heredoc runtime",
+                    )
+                )
+
+        inner_comment = (
+            "result=$(# inner comment\n"
+            "  printf x\n"
+            ")\n"
+            'test "$result" = x\n'
+        )
+        completed = subprocess.run(
+            ["/bin/bash", "-c", inner_comment],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="substitution-comment-boundary-",
+            dir=artifact_root,
+        ) as temporary:
+            raw_cgroup = Path(temporary) / "raw"
+            raw_cgroup.mkdir()
+            (raw_cgroup / "cgroup.procs").write_text(
+                "substitution-boundary-raw-read\n",
+                encoding="ascii",
+            )
+            whitespace = (
+                "result=$(printf x) # <<':'\n"
+                '/bin/cat "$1/cgroup.procs"\n'
+                ":\n"
+            )
+            completed = subprocess.run(
+                ["/bin/bash", "-c", whitespace, "--", str(raw_cgroup)],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                completed.stdout,
+                "substitution-boundary-raw-read\n",
+            )
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    whitespace,
+                    label="substitution whitespace comment boundary",
+                )
+            )
+
+        with (
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_patch_release_run_script_identity",
+            ),
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_builder_isolation_shell_identity",
+            ),
+        ):
+            for label, changed in generate_substitution_word_heredoc_spoofs(
+                self.text
+            ):
+                with self.subTest(substitution_workflow=label):
                     self.assertTrue(
                         workflow_has_raw_builder_cgroup_membership_read(
                             changed

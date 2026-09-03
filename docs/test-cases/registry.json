@@ -1306,6 +1306,8 @@
           "heredoc_comment_source": "syntax-active-pre-comment-only",
           "hash_comment_boundary": "unquoted-word-boundary",
           "metacharacter_comment_boundary": "restore-word-start",
+          "substitution_close_boundary": "resume-containing-word",
+          "subshell_close_boundary": "restore-word-start",
           "hash_data_contexts": "word-parameter-arithmetic-array-quote-escape",
           "ansi_c_quotes": "explicit-escape-decoding",
           "locale_quotes": "double-quote-expansion",

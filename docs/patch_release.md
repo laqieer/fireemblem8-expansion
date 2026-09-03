@@ -369,6 +369,14 @@ recognition, including no-space `(`, `)`, `;`, `&&`, `||`, `|`, `&`, `<`, and
 Hashes remain data inside words, parameter operators, arithmetic bases, array
 subscripts, quotes, escapes, and quoted/escaped redirection targets. Heredoc
 discovery consumes only this corrected pre-comment token stream.
+Nested physical-line execution state distinguishes true subshell/group
+parentheses from word-embedded command, backtick, and input/output process
+substitutions. Closing a group restores a token boundary; closing an embedded
+substitution resumes the same word, so `$(…)#` and `<(…)#` keep `#` literal
+while `(…)#` begins a comment. Quote ownership, nesting, escaped parentheses,
+adjacent suffixes, and inner newlines preserve that distinction. A real
+heredoc following a substitution-word hash is still queued, and its body
+cannot satisfy mandatory actions.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

@@ -357,6 +357,7 @@ class _BashLineLexState:
     arithmetic_depth: int = 0
     arithmetic_bracket_depth: int = 0
     array_bracket_depth: int = 0
+    execution_stack: tuple[tuple[str, str, bool], ...] = ()
     word_start: bool = True
 
 
@@ -569,6 +570,7 @@ def _scan_bash_physical_line(
     arithmetic_depth = state.arithmetic_depth
     arithmetic_bracket_depth = state.arithmetic_bracket_depth
     array_bracket_depth = state.array_bracket_depth
+    execution_stack = list(state.execution_stack)
     word_start = state.word_start
 
     def current_state() -> _BashLineLexState:
@@ -578,8 +580,24 @@ def _scan_bash_physical_line(
             arithmetic_depth=arithmetic_depth,
             arithmetic_bracket_depth=arithmetic_bracket_depth,
             array_bracket_depth=array_bracket_depth,
+            execution_stack=tuple(execution_stack),
             word_start=word_start,
         )
+
+    def open_execution(kind: str, closes_word: bool) -> None:
+        nonlocal quote, word_start
+        execution_stack.append((kind, quote, closes_word))
+        quote = "normal"
+        word_start = True
+
+    def close_execution(expected: set[str]) -> bool:
+        nonlocal quote, word_start
+        if not execution_stack or execution_stack[-1][0] not in expected:
+            return False
+        _kind, restore_quote, closes_word = execution_stack.pop()
+        quote = restore_quote
+        word_start = closes_word
+        return True
 
     index = 0
     while index < len(line):
@@ -671,6 +689,38 @@ def _scan_bash_physical_line(
                 word_start = False
                 index += 2
                 continue
+            elif line.startswith("$(", index):
+                open_execution("command-substitution", False)
+                index += 2
+                continue
+            elif (
+                character in "<>"
+                and index + 1 < len(line)
+                and line[index + 1] == "("
+            ):
+                open_execution("process-substitution", False)
+                index += 2
+                continue
+            elif character == "`":
+                if not close_execution({"backtick-substitution"}):
+                    open_execution("backtick-substitution", False)
+                index += 1
+                continue
+            elif character == "(":
+                open_execution("subshell", True)
+                index += 1
+                continue
+            elif character == ")":
+                if not close_execution(
+                    {
+                        "command-substitution",
+                        "process-substitution",
+                        "subshell",
+                    }
+                ):
+                    word_start = True
+                index += 1
+                continue
             elif character == "[" and not word_start:
                 array_bracket_depth = 1
                 word_start = False
@@ -734,6 +784,10 @@ def _scan_bash_physical_line(
                 arithmetic_depth += 2
                 index += 3
                 continue
+            elif line.startswith("$(", index):
+                open_execution("command-substitution", False)
+                index += 2
+                continue
             elif line.startswith("$[", index):
                 arithmetic_bracket_depth += 1
                 index += 2
@@ -745,6 +799,10 @@ def _scan_bash_physical_line(
                     arithmetic_depth -= 1
             elif arithmetic_bracket_depth and character == "]":
                 arithmetic_bracket_depth -= 1
+            elif character == "`":
+                open_execution("backtick-substitution", False)
+                index += 1
+                continue
             elif (
                 character == "$"
                 and index + 1 < len(line)
@@ -782,13 +840,24 @@ def bash_logical_lines(script: str, *, label: str) -> tuple[str, ...]:
             or state.arithmetic_depth
             or state.arithmetic_bracket_depth
             or state.array_bracket_depth
+            or any(
+                restore_quote != "normal"
+                for _kind, restore_quote, _boundary
+                in state.execution_stack
+            )
         ):
             current += "\n"
             continue
         logical_lines.append(current)
         current = ""
-        state = _BashLineLexState()
-    if current:
+        if state.execution_stack:
+            state = _BashLineLexState(
+                execution_stack=state.execution_stack,
+                word_start=True,
+            )
+        else:
+            state = _BashLineLexState()
+    if current or state.execution_stack:
         raise ValueError(f"{label} has unterminated quoting or continuation")
     return tuple(logical_lines)
 
@@ -1035,9 +1104,9 @@ def _strip_generic_heredoc_bodies(script: str, *, label: str) -> str:
     lines = script.splitlines(keepends=True)
     output: list[str] = []
     index = 0
+    state = _BashLineLexState()
     while index < len(lines):
         logical = ""
-        state = _BashLineLexState()
         while index < len(lines):
             physical = lines[index]
             raw_line = physical.rstrip("\r\n")
@@ -1099,6 +1168,15 @@ def _strip_generic_heredoc_bodies(script: str, *, label: str) -> str:
                 raise ValueError(
                     f"{label} has expansion-active heredoc body"
                 )
+        if state.execution_stack:
+            state = _BashLineLexState(
+                execution_stack=state.execution_stack,
+                word_start=True,
+            )
+        else:
+            state = _BashLineLexState()
+    if state.execution_stack:
+        raise ValueError(f"{label} has unterminated execution scope")
     return "".join(output)
 
 

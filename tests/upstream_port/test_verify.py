@@ -1268,7 +1268,8 @@ class VerifyCliCwdTests(unittest.TestCase):
                     membership_checker_nested_execution=label
                 ), self.assertRaisesRegex(
                     ValueError,
-                    "isolated candidate build differs",
+                    "isolated candidate build differs|"
+                    "unterminated quoting or continuation",
                 ):
                     verify_mod._parse_workflow_structure_text(changed)
             verify_mod._parse_workflow_structure_text(
@@ -1336,6 +1337,19 @@ class VerifyCliCwdTests(unittest.TestCase):
             ):
                 with self.subTest(
                     commented_heredoc_hide=label
+                ), self.assertRaisesRegex(
+                    ValueError,
+                    "isolated candidate build differs",
+                ):
+                    verify_mod._parse_workflow_structure_text(changed)
+            for (
+                label,
+                changed,
+            ) in patch_workflow_tests.generate_substitution_word_heredoc_spoofs(
+                original
+            ):
+                with self.subTest(
+                    substitution_word_heredoc=label
                 ), self.assertRaisesRegex(
                     ValueError,
                     "isolated candidate build differs",
