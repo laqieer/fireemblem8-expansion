@@ -168,9 +168,12 @@ builtins. A fixed `printf -v` target with a modeled literal or `%s` value
 replaces the prior alias value; other formats, `read`, `mapfile`, `readarray`,
 and bare declarations taint the destination until its use is proven safe.
 Assignments and initialized declarations retain exact or tracked values.
-Dynamic writer targets fail closed. Executable controls prove that each writer
-can retarget a previously safe alias to the raw membership file, while an
-exact safe `printf -v` overwrite clears prior raw taint.
+After wrapper and scalar-alias resolution, declaration assignment targets and
+values apply once; an ordinary direct assignment is left to the normal
+assignment path, so `+=` is never duplicated. Dynamic writer targets, values,
+namerefs, or options fail closed. Executable controls prove that each writer
+can retarget a previously safe alias to the raw membership file, while exact
+safe declaration and `printf -v` overwrites clear prior raw taint.
 Nameref creation is never modeled or allowed in the trusted builder.
 Direct, clustered, repeated, toggled, wrapped, aliased, array-backed, and
 dynamic `n` options for declare/typeset/local/export/readonly fail closed,

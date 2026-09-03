@@ -1295,6 +1295,7 @@
             "readarray"
           ],
           "exact_write": "replace",
+          "resolved_declaration_assignment": "apply-once",
           "unknown_write": "taint",
           "dynamic_target": "reject",
           "membership_sensitive_use": "reject"

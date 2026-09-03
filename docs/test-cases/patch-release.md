@@ -287,10 +287,12 @@ Variable-writing builtins update alias state after each command. Fixed
 `printf -v` targets propagate modeled literal or `%s` values exactly; other
 formats, `read`, `mapfile`, `readarray`, and bare declarations taint their
 destinations. Assignments and initialized declarations retain their exact or
-tracked values, and dynamic writer targets reject immediately. Runtime
-controls retarget a safe alias through each writer and read the raw membership
-marker; an exact safe `printf -v` overwrite clears prior taint and reads only
-the safe marker.
+tracked values. Resolved declaration assignment targets and values apply once;
+direct syntactic assignments remain on the ordinary assignment path, including
+single `+=` application. Dynamic writer targets, values, namerefs, and options
+reject immediately. Runtime controls retarget a safe alias through each writer
+and read the raw membership marker; exact safe declaration and `printf -v`
+overwrites clear prior taint and read only the safe marker.
 The trusted builder contains no nameref. Direct `-n`, clustered/repeated
 options containing `n`, `+n` toggles, wrapped/aliased builtins, array/dynamic
 options, assignments, declarations, and eval/source/function ambiguity all
@@ -426,7 +428,9 @@ archival-lane behavior changes.
   PATH/BASH_ENV/posix/hashall and fixed-quoted-literal controls, stateful
   assignment/declaration/printf/read/mapfile/readarray writer mutations plus
   raw-marker and exact-safe-overwrite runtime controls, parsed exit multiset
-  reorder/add/delete/duplicate controls, parsed registry-contract mutations,
+  reorder/add/delete/duplicate controls, resolved declaration-target safe/raw/
+  dynamic controls for declare/typeset/export/readonly/local in both parsers,
+  parsed registry-contract mutations,
   recursive
   command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions

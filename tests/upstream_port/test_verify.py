@@ -1230,6 +1230,14 @@ class VerifyCliCwdTests(unittest.TestCase):
             for (
                 label,
                 changed,
+            ) in patch_workflow_tests.generate_safe_declaration_alias_controls(
+                original
+            ):
+                with self.subTest(safe_declaration_alias=label):
+                    verify_mod._parse_workflow_structure_text(changed)
+            for (
+                label,
+                changed,
             ) in patch_workflow_tests.generate_raw_builder_cgroup_membership_mutations(
                 original
             ):

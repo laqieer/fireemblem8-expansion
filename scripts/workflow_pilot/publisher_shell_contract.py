@@ -2880,6 +2880,8 @@ def _mapfile_builtin_target(
 def _apply_shell_builtin_alias_writes(
     tokens: tuple[str, ...],
     aliases: dict[str, str],
+    *,
+    original_tokens: tuple[str, ...],
 ) -> bool:
     normalized = _normalize_shell_builtin_wrappers(tokens)
     if normalized is None:
@@ -2900,6 +2902,9 @@ def _apply_shell_builtin_alias_writes(
         )
     if not normalized:
         return False
+    if len(original_tokens) < len(normalized):
+        return True
+    aligned_original = original_tokens[-len(normalized) :]
     executable = posixpath.basename(normalized[0])
     arguments = normalized[1:]
     try:
@@ -2968,7 +2973,7 @@ def _apply_shell_builtin_alias_writes(
         }:
             array = False
             after_options = False
-            for argument in arguments:
+            for argument_index, argument in enumerate(arguments, start=1):
                 if argument == "--":
                     after_options = True
                     continue
@@ -2976,10 +2981,42 @@ def _apply_shell_builtin_alias_writes(
                     if "a" in argument[1:] or "A" in argument[1:]:
                         array = True
                     continue
-                if (
-                    _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(argument)
-                    or _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(argument)
-                ):
+                scalar_assignment = _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(
+                    argument
+                )
+                indexed_assignment = _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(
+                    argument
+                )
+                if scalar_assignment or indexed_assignment:
+                    original_argument = aligned_original[argument_index]
+                    if (
+                        _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(
+                            original_argument
+                        )
+                        or _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(
+                            original_argument
+                        )
+                    ):
+                        continue
+                    assignment = scalar_assignment or indexed_assignment
+                    assert assignment is not None
+                    name = assignment.group("name")
+                    value = assignment.group("value")
+                    if assignment.group("append"):
+                        value = aliases.get(name, "") + value
+                    target = name
+                    if indexed_assignment is not None:
+                        target += (
+                            "["
+                            + indexed_assignment.group("index")
+                            + "]"
+                        )
+                    _set_written_shell_alias(
+                        aliases,
+                        target,
+                        value,
+                        array=array,
+                    )
                     continue
                 _set_written_shell_alias(
                     aliases,
@@ -3305,6 +3342,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
             if _apply_shell_builtin_alias_writes(
                 resolved_token_texts,
                 aliases,
+                original_tokens=token_texts,
             ):
                 return True
         return False

@@ -720,6 +720,39 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         '        target="$(printf raw_root)"\n'
         '        printf -v "$target" %s "$cgroup_path"\n',
     )
+    declaration_builtins = (
+        "declare",
+        "typeset",
+        "export",
+        "readonly",
+        "local",
+    )
+    mutations.extend(
+        (
+            "        raw_root=/safe\n"
+            "        target=raw_root\n"
+            f'        {builtin} "$target=$cgroup_path"\n'
+            '        /bin/cat "$raw_root"/cgroup.proc?\n'
+        )
+        for builtin in declaration_builtins
+    )
+    mutations.extend(
+        (
+            "        raw_root=/safe\n"
+            '        target="$(printf raw_root)"\n'
+            f'        {builtin} "$target=/safe"\n'
+        )
+        for builtin in declaration_builtins
+    )
+    mutations.extend(
+        (
+            "        raw_root=/safe\n"
+            "        target=raw_root\n"
+            f'        {builtin} "$target=$(printf %s "$cgroup_path")"\n'
+            '        /bin/cat "$raw_root"/cgroup.proc?\n'
+        )
+        for builtin in declaration_builtins
+    )
     for index, mutation in enumerate(supervisor_reassignments):
         changed = workflow.replace(marker, mutation + marker, 1)
         if changed == workflow:
@@ -732,6 +765,35 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         if changed == workflow:
             raise AssertionError("raw cgroup membership mutation marker differs")
         yield f"raw-membership-{index}", changed
+
+
+def generate_safe_declaration_alias_controls(workflow: str):
+    marker = (
+        '        mapfile -t cgroup_members < '
+        '"$supervisor_cgroup/cgroup.procs"\n'
+    )
+    for builtin in (
+        "declare",
+        "typeset",
+        "export",
+        "readonly",
+        "local",
+    ):
+        function_name = builtin.replace("type", "type_")
+        control = (
+            f"        safe_{function_name}_alias_control() {{\n"
+            '          raw_root="$cgroup_path"\n'
+            "          target=raw_root\n"
+            f'          {builtin} "$target=/safe"\n'
+            '          /bin/cat "$raw_root"/cgroup.proc? > /dev/null\n'
+            "        }\n"
+        )
+        changed = workflow.replace(marker, marker + control, 1)
+        if changed == workflow:
+            raise AssertionError(
+                "safe declaration alias control marker differs"
+            )
+        yield builtin, changed
 
 
 def render_supervisor_parent_remount_mutation(
@@ -6901,6 +6963,13 @@ exit 37
                         label="unrelated dispatch target control",
                     )
                 )
+        for label, changed in generate_safe_declaration_alias_controls(
+            self.text
+        ):
+            with self.subTest(safe_declaration_alias=label):
+                self.assertFalse(
+                    workflow_has_raw_builder_cgroup_membership_read(changed)
+                )
         for label, changed in generate_raw_builder_cgroup_membership_mutations(
             self.text
         ):
@@ -7331,6 +7400,150 @@ exit 37
                     label="exact safe printf alias writer control",
                 )
             )
+
+    def test_declaration_alias_writes_replace_or_taint_runtime_state(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="declaration-alias-writer-",
+            dir=artifact_root,
+        ) as temporary:
+            raw_cgroup = Path(temporary) / "raw"
+            safe_cgroup = Path(temporary) / "safe"
+            raw_cgroup.mkdir()
+            safe_cgroup.mkdir()
+            (raw_cgroup / "cgroup.procs").write_text(
+                "raw-declaration-marker\n",
+                encoding="ascii",
+            )
+            (safe_cgroup / "cgroup.procs").write_text(
+                "safe-declaration-marker\n",
+                encoding="ascii",
+            )
+            for builtin in (
+                "declare",
+                "typeset",
+                "export",
+                "readonly",
+                "local",
+            ):
+                with self.subTest(builtin=builtin, behavior="safe overwrite"):
+                    safe_script = (
+                        "overwrite() {\n"
+                        '  raw_root="$1"\n'
+                        "  target=raw_root\n"
+                        f"  declaration={builtin}\n"
+                        f'  "$declaration" "$target={safe_cgroup}"\n'
+                        '  /bin/cat "$raw_root"/cgroup.proc?\n'
+                        "}\n"
+                        'overwrite "$1"\n'
+                    )
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "-c",
+                            safe_script,
+                            "--",
+                            str(raw_cgroup),
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(
+                        completed.returncode,
+                        0,
+                        completed.stderr,
+                    )
+                    self.assertEqual(
+                        completed.stdout,
+                        "safe-declaration-marker\n",
+                    )
+                    self.assertFalse(
+                        publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                            safe_script,
+                            label=f"safe {builtin} alias overwrite",
+                        )
+                    )
+
+                with self.subTest(builtin=builtin, behavior="raw overwrite"):
+                    raw_script = (
+                        "overwrite() {\n"
+                        '  raw_root=/safe\n'
+                        "  target=raw_root\n"
+                        f'  {builtin} "$target=$1"\n'
+                        '  /bin/cat "$raw_root"/cgroup.proc?\n'
+                        "}\n"
+                        'overwrite "$1"\n'
+                    )
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "-c",
+                            raw_script,
+                            "--",
+                            str(raw_cgroup),
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(
+                        completed.returncode,
+                        0,
+                        completed.stderr,
+                    )
+                    self.assertEqual(
+                        completed.stdout,
+                        "raw-declaration-marker\n",
+                    )
+                    self.assertTrue(
+                        publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                            raw_script,
+                            label=f"raw {builtin} alias overwrite",
+                        )
+                    )
+
+                with self.subTest(builtin=builtin, behavior="dynamic target"):
+                    dynamic_script = (
+                        "overwrite() {\n"
+                        '  raw_root="$1"\n'
+                        '  target="$(printf raw_root)"\n'
+                        f'  {builtin} "$target={safe_cgroup}"\n'
+                        '  /bin/cat "$raw_root"/cgroup.proc?\n'
+                        "}\n"
+                        'overwrite "$1"\n'
+                    )
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "-c",
+                            dynamic_script,
+                            "--",
+                            str(raw_cgroup),
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(
+                        completed.returncode,
+                        0,
+                        completed.stderr,
+                    )
+                    self.assertEqual(
+                        completed.stdout,
+                        "safe-declaration-marker\n",
+                    )
+                    self.assertTrue(
+                        publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                            dynamic_script,
+                            label=f"dynamic {builtin} alias target",
+                        )
+                    )
 
     def test_fixed_quoted_dispatch_literals_do_not_execute_or_false_positive(self):
         cases = (
@@ -9807,6 +10020,7 @@ exit 37
                     "readarray",
                 ],
                 "exact_write": "replace",
+                "resolved_declaration_assignment": "apply-once",
                 "unknown_write": "taint",
                 "dynamic_target": "reject",
                 "membership_sensitive_use": "reject",
