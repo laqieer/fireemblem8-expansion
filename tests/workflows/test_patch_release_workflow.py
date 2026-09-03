@@ -7754,9 +7754,15 @@ exit 37
             dir=artifact_root,
         ) as temporary:
             raw_cgroup = Path(temporary) / "raw"
+            safe_cgroup = Path(temporary) / "safe"
             raw_cgroup.mkdir()
+            safe_cgroup.mkdir()
             (raw_cgroup / "cgroup.procs").write_text(
                 "helper-raw-marker\n",
+                encoding="ascii",
+            )
+            (safe_cgroup / "cgroup.procs").write_text(
+                "helper-safe-marker\n",
                 encoding="ascii",
             )
             scripts = (
@@ -7843,6 +7849,200 @@ exit 37
                             label="user helper raw membership runtime",
                         )
                     )
+
+            safe_scripts = (
+                (
+                    "local positional overwrite",
+                    'raw_root="$1"\n'
+                    "helper() {\n"
+                    '  local raw_root="$2"\n'
+                    '  /bin/cat "$raw_root"/cgroup.proc?\n'
+                    "}\n"
+                    'helper "$1" "$2"\n',
+                ),
+                (
+                    "assignment overwrite",
+                    "helper() {\n"
+                    '  local raw_root="$1"\n'
+                    '  raw_root="$2"\n'
+                    '  /bin/cat "$raw_root"/cgroup.proc?\n'
+                    "}\n"
+                    'helper "$1" "$2"\n',
+                ),
+                (
+                    "declaration overwrite",
+                    "helper() {\n"
+                    '  local raw_root="$1"\n'
+                    '  local raw_root="$2"\n'
+                    '  /bin/cat "$raw_root"/cgroup.proc?\n'
+                    "}\n"
+                    'helper "$1" "$2"\n',
+                ),
+                (
+                    "printf overwrite",
+                    "helper() {\n"
+                    '  local raw_root="$1"\n'
+                    '  printf -v raw_root %s "$2"\n'
+                    '  /bin/cat "$raw_root"/cgroup.proc?\n'
+                    "}\n"
+                    'helper "$1" "$2"\n',
+                ),
+            )
+            for label, script in safe_scripts:
+                with self.subTest(helper_local_state=label):
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "-c",
+                            script,
+                            "--",
+                            str(raw_cgroup),
+                            str(safe_cgroup),
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(
+                        completed.returncode,
+                        0,
+                        completed.stderr,
+                    )
+                    self.assertEqual(
+                        completed.stdout,
+                        "helper-safe-marker\n",
+                    )
+                    self.assertFalse(
+                        publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                            script,
+                            label=f"safe {label} helper runtime",
+                        )
+                    )
+
+            tainted_scripts = (
+                (
+                    "read",
+                    "helper() {\n"
+                    '  local raw_root="$1"\n'
+                    '  read raw_root <<< "$2"\n'
+                    '  /bin/cat "$raw_root"/cgroup.proc?\n'
+                    "}\n"
+                    'helper "$1" "$2"\n',
+                ),
+                (
+                    "mapfile",
+                    "helper() {\n"
+                    "  local -a roots\n"
+                    '  mapfile -t roots <<< "$2"\n'
+                    '  local raw_root="${roots[0]}"\n'
+                    '  /bin/cat "$raw_root"/cgroup.proc?\n'
+                    "}\n"
+                    'helper "$1" "$2"\n',
+                ),
+                (
+                    "readarray",
+                    "helper() {\n"
+                    "  local -a roots\n"
+                    '  readarray -t roots <<< "$2"\n'
+                    '  local raw_root="${roots[0]}"\n'
+                    '  /bin/cat "$raw_root"/cgroup.proc?\n'
+                    "}\n"
+                    'helper "$1" "$2"\n',
+                ),
+                (
+                    "dynamic",
+                    "helper() {\n"
+                    '  local raw_root="$(printf %s "$2")"\n'
+                    '  /bin/cat "$raw_root"/cgroup.proc?\n'
+                    "}\n"
+                    'helper "$1" "$2"\n',
+                ),
+                (
+                    "branch",
+                    "helper() {\n"
+                    '  local raw_root="$1"\n'
+                    "  if true; then\n"
+                    '    raw_root="$2"\n'
+                    "  fi\n"
+                    '  /bin/cat "$raw_root"/cgroup.proc?\n'
+                    "}\n"
+                    'helper "$1" "$2"\n',
+                ),
+                (
+                    "loop",
+                    "helper() {\n"
+                    '  local raw_root="$1"\n'
+                    '  for raw_root in "$2"; do\n'
+                    "    true\n"
+                    "  done\n"
+                    '  /bin/cat "$raw_root"/cgroup.proc?\n'
+                    "}\n"
+                    'helper "$1" "$2"\n',
+                ),
+            )
+            for label, script in tainted_scripts:
+                with self.subTest(helper_tainted_state=label):
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "-c",
+                            script,
+                            "--",
+                            str(raw_cgroup),
+                            str(safe_cgroup),
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(
+                        completed.returncode,
+                        0,
+                        completed.stderr,
+                    )
+                    self.assertEqual(
+                        completed.stdout,
+                        "helper-safe-marker\n",
+                    )
+                    self.assertTrue(
+                        publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                            script,
+                            label=f"tainted {label} helper runtime",
+                        )
+                    )
+
+            global_script = (
+                "raw_root=/safe\n"
+                "helper() {\n"
+                '  raw_root="$1"\n'
+                "}\n"
+                'helper "$1"\n'
+                '/bin/cat "$raw_root"/cgroup.proc?\n'
+            )
+            completed = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-c",
+                    global_script,
+                    "--",
+                    str(raw_cgroup),
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout, "helper-raw-marker\n")
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    global_script,
+                    label="helper global write-back runtime",
+                )
+            )
+
             for label, script in (
                 (
                     "recursive",
@@ -10386,6 +10586,11 @@ exit 37
                 "production_signatures": "closed",
                 "tracked_or_composed_membership_arguments": "reject",
                 "outer_alias_evaluation": "call-time",
+                "frame_evaluation": "sequential",
+                "local_writeback": "discard",
+                "global_writeback": "propagate",
+                "unknown_writes": "taint",
+                "branch_or_loop_writes": "reject",
                 "recursive_or_dynamic": "reject",
             },
             "helper_inventory": {
@@ -10532,6 +10737,8 @@ exit 37
                 "allow",
             ),
             (("helper_calls", "outer_alias_evaluation"), "definition-time"),
+            (("helper_calls", "frame_evaluation"), "frozen"),
+            (("helper_calls", "local_writeback"), "propagate"),
             (("helper_inventory", "definition_count"), 14),
             (("function_shadowing", "result"), "allow"),
             (("raw_membership", "additional_access"), "allow"),

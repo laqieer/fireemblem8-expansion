@@ -270,7 +270,12 @@ body-command identities, and multiplicities without depending on definition
 order; added, removed, duplicated, or modified helpers reject. Calls
 re-evaluate authenticated bodies against current caller aliases, so a
 no-argument closure defined while `raw_root` is safe rejects after assignment
-or `printf -v` retargets it. Recursive and dynamic calls reject. Function
+or `printf -v` retargets it. Calls initialize a sequential frame with caller
+globals and callee positional arguments. Local assignment, declaration, and
+modeled `printf -v` overwrites affect subsequent commands and disappear on
+return; global writes propagate. `read`, `mapfile`, `readarray`, dynamic
+values, and branch- or loop-dependent writes taint or reject conservatively.
+Recursive and dynamic calls reject. Function
 declarations cannot shadow security-sensitive builtins or commands, and
 inline, dynamic, duplicate, and ambiguous definitions reject. The wrapper-only
 membership read uses
@@ -451,7 +456,9 @@ archival-lane behavior changes.
   sensitive-function-shadow mutations, unqualified-versus-builtin mapfile
   runtime, no-argument assignment/`printf -v` closure captures, recursive/
   dynamic dispatch, helper inventory add/modify/duplicate/reorder controls in
-  both parsers, parsed registry-contract mutations,
+  both parsers, sequential local/positional assignment/declaration/printf
+  safe controls, read/mapfile/readarray/dynamic/branch taint controls, global
+  write-back, parsed registry-contract mutations,
   recursive
   command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions

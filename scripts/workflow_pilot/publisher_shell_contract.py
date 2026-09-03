@@ -2523,60 +2523,224 @@ def _shell_function_definitions(
     return bodies, inventory
 
 
-def _function_body_captures_sensitive_alias(
+def _apply_direct_function_alias_writes(
+    tokens: tuple[_ShellToken, ...],
+    aliases: dict[str, str],
+) -> tuple[bool, set[str]]:
+    written: set[str] = set()
+    for token in tokens:
+        indexed = _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(token.text)
+        scalar = _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(token.text)
+        assignment = indexed or scalar
+        if assignment is None:
+            continue
+        name = assignment.group("name")
+        if name in {
+            "cgroup_path",
+            "supervisor_cgroup",
+        } or name in _DISPATCH_STATE_VARIABLES:
+            return True, written
+        value = _resolve_shell_aliases(
+            assignment.group("value"),
+            aliases,
+        )
+        if _assignment_value_has_dynamic_shell_syntax(
+            assignment.group("value"),
+            token_has_shell_syntax=token.has_shell_syntax,
+        ):
+            value = _AMBIGUOUS_DYNAMIC_ALIAS_MARKER + value
+        if assignment.group("append"):
+            value = aliases.get(name, "") + value
+        if indexed is not None or assignment.group("value").startswith("("):
+            value = _AMBIGUOUS_ARRAY_ALIAS_MARKER + value
+        aliases[name] = value
+        written.add(name)
+    return False, written
+
+
+def _function_local_declaration_names(
+    resolved_tokens: tuple[str, ...],
+) -> set[str]:
+    normalized = _normalize_shell_builtin_wrappers(resolved_tokens)
+    if not normalized:
+        return set()
+    executable = posixpath.basename(normalized[0])
+    if executable not in {"declare", "local", "typeset"}:
+        return set()
+    arguments = normalized[1:]
+    global_declaration = False
+    names: set[str] = set()
+    after_options = False
+    for argument in arguments:
+        if argument == "--":
+            after_options = True
+            continue
+        if not after_options and argument.startswith(("-", "+")):
+            if executable != "local" and "g" in argument[1:]:
+                global_declaration = True
+            continue
+        scalar = _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(argument)
+        indexed = _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(argument)
+        if scalar or indexed:
+            assignment = scalar or indexed
+            assert assignment is not None
+            names.add(assignment.group("name"))
+            continue
+        target = _shell_alias_write_target(argument)
+        if target is not None:
+            names.add(target[0])
+    return set() if global_declaration else names
+
+
+def _function_body_has_controlled_alias_writes(
+    body: tuple[str, ...],
+) -> bool:
+    has_control_flow = any(
+        command.split(maxsplit=1)[0] in _SHELL_STRUCTURE_TOKENS
+        for command in body
+        if command.split()
+    )
+    if not has_control_flow:
+        return False
+    for command in body:
+        if command.split(maxsplit=1)[0] in {"for", "select"}:
+            return True
+        tokens = _parse_shell_tokens(
+            command,
+            label="function control-flow write",
+        )
+        if tokens and all(
+            _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(token.text)
+            or _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(token.text)
+            for token in tokens
+        ):
+            return True
+        normalized = _normalize_shell_builtin_wrappers(
+            _token_texts(tokens)
+        )
+        if normalized and posixpath.basename(normalized[0]) in {
+            "declare",
+            "export",
+            "local",
+            "mapfile",
+            "printf",
+            "read",
+            "readarray",
+            "readonly",
+            "typeset",
+        }:
+            return True
+    return False
+
+
+def _analyze_function_call(
     function_name: str,
     *,
     function_bodies: dict[str, tuple[str, ...]],
     aliases: dict[str, str],
+    arguments: tuple[str, ...],
     call_stack: tuple[str, ...] = (),
-) -> bool:
+) -> tuple[bool, dict[str, str]]:
     if function_name in call_stack:
-        return True
+        return True, {}
     body = function_bodies.get(function_name)
     if body is None:
-        return False
-    caller_aliases = {
+        return False, {}
+    if _function_body_has_controlled_alias_writes(body):
+        return True, {}
+    function_aliases = {
         name: value
         for name, value in aliases.items()
         if not name.isdigit()
     }
+    call_arguments = []
+    for argument in arguments:
+        if argument in {">", ">>", "<", "<<", "<<<"}:
+            break
+        call_arguments.append(argument)
+    for index, argument in enumerate(call_arguments, start=1):
+        function_aliases[str(index)] = argument
+    local_names: set[str] = set()
+    global_updates: dict[str, str] = {}
     for command in body:
         tokens = _parse_shell_tokens(
             command,
             label=f"{function_name} call-time body",
         )
-        resolved = tuple(
-            _resolve_shell_aliases(token.text, caller_aliases)
-            for token in tokens
+        resolved = _resolve_tokens_for_alias_state(
+            tokens,
+            function_aliases,
         )
-        if any(
-            marker in token
-            for token in resolved
-            for marker in (
-                _AMBIGUOUS_ARRAY_ALIAS_MARKER,
-                _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
-                _AMBIGUOUS_TRACKED_PARAMETER_MARKER,
-                _RAW_CGROUP_ROOT_MARKER,
+        for original_token in tokens:
+            token = _resolve_shell_aliases(
+                original_token.text,
+                function_aliases,
             )
-        ):
-            return True
+            if (
+                _RAW_CGROUP_ROOT_MARKER in token
+                and _raw_cgroup_suffix_has_dynamic_filename(token)
+            ):
+                return True, {}
+            if _ambiguous_alias_suffix_has_dynamic_filename(token):
+                return True, {}
+            if "cgroup.procs" in token:
+                return True, {}
         if (
             _normalized_command_mutates_supervisor(resolved)
             or _normalized_command_mutates_dispatch_state(resolved)
             or _normalized_command_changes_dispatch(resolved)
         ):
-            return True
+            return True, {}
         if not resolved:
             continue
         callee = posixpath.basename(resolved[0])
-        if callee in function_bodies and _function_body_captures_sensitive_alias(
-            callee,
-            function_bodies=function_bodies,
-            aliases=caller_aliases,
-            call_stack=call_stack + (function_name,),
+        if callee in function_bodies:
+            failed, updates = _analyze_function_call(
+                callee,
+                function_bodies=function_bodies,
+                aliases=function_aliases,
+                arguments=resolved[1:],
+                call_stack=call_stack + (function_name,),
+            )
+            if failed:
+                return True, {}
+            function_aliases.update(updates)
+            global_updates.update(
+                {
+                    name: value
+                    for name, value in updates.items()
+                    if name not in local_names
+                }
+            )
+        local_names.update(
+            _function_local_declaration_names(resolved)
+        )
+        before = dict(function_aliases)
+        failed, directly_written = _apply_direct_function_alias_writes(
+            tokens,
+            function_aliases,
+        )
+        if failed:
+            return True, {}
+        if _apply_shell_builtin_alias_writes(
+            resolved,
+            function_aliases,
+            original_tokens=_token_texts(tokens),
         ):
-            return True
-    return False
+            return True, {}
+        changed = directly_written | {
+            name
+            for name, value in function_aliases.items()
+            if before.get(name) != value
+        }
+        global_updates.update(
+            {
+                name: function_aliases[name]
+                for name in changed
+                if name not in local_names and not name.isdigit()
+            }
+        )
+    return False, global_updates
 
 
 def _helper_call_has_sensitive_arguments(
@@ -2641,12 +2805,17 @@ def _helper_call_has_sensitive_arguments(
     )
     if is_production_call and basename == "builder_main":
         return False
-    if basename in user_functions and _function_body_captures_sensitive_alias(
-        basename,
-        function_bodies=function_bodies,
-        aliases=aliases,
-    ):
-        return True
+    if basename in user_functions:
+        failed, updates = _analyze_function_call(
+            basename,
+            function_bodies=function_bodies,
+            aliases=aliases,
+            arguments=tokens[1:],
+        )
+        if failed:
+            return True
+        aliases.update(updates)
+        return False
     if is_production_call:
         return False
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", basename):
@@ -2772,6 +2941,42 @@ def _assignment_value_has_dynamic_shell_syntax(
         marker in remainder
         for marker in _RAW_CGROUP_DYNAMIC_FILENAME_MARKERS
     )
+
+
+def _resolve_tokens_for_alias_state(
+    tokens: tuple[_ShellToken, ...],
+    aliases: dict[str, str],
+) -> tuple[str, ...]:
+    resolved_tokens = []
+    for token_index, token in enumerate(tokens):
+        dynamic_text = token.text
+        scalar_assignment = _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(
+            token.text
+        )
+        indexed_assignment = _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(
+            token.text
+        )
+        if scalar_assignment is not None:
+            dynamic_text = scalar_assignment.group("value")
+        elif indexed_assignment is not None:
+            dynamic_text = indexed_assignment.group("value")
+        dynamic = _assignment_value_has_dynamic_shell_syntax(
+            dynamic_text,
+            token_has_shell_syntax=token.has_shell_syntax,
+        )
+        if (
+            token_index == 0
+            and token.text.endswith(")")
+            and not token.text.startswith(
+                ("$(", "`", "<(", ">(", "+(", "@(", "!(")
+            )
+        ):
+            dynamic = False
+        resolved_tokens.append(
+            (_AMBIGUOUS_DYNAMIC_ALIAS_MARKER if dynamic else "")
+            + _resolve_shell_aliases(token.text, aliases)
+        )
+    return tuple(resolved_tokens)
 
 
 def _normalize_shell_builtin_wrappers(
@@ -2967,15 +3172,15 @@ def _normalized_command_changes_dispatch(
 
 
 def _dispatch_state_target_is_forbidden(target: str) -> bool:
+    target_name = target.split("+=", 1)[0]
+    target_name = target_name.split("=", 1)[0]
+    base = target_name.split("[", 1)[0]
     if (
-        _AMBIGUOUS_ARRAY_ALIAS_MARKER in target
-        or _AMBIGUOUS_DYNAMIC_ALIAS_MARKER in target
-        or _AMBIGUOUS_TRACKED_PARAMETER_MARKER in target
+        _AMBIGUOUS_ARRAY_ALIAS_MARKER in base
+        or _AMBIGUOUS_DYNAMIC_ALIAS_MARKER in base
+        or _AMBIGUOUS_TRACKED_PARAMETER_MARKER in base
     ):
         return True
-    base = target.split("[", 1)[0]
-    base = base.split("+=", 1)[0]
-    base = base.split("=", 1)[0]
     return base in _DISPATCH_STATE_VARIABLES
 
 
@@ -3053,7 +3258,18 @@ def _ambiguous_array_command_is_forbidden(
     if not ambiguous_indices:
         return False
     if 0 in ambiguous_indices:
-        return True
+        plain_executable = tokens[0]
+        for marker in (
+            _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+            _AMBIGUOUS_TRACKED_PARAMETER_MARKER,
+        ):
+            plain_executable = plain_executable.replace(marker, "")
+        if not (
+            _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(plain_executable)
+            or _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(plain_executable)
+        ):
+            return True
     if tokens and posixpath.basename(tokens[0]) in {
         "builtin",
         "command",
@@ -3530,40 +3746,10 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 and "supervisor_cgroup" in token_texts[1:]
             ):
                 return True
-            resolved_tokens = []
-            for token_index, token in enumerate(tokens):
-                dynamic_text = token.text
-                scalar_assignment = _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(
-                    token.text
-                )
-                indexed_assignment = (
-                    _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(token.text)
-                )
-                if scalar_assignment is not None:
-                    dynamic_text = scalar_assignment.group("value")
-                elif indexed_assignment is not None:
-                    dynamic_text = indexed_assignment.group("value")
-                dynamic = _assignment_value_has_dynamic_shell_syntax(
-                    dynamic_text,
-                    token_has_shell_syntax=token.has_shell_syntax,
-                )
-                if (
-                    token_index == 0
-                    and token.text.endswith(")")
-                    and not token.text.startswith(
-                        ("$(", "`", "<(", ">(", "+(", "@(", "!(")
-                    )
-                ):
-                    dynamic = False
-                resolved_tokens.append(
-                    (
-                        _AMBIGUOUS_DYNAMIC_ALIAS_MARKER
-                        if dynamic
-                        else ""
-                    )
-                    + _resolve_shell_aliases(token.text, aliases)
-                )
-            resolved_token_texts = tuple(resolved_tokens)
+            resolved_token_texts = _resolve_tokens_for_alias_state(
+                tokens,
+                aliases,
+            )
             if _helper_call_has_sensitive_arguments(
                 resolved_token_texts,
                 user_functions=user_functions,

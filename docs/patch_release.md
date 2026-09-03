@@ -158,7 +158,13 @@ production helper names, body-command identities, and multiplicities; added,
 removed, duplicated, or modified helpers fail closed. At invocation, helper
 bodies are re-evaluated against caller alias state, so no-argument closures
 cannot retain a safe definition-time value after assignment or `printf -v`
-retargets it. Recursive and dynamically resolved calls reject. Function
+retargets it. Each invocation gets its positional arguments and a sequential
+local alias frame: local assignment, declaration, and modeled `printf -v`
+writes affect later commands but are discarded on return, while global writes
+propagate to the caller. Unknown `read`/`mapfile`/`readarray` results and
+dynamic values remain tainted. Branch- or loop-dependent alias writes reject
+rather than selecting a favorable path. Recursive and dynamically resolved
+calls reject. Function
 declarations cannot shadow security-sensitive builtins or commands, and
 inline, dynamic, duplicate, or ambiguous declarations fail closed. The
 membership snapshot explicitly invokes

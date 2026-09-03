@@ -1283,6 +1283,11 @@
           "production_signatures": "closed",
           "tracked_or_composed_membership_arguments": "reject",
           "outer_alias_evaluation": "call-time",
+          "frame_evaluation": "sequential",
+          "local_writeback": "discard",
+          "global_writeback": "propagate",
+          "unknown_writes": "taint",
+          "branch_or_loop_writes": "reject",
           "recursive_or_dynamic": "reject"
         },
         "helper_inventory": {
