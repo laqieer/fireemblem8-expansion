@@ -1563,11 +1563,7 @@ def validate_implementation_handoffs(
     issue_timelines: dict[int, list[dict[str, Any]]] = defaultdict(list)
     trusted_handoffs = validate_implementation_handoff_trust(implementation_handoff_trust)
     try:
-        trusted_installation = agent_handoff._coerce_reporter_trusted_installation(  # noqa: SLF001
-            implementation_handoff_installation,
-            repository_root=repository_root,
-            label="implementation_handoff_installation",
-        )
+        trusted_installation = agent_handoff._coerce_reporter_trusted_installation(implementation_handoff_installation, repository_root=repository_root, label="implementation_handoff_installation")  # noqa: SLF001
     except agent_handoff.HandoffDataError as error:
         raise PilotDataError(str(error)) from error
     for index, raw in enumerate(fixture["implementation_handoffs"]):
@@ -1584,10 +1580,7 @@ def validate_implementation_handoffs(
             )
         except agent_handoff.HandoffDataError as error:
             raise PilotDataError(f"{label}: {error}") from error
-        summary = expect_object(
-            bundle["result"]["summary"],
-            f"{label}.result.summary",
-        )
+        summary = expect_object(bundle["result"]["summary"], f"{label}.result.summary")
         local_rejection_codes = {
             code
             for handoff in expect_list(

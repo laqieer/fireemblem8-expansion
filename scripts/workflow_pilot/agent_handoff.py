@@ -1142,47 +1142,22 @@ def reporter_trust_anchor_payload(anchor: dict[str, Any]) -> bytes:
     return signed_record_payload(REPORTER_TRUST_ANCHOR_DOMAIN, anchor)
 class _VerifiedReporterInstallation:
     __slots__ = ("repository", "repository_database_id", "signer")
-
     def __init__(self, token: object, installation: dict[str, Any]) -> None:
         if token is not _VERIFIED_REPORTER_INSTALLATION_TOKEN:
             raise TypeError("use load_reporter_trusted_installation()")
         self.repository = installation["repository"]
         self.repository_database_id = installation["repository_database_id"]
         self.signer = copy.deepcopy(installation["_signer"])
-
-
-def load_reporter_trusted_installation(
-    repository_root: Path,
-    installation_path: Path,
-) -> _VerifiedReporterInstallation:
-    return _VerifiedReporterInstallation(
-        _VERIFIED_REPORTER_INSTALLATION_TOKEN,
-        load_coordinator_installation(repository_root, installation_path),
-    )
-
-
-def _coerce_reporter_trusted_installation(
-    trusted_installation: Any,
-    *,
-    repository_root: Path | None,
-    label: str,
-) -> _VerifiedReporterInstallation:
+def load_reporter_trusted_installation(repository_root: Path, installation_path: Path) -> _VerifiedReporterInstallation:
+    return _VerifiedReporterInstallation(_VERIFIED_REPORTER_INSTALLATION_TOKEN, load_coordinator_installation(repository_root, installation_path))
+def _coerce_reporter_trusted_installation(trusted_installation: Any, *, repository_root: Path | None, label: str) -> _VerifiedReporterInstallation:
     if isinstance(trusted_installation, _VerifiedReporterInstallation):
         return trusted_installation
     if isinstance(trusted_installation, Path):
         if repository_root is None:
-            raise HandoffDataError(
-                f"{label} path requires repository_root"
-            )
-        return load_reporter_trusted_installation(
-            repository_root,
-            trusted_installation,
-        )
-    raise HandoffDataError(
-        f"{label} must be a Path or validated installation handle"
-    )
-
-
+            raise HandoffDataError(f"{label} path requires repository_root")
+        return load_reporter_trusted_installation(repository_root, trusted_installation)
+    raise HandoffDataError(f"{label} must be a Path or validated installation handle")
 def _verify_reporter_trust_anchor(
     raw_anchor: Any, *, expected_input_seal: str, original_authority: dict[str, Any],
     trusted_installation: _VerifiedReporterInstallation, current_time: datetime | None, label: str,

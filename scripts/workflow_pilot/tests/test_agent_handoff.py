@@ -328,9 +328,7 @@ def reporter_fixture_trust(*bundles):
 def reporter_fixture_installation(*bundles):
     return REPORTER_TRUST[bundles[0]["input_seal"]][1]
 def validate_reporter_fixture(
-    fixture,
-    implementation_handoff_trust=None,
-    implementation_handoff_installation=None,
+    fixture, implementation_handoff_trust=None, implementation_handoff_installation=None,
 ):
     if fixture.get("schema_version") == reporter.HANDOFF_FIXTURE_SCHEMA_VERSION:
         implementation_handoff_trust = (
@@ -345,10 +343,7 @@ def validate_reporter_fixture(
         )
     return reporter.validate_fixture(fixture, implementation_handoff_trust=implementation_handoff_trust, implementation_handoff_installation=implementation_handoff_installation)
 def verify_reporter_record_offline(
-    record,
-    trusted_anchor=None,
-    trusted_installation=None,
-    current_time=None,
+    record, trusted_anchor=None, trusted_installation=None, current_time=None,
 ):
     if trusted_anchor is None or trusted_installation is None:
         stored_anchor, stored_installation = REPORTER_TRUST[record["input_seal"]]
@@ -7009,27 +7004,10 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 )
             candidate_install = root / "candidate-installation"
             shutil.copytree(installation_root_path(root), candidate_install)
-            with self.assertRaisesRegex(
-                agent_handoff.HandoffDataError,
-                "outside the candidate worktree",
-            ):
-                agent_handoff.verify_reporter_record(
-                    record,
-                    revalidate_git=False,
-                    repository_root=root,
-                    trusted_anchor=fixture_trust["anchors"][0],
-                    trusted_installation=candidate_install,
-                )
-        verify_reporter_record_offline(
-            record,
-            trusted_anchor=fixture_trust["anchors"][0],
-            trusted_installation=fixture_installation,
-        )
-        offline = validate_reporter_fixture(
-            fixture,
-            implementation_handoff_trust=fixture_trust,
-            implementation_handoff_installation=fixture_installation,
-        )
+            with self.assertRaisesRegex(agent_handoff.HandoffDataError, "outside the candidate worktree"):
+                agent_handoff.verify_reporter_record(record, revalidate_git=False, repository_root=root, trusted_anchor=fixture_trust["anchors"][0], trusted_installation=candidate_install)
+        verify_reporter_record_offline(record, trusted_anchor=fixture_trust["anchors"][0], trusted_installation=fixture_installation)
+        offline = validate_reporter_fixture(fixture, implementation_handoff_trust=fixture_trust, implementation_handoff_installation=fixture_installation)
         self.assertEqual(
             offline["implementation_handoffs"]["issue-178-round-1"][
                 "reported_outcome"
