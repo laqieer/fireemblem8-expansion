@@ -119,7 +119,14 @@ only fixed `launch`, `isolated`, or `cleanup` stage codes with numeric exits,
 never candidate-controlled output. `launch` covers only the bounded,
 kernel-derived stopped-session identity and exact resume operation; its detail
 is one fixed enum value, never a PID or process text. `isolated` reports the
-child exit, and `cleanup` reports teardown summary status whenever teardown
+authenticated supervisor's exit-status substage. Root and candidate traps map
+only namespace, mount-audit, candidate preflight/venv/pip/build-tools/make/
+handoff, output-validation, export, and post-check failures to reserved numeric
+codes. The outer host accepts those codes only from `wait` on the exact
+authenticated supervisor and renders a fixed enum; any other exit or signal
+becomes `detail=transport exit=125`. The channel has no file, pipe, candidate
+descriptor, symlink, nonregular inode, or path race, and candidate text or data
+never enters it. `cleanup` reports teardown summary status whenever teardown
 fails. Earlier trusted pre-spawn setup and later post-child handoff validation
 still use normal shell failure output and are outside this diagnostic enum;
 cleanup may therefore be the only stage text even when the failure began
@@ -142,6 +149,14 @@ trusted host reports only fixed success/failure text and a numeric exit
 classification for those post-spawn `launch`/`isolated`/`cleanup` outcomes; it
 does not claim path-free diagnostics for earlier trusted setup or later
 post-child handoff validation.
+
+The post-candidate cgroup membership check uses Bash `mapfile`, not a child
+utility. Exact failing master
+`5779c38e245d9a14f063338b53851a97bb92d0c0` invoked `sort` from inside the
+builder cgroup to read `cgroup.procs`; the kernel therefore included that
+reader in the snapshot, so the expected wrapper-only assertion necessarily
+failed. The builtin reads the same authenticated read-only cgroup view without
+creating another member.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

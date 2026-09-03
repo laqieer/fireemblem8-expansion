@@ -1839,18 +1839,14 @@ def _parse_step(block, job_name, index):
             or "supervisor_cgroup=/mnt/supervisor/cgroup"
             not in {token for command in values["run"] for token in command}
             or ("test", "!", "-r", "/mnt/supervisor") not in values["run"]
-            or not any(
-                command
-                and command[0].startswith("cgroup_members=")
-                and "$supervisor_cgroup/cgroup.procs" in command[0]
-                for command in values["run"]
+            or (
+                "mapfile",
+                "-t",
+                "cgroup_members",
+                "<",
+                "$supervisor_cgroup/cgroup.procs",
             )
-            or any(
-                command
-                and command[0].startswith("cgroup_members=")
-                and "$cgroup_path/cgroup.procs" in command[0]
-                for command in values["run"]
-            )
+            not in values["run"]
             or "/sys/fs/cgroup/cgroup.controllers"
             not in {token for command in values["run"] for token in command}
             or "$builder_cgroup/cgroup.kill"
@@ -1878,10 +1874,13 @@ def _parse_step(block, job_name, index):
             or "candidate-output.log"
             in " ".join(token for command in values["run"] for token in command)
             or ("ulimit", "-f", "131072") not in values["run"]
-            or ("test", "$cgroup_members", "=", "$$") not in values["run"]
+            or ("test", "${#cgroup_members[@]}", "-eq", "1")
+            not in values["run"]
+            or ("test", "${cgroup_members[0]}", "=", "$$")
+            not in values["run"]
             or "candidate build failed: stage=launch detail=%s exit=%d"
             not in " ".join(token for command in values["run"] for token in command)
-            or "candidate build failed: stage=isolated exit=%d"
+            or "candidate build failed: stage=isolated detail=%s exit=%d"
             not in " ".join(token for command in values["run"] for token in command)
             or "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d"
             not in " ".join(token for command in values["run"] for token in command)

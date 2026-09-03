@@ -207,11 +207,18 @@ Fixed trusted text and a numeric exit classification preserve post-spawn build
 failure without exposing candidate bytes. After the isolated builder is
 spawned, `launch` covers only bounded stopped-session identity and exact resume
 validation and emits one fixed detail enum, never process text or an ID.
-`isolated` reports the child exit, and `cleanup` reports teardown summary
-status whenever teardown fails. Earlier trusted pre-spawn setup and later
-post-child handoff validation still use normal shell failure output and are
-outside this stage enum; cleanup may therefore be the only stage text even
-when the failure began before spawn.
+`isolated` reports the authenticated supervisor's exit-status substage. Root
+and candidate traps map only namespace, mount-audit, candidate preflight/venv/
+pip/build-tools/make/handoff, output-validation, export, and post-check
+failures to reserved numeric codes. The host accepts them only from `wait` on
+the exact authenticated supervisor and renders fixed enum text; unknown exits
+and signals become `detail=transport exit=125`. This authenticated transport
+has no file, pipe, candidate descriptor, symlink, nonregular inode, or TOCTOU
+path and carries no candidate output, data, path, or secret. `cleanup` reports
+teardown summary status whenever teardown fails. Earlier trusted pre-spawn
+setup and later post-child handoff validation still use normal shell failure
+output and are outside this stage enum; cleanup may therefore be the only
+stage text even when the failure began before spawn.
 The wrapper binds the exact owned cgroup read-only under root-only mode-`0700`
 `/mnt/supervisor` before masking `/sys`. The candidate cannot read, write,
 execute, or traverse that parent, while the exact cgroup child remains
@@ -260,8 +267,13 @@ leave an unrelated live process untouched; valid owned identity terminates,
 and the cgroup path still removes namespace descendants. A disposable parent
 exits before `SIGCONT`; the stopped launcher's saved PID/start-time identity
 disappears promptly, its session has no descendant, and no orphan remains. The
-default bare `make` path remains 16 MiB/default-off and does not receive a base
-secret, patch artifact, or publish step.
+exact failing master
+`5779c38e245d9a14f063338b53851a97bb92d0c0` then reaches output validation but
+fails because its `sort` reader joins the builder cgroup while reading
+`cgroup.procs`, making the wrapper-only assertion self-defeating. The fixed
+Bash-builtin `mapfile` check admits the sole wrapper and still rejects an
+additional member. The default bare `make` path remains 16 MiB/default-off and
+does not receive a base secret, patch artifact, or publish step.
 
 ### Interactions and save compatibility
 
@@ -288,7 +300,9 @@ archival-lane behavior changes.
   failing-master PID/PGID mismatch and fixed self-stopped session-launcher
   runtime with no orphan, the disposable-parent pre-resume parent-death
   PID/start-time proof, missing/forged/parent-identity adversaries, and
-  residual-state-only cleanup diagnostics, recursive
+  residual-state-only cleanup diagnostics, the closed authenticated isolated
+  substage exit-status protocol, and exact failing-master `sort` self-
+  observation versus builtin wrapper-only membership, recursive
   command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions
   through inline `else`/brace/case/loop forms, `setsid`-wrapped and common

@@ -36,6 +36,7 @@ MERGED_MASTER_771 = "771d38c5a531f2d63b269220727b02aa820cc3d4"
 FAILING_MASTER_8D81 = "8d81c30b298ef6265ba9c5335c3ca8c8f94e60e6"
 FAILING_MASTER_0456 = "0456f181ad53645a7bc2b677abab05978ab9f35c"
 REVIEWED_RUNTIME_3_6EE = "6ee4766e6204d01f76b334edd2085e965fac5a66"
+FAILING_MASTER_5779 = "5779c38e245d9a14f063338b53851a97bb92d0c0"
 ARTIFACT_FILENAMES = (
     "README.txt",
     "fireemblem8-expansion-all-locales-all-features-aapcs.bps",
@@ -1679,7 +1680,7 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "ulimit -n 128" not in isolated_step
         or "ulimit -u 512" not in isolated_step
         or "ulimit -v 8388608" not in isolated_step
-        or 'test "$cgroup_members" = "$$"' not in isolated_step
+        or 'test "${cgroup_members[0]}" = "$$"' not in isolated_step
         or "size=6g builder-source /mnt/source" not in isolated_step
         or "size=1g builder-home /mnt/home" not in isolated_step
         or "size=1g builder-temp /mnt/tmp" not in isolated_step
@@ -1693,8 +1694,11 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or 'test ! -e /dev/kmsg' not in isolated_step
         or "candidate build failed: stage=launch detail=%s exit=%d"
         not in isolated_step
-        or "candidate build failed: stage=isolated exit=%d"
+        or "candidate build failed: stage=isolated detail=%s exit=%d"
         not in isolated_step
+        or "isolated_stage_failure" not in isolated_step
+        or "candidate_stage_failure" not in isolated_step
+        or "builder_isolated_detail=transport" not in isolated_step
         or "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d"
         not in isolated_step
         or "$builder_cgroup/cgroup.kill\" > /dev/null 2>&1" not in isolated_step
@@ -1748,9 +1752,13 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or '"$supervisor_cgroup/cgroup.procs"' not in isolated_step
         or (
             'cgroup_members="$(LC_ALL=C /usr/bin/sort -n \\\n'
-            '          "$cgroup_path/cgroup.procs")"'
+            '          "$supervisor_cgroup/cgroup.procs")"'
         )
         in isolated_step
+        or 'mapfile -t cgroup_members < "$supervisor_cgroup/cgroup.procs"'
+        not in isolated_step
+        or 'test "${#cgroup_members[@]}" -eq 1' not in isolated_step
+        or 'test "${cgroup_members[0]}" = "$$"' not in isolated_step
         or "/usr/share/dbus-1/system-services" not in isolated_step
         or "/run/dbus/system_bus_socket" not in isolated_step
         or "/run/docker.sock" not in isolated_step
@@ -2331,6 +2339,31 @@ def supervisor_launcher_source(workflow: str) -> str:
     return match.group("body")
 
 
+def candidate_build_shell_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Build candidate in isolated namespace and stage public inputs",
+    )
+    match = re.search(
+        r"(?ms)<<'CANDIDATE_BUILD'\n"
+        r"(?P<body>.*?)^CANDIDATE_BUILD$",
+        script,
+    )
+    if match is None:
+        raise AssertionError("publisher must expose the candidate build shell")
+    return match.group("body")
+
+
+def isolated_failure_report_source(workflow: str) -> str:
+    script = named_step_run_script(
+        workflow,
+        "Build candidate in isolated namespace and stage public inputs",
+    )
+    start = script.index('if [ "$builder_status" -ne 0 ]; then')
+    end = script.index("printf 'candidate build status: success", start)
+    return script[start:end]
+
+
 def patch_release_python_c_snippets(workflow: str) -> list[tuple[int, int, str]]:
     snippets: list[tuple[int, int, str]] = []
     for step_index, commands in enumerate(parse_patch_release_run_commands(workflow)):
@@ -2514,7 +2547,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             supervisor_bind,
         )
         membership = self.patch_job.index(
-            'cgroup_members="$(LC_ALL=C /usr/bin/sort -n',
+            'mapfile -t cgroup_members < "$supervisor_cgroup/cgroup.procs"',
             sys_mask,
         )
         self.assertLess(supervisor_bind, sys_mask)
@@ -2576,7 +2609,13 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             "candidate build failed: stage=launch detail=%s exit=%d",
             self.patch_job,
         )
-        self.assertIn("candidate build failed: stage=isolated exit=%d", self.patch_job)
+        self.assertIn(
+            "candidate build failed: stage=isolated detail=%s exit=%d",
+            self.patch_job,
+        )
+        self.assertIn("isolated_stage_failure", self.patch_job)
+        self.assertIn("candidate_stage_failure", self.patch_job)
+        self.assertIn("builder_isolated_detail=transport", self.patch_job)
         self.assertIn(
             "candidate build cleanup failed: process=%d cgroup=%d state=%d primary=%d",
             self.patch_job,
@@ -3604,10 +3643,8 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         hidden_sys_membership = self.text.replace(
-            'cgroup_members="$(LC_ALL=C /usr/bin/sort -n \\\n'
-            '          "$supervisor_cgroup/cgroup.procs")"',
-            'cgroup_members="$(LC_ALL=C /usr/bin/sort -n \\\n'
-            '          "$cgroup_path/cgroup.procs")"',
+            'mapfile -t cgroup_members < "$supervisor_cgroup/cgroup.procs"',
+            'mapfile -t cgroup_members < "$cgroup_path/cgroup.procs"',
             1,
         )
         exposed_supervisor_to_candidate = self.text.replace(
@@ -6014,9 +6051,9 @@ exit 37
             "Build candidate in isolated namespace and stage public inputs",
         )
         start = full_script.index(
-            'cgroup_members="$(LC_ALL=C /usr/bin/sort -n'
+            'mapfile -t cgroup_members < "$supervisor_cgroup/cgroup.procs"'
         )
-        end_marker = 'test "$cgroup_members" = "$$"'
+        end_marker = 'test "${cgroup_members[0]}" = "$$"'
         end = full_script.index(end_marker, start) + len(end_marker)
         membership_check = full_script[start:end]
         artifact_root = ROOT / "build" / "test-artifacts"
@@ -6031,6 +6068,7 @@ exit 37
 
             def run(extra_pid):
                 setup = (
+                    "set -e\n"
                     'supervisor_cgroup="$1"\n'
                     'printf \'%s\\n\' "$$" > '
                     '"$supervisor_cgroup/cgroup.procs"\n'
@@ -6049,6 +6087,233 @@ exit 37
 
             self.assertEqual(run(None).returncode, 0)
             self.assertNotEqual(run(999999).returncode, 0)
+
+            failed_workflow = subprocess.check_output(
+                [
+                    "git",
+                    "--no-pager",
+                    "show",
+                    f"{FAILING_MASTER_5779}:.github/workflows/build.yml",
+                ],
+                cwd=ROOT,
+                text=True,
+            )
+            failed_script = named_step_run_script(
+                failed_workflow,
+                "Build candidate in isolated namespace and stage public inputs",
+            )
+            failed_start = failed_script.index(
+                'cgroup_members="$(LC_ALL=C /usr/bin/sort -n'
+            )
+            failed_marker = 'test "$cgroup_members" = "$$"'
+            failed_end = (
+                failed_script.index(failed_marker, failed_start)
+                + len(failed_marker)
+            )
+            failed_membership_check = failed_script[
+                failed_start:failed_end
+            ]
+            fifo = supervisor / "cgroup.procs"
+            fifo.unlink()
+            os.mkfifo(fifo)
+            old_process = subprocess.Popen(
+                [
+                    "/bin/bash",
+                    "-c",
+                    'supervisor_cgroup="$1"\n'
+                    + failed_membership_check,
+                    "--",
+                    str(supervisor),
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+            )
+            try:
+                sort_pid = None
+                for _attempt in range(200):
+                    completed = subprocess.run(
+                        ["/usr/bin/ps", "-eo", "sid=,pid=,comm="],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    )
+                    for line in completed.stdout.splitlines():
+                        sid_text, pid_text, command = line.split(
+                            maxsplit=2
+                        )
+                        if (
+                            int(sid_text) == old_process.pid
+                            and command == "sort"
+                        ):
+                            sort_pid = int(pid_text)
+                            break
+                    if sort_pid is not None:
+                        break
+                    time.sleep(0.01)
+                self.assertIsNotNone(sort_pid)
+                with fifo.open("w", encoding="ascii") as stream:
+                    stream.write(f"{old_process.pid}\n{sort_pid}\n")
+                stdout, stderr = old_process.communicate(timeout=5)
+                self.assertEqual(old_process.returncode, 1)
+                self.assertEqual(stdout, "")
+                self.assertEqual(stderr, "")
+            finally:
+                if old_process.poll() is None:
+                    os.killpg(old_process.pid, signal.SIGKILL)
+                    old_process.wait(timeout=5)
+
+    def test_isolated_exit_status_channel_maps_only_fixed_substages(self):
+        report = isolated_failure_report_source(self.text)
+        expected = {
+            71: "candidate-preflight",
+            72: "candidate-venv",
+            73: "candidate-pip",
+            74: "candidate-build-tools",
+            75: "candidate-make",
+            76: "candidate-handoff",
+            77: "candidate-unknown",
+            81: "namespace",
+            82: "mount-audit",
+            83: "output-validate",
+            84: "export",
+            85: "post-check",
+        }
+        for status, detail in expected.items():
+            with self.subTest(status=status, detail=detail):
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        f"builder_status={status}\n" + report,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, status)
+                self.assertEqual(completed.stdout, "")
+                self.assertEqual(
+                    completed.stderr,
+                    "candidate build failed: stage=isolated "
+                    f"detail={detail} exit={status}\n",
+                )
+
+        for status in (1, 70, 78, 80, 86, 124, 125, 137, 255):
+            with self.subTest(malformed_status=status):
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        f"builder_status={status}\n" + report,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 125)
+                self.assertEqual(completed.stdout, "")
+                self.assertEqual(
+                    completed.stderr,
+                    "candidate build failed: stage=isolated "
+                    "detail=transport exit=125\n",
+                )
+
+    def test_candidate_and_root_stage_failures_encode_closed_exit_statuses(self):
+        candidate = candidate_build_shell_source(self.text)
+        candidate_start = candidate.index("candidate_stage=preflight")
+        candidate_marker = "trap candidate_stage_failure ERR"
+        candidate_end = (
+            candidate.index(candidate_marker, candidate_start)
+            + len(candidate_marker)
+        )
+        candidate_protocol = candidate[candidate_start:candidate_end]
+        builder = builder_isolation_shell_source(self.text)
+        builder_start = builder.index("isolated_stage=namespace")
+        builder_marker = "trap isolated_stage_failure ERR"
+        builder_end = (
+            builder.index(builder_marker, builder_start)
+            + len(builder_marker)
+        )
+        builder_protocol = builder[builder_start:builder_end]
+
+        for protocol, variable, cases in (
+            (
+                candidate_protocol,
+                "candidate_stage",
+                {
+                    "preflight": 71,
+                    "venv": 72,
+                    "pip": 73,
+                    "build-tools": 74,
+                    "make": 75,
+                    "handoff": 76,
+                    "invalid": 77,
+                },
+            ),
+            (
+                builder_protocol,
+                "isolated_stage",
+                {
+                    "namespace": 81,
+                    "mount-audit": 82,
+                    "output-validate": 83,
+                    "export": 84,
+                    "post-check": 85,
+                    "invalid": 125,
+                },
+            ),
+        ):
+            for stage, status in cases.items():
+                with self.subTest(variable=variable, stage=stage):
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "-c",
+                            "set -Eeuo pipefail\n"
+                            + protocol
+                            + f"\n{variable}={stage}\n"
+                            + "false\n",
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, status)
+                    self.assertEqual(completed.stdout, "")
+                    self.assertEqual(completed.stderr, "")
+
+    def test_isolated_substage_channel_is_authenticated_and_nonfilesystem(self):
+        script = named_step_run_script(
+            self.text,
+            "Build candidate in isolated namespace and stage public inputs",
+        )
+        self.assertIn(
+            'wait "$builder_supervisor_pid"\n'
+            'builder_status="$?"',
+            script,
+        )
+        self.assertIn(
+            "candidate build failed: stage=isolated detail=%s exit=%d",
+            script,
+        )
+        self.assertNotIn("ISOLATED_STAGE", script)
+        self.assertNotIn("isolated-stage", script)
+        self.assertNotIn("stage-channel", script)
+        leaked = self.text.replace(
+            'builder_isolated_detail=transport\n'
+            '              builder_status=125',
+            'builder_isolated_detail="$builder_identity"\n'
+            '              builder_status=125',
+            1,
+        )
+        self.assertNotEqual(leaked, self.text)
+        self.assertTrue(publisher_boundary_errors(leaked))
 
     def test_builder_cleanup_suppresses_utility_path_stderr(self):
         section = builder_cleanup_functions_source(self.text)
@@ -7672,6 +7937,9 @@ exit 37
             self.assertIn("primary `launch` rejection", text)
             self.assertIn("no cleanup diagnostic", text)
             self.assertIn("residual cgroup", text)
+            self.assertIn("authenticated supervisor", text)
+            self.assertIn("detail=transport exit=125", text)
+            self.assertIn("no file, pipe", text)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)
