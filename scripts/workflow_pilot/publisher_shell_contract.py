@@ -2344,19 +2344,25 @@ def _normalize_shell_builtin_wrappers(
         if executable != "command":
             return normalized
         index = 1
+        query_only = False
         while index < len(normalized):
             option = normalized[index]
             if option == "--":
                 index += 1
                 break
-            if option == "-p":
+            if option.startswith("-") and option != "-":
+                flags = option[1:]
+                if not flags or any(
+                    flag not in {"p", "v", "V"} for flag in flags
+                ):
+                    return None
+                if "v" in flags or "V" in flags:
+                    query_only = True
                 index += 1
                 continue
-            if option in {"-v", "-V"}:
-                return ()
-            if option.startswith("-"):
-                return None
             break
+        if query_only:
+            return ()
         normalized = normalized[index:]
     return None
 

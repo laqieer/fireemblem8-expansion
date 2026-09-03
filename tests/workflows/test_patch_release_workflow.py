@@ -452,6 +452,11 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         "        mutation_target=supervisor_cgroup\n"
         '        builtin "$mutation" "$mutation_target"\n',
         "        command -x unset supervisor_cgroup\n",
+        "        command -px unset supervisor_cgroup\n",
+        "        command -pZ unset supervisor_cgroup\n",
+        "        command -vX unset supervisor_cgroup\n",
+        "        command -pvx unset supervisor_cgroup\n",
+        "        command -p-v unset supervisor_cgroup\n",
         "        declare supervisor_cgroup=/mnt/home\n",
         "        typeset supervisor_cgroup=/mnt/home\n",
         "        local supervisor_cgroup=/mnt/home\n",
@@ -6556,6 +6561,17 @@ exit 37
         for unrelated_wrapped in (
             "command -v unset\n",
             "command -V supervisor_cgroup\n",
+            "command -pv supervisor_cgroup\n",
+            "command -vp supervisor_cgroup\n",
+            "command -pV supervisor_cgroup\n",
+            "command -Vp supervisor_cgroup\n",
+            "command -ppv supervisor_cgroup\n",
+            "command -vvp supervisor_cgroup\n",
+            "command -pVp supervisor_cgroup\n",
+            "command -pvV supervisor_cgroup\n",
+            "command -pv -- supervisor_cgroup\n",
+            "command -p -v supervisor_cgroup\n",
+            "command -v -p supervisor_cgroup\n",
             "command -- printf '%s\\n' unrelated\n",
             "command -p -- printf '%s\\n' unrelated\n",
             "builtin printf '%s\\n' unrelated\n",
@@ -6804,6 +6820,65 @@ exit 37
                         "supervisor_cgroup: unbound variable",
                         completed.stderr,
                     )
+
+    def test_command_query_clusters_are_nonmutating_and_invalid_clusters_fail(self):
+        valid_clusters = (
+            "-pv",
+            "-vp",
+            "-pV",
+            "-Vp",
+            "-ppv",
+            "-vvp",
+            "-pVp",
+            "-pvV",
+        )
+        for cluster in valid_clusters:
+            with self.subTest(valid_cluster=cluster):
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        'supervisor_cgroup="/mnt/supervisor/cgroup"\n'
+                        f"command {cluster} supervisor_cgroup "
+                        "> /dev/null 2>&1 || true\n"
+                        'printf "%s\\n" "$supervisor_cgroup"\n',
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0)
+                self.assertEqual(
+                    completed.stdout,
+                    "/mnt/supervisor/cgroup\n",
+                )
+                self.assertEqual(completed.stderr, "")
+
+        for cluster in ("-px", "-pZ", "-vX", "-pvx", "-p-v"):
+            with self.subTest(invalid_cluster=cluster):
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        'supervisor_cgroup="/mnt/supervisor/cgroup"\n'
+                        f"command {cluster} unset supervisor_cgroup "
+                        "> /dev/null 2>&1\n"
+                        'status="$?"\n'
+                        'printf "%s:%s\\n" "$status" '
+                        '"$supervisor_cgroup"\n',
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0)
+                self.assertEqual(
+                    completed.stdout,
+                    "2:/mnt/supervisor/cgroup\n",
+                )
+                self.assertEqual(completed.stderr, "")
 
     def test_isolated_exit_status_channel_maps_only_fixed_substages(self):
         report = isolated_failure_report_source(self.text)
@@ -9061,6 +9136,7 @@ exit 37
             self.assertIn("brace", text)
             self.assertIn("glob", text)
             self.assertIn("command -v", text)
+            self.assertIn("-pv", text)
             self.assertIn("wrapped", text)
             self.assertIn("unbound", text)
 

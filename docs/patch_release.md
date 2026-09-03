@@ -143,9 +143,13 @@ reassignment invalidates it. Recognized `command` (`-p`/`--`) and `builtin`
 prefixes are normalized after alias resolution, so wrapped or aliased unset
 and variable-mutating declare/typeset/local/export/readonly/read/mapfile/
 readarray/`printf -v` forms reject. `command -v/-V` queries and unrelated
-wrapped commands remain valid; eval, source, and ambiguous mutation surfaces
-fail closed. Runtime wrapped-unset controls leave `supervisor_cgroup` unbound
-before the safe read, proving the mutation.
+wrapped commands remain valid. Clustered `command` options such as `-pv`,
+`-vp`, `-pV`, and `-Vp` accept any repeated ordering of `p`, `v`, and `V`;
+any `v/V` makes the complete valid prefix query-only, while `p` alone remains
+an executing wrapper. Invalid mixed clusters fail closed when they target the
+supervisor alias. Eval, source, and ambiguous mutation surfaces fail closed.
+Runtime wrapped-unset controls leave `supervisor_cgroup` unbound before the
+safe read, proving the mutation.
 Tracked raw-root filename components also reject
 glob, brace, bracket, extglob, command/process/arithmetic substitution, tilde,
 and other dynamic syntax unless the command is the exact join write.

@@ -264,7 +264,11 @@ Literal, alias, parameter-operator, append, indexed/associative array, and
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,
 and ambiguous mutation surfaces fail closed. `command -v/-V` queries and
-unrelated wrapped commands remain valid. Executable wrapped-unset controls
+unrelated wrapped commands remain valid. Clustered `command` query options
+`-pv`, `-vp`, `-pV`, `-Vp`, and repeated/mixed `p`/`v`/`V` forms are
+nonmutating; `-p` alone keeps normal execution semantics, and clusters
+containing any other character fail closed. Executable runtime controls prove
+both query preservation and invalid-option status `2`; wrapped-unset controls
 prove the safe read would otherwise encounter an unbound variable.
 Raw-root filename
 glob, brace, bracket, extglob, command/process/arithmetic substitution, tilde,
@@ -364,7 +368,8 @@ archival-lane behavior changes.
   unknown-root rejection and unrelated-parameter controls, launcher
   `125`/`126` transport controls, supervisor reassignment mutations and
   wrapped-unset runtime controls, unrelated wrapper/query negatives, and
-  executable brace/glob filename controls, recursive
+  clustered `command` query/invalid-option controls, executable brace/glob
+  filename controls, recursive
   command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions
   through inline `else`/brace/case/loop forms, `setsid`-wrapped and common
