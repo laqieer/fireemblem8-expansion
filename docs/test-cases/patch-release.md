@@ -326,6 +326,12 @@ Helper declaration identity includes outer control/execution/operator scope,
 and encountered-definition state requires every helper to execute before its
 first call or reviewed trap use. Reordering is valid only within that pre-use
 region.
+Generic `<<`/`<<-` heredocs are lexed before command records, including
+attached/fd forms, quoted or escaped delimiters, line continuations, tab
+stripping, and multiple bodies in declared order. Body and delimiter lines
+cannot satisfy mandatory action, helper, order, or state-write counts.
+Unquoted expansion-active bodies reject; quoted bodies remain data. `<<<`
+here-strings stay ordinary redirections.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,
@@ -518,6 +524,9 @@ archival-lane behavior changes.
   quote-owned parenthesis nesting, attached/fd/here-string/here-document
   redirections, conditional/subshell helper declarations, and call-before-
   definition runtime/mutation controls,
+  generic heredoc initializer/trap/checker/join/helper spoofs, quoted/unquoted/
+  escaped/attached/fd/`<<-`/multiple/continued delimiters, expansion side
+  effects, and here-string distinction,
   parsed registry-contract mutations,
   recursive
   command/process-substitution inspection for

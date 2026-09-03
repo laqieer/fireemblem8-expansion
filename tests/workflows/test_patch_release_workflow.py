@@ -1450,6 +1450,100 @@ def generate_mandatory_control_scope_mutations(workflow: str):
         yield label, changed
 
 
+def generate_generic_heredoc_spoof_mutations(workflow: str):
+    checker_start = workflow.index(
+        '        /usr/bin/python3 -I -S - "$$" <<\'PY\'\n'
+    )
+    checker_end = (
+        workflow.index("        PY\n", checker_start)
+        + len("        PY\n")
+    )
+    checker = workflow[checker_start:checker_end]
+    helper = (
+        "        unmount_if_mounted() {\n"
+        '          if /usr/bin/mountpoint -q "$1"; then\n'
+        '            /usr/bin/umount --recursive "$1"\n'
+        "          fi\n"
+        "        }\n"
+    )
+    mandatory_actions = {
+        "initializer": '        cgroup_path="$1"\n',
+        "trap": "        trap isolated_stage_failure ERR\n",
+        "join": (
+            '        printf \'%s\\n\' "$$" > '
+            '"$cgroup_path/cgroup.procs"\n'
+        ),
+        "checker": checker,
+        "helper": helper,
+    }
+    for label, action in mandatory_actions.items():
+        wrapped = (
+            "        cat <<'FAKE_SECURITY_ACTION' > /dev/null\n"
+            + action
+            + "        FAKE_SECURITY_ACTION\n"
+        )
+        changed = workflow.replace(action, wrapped, 1)
+        if changed == workflow:
+            raise AssertionError(
+                f"{label} heredoc spoof marker differs"
+            )
+        yield f"{label}-quoted", changed
+
+    initializer = mandatory_actions["initializer"]
+    variants = {
+        "double-quoted": (
+            '        cat <<"FAKE_SECURITY_ACTION" > /dev/null\n'
+            + initializer
+            + "        FAKE_SECURITY_ACTION\n"
+        ),
+        "escaped": (
+            "        cat <<\\FAKE_SECURITY_ACTION > /dev/null\n"
+            + initializer
+            + "        FAKE_SECURITY_ACTION\n"
+        ),
+        "unquoted": (
+            "        cat <<FAKE_SECURITY_ACTION > /dev/null\n"
+            + initializer
+            + "        FAKE_SECURITY_ACTION\n"
+        ),
+        "attached": (
+            "        cat<<'FAKE_SECURITY_ACTION' > /dev/null\n"
+            + initializer
+            + "        FAKE_SECURITY_ACTION\n"
+        ),
+        "descriptor": (
+            "        : 3<<'FAKE_SECURITY_ACTION'\n"
+            + initializer
+            + "        FAKE_SECURITY_ACTION\n"
+        ),
+        "strip-tabs": (
+            "        cat <<-'FAKE_SECURITY_ACTION' > /dev/null\n"
+            + initializer
+            + "        FAKE_SECURITY_ACTION\n"
+        ),
+        "line-continuation": (
+            "        cat <<\\\n"
+            "        'FAKE_SECURITY_ACTION' > /dev/null\n"
+            + initializer
+            + "        FAKE_SECURITY_ACTION\n"
+        ),
+        "multiple": (
+            "        cat <<'FIRST_FAKE' <<'SECOND_FAKE' > /dev/null\n"
+            "        harmless\n"
+            "        FIRST_FAKE\n"
+            + initializer
+            + "        SECOND_FAKE\n"
+        ),
+    }
+    for label, replacement in variants.items():
+        changed = workflow.replace(initializer, replacement, 1)
+        if changed == workflow:
+            raise AssertionError(
+                f"{label} heredoc variant marker differs"
+            )
+        yield f"initializer-{label}", changed
+
+
 def render_supervisor_parent_remount_mutation(
     workflow: str,
     *,
@@ -9979,14 +10073,7 @@ exit 37
             )
             if command.strip().startswith("return")
         ]
-        self.assertEqual(returns.count("return 125"), 40)
-        self.assertEqual(returns.count("return result"), 2)
-        self.assertEqual(returns.count("return value"), 1)
-        self.assertEqual(returns.count("return options"), 1)
-        self.assertEqual(
-            set(returns),
-            {"return 125", "return result", "return value", "return options"},
-        )
+        self.assertEqual(Counter(returns), Counter({"return 125": 40}))
 
     def test_helper_explicit_return_propagates_through_current_mount_stage(self):
         builder = builder_isolation_shell_source(self.text)
@@ -11654,6 +11741,9 @@ exit 37
                 "attached_redirections": (
                     "lex-unquoted-syntax-segments"
                 ),
+                "heredoc_bodies": "excluded-from-command-records",
+                "unquoted_heredoc_expansion": "reject",
+                "here_strings": "ordinary-redirections",
                 "protected_loop_targets": "reject",
                 "operator_literals": "quoted-or-escaped-data",
                 "split_function_declaration": (
@@ -11852,6 +11942,10 @@ exit 37
             (
                 ("shell_surface", "attached_redirections"),
                 "whitespace-only",
+            ),
+            (
+                ("shell_surface", "heredoc_bodies"),
+                "commands",
             ),
             (
                 (
@@ -12525,6 +12619,181 @@ exit 37
                 generate_mandatory_control_scope_mutations(self.text)
             ):
                 with self.subTest(mandatory_control_scope=label):
+                    self.assertTrue(
+                        workflow_has_raw_builder_cgroup_membership_read(
+                            changed
+                        )
+                    )
+                    self.assertIn(
+                        "raw builder cgroup membership read differs",
+                        publisher_boundary_errors(changed),
+                    )
+
+    def test_generic_heredocs_cannot_spoof_mandatory_actions(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        skipped_initializer = (
+            "set -u\n"
+            "cat <<'FAKE' > /dev/null\n"
+            'cgroup_path="$1"\n'
+            "FAKE\n"
+            'printf "%s\\n" "$cgroup_path"\n'
+        )
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "-c",
+                skipped_initializer,
+                "--",
+                "/owned-cgroup",
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("unbound variable", completed.stderr)
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                skipped_initializer,
+                label="heredoc initializer spoof runtime",
+            )
+        )
+
+        skipped_trap = (
+            'trap_marker="$1"\n'
+            "handler() {\n"
+            '  printf "trapped\\n" > "$trap_marker"\n'
+            "}\n"
+            "cat <<'FAKE' > /dev/null\n"
+            "trap handler ERR\n"
+            "FAKE\n"
+            "false || true\n"
+            'test ! -e "$trap_marker"\n'
+        )
+        with tempfile.TemporaryDirectory(
+            prefix="heredoc-trap-spoof-",
+            dir=artifact_root,
+        ) as temporary:
+            marker = Path(temporary) / "trap-marker"
+            completed = subprocess.run(
+                ["/bin/bash", "-c", skipped_trap, "--", str(marker)],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertFalse(marker.exists())
+
+        with tempfile.TemporaryDirectory(
+            prefix="heredoc-expansion-",
+            dir=artifact_root,
+        ) as temporary:
+            marker = Path(temporary) / "expanded"
+            unquoted = (
+                "cat <<HEREDOC > /dev/null\n"
+                '$(printf "expanded\\n" > "$1")\n'
+                "HEREDOC\n"
+            )
+            completed = subprocess.run(
+                ["/bin/bash", "-c", unquoted, "--", str(marker)],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                marker.read_text(encoding="ascii"),
+                "expanded\n",
+            )
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    unquoted,
+                    label="unquoted heredoc expansion runtime",
+                )
+            )
+
+            marker.unlink()
+            quoted = (
+                "cat <<'HEREDOC' > /dev/null\n"
+                '$(printf "expanded\\n" > "$1")\n'
+                "HEREDOC\n"
+            )
+            completed = subprocess.run(
+                ["/bin/bash", "-c", quoted, "--", str(marker)],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertFalse(marker.exists())
+            self.assertFalse(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    quoted,
+                    label="quoted heredoc literal control",
+                )
+            )
+            unquoted_plain = (
+                "cat <<HEREDOC > /dev/null\n"
+                "plain literal body\n"
+                "HEREDOC\n"
+            )
+            self.assertFalse(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    unquoted_plain,
+                    label="unquoted plain heredoc control",
+                )
+            )
+
+        here_string = (
+            "cat <<<'cgroup_path=\"$1\"' > /dev/null\n"
+            'cgroup_path="$1"\n'
+        )
+        self.assertFalse(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                here_string,
+                label="here-string distinction control",
+            )
+        )
+        tab_stripped = (
+            "cat <<-'FAKE' > /dev/null\n"
+            '\tcgroup_path="$1"\n'
+            "\tFAKE\n"
+            'cgroup_path="$1"\n'
+        )
+        records = publisher_shell_contract.split_bash_simple_command_strings(
+            tab_stripped,
+            label="tab-stripped heredoc control",
+        )
+        self.assertEqual(
+            records,
+            ("cat <<-'FAKE' > /dev/null", 'cgroup_path="$1"'),
+        )
+        self.assertFalse(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                tab_stripped,
+                label="tab-stripped heredoc control",
+            )
+        )
+
+        with (
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_patch_release_run_script_identity",
+            ),
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_builder_isolation_shell_identity",
+            ),
+        ):
+            for label, changed in generate_generic_heredoc_spoof_mutations(
+                self.text
+            ):
+                with self.subTest(heredoc_spoof=label):
                     self.assertTrue(
                         workflow_has_raw_builder_cgroup_membership_read(
                             changed

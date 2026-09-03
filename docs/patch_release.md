@@ -343,6 +343,13 @@ Reviewed helper declarations include their outer control, execution, and
 operator scopes. Each helper definition must execute unconditionally before
 its first call or trap use; safe reordering remains allowed only while every
 definition stays in the pre-use region.
+The shared command lexer recognizes generic `<<`/`<<-` heredocs, attached and
+descriptor forms, quoted or escaped delimiters, continuations, tab stripping,
+and multiple bodies in declaration order. Heredoc bodies and terminators never
+become command records or satisfy mandatory/helper/state counts. Unquoted
+bodies containing active parameter, command, arithmetic, or backtick expansion
+fail closed; quoted bodies remain inert data. `<<<` here-strings remain normal
+redirections and are never consumed as heredoc bodies.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

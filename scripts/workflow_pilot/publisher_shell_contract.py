@@ -44,11 +44,11 @@ REVIEWED_BUILDER_HELPER_INVENTORY = {
     ): 1,
     (
         "list_dev_mount_targets",
-        "72de3ebe117bd85b6c1d1105e64a2d24f78a1874bfb128979005bdb0c4fcd1b3",
+        "f1e90d92ae1dfda62f37c0cadfc32c09634132a3f4d00a008b17cec923757cce",
     ): 1,
     (
         "list_writable_mount_records",
-        "452c77e719ea4df4b09765ea1e334ee220a2a02b8d6622359d543b176ad81d1c",
+        "c9a14585224556625d83df8124c9299c7c5c12a635f87316d88175f6a4a20c8f",
     ): 1,
     (
         "read_checked_runtime_transport_file",
@@ -567,11 +567,168 @@ def bash_logical_lines(script: str, *, label: str) -> tuple[str, ...]:
     return tuple(logical_lines)
 
 
+def _logical_heredoc_declarations(
+    logical: str,
+    *,
+    label: str,
+) -> tuple[tuple[str, bool, bool], ...]:
+    declarations: list[tuple[str, bool, bool]] = []
+    quote: str | None = None
+    index = 0
+    while index < len(logical):
+        character = logical[index]
+        if quote is None:
+            if character == "\\":
+                index += 2
+                continue
+            if character in {"'", '"'}:
+                quote = character
+                index += 1
+                continue
+            if character != "<" or not logical.startswith("<<", index):
+                index += 1
+                continue
+            if logical.startswith("<<<", index):
+                index += 3
+                continue
+            strip_tabs = logical.startswith("<<-", index)
+            index += 3 if strip_tabs else 2
+            while index < len(logical) and logical[index] in " \t":
+                index += 1
+            delimiter: list[str] = []
+            delimiter_quote: str | None = None
+            quoted = False
+            while index < len(logical):
+                character = logical[index]
+                if delimiter_quote is None:
+                    if character in " \t;&|<>":
+                        break
+                    if character in {"'", '"'}:
+                        delimiter_quote = character
+                        quoted = True
+                        index += 1
+                        continue
+                    if character == "\\":
+                        if index + 1 >= len(logical):
+                            raise ValueError(
+                                f"{label} heredoc delimiter escape differs"
+                            )
+                        quoted = True
+                        delimiter.append(logical[index + 1])
+                        index += 2
+                        continue
+                    delimiter.append(character)
+                    index += 1
+                    continue
+                if character == delimiter_quote:
+                    delimiter_quote = None
+                elif (
+                    delimiter_quote == '"'
+                    and character == "\\"
+                    and index + 1 < len(logical)
+                    and logical[index + 1] in '$`"\\'
+                ):
+                    quoted = True
+                    delimiter.append(logical[index + 1])
+                    index += 2
+                    continue
+                else:
+                    delimiter.append(character)
+                index += 1
+            if delimiter_quote is not None or not delimiter:
+                raise ValueError(f"{label} heredoc delimiter differs")
+            declarations.append(
+                ("".join(delimiter), strip_tabs, not quoted)
+            )
+            continue
+        if character == quote:
+            quote = None
+        elif (
+            quote == '"'
+            and character == "\\"
+            and index + 1 < len(logical)
+            and logical[index + 1] in '$`"\\'
+        ):
+            index += 2
+            continue
+        index += 1
+    if quote is not None:
+        raise ValueError(f"{label} heredoc command quoting differs")
+    return tuple(declarations)
+
+
+def _unquoted_heredoc_has_active_expansion(body: str) -> bool:
+    index = 0
+    while index < len(body):
+        character = body[index]
+        if character == "\\" and index + 1 < len(body):
+            if body[index + 1] in "$`\\":
+                index += 2
+                continue
+        if character in "$`":
+            return True
+        index += 1
+    return False
+
+
+def _strip_generic_heredoc_bodies(script: str, *, label: str) -> str:
+    lines = script.splitlines(keepends=True)
+    output: list[str] = []
+    index = 0
+    while index < len(lines):
+        logical = ""
+        state = "normal"
+        while index < len(lines):
+            physical = lines[index]
+            raw_line = physical.rstrip("\r\n")
+            logical += raw_line
+            output.append(physical)
+            state, continued = _bash_line_state(raw_line, state)
+            index += 1
+            if continued:
+                logical = logical[:-1]
+                continue
+            if state != "normal":
+                logical += "\n"
+                continue
+            break
+        if state != "normal":
+            raise ValueError(f"{label} has unterminated command quoting")
+        declarations = _logical_heredoc_declarations(
+            logical,
+            label=label,
+        )
+        for delimiter, strip_tabs, expansion_active in declarations:
+            body_lines: list[str] = []
+            while index < len(lines):
+                physical = lines[index]
+                raw_line = physical.rstrip("\r\n")
+                comparable = raw_line.lstrip("\t") if strip_tabs else raw_line
+                index += 1
+                if comparable == delimiter:
+                    break
+                body_lines.append(physical)
+            else:
+                raise ValueError(
+                    f"{label} has unterminated heredoc {delimiter!r}"
+                )
+            body = "".join(body_lines)
+            if (
+                expansion_active
+                and _unquoted_heredoc_has_active_expansion(body)
+            ):
+                raise ValueError(
+                    f"{label} has expansion-active heredoc body"
+                )
+    return "".join(output)
+
+
 def split_bash_command_records(
     script: str,
     *,
     label: str,
 ) -> tuple[_ShellCommandRecord, ...]:
+    script = _strip_generic_heredoc_bodies(script, label=label)
     records: list[_ShellCommandRecord] = []
     pending_operator: str | None = None
     scope_stack: list[tuple[str, str | None]] = []
@@ -3286,7 +3443,10 @@ def _apply_direct_function_alias_writes(
     aliases: dict[str, str],
 ) -> tuple[bool, set[str]]:
     written: set[str] = set()
-    for token in tokens:
+    leading_assignments = _leading_assignment_indices(tokens)
+    for token_index, token in enumerate(tokens):
+        if token_index not in leading_assignments:
+            continue
         indexed = _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(token.text)
         scalar = _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(token.text)
         assignment = indexed or scalar
@@ -3511,7 +3671,6 @@ def _analyze_function_call(
         if _apply_shell_builtin_alias_writes(
             resolved,
             function_aliases,
-            original_tokens=_token_texts(tokens),
             original_shell_tokens=tokens,
         ):
             return True, {}
@@ -3819,6 +3978,25 @@ def _strip_shell_command_prefixes(
     return stripped
 
 
+def _leading_assignment_indices(
+    tokens: tuple[_ShellToken, ...],
+) -> set[int]:
+    index = 0
+    while (
+        index < len(tokens)
+        and tokens[index].text in _SIMPLE_COMMAND_PREFIXES
+    ):
+        index += 1
+    indices: set[int] = set()
+    while index < len(tokens) and (
+        _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(tokens[index].text)
+        or _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(tokens[index].text)
+    ):
+        indices.add(index)
+        index += 1
+    return indices
+
+
 def _resolve_tokens_for_alias_state(
     tokens: tuple[_ShellToken, ...],
     aliases: dict[str, str],
@@ -4087,6 +4265,12 @@ def _normalized_command_changes_dispatch(
     executable = posixpath.basename(normalized[0])
     if executable in dispatch_builtins:
         return True
+    if executable == "env":
+        return any(
+            "=" in argument
+            and _dispatch_state_target_is_forbidden(argument)
+            for argument in normalized[1:]
+        )
     if executable != "set":
         return False
     arguments = normalized[1:]
@@ -4425,13 +4609,11 @@ def _apply_shell_builtin_alias_writes(
     tokens: tuple[str, ...],
     aliases: dict[str, str],
     *,
-    original_tokens: tuple[str, ...],
     original_shell_tokens: tuple[_ShellToken, ...] | None = None,
 ) -> bool:
     if original_shell_tokens is not None:
         lexed = _split_attached_redirections(original_shell_tokens)
         tokens = _resolve_tokens_for_alias_state(lexed, aliases)
-        original_tokens = _token_texts(lexed)
     normalized = _normalize_shell_builtin_wrappers(tokens)
     if normalized is None:
         return any(
@@ -4451,9 +4633,6 @@ def _apply_shell_builtin_alias_writes(
         )
     if not normalized:
         return False
-    if len(original_tokens) < len(normalized):
-        return True
-    aligned_original = original_tokens[-len(normalized) :]
     executable = posixpath.basename(normalized[0])
     arguments = normalized[1:]
     try:
@@ -4522,7 +4701,7 @@ def _apply_shell_builtin_alias_writes(
         }:
             array = False
             after_options = False
-            for argument_index, argument in enumerate(arguments, start=1):
+            for argument in arguments:
                 if argument == "--":
                     after_options = True
                     continue
@@ -4537,16 +4716,6 @@ def _apply_shell_builtin_alias_writes(
                     argument
                 )
                 if scalar_assignment or indexed_assignment:
-                    original_argument = aligned_original[argument_index]
-                    if (
-                        _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(
-                            original_argument
-                        )
-                        or _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(
-                            original_argument
-                        )
-                    ):
-                        continue
                     assignment = scalar_assignment or indexed_assignment
                     assert assignment is not None
                     name = assignment.group("name")
@@ -4931,7 +5100,8 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     for token in token_texts[1:]
                 )
             )
-            for token in tokens:
+            leading_assignments = _leading_assignment_indices(tokens)
+            for token_index, token in enumerate(tokens):
                 resolved = _resolve_shell_token(token, aliases)
                 if _AMBIGUOUS_TRACKED_PARAMETER_MARKER in resolved:
                     return True
@@ -4959,6 +5129,11 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 indexed_assignment = (
                     _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(token.text)
                 )
+                if (
+                    indexed_assignment is not None
+                    and token_index not in leading_assignments
+                ):
+                    indexed_assignment = None
                 if indexed_assignment is not None:
                     name = indexed_assignment.group("name")
                     if name in _DISPATCH_STATE_VARIABLES:
@@ -5004,7 +5179,10 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 assignment = _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(
                     token.text
                 )
-                if assignment is None:
+                if (
+                    assignment is None
+                    or token_index not in leading_assignments
+                ):
                     continue
                 name = assignment.group("name")
                 if name in _DISPATCH_STATE_VARIABLES:
@@ -5071,7 +5249,6 @@ def has_forbidden_raw_builder_cgroup_membership_read(
             if _apply_shell_builtin_alias_writes(
                 resolved_token_texts,
                 aliases,
-                original_tokens=token_texts,
                 original_shell_tokens=tokens,
             ):
                 return True

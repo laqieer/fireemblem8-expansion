@@ -1318,6 +1318,19 @@ class VerifyCliCwdTests(unittest.TestCase):
             for (
                 label,
                 changed,
+            ) in patch_workflow_tests.generate_generic_heredoc_spoof_mutations(
+                original
+            ):
+                with self.subTest(
+                    generic_heredoc_spoof=label
+                ), self.assertRaisesRegex(
+                    ValueError,
+                    "isolated candidate build differs",
+                ):
+                    verify_mod._parse_workflow_structure_text(changed)
+            for (
+                label,
+                changed,
             ) in patch_workflow_tests.generate_safe_declaration_alias_controls(
                 original
             ):
