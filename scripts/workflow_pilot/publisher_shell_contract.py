@@ -12,10 +12,10 @@ from typing import Iterable
 
 
 REVIEWED_PATCH_RELEASE_RUN_SHA256 = (
-    "45d68f9139c80cfc7af1ead7f6a592891cd2a7371be2c12fb57529a80e538e04"
+    "0f17434eff089afe16c7fb5add13deb25737e71d0c465cedab523c87141effe7"
 )
 REVIEWED_BUILDER_ISOLATION_SHA256 = (
-    "b750b03aa814b977790d066ce0c7c99f0855af79ee489e467861f0884fc13506"
+    "71455cd686aaad1b54ad514060b5d0e37b3186465cfa2fbf45175260554cfa45"
 )
 REVIEWED_HIDDEN_MASK_LOOP_SHA256 = (
     "77e81e3a773e78b4c58132c553ea3a3ef0719f802fe1164b59f60aef948235f5"
@@ -2468,6 +2468,53 @@ def _normalized_command_mutates_supervisor(
     return False
 
 
+def _normalized_command_creates_nameref(
+    tokens: tuple[str, ...],
+) -> bool:
+    normalized = _normalize_shell_builtin_wrappers(tokens)
+    declaration_builtins = {
+        "declare",
+        "export",
+        "local",
+        "readonly",
+        "typeset",
+    }
+    if normalized is None:
+        return (
+            any(
+                posixpath.basename(token) in declaration_builtins
+                for token in tokens
+            )
+            and any(
+                _AMBIGUOUS_ARRAY_ALIAS_MARKER in token
+                or _AMBIGUOUS_DYNAMIC_ALIAS_MARKER in token
+                or (
+                    token.startswith(("-", "+"))
+                    and "n" in token[1:]
+                )
+                for token in tokens
+            )
+        )
+    if not normalized:
+        return False
+    if posixpath.basename(normalized[0]) not in declaration_builtins:
+        return False
+    for option in normalized[1:]:
+        if option == "--":
+            break
+        if (
+            _AMBIGUOUS_ARRAY_ALIAS_MARKER in option
+            or _AMBIGUOUS_DYNAMIC_ALIAS_MARKER in option
+        ):
+            return True
+        if option.startswith(("-", "+")) and option not in {"-", "+"}:
+            if "n" in option[1:]:
+                return True
+            continue
+        break
+    return False
+
+
 def _ambiguous_array_command_is_forbidden(
     tokens: tuple[str, ...],
 ) -> bool:
@@ -2698,6 +2745,10 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 for token in tokens
             )
             if _ambiguous_array_command_is_forbidden(
+                resolved_token_texts
+            ):
+                return True
+            if _normalized_command_creates_nameref(
                 resolved_token_texts
             ):
                 return True

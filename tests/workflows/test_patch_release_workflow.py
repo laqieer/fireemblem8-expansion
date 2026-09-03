@@ -546,6 +546,37 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         '        unset "$target"\n',
         "        target=~\n"
         '        unset "$target"\n',
+        "        declare -n target=supervisor_cgroup\n"
+        "        unset target\n",
+        "        declare -n target=$1\n"
+        "        unset target\n",
+        "        typeset -n target=supervisor_cgroup\n"
+        "        target=/mnt/home\n",
+        "        local -n target=supervisor_cgroup\n"
+        "        unset target\n",
+        "        export -n target=supervisor_cgroup\n",
+        "        readonly -n target=supervisor_cgroup\n",
+        "        declare -gn target=supervisor_cgroup\n",
+        "        declare -ng target=supervisor_cgroup\n",
+        "        declare +n target=supervisor_cgroup\n",
+        "        declare +xn target=supervisor_cgroup\n",
+        "        declare -nn target=supervisor_cgroup\n",
+        "        declare -n target\n",
+        "        declare -n target='supervisor_cgroup[0]'\n",
+        "        command declare -n target=supervisor_cgroup\n",
+        "        command -- typeset -n target=supervisor_cgroup\n",
+        "        builtin declare -n target=supervisor_cgroup\n",
+        "        declaration=declare\n"
+        "        option=-n\n"
+        '        "$declaration" "$option" target=supervisor_cgroup\n',
+        '        option="$(printf -- -n)"\n'
+        '        declare "$option" target=supervisor_cgroup\n',
+        "        option[0]=-n\n"
+        '        declare "${option[0]}" target=supervisor_cgroup\n',
+        "        eval 'declare -n target=supervisor_cgroup'\n",
+        "        create_nameref() { "
+        "declare -n target=supervisor_cgroup; }\n"
+        "        create_nameref\n",
     )
     for index, mutation in enumerate(supervisor_reassignments):
         changed = workflow.replace(marker, mutation + marker, 1)
@@ -1913,6 +1944,7 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or "create_supervisor_transport_file() {" not in isolated_step
         or "checked_supervisor_transport_signature() {" not in isolated_step
         or "read_checked_supervisor_transport_file() {" not in isolated_step
+        or "local -n" in isolated_step
         or "remove_supervisor_transport_file() {" not in isolated_step
         or "list_writable_mount_records() {" not in isolated_step
         or (
@@ -1941,13 +1973,13 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or 'list_dev_mount_targets > "$dev_mounts_file"' not in isolated_step
         or (
             'read_checked_supervisor_transport_file \\\n'
-            '          "$dev_mounts_file" "$dev_mount_targets_max_bytes" dev_mounts'
+            '          "$dev_mounts_file" "$dev_mount_targets_max_bytes"'
         )
         not in isolated_step
         or 'remove_supervisor_transport_file "$dev_mounts_file"'
         not in isolated_step
         or (
-            "for ((index=${#dev_mounts[@]} - 1; index >= 0; index--)); do"
+            "for ((index=${#checked_supervisor_transport_output[@]} - 1; index >= 0; index--)); do"
         )
         not in isolated_step
         or '/dev/*) /usr/bin/umount -- "$dev_mount" ;;'
@@ -1957,28 +1989,30 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
         or (
             'read_checked_supervisor_transport_file \\\n'
             '          "$remaining_dev_mounts_file" \\\n'
-            '          "$dev_mount_targets_max_bytes" \\\n'
-            "          remaining_dev_mounts"
+            '          "$dev_mount_targets_max_bytes"'
         )
         not in isolated_step
         or 'remove_supervisor_transport_file "$remaining_dev_mounts_file"'
         not in isolated_step
-        or 'test "${#remaining_dev_mounts[@]}" -eq 1' not in isolated_step
-        or 'test "${remaining_dev_mounts[0]}" = /dev' not in isolated_step
+        or 'test "${#checked_supervisor_transport_output[@]}" -eq 1'
+        not in isolated_step
+        or 'test "${checked_supervisor_transport_output[0]}" = /dev'
+        not in isolated_step
         or 'list_writable_mount_records > "$writable_mount_records_file"' not in isolated_step
         or (
             'read_checked_runtime_transport_file \\\n'
             '          "$writable_mount_records_file" \\\n'
-            '          "$writable_mount_records_max_bytes" \\\n'
-            '          writable_mount_records'
+            '          "$writable_mount_records_max_bytes"'
         )
         not in isolated_step
         or 'remove_runtime_transport_file "$writable_mount_records_file"'
         not in isolated_step
-        or 'test "$(( ${#writable_mount_records[@]} % 2 ))" -eq 0'
+        or 'test "$(( ${#checked_runtime_transport_output[@]} % 2 ))" -eq 0'
         not in isolated_step
-        or 'mount_target="${writable_mount_records[index]}"' not in isolated_step
-        or 'mount_options="${writable_mount_records[index + 1]}"' not in isolated_step
+        or 'mount_target="${checked_runtime_transport_output[index]}"'
+        not in isolated_step
+        or 'mount_options="${checked_runtime_transport_output[index + 1]}"'
+        not in isolated_step
         or "/usr/bin/findmnt -Rrno TARGET /dev" in isolated_step
         or "/usr/bin/findmnt --raw" in isolated_step
         or "< <(list_dev_mount_targets)" in isolated_step
@@ -4161,7 +4195,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             '        dev_mounts_file="$(create_supervisor_transport_file dev-mount-targets)"\n'
             '        list_dev_mount_targets > "$dev_mounts_file"\n'
             "        read_checked_supervisor_transport_file \\\n"
-            '          "$dev_mounts_file" "$dev_mount_targets_max_bytes" dev_mounts\n'
+            '          "$dev_mounts_file" "$dev_mount_targets_max_bytes"\n'
             '        remove_supervisor_transport_file "$dev_mounts_file"',
             "        mapfile -d '' -t dev_mounts < <(list_dev_mount_targets)",
             1,
@@ -4171,8 +4205,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             '        list_writable_mount_records > "$writable_mount_records_file"\n'
             "        read_checked_runtime_transport_file \\\n"
             '          "$writable_mount_records_file" \\\n'
-            '          "$writable_mount_records_max_bytes" \\\n'
-            '          writable_mount_records\n'
+            '          "$writable_mount_records_max_bytes"\n'
             '        remove_runtime_transport_file "$writable_mount_records_file"',
             "        mapfile -d '' -t writable_mount_records < <(list_writable_mount_records)",
             1,
@@ -4193,9 +4226,11 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         forward_dev_teardown = self.text.replace(
-            "for ((index=${#dev_mounts[@]} - 1; "
+            "for ((index=${#checked_supervisor_transport_output[@]} - 1; "
             "index >= 0; index--)); do",
-            "for ((index=0; index < ${#dev_mounts[@]}; index++)); do",
+            "for ((index=0; "
+            "index < ${#checked_supervisor_transport_output[@]}; "
+            "index++)); do",
             1,
         )
         ambient_dependency_python = self.text.replace(
@@ -6676,6 +6711,24 @@ exit 37
                         label="fixed literal alias control",
                     )
                 )
+        for ordinary_declaration in (
+            "declare ordinary=value\n",
+            "declare -x ordinary=value\n",
+            "typeset -r ordinary=value\n",
+            "local ordinary=value\n",
+            "export ordinary=value\n",
+            "readonly ordinary=value\n",
+            "declare -- nameref=value\n",
+        ):
+            with self.subTest(
+                ordinary_declaration=ordinary_declaration.strip()
+            ):
+                self.assertFalse(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        builder + "\n" + ordinary_declaration,
+                        label="ordinary declaration control",
+                    )
+                )
         for label, changed in generate_raw_builder_cgroup_membership_mutations(
             self.text
         ):
@@ -6910,6 +6963,48 @@ exit 37
                         label="dynamic scalar alias runtime",
                     )
                 )
+
+    def test_nameref_runtime_unsets_and_writes_through_supervisor_alias(self):
+        cases = (
+            (
+                "declare -n target=supervisor_cgroup\n"
+                "unset target\n"
+                'printf "%s\\n" "$supervisor_cgroup"\n',
+                "unbound variable",
+            ),
+            (
+                "declare -n target=supervisor_cgroup\n"
+                "target=/mnt/home\n"
+                'test "$supervisor_cgroup" = /mnt/home\n',
+                "",
+            ),
+            (
+                "declare -n target=supervisor_cgroup\n"
+                'read target <<< "/mnt/home"\n'
+                'test "$supervisor_cgroup" = /mnt/home\n',
+                "",
+            ),
+        )
+        for mutation, expected_stderr in cases:
+            with self.subTest(mutation=mutation.splitlines()[1]):
+                script = (
+                    "set -u\n"
+                    'supervisor_cgroup="/mnt/supervisor/cgroup"\n'
+                    + mutation
+                )
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", script],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if expected_stderr:
+                    self.assertNotEqual(completed.returncode, 0)
+                    self.assertIn(expected_stderr, completed.stderr)
+                else:
+                    self.assertEqual(completed.returncode, 0)
+                    self.assertEqual(completed.stderr, "")
 
     def test_wrapped_unset_runtime_breaks_safe_read_and_is_rejected(self):
         artifact_root = ROOT / "build" / "test-artifacts"
@@ -7439,7 +7534,7 @@ exit 37
         namespace_site = builder[namespace_start:namespace_end]
         mount_start = builder.index(
             "for ((index=0; index < "
-            "${#writable_mount_records[@]}; index+=2)); do"
+            "${#checked_runtime_transport_output[@]}; index+=2)); do"
         )
         mount_end = builder.index("\ndone", mount_start) + len("\ndone")
         mount_site = builder[mount_start:mount_end]
@@ -7456,7 +7551,8 @@ exit 37
             (
                 "mount-audit",
                 "isolated_stage=mount-audit\n"
-                'writable_mount_records=("/unexpected" "rw,nodev")\n',
+                'checked_runtime_transport_output='
+                '("/unexpected" "rw,nodev")\n',
                 mount_site,
                 82,
                 "mount-audit",
@@ -9331,6 +9427,9 @@ exit 37
             self.assertIn("dynamic", text.lower())
             self.assertIn("backtick", text.lower())
             self.assertIn("fixed", text.lower())
+            self.assertIn("nameref", text.lower())
+            self.assertIn("local -n", text)
+            self.assertIn("result arrays", text)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)

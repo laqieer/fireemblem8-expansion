@@ -283,6 +283,13 @@ allowed, but executable, wrapper, option, mutator, target, and supervisor-
 sensitive sinks reject. Runtime command-substitution, backtick, and
 parameter-transform targets otherwise unset or rewrite `supervisor_cgroup`;
 fixed single-quoted literal spellings remain accepted.
+The trusted builder contains no nameref. Direct `-n`, clustered/repeated
+options containing `n`, `+n` toggles, wrapped/aliased builtins, array/dynamic
+options, assignments, declarations, and eval/source/function ambiguity all
+fail closed for declare/typeset/local/export/readonly. Checked transport
+readers use fixed result arrays instead of `local -n`. Runtime controls prove
+nameref `unset`, assignment, and redirected `read` mutate the underlying
+supervisor alias; ordinary non-`n` declarations remain valid.
 Raw-root filename
 glob, brace, bracket, extglob, command/process/arithmetic substitution, tilde,
 and other dynamic syntax fail closed. Executable `cgroup{.,_}procs` and
@@ -384,7 +391,9 @@ archival-lane behavior changes.
   clustered `command` query/invalid-option controls, array-backed executable/
   wrapper/option/mutator/target mutations and query controls, executable
   brace/glob filename controls, dynamic scalar alias sink mutations and
-  command-substitution/backtick/transform runtime controls, recursive
+  command-substitution/backtick/transform runtime controls, broad nameref
+  declaration mutations and unset/assignment/redirected-read runtime proofs,
+  recursive
   command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions
   through inline `else`/brace/case/loop forms, `setsid`-wrapped and common

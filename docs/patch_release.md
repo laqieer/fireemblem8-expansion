@@ -163,6 +163,13 @@ an executable, wrapper, option, mutator, target, or supervisor-sensitive path.
 Runtime `$(printf supervisor_cgroup)`, backtick, and parameter-transform
 controls otherwise unset or rewrite the trusted alias; fixed single-quoted
 literal spellings remain accepted.
+Nameref creation is never modeled or allowed in the trusted builder.
+Direct, clustered, repeated, toggled, wrapped, aliased, array-backed, and
+dynamic `n` options for declare/typeset/local/export/readonly fail closed,
+including eval/source/function ambiguity. Checked transport readers use fixed
+result arrays rather than `local -n`. Runtime controls prove plain `unset`,
+assignment, and redirected `read` write through a nameref to the underlying
+supervisor alias; ordinary non-`n` declarations remain valid.
 Tracked raw-root filename components also reject
 glob, brace, bracket, extglob, command/process/arithmetic substitution, tilde,
 and other dynamic syntax unless the command is the exact join write.
