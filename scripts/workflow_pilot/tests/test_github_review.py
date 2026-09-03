@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 import unittest
 from itertools import count
 from datetime import datetime, timedelta, timezone
@@ -820,6 +821,39 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 return real_open(path, flags, mode)
             return real_open(path, flags, mode, dir_fd=dir_fd)
         return wrapper
+    def maintenance_lock_actor(self, root):
+        stop = threading.Event()
+        touched = threading.Event()
+        lock_path = Path(root) / ".git" / "maintenance.lock"
+        def worker():
+            try:
+                while not stop.is_set():
+                    lock_path.write_text("lock\n", encoding="utf-8")
+                    touched.set()
+                    if stop.wait(0.01):
+                        break
+                    try:
+                        lock_path.unlink()
+                    except FileNotFoundError:
+                        pass
+            finally:
+                try:
+                    lock_path.unlink()
+                except FileNotFoundError:
+                    pass
+        thread = threading.Thread(target=worker, name=f"maintenance-lock-{Path(root).name}")
+        thread.start()
+        return {"name": thread.name, "stop": stop, "thread": thread, "touched": touched}
+    def cleanup_repo(self, root, *actors):
+        active = []
+        for actor in actors:
+            actor["stop"].set()
+        for actor in actors:
+            actor["thread"].join(timeout=5)
+            if actor["thread"].is_alive():
+                active.append(actor["name"])
+        self.assertEqual(active, [], f"repo cleanup left active actors: {', '.join(active)}")
+        shutil.rmtree(root)
     def temporary_repo(self, name):
         artifact_root = ROOT / "build" / "test-artifacts"
         suffix = len(list(artifact_root.glob(f"{name}-{os.getpid()}-*")))
@@ -2660,6 +2694,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 shutil.rmtree(repo)
     def test_candidate_trigger_decision_record_must_preserve_exact_current_pr_entry(self):
         repo, base, candidate = self.build_decision_repo(self.decision_entry())
+        actor = None
         try:
             decisions = self.load_decision_record(repo)
             decision_path = Path(repo) / trusted_review_gate.DECISION_RECORD_PATH
@@ -2676,8 +2711,13 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 contract, repo, reformatted
             )
             self.assertEqual(trigger["pull_request"], SYNTHETIC_PULL_REQUEST)
+            actor = self.maintenance_lock_actor(repo)
+            self.assertTrue(actor["touched"].wait(1))
         finally:
-            shutil.rmtree(repo)
+            if actor is None:
+                self.cleanup_repo(repo)
+            else:
+                self.cleanup_repo(repo, actor)
         for case_name, pattern, mutate in (
             (
                 "delete-file",
@@ -2744,7 +2784,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                         contract, repo, drifted
                     )
             finally:
-                shutil.rmtree(repo)
+                self.cleanup_repo(repo)
     def test_base_owned_trigger_decision_controls_end_to_end_and_drift_fails(self):
         repo, base, candidate = self.build_decision_repo(
             self.decision_entry(

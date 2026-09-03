@@ -530,10 +530,16 @@ def trusted_git_executable() -> str:
 
 def git_environment(*, offline: bool) -> dict[str, str]:
     environment = {
-        "GIT_CONFIG_COUNT": "0",
+        "GIT_CONFIG_COUNT": "3",
         "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_KEY_0": "gc.auto",
+        "GIT_CONFIG_KEY_1": "maintenance.auto",
+        "GIT_CONFIG_KEY_2": "maintenance.autoDetach",
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_CONFIG_SYSTEM": "/dev/null",
+        "GIT_CONFIG_VALUE_0": "0",
+        "GIT_CONFIG_VALUE_1": "false",
+        "GIT_CONFIG_VALUE_2": "false",
         "GIT_NO_REPLACE_OBJECTS": "1",
         "GIT_TERMINAL_PROMPT": "0",
         "LC_ALL": "C",
