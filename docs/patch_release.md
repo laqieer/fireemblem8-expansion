@@ -174,10 +174,16 @@ The reviewed builder also permits no alias/unalias/shopt/enable/hash dispatch
 configuration. Direct, `command`/`builtin`, aliased, dynamic, and array-backed
 forms all reject; shopt set/unset/query and clustered option forms reject
 uniformly, including `expand_aliases`. BASHOPTS, SHELLOPTS, BASH_ENV, ENV, PATH,
-`set -h/+h`, hashall, and POSIX-mode mutation fail closed. Runtime proves an
-enabled alias can otherwise dispatch `printf -v` and rewrite the trusted
-supervisor alias. Query-only `command -v/-V`, ordinary `set ±e`, and current
-non-alias commands remain valid.
+`set -h/+h`, hashall, and POSIX-mode mutation fail closed. Variable targets
+for `unset`, `printf -v`, `read`, `readarray`, `mapfile`, and declaration/
+environment builtins are resolved through scalar chains and `+=`; array,
+substitution, transform, and other dynamic targets remain tainted and reject.
+`set -o/+o` option names receive the same treatment. Runtime proves an enabled
+alias can otherwise dispatch `printf -v` and rewrite the trusted supervisor
+alias, resolved targets can rewrite `PATH` and `BASH_ENV`, and resolved option
+names can enable `posix` and `hashall`. Fixed single-quoted target/option
+literals do not execute and remain accepted. Query-only `command -v/-V`,
+ordinary `set ±e`, and current non-alias commands remain valid.
 Tracked raw-root filename components also reject
 glob, brace, bracket, extglob, command/process/arithmetic substitution, tilde,
 and other dynamic syntax unless the command is the exact join write.

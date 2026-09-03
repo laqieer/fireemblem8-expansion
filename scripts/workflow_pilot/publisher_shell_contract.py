@@ -138,6 +138,10 @@ _RAW_CGROUP_ROOT_MARKER = "\x00raw-cgroup-root\x00"
 _AMBIGUOUS_TRACKED_PARAMETER_MARKER = "\x00ambiguous-tracked-parameter\x00"
 _AMBIGUOUS_ARRAY_ALIAS_MARKER = "\x00ambiguous-array-alias\x00"
 _AMBIGUOUS_DYNAMIC_ALIAS_MARKER = "\x00ambiguous-dynamic-alias\x00"
+_DISPATCH_STATE_VARIABLES = frozenset(
+    {"BASHOPTS", "BASH_ENV", "ENV", "PATH", "SHELLOPTS"}
+)
+_DISPATCH_SET_OPTIONS = frozenset({"hashall", "posix"})
 _RAW_CGROUP_DYNAMIC_FILENAME_MARKERS = (
     "$",
     "`",
@@ -2541,10 +2545,112 @@ def _normalized_command_changes_dispatch(
     if executable != "set":
         return False
     arguments = normalized[1:]
-    return any(
-        argument in {"-h", "+h", "hashall", "posix"}
-        for argument in arguments
-    )
+    for index, argument in enumerate(arguments):
+        if (
+            _AMBIGUOUS_ARRAY_ALIAS_MARKER in argument
+            or _AMBIGUOUS_DYNAMIC_ALIAS_MARKER in argument
+        ):
+            return True
+        if argument in {"-h", "+h"}:
+            return True
+        if argument in {"-o", "+o"}:
+            if index + 1 >= len(arguments):
+                continue
+            option = arguments[index + 1]
+            if (
+                _AMBIGUOUS_ARRAY_ALIAS_MARKER in option
+                or _AMBIGUOUS_DYNAMIC_ALIAS_MARKER in option
+                or option in _DISPATCH_SET_OPTIONS
+            ):
+                return True
+            continue
+        if argument.startswith(("-o", "+o")) and len(argument) > 2:
+            option = argument[2:]
+            if option in _DISPATCH_SET_OPTIONS:
+                return True
+        if (
+            argument.startswith(("-", "+"))
+            and not argument.startswith(("-o", "+o"))
+            and "h" in argument[1:]
+        ):
+            return True
+    return False
+
+
+def _dispatch_state_target_is_forbidden(target: str) -> bool:
+    if (
+        _AMBIGUOUS_ARRAY_ALIAS_MARKER in target
+        or _AMBIGUOUS_DYNAMIC_ALIAS_MARKER in target
+        or _AMBIGUOUS_TRACKED_PARAMETER_MARKER in target
+    ):
+        return True
+    base = target.split("[", 1)[0]
+    base = base.split("+=", 1)[0]
+    base = base.split("=", 1)[0]
+    return base in _DISPATCH_STATE_VARIABLES
+
+
+def _normalized_command_mutates_dispatch_state(
+    tokens: tuple[str, ...],
+) -> bool:
+    normalized = _normalize_shell_builtin_wrappers(tokens)
+    if normalized is None:
+        return any(
+            _dispatch_state_target_is_forbidden(token)
+            for token in tokens
+        )
+    if not normalized:
+        return False
+    executable = posixpath.basename(normalized[0])
+    arguments = normalized[1:]
+    if executable == "unset":
+        return any(
+            _dispatch_state_target_is_forbidden(argument)
+            for argument in arguments
+            if not argument.startswith("-")
+        )
+    if executable == "read":
+        mutation_arguments = arguments
+        if "<" in mutation_arguments:
+            mutation_arguments = mutation_arguments[
+                : mutation_arguments.index("<")
+            ]
+        return any(
+            _dispatch_state_target_is_forbidden(argument)
+            for argument in mutation_arguments
+            if not argument.startswith("-")
+        )
+    if executable in {"mapfile", "readarray"}:
+        mutation_arguments = arguments
+        if "<" in mutation_arguments:
+            mutation_arguments = mutation_arguments[
+                : mutation_arguments.index("<")
+            ]
+        return any(
+            _dispatch_state_target_is_forbidden(argument)
+            for argument in mutation_arguments
+            if not argument.startswith("-")
+        )
+    if executable == "printf":
+        for index, argument in enumerate(arguments[:-1]):
+            if argument == "-v" and _dispatch_state_target_is_forbidden(
+                arguments[index + 1]
+            ):
+                return True
+        return False
+    if executable in {
+        "declare",
+        "export",
+        "local",
+        "readonly",
+        "typeset",
+    }:
+        return any(
+            _dispatch_state_target_is_forbidden(argument)
+            for argument in arguments
+            if not argument.startswith(("-", "+"))
+        )
+    return False
 
 
 def _ambiguous_array_command_is_forbidden(
@@ -2784,6 +2890,10 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 resolved_token_texts
             ):
                 return True
+            if _normalized_command_mutates_dispatch_state(
+                resolved_token_texts
+            ):
+                return True
             if _normalized_command_creates_nameref(
                 resolved_token_texts
             ):
@@ -2832,13 +2942,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 )
                 if indexed_assignment is not None:
                     name = indexed_assignment.group("name")
-                    if name in {
-                        "BASHOPTS",
-                        "BASH_ENV",
-                        "ENV",
-                        "PATH",
-                        "SHELLOPTS",
-                    }:
+                    if name in _DISPATCH_STATE_VARIABLES:
                         return True
                     if name == "supervisor_cgroup":
                         return True
@@ -2883,13 +2987,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 if assignment is None:
                     continue
                 name = assignment.group("name")
-                if name in {
-                    "BASHOPTS",
-                    "BASH_ENV",
-                    "ENV",
-                    "PATH",
-                    "SHELLOPTS",
-                }:
+                if name in _DISPATCH_STATE_VARIABLES:
                     return True
                 value = _resolve_shell_aliases(
                     assignment.group("value"),

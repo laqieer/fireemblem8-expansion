@@ -294,9 +294,15 @@ Alias, unalias, shopt, enable, and hash dispatch configuration is prohibited
 through direct, `command`/`builtin`, aliased, dynamic, or array-backed forms.
 All shopt modes, including query and clustered options for `expand_aliases`,
 reject. BASHOPTS/SHELLOPTS/BASH_ENV/ENV/PATH and hashall/POSIX dispatch
-configuration reject, while query-only `command -v/-V`, ordinary `set ±e`,
-and current commands remain valid. An executable runtime alias dispatches
-`printf -v` and rewrites the trusted supervisor alias without the guard.
+configuration reject. Scalar targets and option names resolve through aliases,
+chains, and `+=`; array, substitution, transform, and other dynamic values
+remain tainted at `unset`, `printf -v`, `read`, `readarray`, `mapfile`,
+declaration/environment, and `set -o/+o` sinks. Query-only `command -v/-V`,
+ordinary `set ±e`, and current commands remain valid. Runtime controls prove
+an executable alias can dispatch `printf -v` and rewrite the trusted
+supervisor alias, indirect targets can rewrite `PATH` and `BASH_ENV`, and
+indirect options can enable `posix` and `hashall`; fixed single-quoted target
+and option literals do not execute and remain accepted.
 Raw-root filename
 glob, brace, bracket, extglob, command/process/arithmetic substitution, tilde,
 and other dynamic syntax fail closed. Executable `cgroup{.,_}procs` and
@@ -401,7 +407,9 @@ archival-lane behavior changes.
   command-substitution/backtick/transform runtime controls, broad nameref
   declaration mutations and unset/assignment/redirected-read runtime proofs,
   alias/unalias/shopt/enable/hash and shell-option environment mutations plus
-  the executable expand-aliases rewrite proof, recursive
+  the executable expand-aliases rewrite proof, scalar-chain/append/array/
+  dynamic dispatch-target and `set -o/+o` option mutations plus executable
+  PATH/BASH_ENV/posix/hashall and fixed-quoted-literal controls, recursive
   command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions
   through inline `else`/brace/case/loop forms, `setsid`-wrapped and common

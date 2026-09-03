@@ -625,6 +625,73 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         "        PATH=/mnt/home\n",
         "        /usr/bin/env BASHOPTS=expand_aliases /bin/bash -c true\n",
         "        eval 'shopt -s expand_aliases'\n",
+        "        target=PATH\n"
+        '        printf -v "$target" %s /mnt/home\n',
+        "        target=BASH_ENV\n"
+        '        unset "$target"\n',
+        "        target=ENV\n"
+        '        read "$target" < /dev/null\n',
+        "        target=BASHOPTS\n"
+        '        readarray -t "$target" < /dev/null\n',
+        "        target=SHELLOPTS\n"
+        '        mapfile -t "$target" < /dev/null\n',
+        "        first=PATH\n"
+        '        second="$first"\n'
+        '        printf -v "$second" %s /mnt/home\n',
+        "        target=PA\n"
+        "        target+=TH\n"
+        '        unset "$target"\n',
+        "        targets[0]=PATH\n"
+        '        printf -v "${targets[0]}" %s /mnt/home\n',
+        "        declare -A targets=([key]=BASH_ENV)\n"
+        '        unset "${targets[key]}"\n',
+        '        target="$(printf PATH)"\n'
+        '        printf -v "$target" %s /mnt/home\n',
+        "        target_name=PATH\n"
+        '        target="${target_name@P}"\n'
+        '        unset "$target"\n',
+        "        target_name=PATH\n"
+        "        target_ref=target_name\n"
+        '        unset "${!target_ref}"\n',
+        "        target=PATH\n"
+        '        declare "$target=/mnt/home"\n',
+        "        target=BASH_ENV\n"
+        '        typeset "$target=/dev/null"\n',
+        "        target=ENV\n"
+        '        local "$target=/dev/null"\n',
+        "        target=PATH\n"
+        '        export "$target=/mnt/home"\n',
+        "        target=SHELLOPTS\n"
+        '        readonly "$target=hashall"\n',
+        "        option=posix\n"
+        '        set -o "$option"\n',
+        "        first_option=posix\n"
+        '        second_option="$first_option"\n'
+        '        set -o "$second_option"\n',
+        "        option=hash\n"
+        "        option+=all\n"
+        '        set +o "$option"\n',
+        "        options[0]=posix\n"
+        '        set -o "${options[0]}"\n',
+        "        declare -A options=([key]=hashall)\n"
+        '        set +o "${options[key]}"\n',
+        '        option="$(printf posix)"\n'
+        '        set -o "$option"\n',
+        "        option_name=posix\n"
+        '        option="${option_name@P}"\n'
+        '        set +o "$option"\n',
+        "        option_name=posix\n"
+        "        option_ref=option_name\n"
+        '        set +o "${!option_ref}"\n',
+        "        flag=-o\n"
+        "        option=posix\n"
+        '        set "$flag" "$option"\n',
+        "        set -eh\n",
+        "        set +eh\n",
+        "        set -oposix\n",
+        "        set +ohashall\n",
+        "        command set -o posix\n",
+        "        builtin set +o hashall\n",
     )
     for index, mutation in enumerate(supervisor_reassignments):
         changed = workflow.replace(marker, mutation + marker, 1)
@@ -6781,6 +6848,32 @@ exit 37
                         label="ordinary declaration control",
                     )
                 )
+        for unrelated_dispatch_target in (
+            "target=ordinary\n"
+            'printf -v "$target" %s value\n',
+            "target=ordinary\n"
+            'unset "$target"\n',
+            "target=ordinary\n"
+            'read "$target" < /dev/null\n',
+            "target=ordinary\n"
+            'declare "$target=value"\n',
+            "option=errexit\n"
+            'set -o "$option"\n',
+            "option=nounset\n"
+            'set +o "$option"\n',
+            "set -- posix hashall\n",
+        ):
+            with self.subTest(
+                unrelated_dispatch_target=(
+                    unrelated_dispatch_target.splitlines()[0]
+                )
+            ):
+                self.assertFalse(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        builder + "\n" + unrelated_dispatch_target,
+                        label="unrelated dispatch target control",
+                    )
+                )
         for label, changed in generate_raw_builder_cgroup_membership_mutations(
             self.text
         ):
@@ -7013,6 +7106,133 @@ exit 37
                     publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
                         script,
                         label="dynamic scalar alias runtime",
+                    )
+                )
+
+    def test_dynamic_dispatch_state_runtime_mutates_shell_and_is_rejected(self):
+        cases = (
+            (
+                "target=PATH\n"
+                'printf -v "$target" %s /dispatch-rewritten\n'
+                'test "$PATH" = /dispatch-rewritten\n',
+                "if command -v sh >/dev/null; then exit 90; fi\n",
+                "PATH alias",
+            ),
+            (
+                'target="$(printf PATH)"\n'
+                'printf -v "$target" %s /dispatch-dynamic\n'
+                'test "$PATH" = /dispatch-dynamic\n',
+                "if command -v sh >/dev/null; then exit 90; fi\n",
+                "PATH dynamic",
+            ),
+            (
+                "target=BASH_ENV\n"
+                'printf -v "$target" %s /dispatch-env\n'
+                'test "$BASH_ENV" = /dispatch-env\n',
+                "",
+                "BASH_ENV",
+            ),
+            (
+                'option="$(printf posix)"\n'
+                'set -o "$option"\n'
+                "[[ -o posix ]]\n",
+                "",
+                "posix",
+            ),
+            (
+                "set +h\n"
+                "option=hash\n"
+                "option+=all\n"
+                'set -o "$option"\n'
+                "[[ -o hashall ]]\n",
+                "",
+                "hashall",
+            ),
+        )
+        for script, observable, label in cases:
+            with self.subTest(label=label):
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", script + observable],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, "")
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        script,
+                        label=f"{label} dispatch mutation runtime",
+                    )
+                )
+
+    def test_dynamic_bash_env_target_runtime_dispatches_and_is_rejected(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="dynamic-bash-env-",
+            dir=artifact_root,
+        ) as temporary:
+            startup = Path(temporary) / "startup.sh"
+            startup.write_text(
+                "printf 'bash-env-dispatched\\n'\n",
+                encoding="ascii",
+            )
+            script = (
+                "target=BASH_ENV\n"
+                'printf -v "$target" %s "$1"\n'
+                'export "$target"\n'
+                "/bin/bash -c true\n"
+            )
+            completed = subprocess.run(
+                ["/bin/bash", "-c", script, "--", str(startup)],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout, "bash-env-dispatched\n")
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    script,
+                    label="BASH_ENV dispatch runtime",
+                )
+            )
+
+    def test_fixed_quoted_dispatch_literals_do_not_execute_or_false_positive(self):
+        cases = (
+            (
+                "before=$PATH\n"
+                "target='$(printf PATH)'\n"
+                'if printf -v "$target" %s /dispatch-rewritten '
+                "2>/dev/null; then exit 91; fi\n"
+                'test "$PATH" = "$before"\n',
+                "quoted target",
+            ),
+            (
+                "option='$(printf posix)'\n"
+                'if set -o "$option" 2>/dev/null; then exit 92; fi\n'
+                "[[ ! -o posix ]]\n",
+                "quoted option",
+            ),
+        )
+        for script, label in cases:
+            with self.subTest(label=label):
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", script],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, "")
+                self.assertFalse(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        script,
+                        label=f"{label} dispatch control runtime",
                     )
                 )
 
@@ -9510,6 +9730,11 @@ exit 37
             self.assertIn("expand_aliases", text)
             self.assertIn("enable", text)
             self.assertIn("hash", text)
+            self.assertIn("PATH", text)
+            self.assertIn("BASH_ENV", text)
+            self.assertIn("set -o/+o", text)
+            self.assertIn("posix", text.lower())
+            self.assertIn("target", text.lower())
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)
