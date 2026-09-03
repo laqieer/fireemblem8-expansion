@@ -343,6 +343,11 @@ hashes/operators/parentheses inert; locale strings keep double-quote
 expansion. Arithmetic `$((…))`, `((…))`, and `$[…]` nesting prevents `<<`,
 `>>`, or base-`#` syntax from being interpreted as comments, redirections, or
 heredocs.
+Syntax-active grouping, control, and redirection metacharacters restore Bash
+word-boundary state, including no-space `(`, `)`, `;`, `&&`, `||`, `|`, `&`,
+`<`, and `>`. A following unquoted `#` starts a comment, while hashes inside
+words, parameter operators, arithmetic bases, array subscripts, quotes,
+escapes, and quoted/escaped redirection targets remain data.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,
@@ -543,6 +548,8 @@ archival-lane behavior changes.
   ANSI-C/locale quote and delimiter parity, escaped ANSI quotes, arithmetic
   shifts/base/nesting/legacy forms, and raw-read adversaries after inert quote
   or arithmetic prefixes,
+  parenthesis/control/case no-space comment boundaries hiding raw reads plus
+  word/parameter/arithmetic/array/quote/escape/redirection-target controls,
   parsed registry-contract mutations,
   recursive
   command/process-substitution inspection for

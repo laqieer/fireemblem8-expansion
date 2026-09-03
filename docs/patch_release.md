@@ -363,6 +363,12 @@ quote. Locale strings retain double-quote expansion behavior. Arithmetic
 `$((…))`, `((…))`, and legacy `$[…]` contexts track nested delimiters, so
 `<<`/`>>` and base-`#` syntax cannot become comments, redirections, or
 heredocs; a real `<<` outside arithmetic remains a heredoc.
+Syntax-active shell metacharacters restore Bash word-boundary state for comment
+recognition, including no-space `(`, `)`, `;`, `&&`, `||`, `|`, `&`, `<`, and
+`>`. A following unquoted `#` therefore starts a comment where Bash does.
+Hashes remain data inside words, parameter operators, arithmetic bases, array
+subscripts, quotes, escapes, and quoted/escaped redirection targets. Heredoc
+discovery consumes only this corrected pre-comment token stream.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

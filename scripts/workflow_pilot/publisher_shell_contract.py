@@ -356,6 +356,7 @@ class _BashLineLexState:
     parameter_depth: int = 0
     arithmetic_depth: int = 0
     arithmetic_bracket_depth: int = 0
+    array_bracket_depth: int = 0
     word_start: bool = True
 
 
@@ -567,6 +568,7 @@ def _scan_bash_physical_line(
     parameter_depth = state.parameter_depth
     arithmetic_depth = state.arithmetic_depth
     arithmetic_bracket_depth = state.arithmetic_bracket_depth
+    array_bracket_depth = state.array_bracket_depth
     word_start = state.word_start
 
     def current_state() -> _BashLineLexState:
@@ -575,6 +577,7 @@ def _scan_bash_physical_line(
             parameter_depth=parameter_depth,
             arithmetic_depth=arithmetic_depth,
             arithmetic_bracket_depth=arithmetic_bracket_depth,
+            array_bracket_depth=array_bracket_depth,
             word_start=word_start,
         )
 
@@ -582,6 +585,28 @@ def _scan_bash_physical_line(
     while index < len(line):
         character = line[index]
         if quote == "normal":
+            if array_bracket_depth:
+                if character == "\\":
+                    if index == len(line) - 1:
+                        return current_state(), True, None
+                    index += 2
+                    continue
+                if line.startswith("$'", index):
+                    quote = "ansi"
+                    index += 2
+                    continue
+                if line.startswith('$"', index):
+                    quote = "locale"
+                    index += 2
+                    continue
+                if character in {"'", '"'}:
+                    quote = "single" if character == "'" else "double"
+                elif character == "[":
+                    array_bracket_depth += 1
+                elif character == "]":
+                    array_bracket_depth -= 1
+                index += 1
+                continue
             if arithmetic_depth or arithmetic_bracket_depth:
                 if character == "\\":
                     if index == len(line) - 1:
@@ -646,6 +671,9 @@ def _scan_bash_physical_line(
                 word_start = False
                 index += 2
                 continue
+            elif character == "[" and not word_start:
+                array_bracket_depth = 1
+                word_start = False
             elif (
                 character == "$"
                 and index + 1 < len(line)
@@ -677,6 +705,8 @@ def _scan_bash_physical_line(
                     and line[index + 1] == character
                 ):
                     index += 1
+                word_start = True
+            elif character in "()<>":
                 word_start = True
             else:
                 word_start = False
@@ -751,6 +781,7 @@ def bash_logical_lines(script: str, *, label: str) -> tuple[str, ...]:
             or state.parameter_depth
             or state.arithmetic_depth
             or state.arithmetic_bracket_depth
+            or state.array_bracket_depth
         ):
             current += "\n"
             continue
@@ -772,12 +803,31 @@ def _logical_heredoc_declarations(
     parameter_depth = 0
     arithmetic_depth = 0
     arithmetic_bracket_depth = 0
+    array_bracket_depth = 0
+    word_start = True
     index = 0
     while index < len(logical):
         character = logical[index]
         if quote is None:
+            if array_bracket_depth:
+                if character == "\\":
+                    index += 2
+                    continue
+                if character in {"'", '"'}:
+                    quote = character
+                elif character == "[":
+                    array_bracket_depth += 1
+                elif character == "]":
+                    array_bracket_depth -= 1
+                index += 1
+                continue
+            if character in " \t":
+                word_start = True
+                index += 1
+                continue
             if character == "\\":
                 index += 2
+                word_start = False
                 continue
             if arithmetic_depth or arithmetic_bracket_depth:
                 if logical.startswith("$((", index):
@@ -799,34 +849,46 @@ def _logical_heredoc_declarations(
                 continue
             if logical.startswith("$'", index):
                 quote = "ansi"
+                word_start = False
                 index += 2
                 continue
             if logical.startswith('$"', index):
                 quote = "locale"
+                word_start = False
                 index += 2
                 continue
             if logical.startswith("$((", index):
                 arithmetic_depth = 2
+                word_start = False
                 index += 3
                 continue
             if logical.startswith("((", index):
                 arithmetic_depth = 2
+                word_start = False
                 index += 2
                 continue
             if logical.startswith("$[", index):
                 arithmetic_bracket_depth = 1
+                word_start = False
                 index += 2
                 continue
             if character in {"'", '"'}:
                 quote = character
+                word_start = False
                 index += 1
                 continue
             if logical.startswith("${", index):
                 parameter_depth += 1
+                word_start = False
                 index += 2
                 continue
             if character == "}" and parameter_depth:
                 parameter_depth -= 1
+                word_start = False
+                index += 1
+                continue
+            if character == "[" and not word_start:
+                array_bracket_depth = 1
                 index += 1
                 continue
             if (
@@ -835,6 +897,7 @@ def _logical_heredoc_declarations(
                 or not logical.startswith("<<", index)
             ):
                 index += 1
+                word_start = character in "&|;()<>"
                 continue
             if logical.startswith("<<<", index):
                 index += 3
@@ -912,6 +975,7 @@ def _logical_heredoc_declarations(
             declarations.append(
                 ("".join(delimiter), strip_tabs, not quoted)
             )
+            word_start = False
             continue
         if quote == "ansi":
             if character == "\\":
@@ -947,6 +1011,7 @@ def _logical_heredoc_declarations(
         or parameter_depth
         or arithmetic_depth
         or arithmetic_bracket_depth
+        or array_bracket_depth
     ):
         raise ValueError(f"{label} heredoc command quoting differs")
     return tuple(declarations)
@@ -995,6 +1060,7 @@ def _strip_generic_heredoc_bodies(script: str, *, label: str) -> str:
                 or state.parameter_depth
                 or state.arithmetic_depth
                 or state.arithmetic_bracket_depth
+                or state.array_bracket_depth
             ):
                 logical += "\n"
                 continue
@@ -1004,6 +1070,7 @@ def _strip_generic_heredoc_bodies(script: str, *, label: str) -> str:
             or state.parameter_depth
             or state.arithmetic_depth
             or state.arithmetic_bracket_depth
+            or state.array_bracket_depth
         ):
             raise ValueError(f"{label} has unterminated command quoting")
         declarations = _logical_heredoc_declarations(

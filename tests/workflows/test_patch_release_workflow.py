@@ -1684,6 +1684,50 @@ def generate_commented_heredoc_hide_mutations(workflow: str):
             + suffix,
             1,
         )
+    boundary_variants = {
+        "open-paren": (
+            "        (# <<':'\n",
+            "        :\n"
+            "        )\n",
+        ),
+        "close-paren": (
+            "        (:)# <<':'\n",
+            "        :\n",
+        ),
+        "semicolon": (
+            "        :;# <<':'\n",
+            "        :\n",
+        ),
+        "and": (
+            "        :&&# <<':'\n",
+            "        :\n",
+        ),
+        "or": (
+            "        :||# <<':'\n",
+            "        :\n",
+        ),
+        "background": (
+            "        :&# <<':'\n",
+            "        :\n",
+        ),
+        "case-terminator": (
+            "        case one in\n"
+            "          one)# <<':'\n",
+            "            :\n"
+            "            ;;\n"
+            "        esac\n",
+        ),
+    }
+    for label, (comment, suffix) in boundary_variants.items():
+        mutations[f"boundary-{label}"] = workflow.replace(
+            marker,
+            marker
+            + comment
+            + '        /bin/cat "$cgroup_path/cgroup.procs" '
+            + "> /dev/null\n"
+            + suffix,
+            1,
+        )
     for label, changed in mutations.items():
         if changed == workflow:
             raise AssertionError(
@@ -12042,6 +12086,10 @@ exit 37
                     "syntax-active-pre-comment-only"
                 ),
                 "hash_comment_boundary": "unquoted-word-boundary",
+                "metacharacter_comment_boundary": "restore-word-start",
+                "hash_data_contexts": (
+                    "word-parameter-arithmetic-array-quote-escape"
+                ),
                 "ansi_c_quotes": "explicit-escape-decoding",
                 "locale_quotes": "double-quote-expansion",
                 "arithmetic_contexts": (
@@ -12255,6 +12303,10 @@ exit 37
             (
                 ("shell_surface", "heredoc_comment_source"),
                 "full-physical-line",
+            ),
+            (
+                ("shell_surface", "metacharacter_comment_boundary"),
+                "retain-word-state",
             ),
             (
                 ("shell_surface", "ansi_c_quotes"),
@@ -13129,6 +13181,36 @@ exit 37
                     label="commented heredoc hide runtime",
                 )
             )
+            parenthesized = (
+                "(# <<':'\n"
+                '/bin/cat "$1/cgroup.procs"\n'
+                ":\n"
+                ")\n"
+            )
+            completed = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-c",
+                    parenthesized,
+                    "--",
+                    str(raw_cgroup),
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                completed.stdout,
+                "comment-hidden-raw-read\n",
+            )
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    parenthesized,
+                    label="parenthesized comment boundary runtime",
+                )
+            )
 
         comment_controls = (
             (
@@ -13160,6 +13242,23 @@ exit 37
                 ("value=${x#<<FAKE}", "true"),
             ),
             (
+                "arithmetic-base",
+                "value=$((16#10 + 1))\n"
+                "true\n",
+                ("value=$((16#10 + 1))", "true"),
+            ),
+            (
+                "array-subscript",
+                "declare -A array\n"
+                "array[key#value]=entry\n"
+                "true\n",
+                (
+                    "declare -A array",
+                    "array[key#value]=entry",
+                    "true",
+                ),
+            ),
+            (
                 "hash-within-word",
                 "cat word#<<FAKE\n"
                 "body\n"
@@ -13169,6 +13268,14 @@ exit 37
         )
         for label, script, expected_records in comment_controls:
             with self.subTest(comment_control=label):
+                syntax = subprocess.run(
+                    ["/bin/bash", "-n", "-c", script],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(syntax.returncode, 0, syntax.stderr)
                 self.assertEqual(
                     publisher_shell_contract.split_bash_simple_command_strings(
                         script,
