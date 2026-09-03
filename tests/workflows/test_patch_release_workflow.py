@@ -470,6 +470,37 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         "        . /dev/null\n",
         "        mutate_supervisor() { supervisor_cgroup=/mnt/home; }\n"
         "        mutate_supervisor\n",
+        "        wrapper[0]=command\n"
+        '        "${wrapper[0]}" unset supervisor_cgroup\n',
+        "        wrapper[key]=builtin\n"
+        '        "${wrapper[key]}" unset supervisor_cgroup\n',
+        "        declare -a wrapper=(command)\n"
+        '        "${wrapper[0]}" unset supervisor_cgroup\n',
+        "        declare -A wrapper=([key]=builtin)\n"
+        '        "${wrapper[key]}" unset supervisor_cgroup\n',
+        "        index=0\n"
+        "        wrapper[0]=command\n"
+        '        "${wrapper[$index]}" unset supervisor_cgroup\n',
+        "        wrapper[0]=command\n"
+        '        "${!wrapper[@]}" unset supervisor_cgroup\n',
+        "        flags[0]=-pp\n"
+        '        command "${flags[0]}" unset supervisor_cgroup\n',
+        "        flags[key]=-pp\n"
+        '        command "${flags[key]}" unset supervisor_cgroup\n',
+        "        flags[0]=-pv\n"
+        '        command "${flags[0]}" supervisor_cgroup\n',
+        "        flags[key]=-pV\n"
+        '        command "${flags[key]}" supervisor_cgroup\n',
+        "        mutator[0]=printf\n"
+        "        flags[0]=-v\n"
+        '        "${mutator[0]}" "${flags[0]}" '
+        "supervisor_cgroup /mnt/home\n",
+        "        mutator[key]=unset\n"
+        "        target[key]=supervisor_cgroup\n"
+        '        "${mutator[key]}" "${target[key]}"\n',
+        "        wrapper[0]=builtin\n"
+        "        mutator[0]=unset\n"
+        '        "${wrapper[0]}" "${mutator[0]}" supervisor_cgroup\n',
     )
     for index, mutation in enumerate(supervisor_reassignments):
         changed = workflow.replace(marker, mutation + marker, 1)
@@ -6789,6 +6820,16 @@ exit 37
                 '"$mutation" "$target"',
                 "mutation=unset; target=supervisor_cgroup; "
                 'builtin "$mutation" "$target"',
+                'wrapper=(command); "${wrapper[0]}" '
+                "unset supervisor_cgroup",
+                "declare -A wrapper=([key]=builtin); "
+                '"${wrapper[key]}" unset supervisor_cgroup',
+                'flags=(-pp); command "${flags[0]}" '
+                "unset supervisor_cgroup",
+                "declare -A flags=([key]=-pp); "
+                'command "${flags[key]}" unset supervisor_cgroup',
+                "index=0; wrapper=(command); "
+                '"${wrapper[$index]}" unset supervisor_cgroup',
             )
             for mutation in mutations:
                 with self.subTest(mutation=mutation):
@@ -6842,6 +6883,37 @@ exit 37
                         f"command {cluster} supervisor_cgroup "
                         "> /dev/null 2>&1 || true\n"
                         'printf "%s\\n" "$supervisor_cgroup"\n',
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0)
+                self.assertEqual(
+                    completed.stdout,
+                    "/mnt/supervisor/cgroup\n",
+                )
+                self.assertEqual(completed.stderr, "")
+
+        for setup, expansion in (
+            ("flags=(-pv)", "${flags[0]}"),
+            (
+                "declare -A flags=([query]=-pV)",
+                "${flags[query]}",
+            ),
+        ):
+            with self.subTest(array_query=setup):
+                completed = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        'supervisor_cgroup="/mnt/supervisor/cgroup"\n'
+                        + setup
+                        + "\n"
+                        + f'command "{expansion}" supervisor_cgroup '
+                        "> /dev/null 2>&1 || true\n"
+                        + 'printf "%s\\n" "$supervisor_cgroup"\n',
                     ],
                     cwd=ROOT,
                     check=False,
@@ -9139,6 +9211,8 @@ exit 37
             self.assertIn("-pv", text)
             self.assertIn("wrapped", text)
             self.assertIn("unbound", text)
+            self.assertIn("array-backed", text.lower())
+            self.assertIn("query-only array", text.lower())
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)

@@ -2414,6 +2414,29 @@ def _normalized_command_mutates_supervisor(
     return False
 
 
+def _ambiguous_array_command_is_forbidden(
+    tokens: tuple[str, ...],
+) -> bool:
+    ambiguous_indices = tuple(
+        index
+        for index, token in enumerate(tokens)
+        if _AMBIGUOUS_ARRAY_ALIAS_MARKER in token
+    )
+    if not ambiguous_indices:
+        return False
+    if 0 in ambiguous_indices:
+        return True
+    if tokens and posixpath.basename(tokens[0]) in {
+        "builtin",
+        "command",
+    }:
+        return True
+    return any(
+        "supervisor_cgroup" in token or "cgroup.procs" in token
+        for token in tokens
+    )
+
+
 def has_forbidden_raw_builder_cgroup_membership_read(
     script: str,
     *,
@@ -2516,6 +2539,10 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 _resolve_shell_aliases(token.text, aliases)
                 for token in tokens
             )
+            if _ambiguous_array_command_is_forbidden(
+                resolved_token_texts
+            ):
+                return True
             if _normalized_command_mutates_supervisor(
                 resolved_token_texts
             ):

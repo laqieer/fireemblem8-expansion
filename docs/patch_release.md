@@ -149,7 +149,13 @@ any `v/V` makes the complete valid prefix query-only, while `p` alone remains
 an executing wrapper. Invalid mixed clusters fail closed when they target the
 supervisor alias. Eval, source, and ambiguous mutation surfaces fail closed.
 Runtime wrapped-unset controls leave `supervisor_cgroup` unbound before the
-safe read, proving the mutation.
+safe read, proving the mutation. Array-backed executable slots are always
+rejected by this security guard. Array-backed `command`/`builtin` option,
+mutator, or target slots are likewise rejected when supervisor authorization
+is involved. This intentionally includes query-only array flags such as
+`-pv`/`-pV`: Bash leaves the alias unchanged at runtime, but the parser does
+not trust ambiguous array-backed dispatch. Scalar/literal query clusters
+remain valid.
 Tracked raw-root filename components also reject
 glob, brace, bracket, extglob, command/process/arithmetic substitution, tilde,
 and other dynamic syntax unless the command is the exact join write.

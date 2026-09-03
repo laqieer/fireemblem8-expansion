@@ -270,6 +270,12 @@ nonmutating; `-p` alone keeps normal execution semantics, and clusters
 containing any other character fail closed. Executable runtime controls prove
 both query preservation and invalid-option status `2`; wrapped-unset controls
 prove the safe read would otherwise encounter an unbound variable.
+Array-backed executable slots are universally rejected; array-backed
+`command`/`builtin` options, mutators, and targets reject when supervisor
+authorization is involved. Runtime array wrappers and `-pp` flags prove the
+mutation. Query-only array `-pv`/`-pV` forms are nonmutating in Bash but
+conservatively rejected because the security parser does not normalize
+ambiguous array-backed dispatch. Scalar/literal query clusters remain valid.
 Raw-root filename
 glob, brace, bracket, extglob, command/process/arithmetic substitution, tilde,
 and other dynamic syntax fail closed. Executable `cgroup{.,_}procs` and
@@ -368,8 +374,9 @@ archival-lane behavior changes.
   unknown-root rejection and unrelated-parameter controls, launcher
   `125`/`126` transport controls, supervisor reassignment mutations and
   wrapped-unset runtime controls, unrelated wrapper/query negatives, and
-  clustered `command` query/invalid-option controls, executable brace/glob
-  filename controls, recursive
+  clustered `command` query/invalid-option controls, array-backed executable/
+  wrapper/option/mutator/target mutations and query controls, executable
+  brace/glob filename controls, recursive
   command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions
   through inline `else`/brace/case/loop forms, `setsid`-wrapped and common
