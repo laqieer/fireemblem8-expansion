@@ -1562,10 +1562,6 @@ def validate_implementation_handoffs(
     handoffs: dict[str, dict[str, Any]] = {}
     issue_timelines: dict[int, list[dict[str, Any]]] = defaultdict(list)
     trusted_handoffs = validate_implementation_handoff_trust(implementation_handoff_trust)
-    try:
-        trusted_installation = agent_handoff._coerce_reporter_trusted_installation(implementation_handoff_installation, repository_root=repository_root, label="implementation_handoff_installation")  # noqa: SLF001
-    except agent_handoff.HandoffDataError as error:
-        raise PilotDataError(str(error)) from error
     for index, raw in enumerate(fixture["implementation_handoffs"]):
         label = f"implementation_handoffs[{index}]"
         raw_record = expect_object(raw, label)
@@ -1575,7 +1571,8 @@ def validate_implementation_handoffs(
                 raw,
                 revalidate_git=False,
                 trusted_anchor=trusted_handoffs.get(input_seal),
-                trusted_installation=trusted_installation,
+                repository_root=repository_root,
+                trusted_installation=implementation_handoff_installation,
                 current_time=lifecycle_as_of,
             )
         except agent_handoff.HandoffDataError as error:
@@ -2909,6 +2906,7 @@ def cross_validate_fixture(
 
 def validate_fixture(
     fixture: Any,
+    repository_root: Path | None = None,
     implementation_handoff_trust: Any | None = None,
     implementation_handoff_installation: Any | None = None,
 ) -> dict[str, Any]:
@@ -2935,6 +2933,7 @@ def validate_fixture(
     edges = validate_edges(fixture)
     implementation_handoffs = validate_implementation_handoffs(
         fixture,
+        repository_root=repository_root,
         implementation_handoff_trust=implementation_handoff_trust,
         implementation_handoff_installation=implementation_handoff_installation,
     )
@@ -4426,23 +4425,9 @@ def build_report(
             "report construction requires an explicit repository authority root"
         )
     repository_root = validate_repository_root(repository_root)
-    fixture = expect_object(fixture, "fixture")
-    if (
-        fixture.get("schema_version") == HANDOFF_FIXTURE_SCHEMA_VERSION
-        and implementation_handoff_installation is not None
-    ):
-        from scripts.workflow_pilot import agent_handoff
-
-        try:
-            implementation_handoff_installation = agent_handoff._coerce_reporter_trusted_installation(  # noqa: SLF001
-                implementation_handoff_installation,
-                repository_root=repository_root,
-                label="implementation_handoff_installation",
-            )
-        except agent_handoff.HandoffDataError as error:
-            raise PilotDataError(str(error)) from error
     data = validate_fixture(
         fixture,
+        repository_root=repository_root,
         implementation_handoff_trust=implementation_handoff_trust,
         implementation_handoff_installation=implementation_handoff_installation,
     )

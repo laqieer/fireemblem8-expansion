@@ -263,10 +263,26 @@ def finalize_result_attestation(repository_root, document, result):
         "signature": response["signature"],
     }
 
-
 REPORTER_TRUST = {}
+REPORTER_INSTALLATIONS = {}
 def trusted_reporter_installation(repository_root):
-    return agent_handoff.load_reporter_trusted_installation(repository_root, installation_root_path(repository_root))
+    key = str(repository_root)
+    if key not in REPORTER_INSTALLATIONS:
+        root = Path(tempfile.mkdtemp(prefix="workflow-pilot-offline-install-", dir=TEST_ARTIFACTS))
+        installation = root / "installation"
+        verifier_root = root / "verifier"
+        shutil.copytree(installation_root_path(repository_root), installation)
+        manifest_path = installation / "installation.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["bootstrap_validator"]["path"] = "raw_diff_check.py"
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+        verifier_root.mkdir()
+        git(verifier_root, "init", "-q", "-b", "master")
+        git(verifier_root, "config", "user.name", "Offline Verifier")
+        git(verifier_root, "config", "user.email", "offline@example.invalid")
+        git(verifier_root, "remote", "add", "origin", "https://github.com/example/offline-verifier.git")
+        REPORTER_INSTALLATIONS[key] = (installation, verifier_root)
+    return REPORTER_INSTALLATIONS[key]
 def sign_reporter_trust_anchor(repository_root, anchor):
     anchor["signature"] = external_sign(repository_root, agent_handoff.reporter_trust_anchor_payload(anchor))
     return anchor
@@ -302,7 +318,8 @@ def trusted_reporter_anchor(
         "expires_at": iso_utc(expires_at),
     })
 def remember_reporter_trust(record, trusted_anchor, trusted_installation):
-    REPORTER_TRUST[record["input_seal"]] = (copy.deepcopy(trusted_anchor), trusted_installation)
+    installation_path, verifier_root = trusted_installation
+    REPORTER_TRUST[record["input_seal"]] = (copy.deepcopy(trusted_anchor), installation_path, verifier_root)
     return record
 def reporter_record(repository_root, document, result):
     trusted_installation = trusted_reporter_installation(repository_root)
@@ -312,8 +329,9 @@ def reporter_record(repository_root, document, result):
             document,
             result,
             finalize_result_attestation(repository_root, document, result),
+            repository_root=trusted_installation[1],
             trusted_anchor=trusted_anchor,
-            trusted_installation=trusted_installation,
+            trusted_installation=trusted_installation[0],
         ),
         trusted_anchor,
         trusted_installation,
@@ -327,8 +345,10 @@ def reporter_fixture_trust(*bundles):
     }
 def reporter_fixture_installation(*bundles):
     return REPORTER_TRUST[bundles[0]["input_seal"]][1]
+def reporter_fixture_repository_root(*bundles):
+    return REPORTER_TRUST[bundles[0]["input_seal"]][2]
 def validate_reporter_fixture(
-    fixture, implementation_handoff_trust=None, implementation_handoff_installation=None,
+    fixture, repository_root=None, implementation_handoff_trust=None, implementation_handoff_installation=None,
 ):
     if fixture.get("schema_version") == reporter.HANDOFF_FIXTURE_SCHEMA_VERSION:
         implementation_handoff_trust = (
@@ -341,15 +361,19 @@ def validate_reporter_fixture(
             if implementation_handoff_installation is None
             else implementation_handoff_installation
         )
-    return reporter.validate_fixture(fixture, implementation_handoff_trust=implementation_handoff_trust, implementation_handoff_installation=implementation_handoff_installation)
+        repository_root = reporter_fixture_repository_root(*fixture["implementation_handoffs"]) if repository_root is None else repository_root
+    return reporter.validate_fixture(fixture, repository_root=repository_root, implementation_handoff_trust=implementation_handoff_trust, implementation_handoff_installation=implementation_handoff_installation)
 def verify_reporter_record_offline(
-    record, trusted_anchor=None, trusted_installation=None, current_time=None,
+    record, repository_root=None, trusted_anchor=None, trusted_installation=None, current_time=None,
 ):
+    if repository_root is None and record["input_seal"] in REPORTER_TRUST:
+        repository_root = REPORTER_TRUST[record["input_seal"]][2]
     if trusted_anchor is None or trusted_installation is None:
-        stored_anchor, stored_installation = REPORTER_TRUST[record["input_seal"]]
+        stored_anchor, stored_installation, stored_root = REPORTER_TRUST[record["input_seal"]]
         trusted_anchor = copy.deepcopy(stored_anchor if trusted_anchor is None else trusted_anchor)
         trusted_installation = stored_installation if trusted_installation is None else trusted_installation
-    return agent_handoff.verify_reporter_record(record, revalidate_git=False, trusted_anchor=trusted_anchor, trusted_installation=trusted_installation, current_time=current_time)
+        repository_root = stored_root if repository_root is None else repository_root
+    return agent_handoff.verify_reporter_record(record, revalidate_git=False, repository_root=repository_root, trusted_anchor=trusted_anchor, trusted_installation=trusted_installation, current_time=current_time)
 def installation_root_path(repository_root):
     return COORDINATOR_INSTALLATIONS[str(repository_root)]
 def installation_manifest(repository_root):
@@ -7014,11 +7038,13 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             ],
             "accepted",
         )
+        self.assertFalse(hasattr(agent_handoff, "_VerifiedReporterInstallation"))
+        self.assertFalse(hasattr(agent_handoff, "_VERIFIED_REPORTER_INSTALLATION_TOKEN"))
         for trust, installation, pattern in (
             (None, fixture_installation, "require external trusted anchor attestations"),
             (fixture_trust, None, "require an external trusted installation"),
-            (fixture_trust, {}, "must be a Path or validated installation handle"),
-            (fixture_trust, attacker_installation, "trusted anchor\\.signer does not match trusted installation"),
+            (fixture_trust, {}, "must be a Path"),
+            (fixture_trust, attacker_installation[0], "trusted anchor\\.signer does not match trusted installation"),
             (wrong_trust, fixture_installation, "trusted anchor does not match its record"),
             (expired_trust, fixture_installation, "future-dated or expired"),
         ):
@@ -7026,6 +7052,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 with self.assertRaisesRegex(reporter.PilotDataError, pattern):
                     reporter.validate_fixture(
                         fixture,
+                        repository_root=reporter_fixture_repository_root(record),
                         implementation_handoff_trust=trust,
                         implementation_handoff_installation=installation,
                     )
@@ -7040,12 +7067,14 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
         with self.assertRaisesRegex(reporter.PilotDataError, "unknown fields"):
             reporter.validate_fixture(
                 self_trusting_fixture,
+                repository_root=reporter_fixture_repository_root(record),
                 implementation_handoff_trust=fixture_trust,
                 implementation_handoff_installation=fixture_installation,
             )
         with self.assertRaisesRegex(reporter.PilotDataError, "trusted anchor\\.signature does not verify|trusted anchor\\.signer does not match trusted installation"):
             reporter.validate_fixture(
                 forged_fixture,
+                repository_root=reporter_fixture_repository_root(record),
                 implementation_handoff_trust=forged_trust,
                 implementation_handoff_installation=fixture_installation,
             )
@@ -7121,12 +7150,13 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                     forged_document,
                     forged_result,
                     forged_record["result_attestation"],
+                    repository_root=trusted_reporter_installation(root)[1],
                     trusted_anchor=trusted_reporter_anchor(
                         root,
                         forged_document,
                         forged_result["input_seal"],
                     ),
-                    trusted_installation=trusted_reporter_installation(root),
+                    trusted_installation=trusted_reporter_installation(root)[0],
                 )
             with self.assertRaisesRegex(
                 reporter.PilotDataError,
@@ -7945,6 +7975,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             ):
                 reporter.validate_fixture(
                     fixture,
+                    repository_root=reporter_fixture_repository_root(record),
                     implementation_handoff_trust=reporter_fixture_trust(record),
                     implementation_handoff_installation=reporter_fixture_installation(record),
                 )

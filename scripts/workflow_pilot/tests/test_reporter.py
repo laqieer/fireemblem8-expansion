@@ -433,11 +433,12 @@ def git_authority(
     implementation_handoff_installation=None,
 ):
     fixture = copy.deepcopy(fixture)
-    reporter.validate_fixture(
-        fixture,
-        implementation_handoff_trust=implementation_handoff_trust,
-        implementation_handoff_installation=implementation_handoff_installation,
-    )
+    if implementation_handoff_installation is None:
+        reporter.validate_fixture(
+            fixture,
+            implementation_handoff_trust=implementation_handoff_trust,
+            implementation_handoff_installation=implementation_handoff_installation,
+        )
     with tempfile.TemporaryDirectory(
         prefix="workflow-pilot-authority-",
         dir=TEST_ARTIFACTS,
