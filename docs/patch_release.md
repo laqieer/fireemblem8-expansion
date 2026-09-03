@@ -155,7 +155,14 @@ mutator, or target slots are likewise rejected when supervisor authorization
 is involved. This intentionally includes query-only array flags such as
 `-pv`/`-pV`: Bash leaves the alias unchanged at runtime, but the parser does
 not trust ambiguous array-backed dispatch. Scalar/literal query clusters
-remain valid.
+remain valid. Scalar alias assignments and appends containing command/process/
+arithmetic substitution, backticks, unresolved parameter transforms, or
+runtime filename expansion retain dynamic taint rather than becoming ordinary
+literals. The taint may remain ordinary data, but fails closed when it reaches
+an executable, wrapper, option, mutator, target, or supervisor-sensitive path.
+Runtime `$(printf supervisor_cgroup)`, backtick, and parameter-transform
+controls otherwise unset or rewrite the trusted alias; fixed single-quoted
+literal spellings remain accepted.
 Tracked raw-root filename components also reject
 glob, brace, bracket, extglob, command/process/arithmetic substitution, tilde,
 and other dynamic syntax unless the command is the exact join write.

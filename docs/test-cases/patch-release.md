@@ -276,6 +276,13 @@ authorization is involved. Runtime array wrappers and `-pp` flags prove the
 mutation. Query-only array `-pv`/`-pV` forms are nonmutating in Bash but
 conservatively rejected because the security parser does not normalize
 ambiguous array-backed dispatch. Scalar/literal query clusters remain valid.
+Scalar alias assignment/append values containing command/process/arithmetic
+substitution, backticks, unresolved parameter transforms, glob/brace/tilde, or
+other runtime evaluation retain ambiguous dynamic taint. Ordinary data use is
+allowed, but executable, wrapper, option, mutator, target, and supervisor-
+sensitive sinks reject. Runtime command-substitution, backtick, and
+parameter-transform targets otherwise unset or rewrite `supervisor_cgroup`;
+fixed single-quoted literal spellings remain accepted.
 Raw-root filename
 glob, brace, bracket, extglob, command/process/arithmetic substitution, tilde,
 and other dynamic syntax fail closed. Executable `cgroup{.,_}procs` and
@@ -376,7 +383,8 @@ archival-lane behavior changes.
   wrapped-unset runtime controls, unrelated wrapper/query negatives, and
   clustered `command` query/invalid-option controls, array-backed executable/
   wrapper/option/mutator/target mutations and query controls, executable
-  brace/glob filename controls, recursive
+  brace/glob filename controls, dynamic scalar alias sink mutations and
+  command-substitution/backtick/transform runtime controls, recursive
   command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions
   through inline `else`/brace/case/loop forms, `setsid`-wrapped and common

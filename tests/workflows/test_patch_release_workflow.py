@@ -501,6 +501,51 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         "        wrapper[0]=builtin\n"
         "        mutator[0]=unset\n"
         '        "${wrapper[0]}" "${mutator[0]}" supervisor_cgroup\n',
+        '        target="$(printf supervisor_cgroup)"\n'
+        '        unset "$target"\n',
+        "        target=`printf supervisor_cgroup`\n"
+        '        unset "$target"\n',
+        '        target="$(printf supervisor_cgroup)"\n'
+        '        printf -v "$target" %s /mnt/home\n',
+        '        target="$(printf supervisor_cgroup)"\n'
+        '        read "$target" < /dev/null\n',
+        '        target="$(printf supervisor_cgroup)"\n'
+        '        readarray -t "$target" < /dev/null\n',
+        '        target="$(printf supervisor_cgroup)"\n'
+        '        mapfile -t "$target" < /dev/null\n',
+        '        target="$(printf supervisor_cgroup)"\n'
+        '        declare "$target=/mnt/home"\n',
+        '        target="$(printf supervisor_cgroup)"\n'
+        '        typeset "$target=/mnt/home"\n',
+        '        target="$(printf supervisor_cgroup)"\n'
+        '        export "$target=/mnt/home"\n',
+        '        target="$(printf supervisor_cgroup)"\n'
+        '        readonly "$target=/mnt/home"\n',
+        '        wrapper="$(printf command)"\n'
+        '        "$wrapper" unset supervisor_cgroup\n',
+        '        wrapper=`printf builtin`\n'
+        '        "$wrapper" unset supervisor_cgroup\n',
+        '        flag="$(printf -- -p)"\n'
+        '        command "$flag" unset supervisor_cgroup\n',
+        '        mutator="$(printf unset)"\n'
+        '        "$mutator" supervisor_cgroup\n',
+        "        target_name=supervisor_cgroup\n"
+        '        target="${target_name@P}"\n'
+        '        unset "$target"\n',
+        "        target=supervisor\n"
+        '        target+="$(printf _cgroup)"\n'
+        '        unset "$target"\n',
+        "        target=<(printf supervisor_cgroup)\n"
+        '        unset "$target"\n',
+        "        target='$((1 + 1))'\n"
+        '        printf "%s\\n" "$target" > /dev/null\n'
+        '        unset "$(printf supervisor_cgroup)"\n',
+        "        target=supervisor_cgrou?\n"
+        '        unset "$target"\n',
+        "        target=supervisor_{cgroup,other}\n"
+        '        unset "$target"\n',
+        "        target=~\n"
+        '        unset "$target"\n',
     )
     for index, mutation in enumerate(supervisor_reassignments):
         changed = workflow.replace(marker, mutation + marker, 1)
@@ -6616,6 +6661,21 @@ exit 37
                         label="unrelated wrapped control",
                     )
                 )
+        for fixed_literal in (
+            "target='$(printf supervisor_cgroup)'\n"
+            'printf "%s\\n" "$target"\n',
+            "target='supervisor_cgrou?'\n"
+            'printf "%s\\n" "$target"\n',
+            "target='supervisor_{cgroup,other}'\n"
+            'printf "%s\\n" "$target"\n',
+        ):
+            with self.subTest(fixed_literal=fixed_literal.splitlines()[0]):
+                self.assertFalse(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        builder + "\n" + fixed_literal,
+                        label="fixed literal alias control",
+                    )
+                )
         for label, changed in generate_raw_builder_cgroup_membership_mutations(
             self.text
         ):
@@ -6795,6 +6855,61 @@ exit 37
                     label="dynamic raw cgroup runtime",
                 )
             )
+
+    def test_dynamic_scalar_alias_runtime_mutates_supervisor_and_is_rejected(self):
+        cases = (
+            (
+                'target="$(printf supervisor_cgroup)"\n'
+                'unset "$target"\n'
+                'printf "%s\\n" "$supervisor_cgroup"\n',
+                "unbound variable",
+            ),
+            (
+                "target=`printf supervisor_cgroup`\n"
+                'unset "$target"\n'
+                'printf "%s\\n" "$supervisor_cgroup"\n',
+                "unbound variable",
+            ),
+            (
+                "target_name=supervisor_cgroup\n"
+                'target="${target_name@P}"\n'
+                'unset "$target"\n'
+                'printf "%s\\n" "$supervisor_cgroup"\n',
+                "unbound variable",
+            ),
+            (
+                'target="$(printf supervisor_cgroup)"\n'
+                'printf -v "$target" %s /mnt/home\n'
+                'test "$supervisor_cgroup" = /mnt/home\n',
+                "",
+            ),
+        )
+        for mutation, expected_stderr in cases:
+            with self.subTest(mutation=mutation.splitlines()[0]):
+                script = (
+                    "set -u\n"
+                    'supervisor_cgroup="/mnt/supervisor/cgroup"\n'
+                    + mutation
+                )
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", script],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if expected_stderr:
+                    self.assertNotEqual(completed.returncode, 0)
+                    self.assertIn(expected_stderr, completed.stderr)
+                else:
+                    self.assertEqual(completed.returncode, 0)
+                    self.assertEqual(completed.stderr, "")
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        script,
+                        label="dynamic scalar alias runtime",
+                    )
+                )
 
     def test_wrapped_unset_runtime_breaks_safe_read_and_is_rejected(self):
         artifact_root = ROOT / "build" / "test-artifacts"
@@ -9213,6 +9328,9 @@ exit 37
             self.assertIn("unbound", text)
             self.assertIn("array-backed", text.lower())
             self.assertIn("query-only array", text.lower())
+            self.assertIn("dynamic", text.lower())
+            self.assertIn("backtick", text.lower())
+            self.assertIn("fixed", text.lower())
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)

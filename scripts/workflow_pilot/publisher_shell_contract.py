@@ -137,6 +137,7 @@ _SHELL_ARRAY_EXPANSION_RE = re.compile(
 _RAW_CGROUP_ROOT_MARKER = "\x00raw-cgroup-root\x00"
 _AMBIGUOUS_TRACKED_PARAMETER_MARKER = "\x00ambiguous-tracked-parameter\x00"
 _AMBIGUOUS_ARRAY_ALIAS_MARKER = "\x00ambiguous-array-alias\x00"
+_AMBIGUOUS_DYNAMIC_ALIAS_MARKER = "\x00ambiguous-dynamic-alias\x00"
 _RAW_CGROUP_DYNAMIC_FILENAME_MARKERS = (
     "$",
     "`",
@@ -2327,6 +2328,59 @@ def _raw_cgroup_suffix_has_dynamic_filename(text: str) -> bool:
     )
 
 
+def _assignment_value_has_dynamic_shell_syntax(
+    value: str,
+    *,
+    token_has_shell_syntax: bool,
+) -> bool:
+    if not token_has_shell_syntax:
+        return False
+    if (
+        value.startswith("(")
+        and value.endswith(")")
+        and not any(
+            marker in value
+            for marker in (
+                "$",
+                "`",
+                "*",
+                "?",
+                "{",
+                "}",
+                "~",
+                "<(",
+                ">(",
+                "+(",
+                "@(",
+                "!(",
+            )
+        )
+    ):
+        return False
+    dynamic_parameter = False
+
+    def strip_braced(match: re.Match[str]) -> str:
+        nonlocal dynamic_parameter
+        body = match.group("body")
+        if re.fullmatch(
+            r"(?:[A-Za-z_][A-Za-z0-9_]*|[1-9][0-9]*)",
+            body,
+        ):
+            return ""
+        dynamic_parameter = True
+        return ""
+
+    remainder = _SHELL_BRACED_PARAMETER_RE.sub(strip_braced, value)
+    remainder = _SHELL_PLAIN_VARIABLE_REFERENCE_RE.sub("", remainder)
+    remainder = _SHELL_POSITIONAL_REFERENCE_RE.sub("", remainder)
+    if dynamic_parameter:
+        return True
+    return any(
+        marker in remainder
+        for marker in _RAW_CGROUP_DYNAMIC_FILENAME_MARKERS
+    )
+
+
 def _normalize_shell_builtin_wrappers(
     tokens: tuple[str, ...],
 ) -> tuple[str, ...] | None:
@@ -2437,6 +2491,69 @@ def _ambiguous_array_command_is_forbidden(
     )
 
 
+def _ambiguous_dynamic_command_is_forbidden(
+    tokens: tuple[str, ...],
+) -> bool:
+    ambiguous_indices = tuple(
+        index
+        for index, token in enumerate(tokens)
+        if _AMBIGUOUS_DYNAMIC_ALIAS_MARKER in token
+    )
+    if not ambiguous_indices:
+        return False
+    if 0 in ambiguous_indices:
+        return True
+    if tokens and posixpath.basename(tokens[0]) in {
+        "builtin",
+        "command",
+    }:
+        return True
+    if any(
+        "supervisor_cgroup" in token or "cgroup.procs" in token
+        for token in tokens
+    ):
+        return True
+    normalized = _normalize_shell_builtin_wrappers(tokens)
+    if normalized is None or not normalized:
+        return bool(normalized is None)
+    executable = posixpath.basename(normalized[0])
+    arguments = normalized[1:]
+    if executable in {
+        "declare",
+        "eval",
+        "export",
+        "local",
+        "readonly",
+        "source",
+        "typeset",
+        "unset",
+    } or normalized[0] == ".":
+        return any(
+            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER in argument
+            for argument in arguments
+        )
+    if executable in {"mapfile", "read", "readarray"}:
+        mutation_arguments = arguments
+        if "<" in mutation_arguments:
+            mutation_arguments = mutation_arguments[
+                : mutation_arguments.index("<")
+            ]
+        return any(
+            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER in argument
+            for argument in mutation_arguments
+        )
+    if executable == "printf":
+        if arguments and _AMBIGUOUS_DYNAMIC_ALIAS_MARKER in arguments[0]:
+            return True
+        for index, argument in enumerate(arguments[:-1]):
+            if argument == "-v" and (
+                _AMBIGUOUS_DYNAMIC_ALIAS_MARKER
+                in arguments[index + 1]
+            ):
+                return True
+    return False
+
+
 def has_forbidden_raw_builder_cgroup_membership_read(
     script: str,
     *,
@@ -2454,7 +2571,13 @@ def has_forbidden_raw_builder_cgroup_membership_read(
     saw_supervisor_readonly_remount = False
     saw_supervisor_inode_verification = False
     try:
-        commands = split_bash_simple_command_strings(script, label=label)
+        semantic_script = _strip_patch_release_parser_heredoc_bodies(
+            script
+        )
+        commands = split_bash_simple_command_strings(
+            semantic_script,
+            label=label,
+        )
         for command_text in commands:
             if re.fullmatch(
                 r"[A-Za-z_][A-Za-z0-9_]*\(\) \{",
@@ -2535,11 +2658,50 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 and "supervisor_cgroup" in token_texts[1:]
             ):
                 return True
-            resolved_token_texts = tuple(
-                _resolve_shell_aliases(token.text, aliases)
+            resolved_tokens = []
+            for token_index, token in enumerate(tokens):
+                dynamic_text = token.text
+                scalar_assignment = _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(
+                    token.text
+                )
+                indexed_assignment = (
+                    _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(token.text)
+                )
+                if scalar_assignment is not None:
+                    dynamic_text = scalar_assignment.group("value")
+                elif indexed_assignment is not None:
+                    dynamic_text = indexed_assignment.group("value")
+                dynamic = _assignment_value_has_dynamic_shell_syntax(
+                    dynamic_text,
+                    token_has_shell_syntax=token.has_shell_syntax,
+                )
+                if (
+                    token_index == 0
+                    and token.text.endswith(")")
+                    and not token.text.startswith(
+                        ("$(", "`", "<(", ">(", "+(", "@(", "!(")
+                    )
+                ):
+                    dynamic = False
+                resolved_tokens.append(
+                    (
+                        _AMBIGUOUS_DYNAMIC_ALIAS_MARKER
+                        if dynamic
+                        else ""
+                    )
+                    + _resolve_shell_aliases(token.text, aliases)
+                )
+            resolved_token_texts = tuple(resolved_tokens)
+            assignment_only = bool(tokens) and all(
+                _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(token.text)
+                or _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(token.text)
                 for token in tokens
             )
             if _ambiguous_array_command_is_forbidden(
+                resolved_token_texts
+            ):
+                return True
+            if not assignment_only and _ambiguous_dynamic_command_is_forbidden(
                 resolved_token_texts
             ):
                 return True
@@ -2593,6 +2755,11 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                         indexed_assignment.group("value"),
                         aliases,
                     )
+                    if _assignment_value_has_dynamic_shell_syntax(
+                        indexed_assignment.group("value"),
+                        token_has_shell_syntax=token.has_shell_syntax,
+                    ):
+                        value = _AMBIGUOUS_DYNAMIC_ALIAS_MARKER + value
                     if (
                         _RAW_CGROUP_ROOT_MARKER in index
                         or _RAW_CGROUP_ROOT_MARKER in value
@@ -2625,6 +2792,11 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     assignment.group("value"),
                     aliases,
                 )
+                if _assignment_value_has_dynamic_shell_syntax(
+                    assignment.group("value"),
+                    token_has_shell_syntax=token.has_shell_syntax,
+                ):
+                    value = _AMBIGUOUS_DYNAMIC_ALIAS_MARKER + value
                 is_array_literal = assignment.group("value").startswith(
                     "("
                 )
