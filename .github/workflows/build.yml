@@ -2496,12 +2496,14 @@ jobs:
         ulimit -u 512
         ulimit -v 8388608
         isolated_stage=candidate-preflight
-        set +e
-        /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py \
+        if /usr/bin/python3 -I -S /mnt/control/candidate-launcher.py \
           "$builder_uid" "$builder_gid" \
           /mnt/control/candidate-build.sh "$host_runner_temp"
-        candidate_status="$?"
-        set -e
+        then
+          candidate_status=0
+        else
+          candidate_status="$?"
+        fi
         if [ "$candidate_status" -ne 0 ]; then
           case "$candidate_status" in
             71|72|73|74|75|76) exit "$candidate_status" ;;

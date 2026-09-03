@@ -6298,6 +6298,201 @@ exit 37
                     self.assertEqual(completed.stdout, "")
                     self.assertEqual(completed.stderr, "")
 
+    def test_nonzero_candidate_launcher_reaches_outer_detail_without_err_retrap(self):
+        builder = builder_isolation_shell_source(self.text)
+        protocol_start = builder.index("isolated_stage=namespace")
+        protocol_marker = "trap isolated_stage_failure ERR"
+        protocol_end = (
+            builder.index(protocol_marker, protocol_start)
+            + len(protocol_marker)
+        )
+        builder_protocol = builder[protocol_start:protocol_end]
+        capture_start = builder.index("isolated_stage=candidate-preflight")
+        capture_marker = "isolated_stage=output-validate"
+        capture_end = (
+            builder.index(capture_marker, capture_start)
+            + len(capture_marker)
+        )
+        capture = builder[capture_start:capture_end]
+        launcher = (
+            "/usr/bin/python3 -I -S /mnt/control/candidate-launcher.py \\\n"
+            '  "$builder_uid" "$builder_gid" \\\n'
+            '  /mnt/control/candidate-build.sh "$host_runner_temp"'
+        )
+        self.assertIn(launcher, capture)
+        capture = capture.replace(
+            launcher,
+            "fake_candidate_launcher",
+            1,
+        )
+
+        candidate = candidate_build_shell_source(self.text)
+        candidate_start = candidate.index("candidate_stage=preflight")
+        candidate_marker = "trap candidate_stage_failure ERR"
+        candidate_end = (
+            candidate.index(candidate_marker, candidate_start)
+            + len(candidate_marker)
+        )
+        candidate_protocol = candidate[candidate_start:candidate_end]
+        report = isolated_failure_report_source(self.text)
+        stages = {
+            "preflight": (71, "candidate-preflight"),
+            "venv": (72, "candidate-venv"),
+            "pip": (73, "candidate-pip"),
+            "build-tools": (74, "candidate-build-tools"),
+            "make": (75, "candidate-make"),
+            "handoff": (76, "candidate-handoff"),
+        }
+        for stage, (status, detail) in stages.items():
+            with self.subTest(stage=stage):
+                candidate_result = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        "set -Eeuo pipefail\n"
+                        + candidate_protocol
+                        + f"\ncandidate_stage={stage}\n"
+                        + "false\n",
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(candidate_result.returncode, status)
+                forwarded = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        "set -Eeuo pipefail\n"
+                        + builder_protocol
+                        + "\n"
+                        + "fake_candidate_launcher() { "
+                        + f"return {candidate_result.returncode};"
+                        + " }\n"
+                        + capture
+                        + "\n",
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(forwarded.returncode, status)
+                self.assertNotEqual(forwarded.returncode, 125)
+                normalized = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        f"builder_status={forwarded.returncode}\n"
+                        + report,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(normalized.returncode, status)
+                self.assertEqual(
+                    normalized.stderr,
+                    "candidate build failed: stage=isolated "
+                    f"detail={detail} exit={status}\n",
+                )
+
+        for status in (1, 23, 77, 81, 125, 137):
+            with self.subTest(candidate_arbitrary_status=status):
+                forwarded = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        "set -Eeuo pipefail\n"
+                        + builder_protocol
+                        + "\n"
+                        + f"fake_candidate_launcher() {{ return {status}; }}\n"
+                        + capture
+                        + "\n",
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(forwarded.returncode, 77)
+                normalized = subprocess.run(
+                    [
+                        "/bin/bash",
+                        "-c",
+                        "builder_status=77\n" + report,
+                    ],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(normalized.returncode, 77)
+                self.assertIn(
+                    "detail=candidate-unknown exit=77",
+                    normalized.stderr,
+                )
+
+        success = subprocess.run(
+            [
+                "/bin/bash",
+                "-c",
+                "set -Eeuo pipefail\n"
+                + builder_protocol
+                + "\n"
+                + "fake_candidate_launcher() { return 0; }\n"
+                + capture
+                + "\n"
+                + 'test "$candidate_status" -eq 0\n'
+                + 'test "$isolated_stage" = output-validate\n',
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(success.returncode, 0, success.stderr)
+        self.assertEqual(success.stdout, "")
+        self.assertEqual(success.stderr, "")
+
+        buggy = subprocess.run(
+            [
+                "/bin/bash",
+                "-c",
+                "set -Eeuo pipefail\n"
+                + builder_protocol
+                + "\nisolated_stage=candidate-preflight\n"
+                + "set +e\n"
+                + "false\n"
+                + 'candidate_status="$?"\n',
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(buggy.returncode, 125)
+        self.assertEqual(buggy.stdout, "")
+        self.assertEqual(buggy.stderr, "")
+
+    def test_err_trapped_shells_have_no_set_plus_e_status_capture(self):
+        builder = builder_isolation_shell_source(self.text)
+        candidate = candidate_build_shell_source(self.text)
+        self.assertNotIn("set +e", builder)
+        self.assertNotIn("set +e", candidate)
+        self.assertIn(
+            "if /usr/bin/python3 -I -S "
+            "/mnt/control/candidate-launcher.py",
+            builder,
+        )
+        self.assertIn(
+            "then\n  candidate_status=0\nelse\n"
+            '  candidate_status="$?"\nfi',
+            builder,
+        )
+
     def test_explicit_trusted_failures_use_current_namespace_or_mount_stage(self):
         builder = builder_isolation_shell_source(self.text)
         protocol_start = builder.index("isolated_stage=namespace")
@@ -8165,6 +8360,9 @@ exit 37
             self.assertIn("no file, pipe", text)
             self.assertIn("Explicit trusted", text)
             self.assertIn("return 125", text)
+            self.assertIn("conditional", text)
+            self.assertIn("set +e", text)
+            self.assertIn("exactly once", text)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)

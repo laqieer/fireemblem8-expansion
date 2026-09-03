@@ -131,11 +131,15 @@ the current-stage normalizer directly; the ERR trap covers ordinary command
 failures and propagated helper `return 125` paths. The only remaining explicit
 shell exits are the normalizer's reserved codes, intentional candidate-status
 forwarding, and success `0`, so explicit failures cannot fall through to
-`transport`. `cleanup` reports teardown summary status whenever teardown
-fails. Earlier trusted pre-spawn setup and later post-child handoff validation
-still use normal shell failure output and are outside this diagnostic enum;
-cleanup may therefore be the only stage text even when the failure began
-before spawn.
+`transport`. Candidate-launcher status is captured with an `if` conditional,
+which suppresses ERR handling for that command under Bash semantics; `set +e`
+is intentionally absent because it does not disable an active ERR trap.
+Candidate codes `71` through `76` therefore reach forwarding exactly once,
+arbitrary nonzero candidate status becomes `77`, and success continues as
+zero. `cleanup` reports teardown summary status whenever teardown fails.
+Earlier trusted pre-spawn setup and later post-child handoff validation still
+use normal shell failure output and are outside this diagnostic enum; cleanup
+may therefore be the only stage text even when the failure began before spawn.
 
 Before candidate code starts, its PID-1 wrapper redirects inherited standard
 input/output/error permanently to private `/dev/null`. A trusted isolated
