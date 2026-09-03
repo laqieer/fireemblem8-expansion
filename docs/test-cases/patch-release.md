@@ -238,7 +238,7 @@ read-only; the post-build check remains readable and rejects any member beyond
 the wrapper PID before ROM handoff. Only the exact initial `printf` join writes
 raw `$cgroup_path/cgroup.procs`; bind identity uses directory inodes and every
 membership read uses the read-only supervisor view, so no raw `cgroup.procs`
-read remains. Parsed mutations preserve the safe `mapfile` line while adding
+read remains. Parsed mutations preserve the safe `builtin mapfile` line while adding
 raw mapfile/readarray, cat, sort, redirection, environment/shell wrappers,
 spacing, direct aliases, and composed root/leaf aliases; all fail closed.
 Braced default/assign/error/alternate, prefix/suffix removal, substring, case,
@@ -255,11 +255,22 @@ is seeded as the raw root through quoted/unquoted use, every tracked braced
 operator, indirection, scalar and array aliases, `+=`, and indexed assignment.
 A positional-alias runtime control proves the hidden read. Any other literal
 or resolved `cgroup.procs` path fails closed unless it is the exact initial
-join write or exact supervisor `mapfile` read; unrelated `$2` forms stay valid.
+join write or exact supervisor `builtin mapfile` read; unrelated `$2` forms stay valid.
 That safe read is authorized only after the exact bind, read-only remount,
 single canonical supervisor assignment, and directory-inode verification.
 Literal, alias, parameter-operator, append, indexed/associative array, and
 `unset` reassignments invalidate it before the safe line.
+Function-local positional parameters do not inherit the builder's `$1` model.
+Calls to unanalyzed helpers reject tracked raw-root arguments and split
+arguments that compose `cgroup.procs`; direct, `function` keyword, nested, and
+aliased call controls all read the raw marker without the guard. Exact
+production helper call signatures are the only reviewed exception for
+ambiguous transport values. Function declarations cannot shadow
+security-sensitive builtins or commands, and inline, dynamic, duplicate, and
+ambiguous definitions reject. The wrapper-only membership read uses
+`builtin mapfile`; the runtime negative control shows unqualified `mapfile`
+can forge a singleton while the builtin form reads the real multi-member
+snapshot.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,
@@ -430,7 +441,9 @@ archival-lane behavior changes.
   raw-marker and exact-safe-overwrite runtime controls, parsed exit multiset
   reorder/add/delete/duplicate controls, resolved declaration-target safe/raw/
   dynamic controls for declare/typeset/export/readonly/local in both parsers,
-  parsed registry-contract mutations,
+  direct/function-keyword/nested/aliased helper-call composition and
+  sensitive-function-shadow mutations, unqualified-versus-builtin mapfile
+  runtime, parsed registry-contract mutations,
   recursive
   command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions

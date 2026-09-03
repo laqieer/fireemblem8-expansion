@@ -253,7 +253,7 @@ def workflow_has_raw_builder_cgroup_membership_read(workflow: str) -> bool:
 
 def generate_raw_builder_cgroup_membership_mutations(workflow: str):
     marker = (
-        '        mapfile -t cgroup_members < '
+        '        builtin mapfile -t cgroup_members < '
         '"$supervisor_cgroup/cgroup.procs"\n'
     )
     mutations = [
@@ -753,6 +753,77 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         )
         for builtin in declaration_builtins
     )
+    mutations.extend(
+        (
+            "        helper() {\n"
+            '          /bin/cat "$1/$2$3" > /dev/null\n'
+            "        }\n"
+            '        helper "$cgroup_path" cgroup .procs\n',
+            "        function helper {\n"
+            '          /bin/cat "$1/$2$3" > /dev/null\n'
+            "        }\n"
+            '        helper "$cgroup_path" cgroup .procs\n',
+            "        outer_helper() {\n"
+            "          nested_helper() {\n"
+            '            /bin/cat "$1/$2$3" > /dev/null\n'
+            "          }\n"
+            '          nested_helper "$cgroup_path" cgroup .procs\n'
+            "        }\n"
+            "        outer_helper\n",
+            "        helper() {\n"
+            '          /bin/cat "$1/$2$3" > /dev/null\n'
+            "        }\n"
+            "        helper_alias=helper\n"
+            '        "$helper_alias" "$cgroup_path" cgroup .procs\n',
+            "        helper() {\n"
+            '          /bin/cat "$@" > /dev/null\n'
+            "        }\n"
+            '        helper "$cgroup_path/cgroup.procs"\n',
+        )
+    )
+    function_shadow_mutations = [
+        (
+            "        mapfile() {\n"
+            '          cgroup_members=("$$")\n'
+            "        }\n"
+        ),
+        (
+            "        function mapfile {\n"
+            '          cgroup_members=("$$")\n'
+            "        }\n"
+        ),
+        (
+            "        function mapfile() {\n"
+            '          cgroup_members=("$$")\n'
+            "        }\n"
+        ),
+        (
+            "        shadow_name=mapfile\n"
+            '        function "$shadow_name" {\n'
+            '          cgroup_members=("$$")\n'
+            "        }\n"
+        ),
+        (
+            "        shadow_name=mapfile\n"
+            "        function $shadow_name {\n"
+            '          cgroup_members=("$$")\n'
+            "        }\n"
+        ),
+    ]
+    function_shadow_mutations.extend(
+        f"        {name}() {{\n          true\n        }}\n"
+        for name in (
+            "test",
+            "read",
+            "stat",
+            "printf",
+            "readarray",
+            "local",
+            "unset",
+            "builtin",
+            "command",
+        )
+    )
     for index, mutation in enumerate(supervisor_reassignments):
         changed = workflow.replace(marker, mutation + marker, 1)
         if changed == workflow:
@@ -765,11 +836,18 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         if changed == workflow:
             raise AssertionError("raw cgroup membership mutation marker differs")
         yield f"raw-membership-{index}", changed
+    for index, mutation in enumerate(function_shadow_mutations):
+        changed = workflow.replace(marker, mutation + marker, 1)
+        if changed == workflow:
+            raise AssertionError(
+                "function shadow mutation marker differs"
+            )
+        yield f"function-shadow-{index}", changed
 
 
 def generate_safe_declaration_alias_controls(workflow: str):
     marker = (
-        '        mapfile -t cgroup_members < '
+        '        builtin mapfile -t cgroup_members < '
         '"$supervisor_cgroup/cgroup.procs"\n'
     )
     for builtin in (
@@ -2316,7 +2394,7 @@ def publisher_boundary_errors(workflow: str) -> list[str]:
             '          "$supervisor_cgroup/cgroup.procs")"'
         )
         in isolated_step
-        or 'mapfile -t cgroup_members < "$supervisor_cgroup/cgroup.procs"'
+        or 'builtin mapfile -t cgroup_members < "$supervisor_cgroup/cgroup.procs"'
         not in isolated_step
         or 'test "${#cgroup_members[@]}" -eq 1' not in isolated_step
         or 'test "${cgroup_members[0]}" = "$$"' not in isolated_step
@@ -3108,7 +3186,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             supervisor_bind,
         )
         membership = self.patch_job.index(
-            'mapfile -t cgroup_members < "$supervisor_cgroup/cgroup.procs"',
+            'builtin mapfile -t cgroup_members < "$supervisor_cgroup/cgroup.procs"',
             sys_mask,
         )
         self.assertLess(supervisor_bind, sys_mask)
@@ -4214,7 +4292,7 @@ class PatchReleaseWorkflowTests(unittest.TestCase):
             1,
         )
         hidden_sys_membership = self.text.replace(
-            'mapfile -t cgroup_members < "$supervisor_cgroup/cgroup.procs"',
+            'builtin mapfile -t cgroup_members < "$supervisor_cgroup/cgroup.procs"',
             'mapfile -t cgroup_members < "$cgroup_path/cgroup.procs"',
             1,
         )
@@ -6623,7 +6701,7 @@ exit 37
             "Build candidate in isolated namespace and stage public inputs",
         )
         start = full_script.index(
-            'mapfile -t cgroup_members < "$supervisor_cgroup/cgroup.procs"'
+            'builtin mapfile -t cgroup_members < "$supervisor_cgroup/cgroup.procs"'
         )
         end_marker = 'test "${cgroup_members[0]}" = "$$"'
         end = full_script.index(end_marker, start) + len(end_marker)
@@ -7430,13 +7508,13 @@ exit 37
                 with self.subTest(builtin=builtin, behavior="safe overwrite"):
                     safe_script = (
                         "overwrite() {\n"
-                        '  raw_root="$1"\n'
+                        f'  raw_root="{raw_cgroup}"\n'
                         "  target=raw_root\n"
                         f"  declaration={builtin}\n"
                         f'  "$declaration" "$target={safe_cgroup}"\n'
                         '  /bin/cat "$raw_root"/cgroup.proc?\n'
                         "}\n"
-                        'overwrite "$1"\n'
+                        "overwrite\n"
                     )
                     completed = subprocess.run(
                         [
@@ -7469,13 +7547,14 @@ exit 37
 
                 with self.subTest(builtin=builtin, behavior="raw overwrite"):
                     raw_script = (
+                        f'cgroup_path="{raw_cgroup}"\n'
                         "overwrite() {\n"
                         '  raw_root=/safe\n'
                         "  target=raw_root\n"
-                        f'  {builtin} "$target=$1"\n'
+                        f'  {builtin} "$target=$cgroup_path"\n'
                         '  /bin/cat "$raw_root"/cgroup.proc?\n'
                         "}\n"
-                        'overwrite "$1"\n'
+                        "overwrite\n"
                     )
                     completed = subprocess.run(
                         [
@@ -7509,12 +7588,12 @@ exit 37
                 with self.subTest(builtin=builtin, behavior="dynamic target"):
                     dynamic_script = (
                         "overwrite() {\n"
-                        '  raw_root="$1"\n'
+                        f'  raw_root="{raw_cgroup}"\n'
                         '  target="$(printf raw_root)"\n'
                         f'  {builtin} "$target={safe_cgroup}"\n'
                         '  /bin/cat "$raw_root"/cgroup.proc?\n'
                         "}\n"
-                        'overwrite "$1"\n'
+                        "overwrite\n"
                     )
                     completed = subprocess.run(
                         [
@@ -7544,6 +7623,143 @@ exit 37
                             label=f"dynamic {builtin} alias target",
                         )
                     )
+
+    def test_user_helpers_compose_raw_membership_paths_and_are_rejected(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="helper-raw-membership-",
+            dir=artifact_root,
+        ) as temporary:
+            raw_cgroup = Path(temporary) / "raw"
+            raw_cgroup.mkdir()
+            (raw_cgroup / "cgroup.procs").write_text(
+                "helper-raw-marker\n",
+                encoding="ascii",
+            )
+            scripts = (
+                (
+                    "helper() {\n"
+                    '  /bin/cat "$1/$2$3"\n'
+                    "}\n"
+                    'helper "$1" cgroup .procs\n'
+                ),
+                (
+                    "function helper {\n"
+                    '  /bin/cat "$1/$2$3"\n'
+                    "}\n"
+                    'helper "$1" cgroup .procs\n'
+                ),
+                (
+                    "outer_helper() {\n"
+                    "  nested_helper() {\n"
+                    '    /bin/cat "$1/$2$3"\n'
+                    "  }\n"
+                    '  nested_helper "$1" cgroup .procs\n'
+                    "}\n"
+                    'outer_helper "$1"\n'
+                ),
+                (
+                    "helper() {\n"
+                    '  /bin/cat "$1/$2$3"\n'
+                    "}\n"
+                    "helper_alias=helper\n"
+                    '  "$helper_alias" "$1" cgroup .procs\n'
+                ),
+                (
+                    "helper() {\n"
+                    '  /bin/cat "$@"\n'
+                    "}\n"
+                    'helper "$1/cgroup.procs"\n'
+                ),
+            )
+            for script in scripts:
+                with self.subTest(
+                    declaration=script.splitlines()[0]
+                ):
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "-c",
+                            script,
+                            "--",
+                            str(raw_cgroup),
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(
+                        completed.returncode,
+                        0,
+                        completed.stderr,
+                    )
+                    self.assertEqual(
+                        completed.stdout,
+                        "helper-raw-marker\n",
+                    )
+                    self.assertTrue(
+                        publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                            script,
+                            label="user helper raw membership runtime",
+                        )
+                    )
+
+    def test_mapfile_shadow_forges_singleton_but_builtin_read_cannot_be_shadowed(
+        self,
+    ):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="mapfile-shadow-",
+            dir=artifact_root,
+        ) as temporary:
+            membership = Path(temporary) / "cgroup.procs"
+            membership.write_text(
+                f"{os.getpid()}\n{os.getppid()}\n",
+                encoding="ascii",
+            )
+            shadow = (
+                "mapfile() {\n"
+                '  cgroup_members=("$$")\n'
+                "}\n"
+            )
+            vulnerable = (
+                shadow
+                + 'mapfile -t cgroup_members < "$1"\n'
+                + 'test "${#cgroup_members[@]}" -eq 1\n'
+                + 'test "${cgroup_members[0]}" = "$$"\n'
+            )
+            completed = subprocess.run(
+                ["/bin/bash", "-c", vulnerable, "--", str(membership)],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+
+            hardened = (
+                shadow
+                + 'builtin mapfile -t cgroup_members < "$1"\n'
+                + 'test "${#cgroup_members[@]}" -eq 2\n'
+                + 'test "${cgroup_members[0]}" != "$$"\n'
+            )
+            completed = subprocess.run(
+                ["/bin/bash", "-c", hardened, "--", str(membership)],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    hardened,
+                    label="mapfile shadow runtime",
+                )
+            )
 
     def test_fixed_quoted_dispatch_literals_do_not_execute_or_false_positive(self):
         cases = (
@@ -10003,6 +10219,41 @@ exit 37
             ],
             "supervisor_parent_mode": "0700",
             "post_build_membership": "exact-wrapper-singleton",
+            "membership_reader": "builtin-mapfile",
+            "helper_calls": {
+                "production_signatures": "closed",
+                "tracked_or_composed_membership_arguments": "reject",
+            },
+            "function_shadowing": {
+                "result": "reject",
+                "sensitive_names": [
+                    "alias",
+                    "builtin",
+                    "command",
+                    "declare",
+                    "enable",
+                    "env",
+                    "eval",
+                    "export",
+                    "hash",
+                    "local",
+                    "mapfile",
+                    "mount",
+                    "printf",
+                    "read",
+                    "readarray",
+                    "readonly",
+                    "set",
+                    "shopt",
+                    "sort",
+                    "source",
+                    "stat",
+                    "test",
+                    "typeset",
+                    "unalias",
+                    "unset",
+                ],
+            },
             "raw_membership": {
                 "allowed_accesses": [
                     "initial-join-write",
@@ -10039,6 +10290,7 @@ exit 37
             ("candidate_stage_statuses",),
             ("transport_statuses",),
             ("launcher_identity_fields",),
+            ("function_shadowing", "sensitive_names"),
             ("raw_membership", "allowed_accesses"),
             ("alias_state", "writers"),
         )
@@ -10100,6 +10352,15 @@ exit 37
         for path, value in (
             (("complete_rom_artifact",), True),
             (("candidate_unknown_status",), 78),
+            (("membership_reader",), "mapfile"),
+            (
+                (
+                    "helper_calls",
+                    "tracked_or_composed_membership_arguments",
+                ),
+                "allow",
+            ),
+            (("function_shadowing", "result"), "allow"),
             (("raw_membership", "additional_access"), "allow"),
             (("alias_state", "dynamic_target"), "allow"),
         ):

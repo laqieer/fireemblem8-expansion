@@ -12,10 +12,10 @@ from typing import Iterable
 
 
 REVIEWED_PATCH_RELEASE_RUN_SHA256 = (
-    "0f17434eff089afe16c7fb5add13deb25737e71d0c465cedab523c87141effe7"
+    "db3dddfd08eb1800e588b609ae4143e8553022f9e3c4b7b6b87c5ea46ab2195e"
 )
 REVIEWED_BUILDER_ISOLATION_SHA256 = (
-    "71455cd686aaad1b54ad514060b5d0e37b3186465cfa2fbf45175260554cfa45"
+    "79f9a8b5db7857181e2320fbff36a2c2c1188b7ce3eedd3de18d0bf7d10c5651"
 )
 REVIEWED_HIDDEN_MASK_LOOP_SHA256 = (
     "77e81e3a773e78b4c58132c553ea3a3ef0719f802fe1164b59f60aef948235f5"
@@ -142,6 +142,79 @@ _DISPATCH_STATE_VARIABLES = frozenset(
     {"BASHOPTS", "BASH_ENV", "ENV", "PATH", "SHELLOPTS"}
 )
 _DISPATCH_SET_OPTIONS = frozenset({"hashall", "posix"})
+_SECURITY_SENSITIVE_FUNCTION_NAMES = frozenset(
+    {
+        "alias",
+        "builtin",
+        "case",
+        "command",
+        "declare",
+        "enable",
+        "env",
+        "eval",
+        "export",
+        "hash",
+        "local",
+        "mapfile",
+        "mount",
+        "printf",
+        "read",
+        "readarray",
+        "readonly",
+        "set",
+        "shopt",
+        "sort",
+        "source",
+        "stat",
+        "test",
+        "typeset",
+        "unalias",
+        "unset",
+    }
+)
+_ANALYZED_BUILDER_COMMANDS = frozenset(
+    {
+        "alias",
+        "builtin",
+        "case",
+        "cd",
+        "command",
+        "do",
+        "done",
+        "elif",
+        "else",
+        "esac",
+        "declare",
+        "echo",
+        "enable",
+        "eval",
+        "exec",
+        "export",
+        "fi",
+        "for",
+        "hash",
+        "if",
+        "in",
+        "local",
+        "mapfile",
+        "printf",
+        "read",
+        "readarray",
+        "readonly",
+        "return",
+        "set",
+        "shopt",
+        "source",
+        "test",
+        "trap",
+        "typeset",
+        "ulimit",
+        "unalias",
+        "unset",
+        "until",
+        "while",
+    }
+)
 _RAW_CGROUP_DYNAMIC_FILENAME_MARKERS = (
     "$",
     "`",
@@ -2324,6 +2397,142 @@ def _resolve_shell_aliases(text: str, aliases: dict[str, str]) -> str:
     return resolved
 
 
+def _shell_function_declaration(
+    command_text: str,
+) -> tuple[bool, str | None, bool]:
+    stripped = command_text.strip()
+    matches = (
+        re.match(
+            r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*"
+            r"\(\s*\)\s*\{(?P<body>.*)\Z",
+            stripped,
+        ),
+        re.match(
+            r"function\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)"
+            r"(?:\s*\(\s*\))?\s*\{(?P<body>.*)\Z",
+            stripped,
+        ),
+    )
+    for match in matches:
+        if match is not None:
+            return True, match.group("name"), bool(
+                match.group("body").strip()
+            )
+    if stripped.startswith("function ") or re.search(
+        r"\(\s*\)\s*\{",
+        stripped,
+    ):
+        return True, None, True
+    return False, None, False
+
+
+def _helper_call_has_sensitive_arguments(
+    tokens: tuple[str, ...],
+    *,
+    user_functions: set[str],
+) -> bool:
+    if not tokens:
+        return False
+    executable = tokens[0]
+    if "/" in executable:
+        return False
+    basename = posixpath.basename(executable)
+    if (
+        basename in _ANALYZED_BUILDER_COMMANDS
+        and basename not in user_functions
+    ):
+        return False
+    production_calls = {
+        (
+            "read_checked_supervisor_transport_file",
+            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER
+            + "$(create_supervisor_transport_file dev-mount-targets)",
+            "1048576",
+        ),
+        (
+            "remove_supervisor_transport_file",
+            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER
+            + "$(create_supervisor_transport_file dev-mount-targets)",
+        ),
+        (
+            "read_checked_supervisor_transport_file",
+            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER
+            + "$(create_supervisor_transport_file remaining-dev-mount-targets)",
+            "1048576",
+        ),
+        (
+            "remove_supervisor_transport_file",
+            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER
+            + "$(create_supervisor_transport_file remaining-dev-mount-targets)",
+        ),
+        (
+            "read_checked_runtime_transport_file",
+            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER
+            + "$(create_runtime_transport_file writable-mount-records)",
+            "1048576",
+        ),
+        (
+            "remove_runtime_transport_file",
+            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER
+            + "$(create_runtime_transport_file writable-mount-records)",
+        ),
+        (
+            "builder_main",
+            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER + "$@",
+        ),
+    }
+    if tokens in production_calls and basename in user_functions:
+        return False
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", basename):
+        plain_executable = executable
+        for marker in (
+            _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+            _AMBIGUOUS_TRACKED_PARAMETER_MARKER,
+            _RAW_CGROUP_ROOT_MARKER,
+        ):
+            plain_executable = plain_executable.replace(marker, "")
+        if (
+            _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(plain_executable)
+            or _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(plain_executable)
+        ):
+            return False
+        return any(
+            marker in executable
+            for marker in (
+                _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+                _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+                _AMBIGUOUS_TRACKED_PARAMETER_MARKER,
+                _RAW_CGROUP_ROOT_MARKER,
+            )
+        )
+    arguments = list(tokens[1:])
+    for index, argument in enumerate(arguments):
+        if argument in {">", ">>", "<", "<<", "<<<"}:
+            arguments = arguments[:index]
+            break
+    if any(
+        marker in argument
+        for argument in arguments
+        for marker in (
+            _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+            _AMBIGUOUS_TRACKED_PARAMETER_MARKER,
+            _RAW_CGROUP_ROOT_MARKER,
+        )
+    ):
+        return True
+    joined = "".join(arguments)
+    return "cgroup.procs" in joined or (
+        "cgroup" in joined
+        and "proc" in joined
+        and any(
+            marker in joined
+            for marker in _RAW_CGROUP_DYNAMIC_FILENAME_MARKERS
+        )
+    )
+
+
 def _raw_cgroup_suffix_has_dynamic_filename(text: str) -> bool:
     return any(
         marker in suffix
@@ -3042,6 +3251,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
         }
     ]
     function_depth = 0
+    user_functions: set[str] = set()
     supervisor_assignments = 0
     saw_supervisor_bind = False
     saw_supervisor_readonly_remount = False
@@ -3055,18 +3265,27 @@ def has_forbidden_raw_builder_cgroup_membership_read(
             label=label,
         )
         for command_text in commands:
-            if re.fullmatch(
-                r"[A-Za-z_][A-Za-z0-9_]*\(\) \{",
-                command_text,
-            ):
-                if function_depth > 0:
-                    nested_aliases = dict(alias_scopes[-1])
-                    nested_aliases.pop("1", None)
-                    alias_scopes.append(nested_aliases)
+            is_function, function_name, has_inline_body = (
+                _shell_function_declaration(command_text)
+            )
+            if is_function:
+                if (
+                    function_name is None
+                    or has_inline_body
+                    or function_name in _SECURITY_SENSITIVE_FUNCTION_NAMES
+                    or function_name in user_functions
+                ):
+                    return True
+                user_functions.add(function_name)
+                nested_aliases = dict(alias_scopes[-1])
+                for name in tuple(nested_aliases):
+                    if name.isdigit():
+                        nested_aliases.pop(name)
+                alias_scopes.append(nested_aliases)
                 function_depth += 1
                 continue
             if command_text == "}":
-                if function_depth > 1:
+                if function_depth > 0:
                     alias_scopes.pop()
                 function_depth = max(0, function_depth - 1)
                 continue
@@ -3114,6 +3333,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     continue
                 return True
             if token_texts == (
+                "builtin",
                 "mapfile",
                 "-t",
                 "cgroup_members",
@@ -3168,6 +3388,11 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     + _resolve_shell_aliases(token.text, aliases)
                 )
             resolved_token_texts = tuple(resolved_tokens)
+            if _helper_call_has_sensitive_arguments(
+                resolved_token_texts,
+                user_functions=user_functions,
+            ):
+                return True
             assignment_only = bool(tokens) and all(
                 _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(token.text)
                 or _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(token.text)

@@ -118,7 +118,7 @@ removal. The raw cgroup path is used only for the exact initial
 `printf` membership-join write. Bind identity is checked through the raw and
 supervisor directory inodes; no raw `cgroup.procs` read remains. The parsed
 contract rejects direct, redirected, wrapped, spaced, or aliased raw membership
-reads even when the safe `mapfile` line remains present. Tracked braced
+reads even when the safe `builtin mapfile` line remains present. Tracked braced
 parameters with default/assign/error/alternate, prefix/suffix removal,
 substring, case conversion, transformation, length, or indirect operators
 fail closed because their resulting path is ambiguous. Direct and aliased
@@ -133,7 +133,7 @@ that executable script. Builder positional argument `$1` and `${1}` are seeded
 as the same raw root, including braced operators, indirection, scalar/array
 aliases, and appends. A second runtime control proves a positional alias can
 otherwise read the raw marker. Any `cgroup.procs` reference not structurally
-equal to the exact join write or supervisor `mapfile` read fails closed, even
+equal to the exact join write or supervisor `builtin mapfile` read fails closed, even
 from an unknown root; unrelated arrays and other positional parameters remain
 accepted. The supervisor read is authorized only after the exact bind,
 read-only remount, one canonical
@@ -148,6 +148,16 @@ wrapped commands remain valid. Clustered `command` options such as `-pv`,
 any `v/V` makes the complete valid prefix query-only, while `p` alone remains
 an executing wrapper. Invalid mixed clusters fail closed when they target the
 supervisor alias. Eval, source, and ambiguous mutation surfaces fail closed.
+User-defined helper positionals are scoped independently from the builder
+arguments. Calls to any unanalyzed helper reject tracked raw-root arguments or
+separate arguments that can compose `cgroup.procs`; direct, `function`
+keyword, nested, and scalar-aliased calls are covered. Only the exact
+production helper call signatures may carry their reviewed ambiguous
+transport values. Function declarations cannot shadow security-sensitive
+builtins or commands, and inline, dynamic, duplicate, or ambiguous
+declarations fail closed. The membership snapshot explicitly invokes
+`builtin mapfile`, so even an injected shell function cannot forge the
+wrapper-only array.
 Runtime wrapped-unset controls leave `supervisor_cgroup` unbound before the
 safe read, proving the mutation. Array-backed executable slots are always
 rejected by this security guard. Array-backed `command`/`builtin` option,

@@ -1278,6 +1278,41 @@
         ],
         "supervisor_parent_mode": "0700",
         "post_build_membership": "exact-wrapper-singleton",
+        "membership_reader": "builtin-mapfile",
+        "helper_calls": {
+          "production_signatures": "closed",
+          "tracked_or_composed_membership_arguments": "reject"
+        },
+        "function_shadowing": {
+          "result": "reject",
+          "sensitive_names": [
+            "alias",
+            "builtin",
+            "command",
+            "declare",
+            "enable",
+            "env",
+            "eval",
+            "export",
+            "hash",
+            "local",
+            "mapfile",
+            "mount",
+            "printf",
+            "read",
+            "readarray",
+            "readonly",
+            "set",
+            "shopt",
+            "sort",
+            "source",
+            "stat",
+            "test",
+            "typeset",
+            "unalias",
+            "unset"
+          ]
+        },
         "raw_membership": {
           "allowed_accesses": [
             "initial-join-write",

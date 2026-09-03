@@ -2509,7 +2509,7 @@ jobs:
           esac
         fi
         isolated_stage=output-validate
-        mapfile -t cgroup_members < "$supervisor_cgroup/cgroup.procs"
+        builtin mapfile -t cgroup_members < "$supervisor_cgroup/cgroup.procs"
         test "${#cgroup_members[@]}" -eq 1
         test "${cgroup_members[0]}" = "$$"
         handoff_names="$(/usr/bin/find /mnt/handoff -mindepth 1 \

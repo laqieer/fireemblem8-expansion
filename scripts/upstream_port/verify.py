@@ -1840,6 +1840,7 @@ def _parse_step(block, job_name, index):
             not in {token for command in values["run"] for token in command}
             or ("test", "!", "-r", "/mnt/supervisor") not in values["run"]
             or (
+                "builtin",
                 "mapfile",
                 "-t",
                 "cgroup_members",
