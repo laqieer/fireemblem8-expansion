@@ -196,6 +196,15 @@ join, bind, read-only remount, inode verification, supervisor alias, trap, and
 membership checker actions must each occur exactly once without `&&`, `||`,
 `|`, `|&`, or background `&` edges. Quoted and escaped operator text remains
 ordinary data.
+The same parsed records, including operator edges, nested execution scopes, and
+derived control scopes, form each reviewed helper identity. Backgrounding or
+pipelining any helper command therefore changes the inventory and rejects;
+unreviewed helper calls reject such topology at call time.
+One central mandatory-context predicate covers the initializer, join, bind,
+remount, supervisor alias, inode check, trap, and checker, so none can be
+accepted inside a conditional even without an operator edge. `for` and
+`select` iteration targets may not overwrite cgroup, supervisor, dispatch, or
+tracked alias state.
 Runtime wrapped-unset controls leave `supervisor_cgroup` unbound before the
 safe read, proving the mutation. Array-backed executable slots are always
 rejected by this security guard. Array-backed `command`/`builtin` option,
@@ -317,6 +326,10 @@ The semantic parser tracks shell control scopes and authorizes the checker
 only once on the unconditional `builder_main` path. `if`, loop, or other
 conditional placement rejects even when the checker heredoc and AST remain
 byte-for-byte valid.
+Parenthesized subshells, multiline `$()`/backtick command substitutions, and
+input/output process substitutions are retained as nested execution scopes.
+The checker and every other mandatory action reject in those scopes, including
+when a following `|| true` would otherwise permit export.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

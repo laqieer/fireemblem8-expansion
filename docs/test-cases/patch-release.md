@@ -277,8 +277,9 @@ arguments that compose `cgroup.procs`; direct, `function` keyword, nested, and
 aliased call controls all read the raw marker without the guard. Exact
 production helper call signatures are the only reviewed exception for
 ambiguous transport values. The parsed helper inventory compares exact names,
-body-command identities, and multiplicities without depending on definition
-order; added, removed, duplicated, or modified helpers reject. Calls
+body-command/operator/execution/control-scope identities, and multiplicities
+without depending on definition order; added, removed, duplicated, modified,
+backgrounded, or pipelined helpers reject. Calls
 re-evaluate authenticated bodies against current caller aliases, so a
 no-argument closure defined while `raw_root` is safe rejects after assignment
 or `printf -v` retargets it. Calls initialize a sequential frame with caller
@@ -308,6 +309,13 @@ read-only remount, inode verification, supervisor alias, reviewed trap, and
 checker each require one operator-free execution record; `&&`, `||`, `|`,
 `|&`, and background `&` placement reject. Quoted or escaped operator text
 remains inert.
+One central predicate combines operator edges, active control scopes, nested
+execution scopes, and main-function position for every mandatory action.
+Protected `for`/`select` targets cannot overwrite cgroup, supervisor, dispatch,
+reserved membership, or tracked alias state. Parenthesized subshells,
+multiline command/backtick substitutions, and input/output process
+substitutions retain scope; mandatory actions reject within them even when
+`|| true` would otherwise continue to export.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,
@@ -494,6 +502,9 @@ archival-lane behavior changes.
   conditional-checker skip/runtime controls in both semantic validators,
   mandatory-action `&&`/`||`/pipeline/background mutations with physical and
   logical continuations plus quoted/escaped operator controls,
+  helper topology identity mutations, protected for/select targets, central
+  mandatory control contexts, and multiline command/backtick/subshell/
+  process-substitution checker bypasses,
   parsed registry-contract mutations,
   recursive
   command/process-substitution inspection for

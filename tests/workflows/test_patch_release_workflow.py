@@ -927,6 +927,26 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         "          cgroup_path=/tmp/fake\n"
         "        }\n"
         "        mutate_cgroup_path\n",
+        "        for cgroup_path in /tmp/fake; do\n"
+        "          true\n"
+        "        done\n",
+        "        for supervisor_cgroup in /tmp/fake; do\n"
+        "          true\n"
+        "        done\n",
+        "        for PATH in /tmp/fake; do\n"
+        "          true\n"
+        "        done\n",
+        '        raw_root="$cgroup_path"\n'
+        "        for raw_root in /tmp/fake; do\n"
+        "          true\n"
+        "        done\n",
+        "        select cgroup_path in /tmp/fake; do\n"
+        "          break\n"
+        "        done < /dev/null\n",
+        "        loop_target=cgroup_path\n"
+        '        for "$loop_target" in /tmp/fake; do\n'
+        "          true\n"
+        "        done\n",
         '        cgroup_path="$1"\n',
     )
     for index, mutation in enumerate(supervisor_reassignments):
@@ -1047,6 +1067,25 @@ def generate_helper_inventory_mutations(workflow: str):
             '          if /usr/bin/mountpoint -q "$1"; then\n',
             1,
         ),
+        "background-topology": workflow.replace(
+            '          fi\n'
+            '        }\n'
+            '        unmount_if_mounted /home/runner\n',
+            '          fi &\n'
+            '        }\n'
+            '        unmount_if_mounted /home/runner\n',
+            1,
+        ),
+        "pipeline-topology": workflow.replace(
+            '            /usr/bin/umount --recursive "$1"\n',
+            '            /usr/bin/umount --recursive "$1" | /bin/true\n',
+            1,
+        ),
+        "list-topology": workflow.replace(
+            '            /usr/bin/umount --recursive "$1"\n',
+            '            /usr/bin/umount --recursive "$1" && true\n',
+            1,
+        ),
     }
     for label, changed in mutations.items():
         if changed == workflow:
@@ -1153,6 +1192,45 @@ def generate_membership_checker_control_flow_mutations(workflow: str):
         if changed == workflow:
             raise AssertionError(
                 f"{label} membership control mutation marker differs"
+            )
+        yield label, changed
+
+
+def generate_membership_checker_nested_execution_mutations(workflow: str):
+    checker = '        /usr/bin/python3 -I -S - "$$" <<\'PY\'\n'
+    checker_end = "        PY\n        isolated_stage=export\n"
+    wrappers = {
+        "command-substitution": (
+            "        checker_result=$(\n",
+            "        ) || true\n",
+        ),
+        "backtick-substitution": (
+            "        checker_result=`\n",
+            "        ` || true\n",
+        ),
+        "subshell": (
+            "        (\n",
+            "        ) || true\n",
+        ),
+        "input-process-substitution": (
+            "        checker_result=<(\n",
+            "        )\n",
+        ),
+        "output-process-substitution": (
+            "        checker_result=>(\n",
+            "        )\n",
+        ),
+    }
+    for label, (prefix, suffix) in wrappers.items():
+        changed = workflow.replace(checker, prefix + checker, 1)
+        changed = changed.replace(
+            checker_end,
+            "        PY\n" + suffix + "        isolated_stage=export\n",
+            1,
+        )
+        if changed == workflow:
+            raise AssertionError(
+                f"{label} membership nesting marker differs"
             )
         yield label, changed
 
@@ -1276,6 +1354,45 @@ def generate_mandatory_operator_mutations(workflow: str):
             "initializer following operator marker differs"
         )
     yield "initializer-following-and", following
+
+
+def generate_mandatory_control_scope_mutations(workflow: str):
+    actions = {
+        "trap": "        trap isolated_stage_failure ERR\n",
+        "join": (
+            '        printf \'%s\\n\' "$$" > '
+            '"$cgroup_path/cgroup.procs"\n'
+        ),
+        "bind": (
+            '        /usr/bin/mount --bind "$cgroup_path" '
+            "/mnt/supervisor/cgroup\n"
+        ),
+        "remount": (
+            "        /usr/bin/mount -o "
+            "remount,bind,ro,nosuid,nodev,noexec \\\n"
+            "          /mnt/supervisor/cgroup\n"
+        ),
+        "supervisor-alias": (
+            "        supervisor_cgroup=/mnt/supervisor/cgroup\n"
+        ),
+        "inode-check": (
+            '        test "$(/usr/bin/stat -Lc %d:%i "$cgroup_path")" = \\\n'
+            '          "$(/usr/bin/stat -Lc %d:%i "$supervisor_cgroup")"\n'
+        ),
+    }
+    for label, action in actions.items():
+        changed = workflow.replace(
+            action,
+            "        if false; then\n"
+            + action
+            + "        fi\n",
+            1,
+        )
+        if changed == workflow:
+            raise AssertionError(
+                f"{label} control scope mutation marker differs"
+            )
+        yield label, changed
 
 
 def render_supervisor_parent_remount_mutation(
@@ -7510,6 +7627,47 @@ exit 37
                     errors,
                 )
 
+    def test_helper_background_topology_runs_asynchronously_and_is_rejected(
+        self,
+    ):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="helper-background-topology-",
+            dir=artifact_root,
+        ) as temporary:
+            marker = Path(temporary) / "completed"
+            script = (
+                "helper() {\n"
+                "  if true; then\n"
+                "    /bin/sleep 0.2\n"
+                '    printf "done\\n" > "$1"\n'
+                "  fi &\n"
+                "}\n"
+                'helper "$1"\n'
+                'test ! -e "$1"\n'
+                "wait\n"
+                'test -e "$1"\n'
+            )
+            completed = subprocess.run(
+                ["/bin/bash", "-c", script, "--", str(marker)],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                marker.read_text(encoding="ascii"),
+                "done\n",
+            )
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    script,
+                    label="helper background topology runtime",
+                )
+            )
+
     def test_indexed_alias_runtime_reaches_raw_membership_and_is_rejected(self):
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
@@ -8936,6 +9094,51 @@ exit 37
                         publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
                             script,
                             label="cgroup path reassignment runtime",
+                        )
+            )
+            (fake_cgroup / "cgroup.procs").unlink()
+            loop_script = (
+                        'cgroup_path="$1"\n'
+                        'for cgroup_path in "$2"; do\n'
+                        "  true\n"
+                        "done\n"
+                        'printf \'%s\\n\' "$$" > "$cgroup_path/cgroup.procs"\n'
+            )
+            completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "-c",
+                            loop_script,
+                            "--",
+                            str(raw_cgroup),
+                            str(fake_cgroup),
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertTrue((fake_cgroup / "cgroup.procs").exists())
+            self.assertTrue(
+                        publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                            loop_script,
+                            label="protected loop target runtime",
+                        )
+            )
+
+        for valid_loop in (
+            "for ordinary in one two; do\n"
+            "  true\n"
+            "done\n",
+            "select ordinary in one; do\n"
+            "  break\n"
+            "done < /dev/null\n",
+        ):
+            self.assertFalse(
+                        publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                            valid_loop,
+                            label="ordinary loop target control",
                         )
             )
 
@@ -11258,6 +11461,11 @@ exit 37
                 "control_operator_topology": (
                     "mandatory-actions-unconditional-and-unique"
                 ),
+                "mandatory_context": (
+                    "central-top-level-control-operator-scope-free"
+                ),
+                "nested_execution_scopes": "reject-mandatory-actions",
+                "protected_loop_targets": "reject",
                 "operator_literals": "quoted-or-escaped-data",
                 "split_function_declaration": (
                     "bind-pending-name-to-brace"
@@ -11281,7 +11489,7 @@ exit 37
             },
             "helper_inventory": {
                 "definition_count": 13,
-                "body_identity": "parsed-command-digest",
+                "body_identity": "parsed-command-topology-scope-digest",
                 "multiplicity": "exact",
                 "ordering": "insensitive",
                 "entrypoint_body": "separately-reviewed",
@@ -11441,6 +11649,14 @@ exit 37
             (
                 ("shell_surface", "control_operator_topology"),
                 "discard",
+            ),
+            (
+                ("shell_surface", "mandatory_context"),
+                "operator-only",
+            ),
+            (
+                ("shell_surface", "protected_loop_targets"),
+                "allow",
             ),
             (
                 (
@@ -11843,6 +12059,12 @@ exit 37
             ("if-false", "if false; then\n", "\nfi"),
             ("while-false", "while false; do\n", "\ndone"),
             ("and-list", "set -e\nfalse && \\\n", ""),
+            (
+                "command-substitution",
+                "set -e\nchecker_result=$(\n",
+                "\n) || true",
+            ),
+            ("subshell", "set -e\n(\n", "\n) || true"),
         ):
             with self.subTest(runtime_wrapper=label):
                 completed = subprocess.run(
@@ -11881,6 +12103,21 @@ exit 37
                 )
             ):
                 with self.subTest(checker_control_flow=label):
+                    self.assertTrue(
+                        workflow_has_raw_builder_cgroup_membership_read(
+                            changed
+                        )
+                    )
+                    self.assertIn(
+                        "raw builder cgroup membership read differs",
+                        publisher_boundary_errors(changed),
+                    )
+            for label, changed in (
+                generate_membership_checker_nested_execution_mutations(
+                    self.text
+                )
+            ):
+                with self.subTest(checker_nested_execution=label):
                     self.assertTrue(
                         workflow_has_raw_builder_cgroup_membership_read(
                             changed
@@ -12008,6 +12245,19 @@ exit 37
                 self.text
             ):
                 with self.subTest(mandatory_operator=label):
+                    self.assertTrue(
+                        workflow_has_raw_builder_cgroup_membership_read(
+                            changed
+                        )
+                    )
+                    self.assertIn(
+                        "raw builder cgroup membership read differs",
+                        publisher_boundary_errors(changed),
+                    )
+            for label, changed in (
+                generate_mandatory_control_scope_mutations(self.text)
+            ):
+                with self.subTest(mandatory_control_scope=label):
                     self.assertTrue(
                         workflow_has_raw_builder_cgroup_membership_read(
                             changed

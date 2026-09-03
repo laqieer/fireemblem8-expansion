@@ -1258,6 +1258,19 @@ class VerifyCliCwdTests(unittest.TestCase):
                     "isolated candidate build differs",
                 ):
                     verify_mod._parse_workflow_structure_text(changed)
+            for (
+                label,
+                changed,
+            ) in patch_workflow_tests.generate_membership_checker_nested_execution_mutations(
+                original
+            ):
+                with self.subTest(
+                    membership_checker_nested_execution=label
+                ), self.assertRaisesRegex(
+                    ValueError,
+                    "isolated candidate build differs",
+                ):
+                    verify_mod._parse_workflow_structure_text(changed)
             verify_mod._parse_workflow_structure_text(
                 patch_workflow_tests.reformatted_cgroup_initializer_control(
                     original
@@ -1284,6 +1297,19 @@ class VerifyCliCwdTests(unittest.TestCase):
             ):
                 with self.subTest(
                     mandatory_operator=label
+                ), self.assertRaisesRegex(
+                    ValueError,
+                    "isolated candidate build differs",
+                ):
+                    verify_mod._parse_workflow_structure_text(changed)
+            for (
+                label,
+                changed,
+            ) in patch_workflow_tests.generate_mandatory_control_scope_mutations(
+                original
+            ):
+                with self.subTest(
+                    mandatory_control_scope=label
                 ), self.assertRaisesRegex(
                     ValueError,
                     "isolated candidate build differs",
