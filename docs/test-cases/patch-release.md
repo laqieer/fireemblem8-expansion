@@ -256,6 +256,14 @@ operator, indirection, scalar and array aliases, `+=`, and indexed assignment.
 A positional-alias runtime control proves the hidden read. Any other literal
 or resolved `cgroup.procs` path fails closed unless it is the exact initial
 join write or exact supervisor `mapfile` read; unrelated `$2` forms stay valid.
+That safe read is authorized only after the exact bind, read-only remount,
+single canonical supervisor assignment, and directory-inode verification.
+Literal, alias, parameter-operator, append, indexed/associative array, and
+`unset` reassignments invalidate it before the safe line. Raw-root filename
+glob, brace, bracket, extglob, command/process/arithmetic substitution, tilde,
+and other dynamic syntax fail closed. Executable `cgroup{.,_}procs` and
+`cgroup.proc?` controls both read the raw marker after the safe supervisor read
+without the guard.
 Decoded recursive `/dev` mount targets are
 emitted through NUL-delimited trusted JSON parsing, staged through checked
 root-owned regular temp files under `/mnt/supervisor`, unmounted deepest-first,
@@ -347,7 +355,8 @@ archival-lane behavior changes.
   indexed/associative array mutations plus the executable hidden-read control,
   positional `$1`/`${1}` direct/alias/operator/array mutations plus runtime,
   unknown-root rejection and unrelated-parameter controls, launcher
-  `125`/`126` transport controls, recursive
+  `125`/`126` transport controls, supervisor reassignment mutations and
+  executable brace/glob filename controls, recursive
   command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions
   through inline `else`/brace/case/loop forms, `setsid`-wrapped and common

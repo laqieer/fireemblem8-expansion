@@ -135,7 +135,15 @@ aliases, and appends. A second runtime control proves a positional alias can
 otherwise read the raw marker. Any `cgroup.procs` reference not structurally
 equal to the exact join write or supervisor `mapfile` read fails closed, even
 from an unknown root; unrelated arrays and other positional parameters remain
-accepted.
+accepted. The supervisor read is authorized only after the exact bind,
+read-only remount, one canonical
+`supervisor_cgroup=/mnt/supervisor/cgroup` assignment, and directory-inode
+verification. Literal, aliased, operator, append, array, or `unset`
+reassignment invalidates it. Tracked raw-root filename components also reject
+glob, brace, bracket, extglob, command/process/arithmetic substitution, tilde,
+and other dynamic syntax unless the command is the exact join write.
+Executable brace and `?` glob controls otherwise read the raw marker after the
+safe supervisor read; the semantic guard rejects both.
 After the isolated builder is spawned, trusted wrapper failures emit
 only fixed `launch`, `isolated`, or `cleanup` stage codes with numeric exits,
 never candidate-controlled output. `launch` covers only the bounded,

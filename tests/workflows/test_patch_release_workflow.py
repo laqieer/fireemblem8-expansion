@@ -279,6 +279,16 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         "        unknown_root=/safe\n"
         "        unknown_leaf=cgroup.procs\n"
         '        /bin/cat "$unknown_root/$unknown_leaf" > /dev/null\n',
+        '        /bin/cat "$cgroup_path"/cgroup{.,_}procs > /dev/null\n',
+        '        /bin/cat "$cgroup_path"/cgroup.proc? > /dev/null\n',
+        '        /bin/cat "$cgroup_path"/cgroup.proc* > /dev/null\n',
+        '        /bin/cat "$cgroup_path"/cgroup.proc[s] > /dev/null\n',
+        "        shopt -s extglob\n"
+        '        /bin/cat "$cgroup_path"/cgroup.@(procs|events) > /dev/null\n',
+        '        /bin/cat "$cgroup_path/$(printf cgroup.procs)" > /dev/null\n',
+        '        /bin/cat "$cgroup_path"/<(printf cgroup.procs) > /dev/null\n',
+        '        /bin/cat "$cgroup_path/cgroup.proc$((1 + 1))" > /dev/null\n',
+        '        /bin/cat "$cgroup_path"/~ > /dev/null\n',
         '        mapfile -t leaked < "$cgroup_path/cgroup.procs"\n',
         '        /bin/cat -- "${cgroup_path}/cgroup.procs" > /dev/null\n',
         '        /usr/bin/sort -n "$cgroup_path"/cgroup.procs > /dev/null\n',
@@ -417,6 +427,26 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
             "@P",
         )
     )
+    supervisor_reassignments = (
+        "        supervisor_cgroup=/mnt/home\n",
+        "        alternate_supervisor=/mnt/home\n"
+        '        supervisor_cgroup="$alternate_supervisor"\n',
+        '        supervisor_cgroup="$cgroup_path"\n',
+        '        supervisor_cgroup="${supervisor_cgroup%/}"\n',
+        "        supervisor_cgroup+=/other\n",
+        "        supervisor_cgroup[0]=/mnt/supervisor/cgroup\n",
+        "        supervisor_cgroup[key]=/mnt/supervisor/cgroup\n",
+        "        declare -a supervisor_cgroup=(/mnt/supervisor/cgroup)\n",
+        "        declare -A supervisor_cgroup=([key]=/mnt/supervisor/cgroup)\n",
+        "        unset supervisor_cgroup\n",
+    )
+    for index, mutation in enumerate(supervisor_reassignments):
+        changed = workflow.replace(marker, mutation + marker, 1)
+        if changed == workflow:
+            raise AssertionError(
+                "supervisor reassignment mutation marker differs"
+            )
+        yield f"supervisor-reassignment-{index}", changed
     for index, mutation in enumerate(mutations):
         changed = workflow.replace(marker, marker + mutation, 1)
         if changed == workflow:
@@ -6616,6 +6646,67 @@ exit 37
                 )
             )
 
+    def test_dynamic_filename_runtime_brace_and_glob_reach_raw_membership(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="dynamic-raw-cgroup-read-",
+            dir=artifact_root,
+        ) as temporary:
+            sandbox = Path(temporary)
+            raw_cgroup = sandbox / "raw"
+            supervisor_cgroup = sandbox / "supervisor"
+            raw_cgroup.mkdir()
+            supervisor_cgroup.mkdir()
+            (raw_cgroup / "cgroup.procs").write_text(
+                "raw-dynamic-marker\n",
+                encoding="ascii",
+            )
+            (raw_cgroup / "cgroup_procs").write_text(
+                "brace-decoy-marker\n",
+                encoding="ascii",
+            )
+            (supervisor_cgroup / "cgroup.procs").write_text(
+                "safe-dynamic-marker\n",
+                encoding="ascii",
+            )
+            script = (
+                'supervisor_cgroup="$2"\n'
+                'mapfile -t safe < "$supervisor_cgroup/cgroup.procs"\n'
+                'brace="$(/bin/cat "$1"/cgroup{.,_}procs)"\n'
+                'glob="$(/bin/cat "$1"/cgroup.proc?)"\n'
+                'printf "%s\\n%s\\n%s\\n" '
+                '"${safe[0]}" "$brace" "$glob"\n'
+            )
+            completed = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-c",
+                    script,
+                    "--",
+                    str(raw_cgroup),
+                    str(supervisor_cgroup),
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                completed.stdout,
+                "safe-dynamic-marker\n"
+                "raw-dynamic-marker\n"
+                "brace-decoy-marker\n"
+                "raw-dynamic-marker\n",
+            )
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    script,
+                    label="dynamic raw cgroup runtime",
+                )
+            )
+
     def test_isolated_exit_status_channel_maps_only_fixed_substages(self):
         report = isolated_failure_report_source(self.text)
         expected = {
@@ -8859,6 +8950,18 @@ exit 37
             self.assertIn("${1}", text)
             self.assertIn("unknown", text.lower())
             self.assertIn("positional", text.lower())
+        expanded_registry = " ".join(
+            (
+                expected_result,
+                " ".join(entry["actions"].split()),
+                " ".join(entry["limitations"].split()),
+            )
+        )
+        for text in (overview, case, expanded_registry):
+            self.assertIn("canonical", text)
+            self.assertIn("reassignment", text.lower())
+            self.assertIn("brace", text)
+            self.assertIn("glob", text)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)

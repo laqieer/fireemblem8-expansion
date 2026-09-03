@@ -137,6 +137,22 @@ _SHELL_ARRAY_EXPANSION_RE = re.compile(
 _RAW_CGROUP_ROOT_MARKER = "\x00raw-cgroup-root\x00"
 _AMBIGUOUS_TRACKED_PARAMETER_MARKER = "\x00ambiguous-tracked-parameter\x00"
 _AMBIGUOUS_ARRAY_ALIAS_MARKER = "\x00ambiguous-array-alias\x00"
+_RAW_CGROUP_DYNAMIC_FILENAME_MARKERS = (
+    "$",
+    "`",
+    "*",
+    "?",
+    "[",
+    "]",
+    "{",
+    "}",
+    "~",
+    "<(",
+    ">(",
+    "+(",
+    "@(",
+    "!(",
+)
 
 
 @dataclass(frozen=True)
@@ -2303,37 +2319,112 @@ def _resolve_shell_aliases(text: str, aliases: dict[str, str]) -> str:
     return resolved
 
 
+def _raw_cgroup_suffix_has_dynamic_filename(text: str) -> bool:
+    return any(
+        marker in suffix
+        for suffix in text.split(_RAW_CGROUP_ROOT_MARKER)[1:]
+        for marker in _RAW_CGROUP_DYNAMIC_FILENAME_MARKERS
+    )
+
+
 def has_forbidden_raw_builder_cgroup_membership_read(
     script: str,
     *,
     label: str,
 ) -> bool:
-    aliases = {
-        "1": _RAW_CGROUP_ROOT_MARKER,
-        "cgroup_path": _RAW_CGROUP_ROOT_MARKER,
-    }
+    alias_scopes = [
+        {
+            "1": _RAW_CGROUP_ROOT_MARKER,
+            "cgroup_path": _RAW_CGROUP_ROOT_MARKER,
+        }
+    ]
+    function_depth = 0
+    supervisor_assignments = 0
+    saw_supervisor_bind = False
+    saw_supervisor_readonly_remount = False
+    saw_supervisor_inode_verification = False
     try:
         commands = split_bash_simple_command_strings(script, label=label)
         for command_text in commands:
+            if re.fullmatch(
+                r"[A-Za-z_][A-Za-z0-9_]*\(\) \{",
+                command_text,
+            ):
+                if function_depth > 0:
+                    nested_aliases = dict(alias_scopes[-1])
+                    nested_aliases.pop("1", None)
+                    alias_scopes.append(nested_aliases)
+                function_depth += 1
+                continue
+            if command_text == "}":
+                if function_depth > 1:
+                    alias_scopes.pop()
+                function_depth = max(0, function_depth - 1)
+                continue
+            aliases = alias_scopes[-1]
             tokens = _parse_shell_tokens(command_text, label=label)
             token_texts = _token_texts(tokens)
-            if token_texts in {
-                (
-                    "printf",
-                    "%s\\n",
-                    "$$",
-                    ">",
-                    "$cgroup_path/cgroup.procs",
-                ),
-                (
-                    "mapfile",
-                    "-t",
-                    "cgroup_members",
-                    "<",
-                    "$supervisor_cgroup/cgroup.procs",
-                ),
-            }:
+            if token_texts == (
+                "printf",
+                "%s\\n",
+                "$$",
+                ">",
+                "$cgroup_path/cgroup.procs",
+            ):
                 continue
+            if token_texts == (
+                "/usr/bin/mount",
+                "--bind",
+                "$cgroup_path",
+                "/mnt/supervisor/cgroup",
+            ):
+                saw_supervisor_bind = True
+            elif token_texts == (
+                "/usr/bin/mount",
+                "-o",
+                "remount,bind,ro,nosuid,nodev,noexec",
+                "/mnt/supervisor/cgroup",
+            ):
+                saw_supervisor_readonly_remount = (
+                    saw_supervisor_bind
+                )
+            elif token_texts == (
+                "test",
+                "$(/usr/bin/stat -Lc %d:%i $cgroup_path)",
+                "=",
+                "$(/usr/bin/stat -Lc %d:%i $supervisor_cgroup)",
+            ):
+                saw_supervisor_inode_verification = (
+                    saw_supervisor_bind
+                    and saw_supervisor_readonly_remount
+                    and supervisor_assignments == 1
+                    and aliases.get("supervisor_cgroup")
+                    == "/mnt/supervisor/cgroup"
+                )
+                if saw_supervisor_inode_verification:
+                    continue
+                return True
+            if token_texts == (
+                "mapfile",
+                "-t",
+                "cgroup_members",
+                "<",
+                "$supervisor_cgroup/cgroup.procs",
+            ):
+                if (
+                    supervisor_assignments == 1
+                    and aliases.get("supervisor_cgroup")
+                    == "/mnt/supervisor/cgroup"
+                    and saw_supervisor_inode_verification
+                ):
+                    continue
+                return True
+            if (
+                token_texts
+                and posixpath.basename(token_texts[0]) == "unset"
+                and "supervisor_cgroup" in token_texts[1:]
+            ):
+                return True
             array_declaration = (
                 bool(token_texts)
                 and posixpath.basename(token_texts[0])
@@ -2347,6 +2438,11 @@ def has_forbidden_raw_builder_cgroup_membership_read(
             for token in tokens:
                 resolved = _resolve_shell_aliases(token.text, aliases)
                 if _AMBIGUOUS_TRACKED_PARAMETER_MARKER in resolved:
+                    return True
+                if (
+                    _RAW_CGROUP_ROOT_MARKER in resolved
+                    and _raw_cgroup_suffix_has_dynamic_filename(resolved)
+                ):
                     return True
                 if (
                     _AMBIGUOUS_ARRAY_ALIAS_MARKER in resolved
@@ -2365,6 +2461,8 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 )
                 if indexed_assignment is not None:
                     name = indexed_assignment.group("name")
+                    if name == "supervisor_cgroup":
+                        return True
                     index = _resolve_shell_aliases(
                         indexed_assignment.group("index"),
                         aliases,
@@ -2408,6 +2506,20 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 is_array_literal = assignment.group("value").startswith(
                     "("
                 )
+                if name == "supervisor_cgroup":
+                    supervisor_assignments += 1
+                    if (
+                        supervisor_assignments != 1
+                        or assignment.group("append")
+                        or array_declaration
+                        or is_array_literal
+                        or value != "/mnt/supervisor/cgroup"
+                        or not saw_supervisor_bind
+                        or not saw_supervisor_readonly_remount
+                    ):
+                        return True
+                    aliases[name] = value
+                    continue
                 if (
                     (array_declaration or is_array_literal)
                     and (
@@ -2431,6 +2543,8 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                         r"[A-Za-z_][A-Za-z0-9_]*",
                         token.text,
                     ):
+                        if token.text == "supervisor_cgroup":
+                            return True
                         aliases.setdefault(
                             token.text,
                             _AMBIGUOUS_ARRAY_ALIAS_MARKER,
