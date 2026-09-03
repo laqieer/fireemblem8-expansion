@@ -1573,6 +1573,9 @@ declaration order produces identical authority. State/source/domain/
 combination/depth/time cap fixtures reject rather than returning a partial
 census, with the time cap enforced independently for each concrete
 standalone-target or combined-root fallback/domain/origin probe state.
+Environment-origin graph variants are spawned only for names observed as
+loaded-source defaults or actual undefined authority; explicit graph
+assignments collapse that unrelated environment dimension.
 The combined-root GNU Make database comparison establishes whether any
 requested target is `MAKECMDGOALS`-sensitive; standalone checks remain
 authoritative for every concrete fallback/domain/origin state. A changed

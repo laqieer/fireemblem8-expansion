@@ -270,6 +270,10 @@ authentic recipe-only census evidence, and recipe-only finite domains remain in
 the observed census without spawning closure-expansion variants. Definition-dependency expansion is
 scoped to the authoritative sources GNU Make actually loaded, so an alternate
 branch cannot backfill an unobserved selector into another branch's census.
+Process-environment variants are likewise driven by authentic observations:
+only names that the loaded sources treat as ambient defaults or actually
+undefined authority spawn environment-origin graph variants; explicit
+Makefile-assigned graph selectors do not.
 State, combination, depth, source,
 domain, subprocess, and one-hour per concrete standalone-target or
 combined-root fallback/domain/origin probe-state bounds all fail closed on

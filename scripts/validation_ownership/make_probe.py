@@ -13,7 +13,9 @@ import struct
 import subprocess
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Lock
 from typing import Any, Iterable
 
 
@@ -40,10 +42,12 @@ MAX_DISCOVERED_SOURCES = 4096
 MAX_DISCOVERED_DOMAINS = 512
 MAX_PROBE_SECONDS = 3600
 REGISTERED_COMMAND_CACHE_LIMIT = 8192
+MAX_PARALLEL_REGISTERED_COMMANDS = 32
 TRACE_RE = re.compile(
     r"^(?P<source>.+?):[0-9]+: "
-    r"(?:(?:update )?target) '(?P<target>[^']+)'"
-    r"(?: due to: (?P<due>.*))?$"
+    r"(?:(?:(?:update )?target) '(?P<target>[^']+)'"
+    r"(?: due to: (?P<due>.*))?"
+    r"|target '(?P<missing_target>[^']+)' does not exist)$"
 )
 CONSIDER_RE = re.compile(
     r"^(?P<indent> *)Considering target file '(?P<target>[^']+)'\.$"
@@ -104,6 +108,9 @@ class MakeProbeError(RuntimeError):
 
 
 _REGISTERED_COMMAND_CACHE: dict[tuple[Any, ...], bytes] = {}
+_REGISTERED_COMMAND_CACHE_LOCK = Lock()
+_SCANINC_COMPILE_LOCK = Lock()
+_COMMAND_ROOT_LOCK = Lock()
 
 
 def _prepare_confined_scratch(loader: Any, scratch_root: Path) -> Path:
@@ -394,6 +401,7 @@ def _sandbox_run(
     work: Path,
     *,
     argv: list[str],
+    config_name: str | None = None,
     event_path: Path | None = None,
     environment: dict[str, str],
     mapping_path: Path | None = None,
@@ -431,7 +439,9 @@ def _sandbox_run(
             )
         ],
     }
-    config_path = work.parent / "sandbox.json"
+    config_path = work.parent / (
+        "sandbox.json" if config_name is None else f"{config_name}.json"
+    )
     config_path.write_text(
         json.dumps(config, sort_keys=True, separators=(",", ":")),
         encoding="utf-8",
@@ -903,11 +913,13 @@ def _make_reference_census(
     dict[str, set[str]],
     dict[str, set[str]],
     dict[str, set[str]],
+    dict[str, set[str]],
     dict[str, dict[str, set[str]]],
 ]:
     all_by_path: dict[str, set[str]] = {}
     graph_by_path: dict[str, set[str]] = {}
     recipe_by_path: dict[str, set[str]] = {}
+    introspection_by_path: dict[str, set[str]] = {}
     dependencies_by_path: dict[str, dict[str, set[str]]] = {}
     for path, entry in sorted(loader.entries.items()):
         if (
@@ -930,6 +942,7 @@ def _make_reference_census(
         references: set[str] = set()
         graph_references: set[str] = set()
         recipe_references: set[str] = set()
+        introspection_references: set[str] = set()
         path_dependencies: dict[str, set[str]] = {}
         defaults = set()
         current_define: str | None = None
@@ -950,6 +963,10 @@ def _make_reference_census(
                 define_references = _make_reference_names(line)
                 references.update(define_references)
                 path_dependencies[current_define].update(define_references)
+                introspection_references.update(
+                    match.group("name")
+                    for match in INTROSPECTION_VARIABLE_RE.finditer(line)
+                )
                 if "$($" in line or "${$" in line:
                     computed_variables.add(current_define)
                 if "$(eval" in line or "${eval" in line:
@@ -958,6 +975,10 @@ def _make_reference_census(
 
             line_references = _make_reference_names(line)
             references.update(line_references)
+            introspection_references.update(
+                match.group("name")
+                for match in INTROSPECTION_VARIABLE_RE.finditer(line)
+            )
             is_recipe = raw_line.startswith("\t")
             assignment = (
                 None if is_recipe else VARIABLE_ASSIGNMENT_RE.match(line)
@@ -1027,11 +1048,13 @@ def _make_reference_census(
         all_by_path[path] = references
         graph_by_path[path] = graph_references
         recipe_by_path[path] = recipe_references
+        introspection_by_path[path] = introspection_references
         dependencies_by_path[path] = path_dependencies
     return (
         all_by_path,
         graph_by_path,
         recipe_by_path,
+        introspection_by_path,
         dependencies_by_path,
     )
 
@@ -1056,6 +1079,7 @@ def _target_variable_usage(
         dict[str, set[str]],
         dict[str, set[str]],
         dict[str, set[str]],
+        dict[str, set[str]],
         dict[str, dict[str, set[str]]],
     ],
 ) -> dict[str, set[str]]:
@@ -1072,12 +1096,17 @@ def _source_variable_usage(
         dict[str, set[str]],
         dict[str, set[str]],
         dict[str, set[str]],
+        dict[str, set[str]],
         dict[str, dict[str, set[str]]],
     ],
 ) -> dict[str, set[str]]:
-    all_by_path, graph_by_path, recipe_by_path, dependencies_by_path = (
-        reference_census
-    )
+    (
+        all_by_path,
+        graph_by_path,
+        recipe_by_path,
+        introspection_by_path,
+        dependencies_by_path,
+    ) = reference_census
     dependencies: dict[str, set[str]] = {}
     for source in sources:
         for name, referenced_names in dependencies_by_path.get(
@@ -1109,14 +1138,37 @@ def _source_variable_usage(
         },
         dependencies,
     )
+    introspection = _expand_make_references(
+        {
+            name
+            for source in sources
+            for name in introspection_by_path.get(source, ())
+        },
+        dependencies,
+    )
     observed.update(graph)
     observed.update(recipe)
     return {
         "all": observed,
         "graph": graph,
+        "introspection": introspection,
         "recipe": recipe,
         "recipe_only": recipe - graph,
     }
+
+
+def _environment_sensitive_names(
+    *,
+    defaults: set[str],
+    usage: dict[str, set[str]],
+    undefined_names: Iterable[str],
+    ambient_undefined_names: set[str],
+    environment_names: set[str],
+) -> set[str]:
+    sensitive = (defaults & usage["all"]) | (
+        set(undefined_names) & ambient_undefined_names
+    )
+    return sensitive & environment_names
 
 
 def _variant_sources(variant: dict[str, Any]) -> set[str]:
@@ -1199,16 +1251,19 @@ def _prepare_make_root(
 
 def _prepare_command_root(base: Path) -> Path:
     root = base / "command-root"
-    for directory in ("dev", "repo", "usr", "work"):
-        (root / directory).mkdir(parents=True, exist_ok=True)
-    for name, target in (
-        ("bin", "usr/bin"),
-        ("lib", "usr/lib"),
-        ("lib64", "usr/lib64"),
-    ):
-        (root / name).symlink_to(target)
-    (root / "dev/null").touch()
-    return root
+    with _COMMAND_ROOT_LOCK:
+        for directory in ("dev", "repo", "usr", "work"):
+            (root / directory).mkdir(parents=True, exist_ok=True)
+        for name, target in (
+            ("bin", "usr/bin"),
+            ("lib", "usr/lib"),
+            ("lib64", "usr/lib64"),
+        ):
+            link = root / name
+            if not link.exists() and not link.is_symlink():
+                link.symlink_to(target)
+        (root / "dev/null").touch()
+        return root
 
 
 def probe_generated_registry(
@@ -1274,46 +1329,47 @@ def probe_generated_registry(
         }
 def _compile_scaninc(tree: Path, work: Path) -> Path:
     output = work / "scaninc"
-    if output.exists():
+    with _SCANINC_COMPILE_LOCK:
+        if output.exists():
+            return output
+        sources = [
+            tree / "tools/scaninc" / name
+            for name in (
+                "scaninc.cpp",
+                "c_file.cpp",
+                "asm_file.cpp",
+                "source_file.cpp",
+            )
+        ]
+        completed = subprocess.run(
+            [
+                "/usr/bin/g++",
+                "-Wall",
+                "-Werror",
+                "-std=c++11",
+                "-O2",
+                *(str(path) for path in sources),
+                "-o",
+                str(output),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            env={
+                "HOME": "/nonexistent",
+                "LANG": "C",
+                "LC_ALL": "C",
+                "PATH": "/usr/bin:/bin",
+                "TZ": "UTC",
+            },
+        )
+        if completed.returncode != 0:
+            raise MakeProbeError(
+                "cannot compile registered scaninc authority: "
+                + completed.stderr.strip()
+            )
+        output.chmod(0o755)
         return output
-    sources = [
-        tree / "tools/scaninc" / name
-        for name in (
-            "scaninc.cpp",
-            "c_file.cpp",
-            "asm_file.cpp",
-            "source_file.cpp",
-        )
-    ]
-    completed = subprocess.run(
-        [
-            "/usr/bin/g++",
-            "-Wall",
-            "-Werror",
-            "-std=c++11",
-            "-O2",
-            *(str(path) for path in sources),
-            "-o",
-            str(output),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        env={
-            "HOME": "/nonexistent",
-            "LANG": "C",
-            "LC_ALL": "C",
-            "PATH": "/usr/bin:/bin",
-            "TZ": "UTC",
-        },
-    )
-    if completed.returncode != 0:
-        raise MakeProbeError(
-            "cannot compile registered scaninc authority: "
-            + completed.stderr.strip()
-        )
-    output.chmod(0o755)
-    return output
 
 
 def _compile_gbagfx(tree: Path, output: Path) -> dict[str, str]:
@@ -1394,6 +1450,24 @@ def _registered_command_cache_key(
     )
 
 
+def _is_parallel_registered_command(
+    *,
+    cache_namespace: tuple[Any, ...],
+    command: str,
+    contract: dict[str, Any],
+    environment: dict[str, str],
+) -> bool:
+    return (
+        _registered_command_cache_key(
+            cache_namespace=cache_namespace,
+            command=command,
+            contract=contract,
+            environment=environment,
+        )
+        is not None
+    )
+
+
 def _execute_registered_command(
     command: str,
     contract: dict[str, Any],
@@ -1417,9 +1491,11 @@ def _execute_registered_command(
         environment=environment,
     )
     if cache_key is not None:
-        cached = _REGISTERED_COMMAND_CACHE.pop(cache_key, None)
+        with _REGISTERED_COMMAND_CACHE_LOCK:
+            cached = _REGISTERED_COMMAND_CACHE.pop(cache_key, None)
         if cached is not None:
-            _REGISTERED_COMMAND_CACHE[cache_key] = cached
+            with _REGISTERED_COMMAND_CACHE_LOCK:
+                _REGISTERED_COMMAND_CACHE[cache_key] = cached
             return cached
     executed = command
     if contract["id"] == "banim-scaninc-inputs":
@@ -1462,6 +1538,7 @@ def _execute_registered_command(
         root,
         command_work,
         argv=argv,
+        config_name=f"sandbox-{_command_hash(command)}",
         environment={
             "HOME": "/nonexistent",
             "LANG": "C",
@@ -1489,9 +1566,10 @@ def _execute_registered_command(
         )
     output = completed.stdout.encode("utf-8")
     if cache_key is not None:
-        if len(_REGISTERED_COMMAND_CACHE) >= REGISTERED_COMMAND_CACHE_LIMIT:
-            _REGISTERED_COMMAND_CACHE.pop(next(iter(_REGISTERED_COMMAND_CACHE)))
-        _REGISTERED_COMMAND_CACHE[cache_key] = output
+        with _REGISTERED_COMMAND_CACHE_LOCK:
+            if len(_REGISTERED_COMMAND_CACHE) >= REGISTERED_COMMAND_CACHE_LIMIT:
+                _REGISTERED_COMMAND_CACHE.pop(next(iter(_REGISTERED_COMMAND_CACHE)))
+            _REGISTERED_COMMAND_CACHE[cache_key] = output
     return output
 
 
@@ -1510,7 +1588,7 @@ def _trace_records(output: str) -> dict[str, dict[str, Any]]:
     for line in lines:
         match = TRACE_RE.match(line)
         if match:
-            target = match.group("target")
+            target = match.group("target") or match.group("missing_target")
             current = records.setdefault(
                 target,
                 {
@@ -2079,6 +2157,8 @@ def run_probe(
                 if not unknown or public_gate:
                     break
                 replay = False
+                pending = []
+                pending_commands = set()
                 for event in unknown:
                     command = _event_command(event)
                     if command is None:
@@ -2100,20 +2180,76 @@ def run_probe(
                             "GNU Make attempted command execution without "
                             "exactly one sealed contract: " + repr(event)
                         )
-                    if any(item["command"] == command for item in mappings):
+                    if (
+                        any(item["command"] == command for item in mappings)
+                        or command in pending_commands
+                    ):
                         continue
-                    contract = matches[0]
-                    output = _execute_registered_command(
+                    pending_commands.add(command)
+                    pending.append(
+                        (
+                            command,
+                            matches[0],
+                            _event_direct_arguments(event),
+                        )
+                    )
+                if any(
+                    contract["id"] == "banim-scaninc-inputs"
+                    for _, contract, _ in pending
+                ):
+                    _compile_scaninc(tree, command_work)
+                parallel: list[tuple[str, dict[str, Any], list[str] | None]] = []
+                sequential: list[tuple[str, dict[str, Any], list[str] | None]] = []
+                for item in pending:
+                    command, contract, _ = item
+                    if _is_parallel_registered_command(
+                        cache_namespace=cache_namespace,
+                        command=command,
+                        contract=contract,
+                        environment=extra_environment,
+                    ):
+                        parallel.append(item)
+                    else:
+                        sequential.append(item)
+                outputs: dict[str, bytes] = {}
+                if parallel:
+                    with ThreadPoolExecutor(
+                        max_workers=min(
+                            MAX_PARALLEL_REGISTERED_COMMANDS,
+                            len(parallel),
+                        )
+                    ) as executor:
+                        futures = [
+                            executor.submit(
+                                _execute_registered_command,
+                                command,
+                                contract,
+                                base=base,
+                                build_output=build_output,
+                                cache_namespace=cache_namespace,
+                                command_work=command_work,
+                                direct_arguments=direct_arguments,
+                                tree=tree,
+                                environment=extra_environment,
+                            )
+                            for command, contract, direct_arguments in parallel
+                        ]
+                        for (command, _, _), future in zip(parallel, futures):
+                            outputs[command] = future.result()
+                for command, contract, direct_arguments in sequential:
+                    outputs[command] = _execute_registered_command(
                         command,
                         contract,
                         base=base,
                         build_output=build_output,
                         cache_namespace=cache_namespace,
                         command_work=command_work,
-                        direct_arguments=_event_direct_arguments(event),
+                        direct_arguments=direct_arguments,
                         tree=tree,
                         environment=extra_environment,
                     )
+                for command, contract, _ in pending:
+                    output = outputs[command]
                     mappings.append(
                         {
                             "command": command,
@@ -2225,14 +2361,8 @@ def run_probe(
             }
 
         baseline_by_group = []
-        database_baselines = []
         for group in target_groups:
             baseline_by_group.append(invoke(group))
-            database_baselines.append(
-                None
-                if group == ["validation-ownership-check"]
-                else invoke(group, database_only=True)["database_sha256"]
-            )
         loaded_sources = {"Makefile"}
         for baseline in baseline_by_group:
             loaded_sources.update(
@@ -2258,6 +2388,15 @@ def run_probe(
             for group, baseline in zip(target_groups, baseline_by_group)
             if group != ["validation-ownership-check"]
         }
+        baseline_by_target = {
+            group[0]: baseline
+            for group, baseline in zip(target_groups, baseline_by_group)
+            if group != ["validation-ownership-check"]
+        }
+        baseline_default_names = {
+            target: _external_default_names(loader, _variant_sources(baseline))
+            for target, baseline in baseline_by_target.items()
+        }
         graph_shaping_symbolic = {
             name
             for usage in target_variable_usage.values()
@@ -2272,6 +2411,16 @@ def run_probe(
         target_domain_names = {
             target: usage["graph"] & set(prerequisite_domains)
             for target, usage in target_variable_usage.items()
+        }
+        target_environment_sensitive_names = {
+            target: _environment_sensitive_names(
+                defaults=baseline_default_names[target],
+                usage=target_variable_usage[target],
+                undefined_names=baseline_by_target[target]["undefined_names"],
+                ambient_undefined_names=ambient_undefined_names,
+                environment_names=environment_names,
+            )
+            for target in baseline_by_target
         }
 
         def target_semantics(
@@ -2305,10 +2454,7 @@ def run_probe(
 
         combined_orders = [normal_targets]
         combined_baselines = [
-            (
-                invoke(order),
-                invoke(order, database_only=True)["database_sha256"],
-            )
+            invoke(order)
             for order in combined_orders
         ] if normal_targets else []
         target_goal_sensitive = {
@@ -2318,14 +2464,14 @@ def run_probe(
                     baseline_by_group[target_groups.index([target])],
                     target,
                 )
-                for combined, _ in combined_baselines
+                for combined in combined_baselines
             )
             for target in normal_targets
         }
 
         def reuse_baseline(
             baseline: dict[str, Any],
-            database_sha256: str,
+            database_sha256: str | None,
             origin: str,
             name: str,
             value: str,
@@ -2352,10 +2498,9 @@ def run_probe(
             )
             return candidate
 
-        for group, baseline, database_baseline in zip(
+        for group, baseline in zip(
             target_groups,
             baseline_by_group,
-            database_baselines,
         ):
             variant_results.append(baseline)
             if group == ["validation-ownership-check"]:
@@ -2369,41 +2514,59 @@ def run_probe(
                     else [baseline["domain_values"][name]]
                 )
                 for value in values:
-                    candidate = invoke(
-                        group,
-                        cli=(name, value),
-                        database_only=True,
-                    )
-                    signature_matches = (
-                        _variant_discovery_signature(candidate)
-                        == _variant_discovery_signature(baseline)
-                    )
                     if (
-                        candidate["database_sha256"] == database_baseline
-                        and signature_matches
+                        baseline["domain_values"][name] == value
+                        and name not in target_usage["introspection"]
                     ):
                         candidate = reuse_baseline(
                             baseline,
-                            database_baseline,
-                            "command-line",
-                            name,
-                            value,
-                        )
-                    elif (
-                        signature_matches
-                        and name not in target_usage["recipe"]
-                    ):
-                        candidate = reuse_baseline(
-                            baseline,
-                            candidate["database_sha256"],
+                            None,
                             "command-line",
                             name,
                             value,
                         )
                     else:
-                        candidate = invoke(group, cli=(name, value))
+                        candidate = invoke(
+                            group,
+                            cli=(name, value),
+                            database_only=True,
+                        )
+                        signature_matches = (
+                            _variant_discovery_signature(candidate)
+                            == _variant_discovery_signature(baseline)
+                        )
+                        safe_reuse = signature_matches and (
+                            name not in target_usage["recipe"]
+                            or (
+                                baseline["domain_values"][name] == value
+                                and name not in target_usage["introspection"]
+                            )
+                        )
+                        if safe_reuse:
+                            candidate = reuse_baseline(
+                                baseline,
+                                candidate["database_sha256"],
+                                "command-line",
+                                name,
+                                value,
+                            )
+                        else:
+                            candidate = invoke(group, cli=(name, value))
                     variant_results.append(candidate)
-                    if name in environment_names:
+                    if name not in target_environment_sensitive_names[group[0]]:
+                        continue
+                    if (
+                        baseline["domain_values"][name] == value
+                        and name not in target_usage["introspection"]
+                    ):
+                        candidate = reuse_baseline(
+                            baseline,
+                            None,
+                            "environment",
+                            name,
+                            value,
+                        )
+                    else:
                         candidate = invoke(
                             group,
                             environment_value=(name, value),
@@ -2413,22 +2576,14 @@ def run_probe(
                             _variant_discovery_signature(candidate)
                             == _variant_discovery_signature(baseline)
                         )
-                        if (
-                            candidate["database_sha256"]
-                            == database_baseline
-                            and signature_matches
-                        ):
-                            candidate = reuse_baseline(
-                                baseline,
-                                database_baseline,
-                                "environment",
-                                name,
-                                value,
+                        safe_reuse = signature_matches and (
+                            name not in target_usage["recipe"]
+                            or (
+                                baseline["domain_values"][name] == value
+                                and name not in target_usage["introspection"]
                             )
-                        elif (
-                            signature_matches
-                            and name not in target_usage["recipe"]
-                        ):
+                        )
+                        if safe_reuse:
                             candidate = reuse_baseline(
                                 baseline,
                                 candidate["database_sha256"],
@@ -2441,7 +2596,7 @@ def run_probe(
                                 group,
                                 environment_value=(name, value),
                             )
-                        variant_results.append(candidate)
+                    variant_results.append(candidate)
 
         variants_by_target: dict[
             str,
@@ -2487,6 +2642,7 @@ def run_probe(
             target: {
                 "all": set(),
                 "graph": set(),
+                "introspection": set(),
                 "recipe": set(),
                 "recipe_only": set(),
             }
@@ -2521,6 +2677,15 @@ def run_probe(
                 target_variable_usage[target][field].update(usage[field])
             target_external_default_names[target].update(
                 defaults & usage["all"]
+            )
+            target_environment_sensitive_names[target].update(
+                _environment_sensitive_names(
+                    defaults=defaults,
+                    usage=usage,
+                    undefined_names=variant["undefined_names"],
+                    ambient_undefined_names=ambient_undefined_names,
+                    environment_names=environment_names,
+                )
             )
             observed_domains = usage["all"] & set(prerequisite_domains)
             graph_domains = usage["graph"] & set(prerequisite_domains)
@@ -2566,7 +2731,7 @@ def run_probe(
                     else [variant["domain_values"][name]]
                 )
                 origins = ["command-line"]
-                if name in environment_names:
+                if name in target_environment_sensitive_names[target]:
                     origins.append("environment")
                 for value in values:
                     for origin in origins:

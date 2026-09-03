@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest import mock
 
@@ -535,6 +536,62 @@ class OwnershipGraphTests(unittest.TestCase):
             reporter._MAKE_AUTHORITY_CACHE.clear()
             reporter._MAKE_AUTHORITY_CACHE.update(cache_before)
 
+    def test_make_authority_parse_merges_parallel_target_results(self):
+        cache_before = dict(reporter._MAKE_AUTHORITY_CACHE)
+        calls = []
+
+        def fake_probe(selected_loader, targets, *args, **kwargs):
+            del selected_loader, args, kwargs
+            targets = tuple(sorted(targets))
+            calls.append(targets)
+            return {
+                target: {
+                    "dynamic_dependencies": [],
+                    "prerequisite_domain_census": {
+                        "generated_paths": [],
+                        "used": [],
+                    },
+                    "variable_census": {
+                        "ambient_undefined": [],
+                        "trusted_builtins": [],
+                        "scoped_variables": [],
+                        "escaped_literals": [],
+                    },
+                    "record": {
+                        "symbolic_recipe_names": [],
+                    },
+                }
+                for target in targets
+            }
+
+        try:
+            reporter._MAKE_AUTHORITY_CACHE.clear()
+            with mock.patch(
+                "scripts.validation_ownership.reporter._make_authority_executor",
+                side_effect=lambda max_workers: ThreadPoolExecutor(
+                    max_workers=max_workers
+                ),
+            ), mock.patch(
+                "scripts.validation_ownership.make_probe.run_probe",
+                side_effect=fake_probe,
+            ):
+                parsed = reporter._parse_make_authorities(
+                    self.loader,
+                    {"target-a", "target-b"},
+                    require_dynamic_contracts=True,
+                )
+            self.assertEqual(
+                calls,
+                [("target-a",), ("target-b",)],
+            )
+            self.assertEqual(
+                set(parsed),
+                {"target-a", "target-b"},
+            )
+        finally:
+            reporter._MAKE_AUTHORITY_CACHE.clear()
+            reporter._MAKE_AUTHORITY_CACHE.update(cache_before)
+
     def test_unused_make_domain_cannot_be_backfilled_from_registry(self):
         ambient = reporter.load_make_ambient_contracts(
             self.loader,
@@ -972,7 +1029,12 @@ class OwnershipGraphTests(unittest.TestCase):
     def test_stale_make_workflow_case_and_generated_targets_reject(self):
         mutations = (
             ("owner.host-runtime", "step", "Missing workflow step", "stale workflow step"),
-            ("owner.case", "case_id", "TC-WORKFLOW-MISSING-001", "stale tester case"),
+            (
+                "owner.case",
+                "case_id",
+                "TC-WORKFLOW-MISSING-001",
+                "tester-case consistency authority|stale tester case",
+            ),
         )
         for node_id, field, value, message in mutations:
             with self.subTest(node=node_id):
@@ -1294,6 +1356,39 @@ class OwnershipGraphTests(unittest.TestCase):
             self.assertEqual(first, {"cached": True})
             self.assertEqual(second, {"cached": True})
             self.assertEqual(validate.call_count, 1)
+        finally:
+            reporter._VALIDATED_GRAPH_CACHE.clear()
+            reporter._VALIDATED_GRAPH_CACHE.update(cache_before)
+
+    def test_validate_graph_cache_distinguishes_entry_sets(self):
+        cache_before = dict(reporter._VALIDATED_GRAPH_CACHE)
+        try:
+            reporter._VALIDATED_GRAPH_CACHE.clear()
+
+            def fake_validate(graph, loader, entries):
+                del graph, loader
+                return {"entry_count": len(entries)}
+
+            with mock.patch.object(
+                reporter,
+                "_validate_semantics",
+                side_effect=fake_validate,
+            ) as validate:
+                fixture_model = reporter.validate_graph(
+                    self.graph,
+                    self.schema,
+                    self.loader,
+                    self.fixture_entries,
+                )
+                full_model = reporter.validate_graph(
+                    self.graph,
+                    self.schema,
+                    self.loader,
+                    self.entries,
+                )
+            self.assertEqual(fixture_model, {"entry_count": len(self.fixture_entries)})
+            self.assertEqual(full_model, {"entry_count": len(self.entries)})
+            self.assertEqual(validate.call_count, 2)
         finally:
             reporter._VALIDATED_GRAPH_CACHE.clear()
             reporter._VALIDATED_GRAPH_CACHE.update(cache_before)

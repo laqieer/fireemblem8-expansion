@@ -15,6 +15,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +37,7 @@ _MAKE_AUTHORITY_CACHE: dict[
     dict[str, dict[str, Any]],
 ] = {}
 _MAKE_AUTHORITY_CACHE_LIMIT = 64
+_MAKE_AUTHORITY_MAX_PARALLEL_TARGETS = 14
 _VALIDATED_GRAPH_CACHE: dict[
     tuple[Any, ...],
     dict[str, Any],
@@ -1524,29 +1526,25 @@ def _parse_make_authorities(
     try:
         from scripts.validation_ownership import make_probe
 
-        result = make_probe.run_probe(
-            loader,
-            requested_targets,
-            prerequisite_domains,
-            dynamic_contracts,
-            declared_external_names=set(ambient_contracts),
-            environment_names=set(ambient_contracts),
-            generated_path_names=set(generated_paths),
-            symbolic_recipe_names=symbolic_recipe_names,
-            ambient_undefined_names={
+        common_args = {
+            "declared_external_names": set(ambient_contracts),
+            "environment_names": set(ambient_contracts),
+            "generated_path_names": set(generated_paths),
+            "symbolic_recipe_names": symbolic_recipe_names,
+            "ambient_undefined_names": {
                 name
                 for name, contract in ambient_contracts.items()
                 if contract["category"] == "undefined"
             },
-            escaped_literal_names=escaped_literals,
-            scoped_variable_names=scoped_variables,
-            trusted_builtin_names=trusted_builtins,
-            trusted_reference_names={
+            "escaped_literal_names": escaped_literals,
+            "scoped_variable_names": scoped_variables,
+            "trusted_builtin_names": trusted_builtins,
+            "trusted_reference_names": {
                 *trusted_builtins,
                 *scoped_variables,
                 *escaped_literals,
             },
-            scratch_root=(
+            "scratch_root": (
                 loader.scratch_root
                 if loader.scratch_root is not None
                 else (
@@ -1556,7 +1554,40 @@ def _parse_make_authorities(
                     / "validation-ownership"
                 )
             ),
-        )
+        }
+
+        def probe_targets(targets: set[str]) -> dict[str, dict[str, Any]]:
+            return make_probe.run_probe(
+                loader,
+                targets,
+                prerequisite_domains,
+                dynamic_contracts,
+                **common_args,
+            )
+
+        if len(requested_targets) == 1:
+            result = probe_targets(set(requested_targets))
+        else:
+            result = {}
+            ordered_targets = [
+                {target}
+                for target in sorted(requested_targets)
+            ]
+            with _make_authority_executor(
+                max_workers=min(
+                    _MAKE_AUTHORITY_MAX_PARALLEL_TARGETS,
+                    len(ordered_targets),
+                )
+            ) as executor:
+                futures = [
+                    executor.submit(
+                        probe_targets,
+                        target_set,
+                    )
+                    for target_set in ordered_targets
+                ]
+                for future in futures:
+                    result.update(future.result())
     except make_probe.MakeProbeError as error:
         raise OwnershipError(str(error)) from error
     dynamic_values = sorted(
@@ -1569,6 +1600,10 @@ def _parse_make_authorities(
         _MAKE_AUTHORITY_CACHE.pop(next(iter(_MAKE_AUTHORITY_CACHE)))
     _MAKE_AUTHORITY_CACHE[cache_key] = result
     return result
+
+
+def _make_authority_executor(max_workers: int):
+    return ThreadPoolExecutor(max_workers=max_workers)
 
 
 def _make_authority_state(
@@ -1648,6 +1683,20 @@ def _make_authority_state(
             )
         )
     return tuple(records)
+
+
+def _entries_state(
+    entries: dict[str, GitTreeEntry],
+) -> tuple[tuple[str, str, str, str], ...]:
+    return tuple(
+        (
+            path,
+            entry.mode,
+            entry.object_type,
+            entry.object_id,
+        )
+        for path, entry in sorted(entries.items())
+    )
 
 
 def _make_authority_cache_key(
@@ -2359,6 +2408,7 @@ def validate_graph(
         str(Path(loader.root).resolve(strict=True)),
         loader.revision,
         _make_authority_state(loader),
+        _entries_state(entries),
     )
     cached = _VALIDATED_GRAPH_CACHE.pop(cache_key, None)
     if cached is not None:

@@ -329,6 +329,38 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
         )
         self.assertNotIn("semantics", environment)
 
+    def test_multi_target_goal_sensitivity_skips_redundant_combined_database_probe(self):
+        directory, root, entries = self.fixture(
+            "one:\n\t@printf 'one\\n'\n"
+            "two:\n\t@printf 'two\\n'\n"
+        )
+        combined_database_argvs = []
+        original = make_probe._sandbox_run
+
+        def wrapped(*args, **kwargs):
+            argv = kwargs["argv"]
+            if (
+                "--print-data-base" in argv
+                and "one" in argv
+                and "two" in argv
+            ):
+                combined_database_argvs.append(tuple(argv))
+            return original(*args, **kwargs)
+
+        with directory, mock.patch(
+            "scripts.validation_ownership.make_probe._sandbox_run",
+            side_effect=wrapped,
+        ):
+            authority = make_probe.run_probe(
+                reporter.AuthorityLoader(root, entries),
+                {"one", "two"},
+                {},
+                {},
+                scratch_root=root / "artifacts",
+            )
+        self.assertEqual(set(authority), {"one", "two"})
+        self.assertEqual(combined_database_argvs, [])
+
     def test_external_defaults_and_undefined_names_require_sealed_domains(self):
         directory, root, entries = self.fixture(
             "MODE ?= one\n"
@@ -1543,6 +1575,136 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             [item["origin"] for item in authority["record"]["variants"]],
             ["fallback"],
         )
+
+    def test_explicit_graph_assignment_skips_environment_origin(self):
+        directory, root, entries = self.fixture(
+            "DEP := child\n"
+            "all: $(DEP)\n"
+            "child:\n\t@printf child\\n\n"
+        )
+        with directory:
+            authority = self.probe(
+                root,
+                entries,
+                domains={"DEP": {"kind": "tracked-fallback"}},
+                environment_names={"DEP"},
+            )
+        self.assertEqual(
+            [item["origin"] for item in authority["record"]["variants"]],
+            ["fallback", "command-line"],
+        )
+
+    def test_same_value_tracked_fallback_skips_database_only_probes(self):
+        directory, root, entries = self.fixture(
+            "DEP ?= child\n"
+            "all: $(DEP)\n"
+            "child:\n\t@printf child\\n\n"
+        )
+        database_argvs = []
+        original = make_probe._sandbox_run
+
+        def wrapped(*args, **kwargs):
+            argv = kwargs["argv"]
+            environment = kwargs["environment"]
+            if "--print-data-base" in argv and (
+                "DEP=child" in argv or environment.get("DEP") == "child"
+            ):
+                database_argvs.append(tuple(argv))
+            return original(*args, **kwargs)
+
+        with directory, mock.patch(
+            "scripts.validation_ownership.make_probe._sandbox_run",
+            side_effect=wrapped,
+        ):
+            authority = self.probe(
+                root,
+                entries,
+                domains={"DEP": {"kind": "tracked-fallback"}},
+                environment_names={"DEP"},
+            )
+        self.assertEqual(
+            [item["origin"] for item in authority["record"]["variants"]],
+            ["fallback", "command-line", "environment"],
+        )
+        self.assertEqual(database_argvs, [])
+
+    def test_same_value_recipe_graph_variant_reuses_baseline_without_introspection(self):
+        directory, root, entries = self.fixture(
+            "DEP ?= child\n"
+            "all: $(DEP)\n"
+            "child:\n\t@printf '%s\\n' '$(DEP)'\n"
+        )
+        with directory:
+            authority = self.probe(
+                root,
+                entries,
+                domains={"DEP": {"kind": "tracked-fallback"}},
+                environment_names={"DEP"},
+            )
+        fallback = next(
+            item
+            for item in authority["record"]["variants"]
+            if item["origin"] == "fallback"
+        )
+        command_line = next(
+            item
+            for item in authority["record"]["variants"]
+            if item["origin"] == "command-line"
+        )
+        environment = next(
+            item
+            for item in authority["record"]["variants"]
+            if item["origin"] == "environment"
+        )
+        self.assertEqual(
+            command_line["semantic_sha256"],
+            fallback["semantic_sha256"],
+        )
+        self.assertNotIn("semantics", command_line)
+        self.assertEqual(
+            environment["semantic_sha256"],
+            fallback["semantic_sha256"],
+        )
+        self.assertNotIn("semantics", environment)
+
+    def test_origin_introspection_keeps_same_value_recipe_variant_distinct(self):
+        directory, root, entries = self.fixture(
+            "DEP ?= child\n"
+            "all: $(DEP)\n"
+            "child:\n\t@printf '%s\\n' '$(origin DEP)'\n"
+        )
+        with directory:
+            authority = self.probe(
+                root,
+                entries,
+                domains={"DEP": {"kind": "tracked-fallback"}},
+                environment_names={"DEP"},
+            )
+        fallback = next(
+            item
+            for item in authority["record"]["variants"]
+            if item["origin"] == "fallback"
+        )
+        command_line = next(
+            item
+            for item in authority["record"]["variants"]
+            if item["origin"] == "command-line"
+        )
+        environment = next(
+            item
+            for item in authority["record"]["variants"]
+            if item["origin"] == "environment"
+        )
+        self.assertNotEqual(
+            command_line["semantic_sha256"],
+            fallback["semantic_sha256"],
+        )
+        self.assertIn("semantics", command_line)
+        self.assertNotEqual(
+            environment["semantic_sha256"],
+            fallback["semantic_sha256"],
+        )
+        self.assertIn("semantics", environment)
 
     def test_variant_fixed_point_caps_fail_closed(self):
         simple = "MODE ?= a\nall: $(MODE)\na b:\n\t@true\n"
