@@ -3319,7 +3319,11 @@ class ExactHandoffTests(unittest.TestCase):
                     )
             wrong_time = handoff_document(root, parent, result)
             receipt = wrong_time["handoffs"][0]["check_receipts"][0]
-            receipt["completed_at"] = "2026-09-03T00:00:00Z"
+            receipt["completed_at"] = next(
+                state["at"]
+                for state in wrong_time["handoffs"][0]["states"]
+                if state["state"] == "handed_off"
+            )
             receipt["seal"] = agent_handoff.seal_check_receipt(receipt)
             with self.assertRaisesRegex(
                 agent_handoff.HandoffDataError,
