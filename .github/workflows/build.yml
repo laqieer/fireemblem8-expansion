@@ -1680,8 +1680,13 @@ jobs:
         builder_gid=""
         builder_cgroup=""
         builder_cgroup_owned=0
-        builder_pgid=""
+        builder_session_authenticated=0
+        builder_session_id=""
+        builder_supervisor_parent_pid="$$"
         builder_supervisor_pid=""
+        builder_supervisor_starttime=""
+        builder_supervisor_state=""
+        builder_supervisor_wait_pid=""
         builder_passwd_probe_state=""
         builder_root_owned=0
         builder_uid_occupancy_state=""
@@ -1745,6 +1750,68 @@ jobs:
           output="$(builder_group_pids "$1")" || return 1
           test -z "$output"
         }
+        read_builder_identity() {
+          local process_identity
+          local process_pgid
+          local process_sid
+          local process_stat
+          local stat_record
+          local stat_tail
+          process_identity="$(
+            /usr/bin/ps -o sid=,pgid=,stat= -p "$1" 2>/dev/null \
+              | /usr/bin/awk 'NF == 3 {print $1 " " $2 " " $3}' \
+                  2>/dev/null
+          )" || return 1
+          [[ "$process_identity" =~ ^([1-9][0-9]*)[[:space:]]+([1-9][0-9]*)[[:space:]]+([^[:space:]]+)$ ]] \
+            || return 1
+          process_sid="${BASH_REMATCH[1]}"
+          process_pgid="${BASH_REMATCH[2]}"
+          process_stat="${BASH_REMATCH[3]}"
+          stat_record="$(/bin/cat "/proc/$1/stat" 2>/dev/null)" || return 1
+          case "$stat_record" in
+            *") "*) ;;
+            *) return 1 ;;
+          esac
+          stat_tail="${stat_record##*) }"
+          set -- $stat_tail
+          test "$#" -ge 20 || return 1
+          test "$2" = "$builder_supervisor_parent_pid" || return 1
+          test "$3" = "$process_pgid" || return 1
+          test "$4" = "$process_sid" || return 1
+          test "${process_stat:0:1}" = "$1" || return 1
+          [[ "${20}" =~ ^[1-9][0-9]*$ ]] || return 1
+          printf '%s %s %s %s %s' \
+            "$2" "$4" "$3" "$process_stat" "${20}"
+        }
+        builder_supervisor_identity_matches() {
+          local expected_state="$1"
+          local identity
+          test "$builder_session_authenticated" = 1 || return 1
+          [[ "$builder_session_id" =~ ^[1-9][0-9]*$ ]] || return 1
+          test "$builder_session_id" != "$shell_pgid" || return 1
+          test -n "$builder_supervisor_pid" || return 1
+          test "$builder_session_id" = "$builder_supervisor_pid" || return 1
+          test "$builder_supervisor_wait_pid" = "$builder_supervisor_pid" \
+            || return 1
+          identity="$(read_builder_identity "$builder_supervisor_pid")" \
+            || return 1
+          [[ "$identity" =~ ^([1-9][0-9]*)[[:space:]]+([1-9][0-9]*)[[:space:]]+([1-9][0-9]*)[[:space:]]+([^[:space:]]+)[[:space:]]+([1-9][0-9]*)$ ]] \
+            || return 1
+          test "${BASH_REMATCH[1]}" = "$builder_supervisor_parent_pid" \
+            || return 1
+          test "${BASH_REMATCH[2]}" = "$builder_session_id" || return 1
+          test "${BASH_REMATCH[3]}" = "$builder_session_id" || return 1
+          test "${BASH_REMATCH[5]}" = "$builder_supervisor_starttime" \
+            || return 1
+          case "$expected_state" in
+            stopped) [[ "${BASH_REMATCH[4]}" = T* ]] ;;
+            starting) [[ "${BASH_REMATCH[4]}" != Z* ]] ;;
+            running) [[ "${BASH_REMATCH[4]}" != T* && "${BASH_REMATCH[4]}" != Z* ]] ;;
+            zombie) [[ "${BASH_REMATCH[4]}" = Z* ]] ;;
+            owned) true ;;
+            *) return 1 ;;
+          esac
+        }
         probe_builder_uid_occupancy() {
           local output
           local status
@@ -1772,27 +1839,35 @@ jobs:
         }
         terminate_builder_processes() {
           cleanup_failed=0
-          if [ -n "$builder_pgid" ]; then
-            if [ "$builder_pgid" = "$shell_pgid" ]; then
-              cleanup_failed=1
-            else
+          supervisor_authenticated=0
+          if [ -n "$builder_session_id" ] && \
+             [ -n "$builder_supervisor_pid" ]; then
+            if builder_supervisor_identity_matches zombie; then
+              supervisor_authenticated=1
+            elif builder_supervisor_identity_matches \
+              "$builder_supervisor_state"
+            then
+              supervisor_authenticated=1
               remaining_group=""
-              remaining_group="$(builder_group_pids "$builder_pgid")" \
+              remaining_group="$(builder_group_pids "$builder_session_id")" \
                 || cleanup_failed=1
-              if [ -n "$remaining_group" ]; then
-                /usr/bin/sudo /bin/kill -TERM -- "-$builder_pgid" \
-                  > /dev/null 2>&1 || true
-                /bin/sleep 1
-                remaining_group=""
-                remaining_group="$(builder_group_pids "$builder_pgid")" \
-                  || cleanup_failed=1
-              fi
-              if [ -n "$remaining_group" ]; then
-                /usr/bin/sudo /bin/kill -KILL -- "-$builder_pgid" \
+              if [ -n "$remaining_group" ] && \
+                 builder_supervisor_identity_matches \
+                   "$builder_supervisor_state"
+              then
+                /usr/bin/sudo /bin/kill -TERM -- "-$builder_session_id" \
                   > /dev/null 2>&1 || true
                 /bin/sleep 1
               fi
-              builder_group_is_empty "$builder_pgid" || cleanup_failed=1
+              if builder_supervisor_identity_matches zombie; then
+                :
+              elif builder_supervisor_identity_matches owned; then
+                /usr/bin/sudo /bin/kill -KILL -- "-$builder_session_id" \
+                  > /dev/null 2>&1 || true
+                /bin/sleep 0.1
+              fi
+            else
+              cleanup_failed=1
             fi
           fi
           if [ "$builder_cgroup_owned" = 1 ]; then
@@ -1809,19 +1884,36 @@ jobs:
             fi
             builder_cgroup_is_empty || cleanup_failed=1
           fi
-          if [ -n "$builder_supervisor_pid" ]; then
-            /bin/kill -TERM "$builder_supervisor_pid" > /dev/null 2>&1 \
-              || true
-            for attempt in $(/usr/bin/seq 1 20); do
-              if ! /bin/kill -0 "$builder_supervisor_pid" > /dev/null 2>&1; then
+          if [ "$supervisor_authenticated" = 1 ] && \
+             [ -n "$builder_supervisor_pid" ]; then
+            supervisor_reap_ready=0
+            for attempt in $(/usr/bin/seq 1 50); do
+              if builder_supervisor_identity_matches zombie; then
+                supervisor_reap_ready=1
+                break
+              fi
+              if [ ! -e "/proc/$builder_supervisor_pid" ]; then
+                supervisor_reap_ready=1
+                break
+              fi
+              if ! builder_supervisor_identity_matches owned; then
+                cleanup_failed=1
                 break
               fi
               /bin/sleep 0.1
             done
-            if /bin/kill -0 "$builder_supervisor_pid" > /dev/null 2>&1; then
-              /bin/kill -KILL "$builder_supervisor_pid" > /dev/null 2>&1 \
-                || true
+            if [ "$supervisor_reap_ready" = 1 ] && \
+               [ "$builder_supervisor_wait_pid" = "$builder_supervisor_pid" ]
+            then
+              wait "$builder_supervisor_wait_pid" > /dev/null 2>&1 || true
+              builder_supervisor_pid=""
+              builder_supervisor_wait_pid=""
+            else
+              cleanup_failed=1
             fi
+          fi
+          if [ -n "$builder_session_id" ]; then
+            builder_group_is_empty "$builder_session_id" || cleanup_failed=1
           fi
           builder_uid_is_empty "$builder_uid" || cleanup_failed=1
           return "$cleanup_failed"
@@ -1881,10 +1973,6 @@ jobs:
           set +e
           terminate_builder_processes
           process_cleanup="$?"
-          if [ -n "$builder_supervisor_pid" ]; then
-            wait "$builder_supervisor_pid" > /dev/null 2>&1
-            builder_supervisor_pid=""
-          fi
           remove_builder_cgroup
           cgroup_cleanup="$?"
           remove_builder_state
@@ -2566,9 +2654,55 @@ jobs:
         except OSError:
             raise SystemExit(126)
         CANDIDATE_LAUNCHER
+        /usr/bin/tee "$BUILDER_ROOT/control/supervisor-launcher.py" \
+          > /dev/null <<'SUPERVISOR_LAUNCHER'
+        import ctypes
+        import os
+        import signal
+        import sys
+
+        if len(sys.argv) < 5 or len(sys.argv) > 65 or sys.argv[2] != "--":
+            raise SystemExit(125)
+        parent_pid_text = sys.argv[1]
+        if not parent_pid_text.isascii() or not parent_pid_text.isdecimal():
+            raise SystemExit(125)
+        parent_pid = int(parent_pid_text)
+        if parent_pid <= 1 or os.getppid() != parent_pid:
+            raise SystemExit(125)
+        command = sys.argv[3:]
+        if command[0] != "/usr/bin/timeout":
+            raise SystemExit(125)
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.prctl(1, signal.SIGKILL, 0, 0, 0) != 0:
+            raise SystemExit(125)
+        if os.getppid() != parent_pid:
+            raise SystemExit(125)
+
+        pid = os.getpid()
+        if os.getpgrp() == pid:
+            raise SystemExit(125)
+        try:
+            os.setsid()
+        except OSError:
+            raise SystemExit(125)
+        if os.getsid(0) != pid or os.getpgrp() != pid:
+            raise SystemExit(125)
+
+        os.kill(pid, signal.SIGSTOP)
+        try:
+            os.execve(
+                command[0],
+                command,
+                {"LC_ALL": "C", "PATH": "/usr/bin:/bin"},
+            )
+        except OSError:
+            raise SystemExit(126)
+        SUPERVISOR_LAUNCHER
         /bin/chmod 0500 "$BUILDER_ROOT/control/builder-isolation.sh"
         /bin/chmod 0400 "$BUILDER_ROOT/control/candidate-build.sh"
         /bin/chmod 0400 "$BUILDER_ROOT/control/candidate-launcher.py"
+        /bin/chmod 0400 "$BUILDER_ROOT/control/supervisor-launcher.py"
         /usr/bin/sudo /bin/chown -R "$builder_uid:$builder_gid" \
           "$BUILDER_ROOT/wheelhouse"
         /usr/bin/sudo /usr/bin/unshare --fork --kill-child=KILL \
@@ -2604,8 +2738,12 @@ jobs:
         builder_isolation_script="$(/bin/cat \
           "$BUILDER_ROOT/control/builder-isolation.sh")"
         test -n "$builder_isolation_script"
-        /usr/bin/setsid --wait /usr/bin/timeout --signal=TERM \
-          --kill-after=30s 55m /usr/bin/sudo /usr/bin/unshare --fork \
+        [[ "$shell_pgid" =~ ^[1-9][0-9]*$ ]]
+        set +m
+        /usr/bin/python3 -I -S \
+          "$BUILDER_ROOT/control/supervisor-launcher.py" "$$" -- \
+          /usr/bin/timeout --signal=TERM --kill-after=30s 55m \
+          /usr/bin/sudo /usr/bin/unshare --fork \
           --kill-child=KILL --mount --pid --mount-proc --net --ipc --uts \
           /bin/bash -c "$builder_isolation_script" builder-isolation \
           "$builder_cgroup" "$builder_uid" "$builder_gid" \
@@ -2615,22 +2753,73 @@ jobs:
           "$host_uid" "$host_gid" \
           < /dev/null > /dev/null 2>&1 &
         builder_supervisor_pid="$!"
-        builder_launch_detail=pgid-ready
-        set +e
-        builder_pgid="$(/usr/bin/ps -o pgid= -p "$builder_supervisor_pid" \
-          2>/dev/null | /usr/bin/tr -d ' ' 2>/dev/null)"
-        builder_pgid_status="$?"
-        set -e
-        if [ "$builder_pgid_status" -ne 0 ]; then
-          builder_launch_detail=pgid-query
-        elif ! [[ "$builder_pgid" =~ ^[1-9][0-9]*$ ]]; then
-          builder_launch_detail=pgid-format
-        elif [ "$builder_pgid" != "$builder_supervisor_pid" ]; then
-          builder_launch_detail=pgid-mismatch
-        elif [ "$builder_pgid" = "$shell_pgid" ]; then
-          builder_launch_detail=pgid-parent
+        builder_supervisor_wait_pid="$builder_supervisor_pid"
+        builder_launch_detail=session-timeout
+        for attempt in $(/usr/bin/seq 1 100); do
+          if ! /bin/kill -0 "$builder_supervisor_pid" \
+            > /dev/null 2>&1
+          then
+            builder_launch_detail=session-exit
+            break
+          fi
+          set +e
+          builder_identity="$(read_builder_identity "$builder_supervisor_pid")"
+          builder_identity_status="$?"
+          set -e
+          if [ "$builder_identity_status" -ne 0 ]; then
+            builder_launch_detail=session-query
+          elif ! [[ "$builder_identity" =~ ^([1-9][0-9]*)[[:space:]]+([1-9][0-9]*)[[:space:]]+([1-9][0-9]*)[[:space:]]+([^[:space:]]+)[[:space:]]+([1-9][0-9]*)$ ]]; then
+            builder_launch_detail=session-format
+          elif [ "${BASH_REMATCH[1]}" = "$builder_supervisor_parent_pid" ] && \
+               [ "${BASH_REMATCH[2]}" = "$builder_supervisor_pid" ] && \
+               [ "${BASH_REMATCH[3]}" = "$builder_supervisor_pid" ]; then
+            if [[ "${BASH_REMATCH[4]}" = T* ]]; then
+              builder_session_id="$builder_supervisor_pid"
+              builder_supervisor_starttime="${BASH_REMATCH[5]}"
+              builder_supervisor_state=stopped
+              builder_session_authenticated=1
+              builder_launch_detail=session-ready
+              break
+            fi
+            builder_launch_detail=session-state
+          elif [ "${BASH_REMATCH[3]}" = "$shell_pgid" ]; then
+            builder_launch_detail=session-parent
+          else
+            builder_launch_detail=session-mismatch
+            break
+          fi
+          /bin/sleep 0.01
+        done
+        if [ "$builder_launch_detail" != session-ready ]; then
+          builder_status=125
+          printf 'candidate build failed: stage=launch detail=%s exit=%d\n' \
+            "$builder_launch_detail" "$builder_status" >&2
+          exit "$builder_status"
         fi
-        if [ "$builder_launch_detail" != pgid-ready ]; then
+        if ! builder_supervisor_identity_matches stopped || \
+           ! /bin/kill -CONT "$builder_supervisor_pid" \
+          > /dev/null 2>&1
+        then
+          builder_status=125
+          printf 'candidate build failed: stage=launch detail=session-resume exit=%d\n' \
+            "$builder_status" >&2
+          exit "$builder_status"
+        fi
+        builder_supervisor_state=starting
+        builder_launch_detail=session-start-timeout
+        for attempt in $(/usr/bin/seq 1 100); do
+          if builder_supervisor_identity_matches running; then
+            builder_supervisor_state=running
+            builder_launch_detail=session-started
+            break
+          fi
+          if builder_supervisor_identity_matches zombie; then
+            builder_launch_detail=session-exit
+            break
+          fi
+          /bin/sleep 0.01
+        done
+        if [ "$builder_launch_detail" != session-started ]; then
           builder_status=125
           printf 'candidate build failed: stage=launch detail=%s exit=%d\n' \
             "$builder_launch_detail" "$builder_status" >&2
@@ -2641,13 +2830,14 @@ jobs:
         builder_status="$?"
         set -e
         builder_supervisor_pid=""
+        builder_supervisor_wait_pid=""
         if [ "$builder_status" -ne 0 ]; then
           printf 'candidate build failed: stage=isolated exit=%d\n' \
             "$builder_status" >&2
           exit "$builder_status"
         fi
         printf 'candidate build status: success\n'
-        builder_group_is_empty "$builder_pgid"
+        builder_group_is_empty "$builder_session_id"
         builder_cgroup_is_empty
         builder_uid_is_empty "$builder_uid"
         remove_builder_cgroup
@@ -2688,7 +2878,7 @@ jobs:
         remove_builder_cgroup
         remove_builder_state
         trap - EXIT INT TERM
-        builder_group_is_empty "$builder_pgid"
+        builder_group_is_empty "$builder_session_id"
         test ! -e "$builder_cgroup"
         builder_uid_is_empty "$builder_uid"
         builder_passwd_entry_absent "$builder_user"
