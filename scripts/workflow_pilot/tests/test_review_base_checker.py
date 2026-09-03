@@ -880,8 +880,8 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             "reviewed_changes": copy.deepcopy(self.original_changes),
             "findings": [
                 {
-                    "id": "LOCAL-GENERATED-1",
-                    "family": "generated",
+                    "id": "LOCAL-ACTION-1",
+                    "family": "action",
                     "created_at": "2026-09-01T00:00:30Z",
                 }
             ],
@@ -963,8 +963,8 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         return artifacts
     def build_input(self, *, review_round, candidate_sha=None, candidate_tree=None, assertion_requests=None):
         case_root = self.case_dir()
-        origin_sha = self.base if review_round == 1 else self.head1
-        head_sha = (self.head1 if review_round == 1 else self.head2) if candidate_sha is None else candidate_sha
+        origin_sha = self.head1
+        head_sha = self.head2 if candidate_sha is None else candidate_sha
         head_tree = git_text(self.repo, "rev-parse", f"{head_sha}^{{tree}}") if candidate_tree is None else candidate_tree
         base_root = case_root / "base"
         origin_root = case_root / "origin"
@@ -975,11 +975,20 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         program_path = case_root / "review_assertions.py"
         self.materialize_program(program_path)
         round1, round2 = self.remote_reviews(second_head=head_sha)
+        if review_round == 1:
+            round1.update({
+                "candidate_sha": head_sha,
+                "body": "### 🟢 Approval recommended",
+                "body_classification": "clean-approval",
+                "body_has_findings": False,
+                "outcome": "clean",
+                "finding_ids": [],
+            })
         all_remote_reviews = [round1] if review_round == 1 else [round1, round2]
         review_context = all_remote_reviews[review_round - 1]
         changes = review_family.derive_change_records(self.repo, self.base, head_sha)
         original_receipt = self.original_review_receipt()
-        remote_findings = copy.deepcopy(self.remote_findings())
+        remote_findings = [] if review_round == 1 else copy.deepcopy(self.remote_findings())
         assertion_requests = copy.deepcopy(
             assertion_requests
             or (
@@ -992,9 +1001,9 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                     },
                     {
                         "assertion_id": (
-                            "registry:sibling:generated:owners:affected-fixed:v2"
+                            "registry:sibling:action:items:affected-fixed:v2"
                         ),
-                        "finding_id": "LOCAL-GENERATED-1",
+                        "finding_id": "LOCAL-ACTION-1",
                     },
                 ]
                 if review_round == 1
@@ -1290,15 +1299,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                     )
     def test_round_one_executes_local_finding_with_authoritative_binding(self):
         data = self.build_input(review_round=1)
-        captured = {}
-        real_run = review_base_checker.subprocess.run
-        def wrapper(command, *args, **kwargs):
-            if not captured and tuple(command[:2]) == review_base_checker.ASSERTION_PROGRAM_ARGV[:2] and command[-1] == "--stdin":
-                captured["argv"] = list(command); captured["cwd"] = kwargs.get("cwd")
-            return real_run(command, *args, **kwargs)
-        review_base_checker.subprocess.run = wrapper
-        try: result = self.execute(data)
-        finally: review_base_checker.subprocess.run = real_run
+        result = self.execute_via_cli(data)
         self.assertEqual(result["registry_version"], 1)
         self.assertEqual(len(result["results"]), 2)
         behavior = next(
@@ -1306,22 +1307,20 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             for item in result["results"]
             if item["authority_binding"]["finding_id"] is None
         )
-        self.assertEqual(captured["argv"], list(review_base_checker.ASSERTION_PROGRAM_ARGV))
-        self.assertEqual(Path(captured["cwd"]), Path(data["assertion_program_path"]).parent)
-        self.assertTrue(all(item["program_argv"] == captured["argv"] for item in result["results"]))
-        self.assertEqual(behavior["authority_binding"]["head_sha"], self.head1)
-        self.assertEqual(behavior["authority_binding"]["head_tree"], self.head1_tree)
+        self.assertTrue(all(item["program_argv"] == list(review_base_checker.ASSERTION_PROGRAM_ARGV) for item in result["results"]))
+        self.assertEqual(behavior["authority_binding"]["head_sha"], self.head2)
+        self.assertEqual(behavior["authority_binding"]["head_tree"], self.head2_tree)
         member = next(
             item
             for item in result["results"]
-            if item["authority_binding"]["finding_id"] == "LOCAL-GENERATED-1"
+            if item["authority_binding"]["finding_id"] == "LOCAL-ACTION-1"
         )
-        self.assertEqual(member["authority_binding"]["finding_family"], "generated")
-        self.assertEqual(member["authority_binding"]["finding_member"], "owners")
+        self.assertEqual(member["authority_binding"]["finding_family"], "action")
+        self.assertEqual(member["authority_binding"]["finding_member"], "items")
         self.assertEqual(member["authority_binding"]["finding_review_round"], 0)
         self.assertEqual(member["authority_binding"]["finding_head_sha"], self.head1)
-        self.assertEqual(member["authority_binding"]["finding_origin_sha"], self.base)
-        self.assertEqual(member["authority_binding"]["head_sha"], self.head1)
+        self.assertEqual(member["authority_binding"]["finding_origin_sha"], self.head1)
+        self.assertEqual(member["authority_binding"]["head_sha"], self.head2)
         self.assertEqual(member["output"]["origin_status"], "fail")
         self.assertEqual(member["output"]["head_status"], "pass")
     def test_registered_not_applicable_requires_exact_reason_context(self):
@@ -1365,7 +1364,7 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             assertion_requests=[
                 {
                     "assertion_id": "registry:sibling:wire:producers:verified-unaffected:v2",
-                    "finding_id": "LOCAL-GENERATED-1",
+                    "finding_id": "LOCAL-ACTION-1",
                 }
             ],
         )
@@ -1622,25 +1621,12 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         member = self.execute(data)["results"][0]
         self.assertEqual((member["status"], member["output"]["program_case"]), ("pass", "member/lifecycle/entries/affected-fixed"))
         self.assertEqual((member["output"]["origin_status"], member["output"]["head_status"]), ("fail", "pass"))
-    def test_action_member_requires_real_origin_failure(self):
-        self._restore_baseline()
-        (self.repo / "changed.txt").write_text("clean action candidate\n", encoding="utf-8")
-        action_head = self._commit("action-clean-head"); action_tree = git_text(self.repo, "rev-parse", f"{action_head}^{{tree}}")
-        original_changes = review_family.derive_change_records(self.repo, self.base, action_head)
-        data = self.build_input(review_round=1, candidate_sha=action_head, candidate_tree=action_tree, assertion_requests=[{"assertion_id": "registry:sibling:action:items:affected-fixed:v2", "finding_id": "LOCAL-ACTION-1"}])
-        data["original_pre_review_head"] = action_head
-        data["original_changes"] = copy.deepcopy(original_changes)
-        data["original_pre_review"] = {**self.review_report(), "candidate_sha": action_head, "reviewed_files": changed_files(original_changes), "reviewed_changes": copy.deepcopy(original_changes), "findings": [{"id": "LOCAL-ACTION-1", "family": "action", "created_at": "2026-09-01T00:00:30Z"}]}
-        original_receipt = copy.deepcopy(self.original_review_receipt())
-        original_receipt["candidate_sha"] = action_head; original_receipt["payload_b64"] = base64.b64encode(reporter.normalized_json(data["original_pre_review"])).decode("ascii")
-        data["original_review_receipt"] = original_receipt; data["original_receipt_sha256"] = hashlib.sha256(reporter.normalized_json(original_receipt)).hexdigest()
-        data["review_context"]["candidate_sha"] = action_head
-        data["all_remote_reviews"][0]["candidate_sha"] = action_head
-        data["review_context"]["finding_ids"] = []; data["all_remote_reviews"][0]["finding_ids"] = []; data["remote_findings"] = []; data["remote_finding_ids"] = []
-        data["review_contract"] = self.review_contract(action_head)
-        data["review_contract"]["original_pre_review_head"] = action_head
+    def test_local_member_requires_real_pre_review_origin_failure(self):
+        data = self.build_input(review_round=1, assertion_requests=[{"assertion_id": "registry:sibling:generated:owners:affected-fixed:v2", "finding_id": "LOCAL-GENERATED-1"}])
+        data["original_pre_review"]["findings"] = [{"id": "LOCAL-GENERATED-1", "family": "generated", "created_at": "2026-09-01T00:00:30Z"}]
+        data["original_review_receipt"]["payload_b64"] = base64.b64encode(reporter.normalized_json(data["original_pre_review"])).decode("ascii")
+        data["original_receipt_sha256"] = hashlib.sha256(reporter.normalized_json(data["original_review_receipt"])).hexdigest()
         data["review_contract"]["family_sweeps"] = self.configured_family_sweeps(data["original_pre_review"]["findings"], [], data["assertion_requests"])
-        data["captured_github_payload"] = self.captured_github_payload(action_head, data["all_remote_reviews"], [])
         self.assert_cli_rejected(data, "affected-fixed origin assertion unexpectedly passed")
     def test_resource_enabled_affected_fixed_reads_subject_decision_record(self):
         self._restore_baseline()

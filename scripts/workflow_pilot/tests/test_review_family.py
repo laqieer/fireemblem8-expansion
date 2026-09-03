@@ -327,6 +327,13 @@ class ReviewFamilyContractTests(unittest.TestCase):
             evidence["remote_reviews"][0]["submitted_at"]
         )
         self.assert_rejected(contract, evidence, "backdated or re-signed")
+    def test_local_pre_review_binding_uses_original_pre_review_head_as_origin(self):
+        contract, evidence = fixture()
+        evidence["pre_reviews"][0]["finding_ids"] = ["LOCAL-ACTION-1"]
+        evidence["pre_review_findings"] = [{"id": "LOCAL-ACTION-1", "review_id": evidence["pre_reviews"][0]["id"], "candidate_sha": CANDIDATE, "created_at": "2026-08-31T03:09:30Z", "author_actor_id": evidence["pre_reviews"][0]["owner_actor_id"], "family": "action"}]
+        binding = review_family.assertion_authority_binding(review_family.validate_contract(contract), review_family.validate_evidence(evidence), self.authority, CANDIDATE, 1, review_family.member_assertion_id("action", "items", "affected-fixed"), "LOCAL-ACTION-1")
+        self.assertEqual((binding["finding_head_sha"], binding["finding_origin_sha"], binding["head_sha"]), (CANDIDATE, CANDIDATE, CANDIDATE))
+        self.assertNotEqual(binding["finding_origin_sha"], BASE)
     def test_local_and_remote_namespaces_cannot_overlap(self):
         contract, evidence = fixture()
         evidence["findings"][0]["node_id"] = "LOCAL-ACTION-1"

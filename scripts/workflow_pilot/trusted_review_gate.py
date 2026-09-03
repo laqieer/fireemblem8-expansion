@@ -2074,7 +2074,7 @@ def run_base_pinned_checker(
     finding_origin_sha = (
         review_head_sha
         if review_head_sha != candidate_sha
-        else base_sha
+        else contract["original_pre_review_head"]
         if review_round == 1
         else all_remote_reviews[review_round - 2]["candidate_sha"]
     )

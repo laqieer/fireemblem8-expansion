@@ -1649,8 +1649,8 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
                 "finding_origin_tree": expected_finding_origin_tree,
             }
     elif review_round == 1:
-        expected_finding_origin_sha = base_sha
-        expected_finding_origin_tree = actual_base_tree
+        expected_finding_origin_sha = original_pre_review_head
+        expected_finding_origin_tree = original_pre_review_head_tree
         round_findings = {
             finding["id"]: {
                 "family": finding["family"],
@@ -1658,8 +1658,8 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
                 "review_round": 0,
                 "finding_head_sha": original_pre_review_head,
                 "finding_head_tree": original_pre_review_head_tree,
-                "finding_origin_sha": base_sha,
-                "finding_origin_tree": actual_base_tree,
+                "finding_origin_sha": original_pre_review_head,
+                "finding_origin_tree": original_pre_review_head_tree,
             }
             for finding in report["findings"]
         }

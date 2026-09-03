@@ -1211,12 +1211,8 @@ def assertion_authority_binding(
             "rev-parse",
             f"{finding_head_sha}^{{tree}}",
         ).decode("ascii").strip()
-        finding_origin_sha = contract["base_sha"]
-        finding_origin_tree = reporter.run_git(
-            authority_root,
-            "rev-parse",
-            f"{contract['base_sha']}^{{tree}}",
-        ).decode("ascii").strip()
+        finding_origin_sha = finding_head_sha
+        finding_origin_tree = finding_head_tree
         finding_review_round = 0
     else:
         prior_review = evidence["remote_reviews"][review_round - 2]
@@ -3254,7 +3250,7 @@ def _validate_execution(
             authority["root"], "rev-parse", f"{target_head}^{{tree}}"
         ).decode("ascii").strip()
         finding_origin_sha = (
-            contract["base_sha"]
+            contract["original_pre_review_head"]
             if round_number == 1
             else reviews[round_number - 2]["candidate_sha"]
         )

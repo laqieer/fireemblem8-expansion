@@ -3220,6 +3220,23 @@ class TrustedGitHubGateTests(unittest.TestCase):
             receipt["seal"],
             trusted_review_gate._execution_receipt_seal(receipt, KEY),
         )
+    def test_round_one_local_finding_receipt_binds_original_pre_review_origin(self):
+        repo, base, _ = self.build_decision_repo()
+        try:
+            checker_path = repo / trusted_review_gate.BASE_CHECKER_PATH; original_checker = checker_path.read_text(encoding="utf-8"); checker_path.write_text(original_checker.replace('"finding_member": parsed["member"],', '"finding_member": parsed["family"],', 1), encoding="utf-8"); (repo / "changed.txt").write_text("head-a\n", encoding="utf-8"); self.commit_all_at(repo, "head-a", "2026-08-31T03:06:00Z"); head_a = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
+            checker_path.write_text(original_checker, encoding="utf-8"); (repo / "changed.txt").write_text("head-b\n", encoding="utf-8"); self.commit_all_at(repo, "head-b", "2026-08-31T03:07:00Z"); head_b = git(repo, "rev-parse", "HEAD").stdout.decode().strip()
+            contract = review_family.validate_contract(self.base_pinned_contract(base=base, candidate=head_b, original_head=head_a, kind="complete")); contract["family_sweeps"] = [self.family_sweep("action", "LOCAL-ACTION-1", "items")]
+            original_changes = review_family.derive_change_records(repo, base, head_a); report = review_report(base, head_a, sorted({path for change in original_changes for path in (change["old_path"], change["new_path"]) if path is not None}), original_changes); report["findings"] = [{"id": "LOCAL-ACTION-1", "family": "action", "created_at": "2026-08-31T03:09:30Z"}]
+            remote_review = {"id": 1001, "node_id": "REMOTE_SYNTHETIC_1", "round": 1, "reviewer_actor_id": COPILOT_ACTOR_ID, "candidate_sha": head_b, "submitted_at": "2026-08-31T03:08:00Z", "state": "COMMENTED", "body": "### 🟢 Approval recommended", "body_classification": "clean-approval", "body_has_findings": False, "outcome": "clean", "finding_ids": []}
+            requests = review_family.build_assertion_requests(contract, {"remote_reviews": [remote_review], "pre_review_findings": [{"id": "LOCAL-ACTION-1"}]}, head_b, 1)
+            receipt_bytes = signed_receipt(reporter.normalized_json(report), base=base, candidate=head_a, nonce="checker-receipt-local-round1-0001")
+            receipt = trusted_review_gate.run_base_pinned_checker(repo, contract=contract, candidate_sha=head_b, review_round=1, review_context=remote_review, all_remote_reviews=[remote_review], remote_findings=[], remote_finding_ids=[], captured_github_payload={}, original_review_report_bytes=reporter.normalized_json(report), original_review_receipt=json.loads(receipt_bytes), original_receipt_sha256=hashlib.sha256(receipt_bytes).hexdigest(), assertion_requests=requests, trusted_key=KEY, clock=lambda: datetime(2026, 8, 31, 3, 9, tzinfo=timezone.utc))
+            origin_tree = git(repo, "rev-parse", f"{head_a}^{{tree}}").stdout.decode().strip(); member = next(item for item in receipt["assertion_results"] if item["authority_binding"]["finding_id"] == "LOCAL-ACTION-1" and item["assertion_id"] == review_family.member_assertion_id("action", "items", "affected-fixed"))
+            self.assertEqual((receipt["finding_origin_sha"], receipt["finding_origin_tree"]), (head_a, origin_tree))
+            self.assertEqual((member["authority_binding"]["finding_head_sha"], member["authority_binding"]["finding_origin_sha"], member["authority_binding"]["head_sha"]), (head_a, head_a, head_b))
+            self.assertEqual((member["output"]["origin_status"], member["output"]["head_status"]), ("fail", "pass"))
+        finally:
+            shutil.rmtree(repo)
     def test_checker_rejects_fabricated_result_id_and_dirty_candidate(self):
         contract = review_family.validate_contract(
             self.contract(base=self.base_sha, candidate=self.candidate_sha)
