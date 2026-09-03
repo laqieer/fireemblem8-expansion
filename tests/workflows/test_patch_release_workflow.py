@@ -439,6 +439,32 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         "        declare -a supervisor_cgroup=(/mnt/supervisor/cgroup)\n",
         "        declare -A supervisor_cgroup=([key]=/mnt/supervisor/cgroup)\n",
         "        unset supervisor_cgroup\n",
+        "        command unset supervisor_cgroup\n",
+        "        command -- unset supervisor_cgroup\n",
+        "        command -p unset supervisor_cgroup\n",
+        "        command -p -- unset supervisor_cgroup\n",
+        "        builtin unset supervisor_cgroup\n",
+        "        wrapper=command\n"
+        "        mutation=unset\n"
+        "        mutation_target=supervisor_cgroup\n"
+        '        "$wrapper" -- "$mutation" "$mutation_target"\n',
+        "        mutation=unset\n"
+        "        mutation_target=supervisor_cgroup\n"
+        '        builtin "$mutation" "$mutation_target"\n',
+        "        command -x unset supervisor_cgroup\n",
+        "        declare supervisor_cgroup=/mnt/home\n",
+        "        typeset supervisor_cgroup=/mnt/home\n",
+        "        local supervisor_cgroup=/mnt/home\n",
+        "        export supervisor_cgroup=/mnt/home\n",
+        "        readonly supervisor_cgroup=/mnt/home\n",
+        "        printf -v supervisor_cgroup %s /mnt/home\n",
+        "        read supervisor_cgroup < /dev/null\n",
+        "        mapfile -t supervisor_cgroup < /dev/null\n",
+        "        eval 'supervisor_cgroup=/mnt/home'\n",
+        "        source /dev/null\n",
+        "        . /dev/null\n",
+        "        mutate_supervisor() { supervisor_cgroup=/mnt/home; }\n"
+        "        mutate_supervisor\n",
     )
     for index, mutation in enumerate(supervisor_reassignments):
         changed = workflow.replace(marker, mutation + marker, 1)
@@ -6527,6 +6553,22 @@ exit 37
                         label="unrelated positional control",
                     )
                 )
+        for unrelated_wrapped in (
+            "command -v unset\n",
+            "command -V supervisor_cgroup\n",
+            "command -- printf '%s\\n' unrelated\n",
+            "command -p -- printf '%s\\n' unrelated\n",
+            "builtin printf '%s\\n' unrelated\n",
+        ):
+            with self.subTest(
+                unrelated_wrapped=unrelated_wrapped.strip()
+            ):
+                self.assertFalse(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        builder + "\n" + unrelated_wrapped,
+                        label="unrelated wrapped control",
+                    )
+                )
         for label, changed in generate_raw_builder_cgroup_membership_mutations(
             self.text
         ):
@@ -6706,6 +6748,62 @@ exit 37
                     label="dynamic raw cgroup runtime",
                 )
             )
+
+    def test_wrapped_unset_runtime_breaks_safe_read_and_is_rejected(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="wrapped-supervisor-unset-",
+            dir=artifact_root,
+        ) as temporary:
+            supervisor = Path(temporary) / "supervisor"
+            supervisor.mkdir()
+            (supervisor / "cgroup.procs").write_text(
+                "safe-wrapper\n",
+                encoding="ascii",
+            )
+            mutations = (
+                "command unset supervisor_cgroup",
+                "command -- unset supervisor_cgroup",
+                "command -p unset supervisor_cgroup",
+                "command -p -- unset supervisor_cgroup",
+                "builtin unset supervisor_cgroup",
+                "wrapper=command; mutation=unset; "
+                'target=supervisor_cgroup; "$wrapper" -- '
+                '"$mutation" "$target"',
+                "mutation=unset; target=supervisor_cgroup; "
+                'builtin "$mutation" "$target"',
+            )
+            for mutation in mutations:
+                with self.subTest(mutation=mutation):
+                    script = (
+                        "set -u\n"
+                        'supervisor_cgroup="$1"\n'
+                        + mutation
+                        + "\n"
+                        'mapfile -t members < '
+                        '"$supervisor_cgroup/cgroup.procs"\n'
+                        'printf "success:%s\\n" "${members[0]}"\n'
+                    )
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "-c",
+                            script,
+                            "--",
+                            str(supervisor),
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertNotEqual(completed.returncode, 0)
+                    self.assertEqual(completed.stdout, "")
+                    self.assertIn(
+                        "supervisor_cgroup: unbound variable",
+                        completed.stderr,
+                    )
 
     def test_isolated_exit_status_channel_maps_only_fixed_substages(self):
         report = isolated_failure_report_source(self.text)
@@ -8962,6 +9060,9 @@ exit 37
             self.assertIn("reassignment", text.lower())
             self.assertIn("brace", text)
             self.assertIn("glob", text)
+            self.assertIn("command -v", text)
+            self.assertIn("wrapped", text)
+            self.assertIn("unbound", text)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)

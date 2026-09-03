@@ -2327,6 +2327,87 @@ def _raw_cgroup_suffix_has_dynamic_filename(text: str) -> bool:
     )
 
 
+def _normalize_shell_builtin_wrappers(
+    tokens: tuple[str, ...],
+) -> tuple[str, ...] | None:
+    normalized = tokens
+    for _depth in range(8):
+        if not normalized:
+            return ()
+        executable = posixpath.basename(normalized[0])
+        if executable == "builtin":
+            index = 1
+            if index < len(normalized) and normalized[index] == "--":
+                index += 1
+            normalized = normalized[index:]
+            continue
+        if executable != "command":
+            return normalized
+        index = 1
+        while index < len(normalized):
+            option = normalized[index]
+            if option == "--":
+                index += 1
+                break
+            if option == "-p":
+                index += 1
+                continue
+            if option in {"-v", "-V"}:
+                return ()
+            if option.startswith("-"):
+                return None
+            break
+        normalized = normalized[index:]
+    return None
+
+
+def _normalized_command_mutates_supervisor(
+    tokens: tuple[str, ...],
+) -> bool:
+    normalized = _normalize_shell_builtin_wrappers(tokens)
+    if normalized is None:
+        return any("supervisor_cgroup" in token for token in tokens)
+    if not normalized:
+        return False
+    executable = posixpath.basename(normalized[0])
+    arguments = normalized[1:]
+    if normalized[0] in {".", "eval", "source"}:
+        return True
+    if executable == "unset":
+        return any(
+            argument == "supervisor_cgroup"
+            or argument.startswith("supervisor_cgroup[")
+            for argument in arguments
+            if not argument.startswith("-")
+        )
+    if executable == "read":
+        return any(argument == "supervisor_cgroup" for argument in arguments)
+    if executable in {"mapfile", "readarray"}:
+        return any(
+            argument == "supervisor_cgroup" for argument in arguments
+        )
+    if executable == "printf":
+        for index, argument in enumerate(arguments[:-1]):
+            if argument == "-v" and arguments[index + 1] == "supervisor_cgroup":
+                return True
+    if executable in {
+        "declare",
+        "export",
+        "local",
+        "readonly",
+        "typeset",
+    }:
+        return any(
+            argument == "supervisor_cgroup"
+            or argument.startswith("supervisor_cgroup=")
+            or argument.startswith("supervisor_cgroup+=")
+            or argument.startswith("supervisor_cgroup[")
+            for argument in arguments
+            if not argument.startswith("-")
+        )
+    return False
+
+
 def has_forbidden_raw_builder_cgroup_membership_read(
     script: str,
     *,
@@ -2423,6 +2504,14 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 token_texts
                 and posixpath.basename(token_texts[0]) == "unset"
                 and "supervisor_cgroup" in token_texts[1:]
+            ):
+                return True
+            resolved_token_texts = tuple(
+                _resolve_shell_aliases(token.text, aliases)
+                for token in tokens
+            )
+            if _normalized_command_mutates_supervisor(
+                resolved_token_texts
             ):
                 return True
             array_declaration = (

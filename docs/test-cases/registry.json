@@ -1226,7 +1226,7 @@
       "interactions": "Shares the trusted metadata, preserve-BGM, artifact-guard, wrong-base, untrusted-event, and output-contamination boundaries of TC-CI-PATCH-049-001.",
       "save_compatibility": "No save field, layout, migration, compatibility epoch, public C API, localization-ID, or archival-lane change.",
       "cleanup": "Remove only disposable local copies and outputs created for a negative control.",
-      "limitations": "Legal base acquisition remains private and manual because no ROM can be published; deterministic validation is automated. No full Bash filename evaluator is trusted: canonical supervisor binding is required, and reassignment plus brace/glob dynamic raw filenames fail closed.",
+      "limitations": "Legal base acquisition remains private and manual because no ROM can be published; deterministic validation is automated. No full Bash filename evaluator is trusted: canonical supervisor binding is required, reassignment plus brace/glob dynamic raw filenames fail closed, wrapped variable mutation is normalized, `command -v/-V` queries remain valid, and wrapped-unset runtime controls prove an unbound safe-read variable.",
       "automation": [
         {
           "command": "python3 -m unittest scripts.modernize.tests.test_patch_release -v",

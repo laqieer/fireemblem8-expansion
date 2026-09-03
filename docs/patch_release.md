@@ -139,7 +139,14 @@ accepted. The supervisor read is authorized only after the exact bind,
 read-only remount, one canonical
 `supervisor_cgroup=/mnt/supervisor/cgroup` assignment, and directory-inode
 verification. Literal, aliased, operator, append, array, or `unset`
-reassignment invalidates it. Tracked raw-root filename components also reject
+reassignment invalidates it. Recognized `command` (`-p`/`--`) and `builtin`
+prefixes are normalized after alias resolution, so wrapped or aliased unset
+and variable-mutating declare/typeset/local/export/readonly/read/mapfile/
+readarray/`printf -v` forms reject. `command -v/-V` queries and unrelated
+wrapped commands remain valid; eval, source, and ambiguous mutation surfaces
+fail closed. Runtime wrapped-unset controls leave `supervisor_cgroup` unbound
+before the safe read, proving the mutation.
+Tracked raw-root filename components also reject
 glob, brace, bracket, extglob, command/process/arithmetic substitution, tilde,
 and other dynamic syntax unless the command is the exact join write.
 Executable brace and `?` glob controls otherwise read the raw marker after the
