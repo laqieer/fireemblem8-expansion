@@ -254,6 +254,7 @@ def workflow_has_raw_builder_cgroup_membership_read(workflow: str) -> bool:
 
 def generate_raw_builder_cgroup_membership_mutations(workflow: str):
     marker = "        isolated_stage=export\n"
+    cgroup_init_marker = '        cgroup_path="$1"\n'
     checker_marker = (
         '        /usr/bin/python3 -I -S - "$$" <<\'PY\'\n'
     )
@@ -843,6 +844,9 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         '        raw_root="$cgroup_path"\n'
         '        /bin/cat "${raw_root:-${HOME}}/cgroup.procs" '
         "> /dev/null\n",
+        "        safe_suffix=safe\n"
+        "        value='literal-'\"$cgroup_path\"\"-$safe_suffix\"\n"
+        '        printf "%s\\n" "$value" > /dev/null\n',
         '        trap \'/bin/cat "$cgroup_path/cgroup.procs"\' DEBUG\n',
         "        trap true RETURN\n",
         "        trap true EXIT\n",
@@ -867,6 +871,30 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         "        }\n"
         "        forge_members\n",
         '        trap \'cgroup_members=("$$")\' DEBUG\n',
+    )
+    cgroup_path_mutations = (
+        "        cgroup_path=/tmp/fake\n",
+        "        cgroup_path[0]=/tmp/fake\n",
+        "        declare -a cgroup_path=(/tmp/fake)\n",
+        "        declare cgroup_path=/tmp/fake\n",
+        "        typeset cgroup_path=/tmp/fake\n",
+        "        local cgroup_path=/tmp/fake\n",
+        "        export cgroup_path=/tmp/fake\n",
+        "        readonly cgroup_path=/tmp/fake\n",
+        "        printf -v cgroup_path %s /tmp/fake\n",
+        "        read cgroup_path < /dev/null\n",
+        "        mapfile -t cgroup_path < /dev/null\n",
+        "        readarray -t cgroup_path < /dev/null\n",
+        "        unset cgroup_path\n",
+        "        target=cgroup_path\n"
+        '        declare "$target=/tmp/fake"\n',
+        '        target="$(printf cgroup_path)"\n'
+        '        printf -v "$target" %s /tmp/fake\n',
+        "        mutate_cgroup_path() {\n"
+        "          cgroup_path=/tmp/fake\n"
+        "        }\n"
+        "        mutate_cgroup_path\n",
+        '        cgroup_path="$1"\n',
     )
     for index, mutation in enumerate(supervisor_reassignments):
         changed = workflow.replace(marker, mutation + marker, 1)
@@ -898,6 +926,21 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
                 "pre-checker mutation marker differs"
             )
         yield f"pre-checker-{index}", changed
+    for index, mutation in enumerate(cgroup_path_mutations):
+        changed = workflow.replace(
+            cgroup_init_marker,
+            cgroup_init_marker + mutation,
+            1,
+        )
+        if changed == workflow:
+            raise AssertionError(
+                "cgroup path mutation marker differs"
+            )
+        yield f"cgroup-path-{index}", changed
+    removed_init = workflow.replace(cgroup_init_marker, "", 1)
+    if removed_init == workflow:
+        raise AssertionError("cgroup path removal marker differs")
+    yield "cgroup-path-missing", removed_init
 
 
 def generate_safe_declaration_alias_controls(workflow: str):
@@ -921,6 +964,27 @@ def generate_safe_declaration_alias_controls(workflow: str):
                 "safe declaration alias control marker differs"
             )
         yield builtin, changed
+
+
+def generate_quote_context_controls(workflow: str):
+    marker = "        isolated_stage=export\n"
+    controls = (
+        "        printf '%s\\n' '$cgroup_path' > /dev/null\n",
+        "        printf '%s\\n' \\$cgroup_path > /dev/null\n",
+        "        safe_suffix=safe\n"
+        "        value='literal-$cgroup_path-'\"$safe_suffix\"\n"
+        '        test "$value" = \'literal-$cgroup_path-safe\'\n',
+    )
+    for label, control in zip(
+        ("single-quoted", "escaped", "mixed"),
+        controls,
+    ):
+        changed = workflow.replace(marker, marker + control, 1)
+        if changed == workflow:
+            raise AssertionError(
+                f"{label} quote control marker differs"
+            )
+        yield label, changed
 
 
 def generate_helper_inventory_mutations(workflow: str):
@@ -7196,6 +7260,11 @@ exit 37
                 self.assertFalse(
                     workflow_has_raw_builder_cgroup_membership_read(changed)
                 )
+        for label, changed in generate_quote_context_controls(self.text):
+            with self.subTest(quote_context_control=label):
+                self.assertFalse(
+                    workflow_has_raw_builder_cgroup_membership_read(changed)
+                )
         for label, changed in generate_raw_builder_cgroup_membership_mutations(
             self.text
         ):
@@ -8540,6 +8609,112 @@ exit 37
                                 label=f"{label} control",
                             )
                         )
+
+    def test_quote_context_resolves_only_expansion_active_segments(self):
+        inert_cases = (
+            (
+                        "single quoted",
+                        "value='$cgroup_path'\n"
+                        'printf "%s\\n" "$value"\n',
+                        "$cgroup_path\n",
+            ),
+            (
+                        "escaped",
+                        "value=\\$cgroup_path\n"
+                        'printf "%s\\n" "$value"\n',
+                        "$cgroup_path\n",
+            ),
+            (
+                        "mixed inert",
+                        "suffix=safe\n"
+                        "value='literal-$cgroup_path-'\"$suffix\"\n"
+                        'printf "%s\\n" "$value"\n',
+                        "literal-$cgroup_path-safe\n",
+            ),
+        )
+        for label, script, expected in inert_cases:
+            with self.subTest(quote_context=label):
+                        completed = subprocess.run(
+                            ["/bin/bash", "-c", script],
+                            cwd=ROOT,
+                            check=False,
+                            capture_output=True,
+                            text=True,
+                        )
+                        self.assertEqual(completed.returncode, 0, completed.stderr)
+                        self.assertEqual(completed.stdout, expected)
+                        self.assertFalse(
+                            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                                script,
+                                label=f"{label} quote control",
+                            )
+                        )
+
+        expanding = (
+            'cgroup_path="$1"\n'
+            "value='literal-'\"$cgroup_path\"\n"
+            'printf "%s\\n" "$value"\n'
+        )
+        completed = subprocess.run(
+            ["/bin/bash", "-c", expanding, "--", "/raw-root"],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout, "literal-/raw-root\n")
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        expanding,
+                        label="mixed expanding quote negative",
+            )
+        )
+
+    def test_cgroup_path_reassignment_redirects_join_and_is_rejected(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="cgroup-path-reassignment-",
+            dir=artifact_root,
+        ) as temporary:
+            raw_cgroup = Path(temporary) / "raw"
+            fake_cgroup = Path(temporary) / "fake"
+            raw_cgroup.mkdir()
+            fake_cgroup.mkdir()
+            script = (
+                        'cgroup_path="$1"\n'
+                        'cgroup_path="$2"\n'
+                        'printf \'%s\\n\' "$$" > "$cgroup_path/cgroup.procs"\n'
+            )
+            completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "-c",
+                            script,
+                            "--",
+                            str(raw_cgroup),
+                            str(fake_cgroup),
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertFalse((raw_cgroup / "cgroup.procs").exists())
+            self.assertRegex(
+                        (fake_cgroup / "cgroup.procs").read_text(
+                            encoding="ascii"
+                        ),
+                        r"^[1-9][0-9]*\n$",
+            )
+            self.assertTrue(
+                        publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                            script,
+                            label="cgroup path reassignment runtime",
+                        )
+            )
 
     def test_command_query_clusters_are_nonmutating_and_invalid_clusters_fail(self):
         valid_clusters = (
@@ -10840,6 +11015,12 @@ exit 37
                 "shell_snapshot_state": "absent",
             },
             "shell_surface": {
+                "cgroup_path_initialization": (
+                    "exact-main-scope-argument-1-once"
+                ),
+                "cgroup_path_mutation": "reject-after-initialization",
+                "quote_resolution": "expansion-active-segments-only",
+                "literal_dollar_reexpansion": "forbidden",
                 "nested_braced_parameters": "reject-active",
                 "trap": "exact-isolated-err-only",
                 "absolute_raw_root_commands": "closed-signatures",
@@ -10996,6 +11177,14 @@ exit 37
             (("membership_reader",), "mapfile"),
             (("membership_checker", "maximum_bytes"), 8192),
             (("shell_surface", "trap"), "allow"),
+            (
+                ("shell_surface", "cgroup_path_mutation"),
+                "allow",
+            ),
+            (
+                ("shell_surface", "quote_resolution"),
+                "shlex-text-only",
+            ),
             (
                 (
                     "helper_calls",

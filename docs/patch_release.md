@@ -118,6 +118,14 @@ alone; the host continues to use the actual cgroup path for kill and removal.
 The raw cgroup path is used only for the exact initial
 `printf` membership-join write. Bind identity is checked through the raw and
 supervisor directory inodes; no raw `cgroup.procs` read remains. The parsed
+contract requires exactly one main-scope `cgroup_path="$1"` initialization
+before those join/bind/stat operations and rejects every later scalar, indexed,
+array, declaration, writer, unset, function, or dynamic mutation.
+Shell tokens retain quote segments: parameter expansion occurs only in
+unquoted or double-quoted active segments, while single-quoted and escaped
+dollars remain inert literal data. Mixed segments concatenate without
+recursively expanding literal dollars.
+The parsed
 contract rejects direct, redirected, wrapped, spaced, or aliased raw membership
 reads even when the fixed checker remains present. Tracked braced
 parameters with default/assign/error/alternate, prefix/suffix removal,
@@ -284,8 +292,8 @@ The post-candidate cgroup membership check uses fixed
 `/usr/bin/python3 -I -S`, not mutable shell state. Exact failing master
 `5779c38e245d9a14f063338b53851a97bb92d0c0` invoked `sort` from inside the
 builder cgroup to read `cgroup.procs`; the kernel therefore included that
-reader in the snapshot, so the expected wrapper-only assertion necessarily
-failed. The replacement checker expects its own transient PID plus the wrapper
+reader in the snapshot, so its single-wrapper assertion necessarily failed.
+The replacement checker expects its own transient PID plus the wrapper
 PID in either order from literal
 `/mnt/supervisor/cgroup/cgroup.procs`. Its exact AST fixes the path, byte bound,
 canonical positive-decimal grammar, cardinality, and PID set. Empty, malformed,

@@ -8,7 +8,6 @@ from dataclasses import dataclass
 import hashlib
 import posixpath
 import re
-import shlex
 from typing import Iterable
 
 
@@ -239,6 +238,7 @@ _RAW_CGROUP_ROOT_MARKER = "\x00raw-cgroup-root\x00"
 _AMBIGUOUS_TRACKED_PARAMETER_MARKER = "\x00ambiguous-tracked-parameter\x00"
 _AMBIGUOUS_ARRAY_ALIAS_MARKER = "\x00ambiguous-array-alias\x00"
 _AMBIGUOUS_DYNAMIC_ALIAS_MARKER = "\x00ambiguous-dynamic-alias\x00"
+_LITERAL_DOLLAR_MARKER = "\x00literal-dollar\x00"
 _DISPATCH_STATE_VARIABLES = frozenset(
     {"BASHOPTS", "BASH_ENV", "ENV", "PATH", "SHELLOPTS"}
 )
@@ -338,6 +338,7 @@ _RAW_CGROUP_DYNAMIC_FILENAME_MARKERS = (
 class _ShellToken:
     text: str
     has_shell_syntax: bool
+    segments: tuple[tuple[str, bool], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -787,17 +788,115 @@ def _token_shell_syntax_flags(command_text: str, *, label: str) -> tuple[bool, .
     return tuple(flags)
 
 
+def _token_quote_segments(
+    command_text: str,
+    *,
+    label: str,
+) -> tuple[tuple[tuple[str, bool], ...], ...]:
+    tokens: list[tuple[tuple[str, bool], ...]] = []
+    segments: list[tuple[str, bool]] = []
+    current: list[str] = []
+    current_active: bool | None = None
+    token_started = False
+    quote: str | None = None
+
+    def append(character: str, active: bool) -> None:
+        nonlocal current_active
+        if current_active is not None and current_active != active:
+            segments.append(("".join(current), current_active))
+            current.clear()
+        current_active = active
+        current.append(character)
+
+    def finish_token() -> None:
+        nonlocal current_active, token_started
+        if current_active is not None:
+            segments.append(("".join(current), current_active))
+        elif token_started:
+            segments.append(("", False))
+        tokens.append(tuple(segments))
+        segments.clear()
+        current.clear()
+        current_active = None
+        token_started = False
+
+    index = 0
+    while index < len(command_text):
+        character = command_text[index]
+        if quote is None:
+            if character in " \t":
+                if token_started:
+                    finish_token()
+                index += 1
+                continue
+            token_started = True
+            if character == "'":
+                quote = "'"
+                index += 1
+                continue
+            if character == '"':
+                quote = '"'
+                index += 1
+                continue
+            if character == "\\":
+                if index + 1 >= len(command_text):
+                    raise ValueError(
+                        f"{label} shell token continuation differs"
+                    )
+                append(command_text[index + 1], False)
+                index += 2
+                continue
+            append(character, True)
+            index += 1
+            continue
+        if quote == "'":
+            if character == "'":
+                quote = None
+            else:
+                append(character, False)
+            index += 1
+            continue
+        if character == '"':
+            quote = None
+            index += 1
+            continue
+        if (
+            character == "\\"
+            and index + 1 < len(command_text)
+            and command_text[index + 1] in '$`"\\'
+        ):
+            append(command_text[index + 1], False)
+            index += 2
+            continue
+        append(character, True)
+        index += 1
+    if quote is not None:
+        raise ValueError(f"{label} has unterminated quoting or continuation")
+    if token_started:
+        finish_token()
+    return tuple(tokens)
+
+
 def _parse_shell_tokens(command_text: str, *, label: str) -> tuple[_ShellToken, ...]:
     syntax_flags = _token_shell_syntax_flags(command_text, label=label)
-    try:
-        values = tuple(shlex.split(command_text))
-    except ValueError as error:
-        raise ValueError(f"{label} shell tokenization differs") from error
-    if len(values) != len(syntax_flags):
+    segments = _token_quote_segments(command_text, label=label)
+    values = tuple(
+        "".join(segment for segment, _active in token_segments)
+        for token_segments in segments
+    )
+    if len(values) != len(syntax_flags) or len(values) != len(segments):
         raise ValueError(f"{label} shell token boundaries differ")
     return tuple(
-        _ShellToken(text=value, has_shell_syntax=has_shell_syntax)
-        for value, has_shell_syntax in zip(values, syntax_flags)
+        _ShellToken(
+            text=value,
+            has_shell_syntax=has_shell_syntax,
+            segments=token_segments,
+        )
+        for value, has_shell_syntax, token_segments in zip(
+            values,
+            syntax_flags,
+            segments,
+        )
     )
 
 
@@ -2531,19 +2630,68 @@ def _resolve_shell_aliases(text: str, aliases: dict[str, str]) -> str:
     return resolved
 
 
+def _resolve_shell_token(
+    token: _ShellToken,
+    aliases: dict[str, str],
+) -> str:
+    if not token.segments:
+        return _resolve_shell_aliases(token.text, aliases)
+    return "".join(
+        _resolve_shell_aliases(segment, aliases)
+        if expansion_active
+        else segment.replace("$", _LITERAL_DOLLAR_MARKER)
+        for segment, expansion_active in token.segments
+    )
+
+
+def _slice_shell_token(token: _ShellToken, start: int) -> _ShellToken:
+    if not token.segments:
+        return _ShellToken(
+            text=token.text[start:],
+            has_shell_syntax=token.has_shell_syntax,
+        )
+    consumed = 0
+    sliced: list[tuple[str, bool]] = []
+    for segment, expansion_active in token.segments:
+        end = consumed + len(segment)
+        if end <= start:
+            consumed = end
+            continue
+        segment_start = max(0, start - consumed)
+        sliced.append((segment[segment_start:], expansion_active))
+        consumed = end
+    text = token.text[start:]
+    return _ShellToken(
+        text=text,
+        has_shell_syntax=token.has_shell_syntax,
+        segments=tuple(sliced),
+    )
+
+
+def _active_shell_token_text(token: _ShellToken) -> str:
+    if not token.segments:
+        return token.text if token.has_shell_syntax else ""
+    return "".join(
+        segment
+        for segment, expansion_active in token.segments
+        if expansion_active
+    )
+
+
 def _token_has_nested_braced_parameter(token: _ShellToken) -> bool:
     if not token.has_shell_syntax:
         return False
+    active_text = _active_shell_token_text(token)
     depth = 0
     index = 0
-    while index < len(token.text):
-        if token.text.startswith("${", index):
+    while index < len(active_text):
+        if active_text.startswith("${", index):
             if depth:
                 return True
             depth += 1
             index += 2
             continue
-        if token.text[index] == "}" and depth:
+        if active_text[index] == "}" and depth:
             depth -= 1
         index += 1
     return False
@@ -2637,13 +2785,14 @@ def _apply_direct_function_alias_writes(
             "supervisor_cgroup",
         } or name in _DISPATCH_STATE_VARIABLES:
             return True, written
-        value = _resolve_shell_aliases(
-            assignment.group("value"),
-            aliases,
+        value_token = _slice_shell_token(
+            token,
+            assignment.start("value"),
         )
+        value = _resolve_shell_token(value_token, aliases)
         if _assignment_value_has_dynamic_shell_syntax(
-            assignment.group("value"),
-            token_has_shell_syntax=token.has_shell_syntax,
+            _active_shell_token_text(value_token),
+            token_has_shell_syntax=value_token.has_shell_syntax,
         ):
             value = _AMBIGUOUS_DYNAMIC_ALIAS_MARKER + value
         if assignment.group("append"):
@@ -2771,8 +2920,8 @@ def _analyze_function_call(
             function_aliases,
         )
         for original_token in tokens:
-            token = _resolve_shell_aliases(
-                original_token.text,
+            token = _resolve_shell_token(
+                original_token,
                 function_aliases,
             )
             if (
@@ -3102,20 +3251,27 @@ def _resolve_tokens_for_alias_state(
 ) -> tuple[str, ...]:
     resolved_tokens = []
     for token_index, token in enumerate(tokens):
-        dynamic_text = token.text
         scalar_assignment = _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(
             token.text
         )
         indexed_assignment = _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(
             token.text
         )
+        dynamic_token = token
         if scalar_assignment is not None:
-            dynamic_text = scalar_assignment.group("value")
+            dynamic_token = _slice_shell_token(
+                token,
+                scalar_assignment.start("value"),
+            )
         elif indexed_assignment is not None:
-            dynamic_text = indexed_assignment.group("value")
+            dynamic_token = _slice_shell_token(
+                token,
+                indexed_assignment.start("value"),
+            )
+        dynamic_text = _active_shell_token_text(dynamic_token)
         dynamic = _assignment_value_has_dynamic_shell_syntax(
             dynamic_text,
-            token_has_shell_syntax=token.has_shell_syntax,
+            token_has_shell_syntax=dynamic_token.has_shell_syntax,
         )
         if (
             token_index == 0
@@ -3127,7 +3283,7 @@ def _resolve_tokens_for_alias_state(
             dynamic = False
         resolved_tokens.append(
             (_AMBIGUOUS_DYNAMIC_ALIAS_MARKER if dynamic else "")
-            + _resolve_shell_aliases(token.text, aliases)
+            + _resolve_shell_token(token, aliases)
         )
     return tuple(resolved_tokens)
 
@@ -3215,6 +3371,62 @@ def _normalized_command_mutates_supervisor(
             or argument.startswith("supervisor_cgroup[")
             for argument in arguments
             if not argument.startswith("-")
+        )
+    return False
+
+
+def _normalized_command_mutates_cgroup_path(
+    tokens: tuple[str, ...],
+) -> bool:
+    normalized = _normalize_shell_builtin_wrappers(tokens)
+    if normalized is None:
+        return any(
+            "cgroup_path" in token
+            or _AMBIGUOUS_ARRAY_ALIAS_MARKER in token
+            or _AMBIGUOUS_DYNAMIC_ALIAS_MARKER in token
+            for token in tokens
+        )
+    if not normalized:
+        return False
+    executable = posixpath.basename(normalized[0])
+    arguments = normalized[1:]
+
+    def target_is_protected(target: str) -> bool:
+        target_name = target.split("+=", 1)[0]
+        target_name = target_name.split("=", 1)[0]
+        target_name = target_name.split("[", 1)[0]
+        return (
+            target_name == "cgroup_path"
+            or _AMBIGUOUS_ARRAY_ALIAS_MARKER in target_name
+            or _AMBIGUOUS_DYNAMIC_ALIAS_MARKER in target_name
+            or _AMBIGUOUS_TRACKED_PARAMETER_MARKER in target_name
+        )
+
+    if normalized[0] in {".", "eval", "source"}:
+        return True
+    if executable in {"unset", "read", "mapfile", "readarray"}:
+        return any(
+            target_is_protected(argument)
+            for argument in arguments
+            if not argument.startswith(("-", "+"))
+        )
+    if executable == "printf":
+        return any(
+            argument == "-v"
+            and target_is_protected(arguments[index + 1])
+            for index, argument in enumerate(arguments[:-1])
+        )
+    if executable in {
+        "declare",
+        "export",
+        "local",
+        "readonly",
+        "typeset",
+    }:
+        return any(
+            target_is_protected(argument)
+            for argument in arguments
+            if not argument.startswith(("-", "+"))
         )
     return False
 
@@ -3797,6 +4009,8 @@ def has_forbidden_raw_builder_cgroup_membership_read(
     saw_supervisor_readonly_remount = False
     saw_supervisor_inode_verification = False
     reviewed_trap_count = 0
+    cgroup_path_initializations = 0
+    cgroup_path_initialized = False
     try:
         semantic_script = _strip_patch_release_parser_heredoc_bodies(
             script
@@ -3853,6 +4067,19 @@ def has_forbidden_raw_builder_cgroup_membership_read(
             ):
                 return True
             token_texts = _token_texts(tokens)
+            if command_text == 'cgroup_path="$1"':
+                if (
+                    cgroup_path_initializations != 0
+                    or (
+                        require_production_helpers
+                        and function_stack != ["builder_main"]
+                    )
+                ):
+                    return True
+                cgroup_path_initializations = 1
+                cgroup_path_initialized = True
+                aliases["cgroup_path"] = _RAW_CGROUP_ROOT_MARKER
+                continue
             if token_texts == (
                 "printf",
                 "%s\\n",
@@ -3860,6 +4087,11 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 ">",
                 "$cgroup_path/cgroup.procs",
             ):
+                if (
+                    require_production_helpers
+                    and not cgroup_path_initialized
+                ):
+                    return True
                 continue
             if token_texts == (
                 "/usr/bin/mount",
@@ -3867,6 +4099,11 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 "$cgroup_path",
                 "/mnt/supervisor/cgroup",
             ):
+                if (
+                    require_production_helpers
+                    and not cgroup_path_initialized
+                ):
+                    return True
                 saw_supervisor_bind = True
             elif token_texts == (
                 "/usr/bin/mount",
@@ -3919,6 +4156,15 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 tokens,
                 aliases,
             )
+            if (
+                require_production_helpers
+                and not cgroup_path_initialized
+                and any(
+                    _RAW_CGROUP_ROOT_MARKER in token
+                    for token in resolved_token_texts
+                )
+            ):
+                return True
             normalized_command = _normalize_shell_builtin_wrappers(
                 resolved_token_texts
             )
@@ -3971,6 +4217,10 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 resolved_token_texts
             ):
                 return True
+            if _normalized_command_mutates_cgroup_path(
+                resolved_token_texts
+            ):
+                return True
             array_declaration = (
                 bool(token_texts)
                 and posixpath.basename(token_texts[0])
@@ -3982,7 +4232,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 )
             )
             for token in tokens:
-                resolved = _resolve_shell_aliases(token.text, aliases)
+                resolved = _resolve_shell_token(token, aliases)
                 if _AMBIGUOUS_TRACKED_PARAMETER_MARKER in resolved:
                     return True
                 if (
@@ -4013,19 +4263,20 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     name = indexed_assignment.group("name")
                     if name in _DISPATCH_STATE_VARIABLES:
                         return True
-                    if name == "supervisor_cgroup":
+                    if name in {"cgroup_path", "supervisor_cgroup"}:
                         return True
+                    value_token = _slice_shell_token(
+                        token,
+                        indexed_assignment.start("value"),
+                    )
                     index = _resolve_shell_aliases(
                         indexed_assignment.group("index"),
                         aliases,
                     )
-                    value = _resolve_shell_aliases(
-                        indexed_assignment.group("value"),
-                        aliases,
-                    )
+                    value = _resolve_shell_token(value_token, aliases)
                     if _assignment_value_has_dynamic_shell_syntax(
-                        indexed_assignment.group("value"),
-                        token_has_shell_syntax=token.has_shell_syntax,
+                        _active_shell_token_text(value_token),
+                        token_has_shell_syntax=value_token.has_shell_syntax,
                     ):
                         value = _AMBIGUOUS_DYNAMIC_ALIAS_MARKER + value
                     if (
@@ -4058,13 +4309,16 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 name = assignment.group("name")
                 if name in _DISPATCH_STATE_VARIABLES:
                     return True
-                value = _resolve_shell_aliases(
-                    assignment.group("value"),
-                    aliases,
+                if name == "cgroup_path":
+                    return True
+                value_token = _slice_shell_token(
+                    token,
+                    assignment.start("value"),
                 )
+                value = _resolve_shell_token(value_token, aliases)
                 if _assignment_value_has_dynamic_shell_syntax(
-                    assignment.group("value"),
-                    token_has_shell_syntax=token.has_shell_syntax,
+                    _active_shell_token_text(value_token),
+                    token_has_shell_syntax=value_token.has_shell_syntax,
                 ):
                     value = _AMBIGUOUS_DYNAMIC_ALIAS_MARKER + value
                 is_array_literal = assignment.group("value").startswith(
@@ -4092,15 +4346,14 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     )
                 ):
                     return True
-                if name != "cgroup_path":
-                    if assignment.group("append"):
-                        aliases[name] = aliases.get(name, "") + value
-                    elif array_declaration or is_array_literal:
-                        aliases[name] = (
-                            _AMBIGUOUS_ARRAY_ALIAS_MARKER + value
-                        )
-                    else:
-                        aliases[name] = value
+                if assignment.group("append"):
+                    aliases[name] = aliases.get(name, "") + value
+                elif array_declaration or is_array_literal:
+                    aliases[name] = (
+                        _AMBIGUOUS_ARRAY_ALIAS_MARKER + value
+                    )
+                else:
+                    aliases[name] = value
             if array_declaration:
                 for token in tokens[1:]:
                     if re.fullmatch(
@@ -4119,8 +4372,15 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 original_tokens=token_texts,
             ):
                 return True
-        if require_production_helpers and reviewed_trap_count != 1:
-            return True
+        if require_production_helpers:
+            if reviewed_trap_count != 1:
+                return True
+            if (
+                cgroup_path_initializations != 1
+                or aliases.get("cgroup_path")
+                != _RAW_CGROUP_ROOT_MARKER
+            ):
+                return True
         return False
     except ValueError:
         return True

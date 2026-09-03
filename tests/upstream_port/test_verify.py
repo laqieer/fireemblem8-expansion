@@ -1253,6 +1253,14 @@ class VerifyCliCwdTests(unittest.TestCase):
             ):
                 with self.subTest(safe_declaration_alias=label):
                     verify_mod._parse_workflow_structure_text(changed)
+            for (
+                label,
+                changed,
+            ) in patch_workflow_tests.generate_quote_context_controls(
+                original
+            ):
+                with self.subTest(quote_context_control=label):
+                    verify_mod._parse_workflow_structure_text(changed)
             reordered = (
                 patch_workflow_tests.reordered_helper_inventory_control(
                     original

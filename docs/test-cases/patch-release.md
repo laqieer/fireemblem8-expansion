@@ -239,7 +239,13 @@ checker PID before ROM handoff, then exits before export. Only the exact
 initial `printf` join writes
 raw `$cgroup_path/cgroup.procs`; bind identity uses directory inodes and every
 membership read uses the read-only supervisor view, so no raw `cgroup.procs`
-read remains. Parsed mutations preserve the fixed checker while adding
+read remains. Exactly one main-scope `cgroup_path="$1"` initialization is
+required before join/bind/stat use; all later assignment, array, declaration,
+writer, unset, function, and dynamic mutations reject. Quote-segment-aware
+resolution expands only unquoted and double-quoted active segments.
+Single-quoted or escaped dollars remain literal, while mixed active/inert
+segments concatenate without recursive expansion. Parsed mutations preserve
+the fixed checker while adding
 raw mapfile/readarray, cat, sort, redirection, environment/shell wrappers,
 spacing, direct aliases, and composed root/leaf aliases; all fail closed.
 Braced default/assign/error/alternate, prefix/suffix removal, substring, case,
@@ -399,7 +405,7 @@ disappears promptly, its session has no descendant, and no orphan remains. The
 exact failing master
 `5779c38e245d9a14f063338b53851a97bb92d0c0` then reaches output validation but
 fails because its `sort` reader joins the builder cgroup while reading
-`cgroup.procs`, making the wrapper-only assertion self-defeating. The fixed
+`cgroup.procs`, making its single-wrapper assertion self-defeating. The fixed
 Python checker admits exactly the canonical wrapper and transient checker PIDs
 in either order. Empty, malformed nonnumeric, blank, signed, zero,
 leading/trailing-whitespace, missing-newline, oversized, duplicate,
@@ -435,7 +441,7 @@ archival-lane behavior changes.
   PID/start-time proof, missing/forged/parent-identity adversaries, and
   residual-state-only cleanup diagnostics, the closed authenticated isolated
   substage exit-status protocol, and exact failing-master `sort` self-
-  observation versus builtin wrapper-only membership, conditional candidate
+  observation versus the fixed wrapper/checker Python membership set, conditional candidate
   status capture with all six mapped stages plus unknown/success controls,
   the executable empty/malformed/duplicate/additional/order membership matrix
   with downstream-marker and external-process controls, safe-plus-raw cgroup
@@ -467,6 +473,8 @@ archival-lane behavior changes.
   safe controls, read/mapfile/readarray/dynamic/branch taint controls, global
   write-back, nested-brace/trap/absolute-command/mapfile-callback/reserved-
   membership-state repros, fixed membership-checker runtime/AST mutations,
+  canonical cgroup-path missing/duplicate/reassignment/writer mutations,
+  single-quoted/escaped/mixed quote-segment controls,
   parsed registry-contract mutations,
   recursive
   command/process-substitution inspection for

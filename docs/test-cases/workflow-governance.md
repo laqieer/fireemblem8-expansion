@@ -448,9 +448,10 @@ upload.
 Before `/sys` is masked, the exact owned cgroup is bound read-only below a
 root-only `0700` `/mnt/supervisor`; the candidate cannot read, write, execute,
 or traverse that parent. The exact cgroup child there remains read-only. The
-wrapper reads that supervisor view after `/sys` is masked and permits handoff
-only when its own PID is the sole member. Host-side kill/removal still uses the
-actual cgroup path.
+fixed isolated Python reads that supervisor view after `/sys` is masked and
+permits handoff only when the members are the wrapper PID and its transient
+checker PID. The checker exits before export; host-side kill/removal still
+uses the actual cgroup path.
 All repository/candidate-controlled commands finish before private download.
 Cleanup is verified before upload.
 After that cleanup, an adjacent final check revalidates exactly regular,

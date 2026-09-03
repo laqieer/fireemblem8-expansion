@@ -1139,7 +1139,7 @@ def classifier_bootstrap_contract_violations(text):
             "exact cgroup child",
             "read-only",
             "after /sys is masked",
-            "sole member",
+            "transient checker PID",
             "builder user, tree, wheelhouse, and candidate checkout",
             "unpredictable",
             "mode-restricted",
