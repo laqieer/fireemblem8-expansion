@@ -266,7 +266,7 @@ def finalize_result_attestation(repository_root, document, result):
 
 REPORTER_TRUST = {}
 def trusted_reporter_installation(repository_root):
-    return agent_handoff.load_coordinator_installation(repository_root, installation_root_path(repository_root))
+    return agent_handoff.load_reporter_trusted_installation(repository_root, installation_root_path(repository_root))
 def sign_reporter_trust_anchor(repository_root, anchor):
     anchor["signature"] = external_sign(repository_root, agent_handoff.reporter_trust_anchor_payload(anchor))
     return anchor
@@ -302,7 +302,7 @@ def trusted_reporter_anchor(
         "expires_at": iso_utc(expires_at),
     })
 def remember_reporter_trust(record, trusted_anchor, trusted_installation):
-    REPORTER_TRUST[record["input_seal"]] = (copy.deepcopy(trusted_anchor), copy.deepcopy(trusted_installation))
+    REPORTER_TRUST[record["input_seal"]] = (copy.deepcopy(trusted_anchor), trusted_installation)
     return record
 def reporter_record(repository_root, document, result):
     trusted_installation = trusted_reporter_installation(repository_root)
@@ -326,7 +326,7 @@ def reporter_fixture_trust(*bundles):
         "anchors": [copy.deepcopy(REPORTER_TRUST[bundle["input_seal"]][0]) for bundle in bundles],
     }
 def reporter_fixture_installation(*bundles):
-    return copy.deepcopy(REPORTER_TRUST[bundles[0]["input_seal"]][1])
+    return REPORTER_TRUST[bundles[0]["input_seal"]][1]
 def validate_reporter_fixture(
     fixture,
     implementation_handoff_trust=None,
@@ -353,7 +353,7 @@ def verify_reporter_record_offline(
     if trusted_anchor is None or trusted_installation is None:
         stored_anchor, stored_installation = REPORTER_TRUST[record["input_seal"]]
         trusted_anchor = copy.deepcopy(stored_anchor if trusted_anchor is None else trusted_anchor)
-        trusted_installation = copy.deepcopy(stored_installation if trusted_installation is None else trusted_installation)
+        trusted_installation = stored_installation if trusted_installation is None else trusted_installation
     return agent_handoff.verify_reporter_record(record, revalidate_git=False, trusted_anchor=trusted_anchor, trusted_installation=trusted_installation, current_time=current_time)
 def installation_root_path(repository_root):
     return COORDINATOR_INSTALLATIONS[str(repository_root)]
@@ -6996,6 +6996,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             ]
             forged_trust = {"schema_version": 1, "anchors": []}
             with handoff_repository() as (attacker_root, _b, _p, _r):
+                attacker_installation = trusted_reporter_installation(attacker_root)
                 forged_trust["anchors"].append(
                     trusted_reporter_anchor(
                         attacker_root,
@@ -7005,6 +7006,19 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                         signer=forged_signer,
                         signing_root=attacker_root,
                     )
+                )
+            candidate_install = root / "candidate-installation"
+            shutil.copytree(installation_root_path(root), candidate_install)
+            with self.assertRaisesRegex(
+                agent_handoff.HandoffDataError,
+                "outside the candidate worktree",
+            ):
+                agent_handoff.verify_reporter_record(
+                    record,
+                    revalidate_git=False,
+                    repository_root=root,
+                    trusted_anchor=fixture_trust["anchors"][0],
+                    trusted_installation=candidate_install,
                 )
         verify_reporter_record_offline(
             record,
@@ -7025,6 +7039,8 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
         for trust, installation, pattern in (
             (None, fixture_installation, "require external trusted anchor attestations"),
             (fixture_trust, None, "require an external trusted installation"),
+            (fixture_trust, {}, "must be a Path or validated installation handle"),
+            (fixture_trust, attacker_installation, "trusted anchor\\.signer does not match trusted installation"),
             (wrong_trust, fixture_installation, "trusted anchor does not match its record"),
             (expired_trust, fixture_installation, "future-dated or expired"),
         ):

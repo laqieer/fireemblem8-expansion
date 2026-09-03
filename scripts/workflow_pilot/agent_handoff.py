@@ -123,6 +123,7 @@ ZERO_SEAL = "0" * 64
 HISTORY_REF_PREFIX = "refs/heads/workflow-pilot/authority"
 HISTORY_ANCHOR_REF_PREFIX = "refs/heads/workflow-pilot/authority-anchor"
 REPOSITORY_IDENTITY_REF = "refs/workflow-pilot/repository-identity"
+_VERIFIED_REPORTER_INSTALLATION_TOKEN = object()
 RAW_DIFF_CHECK_PATH = Path(__file__).resolve().with_name("raw_diff_check.py")
 RAW_DIFF_CHECK_REPOSITORY_PATH = "scripts/workflow_pilot/raw_diff_check.py"
 HANDOFF_SCHEMA_REPOSITORY_PATH = (
@@ -1139,27 +1140,55 @@ def signed_record_payload(domain: bytes, record: dict[str, Any]) -> bytes:
     )
 def reporter_trust_anchor_payload(anchor: dict[str, Any]) -> bytes:
     return signed_record_payload(REPORTER_TRUST_ANCHOR_DOMAIN, anchor)
-def _parse_reporter_trusted_installation(raw: Any, *, label: str) -> dict[str, Any]:
-    installation = copy.deepcopy(expect_object(raw, label))
-    if (
-        "repository" not in installation
-        or "repository_database_id" not in installation
-        or ("_signer" not in installation and "signer_public" not in installation)
-    ):
-        raise HandoffDataError(f"{label} is missing trusted installation fields")
-    signer_label = f"{label}._signer" if "_signer" in installation else f"{label}.signer_public"
-    return {
-        "repository": expect_string(installation["repository"], f"{label}.repository"),
-        "repository_database_id": expect_int(installation["repository_database_id"], f"{label}.repository_database_id", 1),
-        "signer": _parse_signer_public(installation.get("_signer", installation["signer_public"]), signer_label),
-    }
+class _VerifiedReporterInstallation:
+    __slots__ = ("repository", "repository_database_id", "signer")
+
+    def __init__(self, token: object, installation: dict[str, Any]) -> None:
+        if token is not _VERIFIED_REPORTER_INSTALLATION_TOKEN:
+            raise TypeError("use load_reporter_trusted_installation()")
+        self.repository = installation["repository"]
+        self.repository_database_id = installation["repository_database_id"]
+        self.signer = copy.deepcopy(installation["_signer"])
+
+
+def load_reporter_trusted_installation(
+    repository_root: Path,
+    installation_path: Path,
+) -> _VerifiedReporterInstallation:
+    return _VerifiedReporterInstallation(
+        _VERIFIED_REPORTER_INSTALLATION_TOKEN,
+        load_coordinator_installation(repository_root, installation_path),
+    )
+
+
+def _coerce_reporter_trusted_installation(
+    trusted_installation: Any,
+    *,
+    repository_root: Path | None,
+    label: str,
+) -> _VerifiedReporterInstallation:
+    if isinstance(trusted_installation, _VerifiedReporterInstallation):
+        return trusted_installation
+    if isinstance(trusted_installation, Path):
+        if repository_root is None:
+            raise HandoffDataError(
+                f"{label} path requires repository_root"
+            )
+        return load_reporter_trusted_installation(
+            repository_root,
+            trusted_installation,
+        )
+    raise HandoffDataError(
+        f"{label} must be a Path or validated installation handle"
+    )
+
+
 def _verify_reporter_trust_anchor(
     raw_anchor: Any, *, expected_input_seal: str, original_authority: dict[str, Any],
-    trusted_installation: Any, current_time: datetime | None, label: str,
+    trusted_installation: _VerifiedReporterInstallation, current_time: datetime | None, label: str,
 ) -> dict[str, Any]:
     anchor = copy.deepcopy(expect_object(raw_anchor, label))
     expect_keys(anchor, label, ("input_seal", "authority_digest", "repository", "ref", "anchor_ref", "signer", "issued_at", "expires_at", "signature"))
-    installation = _parse_reporter_trusted_installation(trusted_installation, label=f"{label} trusted installation")
     input_seal = anchor["input_seal"]
     if not isinstance(input_seal, str) or reporter.SHA256_RE.fullmatch(input_seal) is None:
         raise HandoffDataError(f"{label}.input_seal must be a SHA-256")
@@ -1169,12 +1198,12 @@ def _verify_reporter_trust_anchor(
     if not isinstance(authority_digest, str) or reporter.SHA256_RE.fullmatch(authority_digest) is None:
         raise HandoffDataError(f"{label}.authority_digest must be a SHA-256")
     repository = expect_string(anchor["repository"], f"{label}.repository")
-    if repository != installation["repository"]:
+    if repository != trusted_installation.repository:
         raise HandoffDataError(f"{label}.repository does not match trusted installation")
     ref = expect_string(anchor["ref"], f"{label}.ref")
     anchor_ref = expect_string(anchor["anchor_ref"], f"{label}.anchor_ref")
     signer = _parse_signer_public(anchor["signer"], f"{label}.signer")
-    if signer != installation["signer"]:
+    if signer != trusted_installation.signer:
         raise HandoffDataError(f"{label}.signer does not match trusted installation")
     issued_at = parse_time(anchor["issued_at"], f"{label}.issued_at")
     expires_at = parse_time(anchor["expires_at"], f"{label}.expires_at")
@@ -1183,10 +1212,10 @@ def _verify_reporter_trust_anchor(
     verification_time = authoritative_current_time(current_time, label=f"{label} current_time")
     if issued_at > verification_time or expires_at < verification_time:
         raise HandoffDataError(f"{label} is future-dated or expired")
-    verify_external_signature(installation["signer"], reporter_trust_anchor_payload(anchor), anchor["signature"], f"{label}.signature")
+    verify_external_signature(trusted_installation.signer, reporter_trust_anchor_payload(anchor), anchor["signature"], f"{label}.signature")
     if authority_digest != hashlib.sha256(normalized_json(original_authority)).hexdigest() or repository != original_authority["repository"] or ref != original_authority["ref"] or anchor_ref != original_authority["anchor_ref"]:
         raise HandoffDataError(f"{label} does not match its record")
-    return {"signer": signer, "repository_database_id": installation["repository_database_id"]}
+    return {"signer": signer, "repository_database_id": trusted_installation.repository_database_id}
 def worktree_identity(repository_root: Path) -> str:
     repository_root = validate_repository_root(repository_root)
     payload = {
@@ -5235,7 +5264,7 @@ def _verify_handoff_document_result(
     revalidate_git: bool,
     repository_root: Path | None = None,
     trusted_anchor: dict[str, Any] | None = None,
-    trusted_installation: dict[str, Any] | None = None,
+    trusted_installation: Path | _VerifiedReporterInstallation | None = None,
     current_time: datetime | None = None,
     current_authority: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -5427,11 +5456,16 @@ def _verify_handoff_document_result(
             raise HandoffDataError(
                 "handoff reporter offline verification requires trusted installation"
             )
+        verified_installation = _coerce_reporter_trusted_installation(
+            trusted_installation,
+            repository_root=repository_root,
+            label="handoff reporter trusted installation",
+        )
         trusted = _verify_reporter_trust_anchor(
             trusted_anchor,
             expected_input_seal=result["input_seal"],
             original_authority=original_authority,
-            trusted_installation=trusted_installation,
+            trusted_installation=verified_installation,
             current_time=current_time,
             label="handoff reporter trusted anchor",
         )
@@ -5622,7 +5656,8 @@ def reporter_record(
     result_attestation: dict[str, Any],
     *,
     trusted_anchor: dict[str, Any],
-    trusted_installation: dict[str, Any],
+    trusted_installation: Path | _VerifiedReporterInstallation,
+    repository_root: Path | None = None,
 ) -> dict[str, Any]:
     record = {
         "source_handoff_ids": sorted(
@@ -5638,6 +5673,7 @@ def reporter_record(
     verify_reporter_record(
         record,
         revalidate_git=False,
+        repository_root=repository_root,
         trusted_anchor=trusted_anchor,
         trusted_installation=trusted_installation,
     )
@@ -5648,7 +5684,7 @@ def verify_reporter_record(
     revalidate_git: bool,
     repository_root: Path | None = None,
     trusted_anchor: dict[str, Any] | None = None,
-    trusted_installation: dict[str, Any] | None = None,
+    trusted_installation: Path | _VerifiedReporterInstallation | None = None,
     current_time: datetime | None = None,
 ) -> dict[str, Any]:
     record = copy.deepcopy(expect_object(raw_record, "handoff reporter record"))
