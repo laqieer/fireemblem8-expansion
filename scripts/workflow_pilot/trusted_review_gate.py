@@ -2206,13 +2206,7 @@ def run_base_pinned_checker(
     origin_root.chmod(0o555)
     head_root.chmod(0o555)
     sandbox.chmod(0o555)
-    command = (
-        "/usr/bin/python3",
-        "-I",
-        str(checker_path),
-        "--input",
-        str(input_path),
-    )
+    command = BASE_CHECKER_ARGV
     environment = {
         "HOME": str(sandbox),
         "LC_ALL": "C",
@@ -3236,7 +3230,10 @@ def collect_live_evidence_bytes(
                 "the immutable pre-review receipt"
             )
     pre_reviews = []
-    if authoritative_trigger is not None and authoritative_trigger["pre_review_required"]:
+    if (
+        resolved_authoritative_trigger is not None
+        and resolved_authoritative_trigger["pre_review_required"]
+    ):
         pre_reviews.append(
             {
                 "id": review_report["report_id"],
@@ -3590,7 +3587,7 @@ def _run_trusted_gate(
         envelope,
         execution_receipts,
         local_remediation_receipt=local_remediation_receipt,
-        authoritative_trigger=authoritative_trigger,
+        authoritative_trigger=None,
         adapter=adapter,
         clock=clock,
     )

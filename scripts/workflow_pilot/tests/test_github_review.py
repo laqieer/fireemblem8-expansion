@@ -2402,6 +2402,17 @@ class TrustedGitHubGateTests(unittest.TestCase):
             self.assertTrue(result["gates"]["current_candidate_reviewed"])
             self.assertEqual(result["identity"]["original_pre_review_head"], original_head)
             self.assertFalse(result["bootstrap"]["mode"] == "introduction")
+            for case_name, mutate, pattern in (
+                ("deleted", lambda payload: payload["data"]["repository"]["pullRequest"]["comments"].__setitem__("nodes", []), "GitHub head/review/thread state changed during gate evaluation|requires an authoritative trigger decision"),
+                ("body", lambda payload: payload["data"]["repository"]["pullRequest"]["comments"]["nodes"][0].__setitem__("body", payload["data"]["repository"]["pullRequest"]["comments"]["nodes"][0]["body"].replace(candidate, original_head, 1)), "does not bind the exact initial remote review head"),
+                ("edited", lambda payload: payload["data"]["repository"]["pullRequest"]["comments"]["nodes"][0].__setitem__("updatedAt", "2026-08-31T03:11:31Z"), "must not be edited"),
+                ("actor", lambda payload: payload["data"]["repository"]["pullRequest"]["comments"]["nodes"][0].__setitem__("author", human_graphql_actor()), "exact trusted coordinator actor"),
+                ("id", lambda payload: payload["data"]["repository"]["pullRequest"]["comments"]["nodes"][0].__setitem__("id", "COMMENT_DECISION_002"), "GitHub head/review/thread state changed during gate evaluation"),
+            ):
+                replay = repo / "build" / f"replay-{case_name}"; replay.mkdir(parents=True, exist_ok=True)
+                mutated = copy.deepcopy(payload); mutate(mutated)
+                with self.subTest(case=case_name), self.assertRaisesRegex(reporter.PilotDataError, pattern):
+                    trusted_review_gate._run_trusted_gate(raw_contract=contract, repository_root=repo, expected_candidate=candidate, expected_remote_head=candidate, expected_base=base, review_receipt_bytes=receipt, replay_store=replay, trusted_key_id=KEY_ID, trusted_key_epoch=KEY_EPOCH, trusted_key=KEY, current_time=datetime(2026, 8, 31, 4, 0, tzinfo=timezone.utc), adapter=StaticAdapter(payload, mutated), clock=lambda: datetime(2026, 8, 31, 4, 1, tzinfo=timezone.utc))
         finally:
             shutil.rmtree(repo)
     def test_external_preregistration_rejects_force_pushed_away_remote_head(self):
@@ -3095,23 +3106,15 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 datetime.now(timezone.utc) + timedelta(seconds=1),
             )
         )
-        receipt = trusted_review_gate.run_base_pinned_checker(
-            self.repo,
-            contract=contract,
-            candidate_sha=self.candidate_sha,
-            review_round=1,
-            review_context=remote_review,
-            all_remote_reviews=[remote_review],
-            remote_findings=[],
-            remote_finding_ids=[],
-            captured_github_payload=self.adapter(),
-            original_review_report_bytes=reporter.normalized_json(report),
-            original_review_receipt=receipt_envelope,
-            original_receipt_sha256=hashlib.sha256(receipt_bytes).hexdigest(),
-            assertion_requests=requests,
-            trusted_key=KEY,
-            clock=lambda: next(times),
-        )
+        captured = {}
+        real_run = trusted_review_gate.subprocess.run
+        def wrapper(command, *args, **kwargs):
+            if not captured and tuple(command[:2]) == trusted_review_gate.BASE_CHECKER_ARGV[:2] and command[-2:] == ("--input", "checker-input.json"):
+                captured["argv"] = list(command); captured["cwd"] = kwargs.get("cwd")
+            return real_run(command, *args, **kwargs)
+        trusted_review_gate.subprocess.run = wrapper
+        try: receipt = trusted_review_gate.run_base_pinned_checker(self.repo, contract=contract, candidate_sha=self.candidate_sha, review_round=1, review_context=remote_review, all_remote_reviews=[remote_review], remote_findings=[], remote_finding_ids=[], captured_github_payload=self.adapter(), original_review_report_bytes=reporter.normalized_json(report), original_review_receipt=receipt_envelope, original_receipt_sha256=hashlib.sha256(receipt_bytes).hexdigest(), assertion_requests=requests, trusted_key=KEY, clock=lambda: next(times))
+        finally: trusted_review_gate.subprocess.run = real_run
         self.assertEqual(receipt["result"], "pass")
         self.assertEqual(receipt["base_sha"], self.base_sha)
         self.assertEqual(receipt["candidate_sha"], self.candidate_sha)
@@ -3128,6 +3131,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
             receipt["assertion_program_argv"],
             list(trusted_review_gate.ASSERTION_PROGRAM_ARGV),
         )
+        self.assertEqual(receipt["argv"], captured["argv"]); self.assertEqual(receipt["argv"], list(trusted_review_gate.BASE_CHECKER_ARGV)); self.assertTrue(Path(captured["cwd"]).name.startswith("review-base-check-"))
         self.assertTrue(all(result["program_argv"] == receipt["assertion_program_argv"] for result in receipt["assertion_results"]))
         expected_head_tree = git(
             self.repo, "rev-parse", f"{self.candidate_sha}^{{tree}}"
