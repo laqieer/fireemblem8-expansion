@@ -165,7 +165,10 @@ utility. Exact failing master
 builder cgroup to read `cgroup.procs`; the kernel therefore included that
 reader in the snapshot, so the expected wrapper-only assertion necessarily
 failed. The builtin reads the same authenticated read-only cgroup view without
-creating another member.
+creating another member. Its executable fixture accepts exactly one canonical
+wrapper PID; empty, malformed, signed, whitespace-padded, zero, duplicate, and
+additional-member snapshots fail before success or export, regardless of
+member ordering, without signaling an unrelated live process.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

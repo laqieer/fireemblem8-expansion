@@ -6055,7 +6055,7 @@ exit 37
                 socket_left.close()
                 socket_right.close()
 
-    def test_supervisor_membership_view_allows_only_wrapper_pid(self):
+    def test_supervisor_membership_runtime_accepts_exact_singleton_only(self):
         full_script = named_step_run_script(
             self.text,
             "Build candidate in isolated namespace and stage public inputs",
@@ -6074,29 +6074,130 @@ exit 37
         ) as temporary:
             supervisor = Path(temporary) / "supervisor"
             supervisor.mkdir(mode=0o700)
-            (supervisor / "cgroup.procs").write_text("", encoding="ascii")
+            membership_path = supervisor / "cgroup.procs"
+            success_marker = Path(temporary) / "success"
+            export_marker = Path(temporary) / "export"
+            external = subprocess.Popen(
+                ["/bin/sleep", "60"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
 
-            def run(extra_pid):
+            def run(writer: str) -> subprocess.CompletedProcess[str]:
+                membership_path.unlink(missing_ok=True)
+                success_marker.unlink(missing_ok=True)
+                export_marker.unlink(missing_ok=True)
                 setup = (
                     "set -e\n"
                     'supervisor_cgroup="$1"\n'
-                    'printf \'%s\\n\' "$$" > '
-                    '"$supervisor_cgroup/cgroup.procs"\n'
+                    'external_pid="$2"\n'
+                    + writer
+                    + "\n"
                 )
-                if extra_pid is not None:
-                    setup += (
-                        f"printf '%s\\n' {extra_pid} >> "
-                        '"$supervisor_cgroup/cgroup.procs"\n'
-                    )
                 return subprocess.run(
-                    ["/bin/bash", "-c", setup + membership_check, "--", str(supervisor)],
+                    [
+                        "/bin/bash",
+                        "-c",
+                        setup
+                        + membership_check
+                        + "\n"
+                        + 'printf "success\\n" > "$3"\n'
+                        + 'printf "export\\n" > "$4"\n',
+                        "--",
+                        str(supervisor),
+                        str(external.pid),
+                        str(success_marker),
+                        str(export_marker),
+                    ],
                     check=False,
                     capture_output=True,
                     text=True,
                 )
 
-            self.assertEqual(run(None).returncode, 0)
-            self.assertNotEqual(run(999999).returncode, 0)
+            valid_writer = (
+                'printf \'%s\\n\' "$$" > '
+                '"$supervisor_cgroup/cgroup.procs"'
+            )
+            invalid_writers = {
+                "empty": ': > "$supervisor_cgroup/cgroup.procs"',
+                "empty-line": (
+                    'printf \'\\n\' > "$supervisor_cgroup/cgroup.procs"'
+                ),
+                "nonnumeric": (
+                    "printf 'not-a-pid\\n' > "
+                    '"$supervisor_cgroup/cgroup.procs"'
+                ),
+                "whitespace": (
+                    "printf ' \\n' > "
+                    '"$supervisor_cgroup/cgroup.procs"'
+                ),
+                "plus-sign": (
+                    'printf \'+%s\\n\' "$$" > '
+                    '"$supervisor_cgroup/cgroup.procs"'
+                ),
+                "minus-sign": (
+                    'printf \'%s\\n\' "-$$" > '
+                    '"$supervisor_cgroup/cgroup.procs"'
+                ),
+                "zero": (
+                    "printf '0\\n' > "
+                    '"$supervisor_cgroup/cgroup.procs"'
+                ),
+                "leading-whitespace": (
+                    'printf \' %s\\n\' "$$" > '
+                    '"$supervisor_cgroup/cgroup.procs"'
+                ),
+                "trailing-whitespace": (
+                    'printf \'%s \\n\' "$$" > '
+                    '"$supervisor_cgroup/cgroup.procs"'
+                ),
+                "duplicate-wrapper": (
+                    'printf \'%s\\n%s\\n\' "$$" "$$" > '
+                    '"$supervisor_cgroup/cgroup.procs"'
+                ),
+                "external-only": (
+                    'printf \'%s\\n\' "$external_pid" > '
+                    '"$supervisor_cgroup/cgroup.procs"'
+                ),
+                "extra-after": (
+                    'printf \'%s\\n%s\\n\' "$$" "$external_pid" > '
+                    '"$supervisor_cgroup/cgroup.procs"'
+                ),
+                "extra-before": (
+                    'printf \'%s\\n%s\\n\' "$external_pid" "$$" > '
+                    '"$supervisor_cgroup/cgroup.procs"'
+                ),
+            }
+            try:
+                valid = run(valid_writer)
+                self.assertEqual(valid.returncode, 0, valid.stderr)
+                self.assertEqual(valid.stdout, "")
+                self.assertEqual(valid.stderr, "")
+                self.assertEqual(
+                    success_marker.read_text(encoding="ascii"),
+                    "success\n",
+                )
+                self.assertEqual(
+                    export_marker.read_text(encoding="ascii"),
+                    "export\n",
+                )
+                self.assertIsNone(external.poll())
+
+                for name, writer in invalid_writers.items():
+                    with self.subTest(case=name):
+                        rejected = run(writer)
+                        self.assertEqual(rejected.returncode, 1)
+                        self.assertEqual(rejected.stdout, "")
+                        self.assertEqual(rejected.stderr, "")
+                        self.assertFalse(success_marker.exists())
+                        self.assertFalse(export_marker.exists())
+                        self.assertIsNone(external.poll())
+                        os.kill(external.pid, 0)
+            finally:
+                if external.poll() is None:
+                    external.terminate()
+                    external.wait(timeout=5)
 
             failed_workflow = subprocess.check_output(
                 [
@@ -6123,7 +6224,7 @@ exit 37
             failed_membership_check = failed_script[
                 failed_start:failed_end
             ]
-            fifo = supervisor / "cgroup.procs"
+            fifo = membership_path
             fifo.unlink()
             os.mkfifo(fifo)
             old_process = subprocess.Popen(
@@ -8363,6 +8464,9 @@ exit 37
             self.assertIn("conditional", text)
             self.assertIn("set +e", text)
             self.assertIn("exactly once", text)
+            self.assertIn("empty, malformed", text)
+            self.assertIn("duplicate", text)
+            self.assertIn("unrelated live process", text)
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)

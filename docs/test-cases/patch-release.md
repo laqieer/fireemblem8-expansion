@@ -281,9 +281,12 @@ exact failing master
 `5779c38e245d9a14f063338b53851a97bb92d0c0` then reaches output validation but
 fails because its `sort` reader joins the builder cgroup while reading
 `cgroup.procs`, making the wrapper-only assertion self-defeating. The fixed
-Bash-builtin `mapfile` check admits the sole wrapper and still rejects an
-additional member. The default bare `make` path remains 16 MiB/default-off and
-does not receive a base secret, patch artifact, or publish step.
+Bash-builtin `mapfile` check admits exactly one canonical wrapper PID. The
+empty, malformed nonnumeric, blank, signed, zero, leading/trailing-whitespace,
+duplicate, external-only, and extra-before/extra-after snapshots all fail
+before success or export markers and never signal the unrelated live process.
+The default bare `make` path remains 16 MiB/default-off and does not receive a
+base secret, patch artifact, or publish step.
 
 ### Interactions and save compatibility
 
@@ -314,7 +317,8 @@ archival-lane behavior changes.
   substage exit-status protocol, and exact failing-master `sort` self-
   observation versus builtin wrapper-only membership, conditional candidate
   status capture with all six mapped stages plus unknown/success controls,
-  recursive
+  the executable empty/malformed/duplicate/additional/order membership matrix
+  with downstream-marker and external-process controls, recursive
   command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions
   through inline `else`/brace/case/loop forms, `setsid`-wrapped and common
