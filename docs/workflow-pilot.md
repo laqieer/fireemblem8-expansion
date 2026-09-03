@@ -635,7 +635,7 @@ The review-family report names, but does not duplicate or overwrite, the existin
 | Time to clean review | `delivery.first_push_to_clean_review.*` |
 | Coordination overhead | `efficiency.pilot_coordination_minutes` and `efficiency.metadata_maintenance_minutes` |
 
-The frozen baseline remains 34 rounds, 101 findings, 5.054 findings/KLOC, unavailable historical time-to-clean evidence, and zero captured pilot and metadata overhead. Future #179 pilot events use those existing identities and formulas; this module adds no alternate counter or current-state field.
+The frozen baseline keeps the same semantic metrics and outcomes: 34 rounds, 101 findings, 5.054 findings/KLOC, unavailable historical time-to-clean evidence, and zero captured pilot and metadata overhead. The authenticated review and manual-handoff contract intentionally updates the baseline representation to schema v2 and refreshes the derived `identities.seal` and `decisions.seal`; the semantic metric values, formulas, and availability reasons remain unchanged. Future #179 pilot events use those existing formulas and outcomes; this module adds no alternate counter or current-state field.
 
 The contract depends on #176 and is required by #181. It conflicts with dirty or candidate-held trusted code/credentials, duplicate review agents, mutating pre-review permissions, incomplete or unsupported outcome evidence, stale base/head/blob/status evidence, spoofed clean markers, backdated receipts, inferred push histories, overlapping disposition actors, and advancement through an unresolved held head. It has no game/runtime, save, generated game-data, localization, ROM, RAM, modern debug/release, or archival impact and needs no feature flag. Rollback is a normal revert of issue #179.
 
