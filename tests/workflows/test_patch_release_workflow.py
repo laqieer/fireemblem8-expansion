@@ -248,6 +248,7 @@ def workflow_has_raw_builder_cgroup_membership_read(workflow: str) -> bool:
     return publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
         builder_shell,
         label="publisher builder raw cgroup membership read",
+        require_production_helpers=True,
     )
 
 
@@ -779,6 +780,18 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
             '          /bin/cat "$@" > /dev/null\n'
             "        }\n"
             '        helper "$cgroup_path/cgroup.procs"\n',
+            "        raw_root=/safe\n"
+            "        helper() {\n"
+            '          /bin/cat "$raw_root"/cgroup.proc? > /dev/null\n'
+            "        }\n"
+            '        raw_root="$cgroup_path"\n'
+            "        helper\n",
+            "        raw_root=/safe\n"
+            "        helper() {\n"
+            '          /bin/cat "$raw_root"/cgroup.proc? > /dev/null\n'
+            "        }\n"
+            '        printf -v raw_root %s "$cgroup_path"\n'
+            "        helper\n",
         )
     )
     function_shadow_mutations = [
@@ -857,14 +870,11 @@ def generate_safe_declaration_alias_controls(workflow: str):
         "readonly",
         "local",
     ):
-        function_name = builtin.replace("type", "type_")
         control = (
-            f"        safe_{function_name}_alias_control() {{\n"
-            '          raw_root="$cgroup_path"\n'
-            "          target=raw_root\n"
-            f'          {builtin} "$target=/safe"\n'
-            '          /bin/cat "$raw_root"/cgroup.proc? > /dev/null\n'
-            "        }\n"
+            '        raw_root="$cgroup_path"\n'
+            "        target=raw_root\n"
+            f'        {builtin} "$target=/safe"\n'
+            '        /bin/cat "$raw_root"/cgroup.proc? > /dev/null\n'
         )
         changed = workflow.replace(marker, marker + control, 1)
         if changed == workflow:
@@ -872,6 +882,74 @@ def generate_safe_declaration_alias_controls(workflow: str):
                 "safe declaration alias control marker differs"
             )
         yield builtin, changed
+
+
+def generate_helper_inventory_mutations(workflow: str):
+    marker = (
+        '        builtin mapfile -t cgroup_members < '
+        '"$supervisor_cgroup/cgroup.procs"\n'
+    )
+    mutations = {
+        "added": workflow.replace(
+            marker,
+            "        added_helper() {\n"
+            "          true\n"
+            "        }\n"
+            + marker,
+            1,
+        ),
+        "duplicate": workflow.replace(
+            marker,
+            "        unmount_if_mounted() {\n"
+            "          true\n"
+            "        }\n"
+            + marker,
+            1,
+        ),
+        "modified": workflow.replace(
+            '        unmount_if_mounted() {\n'
+            '          if /usr/bin/mountpoint -q "$1"; then\n',
+            '        unmount_if_mounted() {\n'
+            "          true\n"
+            '          if /usr/bin/mountpoint -q "$1"; then\n',
+            1,
+        ),
+    }
+    for label, changed in mutations.items():
+        if changed == workflow:
+            raise AssertionError(
+                f"{label} helper inventory mutation marker differs"
+            )
+        yield label, changed
+
+
+def reordered_helper_inventory_control(workflow: str) -> str:
+    first = (
+        "        read_checked_supervisor_transport_file() {\n"
+        '          local path="$1"\n'
+        '          local size_limit="$2"\n'
+        "          local signature\n"
+        '          signature="$(checked_supervisor_transport_signature "$path" "$size_limit")" || return 125\n'
+        "          mapfile -d '' -t checked_supervisor_transport_output \\\n"
+        '            < "$path" || return 125\n'
+        '          test "$(checked_supervisor_transport_signature "$path" "$size_limit")" = \\\n'
+        '            "$signature" || return 125\n'
+        "        }\n"
+    )
+    second = (
+        "        remove_supervisor_transport_file() {\n"
+        '          local path="$1"\n'
+        '          /bin/rm -f -- "$path" || return 125\n'
+        '          test ! -e "$path" || return 125\n'
+        "        }\n"
+    )
+    adjacent = first + second
+    changed = workflow.replace(adjacent, second + first, 1)
+    if changed == workflow:
+        raise AssertionError(
+            "helper inventory reorder marker differs"
+        )
+    return changed
 
 
 def render_supervisor_parent_remount_mutation(
@@ -7060,6 +7138,50 @@ exit 37
                     publisher_boundary_errors(changed),
                 )
 
+    def test_production_helper_inventory_is_exact_and_order_independent(self):
+        self.assertFalse(
+            workflow_has_raw_builder_cgroup_membership_read(self.text)
+        )
+        reordered = reordered_helper_inventory_control(self.text)
+        self.assertFalse(
+            workflow_has_raw_builder_cgroup_membership_read(reordered)
+        )
+        with (
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_patch_release_run_script_identity",
+            ),
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_builder_isolation_shell_identity",
+            ),
+        ):
+            reordered_errors = publisher_boundary_errors(reordered)
+        self.assertNotIn(
+            "raw builder cgroup membership read differs",
+            reordered_errors,
+        )
+        for label, changed in generate_helper_inventory_mutations(self.text):
+            with self.subTest(helper_inventory_mutation=label):
+                self.assertTrue(
+                    workflow_has_raw_builder_cgroup_membership_read(changed)
+                )
+                with (
+                    mock.patch.object(
+                        publisher_shell_contract,
+                        "assert_reviewed_patch_release_run_script_identity",
+                    ),
+                    mock.patch.object(
+                        publisher_shell_contract,
+                        "assert_reviewed_builder_isolation_shell_identity",
+                    ),
+                ):
+                    errors = publisher_boundary_errors(changed)
+                self.assertIn(
+                    "raw builder cgroup membership read differs",
+                    errors,
+                )
+
     def test_indexed_alias_runtime_reaches_raw_membership_and_is_rejected(self):
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
@@ -7672,6 +7794,22 @@ exit 37
                     "}\n"
                     'helper "$1/cgroup.procs"\n'
                 ),
+                (
+                    "raw_root=/safe\n"
+                    "helper() {\n"
+                    '  /bin/cat "$raw_root"/cgroup.proc?\n'
+                    "}\n"
+                    'raw_root="$1"\n'
+                    "helper\n"
+                ),
+                (
+                    "raw_root=/safe\n"
+                    "helper() {\n"
+                    '  /bin/cat "$raw_root"/cgroup.proc?\n'
+                    "}\n"
+                    'printf -v raw_root %s "$1"\n'
+                    "helper\n"
+                ),
             )
             for script in scripts:
                 with self.subTest(
@@ -7703,6 +7841,30 @@ exit 37
                         publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
                             script,
                             label="user helper raw membership runtime",
+                        )
+                    )
+            for label, script in (
+                (
+                    "recursive",
+                    "helper() {\n"
+                    "  helper\n"
+                    "}\n"
+                    "helper\n",
+                ),
+                (
+                    "dynamic",
+                    "helper() {\n"
+                    "  true\n"
+                    "}\n"
+                    'callee="$(printf helper)"\n'
+                    '"$callee"\n',
+                ),
+            ):
+                with self.subTest(helper_dispatch=label):
+                    self.assertTrue(
+                        publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                            script,
+                            label=f"{label} helper dispatch",
                         )
                     )
 
@@ -10223,6 +10385,15 @@ exit 37
             "helper_calls": {
                 "production_signatures": "closed",
                 "tracked_or_composed_membership_arguments": "reject",
+                "outer_alias_evaluation": "call-time",
+                "recursive_or_dynamic": "reject",
+            },
+            "helper_inventory": {
+                "definition_count": 13,
+                "body_identity": "parsed-command-digest",
+                "multiplicity": "exact",
+                "ordering": "insensitive",
+                "entrypoint_body": "separately-reviewed",
             },
             "function_shadowing": {
                 "result": "reject",
@@ -10360,6 +10531,8 @@ exit 37
                 ),
                 "allow",
             ),
+            (("helper_calls", "outer_alias_evaluation"), "definition-time"),
+            (("helper_inventory", "definition_count"), 14),
             (("function_shadowing", "result"), "allow"),
             (("raw_membership", "additional_access"), "allow"),
             (("alias_state", "dynamic_target"), "allow"),

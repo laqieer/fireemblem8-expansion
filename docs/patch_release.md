@@ -153,9 +153,15 @@ arguments. Calls to any unanalyzed helper reject tracked raw-root arguments or
 separate arguments that can compose `cgroup.procs`; direct, `function`
 keyword, nested, and scalar-aliased calls are covered. Only the exact
 production helper call signatures may carry their reviewed ambiguous
-transport values. Function declarations cannot shadow security-sensitive
-builtins or commands, and inline, dynamic, duplicate, or ambiguous
-declarations fail closed. The membership snapshot explicitly invokes
+transport values. A parsed, order-independent inventory requires the exact
+production helper names, body-command identities, and multiplicities; added,
+removed, duplicated, or modified helpers fail closed. At invocation, helper
+bodies are re-evaluated against caller alias state, so no-argument closures
+cannot retain a safe definition-time value after assignment or `printf -v`
+retargets it. Recursive and dynamically resolved calls reject. Function
+declarations cannot shadow security-sensitive builtins or commands, and
+inline, dynamic, duplicate, or ambiguous declarations fail closed. The
+membership snapshot explicitly invokes
 `builtin mapfile`, so even an injected shell function cannot forge the
 wrapper-only array.
 Runtime wrapped-unset controls leave `supervisor_cgroup` unbound before the

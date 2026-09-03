@@ -265,9 +265,15 @@ Calls to unanalyzed helpers reject tracked raw-root arguments and split
 arguments that compose `cgroup.procs`; direct, `function` keyword, nested, and
 aliased call controls all read the raw marker without the guard. Exact
 production helper call signatures are the only reviewed exception for
-ambiguous transport values. Function declarations cannot shadow
-security-sensitive builtins or commands, and inline, dynamic, duplicate, and
-ambiguous definitions reject. The wrapper-only membership read uses
+ambiguous transport values. The parsed helper inventory compares exact names,
+body-command identities, and multiplicities without depending on definition
+order; added, removed, duplicated, or modified helpers reject. Calls
+re-evaluate authenticated bodies against current caller aliases, so a
+no-argument closure defined while `raw_root` is safe rejects after assignment
+or `printf -v` retargets it. Recursive and dynamic calls reject. Function
+declarations cannot shadow security-sensitive builtins or commands, and
+inline, dynamic, duplicate, and ambiguous definitions reject. The wrapper-only
+membership read uses
 `builtin mapfile`; the runtime negative control shows unqualified `mapfile`
 can forge a singleton while the builtin form reads the real multi-member
 snapshot.
@@ -443,7 +449,9 @@ archival-lane behavior changes.
   dynamic controls for declare/typeset/export/readonly/local in both parsers,
   direct/function-keyword/nested/aliased helper-call composition and
   sensitive-function-shadow mutations, unqualified-versus-builtin mapfile
-  runtime, parsed registry-contract mutations,
+  runtime, no-argument assignment/`printf -v` closure captures, recursive/
+  dynamic dispatch, helper inventory add/modify/duplicate/reorder controls in
+  both parsers, parsed registry-contract mutations,
   recursive
   command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from collections import Counter
 from dataclasses import dataclass
 import hashlib
 import posixpath
@@ -17,6 +18,60 @@ REVIEWED_PATCH_RELEASE_RUN_SHA256 = (
 REVIEWED_BUILDER_ISOLATION_SHA256 = (
     "79f9a8b5db7857181e2320fbff36a2c2c1188b7ce3eedd3de18d0bf7d10c5651"
 )
+REVIEWED_BUILDER_HELPER_INVENTORY = {
+    (
+        "builder_main",
+        "4b6fc72ef7a744b89c780343e3cbfc1458b579b26afd15a74d87c3c7d968941c",
+    ): 1,
+    (
+        "checked_runtime_transport_signature",
+        "e4d8275cb878d6883a9dd06dfa41c9c460f38e89bc83bf7c540f6c162b5adc25",
+    ): 1,
+    (
+        "checked_supervisor_transport_signature",
+        "d45e0e6437b28cbcced5eb510b9e830f7b20a6581dd8546d73a9c8a3b94c87a9",
+    ): 1,
+    (
+        "create_runtime_transport_file",
+        "940196aeac29acdef010e0f785859376c64950fc5b02d30867d1c6b43db8f37a",
+    ): 1,
+    (
+        "create_supervisor_transport_file",
+        "c665f3be11cde8ba70919c794e34a100f3007114582f83f873c4ee60944ac57d",
+    ): 1,
+    (
+        "isolated_stage_failure",
+        "a7899c05a8a29c797a6ae3c6e46094c697c6eb0c29c4e7168e925a94c50a8980",
+    ): 1,
+    (
+        "list_dev_mount_targets",
+        "4b86e37163fa86372d9b4fe0f77196176ae1218b792dd8a2cb3d93b8892f808c",
+    ): 1,
+    (
+        "list_writable_mount_records",
+        "fb92905fb99c19181ab947a240fda23ef9a9e187934526be602006a875ef9b35",
+    ): 1,
+    (
+        "read_checked_runtime_transport_file",
+        "8f35ebf74f9f5cfb980e214b5d79e7ba60fadacedc20f8a99ff24249a7166343",
+    ): 1,
+    (
+        "read_checked_supervisor_transport_file",
+        "8302f6423fdf0b78f1da424b2434a04630f03e050d5102d877448efe8e39b273",
+    ): 1,
+    (
+        "remove_runtime_transport_file",
+        "28d76da2a17ed29d94af2156f8a8169f8b2c3cd2b008461c490192bd978c519a",
+    ): 1,
+    (
+        "remove_supervisor_transport_file",
+        "5457f9f7236f30e45311c86bdf98349f3ec31de215ddfa9e0d6663ddc968b32c",
+    ): 1,
+    (
+        "unmount_if_mounted",
+        "f88f66f289fb6997d8dde14d0e2deec4fc0bac82076f25163544816c0dbbc615",
+    ): 1,
+}
 REVIEWED_HIDDEN_MASK_LOOP_SHA256 = (
     "77e81e3a773e78b4c58132c553ea3a3ef0719f802fe1164b59f60aef948235f5"
 )
@@ -2426,10 +2481,110 @@ def _shell_function_declaration(
     return False, None, False
 
 
+def _shell_function_definitions(
+    commands: tuple[str, ...],
+) -> tuple[dict[str, tuple[str, ...]], Counter[tuple[str, str]]]:
+    stack: list[tuple[str, str, list[str]]] = []
+    definitions: list[tuple[str, str, tuple[str, ...]]] = []
+    for command in commands:
+        is_function, function_name, has_inline_body = (
+            _shell_function_declaration(command)
+        )
+        if is_function:
+            if function_name is None or has_inline_body:
+                raise ValueError("ambiguous shell function definition")
+            stack.append((function_name, command, []))
+            continue
+        if command == "}" and stack:
+            function_name, declaration, body = stack.pop()
+            definitions.append(
+                (function_name, declaration, tuple(body))
+            )
+            continue
+        if stack:
+            stack[-1][2].append(command)
+    if stack:
+        raise ValueError("unterminated shell function definition")
+    bodies: dict[str, tuple[str, ...]] = {}
+    inventory: Counter[tuple[str, str]] = Counter()
+    for function_name, declaration, body in definitions:
+        identity_commands = (
+            (declaration,)
+            if function_name == "builder_main"
+            else (declaration,) + body
+        )
+        body_digest = hashlib.sha256(
+            "\0".join(identity_commands).encode("utf-8")
+        ).hexdigest()
+        inventory[(function_name, body_digest)] += 1
+        if function_name in bodies:
+            raise ValueError("duplicate shell function definition")
+        bodies[function_name] = body
+    return bodies, inventory
+
+
+def _function_body_captures_sensitive_alias(
+    function_name: str,
+    *,
+    function_bodies: dict[str, tuple[str, ...]],
+    aliases: dict[str, str],
+    call_stack: tuple[str, ...] = (),
+) -> bool:
+    if function_name in call_stack:
+        return True
+    body = function_bodies.get(function_name)
+    if body is None:
+        return False
+    caller_aliases = {
+        name: value
+        for name, value in aliases.items()
+        if not name.isdigit()
+    }
+    for command in body:
+        tokens = _parse_shell_tokens(
+            command,
+            label=f"{function_name} call-time body",
+        )
+        resolved = tuple(
+            _resolve_shell_aliases(token.text, caller_aliases)
+            for token in tokens
+        )
+        if any(
+            marker in token
+            for token in resolved
+            for marker in (
+                _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+                _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+                _AMBIGUOUS_TRACKED_PARAMETER_MARKER,
+                _RAW_CGROUP_ROOT_MARKER,
+            )
+        ):
+            return True
+        if (
+            _normalized_command_mutates_supervisor(resolved)
+            or _normalized_command_mutates_dispatch_state(resolved)
+            or _normalized_command_changes_dispatch(resolved)
+        ):
+            return True
+        if not resolved:
+            continue
+        callee = posixpath.basename(resolved[0])
+        if callee in function_bodies and _function_body_captures_sensitive_alias(
+            callee,
+            function_bodies=function_bodies,
+            aliases=caller_aliases,
+            call_stack=call_stack + (function_name,),
+        ):
+            return True
+    return False
+
+
 def _helper_call_has_sensitive_arguments(
     tokens: tuple[str, ...],
     *,
     user_functions: set[str],
+    function_bodies: dict[str, tuple[str, ...]],
+    aliases: dict[str, str],
 ) -> bool:
     if not tokens:
         return False
@@ -2481,7 +2636,18 @@ def _helper_call_has_sensitive_arguments(
             _AMBIGUOUS_DYNAMIC_ALIAS_MARKER + "$@",
         ),
     }
-    if tokens in production_calls and basename in user_functions:
+    is_production_call = (
+        tokens in production_calls and basename in user_functions
+    )
+    if is_production_call and basename == "builder_main":
+        return False
+    if basename in user_functions and _function_body_captures_sensitive_alias(
+        basename,
+        function_bodies=function_bodies,
+        aliases=aliases,
+    ):
+        return True
+    if is_production_call:
         return False
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", basename):
         plain_executable = executable
@@ -3243,6 +3409,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
     script: str,
     *,
     label: str,
+    require_production_helpers: bool = False,
 ) -> bool:
     alias_scopes = [
         {
@@ -3252,6 +3419,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
     ]
     function_depth = 0
     user_functions: set[str] = set()
+    encountered_functions: set[str] = set()
     supervisor_assignments = 0
     saw_supervisor_bind = False
     saw_supervisor_readonly_remount = False
@@ -3264,6 +3432,14 @@ def has_forbidden_raw_builder_cgroup_membership_read(
             semantic_script,
             label=label,
         )
+        function_bodies, function_inventory = (
+            _shell_function_definitions(commands)
+        )
+        user_functions = set(function_bodies)
+        if require_production_helpers and function_inventory != Counter(
+            REVIEWED_BUILDER_HELPER_INVENTORY
+        ):
+            return True
         for command_text in commands:
             is_function, function_name, has_inline_body = (
                 _shell_function_declaration(command_text)
@@ -3273,10 +3449,10 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     function_name is None
                     or has_inline_body
                     or function_name in _SECURITY_SENSITIVE_FUNCTION_NAMES
-                    or function_name in user_functions
+                    or function_name in encountered_functions
                 ):
                     return True
-                user_functions.add(function_name)
+                encountered_functions.add(function_name)
                 nested_aliases = dict(alias_scopes[-1])
                 for name in tuple(nested_aliases):
                     if name.isdigit():
@@ -3391,6 +3567,8 @@ def has_forbidden_raw_builder_cgroup_membership_read(
             if _helper_call_has_sensitive_arguments(
                 resolved_token_texts,
                 user_functions=user_functions,
+                function_bodies=function_bodies,
+                aliases=aliases,
             ):
                 return True
             assignment_only = bool(tokens) and all(

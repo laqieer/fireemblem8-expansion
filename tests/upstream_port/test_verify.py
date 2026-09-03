@@ -1235,6 +1235,25 @@ class VerifyCliCwdTests(unittest.TestCase):
             ):
                 with self.subTest(safe_declaration_alias=label):
                     verify_mod._parse_workflow_structure_text(changed)
+            reordered = (
+                patch_workflow_tests.reordered_helper_inventory_control(
+                    original
+                )
+            )
+            verify_mod._parse_workflow_structure_text(reordered)
+            for (
+                label,
+                changed,
+            ) in patch_workflow_tests.generate_helper_inventory_mutations(
+                original
+            ):
+                with self.subTest(
+                    helper_inventory_mutation=label
+                ), self.assertRaisesRegex(
+                    ValueError,
+                    "isolated candidate build differs",
+                ):
+                    verify_mod._parse_workflow_structure_text(changed)
             for (
                 label,
                 changed,

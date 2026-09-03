@@ -1281,7 +1281,16 @@
         "membership_reader": "builtin-mapfile",
         "helper_calls": {
           "production_signatures": "closed",
-          "tracked_or_composed_membership_arguments": "reject"
+          "tracked_or_composed_membership_arguments": "reject",
+          "outer_alias_evaluation": "call-time",
+          "recursive_or_dynamic": "reject"
+        },
+        "helper_inventory": {
+          "definition_count": 13,
+          "body_identity": "parsed-command-digest",
+          "multiplicity": "exact",
+          "ordering": "insensitive",
+          "entrypoint_body": "separately-reviewed"
         },
         "function_shadowing": {
           "result": "reject",

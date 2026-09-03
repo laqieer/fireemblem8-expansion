@@ -1965,6 +1965,7 @@ def _parse_step(block, job_name, index):
             if publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
                 builder_shell,
                 label=step_label,
+                require_production_helpers=True,
             ):
                 raise ValueError(f"{step_label} isolated candidate build differs")
         if index == 4 and (
