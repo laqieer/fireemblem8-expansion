@@ -434,33 +434,12 @@ def git_authority(
 ):
     fixture = copy.deepcopy(fixture)
     if implementation_handoff_installation is None:
-        reporter.validate_fixture(
-            fixture,
-            implementation_handoff_trust=implementation_handoff_trust,
-            implementation_handoff_installation=implementation_handoff_installation,
-        )
-    with tempfile.TemporaryDirectory(
-        prefix="workflow-pilot-authority-",
-        dir=TEST_ARTIFACTS,
-    ) as temporary:
+        reporter.validate_fixture(fixture, implementation_handoff_trust=implementation_handoff_trust, implementation_handoff_installation=implementation_handoff_installation)
+    with tempfile.TemporaryDirectory(prefix="workflow-pilot-authority-", dir=TEST_ARTIFACTS) as temporary:
         repository_root = Path(temporary)
         git_run(repository_root, "init", "-q", "-b", "master")
-        git_run(
-            repository_root,
-            "remote",
-            "add",
-            "origin",
-            f"https://github.com/{fixture['repository']}.git",
-        )
-        empty_tree = (
-            git_run(
-                repository_root,
-                "mktree",
-                input=b"",
-            )
-            .stdout.decode("ascii")
-            .strip()
-        )
+        git_run(repository_root, "remote", "add", "origin", f"https://github.com/{fixture['repository']}.git")
+        empty_tree = git_run(repository_root, "mktree", input=b"").stdout.decode("ascii").strip()
         commits = {commit["sha"]: commit for commit in fixture["commits"]}
         replacements = {}
         pending = set(commits)
@@ -482,14 +461,8 @@ def git_authority(
                 raise AssertionError("test fixture commit graph is cyclic or incomplete")
             for old_sha in ready:
                 commit = commits[old_sha]
-                message = _replace_commit_identities(
-                    commit["message"],
-                    replacements,
-                )
-                command = [
-                    "commit-tree",
-                    empty_tree,
-                ]
+                message = _replace_commit_identities(commit["message"], replacements)
+                command = ["commit-tree", empty_tree]
                 for parent_sha in commit["parents"]:
                     command.extend(("-p", replacements[parent_sha]))
                 environment = {
@@ -500,25 +473,11 @@ def git_authority(
                     "GIT_AUTHOR_DATE": commit["committed_at"],
                     "GIT_COMMITTER_DATE": commit["committed_at"],
                 }
-                replacements[old_sha] = (
-                    git_run(
-                        repository_root,
-                        *command,
-                        input=(message + "\n").encode("utf-8"),
-                        environment=environment,
-                    )
-                    .stdout.decode("ascii")
-                    .strip()
-                )
+                replacements[old_sha] = git_run(repository_root, *command, input=(message + "\n").encode("utf-8"), environment=environment).stdout.decode("ascii").strip()
                 pending.remove(old_sha)
-        authoritative_fixture = _replace_commit_identities(
-            fixture,
-            replacements,
-        )
+        authoritative_fixture = _replace_commit_identities(fixture, replacements)
         if "implementation_handoffs" in fixture:
-            authoritative_fixture["implementation_handoffs"] = copy.deepcopy(
-                fixture["implementation_handoffs"]
-            )
+            authoritative_fixture["implementation_handoffs"] = copy.deepcopy(fixture["implementation_handoffs"])
         yield authoritative_fixture, repository_root
 
 
@@ -530,33 +489,11 @@ def authoritative_report(
     implementation_handoff_installation=None,
 ):
     if repository_root is not None:
-        return reporter.build_report(
-            fixture,
-            decisions,
-            repository_root,
-            implementation_handoff_trust=implementation_handoff_trust,
-            implementation_handoff_installation=implementation_handoff_installation,
-        )
+        return reporter.build_report(fixture, decisions, repository_root, implementation_handoff_trust=implementation_handoff_trust, implementation_handoff_installation=implementation_handoff_installation)
     if fixture["repository"] == "laqieer/fireemblem8-expansion":
-        return reporter.build_report(
-            fixture,
-            decisions,
-            BASELINE_AUTHORITY,
-            implementation_handoff_trust=implementation_handoff_trust,
-            implementation_handoff_installation=implementation_handoff_installation,
-        )
-    with git_authority(
-        fixture,
-        implementation_handoff_trust=implementation_handoff_trust,
-        implementation_handoff_installation=implementation_handoff_installation,
-    ) as (authoritative_fixture, authority_root):
-        return reporter.build_report(
-            authoritative_fixture,
-            decisions,
-            authority_root,
-            implementation_handoff_trust=implementation_handoff_trust,
-            implementation_handoff_installation=implementation_handoff_installation,
-        )
+        return reporter.build_report(fixture, decisions, BASELINE_AUTHORITY, implementation_handoff_trust=implementation_handoff_trust, implementation_handoff_installation=implementation_handoff_installation)
+    with git_authority(fixture, implementation_handoff_trust=implementation_handoff_trust, implementation_handoff_installation=implementation_handoff_installation) as (authoritative_fixture, authority_root):
+        return reporter.build_report(authoritative_fixture, decisions, authority_root, implementation_handoff_trust=implementation_handoff_trust, implementation_handoff_installation=implementation_handoff_installation)
 
 
 def expected_from_report(report):

@@ -6971,6 +6971,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             fixture = reporter_fixture_with_handoffs(record)
             fixture_trust = reporter_fixture_trust(record)
             fixture_installation = reporter_fixture_installation(record)
+            fixture_root = reporter_fixture_repository_root(record)
             wrong_trust = copy.deepcopy(fixture_trust)
             wrong_trust["anchors"][0]["ref"] = "refs/pull/999/head"
             sign_reporter_trust_anchor(root, wrong_trust["anchors"][0])
@@ -6979,65 +6980,26 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             expired_trust["anchors"][0]["expires_at"] = "2000-01-01T00:00:00Z"
             sign_reporter_trust_anchor(root, expired_trust["anchors"][0])
             forged_fixture = reporter_fixture_with_handoffs(record)
-            forged_signer = signer_public_with_key_id(
-                {
-                    **copy.deepcopy(
-                        forged_fixture["implementation_handoffs"][0]["document"][
-                            "history_authority"
-                        ]["signer"]
-                    ),
-                    "service_identity": "self-authored-attacker",
-                }
-            )
             forged_bundle = forged_fixture["implementation_handoffs"][0]
+            forged_signer = signer_public_with_key_id({**copy.deepcopy(forged_bundle["document"]["history_authority"]["signer"]), "service_identity": "self-authored-attacker"})
             forged_bundle["document"]["history_authority"]["signer"] = forged_signer
-            forged_bundle["result_attestation"]["signer_key_id"] = forged_signer[
-                "key_id"
-            ]
-            forged_bundle["input_seal"] = hashlib.sha256(
-                agent_handoff.INPUT_SEAL_DOMAIN
-                + agent_handoff.normalized_json(forged_bundle["document"])
-            ).hexdigest()
+            forged_bundle["result_attestation"]["signer_key_id"] = forged_signer["key_id"]
+            forged_bundle["input_seal"] = hashlib.sha256(agent_handoff.INPUT_SEAL_DOMAIN + agent_handoff.normalized_json(forged_bundle["document"])).hexdigest()
             forged_bundle["result"]["input_seal"] = forged_bundle["input_seal"]
-            forged_bundle["result"]["result_seal"] = agent_handoff.seal_handoff_result(
-                forged_bundle["result"]
-            )
+            forged_bundle["result"]["result_seal"] = agent_handoff.seal_handoff_result(forged_bundle["result"])
             forged_bundle["result_seal"] = forged_bundle["result"]["result_seal"]
             self_trusting_fixture = copy.deepcopy(forged_fixture)
-            self_trusting_fixture["implementation_handoff_trust"] = [
-                trusted_reporter_anchor(
-                    root,
-                    forged_bundle["document"],
-                    forged_bundle["input_seal"],
-                    authority=forged_bundle["document"]["history_authority"],
-                    signer=forged_signer,
-                )
-            ]
+            self_trusting_fixture["implementation_handoff_trust"] = [trusted_reporter_anchor(root, forged_bundle["document"], forged_bundle["input_seal"], authority=forged_bundle["document"]["history_authority"], signer=forged_signer)]
             forged_trust = {"schema_version": 1, "anchors": []}
             with handoff_repository() as (attacker_root, _b, _p, _r):
                 attacker_installation = trusted_reporter_installation(attacker_root)
-                forged_trust["anchors"].append(
-                    trusted_reporter_anchor(
-                        attacker_root,
-                        forged_bundle["document"],
-                        forged_bundle["input_seal"],
-                        authority=forged_bundle["document"]["history_authority"],
-                        signer=forged_signer,
-                        signing_root=attacker_root,
-                    )
-                )
+                forged_trust["anchors"].append(trusted_reporter_anchor(attacker_root, forged_bundle["document"], forged_bundle["input_seal"], authority=forged_bundle["document"]["history_authority"], signer=forged_signer, signing_root=attacker_root))
             candidate_install = root / "candidate-installation"
             shutil.copytree(installation_root_path(root), candidate_install)
-            with self.assertRaisesRegex(agent_handoff.HandoffDataError, "outside the candidate worktree"):
-                agent_handoff.verify_reporter_record(record, revalidate_git=False, repository_root=root, trusted_anchor=fixture_trust["anchors"][0], trusted_installation=candidate_install)
+            with self.assertRaisesRegex(agent_handoff.HandoffDataError, "outside the candidate worktree"): agent_handoff.verify_reporter_record(record, revalidate_git=False, repository_root=root, trusted_anchor=fixture_trust["anchors"][0], trusted_installation=candidate_install)
         verify_reporter_record_offline(record, trusted_anchor=fixture_trust["anchors"][0], trusted_installation=fixture_installation)
         offline = validate_reporter_fixture(fixture, implementation_handoff_trust=fixture_trust, implementation_handoff_installation=fixture_installation)
-        self.assertEqual(
-            offline["implementation_handoffs"]["issue-178-round-1"][
-                "reported_outcome"
-            ],
-            "accepted",
-        )
+        self.assertEqual(offline["implementation_handoffs"]["issue-178-round-1"]["reported_outcome"], "accepted")
         self.assertFalse(hasattr(agent_handoff, "_VerifiedReporterInstallation"))
         self.assertFalse(hasattr(agent_handoff, "_VERIFIED_REPORTER_INSTALLATION_TOKEN"))
         for trust, installation, pattern in (
@@ -7049,35 +7011,10 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             (expired_trust, fixture_installation, "future-dated or expired"),
         ):
             with self.subTest(pattern=pattern):
-                with self.assertRaisesRegex(reporter.PilotDataError, pattern):
-                    reporter.validate_fixture(
-                        fixture,
-                        repository_root=reporter_fixture_repository_root(record),
-                        implementation_handoff_trust=trust,
-                        implementation_handoff_installation=installation,
-                    )
-        with self.assertRaisesRegex(
-            agent_handoff.HandoffDataError,
-            "requires repository_root",
-        ):
-            agent_handoff.verify_reporter_record(
-                record,
-                revalidate_git=True,
-            )
-        with self.assertRaisesRegex(reporter.PilotDataError, "unknown fields"):
-            reporter.validate_fixture(
-                self_trusting_fixture,
-                repository_root=reporter_fixture_repository_root(record),
-                implementation_handoff_trust=fixture_trust,
-                implementation_handoff_installation=fixture_installation,
-            )
-        with self.assertRaisesRegex(reporter.PilotDataError, "trusted anchor\\.signature does not verify|trusted anchor\\.signer does not match trusted installation"):
-            reporter.validate_fixture(
-                forged_fixture,
-                repository_root=reporter_fixture_repository_root(record),
-                implementation_handoff_trust=forged_trust,
-                implementation_handoff_installation=fixture_installation,
-            )
+                with self.assertRaisesRegex(reporter.PilotDataError, pattern): reporter.validate_fixture(fixture, repository_root=fixture_root, implementation_handoff_trust=trust, implementation_handoff_installation=installation)
+        with self.assertRaisesRegex(agent_handoff.HandoffDataError, "requires repository_root"): agent_handoff.verify_reporter_record(record, revalidate_git=True)
+        with self.assertRaisesRegex(reporter.PilotDataError, "unknown fields"): reporter.validate_fixture(self_trusting_fixture, repository_root=fixture_root, implementation_handoff_trust=fixture_trust, implementation_handoff_installation=fixture_installation)
+        with self.assertRaisesRegex(reporter.PilotDataError, "trusted anchor\\.signature does not verify|trusted anchor\\.signer does not match trusted installation"): reporter.validate_fixture(forged_fixture, repository_root=fixture_root, implementation_handoff_trust=forged_trust, implementation_handoff_installation=fixture_installation)
     def test_forged_signed_stale_record_cannot_claim_offline_acceptance(self):
         with handoff_repository() as (root, _base, parent, result):
             document = handoff_document(root, parent, result)
@@ -7088,14 +7025,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             self.assertTrue(stale_result["handoffs"][0]["stale_response"])
             self.assertEqual(stale_result["handoffs"][0]["outcome"], "rejected")
             stale_record = reporter_record(root, document, stale_result)
-            self.assertEqual(
-                validate_reporter_fixture(
-                    reporter_fixture_with_handoffs(stale_record)
-                )["implementation_handoffs"]["issue-178-round-1"][
-                    "reported_outcome"
-                ],
-                "rejected",
-            )
+            self.assertEqual(validate_reporter_fixture(reporter_fixture_with_handoffs(stale_record))["implementation_handoffs"]["issue-178-round-1"]["reported_outcome"], "rejected")
             forged_document = handoff_document(root, parent, result)
             forged_document["handoffs"][0]["result"]["sha"] = parent
             shift_handoff_times(forged_document, -1200)
@@ -7115,9 +7045,7 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                     "rejection_codes": [],
                 }
             )
-            forged_result["result_seal"] = agent_handoff.seal_handoff_result(
-                forged_result
-            )
+            forged_result["result_seal"] = agent_handoff.seal_handoff_result(forged_result)
             forged_record = {
                 "source_handoff_ids": sorted(
                     item["id"] for item in forged_document["handoffs"]
@@ -7133,38 +7061,10 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                     forged_result,
                 ),
             }
-            remember_reporter_trust(
-                forged_record,
-                trusted_reporter_anchor(
-                    root,
-                    forged_document,
-                    forged_record["input_seal"],
-                ),
-                trusted_reporter_installation(root),
-            )
-            with self.assertRaisesRegex(
-                agent_handoff.HandoffDataError,
-                "result handoffs do not verify|result summary does not verify",
-            ):
-                agent_handoff.reporter_record(
-                    forged_document,
-                    forged_result,
-                    forged_record["result_attestation"],
-                    repository_root=trusted_reporter_installation(root)[1],
-                    trusted_anchor=trusted_reporter_anchor(
-                        root,
-                        forged_document,
-                        forged_result["input_seal"],
-                    ),
-                    trusted_installation=trusted_reporter_installation(root)[0],
-                )
-            with self.assertRaisesRegex(
-                reporter.PilotDataError,
-                "result handoffs do not verify|result summary does not verify",
-            ):
-                validate_reporter_fixture(
-                    reporter_fixture_with_handoffs(forged_record)
-                )
+            trusted_installation = trusted_reporter_installation(root)
+            remember_reporter_trust(forged_record, trusted_reporter_anchor(root, forged_document, forged_record["input_seal"]), trusted_installation)
+            with self.assertRaisesRegex(agent_handoff.HandoffDataError, "result handoffs do not verify|result summary does not verify"): agent_handoff.reporter_record(forged_document, forged_result, forged_record["result_attestation"], repository_root=trusted_installation[1], trusted_anchor=trusted_reporter_anchor(root, forged_document, forged_result["input_seal"]), trusted_installation=trusted_installation[0])
+            with self.assertRaisesRegex(reporter.PilotDataError, "result handoffs do not verify|result summary does not verify"): validate_reporter_fixture(reporter_fixture_with_handoffs(forged_record))
     def test_historical_successors_aggregate_and_require_current_ancestry(self):
         with handoff_repository() as (root, _base, parent, first_result):
             first_document = handoff_document(root, parent, first_result)
@@ -7356,16 +7256,9 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 )
     def test_version_two_fixture_reports_sealed_handoff_metrics(self):
         with handoff_repository() as (root, _base, parent, result):
-            accepted = validated_record(
-                root,
-                handoff_document(root, parent, result),
-            )
+            accepted = validated_record(root, handoff_document(root, parent, result))
             stale_document = handoff_document(root, parent, result)
-            rename_handoff(
-                stale_document,
-                "issue-178-stale",
-                owner=("owner-2", 102),
-            )
+            rename_handoff(stale_document, "issue-178-stale", owner=("owner-2", 102))
             stale_document["handoffs"][0]["result"]["sha"] = parent
             shift_handoff_times(stale_document, -600)
             refresh_coordinator_receipt(stale_document, root)
@@ -7390,18 +7283,8 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
             ]
             decisions = test_reporter.minimal_decisions()
             with test_reporter.git_authority(fixture, implementation_handoff_trust=trust, implementation_handoff_installation=installation) as (authoritative_fixture, authority_root):
-                for bundle in authoritative_fixture[
-                    "implementation_handoffs"
-                ]:
-                    self.assertEqual(
-                        bundle["input_seal"],
-                        hashlib.sha256(
-                            agent_handoff.INPUT_SEAL_DOMAIN
-                            + agent_handoff.normalized_json(
-                                bundle["document"]
-                            )
-                        ).hexdigest(),
-                    )
+                for bundle in authoritative_fixture["implementation_handoffs"]:
+                    self.assertEqual(bundle["input_seal"], hashlib.sha256(agent_handoff.INPUT_SEAL_DOMAIN + agent_handoff.normalized_json(bundle["document"])).hexdigest())
                 report = reporter.build_report(authoritative_fixture, decisions, authority_root, implementation_handoff_trust=trust, implementation_handoff_installation=installation)
                 decisions_path = authority_root / ".github" / "workflow-pilot-decisions.json"
                 decisions_path.parent.mkdir(parents=True)
@@ -7422,61 +7305,20 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                     self.assertEqual(linked.returncode, 2)
                     self.assertIn(b"implementation handoff trust sidecar must be a regular file", linked.stderr)
         self.assertEqual(report["schema_version"], 2)
-        self.assertEqual(
-            report["identities"]["implementation_handoffs"],
-            ["issue-178-round-1", "issue-178-stale"],
-        )
-        expected_lifetime = max(
-            item["lifetime_seconds"]
-            for item in (
-                accepted["result"]["handoffs"][0],
-                stale["result"]["handoffs"][0],
-            )
-        )
-        self.assertEqual(
-            report["implementation_handoffs"],
-            {
-                "records": 2,
-                "accepted": 1,
-                "bundle_rejected": 0,
-                "rejected": 1,
-                "interrupted": 0,
-                "in_progress": 0,
-                "stale_responses": 1,
-                "max_lifetime_seconds": expected_lifetime,
-                "max_peak_rss_bytes": 134217728,
-                "coordination_turns": 4,
-                "recovery_minutes": 0,
-                "rejection_codes": sorted(
-                    stale["result"]["summary"]["rejection_codes"]
-                ),
-            },
-        )
+        self.assertEqual(report["identities"]["implementation_handoffs"], ["issue-178-round-1", "issue-178-stale"])
+        expected_lifetime = max(item["lifetime_seconds"] for item in (accepted["result"]["handoffs"][0], stale["result"]["handoffs"][0]))
+        self.assertEqual(report["implementation_handoffs"], {"records": 2, "accepted": 1, "bundle_rejected": 0, "rejected": 1, "interrupted": 0, "in_progress": 0, "stale_responses": 1, "max_lifetime_seconds": expected_lifetime, "max_peak_rss_bytes": 134217728, "coordination_turns": 4, "recovery_minutes": 0, "rejection_codes": sorted(stale["result"]["summary"]["rejection_codes"])})
         tampered = copy.deepcopy(fixture)
-        tampered["implementation_handoffs"][0]["result"]["summary"][
-            "accepted_handoffs"
-        ] = 99
-        with self.assertRaisesRegex(
-            reporter.PilotDataError,
-            "result seal does not verify",
-        ):
-            validate_reporter_fixture(tampered)
+        tampered["implementation_handoffs"][0]["result"]["summary"]["accepted_handoffs"] = 99
+        with self.assertRaisesRegex(reporter.PilotDataError, "result seal does not verify"): validate_reporter_fixture(tampered)
         rehashed = copy.deepcopy(fixture)
         bundle = rehashed["implementation_handoffs"][0]
         bundle["result"]["git_authority"]["head_sha"] = "0" * 40
-        bundle["result"]["git_seal"] = agent_handoff.seal_git_authority(
-            bundle["result"]["git_authority"]
-        )
+        bundle["result"]["git_seal"] = agent_handoff.seal_git_authority(bundle["result"]["git_authority"])
         bundle["git_seal"] = bundle["result"]["git_seal"]
-        bundle["result"]["result_seal"] = agent_handoff.seal_handoff_result(
-            bundle["result"]
-        )
+        bundle["result"]["result_seal"] = agent_handoff.seal_handoff_result(bundle["result"])
         bundle["result_seal"] = bundle["result"]["result_seal"]
-        with self.assertRaisesRegex(
-            reporter.PilotDataError,
-            "Git authority does not verify|result signature does not verify",
-        ):
-            validate_reporter_fixture(rehashed)
+        with self.assertRaisesRegex(reporter.PilotDataError, "Git authority does not verify|result signature does not verify"): validate_reporter_fixture(rehashed)
     def test_reporter_counts_bundle_rejections_without_losing_failure_codes(self):
         with handoff_repository() as (root, _base, parent, result):
             accepted_record = validated_record(
@@ -7508,67 +7350,13 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                 duplicate_watcher(document)
                 document["handoffs"][0]["result"]["sha"] = parent
                 sign_coordinator_document(document, root)
+            bundle_metrics = {"accepted": 1, "bundle_rejected": 1, "rejected": 0, "interrupted": 0, "in_progress": 0, "stale_responses": 0}
+            rejected_metrics = {"accepted": 1, "bundle_rejected": 0, "rejected": 1, "interrupted": 0, "in_progress": 0, "stale_responses": 1}
             cases = {
-                "duplicate-watcher": (
-                    "issue-178-duplicate-watcher",
-                    "owner-2",
-                    102,
-                    "bundle_rejected",
-                    {
-                        "accepted": 1,
-                        "bundle_rejected": 1,
-                        "rejected": 0,
-                        "interrupted": 0,
-                        "in_progress": 0,
-                        "stale_responses": 0,
-                    },
-                    duplicate_watcher,
-                ),
-                "watcher-owner-mismatch": (
-                    "issue-178-watcher-owner",
-                    "owner-3",
-                    103,
-                    "bundle_rejected",
-                    {
-                        "accepted": 1,
-                        "bundle_rejected": 1,
-                        "rejected": 0,
-                        "interrupted": 0,
-                        "in_progress": 0,
-                        "stale_responses": 0,
-                    },
-                    watcher_owner_mismatch,
-                ),
-                "remote-coverage-incomplete": (
-                    "issue-178-incomplete-coverage",
-                    "owner-4",
-                    104,
-                    "bundle_rejected",
-                    {
-                        "accepted": 1,
-                        "bundle_rejected": 1,
-                        "rejected": 0,
-                        "interrupted": 0,
-                        "in_progress": 0,
-                        "stale_responses": 0,
-                    },
-                    incomplete_coverage,
-                ),
-                "local-rejected-duplicate-watcher": (
-                    "issue-178-local-rejected-duplicate-watcher",
-                    "owner-5",
-                    105,
-                    "rejected",
-                    {
-                        "accepted": 1,
-                        "bundle_rejected": 0,
-                        "rejected": 1,
-                        "interrupted": 0,
-                        "in_progress": 0,
-                        "stale_responses": 1,
-                    },
-                    local_rejected_with_duplicate_watcher,
-                ),
+                "duplicate-watcher": ("issue-178-duplicate-watcher", "owner-2", 102, "bundle_rejected", bundle_metrics, duplicate_watcher),
+                "watcher-owner-mismatch": ("issue-178-watcher-owner", "owner-3", 103, "bundle_rejected", bundle_metrics, watcher_owner_mismatch),
+                "remote-coverage-incomplete": ("issue-178-incomplete-coverage", "owner-4", 104, "bundle_rejected", bundle_metrics, incomplete_coverage),
+                "local-rejected-duplicate-watcher": ("issue-178-local-rejected-duplicate-watcher", "owner-5", 105, "rejected", rejected_metrics, local_rejected_with_duplicate_watcher),
             }
             for code, (
                 handoff_id,
@@ -7589,80 +7377,22 @@ class ReporterHandoffExtensionTests(unittest.TestCase):
                     document["handoffs"][0]["owner_id"] = owner_id
                     document["handoffs"][0]["owner_database_id"] = owner_database_id
                     mutate(document)
-                    result_report = agent_handoff.validate_document(
-                        document,
-                        root,
-                    )
-                    (
-                        _expected_summary,
-                        expected_bundle_codes,
-                        _delivery_graph,
-                        _watchers,
-                    ) = agent_handoff.derive_reporter_result_summary(
-                        document,
-                        result_report,
-                    )
-                    record = reporter_record(
-                        root,
-                        document,
-                        result_report,
-                    )
-                    fixture = reporter_fixture_with_handoffs(
-                        accepted_record,
-                        record,
-                    )
+                    result_report = agent_handoff.validate_document(document, root)
+                    (_expected_summary, expected_bundle_codes, _delivery_graph, _watchers) = agent_handoff.derive_reporter_result_summary(document, result_report)
+                    record = reporter_record(root, document, result_report)
+                    fixture = reporter_fixture_with_handoffs(accepted_record, record)
                     data = validate_reporter_fixture(fixture)
                     normalized = data["implementation_handoffs"][handoff_id]
-                    self.assertEqual(
-                        normalized["reported_outcome"],
-                        expected_reported_outcome,
-                    )
+                    self.assertEqual(normalized["reported_outcome"], expected_reported_outcome)
                     if expected_reported_outcome == "bundle_rejected":
-                        self.assertEqual(
-                            normalized["outcome"],
-                            "accepted",
-                        )
-                    self.assertEqual(
-                        normalized["bundle_rejection_codes"],
-                        expected_bundle_codes,
-                    )
-                    report = test_reporter.authoritative_report(
-                        fixture,
-                        test_reporter.minimal_decisions(),
-                        implementation_handoff_trust=reporter_fixture_trust(
-                            accepted_record,
-                            record,
-                        ),
-                        implementation_handoff_installation=reporter_fixture_installation(
-                            accepted_record,
-                            record,
-                        ),
-                    )
-                    self.assertEqual(
-                        report["implementation_handoffs"]["records"],
-                        2,
-                    )
-                    self.assertEqual(
-                        report["implementation_handoffs"]["max_peak_rss_bytes"],
-                        134217728,
-                    )
-                    self.assertEqual(
-                        report["implementation_handoffs"]["coordination_turns"],
-                        4,
-                    )
-                    self.assertEqual(
-                        report["implementation_handoffs"]["recovery_minutes"],
-                        0,
-                    )
+                        self.assertEqual(normalized["outcome"], "accepted")
+                    self.assertEqual(normalized["bundle_rejection_codes"], expected_bundle_codes)
+                    report = test_reporter.authoritative_report(fixture, test_reporter.minimal_decisions(), implementation_handoff_trust=reporter_fixture_trust(accepted_record, record), implementation_handoff_installation=reporter_fixture_installation(accepted_record, record))
+                    for field, expected_value in {"records": 2, "max_peak_rss_bytes": 134217728, "coordination_turns": 4, "recovery_minutes": 0}.items():
+                        self.assertEqual(report["implementation_handoffs"][field], expected_value)
                     for field, expected_value in expected_metrics.items():
-                        self.assertEqual(
-                            report["implementation_handoffs"][field],
-                            expected_value,
-                        )
-                    self.assertEqual(
-                        report["implementation_handoffs"]["rejection_codes"],
-                        sorted(result_report["summary"]["rejection_codes"]),
-                    )
+                        self.assertEqual(report["implementation_handoffs"][field], expected_value)
+                    self.assertEqual(report["implementation_handoffs"]["rejection_codes"], sorted(result_report["summary"]["rejection_codes"]))
     def test_verify_reporter_record_rederives_rows_and_summary_from_signed_inputs(self):
         with handoff_repository() as (root, _base, parent, result):
             honest_document = handoff_document(root, parent, result)
