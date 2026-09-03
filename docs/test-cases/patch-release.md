@@ -316,6 +316,16 @@ reserved membership, or tracked alias state. Parenthesized subshells,
 multiline command/backtick substitutions, and input/output process
 substitutions retain scope; mandatory actions reject within them even when
 `|| true` would otherwise continue to export.
+Each parenthesis scope is owned by the quote context that opened it, so
+single/double-quoted or escaped `)` text cannot close an outer substitution.
+Attached redirections are lexed from unquoted syntax-active segments,
+including descriptor, here-string, and here-document forms; protected
+read/mapfile/readarray targets reject regardless of whitespace. Quoted
+redirection text and process-substitution inputs remain valid.
+Helper declaration identity includes outer control/execution/operator scope,
+and encountered-definition state requires every helper to execute before its
+first call or reviewed trap use. Reordering is valid only within that pre-use
+region.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,
@@ -505,6 +515,9 @@ archival-lane behavior changes.
   helper topology identity mutations, protected for/select targets, central
   mandatory control contexts, and multiline command/backtick/subshell/
   process-substitution checker bypasses,
+  quote-owned parenthesis nesting, attached/fd/here-string/here-document
+  redirections, conditional/subshell helper declarations, and call-before-
+  definition runtime/mutation controls,
   parsed registry-contract mutations,
   recursive
   command/process-substitution inspection for

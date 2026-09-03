@@ -330,6 +330,19 @@ Parenthesized subshells, multiline `$()`/backtick command substitutions, and
 input/output process substitutions are retained as nested execution scopes.
 The checker and every other mandatory action reject in those scopes, including
 when a following `|| true` would otherwise permit export.
+Parenthesis scopes retain the lexical quote context that opened them; quoted
+or escaped `)` data cannot close an outer substitution or subshell. Nested
+substitutions and mixed quoted/unquoted words therefore keep the checker in
+its true execution scope.
+Attached redirections are split only in unquoted syntax-active segments,
+including descriptor, `<`, `>`, `<<`, and `<<<` forms. Protected `read`,
+`mapfile`, and `readarray` targets are recognized with or without whitespace,
+while quoted redirection characters and process substitutions remain data or
+redirection inputs as Bash defines them.
+Reviewed helper declarations include their outer control, execution, and
+operator scopes. Each helper definition must execute unconditionally before
+its first call or trap use; safe reordering remains allowed only while every
+definition stays in the pre-use region.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

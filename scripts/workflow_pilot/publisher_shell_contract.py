@@ -20,55 +20,55 @@ REVIEWED_BUILDER_ISOLATION_SHA256 = (
 REVIEWED_BUILDER_HELPER_INVENTORY = {
     (
         "builder_main",
-        "6faa4ca9586fdeb3ee01ee3459bec156ddbf8b2a507eff1ba4ee90b82a8baa47",
+        "3b57d31d0a22d2c4463a1c64925b8a71e65d595ab3c7a32a646e5cc8ab4bc1ab",
     ): 1,
     (
         "checked_runtime_transport_signature",
-        "d365acee1fb9450ee0b44a2e371dc1e16cb3e59c91a6d7d3634f4130db0bbc74",
+        "86e8011457f1911f1c977ad8f162fa651f99a069add4324a9933eb20029aee5a",
     ): 1,
     (
         "checked_supervisor_transport_signature",
-        "a074f7cf99cf9de98e1f0828a6d2e587930077832cde5b8e7f29a4fd71aec4bc",
+        "7aef373e44ec1a6019d66401d9944401c0c13f99eab7c2b093ee910b6ccd8292",
     ): 1,
     (
         "create_runtime_transport_file",
-        "8cd1d1caaa35bd9a44d4dd8e9de0d12ea46876a87665264caa012e4b4171ddc3",
+        "13b2bcd8e740138330cf75c2061ce14ee0af6b2f89f09445afc58aceadb6daea",
     ): 1,
     (
         "create_supervisor_transport_file",
-        "bf84f0b0eb97e1da0b1a97818ee775dd22ca6bce0a80e4ce6181e3ee377d67e0",
+        "f2a16cb5bfd6c0026c8796dc8ba483642c4df2d849800ae0a628ee9062996326",
     ): 1,
     (
         "isolated_stage_failure",
-        "be6f73b5a60f005ad3e4d979130aa5a59acee1398d1ce21ad3f5a355101eb155",
+        "3e52e0e844a917bec8c2afc23f2f9511d72eb22c82314c082c7b460f7199f2eb",
     ): 1,
     (
         "list_dev_mount_targets",
-        "3ce60aef32d77e2564ce1c8127aac2772623ce91f4bf758911eeb6fd582bb543",
+        "72de3ebe117bd85b6c1d1105e64a2d24f78a1874bfb128979005bdb0c4fcd1b3",
     ): 1,
     (
         "list_writable_mount_records",
-        "47b596f3234912b1745053244484a465f68887646567705f4a4e81066a771b7b",
+        "452c77e719ea4df4b09765ea1e334ee220a2a02b8d6622359d543b176ad81d1c",
     ): 1,
     (
         "read_checked_runtime_transport_file",
-        "7d4aaa54887ec120ba4bb004df637d187d887d2f824d20f975f56ddfe079c138",
+        "b3c563d971d288d74fafae4d33e747bd52f4603d1831facac8430cd0774ad52a",
     ): 1,
     (
         "read_checked_supervisor_transport_file",
-        "03613296ccb3b706a1111c3661f3dd496237c710e8a6bbc28a21fdd9c70f6da8",
+        "75554d782b0eed4c69f0324dc83090782db30fccc9499aa00994bd70fb66eae2",
     ): 1,
     (
         "remove_runtime_transport_file",
-        "09dcc75bc54e673790282a7c2650d6703f98c9e737de1f53d24a235744c5db08",
+        "be01a3eb446e29c705b450d542853329d0861fc1819635a0658bfd5aed2b8f14",
     ): 1,
     (
         "remove_supervisor_transport_file",
-        "16f384cbdd6070aa45b9782ad46b09815aa632faaa0024396a56f029aaeeb5f9",
+        "a1ecfc82bb32648553c081bc3464760c729ba15215d695629e55596b1706c5dd",
     ): 1,
     (
         "unmount_if_mounted",
-        "7fe6e190a1cdb07838869970809705645d8643b2e1cace2ad8bb336636eeba49",
+        "b07d659b2dad4afa252d0873a823a628af04c2980a441ab138fff67942e0dda6",
     ): 1,
 }
 REVIEWED_HIDDEN_MASK_LOOP_SHA256 = (
@@ -338,7 +338,7 @@ _RAW_CGROUP_DYNAMIC_FILENAME_MARKERS = (
 class _ShellToken:
     text: str
     has_shell_syntax: bool
-    segments: tuple[tuple[str, bool], ...] = ()
+    segments: tuple[tuple[str, bool, bool], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -347,6 +347,7 @@ class _ShellCommandRecord:
     preceding_operator: str | None
     following_operator: str | None
     execution_scopes: tuple[str, ...] = ()
+    control_scopes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -573,7 +574,7 @@ def split_bash_command_records(
 ) -> tuple[_ShellCommandRecord, ...]:
     records: list[_ShellCommandRecord] = []
     pending_operator: str | None = None
-    scope_stack: list[str] = []
+    scope_stack: list[tuple[str, str | None]] = []
     backtick_active = False
     for logical in bash_logical_lines(script, label=label):
         current: list[str] = []
@@ -604,7 +605,9 @@ def split_bash_command_records(
         def begin_command() -> None:
             nonlocal record_scopes
             if record_scopes is None:
-                record_scopes = tuple(scope_stack)
+                record_scopes = tuple(
+                    scope_name for scope_name, _owner in scope_stack
+                )
 
         while index < len(logical):
             character = logical[index]
@@ -640,14 +643,17 @@ def split_bash_command_records(
                     if backtick_active:
                         if (
                             not scope_stack
-                            or scope_stack[-1] != "backtick-substitution"
+                            or scope_stack[-1]
+                            != ("backtick-substitution", None)
                         ):
                             raise ValueError(
                                 f"{label} backtick scope differs"
                             )
                         scope_stack.pop()
                     else:
-                        scope_stack.append("backtick-substitution")
+                        scope_stack.append(
+                            ("backtick-substitution", None)
+                        )
                     backtick_active = not backtick_active
                     word_start = False
                 elif (
@@ -659,9 +665,12 @@ def split_bash_command_records(
                     current.append(character)
                     current.append("(")
                     scope_stack.append(
-                        "command-substitution"
-                        if character == "$"
-                        else "process-substitution"
+                        (
+                            "command-substitution"
+                            if character == "$"
+                            else "process-substitution",
+                            None,
+                        )
                     )
                     index += 1
                     word_start = False
@@ -680,16 +689,21 @@ def split_bash_command_records(
                         current.append(")")
                         index += 1
                     else:
-                        scope_stack.append("subshell")
+                        scope_stack.append(("subshell", None))
                     word_start = False
                 elif character == ")":
                     begin_command()
                     current.append(character)
-                    if scope_stack and scope_stack[-1] in {
-                        "command-substitution",
-                        "process-substitution",
-                        "subshell",
-                    }:
+                    if (
+                        scope_stack
+                        and scope_stack[-1][0]
+                        in {
+                            "command-substitution",
+                            "process-substitution",
+                            "subshell",
+                        }
+                        and scope_stack[-1][1] is None
+                    ):
                         scope_stack.pop()
                     word_start = False
                 elif character in "&|;":
@@ -721,14 +735,17 @@ def split_bash_command_records(
                     if backtick_active:
                         if (
                             not scope_stack
-                            or scope_stack[-1] != "backtick-substitution"
+                            or scope_stack[-1]
+                            != ("backtick-substitution", "double")
                         ):
                             raise ValueError(
                                 f"{label} backtick scope differs"
                             )
                         scope_stack.pop()
                     else:
-                        scope_stack.append("backtick-substitution")
+                        scope_stack.append(
+                            ("backtick-substitution", "double")
+                        )
                     backtick_active = not backtick_active
                 elif (
                     character == "$"
@@ -736,13 +753,17 @@ def split_bash_command_records(
                     and logical[index + 1] == "("
                 ):
                     current.append("(")
-                    scope_stack.append("command-substitution")
+                    scope_stack.append(
+                        ("command-substitution", "double")
+                    )
                     index += 1
                 elif character == ")":
-                    if scope_stack and scope_stack[-1] in {
-                        "command-substitution",
-                        "subshell",
-                    }:
+                    if (
+                        scope_stack
+                        and scope_stack[-1][0]
+                        in {"command-substitution", "subshell"}
+                        and scope_stack[-1][1] == "double"
+                    ):
                         scope_stack.pop()
                 elif character == '"':
                     quote = None
@@ -767,7 +788,11 @@ def _mandatory_action_context_is_unconditional(
     function_stack: list[str],
     require_production_helpers: bool,
 ) -> bool:
-    if control_stack or record.execution_scopes:
+    if (
+        control_stack
+        or record.control_scopes
+        or record.execution_scopes
+    ):
         return False
     if any(
         operator in {"&&", "||", "|", "|&", "&"}
@@ -955,32 +980,41 @@ def _token_quote_segments(
     command_text: str,
     *,
     label: str,
-) -> tuple[tuple[tuple[str, bool], ...], ...]:
-    tokens: list[tuple[tuple[str, bool], ...]] = []
-    segments: list[tuple[str, bool]] = []
+) -> tuple[tuple[tuple[str, bool, bool], ...], ...]:
+    tokens: list[tuple[tuple[str, bool, bool], ...]] = []
+    segments: list[tuple[str, bool, bool]] = []
     current: list[str] = []
-    current_active: bool | None = None
+    current_mode: tuple[bool, bool] | None = None
     token_started = False
     quote: str | None = None
 
-    def append(character: str, active: bool) -> None:
-        nonlocal current_active
-        if current_active is not None and current_active != active:
-            segments.append(("".join(current), current_active))
+    def append(
+        character: str,
+        expansion_active: bool,
+        redirection_active: bool,
+    ) -> None:
+        nonlocal current_mode
+        mode = (expansion_active, redirection_active)
+        if current_mode is not None and current_mode != mode:
+            segments.append(
+                ("".join(current), current_mode[0], current_mode[1])
+            )
             current.clear()
-        current_active = active
+        current_mode = mode
         current.append(character)
 
     def finish_token() -> None:
-        nonlocal current_active, token_started
-        if current_active is not None:
-            segments.append(("".join(current), current_active))
+        nonlocal current_mode, token_started
+        if current_mode is not None:
+            segments.append(
+                ("".join(current), current_mode[0], current_mode[1])
+            )
         elif token_started:
-            segments.append(("", False))
+            segments.append(("", False, False))
         tokens.append(tuple(segments))
         segments.clear()
         current.clear()
-        current_active = None
+        current_mode = None
         token_started = False
 
     index = 0
@@ -1006,17 +1040,17 @@ def _token_quote_segments(
                     raise ValueError(
                         f"{label} shell token continuation differs"
                     )
-                append(command_text[index + 1], False)
+                append(command_text[index + 1], False, False)
                 index += 2
                 continue
-            append(character, True)
+            append(character, True, True)
             index += 1
             continue
         if quote == "'":
             if character == "'":
                 quote = None
             else:
-                append(character, False)
+                append(character, False, False)
             index += 1
             continue
         if character == '"':
@@ -1028,10 +1062,10 @@ def _token_quote_segments(
             and index + 1 < len(command_text)
             and command_text[index + 1] in '$`"\\'
         ):
-            append(command_text[index + 1], False)
+            append(command_text[index + 1], False, False)
             index += 2
             continue
-        append(character, True)
+        append(character, True, False)
         index += 1
     if quote is not None:
         raise ValueError(f"{label} has unterminated quoting or continuation")
@@ -1044,7 +1078,7 @@ def _parse_shell_tokens(command_text: str, *, label: str) -> tuple[_ShellToken, 
     syntax_flags = _token_shell_syntax_flags(command_text, label=label)
     segments = _token_quote_segments(command_text, label=label)
     values = tuple(
-        "".join(segment for segment, _active in token_segments)
+        "".join(segment for segment, _active, _redirect in token_segments)
         for token_segments in segments
     )
     if len(values) != len(syntax_flags) or len(values) != len(segments):
@@ -1072,6 +1106,121 @@ def _shell_token_from_text(token_text: str, *, label: str) -> _ShellToken:
 
 def _token_texts(tokens: Iterable[_ShellToken]) -> tuple[str, ...]:
     return tuple(token.text for token in tokens)
+
+
+def _is_redirection_token(text: str) -> bool:
+    return bool(
+        re.fullmatch(
+            r"[0-9]*(?:<<<|<<-?|>>|<>|>\||<&|>&|<|>)",
+            text,
+        )
+    )
+
+
+def _split_attached_redirections(
+    tokens: tuple[_ShellToken, ...],
+) -> tuple[_ShellToken, ...]:
+    lexed: list[_ShellToken] = []
+
+    def make_token(
+        characters: list[tuple[str, bool, bool]],
+    ) -> _ShellToken:
+        segments: list[tuple[str, bool, bool]] = []
+        current: list[str] = []
+        mode: tuple[bool, bool] | None = None
+        for character, expansion_active, redirection_active in characters:
+            next_mode = (expansion_active, redirection_active)
+            if mode is not None and mode != next_mode:
+                segments.append(("".join(current), mode[0], mode[1]))
+                current.clear()
+            mode = next_mode
+            current.append(character)
+        if mode is not None:
+            segments.append(("".join(current), mode[0], mode[1]))
+        text = "".join(character for character, _expand, _redirect in characters)
+        return _ShellToken(
+            text=text,
+            has_shell_syntax=any(
+                expansion_active
+                and character in "$`{}*?~"
+                for character, expansion_active, _redirect in characters
+            ),
+            segments=tuple(segments),
+        )
+
+    for token in tokens:
+        characters = [
+            (character, expansion_active, redirection_active)
+            for segment, expansion_active, redirection_active in token.segments
+            for character in segment
+        ]
+        if not characters:
+            lexed.append(token)
+            continue
+        chunk_start = 0
+        index = 0
+        split_occurred = False
+        while index < len(characters):
+            character, _expand, redirection_active = characters[index]
+            if (
+                character not in "<>"
+                or not redirection_active
+                or (
+                    index + 1 < len(characters)
+                    and characters[index + 1][0] == "("
+                    and characters[index + 1][2]
+                )
+            ):
+                index += 1
+                continue
+            remaining = "".join(
+                item[0] for item in characters[index : index + 3]
+            )
+            operator = next(
+                (
+                    candidate
+                    for candidate in (
+                        "<<<",
+                        "<<-",
+                        "<<",
+                        ">>",
+                        "<>",
+                        ">|",
+                        "<&",
+                        ">&",
+                        "<",
+                        ">",
+                    )
+                    if remaining.startswith(candidate)
+                ),
+                None,
+            )
+            if operator is None:
+                index += 1
+                continue
+            prefix = characters[chunk_start:index]
+            descriptor = ""
+            if prefix and all(item[0].isdigit() for item in prefix):
+                descriptor = "".join(item[0] for item in prefix)
+                prefix = []
+            if prefix:
+                lexed.append(make_token(prefix))
+            operator_end = index + len(operator)
+            lexed.append(
+                _ShellToken(
+                    text=descriptor + operator,
+                    has_shell_syntax=False,
+                    segments=((descriptor + operator, True, True),),
+                )
+            )
+            split_occurred = True
+            chunk_start = operator_end
+            index = operator_end
+        if not split_occurred:
+            lexed.append(token)
+        elif chunk_start < len(characters):
+            lexed.append(make_token(characters[chunk_start:]))
+    return tuple(lexed)
 
 
 def _canonical_literal_path(token: _ShellToken) -> str | None:
@@ -2803,7 +2952,7 @@ def _resolve_shell_token(
         _resolve_shell_aliases(segment, aliases)
         if expansion_active
         else segment.replace("$", _LITERAL_DOLLAR_MARKER)
-        for segment, expansion_active in token.segments
+        for segment, expansion_active, _redirection_active in token.segments
     )
 
 
@@ -2815,13 +2964,19 @@ def _slice_shell_token(token: _ShellToken, start: int) -> _ShellToken:
         )
     consumed = 0
     sliced: list[tuple[str, bool]] = []
-    for segment, expansion_active in token.segments:
+    for segment, expansion_active, redirection_active in token.segments:
         end = consumed + len(segment)
         if end <= start:
             consumed = end
             continue
         segment_start = max(0, start - consumed)
-        sliced.append((segment[segment_start:], expansion_active))
+        sliced.append(
+            (
+                segment[segment_start:],
+                expansion_active,
+                redirection_active,
+            )
+        )
         consumed = end
     text = token.text[start:]
     return _ShellToken(
@@ -2836,7 +2991,7 @@ def _active_shell_token_text(token: _ShellToken) -> str:
         return token.text if token.has_shell_syntax else ""
     return "".join(
         segment
-        for segment, expansion_active in token.segments
+        for segment, expansion_active, _redirection_active in token.segments
         if expansion_active
     )
 
@@ -2996,6 +3151,55 @@ def _normalize_split_function_command_records(
     return tuple(normalized)
 
 
+def _annotate_command_control_scopes(
+    records: tuple[_ShellCommandRecord, ...],
+) -> tuple[_ShellCommandRecord, ...]:
+    annotated: list[_ShellCommandRecord] = []
+    control_stack: list[str] = []
+    for record in records:
+        annotated.append(
+            _ShellCommandRecord(
+                text=record.text,
+                preceding_operator=record.preceding_operator,
+                following_operator=record.following_operator,
+                execution_scopes=record.execution_scopes,
+                control_scopes=tuple(control_stack),
+            )
+        )
+        first_word = record.text.split(maxsplit=1)[0]
+        if first_word in {
+            "case",
+            "for",
+            "if",
+            "select",
+            "until",
+            "while",
+            "{",
+        }:
+            control_stack.append(first_word)
+            continue
+        if first_word not in {"done", "esac", "fi", "}"}:
+            continue
+        if first_word == "}" and (
+            not control_stack or control_stack[-1] != "{"
+        ):
+            continue
+        if not control_stack:
+            raise ValueError("shell control scope underflow")
+        expected = {
+            "done": {"for", "select", "until", "while"},
+            "esac": {"case"},
+            "fi": {"if"},
+            "}": {"{"},
+        }[first_word]
+        if control_stack[-1] not in expected:
+            raise ValueError("shell control scope mismatch")
+        control_stack.pop()
+    if control_stack:
+        raise ValueError("unterminated shell control scope")
+    return tuple(annotated)
+
+
 def _shell_function_definitions(
     records: tuple[_ShellCommandRecord, ...],
 ) -> tuple[
@@ -3049,6 +3253,7 @@ def _shell_function_definitions(
                     record.preceding_operator,
                     record.following_operator,
                     record.execution_scopes,
+                    record.control_scopes,
                     tuple(control_scope),
                 )
             )
@@ -3195,6 +3400,7 @@ def _analyze_function_call(
     aliases: dict[str, str],
     arguments: tuple[str, ...],
     trusted_helper_inventory: bool,
+    available_functions: set[str],
     call_stack: tuple[str, ...] = (),
 ) -> tuple[bool, dict[str, str]]:
     if function_name in call_stack:
@@ -3229,9 +3435,11 @@ def _analyze_function_call(
         ):
             return True, {}
         command = record.text
-        tokens = _parse_shell_tokens(
-            command,
-            label=f"{function_name} call-time body",
+        tokens = _split_attached_redirections(
+            _parse_shell_tokens(
+                command,
+                label=f"{function_name} call-time body",
+            )
         )
         if any(_token_has_nested_braced_parameter(token) for token in tokens):
             return True, {}
@@ -3269,12 +3477,15 @@ def _analyze_function_call(
             continue
         callee = posixpath.basename(resolved[0])
         if callee in function_bodies:
+            if callee not in available_functions:
+                return True, {}
             failed, updates = _analyze_function_call(
                 callee,
                 function_bodies=function_bodies,
                 aliases=function_aliases,
                 arguments=resolved[1:],
                 trusted_helper_inventory=trusted_helper_inventory,
+                available_functions=available_functions,
                 call_stack=call_stack + (function_name,),
             )
             if failed:
@@ -3301,6 +3512,7 @@ def _analyze_function_call(
             resolved,
             function_aliases,
             original_tokens=_token_texts(tokens),
+            original_shell_tokens=tokens,
         ):
             return True, {}
         changed = directly_written | {
@@ -3331,6 +3543,11 @@ def _helper_call_has_sensitive_arguments(
         return False
     executable = tokens[0]
     basename = posixpath.basename(executable)
+    if (
+        basename in function_bodies
+        and basename not in user_functions
+    ):
+        return True
     production_calls = {
         (
             "read_checked_supervisor_transport_file",
@@ -3382,6 +3599,7 @@ def _helper_call_has_sensitive_arguments(
             aliases=aliases,
             arguments=tokens[1:],
             trusted_helper_inventory=trusted_helper_inventory,
+            available_functions=user_functions,
         )
         if failed:
             return True
@@ -3761,10 +3979,21 @@ def _normalized_command_mutates_cgroup_path(
 
     if normalized[0] in {".", "eval", "source"}:
         return True
-    if executable in {"unset", "read", "mapfile", "readarray"}:
+    if executable == "unset":
         return any(
             target_is_protected(argument)
             for argument in arguments
+            if not argument.startswith(("-", "+"))
+        )
+    if executable in {"read", "mapfile", "readarray"}:
+        mutation_arguments = arguments
+        for index, argument in enumerate(mutation_arguments):
+            if _is_redirection_token(argument):
+                mutation_arguments = mutation_arguments[:index]
+                break
+        return any(
+            target_is_protected(argument)
+            for argument in mutation_arguments
             if not argument.startswith(("-", "+"))
         )
     if executable == "printf":
@@ -4120,7 +4349,7 @@ def _read_builtin_targets(
     index = 0
     while index < len(arguments):
         argument = arguments[index]
-        if argument in {"<", "<<", "<<<"}:
+        if _is_redirection_token(argument):
             break
         if argument == "--":
             index += 1
@@ -4149,7 +4378,7 @@ def _read_builtin_targets(
         index += 1
     while index < len(arguments):
         argument = arguments[index]
-        if argument in {"<", "<<", "<<<"}:
+        if _is_redirection_token(argument):
             break
         targets.append((argument, False))
         index += 1
@@ -4164,7 +4393,7 @@ def _mapfile_builtin_target(
     index = 0
     while index < len(arguments):
         argument = arguments[index]
-        if argument in {"<", "<<", "<<<"}:
+        if _is_redirection_token(argument):
             break
         if argument == "--":
             index += 1
@@ -4187,7 +4416,7 @@ def _mapfile_builtin_target(
                 break
             flag_index += 1
         index += 1
-    if index >= len(arguments) or arguments[index] in {"<", "<<", "<<<"}:
+    if index >= len(arguments) or _is_redirection_token(arguments[index]):
         return "MAPFILE"
     return arguments[index]
 
@@ -4197,7 +4426,12 @@ def _apply_shell_builtin_alias_writes(
     aliases: dict[str, str],
     *,
     original_tokens: tuple[str, ...],
+    original_shell_tokens: tuple[_ShellToken, ...] | None = None,
 ) -> bool:
+    if original_shell_tokens is not None:
+        lexed = _split_attached_redirections(original_shell_tokens)
+        tokens = _resolve_tokens_for_alias_state(lexed, aliases)
+        original_tokens = _token_texts(lexed)
     normalized = _normalize_shell_builtin_wrappers(tokens)
     if normalized is None:
         return any(
@@ -4378,10 +4612,12 @@ def has_forbidden_raw_builder_cgroup_membership_read(
         semantic_script = _strip_patch_release_parser_heredoc_bodies(
             script
         )
-        command_records = _normalize_split_function_command_records(
-            split_bash_command_records(
-                semantic_script,
-                label=label,
+        command_records = _annotate_command_control_scopes(
+            _normalize_split_function_command_records(
+                split_bash_command_records(
+                    semantic_script,
+                    label=label,
+                )
             )
         )
         commands = tuple(record.text for record in command_records)
@@ -4405,6 +4641,12 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 if (
                     function_name is None
                     or has_inline_body
+                    or command_record.control_scopes
+                    or command_record.execution_scopes
+                    or command_record.preceding_operator
+                    in {"&&", "||", "|", "|&", "&"}
+                    or command_record.following_operator
+                    in {"&&", "||", "|", "|&", "&"}
                     or function_name in _SECURITY_SENSITIVE_FUNCTION_NAMES
                     or function_name in encountered_functions
                 ):
@@ -4471,7 +4713,9 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 )
             )
             aliases = alias_scopes[-1]
-            tokens = _parse_shell_tokens(command_text, label=label)
+            tokens = _split_attached_redirections(
+                _parse_shell_tokens(command_text, label=label)
+            )
             if any(
                 _token_has_nested_braced_parameter(token)
                 for token in tokens
@@ -4573,7 +4817,8 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 "-S",
                 "-",
                 "$$",
-                "<<PY",
+                "<<",
+                "PY",
             ):
                 membership_checker_count += 1
                 if (
@@ -4628,6 +4873,8 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     "ERR",
                 ):
                     return True
+                if "isolated_stage_failure" not in encountered_functions:
+                    return True
                 if not mandatory_context_is_unconditional:
                     return True
                 reviewed_trap_count += 1
@@ -4635,7 +4882,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     return True
             if _helper_call_has_sensitive_arguments(
                 resolved_token_texts,
-                user_functions=user_functions,
+                user_functions=encountered_functions,
                 function_bodies=function_bodies,
                 aliases=aliases,
                 trusted_helper_inventory=helper_inventory_is_reviewed,
@@ -4825,6 +5072,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 resolved_token_texts,
                 aliases,
                 original_tokens=token_texts,
+                original_shell_tokens=tokens,
             ):
                 return True
         if require_production_helpers:

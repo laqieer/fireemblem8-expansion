@@ -1300,6 +1300,8 @@
           "control_operator_topology": "mandatory-actions-unconditional-and-unique",
           "mandatory_context": "central-top-level-control-operator-scope-free",
           "nested_execution_scopes": "reject-mandatory-actions",
+          "parenthesis_scope_ownership": "syntax-active-quote-context",
+          "attached_redirections": "lex-unquoted-syntax-segments",
           "protected_loop_targets": "reject",
           "operator_literals": "quoted-or-escaped-data",
           "split_function_declaration": "bind-pending-name-to-brace",
@@ -1323,6 +1325,8 @@
         "helper_inventory": {
           "definition_count": 13,
           "body_identity": "parsed-command-topology-scope-digest",
+          "declaration_scope": "top-level-unconditional",
+          "definition_order": "before-first-use",
           "multiplicity": "exact",
           "ordering": "insensitive",
           "entrypoint_body": "separately-reviewed"

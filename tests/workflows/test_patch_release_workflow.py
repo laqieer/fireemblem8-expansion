@@ -918,6 +918,16 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         "        read cgroup_path < /dev/null\n",
         "        mapfile -t cgroup_path < /dev/null\n",
         "        readarray -t cgroup_path < /dev/null\n",
+        '        read cgroup_path<<<"/tmp/fake"\n',
+        '        read cgroup_path<"/dev/null"\n',
+        '        read cgroup_path 0<<<"/tmp/fake"\n',
+        "        target=cgroup_path\n"
+        '        read "$target"<<<"/tmp/fake"\n',
+        '        mapfile -t cgroup_path<<<"/tmp/fake"\n',
+        '        readarray -t cgroup_path<<<"/tmp/fake"\n',
+        "        read cgroup_path<<CGROUP_PATH_VALUE\n"
+        "        /tmp/fake\n"
+        "        CGROUP_PATH_VALUE\n",
         "        unset cgroup_path\n",
         "        target=cgroup_path\n"
         '        declare "$target=/tmp/fake"\n',
@@ -1042,6 +1052,13 @@ def generate_quote_context_controls(workflow: str):
 
 def generate_helper_inventory_mutations(workflow: str):
     marker = "        isolated_stage=export\n"
+    unmount_helper = (
+        "        unmount_if_mounted() {\n"
+        '          if /usr/bin/mountpoint -q "$1"; then\n'
+        '            /usr/bin/umount --recursive "$1"\n'
+        "          fi\n"
+        "        }\n"
+    )
     mutations = {
         "added": workflow.replace(
             marker,
@@ -1084,6 +1101,27 @@ def generate_helper_inventory_mutations(workflow: str):
         "list-topology": workflow.replace(
             '            /usr/bin/umount --recursive "$1"\n',
             '            /usr/bin/umount --recursive "$1" && true\n',
+            1,
+        ),
+        "conditional-declaration": workflow.replace(
+            unmount_helper,
+            "        if false; then\n"
+            + unmount_helper
+            + "        fi\n",
+            1,
+        ),
+        "subshell-declaration": workflow.replace(
+            unmount_helper,
+            "        (\n"
+            + unmount_helper
+            + "        )\n",
+            1,
+        ),
+        "call-before-definition": workflow.replace(
+            unmount_helper
+            + "        unmount_if_mounted /home/runner\n",
+            "        unmount_if_mounted /home/runner\n"
+            + unmount_helper,
             1,
         ),
     }
@@ -1202,6 +1240,23 @@ def generate_membership_checker_nested_execution_mutations(workflow: str):
     wrappers = {
         "command-substitution": (
             "        checker_result=$(\n",
+            "        ) || true\n",
+        ),
+        "command-substitution-quoted-paren": (
+            "        checker_result=$(\n"
+            "          printf '%s' \")\" > /dev/null\n",
+            "        ) || true\n",
+        ),
+        "nested-command-substitution": (
+            "        checker_result=$(\n"
+            "          nested_result=$(\n"
+            "            printf '%s' \")\" > /dev/null\n"
+            "          )\n",
+            "        ) || true\n",
+        ),
+        "command-substitution-escaped-paren": (
+            "        checker_result=$(\n"
+            "          printf '%s' \\) > /dev/null\n",
             "        ) || true\n",
         ),
         "backtick-substitution": (
@@ -7668,6 +7723,53 @@ exit 37
                 )
             )
 
+    def test_helper_definition_must_execute_before_first_call(self):
+        cases = (
+            (
+                "conditional",
+                "if false; then\n"
+                "  helper() {\n"
+                "    true\n"
+                "  }\n"
+                "fi\n"
+                "helper\n",
+            ),
+            (
+                "subshell",
+                "(\n"
+                "  helper() {\n"
+                "    true\n"
+                "  }\n"
+                ")\n"
+                "helper\n",
+            ),
+            (
+                "call-before-definition",
+                "helper\n"
+                "status=$?\n"
+                "helper() {\n"
+                "  true\n"
+                "}\n"
+                'exit "$status"\n',
+            ),
+        )
+        for label, script in cases:
+            with self.subTest(helper_definition=label):
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", script],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 127)
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        script,
+                        label=f"{label} helper definition runtime",
+                    )
+                )
+
     def test_indexed_alias_runtime_reaches_raw_membership_and_is_rejected(self):
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
@@ -8967,6 +9069,9 @@ exit 37
                     ),
                     (
                         "reviewed trap",
+                        "isolated_stage_failure() {\n"
+                        "  return 125\n"
+                        "}\n"
                         "trap isolated_stage_failure ERR\n",
                     ),
                     (
@@ -9126,6 +9231,32 @@ exit 37
                             label="protected loop target runtime",
                         )
             )
+            attached_script = (
+                        'cgroup_path="$1"\n'
+                        'read cgroup_path<<<"$2"\n'
+                        'test "$cgroup_path" = "$2"\n'
+            )
+            completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "-c",
+                            attached_script,
+                            "--",
+                            str(raw_cgroup),
+                            str(fake_cgroup),
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertTrue(
+                        publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                            attached_script,
+                            label="attached redirection protected target runtime",
+                        )
+            )
 
         for valid_loop in (
             "for ordinary in one two; do\n"
@@ -9141,6 +9272,58 @@ exit 37
                             label="ordinary loop target control",
                         )
             )
+
+    def test_attached_redirections_preserve_targets_and_quoted_data(self):
+        ordinary = (
+            "read ordinary<<<value\n"
+            'test "$ordinary" = value\n'
+        )
+        completed = subprocess.run(
+            ["/bin/bash", "-c", ordinary],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertFalse(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        ordinary,
+                        label="ordinary attached redirection",
+            )
+        )
+
+        quoted = 'read "ordinary<<<value" 2>/dev/null || true\n'
+        tokens = publisher_shell_contract._parse_shell_tokens(
+            quoted.strip(),
+            label="quoted redirection data",
+        )
+        lexed = publisher_shell_contract._split_attached_redirections(
+            tokens
+        )
+        self.assertIn(
+            "ordinary<<<value",
+            publisher_shell_contract._token_texts(lexed),
+        )
+
+        process_substitution = (
+            "read ordinary< <(printf 'value\\n')\n"
+            'test "$ordinary" = value\n'
+        )
+        completed = subprocess.run(
+            ["/bin/bash", "-c", process_substitution],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertFalse(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        process_substitution,
+                        label="process substitution redirection",
+            )
+        )
 
     def test_command_query_clusters_are_nonmutating_and_invalid_clusters_fail(self):
         valid_clusters = (
@@ -11465,6 +11648,12 @@ exit 37
                     "central-top-level-control-operator-scope-free"
                 ),
                 "nested_execution_scopes": "reject-mandatory-actions",
+                "parenthesis_scope_ownership": (
+                    "syntax-active-quote-context"
+                ),
+                "attached_redirections": (
+                    "lex-unquoted-syntax-segments"
+                ),
                 "protected_loop_targets": "reject",
                 "operator_literals": "quoted-or-escaped-data",
                 "split_function_declaration": (
@@ -11490,6 +11679,8 @@ exit 37
             "helper_inventory": {
                 "definition_count": 13,
                 "body_identity": "parsed-command-topology-scope-digest",
+                "declaration_scope": "top-level-unconditional",
+                "definition_order": "before-first-use",
                 "multiplicity": "exact",
                 "ordering": "insensitive",
                 "entrypoint_body": "separately-reviewed",
@@ -11659,6 +11850,10 @@ exit 37
                 "allow",
             ),
             (
+                ("shell_surface", "attached_redirections"),
+                "whitespace-only",
+            ),
+            (
                 (
                     "helper_calls",
                     "tracked_or_composed_membership_arguments",
@@ -11669,6 +11864,7 @@ exit 37
             (("helper_calls", "frame_evaluation"), "frozen"),
             (("helper_calls", "local_writeback"), "propagate"),
             (("helper_inventory", "definition_count"), 14),
+            (("helper_inventory", "definition_order"), "unordered"),
             (("function_shadowing", "result"), "allow"),
             (("raw_membership", "additional_access"), "allow"),
             (("alias_state", "dynamic_target"), "allow"),
@@ -12064,6 +12260,12 @@ exit 37
                 "set -e\nchecker_result=$(\n",
                 "\n) || true",
             ),
+            (
+                "command-substitution-quoted-paren",
+                "set -e\nchecker_result=$(\n"
+                "printf '%s' \")\" > /dev/null\n",
+                "\n) || true",
+            ),
             ("subshell", "set -e\n(\n", "\n) || true"),
         ):
             with self.subTest(runtime_wrapper=label):
@@ -12127,6 +12329,71 @@ exit 37
                         "raw builder cgroup membership read differs",
                         publisher_boundary_errors(changed),
                     )
+
+    def test_parenthesis_scopes_close_only_in_their_lexical_context(self):
+        nested_cases = (
+            (
+                "double-quoted",
+                "result=$(\n"
+                "printf '%s' \")\"\n"
+                "security_check\n"
+                ")\n",
+            ),
+            (
+                "single-quoted",
+                "result=$(\n"
+                "printf '%s' ')'\n"
+                "security_check\n"
+                ")\n",
+            ),
+            (
+                "escaped",
+                "result=$(\n"
+                "printf '%s' \\)\n"
+                "security_check\n"
+                ")\n",
+            ),
+            (
+                "mixed-nested",
+                "result=$(\n"
+                "nested=$(printf '%s' \")\")\n"
+                "security_check\n"
+                ")\n",
+            ),
+        )
+        for label, script in nested_cases:
+            with self.subTest(parenthesis_context=label):
+                records = (
+                    publisher_shell_contract.split_bash_command_records(
+                        script,
+                        label=f"{label} parenthesis scope",
+                    )
+                )
+                checker = next(
+                    record
+                    for record in records
+                    if record.text == "security_check"
+                )
+                self.assertIn(
+                    "command-substitution",
+                    checker.execution_scopes,
+                )
+
+        unquoted_close = (
+            "result=$(true\n"
+            ")\n"
+            "security_check\n"
+        )
+        records = publisher_shell_contract.split_bash_command_records(
+            unquoted_close,
+            label="unquoted parenthesis close",
+        )
+        checker = next(
+            record
+            for record in records
+            if record.text == "security_check"
+        )
+        self.assertEqual(checker.execution_scopes, ())
 
     def test_cgroup_initializer_must_be_on_unconditional_main_path(self):
         script = (
