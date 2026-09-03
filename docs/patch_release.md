@@ -377,6 +377,13 @@ while `(…)#` begins a comment. Quote ownership, nesting, escaped parentheses,
 adjacent suffixes, and inner newlines preserve that distinction. A real
 heredoc following a substitution-word hash is still queued, and its body
 cannot satisfy mandatory actions.
+Arithmetic state also distinguishes standalone command `((…))` from embedded
+`$((…))` and legacy `$[…]` expansion. Closing an arithmetic command restores a
+token/comment boundary, including `if`, `while`, and `for ((…))` contexts;
+closing an expansion resumes its containing word. Nested parentheses and
+command substitutions suspend and restore the outer arithmetic frame.
+Adjacent comments, suffixes, redirects, and operators therefore follow Bash
+semantics, and malformed frames fail closed.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

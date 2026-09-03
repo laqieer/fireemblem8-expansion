@@ -1358,6 +1358,19 @@ class VerifyCliCwdTests(unittest.TestCase):
             for (
                 label,
                 changed,
+            ) in patch_workflow_tests.generate_arithmetic_command_comment_hide_mutations(
+                original
+            ):
+                with self.subTest(
+                    arithmetic_command_comment=label
+                ), self.assertRaisesRegex(
+                    ValueError,
+                    "isolated candidate build differs",
+                ):
+                    verify_mod._parse_workflow_structure_text(changed)
+            for (
+                label,
+                changed,
             ) in patch_workflow_tests.generate_safe_declaration_alias_controls(
                 original
             ):

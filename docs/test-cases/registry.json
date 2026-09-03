@@ -1312,6 +1312,8 @@
           "ansi_c_quotes": "explicit-escape-decoding",
           "locale_quotes": "double-quote-expansion",
           "arithmetic_contexts": "exclude-shifts-from-heredoc-redirection",
+          "arithmetic_command_close": "restore-word-start",
+          "arithmetic_expansion_close": "resume-containing-word",
           "unquoted_heredoc_expansion": "reject",
           "here_strings": "ordinary-redirections",
           "protected_loop_targets": "reject",

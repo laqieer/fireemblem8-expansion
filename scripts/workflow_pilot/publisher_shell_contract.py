@@ -355,9 +355,13 @@ class _BashLineLexState:
     quote: str = "normal"
     parameter_depth: int = 0
     arithmetic_depth: int = 0
+    arithmetic_kind: str | None = None
     arithmetic_bracket_depth: int = 0
     array_bracket_depth: int = 0
-    execution_stack: tuple[tuple[str, str, bool], ...] = ()
+    execution_stack: tuple[
+        tuple[str, str, bool, int, str | None, int],
+        ...,
+    ] = ()
     word_start: bool = True
 
 
@@ -568,6 +572,7 @@ def _scan_bash_physical_line(
     quote = state.quote
     parameter_depth = state.parameter_depth
     arithmetic_depth = state.arithmetic_depth
+    arithmetic_kind = state.arithmetic_kind
     arithmetic_bracket_depth = state.arithmetic_bracket_depth
     array_bracket_depth = state.array_bracket_depth
     execution_stack = list(state.execution_stack)
@@ -578,6 +583,7 @@ def _scan_bash_physical_line(
             quote=quote,
             parameter_depth=parameter_depth,
             arithmetic_depth=arithmetic_depth,
+            arithmetic_kind=arithmetic_kind,
             arithmetic_bracket_depth=arithmetic_bracket_depth,
             array_bracket_depth=array_bracket_depth,
             execution_stack=tuple(execution_stack),
@@ -585,17 +591,41 @@ def _scan_bash_physical_line(
         )
 
     def open_execution(kind: str, closes_word: bool) -> None:
-        nonlocal quote, word_start
-        execution_stack.append((kind, quote, closes_word))
+        nonlocal arithmetic_bracket_depth, arithmetic_depth
+        nonlocal arithmetic_kind, quote, word_start
+        execution_stack.append(
+            (
+                kind,
+                quote,
+                closes_word,
+                arithmetic_depth,
+                arithmetic_kind,
+                arithmetic_bracket_depth,
+            )
+        )
         quote = "normal"
+        arithmetic_depth = 0
+        arithmetic_kind = None
+        arithmetic_bracket_depth = 0
         word_start = True
 
     def close_execution(expected: set[str]) -> bool:
-        nonlocal quote, word_start
+        nonlocal arithmetic_bracket_depth, arithmetic_depth
+        nonlocal arithmetic_kind, quote, word_start
         if not execution_stack or execution_stack[-1][0] not in expected:
             return False
-        _kind, restore_quote, closes_word = execution_stack.pop()
+        (
+            _kind,
+            restore_quote,
+            closes_word,
+            restore_arithmetic_depth,
+            restore_arithmetic_kind,
+            restore_arithmetic_bracket_depth,
+        ) = execution_stack.pop()
         quote = restore_quote
+        arithmetic_depth = restore_arithmetic_depth
+        arithmetic_kind = restore_arithmetic_kind
+        arithmetic_bracket_depth = restore_arithmetic_bracket_depth
         word_start = closes_word
         return True
 
@@ -647,11 +677,22 @@ def _scan_bash_physical_line(
                     arithmetic_bracket_depth += 1
                     index += 2
                     continue
+                if line.startswith("$(", index):
+                    open_execution("command-substitution", False)
+                    index += 2
+                    continue
+                if character == "`":
+                    open_execution("backtick-substitution", False)
+                    index += 1
+                    continue
                 if arithmetic_depth:
                     if character == "(":
                         arithmetic_depth += 1
                     elif character == ")":
                         arithmetic_depth -= 1
+                        if arithmetic_depth == 0:
+                            word_start = arithmetic_kind == "command"
+                            arithmetic_kind = None
                 elif character == "]":
                     arithmetic_bracket_depth -= 1
                 index += 1
@@ -676,11 +717,13 @@ def _scan_bash_physical_line(
                 continue
             elif line.startswith("$((", index):
                 arithmetic_depth = 2
+                arithmetic_kind = "expansion"
                 word_start = False
                 index += 3
                 continue
             elif line.startswith("((", index):
                 arithmetic_depth = 2
+                arithmetic_kind = "command"
                 word_start = False
                 index += 2
                 continue
@@ -781,6 +824,8 @@ def _scan_bash_physical_line(
                     index += 2
                     continue
             elif line.startswith("$((", index):
+                if arithmetic_depth == 0:
+                    arithmetic_kind = "expansion"
                 arithmetic_depth += 2
                 index += 3
                 continue
@@ -797,6 +842,9 @@ def _scan_bash_physical_line(
                     arithmetic_depth += 1
                 elif character == ")":
                     arithmetic_depth -= 1
+                    if arithmetic_depth == 0:
+                        word_start = arithmetic_kind == "command"
+                        arithmetic_kind = None
             elif arithmetic_bracket_depth and character == "]":
                 arithmetic_bracket_depth -= 1
             elif character == "`":
@@ -842,7 +890,7 @@ def bash_logical_lines(script: str, *, label: str) -> tuple[str, ...]:
             or state.array_bracket_depth
             or any(
                 restore_quote != "normal"
-                for _kind, restore_quote, _boundary
+                for _kind, restore_quote, _boundary, *_arithmetic
                 in state.execution_stack
             )
         ):
@@ -871,6 +919,7 @@ def _logical_heredoc_declarations(
     quote: str | None = None
     parameter_depth = 0
     arithmetic_depth = 0
+    arithmetic_kind: str | None = None
     arithmetic_bracket_depth = 0
     array_bracket_depth = 0
     word_start = True
@@ -912,6 +961,9 @@ def _logical_heredoc_declarations(
                         arithmetic_depth += 1
                     elif character == ")":
                         arithmetic_depth -= 1
+                        if arithmetic_depth == 0:
+                            word_start = arithmetic_kind == "command"
+                            arithmetic_kind = None
                 elif character == "]":
                     arithmetic_bracket_depth -= 1
                 index += 1
@@ -928,11 +980,13 @@ def _logical_heredoc_declarations(
                 continue
             if logical.startswith("$((", index):
                 arithmetic_depth = 2
+                arithmetic_kind = "expansion"
                 word_start = False
                 index += 3
                 continue
             if logical.startswith("((", index):
                 arithmetic_depth = 2
+                arithmetic_kind = "command"
                 word_start = False
                 index += 2
                 continue

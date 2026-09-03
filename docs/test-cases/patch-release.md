@@ -354,6 +354,12 @@ parentheses from word-embedded command/backtick/process substitutions.
 starts a comment. Nested, quoted, escaped, adjacent, and multiline variants
 retain their owner context, so a real heredoc after an embedded-substitution
 hash remains queued and its body stays inert.
+Standalone arithmetic command `((…))` and embedded `$((…))`/`$[…]` expansions
+have distinct frame kinds. Command close restores a comment boundary in
+standalone, `if`, `while`, and `for` positions; expansion close resumes the
+same word. Nested parentheses and command substitutions restore the outer
+arithmetic frame, while adjacent comments/suffixes/redirections/operators
+retain Bash behavior and malformed frames reject.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,
@@ -559,6 +565,8 @@ archival-lane behavior changes.
   command/backtick/input/output substitution word-continuation versus
   subshell/group boundaries, quoted/mixed/nested parentheses, and inert
   initializer heredoc bodies,
+  standalone/if/while/for/nested arithmetic-command comment boundaries versus
+  `$((…))`/`$[…]` word continuation and adjacent redirection controls,
   parsed registry-contract mutations,
   recursive
   command/process-substitution inspection for

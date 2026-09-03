@@ -1089,6 +1089,16 @@ def generate_ansi_arithmetic_controls(workflow: str):
             '        test "$arithmetic_value" -eq 8\n',
         ),
         (
+            "arithmetic-command-comment",
+            "        (( arithmetic_value = 1 ))# inert comment\n"
+            '        test "$arithmetic_value" -eq 1\n',
+        ),
+        (
+            "arithmetic-expansion-suffix",
+            "        arithmetic_value=$((1))#suffix\n"
+            '        test "$arithmetic_value" = "1#suffix"\n',
+        ),
+        (
             "legacy-arithmetic",
             "        arithmetic_value=$[1<<2]\n"
             '        test "$arithmetic_value" -eq 4\n',
@@ -1780,6 +1790,61 @@ def generate_substitution_word_heredoc_spoofs(workflow: str):
         if changed == workflow:
             raise AssertionError(
                 f"{label} substitution heredoc marker differs"
+            )
+        yield label, changed
+
+
+def generate_arithmetic_command_comment_hide_mutations(workflow: str):
+    marker = "        isolated_stage=export\n"
+    contexts = {
+        "standalone-read": (
+            "        ((1))# <<':'\n"
+            '        /bin/cat "$cgroup_path/cgroup.procs" '
+            "> /dev/null\n"
+            "        :\n"
+        ),
+        "standalone-write": (
+            "        ((1))# <<':'\n"
+            "        cgroup_path=/tmp/fake\n"
+            "        :\n"
+        ),
+        "if-condition": (
+            "        if ((1))# <<':'\n"
+            "        then\n"
+            '          /bin/cat "$cgroup_path/cgroup.procs" '
+            "> /dev/null\n"
+            "        fi\n"
+            "        :\n"
+        ),
+        "while-condition": (
+            "        while ((0))# <<':'\n"
+            "        do\n"
+            "          true\n"
+            "        done\n"
+            '        /bin/cat "$cgroup_path/cgroup.procs" '
+            "> /dev/null\n"
+            "        :\n"
+        ),
+        "for-clause": (
+            "        for ((i=0;i<1;i++))# <<':'\n"
+            "        do\n"
+            '          /bin/cat "$cgroup_path/cgroup.procs" '
+            "> /dev/null\n"
+            "        done\n"
+            "        :\n"
+        ),
+        "nested-substitution": (
+            "        (( value = $(printf 1) << 2 ))# <<':'\n"
+            '        /bin/cat "$cgroup_path/cgroup.procs" '
+            "> /dev/null\n"
+            "        :\n"
+        ),
+    }
+    for label, mutation in contexts.items():
+        changed = workflow.replace(marker, marker + mutation, 1)
+        if changed == workflow:
+            raise AssertionError(
+                f"{label} arithmetic comment mutation marker differs"
             )
         yield label, changed
 
@@ -9639,6 +9704,150 @@ exit 37
                                 )
                             )
 
+    def test_arithmetic_command_close_restores_comment_boundary(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="arithmetic-command-comment-",
+            dir=artifact_root,
+        ) as temporary:
+            raw_cgroup = Path(temporary) / "raw"
+            raw_cgroup.mkdir()
+            (raw_cgroup / "cgroup.procs").write_text(
+                "arithmetic-command-raw-read\n",
+                encoding="ascii",
+            )
+            scripts = (
+                "((1))# <<':'\n"
+                '/bin/cat "$1/cgroup.procs"\n'
+                ":\n",
+                "if ((1))# <<':'\n"
+                "then\n"
+                '  /bin/cat "$1/cgroup.procs"\n'
+                "fi\n"
+                ":\n",
+                "for ((i=0;i<1;i++))# <<':'\n"
+                "do\n"
+                '  /bin/cat "$1/cgroup.procs"\n'
+                "done\n"
+                ":\n",
+                "(( value = $(printf 1) << 2 ))# <<':'\n"
+                '/bin/cat "$1/cgroup.procs"\n'
+                ":\n",
+            )
+            for script in scripts:
+                with self.subTest(arithmetic_command=script.splitlines()[0]):
+                            completed = subprocess.run(
+                                [
+                                    "/bin/bash",
+                                    "-c",
+                                    script,
+                                    "--",
+                                    str(raw_cgroup),
+                                ],
+                                cwd=ROOT,
+                                check=False,
+                                capture_output=True,
+                                text=True,
+                            )
+                            self.assertEqual(completed.returncode, 0, completed.stderr)
+                            self.assertEqual(
+                                completed.stdout,
+                                "arithmetic-command-raw-read\n",
+                            )
+                            self.assertTrue(
+                                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                                    script,
+                                    label="arithmetic command comment runtime",
+                                )
+                            )
+
+            redirection = Path(temporary) / "redirected#suffix"
+            redirect_script = '((1))>"$1"#suffix\n'
+            completed = subprocess.run(
+                [
+                            "/bin/bash",
+                            "-c",
+                            redirect_script,
+                            "--",
+                            str(Path(temporary) / "redirected"),
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertTrue(redirection.exists())
+
+        for label, opener in (
+            ("expansion", "value=$((1))# <<'FAKE'\n"),
+            ("legacy", "value=$[1]# <<'FAKE'\n"),
+        ):
+            script = (
+                "set -u\n"
+                + opener
+                + 'cgroup_path="$1"\n'
+                + "FAKE\n"
+                + 'printf "%s\\n" "$cgroup_path"\n'
+            )
+            with self.subTest(arithmetic_word=label):
+                completed = subprocess.run(
+                            ["/bin/bash", "-c", script, "--", "/owned-cgroup"],
+                            cwd=ROOT,
+                            check=False,
+                            capture_output=True,
+                            text=True,
+                )
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn("unbound variable", completed.stderr)
+                records = (
+                            publisher_shell_contract.split_bash_simple_command_strings(
+                                script,
+                                label=f"{label} arithmetic word heredoc",
+                            )
+                )
+                self.assertNotIn('cgroup_path="$1"', records)
+
+        self.assertFalse(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                "printf '%s\\n' '((1))# <<FAKE'\n",
+                label="quoted arithmetic command data",
+            )
+        )
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                "((1)\n",
+                label="malformed arithmetic command",
+            )
+        )
+
+        with (
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_patch_release_run_script_identity",
+            ),
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_builder_isolation_shell_identity",
+            ),
+        ):
+            for label, changed in (
+                generate_arithmetic_command_comment_hide_mutations(
+                            self.text
+                )
+            ):
+                with self.subTest(arithmetic_workflow=label):
+                            self.assertTrue(
+                                workflow_has_raw_builder_cgroup_membership_read(
+                                    changed
+                                )
+                            )
+                            self.assertIn(
+                                "raw builder cgroup membership read differs",
+                                publisher_boundary_errors(changed),
+                            )
+
     def test_cgroup_path_reassignment_redirects_join_and_is_rejected(self):
         artifact_root = ROOT / "build" / "test-artifacts"
         artifact_root.mkdir(parents=True, exist_ok=True)
@@ -12145,6 +12354,8 @@ exit 37
                 "arithmetic_contexts": (
                     "exclude-shifts-from-heredoc-redirection"
                 ),
+                "arithmetic_command_close": "restore-word-start",
+                "arithmetic_expansion_close": "resume-containing-word",
                 "unquoted_heredoc_expansion": "reject",
                 "here_strings": "ordinary-redirections",
                 "protected_loop_targets": "reject",
@@ -12369,6 +12580,10 @@ exit 37
             (
                 ("shell_surface", "arithmetic_contexts"),
                 "heredoc",
+            ),
+            (
+                ("shell_surface", "arithmetic_command_close"),
+                "resume-containing-word",
             ),
             (
                 (
