@@ -1534,7 +1534,12 @@ def _parse_bash_run_script_commands(script, step_label):
     ):
         if not logical.strip() or logical.lstrip().startswith("#"):
             continue
-        command = tuple(shlex.split(logical))
+        command = publisher_shell_contract._token_texts(
+            publisher_shell_contract._parse_shell_tokens(
+                logical,
+                label=step_label,
+            )
+        )
         if not command:
             raise ValueError(f"{step_label} run command is empty")
         parsed.append(command)

@@ -337,6 +337,12 @@ Heredoc detection receives only the shared syntax-active pre-comment source.
 in-word, and parameter-operator hashes remain data. Commented fake
 `<<`/`<<-`/fd/multiple delimiters cannot consume following commands, while a
 real heredoc may retain a trailing comment.
+ANSI-C `$'…'` and locale `$"…"` prefixes use dedicated states. ANSI escapes
+and escaped quotes dequote ordinary words and heredoc delimiters while keeping
+hashes/operators/parentheses inert; locale strings keep double-quote
+expansion. Arithmetic `$((…))`, `((…))`, and `$[…]` nesting prevents `<<`,
+`>>`, or base-`#` syntax from being interpreted as comments, redirections, or
+heredocs.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,
@@ -534,6 +540,9 @@ archival-lane behavior changes.
   effects, and here-string distinction,
   commented fake delimiters hiding raw reads and protected mutations plus
   quoted/escaped/in-word/parameter-operator/trailing-comment controls,
+  ANSI-C/locale quote and delimiter parity, escaped ANSI quotes, arithmetic
+  shifts/base/nesting/legacy forms, and raw-read adversaries after inert quote
+  or arithmetic prefixes,
   parsed registry-contract mutations,
   recursive
   command/process-substitution inspection for

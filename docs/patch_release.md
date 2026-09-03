@@ -356,6 +356,13 @@ boundary; quoted, escaped, in-word, and `${value#pattern}` hashes remain data.
 Consequently commented fake `<<`/`<<-`/fd/multiple delimiters cannot hide
 subsequent commands, while actual heredocs with trailing comments still bind
 their bodies.
+ANSI-C `$'…'` and locale `$"…"` quote prefixes have explicit lexical states.
+ANSI escapes, including escaped quotes, are decoded for ordinary tokens and
+heredoc delimiters; hashes, operators, and parentheses remain inert inside the
+quote. Locale strings retain double-quote expansion behavior. Arithmetic
+`$((…))`, `((…))`, and legacy `$[…]` contexts track nested delimiters, so
+`<<`/`>>` and base-`#` syntax cannot become comments, redirections, or
+heredocs; a real `<<` outside arithmetic remains a heredoc.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

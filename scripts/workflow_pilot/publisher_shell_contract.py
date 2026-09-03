@@ -354,6 +354,8 @@ class _ShellCommandRecord:
 class _BashLineLexState:
     quote: str = "normal"
     parameter_depth: int = 0
+    arithmetic_depth: int = 0
+    arithmetic_bracket_depth: int = 0
     word_start: bool = True
 
 
@@ -506,17 +508,111 @@ def builder_isolation_shell_source(run_script: str, *, label: str) -> str:
     return run_script[start:end] + "\n"
 
 
+def _decode_ansi_c_escape(
+    text: str,
+    index: int,
+) -> tuple[str, int]:
+    if index + 1 >= len(text):
+        raise ValueError("unterminated ANSI-C escape")
+    escape = text[index + 1]
+    simple = {
+        "a": "\a",
+        "b": "\b",
+        "e": "\x1b",
+        "E": "\x1b",
+        "f": "\f",
+        "n": "\n",
+        "r": "\r",
+        "t": "\t",
+        "v": "\v",
+        "\\": "\\",
+        "'": "'",
+        '"': '"',
+        "?": "?",
+    }
+    if escape in simple:
+        return simple[escape], index + 2
+    if escape == "c" and index + 2 < len(text):
+        return chr(ord(text[index + 2]) & 0x1F), index + 3
+    if escape in "xXuU":
+        widths = {"x": 2, "X": 2, "u": 4, "U": 8}
+        width = widths[escape]
+        end = index + 2
+        while (
+            end < len(text)
+            and end < index + 2 + width
+            and text[end] in "0123456789abcdefABCDEF"
+        ):
+            end += 1
+        if end == index + 2:
+            return "\\" + escape, index + 2
+        return chr(int(text[index + 2 : end], 16)), end
+    if escape in "01234567":
+        end = index + 2
+        while (
+            end < len(text)
+            and end < index + 4
+            and text[end] in "01234567"
+        ):
+            end += 1
+        return chr(int(text[index + 1 : end], 8)), end
+    return "\\" + escape, index + 2
+
+
 def _scan_bash_physical_line(
     line: str,
     state: _BashLineLexState,
 ) -> tuple[_BashLineLexState, bool, int | None]:
     quote = state.quote
     parameter_depth = state.parameter_depth
+    arithmetic_depth = state.arithmetic_depth
+    arithmetic_bracket_depth = state.arithmetic_bracket_depth
     word_start = state.word_start
+
+    def current_state() -> _BashLineLexState:
+        return _BashLineLexState(
+            quote=quote,
+            parameter_depth=parameter_depth,
+            arithmetic_depth=arithmetic_depth,
+            arithmetic_bracket_depth=arithmetic_bracket_depth,
+            word_start=word_start,
+        )
+
     index = 0
     while index < len(line):
         character = line[index]
         if quote == "normal":
+            if arithmetic_depth or arithmetic_bracket_depth:
+                if character == "\\":
+                    if index == len(line) - 1:
+                        return current_state(), True, None
+                    index += 2
+                    continue
+                if line.startswith("$'", index):
+                    quote = "ansi"
+                    index += 2
+                    continue
+                if line.startswith('$"', index):
+                    quote = "locale"
+                    index += 2
+                    continue
+                if line.startswith("$((", index):
+                    arithmetic_depth += 2
+                    index += 3
+                    continue
+                if line.startswith("$[", index):
+                    arithmetic_bracket_depth += 1
+                    index += 2
+                    continue
+                if arithmetic_depth:
+                    if character == "(":
+                        arithmetic_depth += 1
+                    elif character == ")":
+                        arithmetic_depth -= 1
+                elif character == "]":
+                    arithmetic_bracket_depth -= 1
+                index += 1
+                continue
             if character in " \t":
                 word_start = True
             elif (
@@ -524,15 +620,32 @@ def _scan_bash_physical_line(
                 and word_start
                 and parameter_depth == 0
             ):
-                return (
-                    _BashLineLexState(
-                        quote=quote,
-                        parameter_depth=parameter_depth,
-                        word_start=True,
-                    ),
-                    False,
-                    index,
-                )
+                return current_state(), False, index
+            elif line.startswith("$'", index):
+                quote = "ansi"
+                word_start = False
+                index += 2
+                continue
+            elif line.startswith('$"', index):
+                quote = "locale"
+                word_start = False
+                index += 2
+                continue
+            elif line.startswith("$((", index):
+                arithmetic_depth = 2
+                word_start = False
+                index += 3
+                continue
+            elif line.startswith("((", index):
+                arithmetic_depth = 2
+                word_start = False
+                index += 2
+                continue
+            elif line.startswith("$[", index):
+                arithmetic_bracket_depth = 1
+                word_start = False
+                index += 2
+                continue
             elif (
                 character == "$"
                 and index + 1 < len(line)
@@ -553,15 +666,7 @@ def _scan_bash_physical_line(
                 word_start = False
             elif character == "\\":
                 if index == len(line) - 1:
-                    return (
-                        _BashLineLexState(
-                            quote=quote,
-                            parameter_depth=parameter_depth,
-                            word_start=word_start,
-                        ),
-                        True,
-                        None,
-                    )
+                    return current_state(), True, None
                 index += 2
                 word_start = False
                 continue
@@ -578,23 +683,38 @@ def _scan_bash_physical_line(
         elif quote == "single":
             if character == "'":
                 quote = "normal"
+        elif quote == "ansi":
+            if character == "\\":
+                if index == len(line) - 1:
+                    return current_state(), True, None
+                index += 2
+                continue
+            if character == "'":
+                quote = "normal"
         else:
             if character == '"':
                 quote = "normal"
             elif character == "\\":
                 if index == len(line) - 1:
-                    return (
-                        _BashLineLexState(
-                            quote=quote,
-                            parameter_depth=parameter_depth,
-                            word_start=word_start,
-                        ),
-                        True,
-                        None,
-                    )
+                    return current_state(), True, None
                 if line[index + 1] in '$`"\\':
                     index += 2
                     continue
+            elif line.startswith("$((", index):
+                arithmetic_depth += 2
+                index += 3
+                continue
+            elif line.startswith("$[", index):
+                arithmetic_bracket_depth += 1
+                index += 2
+                continue
+            elif arithmetic_depth:
+                if character == "(":
+                    arithmetic_depth += 1
+                elif character == ")":
+                    arithmetic_depth -= 1
+            elif arithmetic_bracket_depth and character == "]":
+                arithmetic_bracket_depth -= 1
             elif (
                 character == "$"
                 and index + 1 < len(line)
@@ -607,11 +727,7 @@ def _scan_bash_physical_line(
                 parameter_depth -= 1
         index += 1
     return (
-        _BashLineLexState(
-            quote=quote,
-            parameter_depth=parameter_depth,
-            word_start=word_start,
-        ),
+        current_state(),
         False,
         None,
     )
@@ -630,7 +746,12 @@ def bash_logical_lines(script: str, *, label: str) -> tuple[str, ...]:
         if continued:
             current = current[:-1]
             continue
-        if state.quote != "normal" or state.parameter_depth:
+        if (
+            state.quote != "normal"
+            or state.parameter_depth
+            or state.arithmetic_depth
+            or state.arithmetic_bracket_depth
+        ):
             current += "\n"
             continue
         logical_lines.append(current)
@@ -649,11 +770,51 @@ def _logical_heredoc_declarations(
     declarations: list[tuple[str, bool, bool]] = []
     quote: str | None = None
     parameter_depth = 0
+    arithmetic_depth = 0
+    arithmetic_bracket_depth = 0
     index = 0
     while index < len(logical):
         character = logical[index]
         if quote is None:
             if character == "\\":
+                index += 2
+                continue
+            if arithmetic_depth or arithmetic_bracket_depth:
+                if logical.startswith("$((", index):
+                    arithmetic_depth += 2
+                    index += 3
+                    continue
+                if logical.startswith("$[", index):
+                    arithmetic_bracket_depth += 1
+                    index += 2
+                    continue
+                if arithmetic_depth:
+                    if character == "(":
+                        arithmetic_depth += 1
+                    elif character == ")":
+                        arithmetic_depth -= 1
+                elif character == "]":
+                    arithmetic_bracket_depth -= 1
+                index += 1
+                continue
+            if logical.startswith("$'", index):
+                quote = "ansi"
+                index += 2
+                continue
+            if logical.startswith('$"', index):
+                quote = "locale"
+                index += 2
+                continue
+            if logical.startswith("$((", index):
+                arithmetic_depth = 2
+                index += 3
+                continue
+            if logical.startswith("((", index):
+                arithmetic_depth = 2
+                index += 2
+                continue
+            if logical.startswith("$[", index):
+                arithmetic_bracket_depth = 1
                 index += 2
                 continue
             if character in {"'", '"'}:
@@ -690,6 +851,16 @@ def _logical_heredoc_declarations(
                 if delimiter_quote is None:
                     if character in " \t;&|<>":
                         break
+                    if logical.startswith("$'", index):
+                        delimiter_quote = "ansi"
+                        quoted = True
+                        index += 2
+                        continue
+                    if logical.startswith('$"', index):
+                        delimiter_quote = "locale"
+                        quoted = True
+                        index += 2
+                        continue
                     if character in {"'", '"'}:
                         delimiter_quote = character
                         quoted = True
@@ -707,10 +878,24 @@ def _logical_heredoc_declarations(
                     delimiter.append(character)
                     index += 1
                     continue
-                if character == delimiter_quote:
+                if (
+                    delimiter_quote == "ansi"
+                    and character == "\\"
+                ):
+                    decoded, index = _decode_ansi_c_escape(
+                        logical,
+                        index,
+                    )
+                    delimiter.append(decoded)
+                    continue
+                closing_quote = {
+                    "ansi": "'",
+                    "locale": '"',
+                }.get(delimiter_quote, delimiter_quote)
+                if character == closing_quote:
                     delimiter_quote = None
                 elif (
-                    delimiter_quote == '"'
+                    delimiter_quote in {'"', "locale"}
                     and character == "\\"
                     and index + 1 < len(logical)
                     and logical[index + 1] in '$`"\\'
@@ -728,10 +913,22 @@ def _logical_heredoc_declarations(
                 ("".join(delimiter), strip_tabs, not quoted)
             )
             continue
-        if character == quote:
+        if quote == "ansi":
+            if character == "\\":
+                _decoded, index = _decode_ansi_c_escape(
+                    logical,
+                    index,
+                )
+                continue
+            if character == "'":
+                quote = None
+            index += 1
+            continue
+        closing_quote = '"' if quote == "locale" else quote
+        if character == closing_quote:
             quote = None
         elif (
-            quote == '"'
+            quote in {'"', "locale"}
             and character == "\\"
             and index + 1 < len(logical)
             and logical[index + 1] in '$`"\\'
@@ -745,7 +942,12 @@ def _logical_heredoc_declarations(
         elif character == "}" and parameter_depth:
             parameter_depth -= 1
         index += 1
-    if quote is not None or parameter_depth:
+    if (
+        quote is not None
+        or parameter_depth
+        or arithmetic_depth
+        or arithmetic_bracket_depth
+    ):
         raise ValueError(f"{label} heredoc command quoting differs")
     return tuple(declarations)
 
@@ -788,11 +990,21 @@ def _strip_generic_heredoc_bodies(script: str, *, label: str) -> str:
             if continued:
                 logical = logical[:-1]
                 continue
-            if state.quote != "normal" or state.parameter_depth:
+            if (
+                state.quote != "normal"
+                or state.parameter_depth
+                or state.arithmetic_depth
+                or state.arithmetic_bracket_depth
+            ):
                 logical += "\n"
                 continue
             break
-        if state.quote != "normal" or state.parameter_depth:
+        if (
+            state.quote != "normal"
+            or state.parameter_depth
+            or state.arithmetic_depth
+            or state.arithmetic_bracket_depth
+        ):
             raise ValueError(f"{label} has unterminated command quoting")
         declarations = _logical_heredoc_declarations(
             logical,
@@ -838,6 +1050,8 @@ def split_bash_command_records(
         quote: str | None = None
         word_start = True
         record_scopes: tuple[str, ...] | None = None
+        arithmetic_depth = 0
+        arithmetic_bracket_depth = 0
         index = 0
 
         def emit(following_operator: str | None) -> None:
@@ -869,11 +1083,72 @@ def split_bash_command_records(
         while index < len(logical):
             character = logical[index]
             if quote is None:
+                if arithmetic_depth or arithmetic_bracket_depth:
+                    begin_command()
+                    current.append(character)
+                    if character == "\\" and index + 1 < len(logical):
+                        current.append(logical[index + 1])
+                        index += 2
+                        continue
+                    if logical.startswith("$((", index):
+                        current.extend(("((",))
+                        arithmetic_depth += 2
+                        index += 3
+                        continue
+                    if logical.startswith("$[", index):
+                        current.append("[")
+                        arithmetic_bracket_depth += 1
+                        index += 2
+                        continue
+                    if arithmetic_depth:
+                        if character == "(":
+                            arithmetic_depth += 1
+                        elif character == ")":
+                            arithmetic_depth -= 1
+                    elif character == "]":
+                        arithmetic_bracket_depth -= 1
+                    index += 1
+                    continue
                 if character in " \t":
                     current.append(character)
                     word_start = True
                 elif character == "#" and word_start:
                     break
+                elif logical.startswith("$'", index):
+                    begin_command()
+                    current.extend(("$", "'"))
+                    quote = "ansi"
+                    word_start = False
+                    index += 2
+                    continue
+                elif logical.startswith('$"', index):
+                    begin_command()
+                    current.extend(("$", '"'))
+                    quote = "locale"
+                    word_start = False
+                    index += 2
+                    continue
+                elif logical.startswith("$((", index):
+                    begin_command()
+                    current.extend(("$", "(", "("))
+                    arithmetic_depth = 2
+                    word_start = False
+                    index += 3
+                    continue
+                elif logical.startswith("((", index):
+                    begin_command()
+                    current.extend(("(", "("))
+                    arithmetic_depth = 2
+                    word_start = False
+                    index += 2
+                    continue
+                elif logical.startswith("$[", index):
+                    begin_command()
+                    current.extend(("$", "["))
+                    arithmetic_bracket_depth = 1
+                    word_start = False
+                    index += 2
+                    continue
                 elif character == "'":
                     begin_command()
                     current.append(character)
@@ -983,6 +1258,13 @@ def split_bash_command_records(
                 current.append(character)
                 if character == "'":
                     quote = None
+            elif quote == "ansi":
+                current.append(character)
+                if character == "\\" and index + 1 < len(logical):
+                    current.append(logical[index + 1])
+                    index += 1
+                elif character == "'":
+                    quote = None
             else:
                 current.append(character)
                 if character == "\\" and index + 1 < len(logical):
@@ -993,7 +1275,7 @@ def split_bash_command_records(
                         if (
                             not scope_stack
                             or scope_stack[-1]
-                            != ("backtick-substitution", "double")
+                            != ("backtick-substitution", quote)
                         ):
                             raise ValueError(
                                 f"{label} backtick scope differs"
@@ -1001,9 +1283,24 @@ def split_bash_command_records(
                         scope_stack.pop()
                     else:
                         scope_stack.append(
-                            ("backtick-substitution", "double")
+                            ("backtick-substitution", quote)
                         )
                     backtick_active = not backtick_active
+                elif logical.startswith("$((", index):
+                    current.extend(("(", "("))
+                    arithmetic_depth += 2
+                    index += 2
+                elif logical.startswith("$[", index):
+                    current.append("[")
+                    arithmetic_bracket_depth += 1
+                    index += 1
+                elif arithmetic_depth:
+                    if character == "(":
+                        arithmetic_depth += 1
+                    elif character == ")":
+                        arithmetic_depth -= 1
+                elif arithmetic_bracket_depth and character == "]":
+                    arithmetic_bracket_depth -= 1
                 elif (
                     character == "$"
                     and index + 1 < len(logical)
@@ -1011,7 +1308,7 @@ def split_bash_command_records(
                 ):
                     current.append("(")
                     scope_stack.append(
-                        ("command-substitution", "double")
+                        ("command-substitution", quote)
                     )
                     index += 1
                 elif character == ")":
@@ -1019,7 +1316,7 @@ def split_bash_command_records(
                         scope_stack
                         and scope_stack[-1][0]
                         in {"command-substitution", "subshell"}
-                        and scope_stack[-1][1] == "double"
+                        and scope_stack[-1][1] == quote
                     ):
                         scope_stack.pop()
                 elif character == '"':
@@ -1187,6 +1484,14 @@ def _token_shell_syntax_flags(command_text: str, *, label: str) -> tuple[bool, .
 
             token_started = True
 
+            if command_text.startswith("$'", index):
+                quote = "ansi"
+                index += 2
+                continue
+            if command_text.startswith('$"', index):
+                quote = "locale"
+                index += 2
+                continue
             if character == "'":
                 quote = "'"
                 index += 1
@@ -1212,6 +1517,14 @@ def _token_shell_syntax_flags(command_text: str, *, label: str) -> tuple[bool, .
             continue
 
         if quote == "'":
+            if character == "'":
+                quote = None
+            index += 1
+            continue
+        if quote == "ansi":
+            if character == "\\" and index + 1 < len(command_text):
+                index += 2
+                continue
             if character == "'":
                 quote = None
             index += 1
@@ -1244,6 +1557,8 @@ def _token_quote_segments(
     current_mode: tuple[bool, bool] | None = None
     token_started = False
     quote: str | None = None
+    arithmetic_depth = 0
+    arithmetic_bracket_depth = 0
 
     def append(
         character: str,
@@ -1278,12 +1593,64 @@ def _token_quote_segments(
     while index < len(command_text):
         character = command_text[index]
         if quote is None:
+            if arithmetic_depth or arithmetic_bracket_depth:
+                token_started = True
+                if command_text.startswith("$((", index):
+                    append("$", True, True)
+                    append("(", True, True)
+                    append("(", True, True)
+                    arithmetic_depth += 2
+                    index += 3
+                    continue
+                if command_text.startswith("$[", index):
+                    append("$", True, True)
+                    append("[", True, True)
+                    arithmetic_bracket_depth += 1
+                    index += 2
+                    continue
+                append(character, True, True)
+                if arithmetic_depth:
+                    if character == "(":
+                        arithmetic_depth += 1
+                    elif character == ")":
+                        arithmetic_depth -= 1
+                elif character == "]":
+                    arithmetic_bracket_depth -= 1
+                index += 1
+                continue
             if character in " \t":
                 if token_started:
                     finish_token()
                 index += 1
                 continue
             token_started = True
+            if command_text.startswith("$'", index):
+                quote = "ansi"
+                index += 2
+                continue
+            if command_text.startswith('$"', index):
+                quote = "locale"
+                index += 2
+                continue
+            if command_text.startswith("$((", index):
+                append("$", True, True)
+                append("(", True, True)
+                append("(", True, True)
+                arithmetic_depth = 2
+                index += 3
+                continue
+            if command_text.startswith("((", index):
+                append("(", True, True)
+                append("(", True, True)
+                arithmetic_depth = 2
+                index += 2
+                continue
+            if command_text.startswith("$[", index):
+                append("$", True, True)
+                append("[", True, True)
+                arithmetic_bracket_depth = 1
+                index += 2
+                continue
             if character == "'":
                 quote = "'"
                 index += 1
@@ -1304,6 +1671,20 @@ def _token_quote_segments(
             index += 1
             continue
         if quote == "'":
+            if character == "'":
+                quote = None
+            else:
+                append(character, False, False)
+            index += 1
+            continue
+        if quote == "ansi":
+            if character == "\\":
+                decoded, index = _decode_ansi_c_escape(
+                    command_text,
+                    index,
+                )
+                append(decoded, False, False)
+                continue
             if character == "'":
                 quote = None
             else:
@@ -1332,14 +1713,42 @@ def _token_quote_segments(
 
 
 def _parse_shell_tokens(command_text: str, *, label: str) -> tuple[_ShellToken, ...]:
-    syntax_flags = _token_shell_syntax_flags(command_text, label=label)
     segments = _token_quote_segments(command_text, label=label)
     values = tuple(
         "".join(segment for segment, _active, _redirect in token_segments)
         for token_segments in segments
     )
-    if len(values) != len(syntax_flags) or len(values) != len(segments):
-        raise ValueError(f"{label} shell token boundaries differ")
+    syntax_flags = tuple(
+        any(
+            (
+                expansion_active
+                and any(marker in segment for marker in "$`")
+            )
+            or (
+                redirection_active
+                and any(marker in segment for marker in "{}*?~")
+            )
+            or (
+                redirection_active
+                and any(
+                    marker in segment
+                    for marker in (
+                        "<(",
+                        ">(",
+                        "@(",
+                        "+(",
+                        "!(",
+                    )
+                )
+                or (
+                    redirection_active
+                    and re.search(r"\[[^\]]+\]", segment) is not None
+                )
+            )
+            for segment, expansion_active, redirection_active in token_segments
+        )
+        for token_segments in segments
+    )
     return tuple(
         _ShellToken(
             text=value,
@@ -1378,6 +1787,8 @@ def _split_attached_redirections(
     tokens: tuple[_ShellToken, ...],
 ) -> tuple[_ShellToken, ...]:
     lexed: list[_ShellToken] = []
+    arithmetic_depth = 0
+    arithmetic_bracket_depth = 0
 
     def make_token(
         characters: list[tuple[str, bool, bool]],
@@ -1419,6 +1830,39 @@ def _split_attached_redirections(
         split_occurred = False
         while index < len(characters):
             character, _expand, redirection_active = characters[index]
+            lookahead = "".join(
+                item[0] for item in characters[index : index + 3]
+            )
+            if arithmetic_depth or arithmetic_bracket_depth:
+                if lookahead.startswith("$(("):
+                    arithmetic_depth += 2
+                    index += 3
+                    continue
+                if lookahead.startswith("$["):
+                    arithmetic_bracket_depth += 1
+                    index += 2
+                    continue
+                if arithmetic_depth:
+                    if character == "(":
+                        arithmetic_depth += 1
+                    elif character == ")":
+                        arithmetic_depth -= 1
+                elif character == "]":
+                    arithmetic_bracket_depth -= 1
+                index += 1
+                continue
+            if redirection_active and lookahead.startswith("$(("):
+                arithmetic_depth = 2
+                index += 3
+                continue
+            if redirection_active and lookahead.startswith("(("):
+                arithmetic_depth = 2
+                index += 2
+                continue
+            if redirection_active and lookahead.startswith("$["):
+                arithmetic_bracket_depth = 1
+                index += 2
+                continue
             if (
                 character not in "<>"
                 or not redirection_active
@@ -2417,6 +2861,14 @@ def _consume_parenthesized_substitution_body(
     while index < len(text):
         character = text[index]
         if quote is None:
+            if text.startswith("$'", index):
+                quote = "ansi"
+                index += 2
+                continue
+            if text.startswith('$"', index):
+                quote = "locale"
+                index += 2
+                continue
             if character == "'":
                 quote = "'"
                 index += 1
@@ -2450,6 +2902,18 @@ def _consume_parenthesized_substitution_body(
             continue
 
         if quote == "'":
+            if character == "'":
+                quote = None
+            index += 1
+            continue
+        if quote == "ansi":
+            if character == "\\":
+                if index + 1 >= len(text):
+                    raise ValueError(
+                        f"{label} substitution continuation differs"
+                    )
+                index += 2
+                continue
             if character == "'":
                 quote = None
             index += 1
@@ -2508,6 +2972,14 @@ def _text_has_forbidden_executable_substitution_surface(
     while index < len(text):
         character = text[index]
         if quote is None:
+            if text.startswith("$'", index):
+                quote = "ansi"
+                index += 2
+                continue
+            if text.startswith('$"', index):
+                quote = "locale"
+                index += 2
+                continue
             if character == "'":
                 quote = "'"
                 index += 1
@@ -2607,6 +3079,18 @@ def _text_has_forbidden_executable_substitution_surface(
             continue
 
         if quote == "'":
+            if character == "'":
+                quote = None
+            index += 1
+            continue
+        if quote == "ansi":
+            if character == "\\":
+                if index + 1 >= len(text):
+                    raise ValueError(
+                        f"{label} substitution continuation differs"
+                    )
+                index += 2
+                continue
             if character == "'":
                 quote = None
             index += 1

@@ -904,6 +904,15 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         "        }\n"
         "        forge_members\n",
         '        trap \'cgroup_members=("$$")\' DEBUG\n',
+        "        printf '%s\\n' $'<<FAKE # ) &&' > /dev/null\n"
+        '        /bin/cat "$cgroup_path/cgroup.procs" > /dev/null\n',
+        '        printf \'%s\\n\' $"$cgroup_path" > /dev/null\n',
+        "        arithmetic_value=$((1 << 2))\n"
+        '        /bin/cat "$cgroup_path/cgroup.procs" > /dev/null\n',
+        "        (( arithmetic_value = 1 << 3 ))\n"
+        "        cgroup_path=/tmp/fake\n",
+        "        arithmetic_value=$[1<<2]\n"
+        "        cgroup_path=/tmp/fake\n",
     )
     cgroup_path_mutations = (
         "        cgroup_path=/tmp/fake\n",
@@ -1046,6 +1055,50 @@ def generate_quote_context_controls(workflow: str):
         if changed == workflow:
             raise AssertionError(
                 f"{label} quote control marker differs"
+            )
+        yield label, changed
+
+
+def generate_ansi_arithmetic_controls(workflow: str):
+    marker = "        isolated_stage=export\n"
+    controls = (
+        (
+            "ansi-token",
+            "        ansi_value=$'abc\\'#notcomment'\n"
+            "        test \"$ansi_value\" = \"abc'#notcomment\"\n",
+        ),
+        (
+            "ansi-heredoc",
+            "        cat <<$'ANSI_EOF' > /dev/null\n"
+            "        harmless body\n"
+            "        ANSI_EOF\n",
+        ),
+        (
+            "locale-token",
+            '        locale_value=$"literal#value"\n'
+            '        test "$locale_value" = "literal#value"\n',
+        ),
+        (
+            "arithmetic-expansion",
+            "        arithmetic_value=$((1 << 2))\n"
+            '        test "$arithmetic_value" -eq 4\n',
+        ),
+        (
+            "arithmetic-command",
+            "        (( arithmetic_value = 1 << 3 ))\n"
+            '        test "$arithmetic_value" -eq 8\n',
+        ),
+        (
+            "legacy-arithmetic",
+            "        arithmetic_value=$[1<<2]\n"
+            '        test "$arithmetic_value" -eq 4\n',
+        ),
+    )
+    for label, control in controls:
+        changed = workflow.replace(marker, marker + control, 1)
+        if changed == workflow:
+            raise AssertionError(
+                f"{label} control marker differs"
             )
         yield label, changed
 
@@ -7815,6 +7868,11 @@ exit 37
                 self.assertFalse(
                     workflow_has_raw_builder_cgroup_membership_read(changed)
                 )
+        for label, changed in generate_ansi_arithmetic_controls(self.text):
+            with self.subTest(ansi_arithmetic_control=label):
+                self.assertFalse(
+                    workflow_has_raw_builder_cgroup_membership_read(changed)
+                )
         for label, changed in generate_raw_builder_cgroup_membership_mutations(
             self.text
         ):
@@ -9345,6 +9403,149 @@ exit 37
                         label="mixed expanding quote negative",
             )
         )
+
+    def test_ansi_c_locale_and_arithmetic_lexing_matches_bash(self):
+        cases = (
+            (
+                        "ansi-escaped-quote",
+                        "printf '%s\\n' $'abc\\'#notcomment'\n",
+                        "abc'#notcomment\n",
+            ),
+            (
+                        "ansi-heredoc-delimiter",
+                        "cat <<$'EOF'\n"
+                        "ansi body\n"
+                        "EOF\n",
+                        "ansi body\n",
+            ),
+            (
+                        "ansi-heredoc-escaped-delimiter",
+                        "cat <<$'E\\'OF'\n"
+                        "escaped delimiter\n"
+                        "E'OF\n",
+                        "escaped delimiter\n",
+            ),
+            (
+                        "locale-quote",
+                        "value=world\n"
+                        "LC_ALL=C\n"
+                        "printf '%s\\n' $\"hello#$value\"\n",
+                        "hello#world\n",
+            ),
+            (
+                        "arithmetic-expansion",
+                        "value=$((1 << 2))\n"
+                        "printf '%s\\n' \"$value\"\n",
+                        "4\n",
+            ),
+            (
+                        "arithmetic-command",
+                        "(( value = 1 << 3 ))\n"
+                        "printf '%s\\n' \"$value\"\n",
+                        "8\n",
+            ),
+            (
+                        "legacy-arithmetic",
+                        "value=$[1<<2]\n"
+                        "printf '%s\\n' \"$value\"\n",
+                        "4\n",
+            ),
+            (
+                        "nested-arithmetic",
+                        "value=$(( (1 << 2) + $(printf 1) ))\n"
+                        "printf '%s\\n' \"$value\"\n",
+                        "5\n",
+            ),
+            (
+                        "arithmetic-base",
+                        "value=$((16#10 + 1))\n"
+                        "printf '%s\\n' \"$value\"\n",
+                        "17\n",
+            ),
+        )
+        for label, script, expected in cases:
+            with self.subTest(lexical_form=label):
+                        completed = subprocess.run(
+                            ["/bin/bash", "-c", script],
+                            cwd=ROOT,
+                            check=False,
+                            capture_output=True,
+                            text=True,
+                        )
+                        self.assertEqual(completed.returncode, 0, completed.stderr)
+                        self.assertEqual(completed.stdout, expected)
+                        self.assertFalse(
+                            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                                script,
+                                label=f"{label} Bash parity",
+                            )
+                        )
+
+        inert = "printf '%s\\n' $'&& || |& () #'\n"
+        records = publisher_shell_contract.split_bash_command_records(
+            inert,
+            label="ANSI-C inert topology",
+        )
+        self.assertEqual(len(records), 1)
+        self.assertIsNone(records[0].preceding_operator)
+        self.assertIsNone(records[0].following_operator)
+        self.assertEqual(records[0].execution_scopes, ())
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                "printf '%s\\n' $'unterminated\n",
+                label="unterminated ANSI-C quote",
+            )
+        )
+
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="ansi-arithmetic-raw-read-",
+            dir=artifact_root,
+        ) as temporary:
+            raw_cgroup = Path(temporary) / "raw"
+            raw_cgroup.mkdir()
+            (raw_cgroup / "cgroup.procs").write_text(
+                        "ansi-arithmetic-raw-marker\n",
+                        encoding="ascii",
+            )
+            for label, script in (
+                        (
+                            "ansi-prefix",
+                            "printf '%s' $'<<FAKE # ) &&' > /dev/null\n"
+                            '/bin/cat "$1/cgroup.procs"\n',
+                        ),
+                        (
+                            "arithmetic-prefix",
+                            "value=$((1 << 2))\n"
+                            '/bin/cat "$1/cgroup.procs"\n',
+                        ),
+            ):
+                        with self.subTest(adversarial_form=label):
+                            completed = subprocess.run(
+                                [
+                                    "/bin/bash",
+                                    "-c",
+                                    script,
+                                    "--",
+                                    str(raw_cgroup),
+                                ],
+                                cwd=ROOT,
+                                check=False,
+                                capture_output=True,
+                                text=True,
+                            )
+                            self.assertEqual(completed.returncode, 0, completed.stderr)
+                            self.assertEqual(
+                                completed.stdout,
+                                "ansi-arithmetic-raw-marker\n",
+                            )
+                            self.assertTrue(
+                                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                                    script,
+                                    label=f"{label} raw read",
+                                )
+                            )
 
     def test_cgroup_path_reassignment_redirects_join_and_is_rejected(self):
         artifact_root = ROOT / "build" / "test-artifacts"
@@ -11841,6 +12042,11 @@ exit 37
                     "syntax-active-pre-comment-only"
                 ),
                 "hash_comment_boundary": "unquoted-word-boundary",
+                "ansi_c_quotes": "explicit-escape-decoding",
+                "locale_quotes": "double-quote-expansion",
+                "arithmetic_contexts": (
+                    "exclude-shifts-from-heredoc-redirection"
+                ),
                 "unquoted_heredoc_expansion": "reject",
                 "here_strings": "ordinary-redirections",
                 "protected_loop_targets": "reject",
@@ -12049,6 +12255,14 @@ exit 37
             (
                 ("shell_surface", "heredoc_comment_source"),
                 "full-physical-line",
+            ),
+            (
+                ("shell_surface", "ansi_c_quotes"),
+                "ordinary-single-quote",
+            ),
+            (
+                ("shell_surface", "arithmetic_contexts"),
+                "heredoc",
             ),
             (
                 (
