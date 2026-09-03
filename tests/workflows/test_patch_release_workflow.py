@@ -1544,6 +1544,101 @@ def generate_generic_heredoc_spoof_mutations(workflow: str):
         yield f"initializer-{label}", changed
 
 
+def generate_commented_heredoc_hide_mutations(workflow: str):
+    initializer = '        cgroup_path="$1"\n'
+    trap = "        trap isolated_stage_failure ERR\n"
+    checker_start = workflow.index(
+        '        /usr/bin/python3 -I -S - "$$" <<\'PY\'\n'
+    )
+    checker_end = (
+        workflow.index("        PY\n", checker_start)
+        + len("        PY\n")
+    )
+    join = (
+        '        printf \'%s\\n\' "$$" > '
+        '"$cgroup_path/cgroup.procs"\n'
+    )
+    helper_end = (
+        "        }\n"
+        "        unmount_if_mounted /home/runner\n"
+    )
+    mutations = {
+        "initializer-mutation": workflow.replace(
+            initializer,
+            initializer
+            + "        : # <<':'\n"
+            + "        cgroup_path=/tmp/fake\n"
+            + "        :\n",
+            1,
+        ),
+        "trap-mutation": workflow.replace(
+            trap,
+            trap
+            + "        : # 3<<-':'\n"
+            + "        trap - ERR\n"
+            + "        :\n",
+            1,
+        ),
+        "checker-state": (
+            workflow[:checker_end]
+            + "        : # <<':'\n"
+            + '        cgroup_members=("$$")\n'
+            + "        :\n"
+            + workflow[checker_end:]
+        ),
+        "join-read": workflow.replace(
+            join,
+            join
+            + "        : # <<':'\n"
+            + '        /bin/cat "$cgroup_path/cgroup.procs" '
+            + "> /dev/null\n"
+            + "        :\n",
+            1,
+        ),
+        "helper-redefinition": workflow.replace(
+            helper_end,
+            "        }\n"
+            + "        : # <<':'\n"
+            + "        unmount_if_mounted() {\n"
+            + "          true\n"
+            + "        }\n"
+            + "        :\n"
+            + "        unmount_if_mounted /home/runner\n",
+            1,
+        ),
+    }
+    comment_variants = {
+        "plain": "        : # <<':'\n",
+        "strip-tabs": "        : # <<-':'\n",
+        "descriptor": "        : # 3<<':'\n",
+        "here-string": "        : # <<<':'\n",
+        "multiple": "        : # <<'FIRST' <<'SECOND'\n",
+    }
+    marker = "        isolated_stage=export\n"
+    for label, comment in comment_variants.items():
+        suffix = (
+            "        FIRST\n"
+            "        SECOND\n"
+            if label == "multiple"
+            else "        :\n"
+        )
+        mutations[f"comment-{label}"] = workflow.replace(
+            marker,
+            marker
+            + comment
+            + '        /bin/cat "$cgroup_path/cgroup.procs" '
+            + "> /dev/null\n"
+            + suffix,
+            1,
+        )
+    for label, changed in mutations.items():
+        if changed == workflow:
+            raise AssertionError(
+                f"{label} commented heredoc mutation marker differs"
+            )
+        yield label, changed
+
+
 def render_supervisor_parent_remount_mutation(
     workflow: str,
     *,
@@ -11742,6 +11837,10 @@ exit 37
                     "lex-unquoted-syntax-segments"
                 ),
                 "heredoc_bodies": "excluded-from-command-records",
+                "heredoc_comment_source": (
+                    "syntax-active-pre-comment-only"
+                ),
+                "hash_comment_boundary": "unquoted-word-boundary",
                 "unquoted_heredoc_expansion": "reject",
                 "here_strings": "ordinary-redirections",
                 "protected_loop_targets": "reject",
@@ -11946,6 +12045,10 @@ exit 37
             (
                 ("shell_surface", "heredoc_bodies"),
                 "commands",
+            ),
+            (
+                ("shell_surface", "heredoc_comment_source"),
+                "full-physical-line",
             ),
             (
                 (
@@ -12779,6 +12882,86 @@ exit 37
                 label="tab-stripped heredoc control",
             )
         )
+        with tempfile.TemporaryDirectory(
+            prefix="commented-heredoc-hide-",
+            dir=artifact_root,
+        ) as temporary:
+            raw_cgroup = Path(temporary) / "raw"
+            raw_cgroup.mkdir()
+            (raw_cgroup / "cgroup.procs").write_text(
+                "comment-hidden-raw-read\n",
+                encoding="ascii",
+            )
+            commented = (
+                ": # <<':'\n"
+                '/bin/cat "$1/cgroup.procs"\n'
+                ":\n"
+            )
+            completed = subprocess.run(
+                ["/bin/bash", "-c", commented, "--", str(raw_cgroup)],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                completed.stdout,
+                "comment-hidden-raw-read\n",
+            )
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    commented,
+                    label="commented heredoc hide runtime",
+                )
+            )
+
+        comment_controls = (
+            (
+                "trailing-comment",
+                "cat <<'FAKE' # trailing comment\n"
+                'cgroup_path="$1"\n'
+                "FAKE\n"
+                "true\n",
+                ("cat <<'FAKE'", "true"),
+            ),
+            (
+                "quoted-hash",
+                "cat '#' <<'FAKE'\n"
+                'cgroup_path="$1"\n'
+                "FAKE\n",
+                ("cat '#' <<'FAKE'",),
+            ),
+            (
+                "escaped-hash",
+                "cat \\# <<'FAKE'\n"
+                'cgroup_path="$1"\n'
+                "FAKE\n",
+                ("cat \\# <<'FAKE'",),
+            ),
+            (
+                "parameter-operator",
+                "value=${x#<<FAKE}\n"
+                "true\n",
+                ("value=${x#<<FAKE}", "true"),
+            ),
+            (
+                "hash-within-word",
+                "cat word#<<FAKE\n"
+                "body\n"
+                "FAKE\n",
+                ("cat word#<<FAKE",),
+            ),
+        )
+        for label, script, expected_records in comment_controls:
+            with self.subTest(comment_control=label):
+                self.assertEqual(
+                    publisher_shell_contract.split_bash_simple_command_strings(
+                        script,
+                        label=f"{label} heredoc comment control",
+                    ),
+                    expected_records,
+                )
 
         with (
             mock.patch.object(
@@ -12794,6 +12977,19 @@ exit 37
                 self.text
             ):
                 with self.subTest(heredoc_spoof=label):
+                    self.assertTrue(
+                        workflow_has_raw_builder_cgroup_membership_read(
+                            changed
+                        )
+                    )
+                    self.assertIn(
+                        "raw builder cgroup membership read differs",
+                        publisher_boundary_errors(changed),
+                    )
+            for label, changed in (
+                generate_commented_heredoc_hide_mutations(self.text)
+            ):
+                with self.subTest(commented_heredoc_hide=label):
                     self.assertTrue(
                         workflow_has_raw_builder_cgroup_membership_read(
                             changed

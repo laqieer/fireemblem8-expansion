@@ -351,6 +351,13 @@ class _ShellCommandRecord:
 
 
 @dataclass(frozen=True)
+class _BashLineLexState:
+    quote: str = "normal"
+    parameter_depth: int = 0
+    word_start: bool = True
+
+
+@dataclass(frozen=True)
 class _FlockCommandTarget:
     mode: str
     argv_index: int | None = None
@@ -499,29 +506,66 @@ def builder_isolation_shell_source(run_script: str, *, label: str) -> str:
     return run_script[start:end] + "\n"
 
 
-def _bash_line_state(line: str, state: str) -> tuple[str, bool]:
+def _scan_bash_physical_line(
+    line: str,
+    state: _BashLineLexState,
+) -> tuple[_BashLineLexState, bool, int | None]:
+    quote = state.quote
+    parameter_depth = state.parameter_depth
+    word_start = state.word_start
     index = 0
-    word_start = state == "normal"
     while index < len(line):
         character = line[index]
-        if state == "normal":
+        if quote == "normal":
             if character in " \t":
                 word_start = True
-            elif character == "#" and word_start:
-                break
+            elif (
+                character == "#"
+                and word_start
+                and parameter_depth == 0
+            ):
+                return (
+                    _BashLineLexState(
+                        quote=quote,
+                        parameter_depth=parameter_depth,
+                        word_start=True,
+                    ),
+                    False,
+                    index,
+                )
+            elif (
+                character == "$"
+                and index + 1 < len(line)
+                and line[index + 1] == "{"
+            ):
+                parameter_depth += 1
+                word_start = False
+                index += 2
+                continue
+            elif character == "}" and parameter_depth:
+                parameter_depth -= 1
+                word_start = False
             elif character == "'":
-                state = "single"
+                quote = "single"
                 word_start = False
             elif character == '"':
-                state = "double"
+                quote = "double"
                 word_start = False
             elif character == "\\":
                 if index == len(line) - 1:
-                    return state, True
+                    return (
+                        _BashLineLexState(
+                            quote=quote,
+                            parameter_depth=parameter_depth,
+                            word_start=word_start,
+                        ),
+                        True,
+                        None,
+                    )
                 index += 2
                 word_start = False
                 continue
-            elif character in "&|;":
+            elif character in "&|;" and parameter_depth == 0:
                 if (
                     character in "&|"
                     and index + 1 < len(line)
@@ -531,37 +575,67 @@ def _bash_line_state(line: str, state: str) -> tuple[str, bool]:
                 word_start = True
             else:
                 word_start = False
-        elif state == "single":
+        elif quote == "single":
             if character == "'":
-                state = "normal"
+                quote = "normal"
         else:
             if character == '"':
-                state = "normal"
+                quote = "normal"
             elif character == "\\":
                 if index == len(line) - 1:
-                    return state, True
+                    return (
+                        _BashLineLexState(
+                            quote=quote,
+                            parameter_depth=parameter_depth,
+                            word_start=word_start,
+                        ),
+                        True,
+                        None,
+                    )
                 if line[index + 1] in '$`"\\':
                     index += 2
                     continue
+            elif (
+                character == "$"
+                and index + 1 < len(line)
+                and line[index + 1] == "{"
+            ):
+                parameter_depth += 1
+                index += 2
+                continue
+            elif character == "}" and parameter_depth:
+                parameter_depth -= 1
         index += 1
-    return state, False
+    return (
+        _BashLineLexState(
+            quote=quote,
+            parameter_depth=parameter_depth,
+            word_start=word_start,
+        ),
+        False,
+        None,
+    )
 
 
 def bash_logical_lines(script: str, *, label: str) -> tuple[str, ...]:
-    state = "normal"
+    state = _BashLineLexState()
     logical_lines: list[str] = []
     current = ""
     for line in script.splitlines():
-        current += line
-        state, continued = _bash_line_state(line, state)
+        state, continued, comment_index = _scan_bash_physical_line(
+            line,
+            state,
+        )
+        current += line if comment_index is None else line[:comment_index]
         if continued:
             current = current[:-1]
             continue
-        if state != "normal":
+        if state.quote != "normal" or state.parameter_depth:
             current += "\n"
             continue
         logical_lines.append(current)
         current = ""
+        state = _BashLineLexState()
     if current:
         raise ValueError(f"{label} has unterminated quoting or continuation")
     return tuple(logical_lines)
@@ -574,6 +648,7 @@ def _logical_heredoc_declarations(
 ) -> tuple[tuple[str, bool, bool], ...]:
     declarations: list[tuple[str, bool, bool]] = []
     quote: str | None = None
+    parameter_depth = 0
     index = 0
     while index < len(logical):
         character = logical[index]
@@ -585,7 +660,19 @@ def _logical_heredoc_declarations(
                 quote = character
                 index += 1
                 continue
-            if character != "<" or not logical.startswith("<<", index):
+            if logical.startswith("${", index):
+                parameter_depth += 1
+                index += 2
+                continue
+            if character == "}" and parameter_depth:
+                parameter_depth -= 1
+                index += 1
+                continue
+            if (
+                parameter_depth
+                or character != "<"
+                or not logical.startswith("<<", index)
+            ):
                 index += 1
                 continue
             if logical.startswith("<<<", index):
@@ -651,8 +738,14 @@ def _logical_heredoc_declarations(
         ):
             index += 2
             continue
+        elif logical.startswith("${", index):
+            parameter_depth += 1
+            index += 2
+            continue
+        elif character == "}" and parameter_depth:
+            parameter_depth -= 1
         index += 1
-    if quote is not None:
+    if quote is not None or parameter_depth:
         raise ValueError(f"{label} heredoc command quoting differs")
     return tuple(declarations)
 
@@ -677,22 +770,29 @@ def _strip_generic_heredoc_bodies(script: str, *, label: str) -> str:
     index = 0
     while index < len(lines):
         logical = ""
-        state = "normal"
+        state = _BashLineLexState()
         while index < len(lines):
             physical = lines[index]
             raw_line = physical.rstrip("\r\n")
-            logical += raw_line
             output.append(physical)
-            state, continued = _bash_line_state(raw_line, state)
+            state, continued, comment_index = _scan_bash_physical_line(
+                raw_line,
+                state,
+            )
+            logical += (
+                raw_line
+                if comment_index is None
+                else raw_line[:comment_index]
+            )
             index += 1
             if continued:
                 logical = logical[:-1]
                 continue
-            if state != "normal":
+            if state.quote != "normal" or state.parameter_depth:
                 logical += "\n"
                 continue
             break
-        if state != "normal":
+        if state.quote != "normal" or state.parameter_depth:
             raise ValueError(f"{label} has unterminated command quoting")
         declarations = _logical_heredoc_declarations(
             logical,

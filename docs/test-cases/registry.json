@@ -1303,6 +1303,8 @@
           "parenthesis_scope_ownership": "syntax-active-quote-context",
           "attached_redirections": "lex-unquoted-syntax-segments",
           "heredoc_bodies": "excluded-from-command-records",
+          "heredoc_comment_source": "syntax-active-pre-comment-only",
+          "hash_comment_boundary": "unquoted-word-boundary",
           "unquoted_heredoc_expansion": "reject",
           "here_strings": "ordinary-redirections",
           "protected_loop_targets": "reject",

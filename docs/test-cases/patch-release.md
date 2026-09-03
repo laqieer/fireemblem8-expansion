@@ -332,6 +332,11 @@ stripping, and multiple bodies in declared order. Body and delimiter lines
 cannot satisfy mandatory action, helper, order, or state-write counts.
 Unquoted expansion-active bodies reject; quoted bodies remain data. `<<<`
 here-strings stay ordinary redirections.
+Heredoc detection receives only the shared syntax-active pre-comment source.
+`#` begins a comment only unquoted at a valid word boundary; escaped, quoted,
+in-word, and parameter-operator hashes remain data. Commented fake
+`<<`/`<<-`/fd/multiple delimiters cannot consume following commands, while a
+real heredoc may retain a trailing comment.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,
@@ -527,6 +532,8 @@ archival-lane behavior changes.
   generic heredoc initializer/trap/checker/join/helper spoofs, quoted/unquoted/
   escaped/attached/fd/`<<-`/multiple/continued delimiters, expansion side
   effects, and here-string distinction,
+  commented fake delimiters hiding raw reads and protected mutations plus
+  quoted/escaped/in-word/parameter-operator/trailing-comment controls,
   parsed registry-contract mutations,
   recursive
   command/process-substitution inspection for

@@ -350,6 +350,12 @@ become command records or satisfy mandatory/helper/state counts. Unquoted
 bodies containing active parameter, command, arithmetic, or backtick expansion
 fail closed; quoted bodies remain inert data. `<<<` here-strings remain normal
 redirections and are never consumed as heredoc bodies.
+Heredoc declaration discovery uses the same syntax-active pre-comment prefix
+as command splitting. An unquoted `#` starts a comment only at a Bash word
+boundary; quoted, escaped, in-word, and `${value#pattern}` hashes remain data.
+Consequently commented fake `<<`/`<<-`/fd/multiple delimiters cannot hide
+subsequent commands, while actual heredocs with trailing comments still bind
+their bodies.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.
