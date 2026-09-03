@@ -163,6 +163,14 @@ an executable, wrapper, option, mutator, target, or supervisor-sensitive path.
 Runtime `$(printf supervisor_cgroup)`, backtick, and parameter-transform
 controls otherwise unset or rewrite the trusted alias; fixed single-quoted
 literal spellings remain accepted.
+The alias analysis also applies state changes made by variable-writing
+builtins. A fixed `printf -v` target with a modeled literal or `%s` value
+replaces the prior alias value; other formats, `read`, `mapfile`, `readarray`,
+and bare declarations taint the destination until its use is proven safe.
+Assignments and initialized declarations retain exact or tracked values.
+Dynamic writer targets fail closed. Executable controls prove that each writer
+can retarget a previously safe alias to the raw membership file, while an
+exact safe `printf -v` overwrite clears prior raw taint.
 Nameref creation is never modeled or allowed in the trusted builder.
 Direct, clustered, repeated, toggled, wrapped, aliased, array-backed, and
 dynamic `n` options for declare/typeset/local/export/readonly fail closed,
@@ -184,6 +192,13 @@ alias, resolved targets can rewrite `PATH` and `BASH_ENV`, and resolved option
 names can enable `posix` and `hashall`. Fixed single-quoted target/option
 literals do not execute and remain accepted. Query-only `command -v/-V`,
 ordinary `set ±e`, and current non-alias commands remain valid.
+Explicit builder exits are parsed as a count-preserving multiset. Reordering
+unchanged exits is valid, while an added, removed, or duplicated exit changes
+the contract. The machine-readable `security_contract` object in
+`TC-CI-PATCH-049-002` freezes publisher outputs, diagnostics, launcher and
+cgroup invariants, raw-membership access, alias-state handling, and evidence
+kind; explanatory Markdown remains informational and may be reworded without
+changing behavior.
 Tracked raw-root filename components also reject
 glob, brace, bracket, extglob, command/process/arithmetic substitution, tilde,
 and other dynamic syntax unless the command is the exact join write.

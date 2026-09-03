@@ -1227,6 +1227,84 @@
       "save_compatibility": "No save field, layout, migration, compatibility epoch, public C API, localization-ID, or archival-lane change.",
       "cleanup": "Remove only disposable local copies and outputs created for a negative control.",
       "limitations": "Legal base acquisition remains private and manual because no ROM can be published; deterministic validation is automated. No full Bash filename evaluator is trusted: canonical supervisor binding is required, reassignment plus brace/glob dynamic raw filenames fail closed, wrapped variable mutation is normalized, scalar/literal `command -v/-V` and clustered `-pv`/`-vp`/`-pV`/`-Vp` query forms remain valid and nonmutating, invalid mixed clusters fail closed, array-backed executable slots reject universally, array-backed wrapper/option/mutator/target slots reject around supervisor authorization, query-only array flags conservatively reject despite nonmutation, dynamic scalar command/process/arithmetic/backtick/transform/glob/brace/tilde values retain taint until sensitive use, fixed quoted literals remain valid, nameref creation through any direct/wrapped/aliased/array/dynamic `n` option rejects, checked transports use fixed result arrays instead of `local -n`, alias/unalias/shopt/enable/hash and BASHOPTS/SHELLOPTS/BASH_ENV/ENV/PATH dispatch configuration rejects, resolved scalar-chain/append and tainted array/dynamic variable targets reject at unset/printf/read/mapfile/declaration sinks, and resolved or tainted set -o/+o option names reject. Runtime controls prove expand_aliases rewriting, nameref unset with an unbound safe read, assignment/redirected-read mutation, dynamic unsetting and rewriting of the trusted alias, PATH/BASH_ENV rewriting, posix/hashall activation, and fixed quoted target/option preservation.",
+      "security_contract": {
+        "schema_version": 1,
+        "published_files": [
+          "README.txt",
+          "fireemblem8-expansion-all-locales-all-features-aapcs.bps",
+          "manifest.json"
+        ],
+        "complete_rom_artifact": false,
+        "diagnostic_stages": [
+          "launch",
+          "isolated",
+          "cleanup"
+        ],
+        "isolated_details": [
+          "namespace",
+          "mount-audit",
+          "candidate-preflight",
+          "candidate-venv",
+          "candidate-pip",
+          "candidate-build-tools",
+          "candidate-make",
+          "candidate-handoff",
+          "output-validate",
+          "export",
+          "post-check",
+          "candidate-unknown",
+          "transport"
+        ],
+        "candidate_stage_statuses": [
+          71,
+          72,
+          73,
+          74,
+          75,
+          76
+        ],
+        "transport_statuses": [
+          125,
+          126
+        ],
+        "candidate_unknown_status": 77,
+        "launcher_identity_fields": [
+          "parent-pid",
+          "pid",
+          "sid",
+          "pgid",
+          "state",
+          "start-time"
+        ],
+        "supervisor_parent_mode": "0700",
+        "post_build_membership": "exact-wrapper-singleton",
+        "raw_membership": {
+          "allowed_accesses": [
+            "initial-join-write",
+            "authenticated-supervisor-read"
+          ],
+          "additional_access": "reject"
+        },
+        "alias_state": {
+          "writers": [
+            "assignment",
+            "declaration",
+            "printf-v",
+            "read",
+            "mapfile",
+            "readarray"
+          ],
+          "exact_write": "replace",
+          "unknown_write": "taint",
+          "dynamic_target": "reject",
+          "membership_sensitive_use": "reject"
+        },
+        "evidence": {
+          "behavior": "executable",
+          "registry": "parsed-json",
+          "prose": "informational"
+        }
+      },
       "automation": [
         {
           "command": "python3 -m unittest scripts.modernize.tests.test_patch_release -v",

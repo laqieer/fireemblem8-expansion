@@ -283,6 +283,14 @@ allowed, but executable, wrapper, option, mutator, target, and supervisor-
 sensitive sinks reject. Runtime command-substitution, backtick, and
 parameter-transform targets otherwise unset or rewrite `supervisor_cgroup`;
 fixed single-quoted literal spellings remain accepted.
+Variable-writing builtins update alias state after each command. Fixed
+`printf -v` targets propagate modeled literal or `%s` values exactly; other
+formats, `read`, `mapfile`, `readarray`, and bare declarations taint their
+destinations. Assignments and initialized declarations retain their exact or
+tracked values, and dynamic writer targets reject immediately. Runtime
+controls retarget a safe alias through each writer and read the raw membership
+marker; an exact safe `printf -v` overwrite clears prior taint and reads only
+the safe marker.
 The trusted builder contains no nameref. Direct `-n`, clustered/repeated
 options containing `n`, `+n` toggles, wrapped/aliased builtins, array/dynamic
 options, assignments, declarations, and eval/source/function ambiguity all
@@ -303,6 +311,12 @@ an executable alias can dispatch `printf -v` and rewrite the trusted
 supervisor alias, indirect targets can rewrite `PATH` and `BASH_ENV`, and
 indirect options can enable `posix` and `hashall`; fixed single-quoted target
 and option literals do not execute and remain accepted.
+The explicit exit inventory is a parsed multiset: source reordering preserves
+the contract, while addition, deletion, or duplication fails its exact count.
+The parsed `security_contract` registry object is the behavioral documentation
+oracle for outputs, diagnostics, launcher/cgroup invariants, membership
+access, alias-state writes, and evidence type. Prose is informational, so an
+equivalent rewording does not alter the automated result.
 Raw-root filename
 glob, brace, bracket, extglob, command/process/arithmetic substitution, tilde,
 and other dynamic syntax fail closed. Executable `cgroup{.,_}procs` and
@@ -409,7 +423,11 @@ archival-lane behavior changes.
   alias/unalias/shopt/enable/hash and shell-option environment mutations plus
   the executable expand-aliases rewrite proof, scalar-chain/append/array/
   dynamic dispatch-target and `set -o/+o` option mutations plus executable
-  PATH/BASH_ENV/posix/hashall and fixed-quoted-literal controls, recursive
+  PATH/BASH_ENV/posix/hashall and fixed-quoted-literal controls, stateful
+  assignment/declaration/printf/read/mapfile/readarray writer mutations plus
+  raw-marker and exact-safe-overwrite runtime controls, parsed exit multiset
+  reorder/add/delete/duplicate controls, parsed registry-contract mutations,
+  recursive
   command/process-substitution inspection for
   `$()`/backticks/`<(...)`/`>(...)`, structured `env -S` shell-c evasions
   through inline `else`/brace/case/loop forms, `setsid`-wrapped and common

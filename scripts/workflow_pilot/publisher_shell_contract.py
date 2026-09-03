@@ -2332,6 +2332,20 @@ def _raw_cgroup_suffix_has_dynamic_filename(text: str) -> bool:
     )
 
 
+def _ambiguous_alias_suffix_has_dynamic_filename(text: str) -> bool:
+    return any(
+        marker in suffix
+        for alias_marker in (
+            _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+            _AMBIGUOUS_TRACKED_PARAMETER_MARKER,
+        )
+        for suffix in text.split(alias_marker)[1:]
+        if "cgroup" in suffix and "proc" in suffix
+        for marker in _RAW_CGROUP_DYNAMIC_FILENAME_MARKERS
+    )
+
+
 def _assignment_value_has_dynamic_shell_syntax(
     value: str,
     *,
@@ -2739,6 +2753,246 @@ def _ambiguous_dynamic_command_is_forbidden(
     return False
 
 
+def _shell_alias_write_target(
+    target: str,
+) -> tuple[str, bool] | None:
+    if any(
+        marker in target
+        for marker in (
+            _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+            _AMBIGUOUS_TRACKED_PARAMETER_MARKER,
+            _RAW_CGROUP_ROOT_MARKER,
+        )
+    ):
+        raise ValueError("dynamic shell alias write target")
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", target):
+        return target, False
+    indexed = re.fullmatch(
+        r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\[[^\]]+\]",
+        target,
+    )
+    if indexed is not None:
+        return indexed.group("name"), True
+    return None
+
+
+def _set_written_shell_alias(
+    aliases: dict[str, str],
+    target: str,
+    value: str,
+    *,
+    array: bool = False,
+) -> bool:
+    parsed = _shell_alias_write_target(target)
+    if parsed is None:
+        return False
+    name, indexed = parsed
+    if name in {
+        "cgroup_path",
+        "supervisor_cgroup",
+    } or name in _DISPATCH_STATE_VARIABLES:
+        raise ValueError("trusted shell state write")
+    if array or indexed:
+        aliases[name] = _AMBIGUOUS_ARRAY_ALIAS_MARKER + value
+    else:
+        aliases[name] = value
+    return True
+
+
+def _read_builtin_targets(
+    arguments: tuple[str, ...],
+) -> tuple[tuple[str, bool], ...] | None:
+    targets: list[tuple[str, bool]] = []
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument in {"<", "<<", "<<<"}:
+            break
+        if argument == "--":
+            index += 1
+            break
+        if not argument.startswith("-") or argument == "-":
+            break
+        flags = argument[1:]
+        flag_index = 0
+        while flag_index < len(flags):
+            flag = flags[flag_index]
+            if flag not in {"a", "d", "e", "i", "n", "N", "p", "r", "s", "t", "u"}:
+                return None
+            if flag in {"a", "d", "i", "n", "N", "p", "t", "u"}:
+                attached = flags[flag_index + 1 :]
+                if attached:
+                    option_value = attached
+                else:
+                    index += 1
+                    if index >= len(arguments):
+                        return None
+                    option_value = arguments[index]
+                if flag == "a":
+                    targets.append((option_value, True))
+                break
+            flag_index += 1
+        index += 1
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument in {"<", "<<", "<<<"}:
+            break
+        targets.append((argument, False))
+        index += 1
+    if not targets:
+        targets.append(("REPLY", False))
+    return tuple(targets)
+
+
+def _mapfile_builtin_target(
+    arguments: tuple[str, ...],
+) -> str | None:
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
+        if argument in {"<", "<<", "<<<"}:
+            break
+        if argument == "--":
+            index += 1
+            break
+        if not argument.startswith("-") or argument == "-":
+            break
+        flags = argument[1:]
+        flag_index = 0
+        while flag_index < len(flags):
+            flag = flags[flag_index]
+            if flag not in {"C", "O", "c", "d", "n", "s", "t", "u"}:
+                raise ValueError("ambiguous mapfile option")
+            if flag in {"C", "O", "c", "d", "n", "s", "u"}:
+                if not flags[flag_index + 1 :]:
+                    index += 1
+                    if index >= len(arguments):
+                        raise ValueError("missing mapfile option value")
+                break
+            flag_index += 1
+        index += 1
+    if index >= len(arguments) or arguments[index] in {"<", "<<", "<<<"}:
+        return "MAPFILE"
+    return arguments[index]
+
+
+def _apply_shell_builtin_alias_writes(
+    tokens: tuple[str, ...],
+    aliases: dict[str, str],
+) -> bool:
+    normalized = _normalize_shell_builtin_wrappers(tokens)
+    if normalized is None:
+        return any(
+            posixpath.basename(token)
+            in {
+                "declare",
+                "export",
+                "local",
+                "mapfile",
+                "printf",
+                "read",
+                "readarray",
+                "readonly",
+                "typeset",
+            }
+            for token in tokens
+        )
+    if not normalized:
+        return False
+    executable = posixpath.basename(normalized[0])
+    arguments = normalized[1:]
+    try:
+        if executable == "printf":
+            variable_option = next(
+                (
+                    index
+                    for index, argument in enumerate(arguments[:-1])
+                    if argument == "-v"
+                ),
+                None,
+            )
+            if variable_option is None:
+                return False
+            target = arguments[variable_option + 1]
+            output_arguments = arguments[variable_option + 2 :]
+            if not output_arguments:
+                value = ""
+            else:
+                format_string = output_arguments[0]
+                values = output_arguments[1:]
+                if re.fullmatch(r"(?:%s)+", format_string):
+                    value = "".join(values)
+                elif (
+                    "%" not in format_string
+                    and "\\" not in format_string
+                ):
+                    value = format_string
+                else:
+                    value = (
+                        _AMBIGUOUS_DYNAMIC_ALIAS_MARKER
+                        + format_string
+                        + "".join(values)
+                    )
+            _set_written_shell_alias(aliases, target, value)
+            return False
+        if executable == "read":
+            targets = _read_builtin_targets(arguments)
+            if targets is None:
+                return True
+            for target, array in targets:
+                _set_written_shell_alias(
+                    aliases,
+                    target,
+                    _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+                    array=array,
+                )
+            return False
+        if executable in {"mapfile", "readarray"}:
+            target = _mapfile_builtin_target(arguments)
+            if target is None:
+                return True
+            _set_written_shell_alias(
+                aliases,
+                target,
+                _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+                array=True,
+            )
+            return False
+        if executable in {
+            "declare",
+            "export",
+            "local",
+            "readonly",
+            "typeset",
+        }:
+            array = False
+            after_options = False
+            for argument in arguments:
+                if argument == "--":
+                    after_options = True
+                    continue
+                if not after_options and argument.startswith(("-", "+")):
+                    if "a" in argument[1:] or "A" in argument[1:]:
+                        array = True
+                    continue
+                if (
+                    _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(argument)
+                    or _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(argument)
+                ):
+                    continue
+                _set_written_shell_alias(
+                    aliases,
+                    argument,
+                    _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+                    array=array,
+                )
+            return False
+    except ValueError:
+        return True
+    return False
+
+
 def has_forbidden_raw_builder_cgroup_membership_read(
     script: str,
     *,
@@ -2925,6 +3179,10 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     and _raw_cgroup_suffix_has_dynamic_filename(resolved)
                 ):
                     return True
+                if _ambiguous_alias_suffix_has_dynamic_filename(
+                    resolved
+                ):
+                    return True
                 if (
                     _AMBIGUOUS_ARRAY_ALIAS_MARKER in resolved
                     and "cgroup.procs" in resolved
@@ -3044,6 +3302,11 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                             token.text,
                             _AMBIGUOUS_ARRAY_ALIAS_MARKER,
                         )
+            if _apply_shell_builtin_alias_writes(
+                resolved_token_texts,
+                aliases,
+            ):
+                return True
         return False
     except ValueError:
         return True

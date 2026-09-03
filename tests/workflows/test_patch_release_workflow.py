@@ -19,6 +19,7 @@ import textwrap
 import time
 import threading
 import unittest
+from collections import Counter
 from contextlib import redirect_stderr
 from pathlib import Path
 from unittest import mock
@@ -29,8 +30,6 @@ from scripts.modernize import patch_release
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "build.yml"
-PATCH_RELEASE_CASE = ROOT / "docs" / "test-cases" / "patch-release.md"
-PATCH_RELEASE_OVERVIEW = ROOT / "docs" / "patch_release.md"
 PATCH_RELEASE_REGISTRY = ROOT / "docs" / "test-cases" / "registry.json"
 MERGED_MASTER_771 = "771d38c5a531f2d63b269220727b02aa820cc3d4"
 FAILING_MASTER_8D81 = "8d81c30b298ef6265ba9c5335c3ca8c8f94e60e6"
@@ -692,6 +691,34 @@ def generate_raw_builder_cgroup_membership_mutations(workflow: str):
         "        set +ohashall\n",
         "        command set -o posix\n",
         "        builtin set +o hashall\n",
+        "        raw_root=/safe\n"
+        '        printf -v raw_root %s "$cgroup_path"\n'
+        '        /bin/cat "$raw_root"/cgroup.proc?\n',
+        "        raw_root=/safe\n"
+        "        target=raw_root\n"
+        '        command printf -v "$target" %s "$cgroup_path"\n'
+        '        /bin/cat "$raw_root"/cgroup.proc?\n',
+        "        raw_root=/safe\n"
+        '        printf -v raw_root %q "$cgroup_path"\n'
+        '        /bin/cat "$raw_root"/cgroup.proc?\n',
+        "        raw_root=/safe\n"
+        '        read raw_root <<< "$cgroup_path"\n'
+        '        /bin/cat "$raw_root"/cgroup.proc?\n',
+        "        raw_root=(/safe)\n"
+        '        mapfile -t raw_root <<< "$cgroup_path"\n'
+        '        /bin/cat "${raw_root[0]}"/cgroup.proc?\n',
+        "        raw_root=(/safe)\n"
+        '        readarray -t raw_root <<< "$cgroup_path"\n'
+        '        /bin/cat "${raw_root[0]}"/cgroup.proc?\n',
+        "        raw_root=/safe\n"
+        '        declare raw_root="$cgroup_path"\n'
+        '        /bin/cat "$raw_root"/cgroup.proc?\n',
+        "        raw_root=/safe\n"
+        '        raw_root="$cgroup_path"\n'
+        '        /bin/cat "$raw_root"/cgroup.proc?\n',
+        "        raw_root=/safe\n"
+        '        target="$(printf raw_root)"\n'
+        '        printf -v "$target" %s "$cgroup_path"\n',
     )
     for index, mutation in enumerate(supervisor_reassignments):
         changed = workflow.replace(marker, mutation + marker, 1)
@@ -7201,6 +7228,110 @@ exit 37
                 )
             )
 
+    def test_variable_writers_retarget_raw_membership_and_are_rejected(self):
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="alias-writer-raw-cgroup-",
+            dir=artifact_root,
+        ) as temporary:
+            raw_cgroup = Path(temporary) / "raw"
+            safe_cgroup = Path(temporary) / "safe"
+            raw_cgroup.mkdir()
+            safe_cgroup.mkdir()
+            (raw_cgroup / "cgroup.procs").write_text(
+                "hidden-raw-writer-marker\n",
+                encoding="ascii",
+            )
+            (safe_cgroup / "cgroup.procs").write_text(
+                "safe-writer-marker\n",
+                encoding="ascii",
+            )
+            cases = (
+                "raw_root=/safe\n"
+                'printf -v raw_root %s "$1"\n'
+                '/bin/cat "$raw_root"/cgroup.proc?\n',
+                "raw_root=/safe\n"
+                "target=raw_root\n"
+                'command printf -v "$target" %s "$1"\n'
+                '/bin/cat "$raw_root"/cgroup.proc?\n',
+                "raw_root=/safe\n"
+                'printf -v raw_root %q "$1"\n'
+                '/bin/cat "$raw_root"/cgroup.proc?\n',
+                "raw_root=/safe\n"
+                'read raw_root <<< "$1"\n'
+                '/bin/cat "$raw_root"/cgroup.proc?\n',
+                "raw_root=(/safe)\n"
+                'mapfile -t raw_root <<< "$1"\n'
+                '/bin/cat "${raw_root[0]}"/cgroup.proc?\n',
+                "raw_root=(/safe)\n"
+                'readarray -t raw_root <<< "$1"\n'
+                '/bin/cat "${raw_root[0]}"/cgroup.proc?\n',
+                "raw_root=/safe\n"
+                'declare raw_root="$1"\n'
+                '/bin/cat "$raw_root"/cgroup.proc?\n',
+                "raw_root=/safe\n"
+                'raw_root="$1"\n'
+                '/bin/cat "$raw_root"/cgroup.proc?\n',
+            )
+            for script in cases:
+                with self.subTest(writer=script.splitlines()[1]):
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "-c",
+                            script,
+                            "--",
+                            str(raw_cgroup),
+                        ],
+                        cwd=ROOT,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(
+                        completed.returncode,
+                        0,
+                        completed.stderr,
+                    )
+                    self.assertEqual(
+                        completed.stdout,
+                        "hidden-raw-writer-marker\n",
+                    )
+                    self.assertTrue(
+                        publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                            script,
+                            label="variable writer raw cgroup runtime",
+                        )
+                    )
+
+            safe_script = (
+                'raw_root="$1"\n'
+                f'printf -v raw_root %s "{safe_cgroup}"\n'
+                '/bin/cat "$raw_root"/cgroup.proc?\n'
+            )
+            completed = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-c",
+                    safe_script,
+                    "--",
+                    str(raw_cgroup),
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout, "safe-writer-marker\n")
+            self.assertFalse(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    safe_script,
+                    label="exact safe printf alias writer control",
+                )
+            )
+
     def test_fixed_quoted_dispatch_literals_do_not_execute_or_false_positive(self):
         cases = (
             (
@@ -7949,26 +8080,72 @@ exit 37
 
     def test_builder_isolation_explicit_exit_inventory_is_closed(self):
         builder = builder_isolation_shell_source(self.text)
-        exits = [
-            line.strip()
-            for line in builder.splitlines()
-            if re.search(r"\bexit(?:\s|$)", line)
-        ]
-        self.assertEqual(
-            exits,
-            [
-                "namespace) exit 81 ;;",
-                "mount-audit) exit 82 ;;",
-                "output-validate) exit 83 ;;",
-                "export) exit 84 ;;",
-                "post-check) exit 85 ;;",
-                "*) exit 125 ;;",
-                '71|72|73|74|75|76) exit "$candidate_status" ;;',
-                '125|126) exit "$candidate_status" ;;',
-                "*) exit 77 ;;",
-                "exit 0",
-            ],
+
+        def exit_inventory(script):
+            return Counter(
+                command.strip()
+                for command in publisher_shell_contract.split_bash_simple_command_strings(
+                    script,
+                    label="builder explicit exit inventory",
+                )
+                if re.search(r"\bexit(?:\s|$)", command)
+            )
+
+        expected_exits = Counter(
+            {
+                "namespace) exit 81": 1,
+                "mount-audit) exit 82": 1,
+                "output-validate) exit 83": 1,
+                "export) exit 84": 1,
+                "post-check) exit 85": 1,
+                "*) exit 125": 1,
+                '76) exit "$candidate_status"': 1,
+                '126) exit "$candidate_status"': 1,
+                "*) exit 77": 1,
+                "exit 0": 1,
+            }
         )
+        self.assertEqual(
+            exit_inventory(builder),
+            expected_exits,
+        )
+
+        reordered_lines = builder.splitlines()
+        first = next(
+            index
+            for index, line in enumerate(reordered_lines)
+            if "namespace) exit 81 ;;" in line
+        )
+        second = next(
+            index
+            for index, line in enumerate(reordered_lines)
+            if "mount-audit) exit 82 ;;" in line
+        )
+        reordered_lines[first], reordered_lines[second] = (
+            reordered_lines[second],
+            reordered_lines[first],
+        )
+        self.assertEqual(
+            exit_inventory("\n".join(reordered_lines)),
+            expected_exits,
+        )
+        exit_mutations = {
+            "addition": builder + "\nexit 0\n",
+            "deletion": builder.replace("namespace) exit 81 ;;", "", 1),
+            "duplicate": builder.replace(
+                "mount-audit) exit 82 ;;",
+                "mount-audit) exit 82 ;;\n"
+                "          mount-audit) exit 82 ;;",
+                1,
+            ),
+        }
+        for mutation, changed in exit_mutations.items():
+            with self.subTest(exit_inventory_mutation=mutation):
+                self.assertNotEqual(
+                    exit_inventory(changed),
+                    expected_exits,
+                )
+
         returns = [
             command.strip()
             for command in publisher_shell_contract.split_bash_simple_command_strings(
@@ -9567,174 +9744,172 @@ exit 37
             download_step,
         )
 
-    def test_patch_release_docs_publish_no_internal_rom_artifact(self):
-        text = PATCH_RELEASE_CASE.read_text(encoding="utf-8")
-        compact = " ".join(text.split())
-        self.assertIn(
-            "target ROM remains only in the publisher-local isolated handoff "
-            "and private\nstaging",
-            text,
-        )
-        self.assertIn(
-            "Actions uploads only BPS/manifest/README with 30-day retention",
-            text,
-        )
-        self.assertIn("there\nis no internal or final ROM artifact", text)
-        self.assertNotIn("one-day internal Actions artifact", text)
-        self.assertIn(
-            "decodes recursive `/dev` mount targets from structured `findmnt\n"
-            "--json --submounts --output TARGET /dev` output",
-            text,
-        )
-        self.assertIn(
-            "unmounts exact descendant paths deepest-first, removes the temp files",
-            text,
-        )
-        self.assertIn(
-            "root-owned mode-`0700` `/mnt/supervisor` parent denies candidate read",
-            text,
-        )
-        self.assertIn(
-            "raw escaped or whitespace-delimited mount-target transport",
-            compact,
-        )
-        self.assertIn(
-            "paths outside `/dev`",
-            text,
-        )
-        self.assertIn(
-            "unsafe transport files are rejected",
-            compact,
-        )
-        self.assertIn(
-            "structured\n`findmnt --json --list --uniq --output TARGET,OPTIONS -R /` output, "
-            "writes\nchecked NUL-framed mount target/option records",
-            text,
-        )
-        self.assertIn(
-            "Only `/dev/shm`, `/mnt/handoff`, `/mnt/home`, `/mnt/source`, "
-            "`/mnt/supervisor`,",
-            compact,
-        )
-        self.assertIn(
-            "`/mnt/tmp`, and `/tmp` may carry an exact `rw` option token",
-            compact,
-        )
-        self.assertIn(
-            "`/mnt/supervisor` is the sole mount-level `rw` exception that candidate",
-            compact,
-        )
-        self.assertIn(
-            "util-linux documents `--uniq` as \"effectively skipping over-mounted\nmount points\"",
-            text,
-        )
-        self.assertIn(
-            "control-character targets,",
-            text,
-        )
-        self.assertIn(
-            "malformed option-token grammar",
-            text,
-        )
-
-    def test_patch_release_overview_docs_require_structured_mount_records(self):
-        text = PATCH_RELEASE_OVERVIEW.read_text(encoding="utf-8")
-        compact = " ".join(text.split())
-        self.assertIn(
-            "consumes only decoded structured JSON target records through checked NUL-delimited "
-            "transport",
-            compact,
-        )
-        self.assertIn(
-            "raw escaped or whitespace-delimited mount text can never be "
-            "mistaken for an "
-            "unapproved path",
-            compact,
-        )
-        self.assertNotIn(
-            "consumes raw `findmnt` targets",
-            compact,
-        )
-
-    def test_patch_release_docs_use_runtime_diagnostic_stage_enum(self):
-        overview = " ".join(PATCH_RELEASE_OVERVIEW.read_text(encoding="utf-8").split())
-        case = " ".join(PATCH_RELEASE_CASE.read_text(encoding="utf-8").split())
+    def test_patch_release_security_contract_is_structured_and_prose_independent(
+        self,
+    ):
         registry = json.loads(PATCH_RELEASE_REGISTRY.read_text(encoding="utf-8"))
-        entry = next(item for item in registry["cases"] if item["id"] == "TC-CI-PATCH-049-002")
-        expected_result = " ".join(entry["expected_result"].split())
-        for text in (overview, case, expected_result):
-            self.assertIn("post-spawn", text)
-            self.assertIn("launch", text)
-            self.assertIn("isolated", text)
-            self.assertIn("cleanup", text)
-            self.assertIn("pre-spawn", text)
-            self.assertIn("post-child handoff validation", text)
-            self.assertIn("only stage text", text)
-            self.assertNotIn("isolated-build", text)
-            self.assertIn("self-stop", text)
-            self.assertIn("exact stopped child", text)
-            self.assertIn("kernel process", text)
-            self.assertIn("start time", text)
-            self.assertIn("no PID or process-group signal", text)
-            self.assertIn("primary `launch` rejection", text)
-            self.assertIn("no cleanup diagnostic", text)
-            self.assertIn("residual cgroup", text)
-            self.assertIn("authenticated supervisor", text)
-            self.assertIn("detail=transport exit=125", text)
-            self.assertIn("no file, pipe", text)
-            self.assertIn("Explicit trusted", text)
-            self.assertIn("return 125", text)
-            self.assertIn("conditional", text)
-            self.assertIn("set +e", text)
-            self.assertIn("exactly once", text)
-            self.assertIn("empty, malformed", text)
-            self.assertIn("duplicate", text)
-            self.assertIn("unrelated live process", text)
-            self.assertIn("safe `mapfile` line", text)
-            self.assertIn("alias", text)
-            self.assertIn("no raw `cgroup.procs` read", text)
-            self.assertIn("scalar `+=`", text.lower())
-            self.assertIn("indirect", text)
-            self.assertIn("125", text)
-            self.assertIn("126", text)
-            self.assertIn("Indexed and associative", text)
-            self.assertIn("${raw[0]}", text)
-            self.assertIn("unrelated arrays", text.lower())
-            self.assertIn("${1}", text)
-            self.assertIn("unknown", text.lower())
-            self.assertIn("positional", text.lower())
-        expanded_registry = " ".join(
-            (
-                expected_result,
-                " ".join(entry["actions"].split()),
-                " ".join(entry["limitations"].split()),
-            )
+        entry = next(
+            item
+            for item in registry["cases"]
+            if item["id"] == "TC-CI-PATCH-049-002"
         )
-        for text in (overview, case, expanded_registry):
-            self.assertIn("canonical", text)
-            self.assertIn("reassignment", text.lower())
-            self.assertIn("brace", text)
-            self.assertIn("glob", text)
-            self.assertIn("command -v", text)
-            self.assertIn("-pv", text)
-            self.assertIn("wrapped", text)
-            self.assertIn("unbound", text)
-            self.assertIn("array-backed", text.lower())
-            self.assertIn("query-only array", text.lower())
-            self.assertIn("dynamic", text.lower())
-            self.assertIn("backtick", text.lower())
-            self.assertIn("fixed", text.lower())
-            self.assertIn("nameref", text.lower())
-            self.assertIn("local -n", text)
-            self.assertIn("result arrays", text)
-            self.assertIn("expand_aliases", text)
-            self.assertIn("enable", text)
-            self.assertIn("hash", text)
-            self.assertIn("PATH", text)
-            self.assertIn("BASH_ENV", text)
-            self.assertIn("set -o/+o", text)
-            self.assertIn("posix", text.lower())
-            self.assertIn("target", text.lower())
+        expected = {
+            "schema_version": 1,
+            "published_files": [
+                "README.txt",
+                "fireemblem8-expansion-all-locales-all-features-aapcs.bps",
+                "manifest.json",
+            ],
+            "complete_rom_artifact": False,
+            "diagnostic_stages": ["launch", "isolated", "cleanup"],
+            "isolated_details": [
+                "namespace",
+                "mount-audit",
+                "candidate-preflight",
+                "candidate-venv",
+                "candidate-pip",
+                "candidate-build-tools",
+                "candidate-make",
+                "candidate-handoff",
+                "output-validate",
+                "export",
+                "post-check",
+                "candidate-unknown",
+                "transport",
+            ],
+            "candidate_stage_statuses": [71, 72, 73, 74, 75, 76],
+            "transport_statuses": [125, 126],
+            "candidate_unknown_status": 77,
+            "launcher_identity_fields": [
+                "parent-pid",
+                "pid",
+                "sid",
+                "pgid",
+                "state",
+                "start-time",
+            ],
+            "supervisor_parent_mode": "0700",
+            "post_build_membership": "exact-wrapper-singleton",
+            "raw_membership": {
+                "allowed_accesses": [
+                    "initial-join-write",
+                    "authenticated-supervisor-read",
+                ],
+                "additional_access": "reject",
+            },
+            "alias_state": {
+                "writers": [
+                    "assignment",
+                    "declaration",
+                    "printf-v",
+                    "read",
+                    "mapfile",
+                    "readarray",
+                ],
+                "exact_write": "replace",
+                "unknown_write": "taint",
+                "dynamic_target": "reject",
+                "membership_sensitive_use": "reject",
+            },
+            "evidence": {
+                "behavior": "executable",
+                "registry": "parsed-json",
+                "prose": "informational",
+            },
+        }
+
+        unordered_paths = (
+            ("published_files",),
+            ("diagnostic_stages",),
+            ("isolated_details",),
+            ("candidate_stage_statuses",),
+            ("transport_statuses",),
+            ("launcher_identity_fields",),
+            ("raw_membership", "allowed_accesses"),
+            ("alias_state", "writers"),
+        )
+
+        def normalize_contract(contract):
+            normalized = json.loads(json.dumps(contract))
+            try:
+                for path in unordered_paths:
+                    target = normalized
+                    for component in path[:-1]:
+                        target = target[component]
+                    values = target[path[-1]]
+                    if not isinstance(values, list):
+                        target[path[-1]] = {
+                            "invalid_type": type(values).__name__,
+                        }
+                        continue
+                    target[path[-1]] = {
+                        "count": len(values),
+                        "members": sorted(values),
+                    }
+            except (KeyError, TypeError):
+                return {"invalid_contract": normalized}
+            return normalized
+
+        def contract_errors(case):
+            return (
+                []
+                if normalize_contract(case.get("security_contract"))
+                == normalize_contract(expected)
+                else ["TC-CI-PATCH-049-002 security contract mismatch"]
+            )
+
+        self.assertEqual(contract_errors(entry), [])
+
+        paraphrased = json.loads(json.dumps(entry))
+        for field in (
+            "purpose",
+            "actions",
+            "expected_result",
+            "negative_control",
+            "limitations",
+        ):
+            paraphrased[field] = (
+                "Equivalent explanatory wording is intentionally "
+                "not a behavioral oracle."
+            )
+        self.assertEqual(contract_errors(paraphrased), [])
+
+        reordered = json.loads(json.dumps(entry))
+        for path in unordered_paths:
+            target = reordered["security_contract"]
+            for component in path[:-1]:
+                target = target[component]
+            target[path[-1]].reverse()
+        self.assertEqual(contract_errors(reordered), [])
+
+        mutations = []
+        for path, value in (
+            (("complete_rom_artifact",), True),
+            (("candidate_unknown_status",), 78),
+            (("raw_membership", "additional_access"), "allow"),
+            (("alias_state", "dynamic_target"), "allow"),
+        ):
+            changed = json.loads(json.dumps(entry))
+            target = changed["security_contract"]
+            for component in path[:-1]:
+                target = target[component]
+            target[path[-1]] = value
+            mutations.append(changed)
+        missing_writer = json.loads(json.dumps(entry))
+        missing_writer["security_contract"]["alias_state"]["writers"].remove(
+            "printf-v"
+        )
+        mutations.append(missing_writer)
+        duplicate_writer = json.loads(json.dumps(entry))
+        duplicate_writer["security_contract"]["alias_state"]["writers"].append(
+            "printf-v"
+        )
+        mutations.append(duplicate_writer)
+        missing_contract = json.loads(json.dumps(entry))
+        del missing_contract["security_contract"]
+        mutations.append(missing_contract)
+        for changed in mutations:
+            self.assertNotEqual(contract_errors(changed), [])
 
     def test_redirecting_download_follows_redirects_and_rejects_wrong_content(self):
         download = patch_release_download_command(self.text)
