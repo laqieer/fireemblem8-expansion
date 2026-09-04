@@ -3838,12 +3838,14 @@ def _resolve_shell_aliases(text: str, aliases: dict[str, str]) -> str:
                 or operator.startswith("[")
             ):
                 return match.group(0)
-            value = aliases.get(name)
+            value = _semantic_alias_value(aliases.get(name))
             if value is None:
                 return match.group(0)
             changed = True
             if indirect:
-                indirect_value = aliases.get(value)
+                indirect_value = _semantic_alias_value(
+                    aliases.get(value)
+                )
                 if (
                     _RAW_CGROUP_ROOT_MARKER in value
                     or _AMBIGUOUS_ARRAY_ALIAS_MARKER in value
@@ -3878,7 +3880,9 @@ def _resolve_shell_aliases(text: str, aliases: dict[str, str]) -> str:
 
         def replace_plain(match: re.Match[str]) -> str:
             nonlocal changed
-            value = aliases.get(match.group("name"))
+            value = _semantic_alias_value(
+                aliases.get(match.group("name"))
+            )
             if value is None:
                 return match.group(0)
             changed = True
@@ -3886,7 +3890,9 @@ def _resolve_shell_aliases(text: str, aliases: dict[str, str]) -> str:
 
         def replace_positional(match: re.Match[str]) -> str:
             nonlocal changed
-            value = aliases.get(match.group("position"))
+            value = _semantic_alias_value(
+                aliases.get(match.group("position"))
+            )
             if value is None:
                 return match.group(0)
             changed = True
@@ -3976,6 +3982,14 @@ def _known_array_type_marker(value: str) -> str | None:
 
 def _typed_array_alias(marker: str, value: str) -> str:
     return _AMBIGUOUS_ARRAY_ALIAS_MARKER + marker + value
+
+
+def _semantic_alias_value(value: str | None) -> str | None:
+    return (
+        None
+        if value is None
+        else value.replace(_READONLY_ALIAS_MARKER, "")
+    )
 
 
 def _readonly_alias(value: str) -> str:
@@ -5170,7 +5184,7 @@ def _active_reserved_transport_references(
             for prefix, target, suffix in braced_parameters:
                 if prefix != "!" or suffix in {"*", "@"}:
                     continue
-                value = aliases.get(target)
+                value = _semantic_alias_value(aliases.get(target))
                 if suffix.startswith("["):
                     if (
                         value is not None
@@ -5260,7 +5274,11 @@ def _active_reserved_transport_references(
                     r"\b[A-Za-z_][A-Za-z0-9_]*\b",
                     dereference_text,
                 ):
-                    value = aliases.get(identifier, identifier)
+                    value = _semantic_alias_value(
+                        aliases.get(identifier)
+                    )
+                    if value is None:
+                        value = identifier
                     if any(
                         marker in value
                         for marker in (

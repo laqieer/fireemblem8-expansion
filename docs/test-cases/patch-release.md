@@ -387,6 +387,9 @@ without retagging, and a first local declaration creates a typed shadow.
 `readonly`, `-r`, and typed readonly declarations preserve value and type
 across rejected unset/write/retag/removal attempts, including suppressed
 failures; subshell readonly state does not escape.
+Readonly is attribute metadata rather than value data: direct/indirect alias
+chains, `${!name}` assignment/default/error operators, arithmetic, namerefs,
+helper captures, and raw paths resolve the unchanged semantic value.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,

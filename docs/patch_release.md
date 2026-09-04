@@ -415,6 +415,9 @@ local declaration creates its own typed shadow. Proven readonly attributes are
 also retained: rejected unset, assignment, append, element write, retag, and
 readonly-removal attempts cannot change the modeled value or array type.
 Readonly changes in a subshell remain scoped to that execution environment.
+The readonly attribute is removed from semantic alias resolution, so alias
+chains, indirection and its parameter operators, namerefs, arithmetic, helper
+captures, and raw-path checks still see the underlying value.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

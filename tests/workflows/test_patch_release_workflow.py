@@ -12636,6 +12636,7 @@ exit 37
                 "opposite_array_redeclaration": "error-preserve-type",
                 "readonly_state": "rejected-mutation-preserves-value-and-type",
                 "readonly_scope": "local-and-subshell",
+                "readonly_alias_value": "attribute-separated-semantic-resolution",
                 "later_or_external_mutation": "reject",
             },
             "alias_state": {

@@ -497,6 +497,94 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             )
         )
 
+    def test_readonly_alias_attributes_do_not_hide_semantic_values(self):
+        cases = (
+            (
+                "name=checked_runtime_transport_output\n"
+                "readonly name\n"
+                'printf "%s\\n" "${!name}"\n',
+                {"checked_runtime_transport_output": "value"},
+                "value\n",
+            ),
+            (
+                "name=checked_runtime_transport_output\n"
+                "readonly name\n"
+                'printf "%s\\n" "${!name:=set}"\n'
+                'printf "%s\\n" "$checked_runtime_transport_output"\n',
+                {},
+                "set\nset\n",
+            ),
+            (
+                "name=checked_runtime_transport_output\n"
+                "readonly name\n"
+                'printf "%s\\n" "$((name))"\n',
+                {"checked_runtime_transport_output": "7"},
+                "7\n",
+            ),
+            (
+                "first=checked_runtime_transport_output\n"
+                "readonly first\n"
+                "second=$first\n"
+                "readonly second\n"
+                'printf "%s\\n" "${!second:+present}"\n',
+                {"checked_runtime_transport_output": "value"},
+                "present\n",
+            ),
+            (
+                "name=checked_runtime_transport_output\n"
+                "readonly name\n"
+                "inspect() {\n"
+                '  printf "%s\\n" "${!name}"\n'
+                "}\n"
+                "inspect\n",
+                {"checked_runtime_transport_output": "value"},
+                "value\n",
+            ),
+        )
+        for script, additions, expected in cases:
+            environment = dict(os.environ)
+            environment.update(additions)
+            completed = subprocess.run(
+                ["/bin/bash", "-u", "-c", script],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout, expected)
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    script,
+                    label="readonly alias dereference",
+                )
+            )
+        for operator in (":-fallback", ":?missing", "=set", "+present"):
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    "name=checked_runtime_transport_output\n"
+                    "readonly name\n"
+                    f'printf "%s\\n" "${{!name{operator}}}"\n',
+                    label="readonly indirect parameter operator",
+                )
+            )
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                'raw="$1"\n'
+                "readonly raw\n"
+                '/bin/cat "$raw/cgroup.procs"\n',
+                label="readonly raw path alias",
+            )
+        )
+        self.assertFalse(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                "printf '%s\\n' "
+                "'readonly-alias checked_runtime_transport_output'\n",
+                label="readonly marker spelling literal",
+            )
+        )
+
     def test_publisher_and_upstream_enforce_helper_dereferences(self):
         original = WORKFLOW.read_text(encoding="utf-8")
         producer = (
@@ -524,6 +612,26 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 "          local signature\n"
                 "          inspect_name=checked_supervisor_transport_output\n"
                 '          printf "%s\\n" "${!inspect_name}" > /dev/null\n',
+                1,
+            ),
+            original.replace(
+                "          local signature\n",
+                "          local signature\n"
+                "          local inspect_name="
+                "checked_supervisor_transport_output\n"
+                "          readonly inspect_name\n"
+                '          printf "%s\\n" '
+                '"${!inspect_name:=replacement}" > /dev/null\n',
+                1,
+            ),
+            original.replace(
+                "          local signature\n",
+                "          local signature\n"
+                "          local first="
+                "checked_supervisor_transport_output\n"
+                "          readonly first\n"
+                "          local second=$first\n"
+                '          printf "%s\\n" "$((second))" > /dev/null\n',
                 1,
             ),
             original.replace(
