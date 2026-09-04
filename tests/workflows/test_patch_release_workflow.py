@@ -12632,6 +12632,8 @@ exit 37
                 "invoked_helper_consumers": "reject-unreviewed-runtime-dereference",
                 "parameter_name_enumeration": "literal-prefix-not-indirect",
                 "array_subscripts": "associative-string-indexed-arithmetic",
+                "array_type_lifetime": "assignment-preserve-whole-unset-reset",
+                "opposite_array_redeclaration": "error-preserve-type",
                 "later_or_external_mutation": "reject",
             },
             "alias_state": {

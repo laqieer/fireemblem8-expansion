@@ -3963,6 +3963,20 @@ def _active_shell_token_text(token: _ShellToken) -> str:
     )
 
 
+def _known_array_type_marker(value: str) -> str | None:
+    for marker in (
+        _ASSOCIATIVE_ARRAY_ALIAS_MARKER,
+        _INDEXED_ARRAY_ALIAS_MARKER,
+    ):
+        if marker in value:
+            return marker
+    return None
+
+
+def _typed_array_alias(marker: str, value: str) -> str:
+    return _AMBIGUOUS_ARRAY_ALIAS_MARKER + marker + value
+
+
 def _loop_iteration_target_is_forbidden(
     tokens: tuple[_ShellToken, ...],
     aliases: dict[str, str],
@@ -4286,23 +4300,22 @@ def _apply_direct_function_alias_writes(
             value = aliases.get(name, "") + value
         if indexed is not None:
             previous = aliases.get(name, "")
-            value = _AMBIGUOUS_ARRAY_ALIAS_MARKER + next(
-                (
-                    marker
-                    for marker in (
-                        _ASSOCIATIVE_ARRAY_ALIAS_MARKER,
-                        _INDEXED_ARRAY_ALIAS_MARKER,
-                    )
-                    if marker in previous
-                ),
-                _AMBIGUOUS_ARRAY_ALIAS_MARKER,
-            ) + value
-        elif assignment.group("value").startswith("("):
+            marker = _known_array_type_marker(previous)
             value = (
-                _AMBIGUOUS_ARRAY_ALIAS_MARKER
-                + _INDEXED_ARRAY_ALIAS_MARKER
-                + value
+                _typed_array_alias(marker, value)
+                if marker is not None
+                else _AMBIGUOUS_ARRAY_ALIAS_MARKER + value
             )
+        elif assignment.group("value").startswith("("):
+            value = _typed_array_alias(
+                _known_array_type_marker(aliases.get(name, ""))
+                or _INDEXED_ARRAY_ALIAS_MARKER,
+                value,
+            )
+        elif (
+            marker := _known_array_type_marker(aliases.get(name, ""))
+        ) is not None:
+            value = _typed_array_alias(marker, value)
         aliases[name] = value
         written.add(name)
     return False, written
@@ -4507,6 +4520,7 @@ def _analyze_function_call(
                     if name not in local_names
                 }
             )
+        preexisting_local_names = set(local_names)
         local_names.update(
             _function_local_declaration_names(resolved)
         )
@@ -4521,6 +4535,7 @@ def _analyze_function_call(
             resolved,
             function_aliases,
             original_shell_tokens=tokens,
+            preexisting_local_names=preexisting_local_names,
         ):
             return True, {}
         changed = directly_written | {
@@ -5581,21 +5596,15 @@ def _set_written_shell_alias(
             if associative
             else _INDEXED_ARRAY_ALIAS_MARKER
         )
-        aliases[name] = _AMBIGUOUS_ARRAY_ALIAS_MARKER + marker + value
+        aliases[name] = _typed_array_alias(marker, value)
     elif indexed:
         previous = aliases.get(name, "")
-        marker = next(
-            (
-                candidate
-                for candidate in (
-                    _ASSOCIATIVE_ARRAY_ALIAS_MARKER,
-                    _INDEXED_ARRAY_ALIAS_MARKER,
-                )
-                if candidate in previous
-            ),
-            _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+        marker = _known_array_type_marker(previous)
+        aliases[name] = (
+            _typed_array_alias(marker, value)
+            if marker is not None
+            else _AMBIGUOUS_ARRAY_ALIAS_MARKER + value
         )
-        aliases[name] = _AMBIGUOUS_ARRAY_ALIAS_MARKER + marker + value
     else:
         aliases[name] = value
     return True
@@ -5685,6 +5694,7 @@ def _apply_shell_builtin_alias_writes(
     aliases: dict[str, str],
     *,
     original_shell_tokens: tuple[_ShellToken, ...] | None = None,
+    preexisting_local_names: set[str] | None = None,
 ) -> bool:
     if original_shell_tokens is not None:
         lexed = _split_attached_redirections(original_shell_tokens)
@@ -5711,6 +5721,26 @@ def _apply_shell_builtin_alias_writes(
     executable = posixpath.basename(normalized[0])
     arguments = normalized[1:]
     try:
+        if executable == "unset":
+            for argument in arguments:
+                if argument.startswith("-"):
+                    continue
+                parsed = _shell_alias_write_target(argument)
+                if parsed is None:
+                    return True
+                name, indexed = parsed
+                if indexed:
+                    marker = _known_array_type_marker(
+                        aliases.get(name, "")
+                    )
+                    if marker is not None:
+                        aliases[name] = _typed_array_alias(
+                            marker,
+                            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+                        )
+                else:
+                    aliases.pop(name, None)
+            return False
         if executable == "printf":
             variable_option = next(
                 (
@@ -5777,6 +5807,7 @@ def _apply_shell_builtin_alias_writes(
             array = False
             associative = False
             nameref = False
+            global_declaration = False
             after_options = False
             for argument in arguments:
                 if argument == "--":
@@ -5789,6 +5820,8 @@ def _apply_shell_builtin_alias_writes(
                         associative = True
                     if "n" in argument[1:]:
                         nameref = argument.startswith("-")
+                    if "g" in argument[1:]:
+                        global_declaration = argument.startswith("-")
                     continue
                 scalar_assignment = _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(
                     argument
@@ -5812,14 +5845,79 @@ def _apply_shell_builtin_alias_writes(
                             + indexed_assignment.group("index")
                             + "]"
                         )
+                    existing_type = _known_array_type_marker(
+                        aliases.get(name, "")
+                    )
+                    local_shadow = (
+                        preexisting_local_names is not None
+                        and name not in preexisting_local_names
+                        and not global_declaration
+                        and executable in {"declare", "local", "typeset"}
+                    )
+                    requested_type = (
+                        _ASSOCIATIVE_ARRAY_ALIAS_MARKER
+                        if associative
+                        else _INDEXED_ARRAY_ALIAS_MARKER
+                    )
+                    if (
+                        array
+                        and existing_type is not None
+                        and existing_type != requested_type
+                        and not local_shadow
+                    ):
+                        continue
+                    effective_type = (
+                        requested_type
+                        if array
+                        else (
+                            existing_type
+                            if existing_type is not None
+                            and not local_shadow
+                            else None
+                        )
+                    )
                     _set_written_shell_alias(
                         aliases,
                         target,
                         value,
-                        array=array,
-                        associative=associative,
+                        array=effective_type is not None,
+                        associative=(
+                            effective_type
+                            == _ASSOCIATIVE_ARRAY_ALIAS_MARKER
+                        ),
                     )
                     continue
+                name = argument.split("[", 1)[0]
+                existing_type = _known_array_type_marker(
+                    aliases.get(name, "")
+                )
+                local_shadow = (
+                    preexisting_local_names is not None
+                    and name not in preexisting_local_names
+                    and not global_declaration
+                    and executable in {"declare", "local", "typeset"}
+                )
+                requested_type = (
+                    _ASSOCIATIVE_ARRAY_ALIAS_MARKER
+                    if associative
+                    else _INDEXED_ARRAY_ALIAS_MARKER
+                )
+                if (
+                    array
+                    and existing_type is not None
+                    and existing_type != requested_type
+                    and not local_shadow
+                ):
+                    continue
+                effective_type = (
+                    requested_type
+                    if array
+                    else (
+                        existing_type
+                        if existing_type is not None and not local_shadow
+                        else None
+                    )
+                )
                 _set_written_shell_alias(
                     aliases,
                     argument,
@@ -5829,8 +5927,11 @@ def _apply_shell_builtin_alias_writes(
                         else ""
                     )
                     + _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
-                    array=array,
-                    associative=associative,
+                    array=effective_type is not None,
+                    associative=(
+                        effective_type
+                        == _ASSOCIATIVE_ARRAY_ALIAS_MARKER
+                    ),
                 )
             return False
     except ValueError:
@@ -6381,19 +6482,34 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     )
                 ):
                     return True
+                existing_type = _known_array_type_marker(
+                    aliases.get(name, "")
+                )
                 if assignment.group("append"):
                     aliases[name] = aliases.get(name, "") + value
-                elif array_declaration or is_array_literal:
-                    aliases[name] = (
-                        (
-                            _AMBIGUOUS_ARRAY_ALIAS_MARKER
-                            + (
-                                _ASSOCIATIVE_ARRAY_ALIAS_MARKER
-                                if associative_declaration
-                                else _INDEXED_ARRAY_ALIAS_MARKER
-                            )
+                elif array_declaration:
+                    requested_type = (
+                        _ASSOCIATIVE_ARRAY_ALIAS_MARKER
+                        if associative_declaration
+                        else _INDEXED_ARRAY_ALIAS_MARKER
+                    )
+                    if (
+                        existing_type is None
+                        or existing_type == requested_type
+                    ):
+                        aliases[name] = _typed_array_alias(
+                            requested_type,
+                            value,
                         )
-                        + value
+                elif is_array_literal:
+                    aliases[name] = _typed_array_alias(
+                        existing_type or _INDEXED_ARRAY_ALIAS_MARKER,
+                        value,
+                    )
+                elif existing_type is not None:
+                    aliases[name] = _typed_array_alias(
+                        existing_type,
+                        value,
                     )
                 else:
                     aliases[name] = value

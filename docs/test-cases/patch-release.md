@@ -380,7 +380,10 @@ remains data; inert quoted helper data remains nonexecuting. Prefix-name
 enumeration (`${!prefix*}`/`${!prefix@}`) does not resolve `prefix`'s value.
 Known associative-array keys remain string data, whereas indexed and unknown
 subscripts retain Bash arithmetic recursive-dereference checks. Direct
-reserved-array key enumeration remains a consumer.
+reserved-array key enumeration remains a consumer. Array type persists across
+compound, scalar, append, and element assignment plus element/`[@]` unset;
+whole-variable unset erases type. Opposite-type nonlocal redeclaration errors
+without retagging, and a first local declaration creates a typed shadow.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,

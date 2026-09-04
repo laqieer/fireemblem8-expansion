@@ -312,6 +312,7 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 )
 
         indexed = (
+            "declare -A table=([global]=value)\n"
             "show() {\n"
             "  local -a table=(zero one)\n"
             "  local key=checked_supervisor_transport_output\n"
@@ -335,6 +336,85 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 label="indexed arithmetic recursive dereference",
             )
         )
+        whole_unset = (
+            "declare -A table=()\n"
+            "unset table\n"
+            "table=(zero one)\n"
+            "key=checked_supervisor_transport_output\n"
+            'printf "%s\\n" "${table[$key]}"\n'
+        )
+        for indexed_after in (
+            whole_unset,
+            "show() {\n"
+            "  local key=checked_supervisor_transport_output\n"
+            '  printf "%s\\n" "${unknown_table[$key]}"\n'
+            "}\n"
+            "show\n",
+        ):
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    indexed_after,
+                    label="unknown or reset indexed array",
+                )
+            )
+        completed = subprocess.run(
+            ["/bin/bash", "-u", "-c", whole_unset],
+            cwd=ROOT,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout, "one\n")
+
+    def test_associative_type_persists_until_whole_unset(self):
+        helper = (
+            "show() {\n"
+            "  local -A table=([old]=gone)\n"
+            "  local key=checked_supervisor_transport_output\n"
+            '  table=([$key]=compound)\n'
+            '  printf "%s " "${table[$key]}"\n'
+            "  table=scalar\n"
+            '  printf "%s " "${table[$key]}"\n'
+            "  table+=(tail)\n"
+            '  printf "%s " "${table[$key]}"\n'
+            '  unset "table[@]"\n'
+            '  printf "%s\\n" "${table[$key]}"\n'
+            "}\n"
+            "show\n"
+        )
+        redeclare = (
+            "declare -A table=([checked_supervisor_transport_output]=value)\n"
+            "declare -a table\n"
+            "readonly -a table\n"
+            "key=checked_supervisor_transport_output\n"
+            'printf "%s\\n" "${table[$key]}"\n'
+        )
+        cases = [
+            (
+                helper.replace("local -A", f"{declaration} -A", 1),
+                "compound compound compound compound\n",
+            )
+            for declaration in ("local", "declare", "typeset")
+        ]
+        cases.append((redeclare, "value\n"))
+        for script, expected in cases:
+            completed = subprocess.run(
+                ["/bin/bash", "-u", "-c", script],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout, expected)
+            self.assertFalse(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    script,
+                    label="persistent associative array type",
+                )
+            )
 
     def test_publisher_and_upstream_enforce_helper_dereferences(self):
         original = WORKFLOW.read_text(encoding="utf-8")
@@ -452,6 +532,17 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 "          local signature\n",
                 "          local signature\n"
                 "          local -A inspect_table="
+                "([checked_supervisor_transport_output]=value)\n"
+                '          printf "%s\\n" '
+                '"${inspect_table[checked_supervisor_transport_output]}" '
+                "> /dev/null\n",
+                1,
+            )),
+            ("associative-reassignment", original.replace(
+                "          local signature\n",
+                "          local signature\n"
+                "          local -A inspect_table=()\n"
+                "          inspect_table="
                 "([checked_supervisor_transport_output]=value)\n"
                 '          printf "%s\\n" '
                 '"${inspect_table[checked_supervisor_transport_output]}" '

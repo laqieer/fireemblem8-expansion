@@ -407,7 +407,11 @@ enumeration uses the literal prefix rather than its value, and unrelated
 associative-array subscripts use string keys; neither is a transport read.
 Indexed and unknown array subscripts retain arithmetic recursive resolution,
 while `${!array[@]}`/`${!array[*]}` consumes keys only when `array` is a
-reserved transport result or a nameref to one.
+reserved transport result or a nameref to one. Once Bash establishes indexed
+or associative type, compound, scalar, append, and element assignments retain
+that type. Element and `[@]` unsets retain it; whole-variable unset erases it.
+An opposite-type nonlocal redeclaration fails without retagging, while a first
+local declaration creates its own typed shadow.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.
