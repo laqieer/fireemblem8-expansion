@@ -478,7 +478,7 @@ def install_stalling_transport(repository_root):
         encoding="utf-8",
     )
     stall_script.chmod(0o700)
-    remote_url = "ssh://workflow-pilot.invalid/authority.git"
+    remote_url = "ssh://git@github.com/example/workflow.git"
     manifest_path = COORDINATOR_INSTALLATIONS[str(repository_root)] / "installation.json"
     manifest = json.loads(manifest_path.read_text())
     manifest["authority_protection"]["remote_url"] = remote_url
@@ -898,7 +898,7 @@ def publish_authority_plan(
     )
     agent_handoff.publish_authority_updates(
         owner_root,
-        agent_handoff.load_coordinator_installation(repository_root),
+        installation_root_path(repository_root),
         [(object_id, plan["ref"]), (anchor_object_id, plan["anchor_ref"])],
     )
     if not read_back:
@@ -2490,7 +2490,7 @@ class AuthorityReadRaceTests(unittest.TestCase):
             self.assertEqual(stable["sequence"], 0)
             self.assertEqual(stable["observation"]["attempt"], 1)
             agent_handoff.confirm_history_authority_observation(
-                root, agent_handoff.load_coordinator_installation(root), stable["observation"]
+                root, installation_root_path(root), stable["observation"]
             )
             document = handoff_document(root, _parent, _result)
             report = agent_handoff.validate_document(document, root)
@@ -3175,58 +3175,59 @@ class ExactHandoffTests(unittest.TestCase):
             self.assertIn("missing-commit", report["summary"]["rejection_codes"])
     def test_executable_fsmonitor_cannot_run_or_hide_dirty_worktree(self):
         with handoff_repository() as (root, _base, parent, result):
-            marker = root.parent / "fsmonitor-executed"
-            monitor = root.parent / "malicious-fsmonitor"
-            monitor.write_text(
-                '#!/bin/sh\nprintf executed >"$1"\nexit 0\n',
-                encoding="utf-8",
-            )
+            marker = root.parent / "fsmonitor-executed"; monitor = root.parent / "malicious-fsmonitor"
+            monitor.write_text('#!/bin/sh\nprintf executed >"$1"\nexit 0\n', encoding="utf-8")
             monitor.chmod(0o700)
             git(root, "config", "core.fsmonitor", f"{monitor} {marker}")
-            clean = agent_handoff.validate_document(
-                handoff_document(root, parent, result),
-                root,
-            )
+            clean = agent_handoff.validate_document(handoff_document(root, parent, result), root)
             self.assertNotIn("dirty-worktree", clean["summary"]["rejection_codes"])
             self.assertFalse(marker.exists())
             (root / "README.md").write_text("dirty\n", encoding="utf-8")
-            dirty = agent_handoff.validate_document(
-                handoff_document(root, parent, result),
-                root,
-            )
+            dirty = agent_handoff.validate_document(handoff_document(root, parent, result), root)
             self.assertIn("dirty-worktree", dirty["summary"]["rejection_codes"])
             self.assertFalse(marker.exists())
     def test_remote_rewrites_cannot_replace_installation_endpoint(self):
         with handoff_repository() as (root, _base, _parent, _result):
-            installation = agent_handoff.load_coordinator_installation(root)
+            installation = installation_root_path(root)
             ref = agent_handoff.REPOSITORY_IDENTITY_REF
             oid = agent_handoff._remote_ref_oid(root, installation, ref, allow_missing=False)
             agent_handoff._fetch_remote_authority(root, installation, ref, oid)
             head = git(root, "rev-parse", "HEAD")
             updates = [(head, agent_handoff.history_authority_ref(999, None)), (head, agent_handoff.history_anchor_ref(999))]
             agent_handoff.require_atomic_push_capability(root, installation, updates)
-            remote = Path(installation["authority_protection"]["remote_url"])
+            remote = Path(installation_manifest(root)["authority_protection"]["remote_url"])
             substitute = root.parent / "substitute.git"
             shutil.copytree(remote, substitute)
             included = root.parent / "remote-rewrite.config"
-            included.write_text(f'[url "{substitute.as_uri()}"]\n\tinsteadOf = {remote}\n')
-            for key, value in (
-                (f"url.{substitute.as_uri()}.insteadOf", str(remote)),
-                (f"url.{substitute.as_uri()}.pushInsteadOf", str(remote)),
-                ("remote.origin.pushurl", str(substitute)),
-                ("remote.backup.url", str(substitute)),
-                ("remote.origin.url", str(substitute)),
-                ("include.path", str(included)), ("http.proxy", "http://127.0.0.1:9"), ("http.curloptResolve", "workflow-pilot.invalid:443:127.0.0.1"), ("http.sslVerify", "false"), ("http.sslCAInfo", str(included)), ("http.https://workflow-pilot.invalid.proxy", "http://127.0.0.1:9"), ("credential.helper", str(included)),
-            ):
-                git(root, "config", "--add", key, value)
+            included.write_text(f'[url "{substitute.as_uri()}"]\n\tinsteadOf = {remote}\n\tpushInsteadOf = {remote}\n[remote "origin"]\n\turl = {substitute}\n\tpushurl = {substitute}\n[remote "backup"]\n\turl = {substitute}\n[http]\n\tproxy = http://127.0.0.1:9\n\tcurloptResolve = workflow-pilot.invalid:443:127.0.0.1\n\tsslVerify = false\n\tsslCAInfo = {included}\n[http "https://workflow-pilot.invalid"]\n\tproxy = http://127.0.0.1:9\n[credential]\n\thelper = {included}\n')
+            git(root, "config", "--add", "include.path", str(included))
             operations = (lambda: agent_handoff._remote_ref_oid(root, installation, ref, allow_missing=False), lambda: agent_handoff._fetch_remote_authority(root, installation, ref, oid), lambda: agent_handoff.require_atomic_push_capability(root, installation, updates))
             self.assertEqual(operations[0](), oid)
             operations[1]()
             operations[2]()
             self.assertTrue((remote / "hook-ran").is_file())
-            installation["authority_protection"]["remote_url"] = "https://workflow-pilot.invalid/repository.git"
+            with self.assertRaisesRegex(agent_handoff.HandoffDataError, "external path"): agent_handoff.publish_authority_updates(root, installation_manifest(root), updates)
+            for endpoint in ("ssh://git@github.com/example/workflow.git", "git@github.com:example/workflow.git"): manifest = installation_manifest(root); manifest["authority_protection"]["remote_url"] = endpoint; (installation / "installation.json").write_text(json.dumps(manifest)); self.assertEqual(agent_handoff._transport_endpoint(root, installation), endpoint)
+            common = Path(git(root, "rev-parse", "--git-common-dir")); common = common if common.is_absolute() else root / common
+            objects = common / "objects"; held = common / "objects-held"; original = agent_handoff._run_bounded_process
+            def swap(**kwargs):
+                objects.rename(held); objects.mkdir()
+                try: return original(**kwargs)
+                finally: objects.rmdir(); held.rename(objects)
+            manifest = installation_manifest(root); manifest["authority_protection"]["remote_url"] = str(remote); (installation / "installation.json").write_text(json.dumps(manifest))
+            with mock.patch.object(agent_handoff, "_run_bounded_process", side_effect=swap): agent_handoff.require_atomic_push_capability(root, installation, updates)
+            helper = root.parent / "option-helper"; option_marker = root.parent / "option-executed"; helper.write_text(f'#!/bin/sh\nprintf ran > "{option_marker}"\n'); helper.chmod(0o700)
+            manifest["authority_protection"]["remote_url"] = f"--upload-pack={helper}"; (installation / "installation.json").write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(agent_handoff.HandoffDataError, "not canonical"): operations[0]()
+            self.assertFalse(option_marker.exists())
+            manifest = installation_manifest(root); manifest["authority_protection"]["remote_url"] = "https://github.com/example/workflow.git"; (installation / "installation.json").write_text(json.dumps(manifest))
             with self.assertRaises(agent_handoff.HandoffDataError) as failure: operations[0]()
-            self.assertIn("Could not resolve host", str(failure.exception)); self.assertNotIn("127.0.0.1", str(failure.exception))
+            self.assertNotIn("127.0.0.1", str(failure.exception))
+            linked = root.parent / "linked"; git(root, "worktree", "add", "-q", "--detach", str(linked), head)
+            alternate = root.parent / "alternate.git"; alternate.mkdir(); git(alternate, "init", "-q", "--bare")
+            alternate_oid = git_with_input(alternate, ("hash-object", "-w", "--stdin"), b"alternate only")
+            info = common / "objects" / "info"; info.mkdir(exist_ok=True); (info / "alternates").write_text(str(alternate / "objects"))
+            with self.assertRaisesRegex(agent_handoff.HandoffDataError, "external object providers"): agent_handoff.publish_authority_updates(linked, installation, [(alternate_oid, updates[0][1]), (alternate_oid, updates[1][1])])
     def test_assignment_states_are_distinct_and_not_inferred(self):
         with handoff_repository() as (root, _base, parent, result):
             for state_name in (
@@ -3618,18 +3619,9 @@ class ExactHandoffTests(unittest.TestCase):
             path = root / "scripts" / "workflow_pilot" / "crlf.py"
             path.write_bytes(b"CRLF = True\r\n")
             git(root, "add", str(path.relative_to(root)))
-            git(
-                root,
-                "commit",
-                "-q",
-                "-m",
-                "test: CRLF\n\n" + agent_handoff.COPILOT_TRAILER,
-            )
+            git(root, "commit", "-q", "-m", "test: CRLF\n\n" + agent_handoff.COPILOT_TRAILER)
             candidate = git(root, "rev-parse", "HEAD")
-            self.assertEqual(
-                raw_diff_check.raw_diff_errors(root, result, candidate),
-                ["scripts/workflow_pilot/crlf.py:1: blank-at-eol"],
-            )
+            self.assertEqual(raw_diff_check.raw_diff_errors(root, result, candidate), ["scripts/workflow_pilot/crlf.py:1: blank-at-eol"])
     def test_scope_line_resource_protocol_lifetime_and_rss_budgets_reject(self):
         with handoff_repository() as (root, _base, parent, result):
             cases = {}
@@ -6510,7 +6502,7 @@ class ExactHandoffTests(unittest.TestCase):
                 None,
             )
         def invoke_atomic_preflight(root):
-            installation = agent_handoff.load_coordinator_installation(root)
+            installation = installation_root_path(root)
             return agent_handoff.require_atomic_push_capability(
                 root,
                 installation,

@@ -2384,8 +2384,7 @@ def read_skill():
 def documented_bash_command(text, marker):
     for block in re.findall(r"```bash\n(.*?)\n```", text, flags=re.DOTALL):
         for command in block.split("\n\n"):
-            if marker in command:
-                return shlex.split(command.replace("\\\n", " "))
+            if marker in command: return shlex.split(command.replace("\\\n", " "))
     raise AssertionError(f"missing documented command containing {marker!r}")
 
 
@@ -4648,36 +4647,16 @@ printf '%s\t%s\t%s\n' "$result" \
                 self.assertIn(requirement, template)
 
     def test_handoff_examples_parse_with_external_trust_roots(self):
-        skill = SKILL_PATH.read_text(encoding="utf-8")
-        guide = WORKFLOW_PILOT_PATH.read_text(encoding="utf-8")
+        skill = SKILL_PATH.read_text(encoding="utf-8"); guide = WORKFLOW_PILOT_PATH.read_text(encoding="utf-8")
         cases = (
-            (
-                skill,
-                "--fixture <path>",
-                agent_handoff.parse_args,
-                ("coordinator_installation",),
-            ),
-            (
-                guide,
-                "agent-handoff.json",
-                agent_handoff.parse_args,
-                ("coordinator_installation",),
-            ),
-            (
-                guide,
-                "workflow-pilot-operational.json",
-                reporter.parse_args,
-                (
-                    "implementation_handoff_trust",
-                    "implementation_handoff_installation",
-                ),
-            ),
+            (skill, "--fixture <path>", agent_handoff.parse_args, ("coordinator_installation",)),
+            (guide, "agent-handoff.json", agent_handoff.parse_args, ("coordinator_installation",)),
+            (guide, "workflow-pilot-operational.json", reporter.parse_args, ("implementation_handoff_trust", "implementation_handoff_installation")),
         )
         for text, marker, parser, required in cases:
             with self.subTest(marker=marker):
                 parsed = parser(documented_bash_command(text, marker)[3:])
-                for name in required:
-                    self.assertIsNotNone(getattr(parsed, name))
+                self.assertTrue(all(getattr(parsed, name) is not None for name in required))
 
     def test_manual_handoff_json_contract_and_human_links(self):
         contract = read_manual_handoff_contract()

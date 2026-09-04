@@ -217,6 +217,7 @@ def _run_bounded_process(
     timeout_code: str,
     label: str,
     execute_error_label: str,
+    pass_fds: tuple[int, ...] = (),
 ) -> subprocess.CompletedProcess[bytes]:
     try:
         process = subprocess.Popen(
@@ -227,6 +228,7 @@ def _run_bounded_process(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             start_new_session=True,
+            pass_fds=pass_fds,
         )
     except OSError as error:
         raise HandoffDataError(f"cannot execute {execute_error_label}: {error}") from error
@@ -249,25 +251,25 @@ def _run_bounded_git_transport(
     *arguments: str,
     timeout_code: str,
 ) -> subprocess.CompletedProcess[bytes]:
-    common = Path(run_git(repository_root, "rev-parse", "--git-common-dir").decode().strip()); common = (repository_root / common).resolve() if not common.is_absolute() else common.resolve()
-    with tempfile.TemporaryDirectory(prefix="workflow-pilot-git-") as temporary:
-        sealed = Path(temporary)
-        (sealed / "refs").mkdir(); (sealed / "HEAD").write_text("ref: refs/heads/sealed\n")
-        (sealed / "config").write_text("[core]\nrepositoryformatversion=0\nbare=true\n")
-        environment = {
-            "CURL_HOME": str(sealed), "GIT_DIR": str(sealed),
-            "GIT_OBJECT_DIRECTORY": str(common / "objects"), "HOME": str(sealed),
-            "GIT_SSH_COMMAND": "/usr/bin/ssh -F /dev/null -oBatchMode=yes", "GIT_SSH_VARIANT": "ssh",
-            "XDG_CONFIG_HOME": str(sealed),
-            **reporter.git_environment(offline=False),
-        }
-        return _run_bounded_process(
-            argv=reporter.git_command(sealed, *arguments), cwd=sealed, env=environment,
-            stdin=None, timeout_seconds=REMOTE_GIT_TIMEOUT_SECONDS,
-            timeout_code=timeout_code, label=f"Git {' '.join(arguments)}",
-            execute_error_label="Git",
-        )
-def run_git_online(repository_root: Path, *arguments: str) -> bytes:
+    objects = _open_transport_object_store(repository_root)
+    try:
+        with tempfile.TemporaryDirectory(prefix="workflow-pilot-git-") as temporary:
+            sealed = Path(temporary); (sealed / "refs").mkdir()
+            (sealed / "HEAD").write_text("ref: refs/heads/sealed\n")
+            (sealed / "config").write_text("[core]\nrepositoryformatversion=0\nbare=true\n")
+            environment = {"CURL_HOME": str(sealed), "GIT_DIR": str(sealed),
+                "GIT_OBJECT_DIRECTORY": f"/proc/self/fd/{objects}", "HOME": str(sealed),
+                "GIT_SSH_COMMAND": "/usr/bin/ssh -F /dev/null -oBatchMode=yes",
+                "GIT_SSH_VARIANT": "ssh", "XDG_CONFIG_HOME": str(sealed),
+                **reporter.git_environment(offline=False)}
+            return _run_bounded_process(
+                argv=reporter.git_command(sealed, *arguments), cwd=sealed, env=environment,
+                stdin=None, timeout_seconds=REMOTE_GIT_TIMEOUT_SECONDS,
+                timeout_code=timeout_code, label=f"Git {' '.join(arguments)}",
+                execute_error_label="Git", pass_fds=(objects,))
+    finally:
+        os.close(objects)
+def _run_git_online(repository_root: Path, *arguments: str) -> bytes:
     completed = _run_bounded_git_transport(
         repository_root,
         *arguments,
@@ -809,7 +811,7 @@ def load_history_authority_transition_summary(
     return authority
 def _publish_authority_updates(
     repository_root: Path,
-    installation: dict[str, Any],
+    installation_path: Path | None,
     updates: list[tuple[str, str]],
     *,
     dry_run: bool,
@@ -818,12 +820,13 @@ def _publish_authority_updates(
         raise HandoffDataError(
             "authority publication requires exactly two atomic ref updates"
         )
-    remote = _trusted_remote_url(repository_root, installation)
+    remote = _transport_endpoint(repository_root, installation_path)
     completed = _run_bounded_git_transport(
         repository_root,
         "push",
         "--atomic",
         *(("--dry-run",) if dry_run else ()),
+        "--",
         remote,
         *(f"{object_id}:{reference}" for object_id, reference in updates),
         timeout_code=(
@@ -839,18 +842,18 @@ def _publish_authority_updates(
     return remote
 def require_atomic_push_capability(
     repository_root: Path,
-    installation: dict[str, Any],
+    installation_path: Path | None,
     updates: list[tuple[str, str]],
 ) -> str:
     return _publish_authority_updates(
-        repository_root, installation, updates, dry_run=True
+        repository_root, installation_path, updates, dry_run=True
     )
 def publish_authority_updates(
     repository_root: Path,
-    installation: dict[str, Any],
+    installation_path: Path | None,
     updates: list[tuple[str, str]],
 ) -> None:
-    _publish_authority_updates(repository_root, installation, updates, dry_run=False)
+    _publish_authority_updates(repository_root, installation_path, updates, dry_run=False)
 def validate_repository_root(repository_root: Path) -> Path:
     return _raise_pilot_error(reporter.validate_repository_root, repository_root)
 def _parse_actor(
@@ -1400,6 +1403,31 @@ def _open_trusted_directory_path(
         os.close(descriptor)
         raise
     return absolute_path, descriptor
+def _open_transport_object_store(repository_root: Path) -> int:
+    repository_root = validate_repository_root(repository_root)
+    common = Path(run_git(repository_root, "rev-parse", "--git-common-dir").decode().strip())
+    common = common if common.is_absolute() else repository_root / common; _path, common_fd = _open_trusted_directory_path(common, label="Git common directory")
+    try:
+        objects_fd, _metadata = _open_trusted_entry("objects", dir_fd=common_fd, label="Git common object store", directory=True)
+    finally:
+        os.close(common_fd)
+    flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        for directory in ("info", "pack"):
+            try:
+                child = os.open(directory, flags, dir_fd=objects_fd)
+            except FileNotFoundError: continue
+            except OSError as error:
+                raise HandoffDataError(f"cannot inspect Git object {directory}: {error}") from error
+            try:
+                _require_owner_controlled(os.fstat(child), label=f"Git object {directory}"); names = os.listdir(child)
+            finally: os.close(child)
+            if (directory == "info" and {"alternates", "http-alternates"} & set(names)) or (directory == "pack" and any(name.endswith(".promisor") for name in names)):
+                raise HandoffDataError("Git common object store has external object providers")
+        return objects_fd
+    except Exception:
+        os.close(objects_fd)
+        raise
 def _read_trusted_installation_member(
     installation_root: Path,
     installation_descriptor: int,
@@ -1725,7 +1753,23 @@ def load_coordinator_installation(
         "_bootstrap_validator_source": bootstrap_source,
         "_signer": signer,
     }
-def _trusted_remote_url(repository_root: Path, installation: dict[str, Any]) -> str: return installation["authority_protection"]["remote_url"]
+def _transport_endpoint(repository_root: Path, installation_path: Path | None) -> str:
+    if installation_path is not None and not isinstance(installation_path, Path):
+        raise HandoffDataError("coordinator installation must be an external path")
+    installation = load_coordinator_installation(repository_root, installation_path)
+    remote = installation["authority_protection"]["remote_url"]
+    if remote.startswith("-") or any(ord(character) < 32 or ord(character) == 127 for character in remote):
+        raise HandoffDataError("coordinator installation remote_url is not canonical")
+    repository = installation["repository"]
+    if remote in {f"https://github.com/{repository}.git", f"ssh://git@github.com/{repository}.git", f"git@github.com:{repository}.git"}:
+        return remote
+    try:
+        resolved = Path(remote).resolve(strict=True)
+    except OSError as error:
+        raise HandoffDataError(f"coordinator installation remote_url is unavailable: {error}") from error
+    if installation["authority_protection"]["mode"] != "bare-remote-config" or not Path(remote).is_absolute() or str(resolved) != remote or not resolved.is_dir():
+        raise HandoffDataError("coordinator installation remote_url is not canonical")
+    return remote
 def _git_blob(
     repository_root: Path,
     commit_sha: str,
@@ -2053,16 +2097,17 @@ def history_anchor_ref(issue: int) -> str:
     return f"{HISTORY_ANCHOR_REF_PREFIX}/issue-{issue}"
 def _remote_ref_oid(
     repository_root: Path,
-    installation: dict[str, Any],
+    installation_path: Path | None,
     reference: str,
     *,
     allow_missing: bool,
 ) -> str | None:
-    output = run_git_online(
+    output = _run_git_online(
         repository_root,
         "ls-remote",
         "--refs",
-        _trusted_remote_url(repository_root, installation),
+        "--",
+        _transport_endpoint(repository_root, installation_path),
         reference,
     ).decode("ascii")
     lines = [line for line in output.splitlines() if line]
@@ -2084,7 +2129,7 @@ def _remote_ref_oid(
     return object_id
 def _fetch_remote_authority(
     repository_root: Path,
-    installation: dict[str, Any],
+    installation_path: Path | None,
     reference: str,
     object_id: str,
 ) -> None:
@@ -2104,12 +2149,13 @@ def _fetch_remote_authority(
     fetch_head_before = (
         fetch_head_path.read_bytes() if fetch_head_path.is_file() else None
     )
-    run_git_online(
+    _run_git_online(
         repository_root,
         "fetch",
         "--no-write-fetch-head",
         "--no-tags",
-        _trusted_remote_url(repository_root, installation),
+        "--",
+        _transport_endpoint(repository_root, installation_path),
         object_id,
     )
     if run_git(repository_root, "rev-parse", "HEAD") != head_before:
@@ -2147,17 +2193,17 @@ def _parse_authority_json(
         label,
     )
 def read_remote_repository_identity(
-    repository_root: Path, installation: dict[str, Any],
+    repository_root: Path, installation_path: Path | None,
 ) -> str:
     object_id = _remote_ref_oid(
         repository_root,
-        installation,
+        installation_path,
         REPOSITORY_IDENTITY_REF,
         allow_missing=False,
     )
     _fetch_remote_authority(
         repository_root,
-        installation,
+        installation_path,
         REPOSITORY_IDENTITY_REF,
         object_id,
     )
@@ -2801,7 +2847,7 @@ def _history_observation(
     return payload
 def confirm_history_authority_observation(
     repository_root: Path,
-    installation: dict[str, Any],
+    installation_path: Path | None,
     observation: dict[str, Any],
 ) -> None:
     observation = expect_object(
@@ -2868,13 +2914,13 @@ def confirm_history_authority_observation(
         )
     current = _remote_ref_oid(
         repository_root,
-        installation,
+        installation_path,
         reference,
         allow_missing=False,
     )
     current_anchor = _remote_ref_oid(
         repository_root,
-        installation,
+        installation_path,
         anchor_reference,
         allow_missing=False,
     )
@@ -2882,7 +2928,7 @@ def confirm_history_authority_observation(
         raise HandoffDataError("authority-moved")
 def _terminal_remote_state_rejections(
     repository_root: Path,
-    installation: dict[str, Any],
+    installation_path: Path | None,
     canonical_authority: dict[str, Any],
 ) -> set[str]:
     delivery_ref = "refs/heads/" + canonical_authority["delivery_expectation"][
@@ -2890,7 +2936,7 @@ def _terminal_remote_state_rejections(
     ]
     current_delivery_head = _remote_ref_oid(
         repository_root,
-        installation,
+        installation_path,
         delivery_ref,
         allow_missing=True,
     )
@@ -2906,7 +2952,7 @@ def _terminal_remote_state_rejections(
         rejections.add("remote-coverage-incomplete")
     current_base_head = _remote_ref_oid(
         repository_root,
-        installation,
+        installation_path,
         "refs/heads/" + binding["base_branch"],
         allow_missing=True,
     )
@@ -2927,7 +2973,6 @@ def read_history_authority(
         repository_root,
         coordinator_installation,
     )
-    _trusted_remote_url(repository_root, installation)
     if installation["repository"] != repository:
         raise HandoffDataError(
             "coordinator installation repository mismatch"
@@ -2940,13 +2985,13 @@ def read_history_authority(
     for attempt in range(1, AUTHORITY_READ_ATTEMPTS + 1):
         observed_before = _remote_ref_oid(
             repository_root,
-            installation,
+            coordinator_installation,
             reference,
             allow_missing=False,
         )
         anchor_before = _remote_ref_oid(
             repository_root,
-            installation,
+            coordinator_installation,
             anchor_reference,
             allow_missing=False,
         )
@@ -2954,13 +2999,13 @@ def read_history_authority(
         try:
             _fetch_remote_authority(
                 repository_root,
-                installation,
+                coordinator_installation,
                 reference,
                 observed_before,
             )
             _fetch_remote_authority(
                 repository_root,
-                installation,
+                coordinator_installation,
                 anchor_reference,
                 anchor_before,
             )
@@ -2970,13 +3015,13 @@ def read_history_authority(
             observation_hook(attempt, "after-fetch", observed_before)
         observed_after = _remote_ref_oid(
             repository_root,
-            installation,
+            coordinator_installation,
             reference,
             allow_missing=False,
         )
         anchor_after = _remote_ref_oid(
             repository_root,
-            installation,
+            coordinator_installation,
             anchor_reference,
             allow_missing=False,
         )
@@ -3271,7 +3316,7 @@ def plan_history_authority(
         raise HandoffDataError(
             "coordinator installation repository mismatch"
         )
-    if _repository_from_origin(repository_root, installation) != repository:
+    if _repository_from_origin(repository_root, coordinator_installation) != repository:
         raise HandoffDataError("history authority plan repository mismatch")
     new_head_seal = history_receipt = history_carrier = expected_binding = None
     if operation == "advance":
@@ -3311,13 +3356,13 @@ def plan_history_authority(
     anchor_reference = history_anchor_ref(issue)
     remote_object = _remote_ref_oid(
         repository_root,
-        installation,
+        coordinator_installation,
         reference,
         allow_missing=True,
     )
     remote_anchor = _remote_ref_oid(
         repository_root,
-        installation,
+        coordinator_installation,
         anchor_reference,
         allow_missing=True,
     )
@@ -3328,7 +3373,7 @@ def plan_history_authority(
     )
     require_atomic_push_capability(
         repository_root,
-        installation,
+        coordinator_installation,
         [
             (remote_object or preflight_object, reference),
             (remote_anchor or preflight_object, anchor_reference),
@@ -3678,7 +3723,7 @@ def plan_history_authority(
         "operation_nonce": parsed_publication["operation_nonce"],
         "atomic_push": (
             "scripts.workflow_pilot.agent_handoff.publish_authority_updates("
-            "<external-owner-repository>, <trusted-installation>, "
+            "<external-owner-repository>, <external-installation-path>, "
             f"<new-authority-commit>:{reference} "
             f"<new-anchor-commit>:{anchor_reference})"
         ),
@@ -5847,14 +5892,14 @@ def verify_reporter_record(
     )
     return record
 def _repository_from_origin(
-    repository_root: Path, installation: dict[str, Any],
+    repository_root: Path, installation_path: Path | None,
 ) -> str:
-    origin = _trusted_remote_url(repository_root, installation)
+    origin = _transport_endpoint(repository_root, installation_path)
     repository = reporter._github_repository_from_remote(origin)  # noqa: SLF001
     if repository is None and (
         origin.startswith("file://") or Path(origin).is_absolute()
     ):
-        repository = read_remote_repository_identity(repository_root, installation)
+        repository = read_remote_repository_identity(repository_root, installation_path)
     if repository is None:
         raise HandoffDataError(
             "worktree origin must identify one GitHub repository or "
@@ -8452,7 +8497,7 @@ def validate_document(
         repository_root,
         coordinator_installation,
     )
-    if repository != _repository_from_origin(repository_root, installation):
+    if repository != _repository_from_origin(repository_root, coordinator_installation):
         raise HandoffDataError(
             "handoff document.repository does not match the worktree origin"
         )
@@ -9503,12 +9548,12 @@ def validate_document(
         )
     confirm_history_authority_observation(
         repository_root,
-        installation,
+        coordinator_installation,
         canonical_authority["observation"],
     )
     for code in _terminal_remote_state_rejections(
         repository_root,
-        installation,
+        coordinator_installation,
         canonical_authority,
     ):
         for handoff in handoffs:
