@@ -397,10 +397,7 @@ and binds every active length/key/index/copy/arithmetic/loop/redirection/
 indirect consumer to the latest intended generation. Supervisor phases cover
 the initial descendant-unmount list and later `/dev` singleton check; the
 runtime phase covers writable-mount pairs. Pre-use, duplicate, reordered,
-interphase, stale, or extra consumers reject. Active references in helpers,
-nested helpers, substitutions, callbacks, and traps are evaluated when invoked
-and reject because all reviewed consumers are exact top-level phase events;
-literal quoted data in an otherwise safe helper remains inert.
+interphase, stale, or extra consumers reject.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.
