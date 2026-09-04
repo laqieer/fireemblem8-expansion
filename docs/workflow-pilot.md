@@ -760,7 +760,7 @@ signature fields remain nonempty.
 worktree to public configuration and the external bootstrap validator. Its
 `installation.json` contains repository IDs, authorized coordinator users,
 explicit separately typed non-user bypasses, frozen delivery/base branches,
-expected ruleset identities, and public signer material only. Same-UID
+the exact canonical authority remote URL, expected ruleset identities, and public signer material only. Same-UID
 HMAC secrets, candidate-authored digests, and permission modes do not establish
 trust. Authority reads reject any fetched authority chain whose signer
 identity/public material digest, ruleset ID, full bypass actor set, or frozen

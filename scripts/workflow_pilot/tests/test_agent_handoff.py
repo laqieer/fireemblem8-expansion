@@ -478,12 +478,17 @@ def install_stalling_transport(repository_root):
         encoding="utf-8",
     )
     stall_script.chmod(0o700)
+    remote_url = "ssh://workflow-pilot.invalid/authority.git"
+    manifest_path = COORDINATOR_INSTALLATIONS[str(repository_root)] / "installation.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["authority_protection"]["remote_url"] = remote_url
+    manifest_path.write_text(json.dumps(manifest))
     git(
         repository_root,
         "remote",
         "set-url",
         "origin",
-        "ssh://workflow-pilot.invalid/authority.git",
+        remote_url,
     )
     return invocation_log, child_pid_path, stall_script
 def wait_for_pid_exit(pid_path, timeout=2.0):
@@ -1493,6 +1498,7 @@ def handoff_repository(
                         "anchor_ref_prefix": (
                             agent_handoff.HISTORY_ANCHOR_REF_PREFIX
                         ),
+                        "remote_url": str(remote_root),
                         "force_pushes_allowed": False,
                         "deletions_allowed": False,
                     },
@@ -2487,8 +2493,7 @@ class AuthorityReadRaceTests(unittest.TestCase):
             self.assertEqual(stable["sequence"], 0)
             self.assertEqual(stable["observation"]["attempt"], 1)
             agent_handoff.confirm_history_authority_observation(
-                root,
-                stable["observation"],
+                root, agent_handoff.load_coordinator_installation(root), stable["observation"]
             )
             document = handoff_document(root, _parent, _result)
             report = agent_handoff.validate_document(document, root)
@@ -3194,6 +3199,40 @@ class ExactHandoffTests(unittest.TestCase):
             )
             self.assertIn("dirty-worktree", dirty["summary"]["rejection_codes"])
             self.assertFalse(marker.exists())
+    def test_remote_rewrites_cannot_replace_installation_endpoint(self):
+        with handoff_repository() as (root, _base, _parent, _result):
+            installation = agent_handoff.load_coordinator_installation(root)
+            ref = agent_handoff.REPOSITORY_IDENTITY_REF
+            oid = agent_handoff._remote_ref_oid(root, installation, ref, allow_missing=False)
+            agent_handoff._fetch_remote_authority(root, installation, ref, oid)
+            head = git(root, "rev-parse", "HEAD")
+            updates = [(head, agent_handoff.history_authority_ref(999, None)),
+                       (head, agent_handoff.history_anchor_ref(999))]
+            agent_handoff.require_atomic_push_capability(root, installation, updates)
+            remote = Path(installation["authority_protection"]["remote_url"])
+            substitute = root.parent / "substitute.git"
+            shutil.copytree(remote, substitute)
+            included = root.parent / "remote-rewrite.config"
+            included.write_text(f'[url "{substitute.as_uri()}"]\n\tinsteadOf = {remote}\n')
+            for key, value in (
+                (f"url.{substitute.as_uri()}.insteadOf", str(remote)),
+                (f"url.{substitute.as_uri()}.pushInsteadOf", str(remote)),
+                ("remote.origin.pushurl", str(substitute)),
+                ("remote.backup.url", str(substitute)),
+                ("remote.origin.url", str(substitute)),
+                ("include.path", str(included)),
+            ):
+                git(root, "config", "--add", key, value)
+            operations = (
+                lambda: agent_handoff._remote_ref_oid(root, installation, ref, allow_missing=False),
+                lambda: agent_handoff._fetch_remote_authority(root, installation, ref, oid),
+                lambda: agent_handoff.require_atomic_push_capability(root, installation, updates),
+            )
+            for operation in operations:
+                with self.assertRaisesRegex(
+                    agent_handoff.HandoffDataError, "remote URL configuration"
+                ):
+                    operation()
     def test_assignment_states_are_distinct_and_not_inferred(self):
         with handoff_repository() as (root, _base, parent, result):
             for state_name in (
@@ -3815,6 +3854,8 @@ class ExactHandoffTests(unittest.TestCase):
             first_report = agent_handoff.validate_document(first, root)
             genesis, first_receipt, plan = plan_advance_authority(root, first, first_report)
             self.assertIn("git push --atomic", plan["atomic_push"])
+            self.assertIn(git(root, "config", "--get", "remote.origin.url"), plan["atomic_push"])
+            self.assertNotIn(" origin ", plan["atomic_push"])
             self.assertNotIn("--force", plan["atomic_push"])
             set_history_authority(
                 root,
@@ -6475,8 +6516,10 @@ class ExactHandoffTests(unittest.TestCase):
                 None,
             )
         def invoke_atomic_preflight(root):
+            installation = agent_handoff.load_coordinator_installation(root)
             return agent_handoff.require_atomic_push_capability(
                 root,
+                installation,
                 [
                     (
                         git(root, "rev-parse", "HEAD"),
@@ -6492,12 +6535,12 @@ class ExactHandoffTests(unittest.TestCase):
             (
                 "authority-read",
                 invoke_authority_read,
-                "remote-git-timeout: Git ls-remote --refs origin",
+                "remote-git-timeout: Git ls-remote",
             ),
             (
                 "atomic-preflight",
                 invoke_atomic_preflight,
-                "remote-git-preflight-timeout: Git push --atomic --dry-run origin",
+                "remote-git-preflight-timeout: Git push",
             ),
         )
         for name, callback, pattern in cases:
