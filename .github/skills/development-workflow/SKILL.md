@@ -566,6 +566,20 @@ That comment records:
 - exact candidate SHA, workflow/review identities, and completion state;
 - any actual baseline or fingerprint change and why the oracle itself changed.
 
+Finalize the stable title/body before pushing the candidate, then freeze both
+while the exact-head full Build is queued or in progress. Continue updating the
+canonical evidence comment because comment edits do not emit
+`pull_request: edited`. For a later title/body correction, use the repository's
+isolated `pr-metadata edit` helper with exact current head/base identity. Its
+default path defers an active-full-build race without metadata mutation or run
+cancellation. An essential frozen-contract correction requires a nonempty
+reason; record that reason in the canonical evidence comment, leave the
+same-SHA full Build active, and run `pr-metadata reconcile` after that exact
+full Build succeeds. Reconciliation derives pending state from GitHub
+run/event identity and reruns only the failed lightweight metadata continuity
+run. It never dispatches or cancels a full Build. See
+[`docs/workflow-pilot.md`](../../../docs/workflow-pilot.md#safe-pull-request-metadata-ordering).
+
 Triage every AI review finding. Fix valid findings, answer questions, and close
 false positives with a reasoned explanation. Do not implement review comments
 blindly.
@@ -626,8 +640,10 @@ agent inspect logs, triage findings, or update evidence.
 
 If a candidate SHA changes, cancel superseded candidate runs with
 `gh run cancel <run-id>` when safe, discard their evidence, and dispatch new
-checks for the replacement SHA. Never repeatedly wake the same subagent merely
-to poll CI, and never accept a stale run because its watcher completed.
+checks for the replacement SHA. A title/body edit does not supersede the
+candidate and must never cancel a same-SHA full Build. Never repeatedly wake
+the same subagent merely to poll CI, and never accept a stale run because its
+watcher completed.
 
 After each merge, immediately inspect every open PR. Merge current `master`
 only into PRs with real conflicts or shared-contract changes; refresh

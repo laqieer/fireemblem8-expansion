@@ -53,6 +53,10 @@ STACKED_CI_CASE_HEADING = (
 BODY_EDIT_CASE_HEADING = (
     "TC-WORKFLOW-BODY-EDIT-001: Suppress metadata-only Build workers"
 )
+METADATA_EDIT_RACE_CASE_HEADING = (
+    "TC-WORKFLOW-METADATA-EDIT-RACE-001: "
+    "Defer metadata edits and reconcile continuity"
+)
 CANDIDATE_EVIDENCE_MARKER = "<!-- workflow-pilot-candidate-evidence -->"
 EVOLVING_PR_BODY_FIELDS = (
     "## Validation commands",
@@ -4530,6 +4534,7 @@ printf '%s\t%s\t%s\n' "$result" \
             "TC-WORKFLOW-MANUAL-HANDOFF-001",
             "TC-WORKFLOW-STACKED-CI-001",
             "TC-WORKFLOW-BODY-EDIT-001",
+            "TC-WORKFLOW-METADATA-EDIT-RACE-001",
             "TC-WORKFLOW-PILOT-BASELINE-001",
         ]
         self.assertEqual(
@@ -4574,6 +4579,60 @@ printf '%s\t%s\t%s\n' "$result" \
             "docs/test-cases/workflow-governance.md",
         )
         self.assertEqual(indexed_case["feature_id"], "workflow-governance")
+
+    def test_metadata_edit_race_guidance_and_registry(self):
+        skill = SKILL_PATH.read_text(encoding="utf-8")
+        contributing = CONTRIBUTING_PATH.read_text(encoding="utf-8")
+        pilot = WORKFLOW_PILOT_PATH.read_text(encoding="utf-8")
+        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        case = "\n".join(
+            read_markdown_section(governance, METADATA_EDIT_RACE_CASE_HEADING)
+        )
+
+        for text in (skill, contributing, pilot):
+            normalized = normalize_policy(text)
+            for requirement in (
+                "pr-metadata edit",
+                "canonical evidence comment",
+                "same-SHA full Build",
+            ):
+                with self.subTest(requirement=requirement):
+                    self.assertIn(normalize_policy(requirement), normalized)
+        for requirement in (
+            "pr-metadata reconcile",
+            "performs no PR metadata mutation",
+            "No ARM runtime test is needed",
+            "There is no manual-only criterion",
+        ):
+            with self.subTest(case_requirement=requirement):
+                self.assertIn(normalize_policy(requirement), normalize_policy(case))
+
+        registry = json.loads(
+            TEST_CASE_REGISTRY_PATH.read_text(encoding="utf-8")
+        )
+        feature = next(
+            item
+            for item in registry["features"]
+            if item["id"] == "workflow-governance"
+        )
+        self.assertIn(
+            "https://github.com/laqieer/fireemblem8-expansion/issues/199",
+            feature["issue_urls"],
+        )
+        self.assertIn(
+            "TC-WORKFLOW-METADATA-EDIT-RACE-001",
+            feature["required_cases"],
+        )
+        indexed = next(
+            item
+            for item in registry["cases"]
+            if item["id"] == "TC-WORKFLOW-METADATA-EDIT-RACE-001"
+        )
+        self.assertEqual(indexed["feature_id"], "workflow-governance")
+        self.assertEqual(
+            indexed["document"],
+            "docs/test-cases/workflow-governance.md",
+        )
 
     def test_manual_handoff_human_lifecycle_mutations_fail_closed(self):
         surfaces = (

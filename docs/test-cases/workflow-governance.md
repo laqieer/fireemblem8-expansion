@@ -1211,6 +1211,93 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    Architecture/review comments remain unmarked; only the canonical evolving
    evidence comment carries the one marker.
 
+## TC-WORKFLOW-METADATA-EDIT-RACE-001: Defer metadata edits and reconcile continuity
+
+- **Feature / originating issue:** `workflow-governance` /
+  [issue #199](https://github.com/laqieer/fireemblem8-expansion/issues/199).
+- **Supported configuration or artifact:** clean source checkout with Python
+  3 and synthetic GitHub PR, workflow-run, job, and comment responses; no
+  token, live PR, workflow dispatch, ROM, emulator, or ARM runtime is required.
+- **Prerequisites and clean starting state:** start at the repository root
+  with `scripts/workflow_pilot/pr_metadata.py`, its isolated-launcher mode,
+  Build event classifier/continuity contracts, this procedure, and the
+  canonical tester registry unchanged.
+
+### Actions
+
+1. Run
+   `python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata -v`.
+2. Exercise a same-head/same-base full Build whose complete exact Build job
+   shape is queued. Attempt a default body edit with exact repository, PR,
+   head, and base arguments.
+3. Repeat with a nonempty essential-contract reason, keep the same full run
+   active, then present a successful runner-backed full Build followed by its
+   failed metadata-only continuity run and invoke `pr-metadata reconcile`.
+4. Update a synthetic canonical marked evidence comment while the same full
+   Build is active.
+5. Replay stale head/base before edit and reconciliation, post-edit identity
+   drift, incomplete run pagination, unknown/mixed job sets, duplicate JSON
+   keys, malformed repository identity, and shell/API metacharacters in
+   title/body inputs.
+6. Parse `docs/test-cases/registry.json` and run
+   `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
+
+### Expected result
+
+The default edit returns a structured `deferred` decision, performs no PR
+metadata mutation, and points to the canonical evidence-comment command. A
+nonempty essential override revalidates exact current head/base immediately
+before PATCH, updates only title/body, leaves every same-SHA full Build active,
+and returns the exact reconciliation command. After the newest exact full
+Build succeeds, reconciliation revalidates immutable head/base and complete
+run/job authority twice, then POSTs only
+`actions/runs/<metadata-run-id>/rerun`. The rerun is the existing lightweight
+`pull_request: edited` path, so code is not rebuilt. A successful or active
+metadata run is respectively complete or deferred. Canonical comment PATCH
+uses only `issues/comments/<id>` and emits no `pull_request: edited` event.
+
+### Negative control
+
+Empty override reasons, stale/new candidate identity, incomplete or drifting
+pagination, duplicate run IDs/numbers, wrong workflow/PR/head/base/event/path
+identity, unknown status/conclusion, mixed/partial/duplicate job names,
+noncanonical successful full or metadata jobs, duplicate/non-standalone
+evidence markers, malformed or duplicate-key JSON, and repository/command
+injection all fail closed. No tested path calls a cancellation endpoint or a
+full-workflow dispatch endpoint. A post-PATCH identity race reports
+deterministic recovery and never reruns stale-candidate evidence.
+
+### Interactions and save compatibility
+
+Dependencies are the existing Build event classifier, metadata continuity
+attestation and job shapes, canonical evidence-comment contract, isolated
+workflow-pilot launcher, and exact GitHub PR/run/job authority. Dependents are
+automated delivery coordinators and contributors changing PR title/body after
+candidate push. It conflicts with mutable pending-state ledgers, incomplete
+pagination, stale identity, direct unguarded metadata edits during active
+Build, and same-SHA cancellation. It changes no feature profile, save,
+generated data, localization, ROM/RAM, target build, gameplay, modern
+debug/release output, or archival behavior.
+
+### Automation
+
+`python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata -v`
+behaviorally executes refusal, override, revalidation, reconciliation,
+comment-only routing, pagination, schema, and injection controls through
+structured API calls.
+
+`python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`
+parses the contributor/workflow guidance and indexed tester contract.
+
+### Cleanup and limitations
+
+No cleanup is required because every GitHub response and mutation is
+synthetic. The API cannot make the identity check and PATCH atomic, so the
+helper revalidates immediately before mutation, checks again afterward, and
+returns a deterministic recovery instruction on concurrent identity change.
+There is no manual-only criterion. No ARM runtime test is needed because this
+is host-only delivery orchestration.
+
 ## TC-WORKFLOW-PILOT-BASELINE-001: Freeze reproducible pilot baseline and decisions
 
 - **Feature / originating issue:** `workflow-governance` /

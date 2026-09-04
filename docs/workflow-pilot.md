@@ -380,6 +380,75 @@ decision record, fixture, or another tracked/current-state ledger. Comment
 edits emit no `pull_request: edited` event, while Git, GitHub, and Actions
 remain authoritative for every value.
 
+### Safe pull-request metadata ordering
+
+Finalize the stable PR title/body before pushing the candidate, push the
+candidate, then freeze the title/body while its exact-head full Build is queued
+or in progress. Put every evolving command, result, SHA, run, review, preflight,
+budget, and completion update in the canonical evidence comment instead.
+
+Use the isolated metadata helper for title/body changes after a candidate
+exists. Every invocation binds the repository, PR number, current head SHA,
+current base SHA, active Build workflow, complete exact-head run pages, and
+complete job pages. It fails closed on stale identity, incomplete pagination,
+unknown or mixed run shapes, or a noncanonical workflow:
+
+```bash
+repo=laqieer/fireemblem8-expansion
+pr=123
+head_sha="$(gh api "repos/$repo/pulls/$pr" --jq .head.sha)"
+base_sha="$(gh api "repos/$repo/pulls/$pr" --jq .base.sha)"
+
+/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py pr-metadata edit \
+  --repository "$repo" --pr "$pr" \
+  --head-sha "$head_sha" --base-sha "$base_sha" \
+  --body-file /path/to/stable-pr-body.md
+```
+
+The default edit returns `deferred` without changing metadata when any
+same-head/same-base full Build is queued or in progress. Its structured
+guidance points to the canonical comment route:
+
+```bash
+/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py \
+  pr-metadata evidence-comment \
+  --repository "$repo" --pr "$pr" \
+  --head-sha "$head_sha" --base-sha "$base_sha" \
+  --comment-file /path/to/canonical-evidence.md
+```
+
+An urgent frozen-contract correction may use `--essential-reason` with
+non-whitespace text. The helper revalidates current head/base immediately
+before the title/body PATCH, never cancels the still-valid full Build, and
+returns the exact reconciliation command. Record the essential reason in the
+canonical evidence comment. No tracked or local pending-state ledger is
+created: GitHub's run number, attempt, event, workflow, PR, head, base, mode,
+status, conclusion, and job identities derive whether reconciliation remains
+pending.
+
+After the newest exact full Build succeeds, run:
+
+```bash
+/usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py \
+  pr-metadata reconcile \
+  --repository "$repo" --pr "$pr" \
+  --head-sha "$head_sha" --base-sha "$base_sha"
+```
+
+Reconciliation revalidates head/base and all exact run authority twice, then
+reruns only the newest failed lightweight metadata continuity run that follows
+the successful full Build. It dispatches no full Build and exposes no
+cancellation operation. An already-active metadata rerun is deferred, and an
+already-successful one is complete. Every successful title/body update returns
+this reconciliation command, including an update whose pre-edit query observed
+a successful full Build, so a same-SHA full rerun that starts inside the
+unavoidable GitHub API check/PATCH gap still has a deterministic recovery path.
+If the PR identity changes across that gap, the helper reports deterministic
+post-edit recovery and refuses to rerun evidence for the stale candidate.
+Only the existing coordinator may cancel full runs whose old head SHA was
+actually superseded; a title/body change never makes a same-SHA full run stale.
+The helper therefore never cancels or replaces a same-SHA full Build.
+
 The issue #176 reporter's duplicate unchanged-SHA formula needs no new state:
 capture the post-pilot Actions cohort with the same inclusive-window and
 identity rules, group Build runs by exact `head_sha`, and compare its

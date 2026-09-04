@@ -86,6 +86,14 @@ is `action_required`, the orchestrator reruns it with `gh run rerun <run-id>`
 under owner context. Never create empty commits, weaken Actions approvals, or
 use privileged `pull_request_target` just to bypass approval.
 
+Finalize stable PR title/body before pushing the candidate, then freeze both
+while its exact-head full Build is active. Update evolving evidence only in the
+canonical comment. Use the isolated `pr-metadata edit` helper for later
+title/body corrections; its default path defers active-full races. Essential
+corrections require a nonempty reason and `pr-metadata reconcile` after the
+same full Build succeeds. The helper never cancels or dispatches a full Build,
+and title/body edits never make a same-SHA full Build stale.
+
 Local validation is change-focused by default. Run only the smallest tests
 that directly cover the changed behavior and the one necessary compile or
 runtime scenario. Do not run broad catalog validation, full repository test

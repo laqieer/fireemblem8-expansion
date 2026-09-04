@@ -17,6 +17,7 @@ MODES = frozenset(
         "classify-event",
         "hydrate",
         "lifecycle-check",
+        "pr-metadata",
         "reporter-tests",
     }
 )
@@ -112,6 +113,10 @@ def dispatch(mode: str, arguments: list[str]) -> int:
         from scripts.workflow_pilot import event_classifier
 
         return event_classifier.main(arguments)
+    if mode == "pr-metadata":
+        from scripts.workflow_pilot import pr_metadata
+
+        return pr_metadata.main(arguments)
 
     controlled_repository_root(arguments)
     if mode == "anchor-refs":
