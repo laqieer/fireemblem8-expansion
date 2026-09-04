@@ -430,6 +430,9 @@ The production builder uses no coprocess, option parser, shift, or positional
 reset. Syntax-active `coproc`, `getopts`, `shift`, and positional-mutating
 `set` commands therefore reject across aliases, wrappers, helpers, and control
 placements; reviewed option-only `set` commands and quoted data remain valid.
+`set` accepts only Bash's reviewed short-option alphabet and valid
+`-o`/`+o` option names; unknown long options, invalid clusters, dynamic
+options, positional operands, and bare `--` reject.
 `wait -p` output-variable forms likewise reject across clustered, attached,
 wrapped, aliased, helper, control, and dynamic option/target forms; the two
 reviewed ordinary PID waits remain valid.

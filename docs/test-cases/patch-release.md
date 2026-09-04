@@ -402,6 +402,9 @@ multi-hop readonly or mutable arithmetic/subscript aliases; fixed constants pass
 Syntax-active `coproc`, `getopts`, `shift`, and positional-mutating `set`
 forms reject globally, including aliases, wrappers, helpers, and control
 placements. Reviewed shell-option `set` forms and quoted data remain valid.
+The `set` grammar admits valid reviewed short flags, named `-o`/`+o` toggles,
+and nonmutating bare output forms; invalid long/cluster/name/dynamic forms,
+operands, and `--` reject.
 Every `wait -p` output-variable form rejects, including clustered/attached
 options and dynamic or wrapped destinations; reviewed ordinary waits remain.
 `BASH_CMDS` and `BASH_ALIASES` reject every modeled writer. Function shadows

@@ -9327,15 +9327,17 @@ exit 37
                 "2>/dev/null; then exit 91; fi\n"
                 'test "$PATH" = "$before"\n',
                 "quoted target",
+                False,
             ),
             (
                 "option='$(printf posix)'\n"
                 'if set -o "$option" 2>/dev/null; then exit 92; fi\n'
                 "[[ ! -o posix ]]\n",
                 "quoted option",
+                True,
             ),
         )
-        for script, label in cases:
+        for script, label, expected_rejection in cases:
             with self.subTest(label=label):
                 completed = subprocess.run(
                     ["/bin/bash", "-c", script],
@@ -9346,11 +9348,12 @@ exit 37
                 )
                 self.assertEqual(completed.returncode, 0, completed.stderr)
                 self.assertEqual(completed.stdout, "")
-                self.assertFalse(
+                self.assertEqual(
                     publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
                         script,
                         label=f"{label} dispatch control runtime",
-                    )
+                    ),
+                    expected_rejection,
                 )
 
     def test_nameref_runtime_unsets_and_writes_through_supervisor_alias(self):
@@ -12666,6 +12669,7 @@ exit 37
                 "dynamic_arithmetic_alias": "unresolved-target-fail-closed",
                 "coprocess": "reject",
                 "positional_parameter_mutation": "reject",
+                "set_option_grammar": "valid-reviewed-bash-options-only",
                 "getopts": "reject",
                 "wait_output_variable": "reject",
                 "dispatch_special_arrays": [

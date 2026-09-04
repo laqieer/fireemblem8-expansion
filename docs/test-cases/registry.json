@@ -1432,6 +1432,7 @@
           "dynamic_arithmetic_alias": "unresolved-target-fail-closed",
           "coprocess": "reject",
           "positional_parameter_mutation": "reject",
+          "set_option_grammar": "valid-reviewed-bash-options-only",
           "getopts": "reject",
           "wait_output_variable": "reject",
           "dispatch_special_arrays": [

@@ -255,6 +255,12 @@ _DISPATCH_STATE_VARIABLES = frozenset(
     }
 )
 _DISPATCH_SET_OPTIONS = frozenset({"hashall", "posix"})
+_VALID_SET_OPTION_NAMES = frozenset(
+    "allexport braceexpand emacs errexit errtrace functrace hashall "
+    "histexpand history ignoreeof interactive-comments keyword monitor "
+    "noclobber noexec noglob nolog notify nounset onecmd physical pipefail "
+    "posix privileged verbose vi xtrace".split()
+)
 _RESERVED_TRANSPORT_OUTPUTS = frozenset(
     {
         "checked_runtime_transport_output",
@@ -5505,24 +5511,48 @@ def _command_mutates_unreviewed_shell_state(
         return True
     if executable != "set":
         return False
-    expect_option_name = False
     arguments = normalized[1:]
     for index, argument in enumerate(arguments):
         if _is_redirection_token(argument):
             arguments = arguments[:index]
             break
-    for argument in arguments:
-        if expect_option_name:
-            expect_option_name = False
-            continue
+    index = 0
+    while index < len(arguments):
+        argument = arguments[index]
         if argument == "--":
             return True
         if argument in {"-", "+"}:
+            index += 1
             continue
-        if argument.startswith(("-", "+")) and argument not in {"-", "+"}:
-            expect_option_name = argument[1:].endswith("o")
-            continue
-        return True
+        if argument.startswith("--"):
+            return True
+        if not argument.startswith(("-", "+")):
+            return True
+        options = argument[1:]
+        if "o" in options:
+            option_index = options.index("o")
+            if any(
+                option not in "abefhkmnptuvxBCEHPT"
+                for option in options[:option_index]
+            ):
+                return True
+            option_name = options[option_index + 1 :]
+            if not option_name and index + 1 < len(arguments):
+                candidate = arguments[index + 1]
+                if not candidate.startswith(("-", "+")):
+                    option_name = candidate
+                    index += 1
+            if (
+                option_name
+                and option_name not in _VALID_SET_OPTION_NAMES
+            ):
+                return True
+        elif any(
+            option not in "abefhkmnptuvxBCEHPT"
+            for option in options
+        ):
+            return True
+        index += 1
     return False
 
 

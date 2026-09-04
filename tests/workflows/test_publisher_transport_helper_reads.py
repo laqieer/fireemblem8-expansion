@@ -705,6 +705,10 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             "runner=coproc\n$runner printf done\n",
             "show() {\n builtin getopts a: option\n}\nshow\n",
             "if true; then command set -- fake; fi\n",
+            "set --foo\n",
+            "command set -Z\n",
+            "builtin set -o unknown\n",
+            "option=$GITHUB_REF_NAME\nset \"$option\"\n",
         )
         for index, script in enumerate(rejected):
             completed = subprocess.run(
@@ -723,8 +727,11 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 )
             )
         for safe in (
+            "set -Eeuo pipefail\n",
             "set -euo pipefail\n",
             "set -o errexit\n",
+            "set -onounset\nset +onounset\n",
+            "set -\nset +\nset -o >/dev/null\nset +o >/dev/null\n",
             "printf '%s\\n' 'coproc set -- shift getopts'\n",
         ):
             self.assertFalse(
@@ -733,6 +740,19 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                     label="inert shell state spelling",
                 )
             )
+        for invalid in ("set --foo", "set -Z", "set -o unknown"):
+            completed = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-c",
+                    f"trap 'exit 42' ERR\n{invalid}\n",
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 42)
 
     def test_wait_output_variables_are_rejected(self):
         runtime = (
@@ -887,6 +907,18 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             for name in ("trap", "exec", "ulimit", "return")
         )
         mutations = (
+            original.replace(
+                '        cgroup_path="$1"\n',
+                "        command set --foo\n"
+                '        cgroup_path="$1"\n',
+                1,
+            ),
+            original.replace(
+                '        cgroup_path="$1"\n',
+                "        builtin set -Z\n"
+                '        cgroup_path="$1"\n',
+                1,
+            ),
             original.replace(
                 '        cgroup_path="$1"\n',
                 "        BASH_CMDS[stat]=/bin/false\n"
