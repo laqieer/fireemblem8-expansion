@@ -8393,6 +8393,10 @@ exit 37
                 "/bin/bash",
                 "-c",
                 "value=before\n"
+                "for ((index=0; index<1; index++)); do\n"
+                "  for ((shadow=0; shadow<0; shadow++)); do value=nested; done\n"
+                "done\n"
+                "for ((shadow=0; shadow<0; shadow++)); do value=sibling; done\n"
                 "case no in\n"
                 "yes) time -p -- value=after\n"
                 ";;\n"
@@ -8444,6 +8448,53 @@ exit 37
                         "raw builder cgroup membership read differs",
                         publisher_boundary_errors(changed),
                     )
+            lifecycle_loops = (
+                (
+                    "supervisor",
+                    "        for ((index=${#checked_supervisor_transport_output[@]} "
+                    "- 1; index >= 0; index--)); do\n",
+                    "        remaining_dev_mounts_file=",
+                ),
+                (
+                    "runtime",
+                    "        for ((index=0; index < "
+                    "${#checked_runtime_transport_output[@]}; index+=2)); do\n",
+                    "        exec < /dev/null",
+                ),
+            )
+            done = "        done\n"
+            for label, header, following in lifecycle_loops:
+                start = self.text.index(header)
+                end = self.text.index(following, start)
+                block = self.text[start:end]
+                self.assertTrue(block.endswith(done))
+                body = block[len(header) : -len(done)]
+                mutations = (
+                    (
+                        "sibling",
+                        header
+                        + done
+                        + "        for ((shadow=0; shadow<0; shadow++)); do\n"
+                        + body
+                        + done,
+                    ),
+                    (
+                        "nested",
+                        header
+                        + "          for ((shadow=0; shadow<0; shadow++)); do\n"
+                        + body
+                        + "          done\n"
+                        + done,
+                    ),
+                )
+                for topology, replacement in mutations:
+                    changed = self.text[:start] + replacement + self.text[end:]
+                    with self.subTest(loop=label, topology=topology):
+                        self.assertTrue(
+                            workflow_has_raw_builder_cgroup_membership_read(
+                                changed
+                            )
+                        )
 
     def test_production_helper_inventory_is_exact_and_order_independent(self):
         self.assertFalse(
@@ -12866,7 +12917,7 @@ exit 37
                 "supervisor_producer_calls": 2,
                 "runtime_producer_calls": 1,
                 "initial_state": "unavailable",
-                "consumer_protocol": "exact-required-context-latest-phase-sequence",
+                "consumer_protocol": "exact-frame-bound-latest-phase-sequence",
                 "supervisor_phases": 2,
                 "runtime_phases": 1,
                 "invoked_helper_consumers": "reject-unreviewed-runtime-dereference",

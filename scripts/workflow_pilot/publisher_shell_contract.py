@@ -402,12 +402,23 @@ class _ShellToken:
 
 
 @dataclass(frozen=True)
+class _ShellControlFrame:
+    kind: str
+    identity: int
+
+
+@dataclass(frozen=True)
 class _ShellCommandRecord:
     text: str
     preceding_operator: str | None
     following_operator: str | None
     execution_scopes: tuple[str, ...] = ()
-    control_scopes: tuple[str, ...] = ()
+    control_frames: tuple[_ShellControlFrame, ...] = ()
+    opened_control_frame: _ShellControlFrame | None = None
+
+    @property
+    def control_scopes(self) -> tuple[str, ...]:
+        return tuple(frame.kind for frame in self.control_frames)
 
 
 @dataclass(frozen=True)
@@ -1632,13 +1643,12 @@ def split_bash_simple_command_strings(script: str, *, label: str) -> tuple[str, 
 def _mandatory_action_context_is_unconditional(
     record: _ShellCommandRecord,
     *,
-    control_stack: list[str],
     function_stack: list[str],
     require_production_helpers: bool,
 ) -> bool:
     if (
-        control_stack
-        or record.control_scopes
+        record.control_frames
+        or record.opened_control_frame is not None
         or record.execution_scopes
     ):
         return False
@@ -4310,18 +4320,11 @@ def _annotate_command_control_scopes(
     records: tuple[_ShellCommandRecord, ...],
 ) -> tuple[_ShellCommandRecord, ...]:
     annotated: list[_ShellCommandRecord] = []
-    control_stack: list[str] = []
+    control_stack: list[_ShellControlFrame] = []
+    next_identity = 0
     for record in records:
-        annotated.append(
-            _ShellCommandRecord(
-                text=record.text,
-                preceding_operator=record.preceding_operator,
-                following_operator=record.following_operator,
-                execution_scopes=record.execution_scopes,
-                control_scopes=tuple(control_stack),
-            )
-        )
         first_word = record.text.split(maxsplit=1)[0]
+        opened_control_frame = None
         if first_word in {
             "case",
             "for",
@@ -4331,12 +4334,28 @@ def _annotate_command_control_scopes(
             "while",
             "{",
         }:
-            control_stack.append(first_word)
+            opened_control_frame = _ShellControlFrame(
+                kind=first_word,
+                identity=next_identity,
+            )
+            next_identity += 1
+        annotated.append(
+            _ShellCommandRecord(
+                text=record.text,
+                preceding_operator=record.preceding_operator,
+                following_operator=record.following_operator,
+                execution_scopes=record.execution_scopes,
+                control_frames=tuple(control_stack),
+                opened_control_frame=opened_control_frame,
+            )
+        )
+        if opened_control_frame is not None:
+            control_stack.append(opened_control_frame)
             continue
         if first_word not in {"done", "esac", "fi", "}"}:
             continue
         if first_word == "}" and (
-            not control_stack or control_stack[-1] != "{"
+            not control_stack or control_stack[-1].kind != "{"
         ):
             continue
         if not control_stack:
@@ -4347,7 +4366,7 @@ def _annotate_command_control_scopes(
             "fi": {"if"},
             "}": {"{"},
         }[first_word]
-        if control_stack[-1] not in expected:
+        if control_stack[-1].kind not in expected:
             raise ValueError("shell control scope mismatch")
         control_stack.pop()
     if control_stack:
@@ -6435,7 +6454,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
         "read_checked_supervisor_transport_file": 0,
     }
     transport_phase_events: list[tuple[str, ...]] = []
-    control_stack: list[str] = []
+    transport_loop_frames: dict[str, _ShellControlFrame] = {}
     try:
         semantic_script = _strip_patch_release_parser_heredoc_bodies(
             script
@@ -6490,16 +6509,15 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 continue
             if (
                 command_text == "}"
-                and control_stack
-                and control_stack[-1] == "{"
+                and command_record.control_frames
+                and command_record.control_frames[-1].kind == "{"
             ):
-                control_stack.pop()
                 continue
             if command_text == "}":
                 if (
                     function_stack
                     and function_stack[-1] == "builder_main"
-                    and control_stack
+                    and command_record.control_frames
                 ):
                     return True
                 if function_depth > 0:
@@ -6510,32 +6528,9 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 continue
             if function_stack and function_stack[-1] != "builder_main":
                 continue
-            first_word = command_text.split(maxsplit=1)[0]
-            if first_word in {
-                "case",
-                "for",
-                "if",
-                "select",
-                "until",
-                "while",
-                "{",
-            }:
-                control_stack.append(first_word)
-            elif first_word in {"done", "esac", "fi"}:
-                if not control_stack:
-                    return True
-                expected = {
-                    "done": {"for", "select", "until", "while"},
-                    "esac": {"case"},
-                    "fi": {"if"},
-                }[first_word]
-                if control_stack[-1] not in expected:
-                    return True
-                control_stack.pop()
             mandatory_context_is_unconditional = (
                 _mandatory_action_context_is_unconditional(
                     command_record,
-                    control_stack=control_stack,
                     function_stack=function_stack,
                     require_production_helpers=require_production_helpers,
                 )
@@ -6579,7 +6574,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
             if command_text == 'cgroup_path="$1"':
                 if (
                     cgroup_path_initializations != 0
-                    or control_stack
+                    or command_record.control_frames
                     or not mandatory_context_is_unconditional
                     or (
                         require_production_helpers
@@ -6675,7 +6670,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 membership_checker_count += 1
                 if (
                     membership_checker_count != 1
-                    or control_stack
+                    or command_record.control_frames
                     or not mandatory_context_is_unconditional
                     or function_stack != ["builder_main"]
                 ):
@@ -6726,31 +6721,24 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     transport_event = ("producer",) + token_texts
             if (
                 transport_event is None
-                and _active_reserved_transport_references(
-                    tokens,
-                    resolved_token_texts,
-                    aliases,
+                and (
+                    transport_references
+                    := _active_reserved_transport_references(
+                        tokens,
+                        resolved_token_texts,
+                        aliases,
+                    )
                 )
             ):
                 transport_event = ("consumer",) + token_texts
+            elif transport_event is not None:
+                transport_references = frozenset()
             if transport_event is not None:
                 event_index = len(transport_phase_events)
-                if event_index in {1, 8}:
-                    expected_record_scopes = ()
-                    expected_control_stack = ("for",)
-                elif event_index in {2, 9, 10}:
-                    expected_record_scopes = ("for",)
-                    expected_control_stack = ("for",)
-                else:
-                    expected_record_scopes = ()
-                    expected_control_stack = ()
                 if (
                     event_index >= len(_REVIEWED_TRANSPORT_PHASE_EVENTS)
                     or transport_event
                     != _REVIEWED_TRANSPORT_PHASE_EVENTS[event_index]
-                    or command_record.control_scopes
-                    != expected_record_scopes
-                    or tuple(control_stack) != expected_control_stack
                     or command_record.execution_scopes
                     or command_record.preceding_operator
                     in {"&&", "||", "|", "|&", "&"}
@@ -6760,6 +6748,51 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                         require_production_helpers
                         and function_stack != ["builder_main"]
                     )
+                ):
+                    return True
+                lifecycle_references = frozenset(
+                    name
+                    for name in _RESERVED_TRANSPORT_OUTPUTS
+                    if any(
+                        name in _active_shell_token_text(token)
+                        for token in tokens
+                    )
+                )
+                lifecycle_target = (
+                    next(iter(lifecycle_references))
+                    if len(lifecycle_references) == 1
+                    else None
+                )
+                if executable_tokens and posixpath.basename(
+                    executable_tokens[0]
+                ) == "for":
+                    frame = command_record.opened_control_frame
+                    if (
+                        lifecycle_target is None
+                        or command_record.control_frames
+                        or frame is None
+                        or frame.kind != "for"
+                        or lifecycle_target in transport_loop_frames
+                    ):
+                        return True
+                    transport_loop_frames[lifecycle_target] = frame
+                elif token_texts and token_texts[0].split("=", 1)[0] in {
+                    "dev_mount",
+                    "mount_target",
+                    "mount_options",
+                }:
+                    if (
+                        lifecycle_target is None
+                        or command_record.control_frames
+                        != (
+                            transport_loop_frames.get(lifecycle_target),
+                        )
+                        or command_record.opened_control_frame is not None
+                    ):
+                        return True
+                elif (
+                    command_record.control_frames
+                    or command_record.opened_control_frame is not None
                 ):
                     return True
                 transport_phase_events.append(transport_event)
@@ -7075,7 +7108,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 != _RAW_CGROUP_ROOT_MARKER
             ):
                 return True
-            if membership_checker_count != 1 or control_stack:
+            if membership_checker_count != 1:
                 return True
             if (
                 raw_join_count != 1

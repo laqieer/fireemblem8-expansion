@@ -400,9 +400,9 @@ runtime phase covers writable-mount pairs. Pre-use, duplicate, reordered,
 interphase, stale, or extra consumers reject. Runtime dereferences in helpers,
 nested helpers, substitutions, callbacks, and traps are evaluated when invoked
 and reject because all reviewed consumers are exact top-level phase events.
-Each event must use its exact top-level or canonical lifecycle-loop context;
-extra case, conditional, loop, list, pipeline, background, or nested execution
-cannot advance the mandatory transport phase sequence.
+Each lifecycle loop header binds a stable parser control-frame identity; its
+body events must carry that exact live frame. Sibling, reopened, nested, or
+extra control execution cannot advance the mandatory transport phase sequence.
 Direct, indirect, nameref, arithmetic, and array dereferences are consumers;
 transporting or comparing the literal reserved name remains data, as does
 literal quoted text. Bash `${!prefix*}`/`${!prefix@}` parameter-name
