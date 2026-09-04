@@ -1447,7 +1447,7 @@
           "later_or_external_mutation": "reject"
         },
         "alias_state": {
-          "executable_prefixes": "time-and-case-normalized-fail-closed",
+          "executable_prefixes": "time-and-case-normalized-through-helpers",
           "writers": [
             "assignment",
             "declaration",

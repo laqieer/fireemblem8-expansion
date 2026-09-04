@@ -4769,6 +4769,7 @@ def _helper_call_has_sensitive_arguments(
     function_bodies: dict[str, tuple[_ShellCommandRecord, ...]],
     aliases: dict[str, str],
     trusted_helper_inventory: bool,
+    helper_only: bool = False,
 ) -> bool:
     tokens = _strip_shell_command_prefixes(tokens)
     if not tokens:
@@ -4838,6 +4839,8 @@ def _helper_call_has_sensitive_arguments(
         aliases.update(updates)
         return False
     if is_production_call:
+        return False
+    if helper_only:
         return False
     raw_root_signatures = {
         (
@@ -6691,7 +6694,6 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 and "supervisor_cgroup" in token_texts[1:]
             ):
                 return True
-            raw_tokens = tokens
             tokens = _normalize_alias_state_command_tokens(
                 tokens,
                 label=label,
@@ -6777,16 +6779,12 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 if reviewed_trap_count != 1:
                     return True
             if _helper_call_has_sensitive_arguments(
-                (
-                    _resolve_tokens_for_alias_state(raw_tokens, aliases)
-                    if raw_tokens
-                    and _token_could_be_case_pattern(raw_tokens[0])
-                    else resolved_token_texts
-                ),
+                resolved_token_texts,
                 user_functions=encountered_functions,
                 function_bodies=function_bodies,
                 aliases=aliases,
                 trusted_helper_inventory=helper_inventory_is_reviewed,
+                helper_only="case" in command_record.control_scopes,
             ):
                 return True
             assignment_only = bool(tokens) and all(

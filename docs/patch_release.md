@@ -445,8 +445,8 @@ Every active redirection must have a following non-redirection word target;
 command/control boundaries, syntax-active closing tokens, and adjacent
 redirects fail closed, while quoted or escaped closing characters remain words.
 Syntax-active `time` prefixes (`-p` and optional `--`) and inline case-arm
-payloads are normalized before writer/phase analysis; dynamic or unsupported
-prefix grammar fails closed.
+payloads are normalized before writer, phase, and recursive helper analysis;
+dynamic or unsupported prefix grammar fails closed.
 `wait -p` output-variable forms likewise reject across clustered, attached,
 wrapped, aliased, helper, control, and dynamic option/target forms; the two
 reviewed ordinary PID waits remain valid.

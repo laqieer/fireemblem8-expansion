@@ -8330,6 +8330,63 @@ exit 37
                     )
                 )
 
+    def test_case_time_prefixes_reach_recursive_helper_analysis(self):
+        helper_script = (
+            "mutate() {\n"
+            "  read -a checked_supervisor_transport_output <<< /dev\n"
+            "}\n"
+            "case x in\n"
+            "x) time -p -- mutate\n"
+            ";;\n"
+            "esac\n"
+        )
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "-c",
+                helper_script
+                + 'test "${#checked_supervisor_transport_output[@]}" -eq 1\n'
+                + 'test "${checked_supervisor_transport_output[0]}" = /dev\n',
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                helper_script,
+                label="case time helper write",
+            )
+        )
+
+        hidden_builder = self.text.replace(
+            '        builder_main "$@"\n',
+            "        case x in\n"
+            "        x) time -p -- "
+            "builder_main /sys/fs/cgroup/example\n"
+            "        ;;\n"
+            "        esac\n",
+            1,
+        )
+        self.assertNotEqual(hidden_builder, self.text)
+        with (
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_patch_release_run_script_identity",
+            ),
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_builder_isolation_shell_identity",
+            ),
+        ):
+            self.assertTrue(
+                workflow_has_raw_builder_cgroup_membership_read(
+                    hidden_builder
+                )
+            )
+
     def test_production_helper_inventory_is_exact_and_order_independent(self):
         self.assertFalse(
             workflow_has_raw_builder_cgroup_membership_read(self.text)
@@ -12782,7 +12839,7 @@ exit 37
                 "later_or_external_mutation": "reject",
             },
             "alias_state": {
-                "executable_prefixes": "time-and-case-normalized-fail-closed",
+                "executable_prefixes": "time-and-case-normalized-through-helpers",
                 "writers": [
                     "assignment",
                     "declaration",
