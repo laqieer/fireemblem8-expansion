@@ -12637,6 +12637,8 @@ exit 37
                 "readonly_state": "rejected-mutation-preserves-value-and-type",
                 "readonly_scope": "local-and-subshell",
                 "readonly_alias_value": "attribute-separated-semantic-resolution",
+                "arithmetic_writes": "protected-and-tracked-reject",
+                "readonly_arithmetic_write": "failed-state-preserved",
                 "later_or_external_mutation": "reject",
             },
             "alias_state": {

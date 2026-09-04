@@ -585,6 +585,64 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             )
         )
 
+    def test_arithmetic_writes_cannot_mutate_protected_state(self):
+        writes = (
+            "(( target = 2 ))",
+            "let 'target+=2'",
+            'printf "%s" "$((target++))"',
+            'printf "%s" "$[target=4]"',
+            "for ((target=0; target<1; target++)); do :; done",
+            "declare -i other='target=5'",
+            "(( other=1, other ? target=6 : other++ ))",
+            "(( values[target++]=1 ))",
+        )
+        for write in writes:
+            protected = write.replace("target", "cgroup_path")
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    protected,
+                    label="protected arithmetic write",
+                )
+            )
+            completed = subprocess.run(
+                ["/bin/bash", "-c", "target=1\n" + write + "\n"],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+        for protected in (
+            "(( checked_runtime_transport_output[0] = 1 ))",
+            "name=checked_runtime_transport_output\n(( $name = 1 ))",
+            "(( ordinary[checked_supervisor_transport_output++] = 1 ))",
+            "(( $unknown = 1 ))",
+            'raw="$1"\n(( raw = 0 ))',
+            "change() {\n"
+            '  local -n ref="$1"\n'
+            "  (( ref = 0 ))\n"
+            "}\n"
+            "change cgroup_path\n",
+        ):
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    protected,
+                    label="transport arithmetic write",
+                )
+            )
+        self.assertFalse(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                "ordinary=1\n(( ordinary += 2 ))\n",
+                label="unrelated arithmetic write",
+            )
+        )
+        self.assertFalse(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                'raw="$1"\nreadonly raw\n(( raw = 0 )) || true\n',
+                label="rejected readonly arithmetic write",
+            )
+        )
+
     def test_publisher_and_upstream_enforce_helper_dereferences(self):
         original = WORKFLOW.read_text(encoding="utf-8")
         producer = (
@@ -602,6 +660,18 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             '"${checked_supervisor_transport_output[0]}" > /dev/null\n'
             "        }\n"
             "        inspect_transport_output\n"
+        )
+        arithmetic_mutations = tuple(
+            original.replace(
+                "          local signature\n",
+                "          local signature\n" + f"          {write}\n",
+                1,
+            )
+            for write in (
+                "(( cgroup_path = 0 ))",
+                "let 'checked_supervisor_transport_output[0]=0'",
+                'printf "%s" "$((supervisor_cgroup++))" > /dev/null',
+            )
         )
         mutations = (
             original.replace(producer, helper + producer, 1),
@@ -652,7 +722,7 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 '"${inspect_table[$inspect_key]}" > /dev/null\n',
                 1,
             ),
-        )
+        ) + arithmetic_mutations
         for changed in mutations:
             builder = builder_isolation_shell_source(changed)
             semantic_builder = (

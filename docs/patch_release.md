@@ -418,6 +418,11 @@ Readonly changes in a subshell remain scoped to that execution environment.
 The readonly attribute is removed from semantic alias resolution, so alias
 chains, indirection and its parameter operators, namerefs, arithmetic, helper
 captures, and raw-path checks still see the underlying value.
+Arithmetic commands, `let`, `$((...))`, `$[...]`, arithmetic `for` clauses,
+integer declarations, nested assignments, and subscript side effects reject
+writes to protected or tracked state across assignment, compound assignment,
+and pre/post increment/decrement. Pure transport reads remain phase consumers;
+provably readonly arithmetic writes leave modeled state unchanged.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

@@ -390,6 +390,10 @@ failures; subshell readonly state does not escape.
 Readonly is attribute metadata rather than value data: direct/indirect alias
 chains, `${!name}` assignment/default/error operators, arithmetic, namerefs,
 helper captures, and raw paths resolve the unchanged semantic value.
+Arithmetic lvalues are parsed across standalone commands, `let`, expansions,
+legacy expansions, `for` clauses, integer declarations, nested expressions,
+and subscript side effects. Every protected/tracked write form rejects while
+unrelated writes and reviewed pure-read phase events remain valid.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,

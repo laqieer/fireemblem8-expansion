@@ -4476,6 +4476,12 @@ def _analyze_function_call(
             tokens,
             function_aliases,
         )
+        if _arithmetic_writes_protected_state(
+            tokens,
+            resolved,
+            function_aliases,
+        ):
+            return True, {}
         reviewed_transport_write = _is_reviewed_transport_output_write(
             function_name,
             resolved,
@@ -5292,6 +5298,111 @@ def _active_reserved_transport_references(
                         references.add(name)
                         break
     return frozenset(references)
+
+
+def _arithmetic_expressions(
+    tokens: tuple[_ShellToken, ...],
+    resolved_tokens: tuple[str, ...],
+) -> tuple[str, ...]:
+    expressions: list[str] = []
+    normalized = _strip_shell_command_prefixes(resolved_tokens)
+    if normalized and posixpath.basename(normalized[0]) == "let":
+        expressions.extend(normalized[1:])
+    if (
+        normalized
+        and posixpath.basename(normalized[0])
+        in {"declare", "local", "readonly", "typeset"}
+        and any(
+            option.startswith("-") and "i" in option[1:]
+            for option in normalized[1:]
+        )
+    ):
+        expressions.extend(
+            argument.split("=", 1)[1]
+            for argument in normalized[1:]
+            if "=" in argument
+        )
+    for token, resolved in zip(tokens, resolved_tokens):
+        active = _active_shell_token_text(token)
+        if active.startswith("((") and active.endswith("))"):
+            start = resolved.find("((")
+            end = resolved.rfind("))")
+            expressions.append(resolved[start + 2 : end])
+        expressions.extend(
+            match.group(1) or match.group(2)
+            for match in re.finditer(
+                r"\$\(\((.*)\)\)|\$\[(.*)\]",
+                resolved if "$" in active else "",
+            )
+        )
+    return tuple(expressions)
+
+
+def _arithmetic_writes_protected_state(
+    tokens: tuple[_ShellToken, ...],
+    resolved_tokens: tuple[str, ...],
+    aliases: dict[str, str],
+) -> bool:
+    protected = {
+        "cgroup_path",
+        "supervisor_cgroup",
+        *_DISPATCH_STATE_VARIABLES,
+        *_RESERVED_TRANSPORT_OUTPUTS,
+    }
+    write_re = re.compile(
+        r"(?:"
+        r"(?:\+\+|--)\s*(?P<prefix>[A-Za-z_][A-Za-z0-9_]*)"
+        r"|(?P<suffix>[A-Za-z_][A-Za-z0-9_]*)"
+        r"(?:\[[^\]]*\])?\s*"
+        r"(?:\+\+|--|<<=|>>=|\*\*=|[+\-*/%&|^]=|=(?!=))"
+        r")"
+    )
+    security_markers = (
+        _RAW_CGROUP_ROOT_MARKER,
+        _AMBIGUOUS_TRACKED_PARAMETER_MARKER,
+        _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+        _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+    )
+    marker_write_re = re.compile(
+        "(?:"
+        + "|".join(re.escape(marker) for marker in security_markers)
+        + r")+(?:\[[^\]]*\])?\s*"
+        + r"(?:\+\+|--|<<=|>>=|\*\*=|[+\-*/%&|^]=|=(?!=))"
+    )
+    for expression in _arithmetic_expressions(tokens, resolved_tokens):
+        if marker_write_re.search(expression):
+            return True
+        scan_expressions = (expression,) + tuple(
+            re.findall(r"\[([^\]]*)\]", expression)
+        )
+        for scan_expression in scan_expressions:
+            for match in write_re.finditer(scan_expression):
+                name = match.group("prefix") or match.group("suffix")
+                attributed = aliases.get(name, "")
+                if _READONLY_ALIAS_MARKER in attributed:
+                    continue
+                group_name = (
+                    "prefix" if match.group("prefix") else "suffix"
+                )
+                if (
+                    name in protected
+                    or (
+                        match.start(group_name) > 0
+                        and scan_expression[match.start(group_name) - 1]
+                        == "$"
+                        and name not in aliases
+                    )
+                ):
+                    return True
+                value = _semantic_alias_value(attributed) or ""
+                if (
+                    any(marker in value for marker in security_markers)
+                    or _NAMEREF_ALIAS_MARKER in value
+                    and any(target in value for target in protected)
+                    or value in _RESERVED_TRANSPORT_OUTPUTS
+                ):
+                    return True
+    return False
 
 
 def _normalized_command_creates_nameref(
@@ -6296,6 +6407,12 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 tokens,
                 aliases,
             )
+            if _arithmetic_writes_protected_state(
+                tokens,
+                resolved_token_texts,
+                aliases,
+            ):
+                return True
             executable_tokens = _strip_shell_command_prefixes(
                 resolved_token_texts
             )
