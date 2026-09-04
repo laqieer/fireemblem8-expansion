@@ -12673,6 +12673,7 @@ exit 37
                 "set_redirections": "remove-all-preserve-argv",
                 "fd_redirections": "atomic-not-control-operators",
                 "redirection_matching": "canonical-longest-operator",
+                "redirection_target": "required-syntax-active-word",
                 "set_cluster_o": "ending-o-consumes-next-name",
                 "getopts": "reject",
                 "wait_output_variable": "reject",

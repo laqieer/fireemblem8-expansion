@@ -1605,6 +1605,19 @@ def split_bash_command_records(
         emit(None)
     if scope_stack or backtick_active:
         raise ValueError(f"{label} has unbalanced execution scope")
+    for record in records:
+        tokens = _split_attached_redirections(
+            _parse_shell_tokens(record.text, label=label)
+        )
+        for index, token in enumerate(tokens):
+            if not _token_is_active_redirection(token):
+                continue
+            if (
+                index + 1 >= len(tokens)
+                or _token_is_active_redirection(tokens[index + 1])
+                or tokens[index + 1].text in {")", "}"}
+            ):
+                raise ValueError(f"{label} has missing redirection target")
     return tuple(records)
 
 
@@ -2063,6 +2076,13 @@ def _is_redirection_token(text: str) -> bool:
             and text[: -len(operator)].isdigit()
         )
         for operator in _BASH_REDIRECTION_OPERATORS
+    )
+
+
+def _token_is_active_redirection(token: _ShellToken) -> bool:
+    return _is_redirection_token(token.text) and (
+        not token.segments
+        or any(segment[2] for segment in token.segments)
     )
 
 
@@ -5489,10 +5509,7 @@ def _command_mutates_unreviewed_shell_state(
     index = 0
     while index < len(tokens):
         original = original_shell_tokens[index]
-        active_redirection = _is_redirection_token(original.text) and (
-            not original.segments
-            or any(segment[2] for segment in original.segments)
-        )
+        active_redirection = _token_is_active_redirection(original)
         if not active_redirection:
             filtered.append(tokens[index])
             index += 1

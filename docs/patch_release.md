@@ -441,6 +441,8 @@ atomic redirections rather than background operators, while real `&`, `&&`,
 pipelines, and `|&` retain control topology.
 One longest-match operator table also keeps noclobber override `>|` atomic,
 with optional fd prefixes and attached, separate, quoted, or dynamic targets.
+Every active redirection must have a following non-redirection word target;
+command/control boundaries, closing tokens, and adjacent redirects fail closed.
 `wait -p` output-variable forms likewise reject across clustered, attached,
 wrapped, aliased, helper, control, and dynamic option/target forms; the two
 reviewed ordinary PID waits remain valid.

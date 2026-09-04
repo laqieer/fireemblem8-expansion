@@ -722,6 +722,11 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             "set -Eeuo pipefail >|/dev/null -- fake\n",
             "command set -o 2>| /dev/null -- fake\n",
             'target=/dev/null\nbuiltin set -e >|"$target" -- fake\n',
+            "set -e > &1 -- fake\n",
+            "set -e > &- -- fake\n",
+            "set -e < &0 -- fake\n",
+            "set -e > | cat\n",
+            "set -e > \\\n&1 -- fake\n",
         )
         for index, script in enumerate(rejected):
             completed = subprocess.run(
@@ -821,6 +826,20 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 label="background operator control",
             )
             self.assertEqual(records[0].following_operator, operator)
+        for malformed in (
+            "echo > &1",
+            "echo > &-",
+            "cat < &0",
+            "echo > | cat",
+            "echo >",
+        ):
+            completed = subprocess.run(
+                ["/bin/bash", "-n", "-c", malformed],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+            )
+            self.assertNotEqual(completed.returncode, 0)
 
     def test_wait_output_variables_are_rejected(self):
         runtime = (
@@ -977,6 +996,18 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
         mutations = (
             original.replace(
                 '        cgroup_path="$1"\n',
+                "        set -e > &1 -- /untrusted\n"
+                '        cgroup_path="$1"\n',
+                1,
+            ),
+            original.replace(
+                '        cgroup_path="$1"\n',
+                "        command set -e < &0 -- /untrusted\n"
+                '        cgroup_path="$1"\n',
+                1,
+            ),
+            original.replace(
+                '        cgroup_path="$1"\n',
                 "        set -Eeuo pipefail >|/dev/null -- /untrusted\n"
                 '        cgroup_path="$1"\n',
                 1,
@@ -1104,17 +1135,20 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                     builder
                 )
             )
-            records = publisher_shell_contract._annotate_command_control_scopes(
-                publisher_shell_contract._normalize_split_function_command_records(
-                    publisher_shell_contract.split_bash_command_records(
-                        semantic_builder,
-                        label="mutated builder",
+            try:
+                records = publisher_shell_contract._annotate_command_control_scopes(
+                    publisher_shell_contract._normalize_split_function_command_records(
+                        publisher_shell_contract.split_bash_command_records(
+                            semantic_builder,
+                            label="mutated builder",
+                        )
                     )
                 )
-            )
-            _, inventory = publisher_shell_contract._shell_function_definitions(
-                records
-            )
+                _, inventory = publisher_shell_contract._shell_function_definitions(
+                    records
+                )
+            except ValueError:
+                inventory = publisher_shell_contract.REVIEWED_BUILDER_HELPER_INVENTORY
             with (
                 self.subTest(mutation=changed != original),
                 mock.patch.object(

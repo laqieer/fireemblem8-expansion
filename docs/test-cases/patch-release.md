@@ -411,6 +411,9 @@ FD duplication/close and combined output redirects remain atomic; true
 background, AND-list, and pipeline operators retain their topology.
 The shared longest-match table includes `>|`, so its pipe character never
 becomes pipeline topology and later `set` argv remains visible.
+Missing targets and targets replaced by control/closing/adjacent-redirection
+tokens reject, while atomic fd, dynamic, process, heredoc, and here-string
+targets remain valid.
 Every `wait -p` output-variable form rejects, including clustered/attached
 options and dynamic or wrapped destinations; reviewed ordinary waits remain.
 `BASH_CMDS` and `BASH_ALIASES` reject every modeled writer. Function shadows
