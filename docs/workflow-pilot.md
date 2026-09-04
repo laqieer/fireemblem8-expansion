@@ -395,6 +395,12 @@ Link-header proof; redirects, duplicate/malformed/looping relations, page/body
 contradictions, stale identity, incomplete pagination, unknown or mixed run
 shapes, or a noncanonical workflow fail closed:
 
+HTTP response headers accept only visible ASCII plus the explicitly parsed
+SP separator. Bare CR/LF, NUL, tab, vertical tab, form feed, DEL, non-ASCII,
+folded/obs-fold lines, mixed line endings, and controls embedded in
+Content-Type, Link, Location, or any other value fail before interpretation.
+CRLF and LF header blocks are accepted only when internally consistent.
+
 The current PR's fully validated base-repository payload binds both
 `owner/repository` and its positive numeric repository ID. Pagination accepts
 only GitHub's canonical `/repos/<owner>/<repository>/...` and
@@ -411,6 +417,17 @@ attempt/event, head SHA, head branch, workflow name, node, job API URL, HTML
 URL, check-run URL, runner identity, and completion state must agree with the
 parent exact-candidate run and repository. Mixed run/attempt/repository/head
 pages and identityless jobs fail closed.
+
+Run and job times use a manual canonical
+`YYYY-MM-DDTHH:MM:SSZ` GitHub-RFC3339 parser; timezone offsets, fractional or
+24:00 times, malformed dates, and missing required fields are rejected.
+Runner-backed completed jobs require
+`run-created <= job-created <= job-started <= job-completed <= run-updated`.
+Queued jobs have null start/completion, and in-progress jobs have a valid start
+but null completion. Canonical unassigned skipped jobs preserve GitHub's live
+timestamp quirk: created and started must be equal, while completion may equal
+them or precede them by exactly one second. No wider chronology exception is
+accepted.
 
 ```bash
 repo=laqieer/fireemblem8-expansion
@@ -454,7 +471,8 @@ Every issue comment receives exact comment ID/body and API/HTML
 repository/PR/issue validation. Ordinary unmarked contributor, bot, and
 deleted-author comments remain permitted and cannot disable the helper. The
 one marked canonical evidence comment must be the repository owner's
-owner-associated `User` comment with exactly one standalone marker.
+owner-associated `User` comment with the exact owner numeric user ID from the
+validated PR repository payload and exactly one standalone marker.
 Marked missing/deleted authors, bots, non-owner associations, cross-repository
 IDs, duplicate or embedded markers, and a PATCH response that does not attest
 the same author/comment plus the requested body are rejected.

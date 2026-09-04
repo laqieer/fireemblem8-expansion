@@ -4607,6 +4607,10 @@ printf '%s\t%s\t%s\n' "$result" \
             "/repositories/<numeric-id>/",
             "Unmarked contributor, bot, and deleted-author comments",
             "check-run URL",
+            "SP-only value separation",
+            "exact owner numeric user ID",
+            "24:00",
+            "one-second unassigned-skip timestamp exception",
             "No ARM runtime test is needed",
             "There is no manual-only criterion",
         ):

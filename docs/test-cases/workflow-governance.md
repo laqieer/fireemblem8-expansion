@@ -1247,6 +1247,11 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    job pages, duplicate/identityless jobs, workflow URL/identity drift,
    canonical owner/repository and numeric-repository Link forms, other numeric
    IDs, percent/path ambiguity, and shell/API metacharacters.
+   Replay bare CR/LF, NUL, tab, vertical tab, form feed, DEL, obs-fold, and
+   Content-Type/Link/Location control injection. Replay same-login/wrong-owner
+   IDs and strict job/run timestamps including malformed dates, 24:00,
+   timezone offsets, missing fields, reversed chronology, queued/in-progress
+   nullability, run bounds, and GitHub's captured one-second skipped-job quirk.
 6. Parse `docs/test-cases/registry.json` and run
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
 
@@ -1276,7 +1281,13 @@ checks. Run, job, and comment pagination accepts both captured GitHub
 only when the PR-bound numeric ID, suffix, query, and page are exact. Workflow
 and job payloads bind complete API/HTML/check-run/run/repository/head/branch/
 attempt identities, including each job's exact check-run URL, before any run
-can authorize mutation or reconciliation.
+can authorize mutation or reconciliation. Header parsing permits only
+consistent LF/CRLF framing and visible ASCII with SP-only value separation.
+The marked comment author must match the exact owner numeric user ID as well
+as owner login/type/site-admin/association.
+Job/run timestamps use exact UTC-second GitHub RFC3339 syntax and enforce
+status-dependent nullability and chronology, with only the captured
+one-second unassigned-skip timestamp exception.
 
 ### Negative control
 
@@ -1291,7 +1302,10 @@ mismatch, wrong numeric repository IDs, owner/repository drift,
 percent-encoded/path-ambiguous or cross-form looping Links, workflow payload
 identity drift, duplicate/identityless jobs, mixed run/attempt/repository/head
 job pages, inconsistent job URLs, malformed or duplicate-key JSON, and
-repository/command injection all fail closed. No tested path calls a
+same-login/wrong-owner IDs, header control/DEL or obs-fold smuggling,
+malformed/24:00/offset/missing/reversed timestamps, invalid queued/in-progress
+timing, out-of-run chronology, and repository/command injection all fail
+closed. No tested path calls a
 cancellation endpoint or a full-workflow dispatch endpoint.
 
 ### Interactions and save compatibility

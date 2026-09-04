@@ -170,7 +170,9 @@ def _job(
     status: str = "completed",
     conclusion: str | None = "success",
     runner_name: str | None = "GitHub Actions 1",
-    started_at: str | None = "2026-09-04T00:00:00Z",
+    created_at: str | None = "2026-09-04T00:00:01Z",
+    started_at: str | None = "2026-09-04T00:00:01Z",
+    completed_at: str | None = None,
 ) -> dict:
     return {
         "id": job_id,
@@ -193,9 +195,14 @@ def _job(
         "status": status,
         "conclusion": conclusion,
         "runner_name": runner_name,
+        "created_at": created_at,
         "started_at": started_at,
         "completed_at": (
-            "2026-09-04T00:00:01Z" if status == "completed" else None
+            completed_at
+            if completed_at is not None
+            else "2026-09-04T00:00:02Z"
+            if status == "completed"
+            else None
         ),
         "runner_id": 1 if runner_name else None,
         "runner_group_id": 0 if runner_name else None,
@@ -244,7 +251,6 @@ def _full_jobs(
             run_attempt=run_attempt,
             conclusion="skipped",
             runner_name=None,
-            started_at=None,
         )
     )
     return jobs
@@ -267,7 +273,6 @@ def _metadata_jobs(
                     run_attempt=run_attempt,
                     conclusion="skipped",
                     runner_name=None,
-                    started_at=None,
                 )
             )
         elif name == "summary" and not success:
@@ -302,7 +307,7 @@ def _run(
     attempt: int = 1,
 ) -> tuple[dict, list[dict]]:
     if active:
-        status = "queued"
+        status = "in_progress"
         conclusion = None
     else:
         status = "completed"
@@ -323,6 +328,15 @@ def _run(
             "conclusion": conclusion,
             "head_sha": HEAD,
             "head_branch": HEAD_REF,
+            "created_at": "2026-09-04T00:00:00Z",
+            "run_started_at": (
+                "2026-09-04T00:00:00Z"
+            ),
+            "updated_at": (
+                "2026-09-04T00:00:03Z"
+                if active
+                else "2026-09-04T00:00:03Z"
+            ),
             "path": ".github/workflows/build.yml@refs/pull/199/merge",
             "url": f"https://api.github.com/repos/owner/repo/actions/runs/{run_id}",
             "pull_requests": [
@@ -1434,6 +1448,206 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertEqual(len(runs), 1)
         self.assertEqual(runs[0].run_id, 101)
 
+    def test_job_timing_rejects_malformed_missing_and_reversed_values(self):
+        mutations = {
+            "missing-created": {"created_at": None},
+            "missing-started": {"started_at": None},
+            "missing-completed": {"completed_at": None},
+            "24-hour": {"created_at": "2026-09-04T24:00:00Z"},
+            "timezone": {"created_at": "2026-09-04T00:00:01+00:00"},
+            "malformed": {"created_at": "not-a-time"},
+            "created-after-start": {
+                "created_at": "2026-09-04T00:00:02Z",
+                "started_at": "2026-09-04T00:00:01Z",
+            },
+            "completed-before-start": {
+                "started_at": "2026-09-04T00:00:02Z",
+                "completed_at": "2026-09-04T00:00:01Z",
+            },
+            "after-run": {
+                "completed_at": "2026-09-04T00:00:04Z",
+            },
+            "before-run": {
+                "created_at": "2026-09-03T23:59:59Z",
+                "started_at": "2026-09-04T00:00:01Z",
+            },
+        }
+        for name, changes in mutations.items():
+            with self.subTest(timing=name):
+                client = ScriptedClient()
+                record, jobs = _run(101, 10, mode="full")
+                jobs = copy.deepcopy(jobs)
+                target = next(job for job in jobs if job["name"] == "build")
+                target.update(changes)
+                _add_pr_states(client, _pr())
+                _add_snapshot(client, [(record, jobs)])
+                state = pr_metadata.fetch_pull_request(
+                    client,
+                    REPOSITORY,
+                    PR_NUMBER,
+                )
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.list_candidate_runs(client, state)
+
+    def test_run_timing_rejects_malformed_missing_and_reversed_values(self):
+        mutations = {
+            "missing-created": {"created_at": None},
+            "missing-started": {"run_started_at": None},
+            "missing-updated": {"updated_at": None},
+            "24-hour": {"created_at": "2026-09-04T24:00:00Z"},
+            "timezone": {"run_started_at": "2026-09-04T00:00:00+00:00"},
+            "reversed": {
+                "run_started_at": "2026-09-04T00:00:03Z",
+                "updated_at": "2026-09-04T00:00:02Z",
+            },
+        }
+        for name, changes in mutations.items():
+            with self.subTest(timing=name):
+                client = ScriptedClient()
+                record, jobs = _run(101, 10, mode="full")
+                record.update(changes)
+                _add_pr_states(client, _pr())
+                _add_snapshot(client, [(record, jobs)])
+                state = pr_metadata.fetch_pull_request(
+                    client,
+                    REPOSITORY,
+                    PR_NUMBER,
+                )
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.list_candidate_runs(client, state)
+
+    def test_queued_and_in_progress_job_timing_matches_live_shapes(self):
+        client = ScriptedClient()
+        record, jobs = _run(101, 10, mode="full", active=True)
+        jobs = copy.deepcopy(jobs)
+        active = next(job for job in jobs if job["name"] == "build")
+        active.update(
+            {
+                "status": "in_progress",
+                "runner_id": 1,
+                "runner_name": "GitHub Actions 1",
+                "runner_group_id": 0,
+                "runner_group_name": "GitHub Actions",
+                "started_at": "2026-09-04T00:00:01Z",
+            }
+        )
+        _add_pr_states(client, _pr())
+        _add_snapshot(client, [(record, jobs)])
+        state = pr_metadata.fetch_pull_request(
+            client,
+            REPOSITORY,
+            PR_NUMBER,
+        )
+        runs = pr_metadata.list_candidate_runs(client, state)
+        self.assertEqual(runs[0].status, "in_progress")
+
+        invalid_client = ScriptedClient()
+        invalid_record, invalid_jobs = _run(
+            102,
+            11,
+            mode="full",
+            active=True,
+        )
+        invalid_jobs = copy.deepcopy(invalid_jobs)
+        queued = next(job for job in invalid_jobs if job["name"] == "build")
+        queued["started_at"] = "2026-09-04T00:00:01Z"
+        _add_pr_states(invalid_client, _pr())
+        _add_snapshot(invalid_client, [(invalid_record, invalid_jobs)])
+        invalid_state = pr_metadata.fetch_pull_request(
+            invalid_client,
+            REPOSITORY,
+            PR_NUMBER,
+        )
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "queued timing is invalid",
+        ):
+            pr_metadata.list_candidate_runs(invalid_client, invalid_state)
+
+        future_client = ScriptedClient()
+        future_record, future_jobs = _run(
+            103,
+            12,
+            mode="full",
+            active=True,
+        )
+        future_jobs = copy.deepcopy(future_jobs)
+        future = next(job for job in future_jobs if job["name"] == "build")
+        future.update(
+            {
+                "status": "in_progress",
+                "runner_id": 1,
+                "runner_name": "GitHub Actions 1",
+                "runner_group_id": 0,
+                "runner_group_name": "GitHub Actions",
+                "started_at": "2026-09-04T00:00:04Z",
+            }
+        )
+        _add_pr_states(future_client, _pr())
+        _add_snapshot(future_client, [(future_record, future_jobs)])
+        future_state = pr_metadata.fetch_pull_request(
+            future_client,
+            REPOSITORY,
+            PR_NUMBER,
+        )
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "in-progress timing is invalid",
+        ):
+            pr_metadata.list_candidate_runs(future_client, future_state)
+
+    def test_live_skipped_one_second_timing_quirk_is_bounded(self):
+        client = ScriptedClient()
+        record, jobs = _run(101, 10, mode="full")
+        jobs = copy.deepcopy(jobs)
+        skipped = next(
+            job for job in jobs if job["name"] == "patch-release"
+        )
+        skipped.update(
+            {
+                "created_at": "2026-09-04T00:00:02Z",
+                "started_at": "2026-09-04T00:00:02Z",
+                "completed_at": "2026-09-04T00:00:01Z",
+            }
+        )
+        _add_pr_states(client, _pr())
+        _add_snapshot(client, [(record, jobs)])
+        state = pr_metadata.fetch_pull_request(
+            client,
+            REPOSITORY,
+            PR_NUMBER,
+        )
+        self.assertEqual(
+            pr_metadata.list_candidate_runs(client, state)[0].run_id,
+            101,
+        )
+
+        invalid_client = ScriptedClient()
+        invalid_record, invalid_jobs = _run(102, 11, mode="full")
+        invalid_jobs = copy.deepcopy(invalid_jobs)
+        invalid_skipped = next(
+            job for job in invalid_jobs if job["name"] == "patch-release"
+        )
+        invalid_skipped.update(
+            {
+                "created_at": "2026-09-04T00:00:03Z",
+                "started_at": "2026-09-04T00:00:03Z",
+                "completed_at": "2026-09-04T00:00:01Z",
+            }
+        )
+        _add_pr_states(invalid_client, _pr())
+        _add_snapshot(invalid_client, [(invalid_record, invalid_jobs)])
+        invalid_state = pr_metadata.fetch_pull_request(
+            invalid_client,
+            REPOSITORY,
+            PR_NUMBER,
+        )
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "skipped timing is invalid",
+        ):
+            pr_metadata.list_candidate_runs(invalid_client, invalid_state)
+
     def test_wrong_pr_or_base_binding_cannot_authorize_mutation(self):
         mutations = {
             "pr": ("number", PR_NUMBER + 1),
@@ -1626,16 +1840,21 @@ class PullRequestMetadataTests(unittest.TestCase):
 
     def test_comment_mutation_response_must_attest_identity_and_body(self):
         desired = f"{pr_metadata.EVIDENCE_MARKER}\nNew evidence\n"
-        for name, response in (
+        for name, response, message in (
             (
                 "body",
                 _comment(
                     301,
                     f"{pr_metadata.EVIDENCE_MARKER}\nOld evidence\n",
                 ),
+                "did not attest",
             ),
-            ("identity", _comment(302, desired)),
-            ("author", _comment(301, desired, author_id=88)),
+            ("identity", _comment(302, desired), "did not attest"),
+            (
+                "author",
+                _comment(301, desired, author_id=88),
+                "repository owner",
+            ),
         ):
             with self.subTest(mismatch=name):
                 client = ScriptedClient()
@@ -1660,7 +1879,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 )
                 with self.assertRaisesRegex(
                     pr_metadata.MetadataEditError,
-                    "did not attest",
+                    message,
                 ):
                     pr_metadata.update_evidence_comment(
                         client,
@@ -1675,6 +1894,7 @@ class PullRequestMetadataTests(unittest.TestCase):
         mutations = {
             "missing-user": {"user": None},
             "wrong-login": {"user": {"id": 77, "login": "attacker", "type": "User", "site_admin": False}},
+            "wrong-owner-id": {"user": {"id": 88, "login": "owner", "type": "User", "site_admin": False}},
             "bot": {"user": {"id": 77, "login": "owner", "type": "Bot", "site_admin": False}},
             "association": {"author_association": "NONE"},
             "site-admin": {"user": {"id": 77, "login": "owner", "type": "User", "site_admin": True}},
@@ -1804,6 +2024,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                         REPOSITORY,
                         PR_NUMBER,
                         REPOSITORY_ID,
+                        OWNER_ID,
                     )
 
     def test_comment_pagination_consumes_canonical_linked_pages(self):
@@ -1849,6 +2070,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             REPOSITORY,
             PR_NUMBER,
             REPOSITORY_ID,
+            OWNER_ID,
         )
         self.assertEqual(len(comments), 101)
 
@@ -1935,6 +2157,43 @@ class PullRequestMetadataTests(unittest.TestCase):
                         label="HTTP fixture",
                     )
 
+    def test_http_header_control_bytes_and_obs_fold_are_rejected(self):
+        headers = {
+            "content-type-cr-location": (
+                "Content-Type: application/json\r"
+                "Location: https://example.test/"
+            ),
+            "nul": "X-Test: value\x00suffix",
+            "tab": "Content-Type:\tapplication/json",
+            "vertical-tab": "Link: value\x0bsuffix",
+            "form-feed": "Location: value\x0csuffix",
+            "delete": "X-Test: value\x7fsuffix",
+            "bare-lf": "X-Test: value\ninjected",
+            "obs-fold": "Link: value\n continuation",
+            "location-nul": "Location: https://example.test/\x00",
+        }
+        for name, header in headers.items():
+            with self.subTest(header=name):
+                raw = f"HTTP/2 200 OK\n{header}\n\n{{}}\n"
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata._parse_http_response(
+                        raw,
+                        label="control fixture",
+                        allow_empty_body=False,
+                    )
+
+    def test_http_crlf_headers_with_json_body_are_valid(self):
+        response = pr_metadata._parse_http_response(
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json\r\n"
+            "X-Empty: \r\n"
+            "\r\n"
+            '{"ok":true}\n',
+            label="CRLF fixture",
+            allow_empty_body=False,
+        )
+        self.assertEqual(response.payload, {"ok": True})
+
     def test_repository_and_json_inputs_fail_closed(self):
         with self.assertRaises(pr_metadata.MetadataEditError):
             pr_metadata._repository("owner/repo;gh-run-cancel")
@@ -1943,6 +2202,28 @@ class PullRequestMetadataTests(unittest.TestCase):
             "repeats key",
         ):
             pr_metadata._parse_json('{"id":1,"id":2}', "test")
+
+    def test_github_timestamp_parser_rejects_noncanonical_values(self):
+        invalid = (
+            None,
+            "",
+            "2026-09-04T24:00:00Z",
+            "2026-09-04T23:60:00Z",
+            "2026-02-30T12:00:00Z",
+            "2026-09-04T12:00:00+00:00",
+            "2026-09-04T12:00:00.000Z",
+            "2026-9-4T12:00:00Z",
+            "not-a-time",
+        )
+        for value in invalid:
+            with self.subTest(value=value):
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata._github_timestamp(value, "timestamp")
+        parsed = pr_metadata._github_timestamp(
+            "2026-09-04T23:59:59Z",
+            "timestamp",
+        )
+        self.assertEqual(parsed.hour, 23)
 
 
 if __name__ == "__main__":

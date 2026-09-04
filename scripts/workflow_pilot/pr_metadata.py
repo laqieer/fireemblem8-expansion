@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import math
 import os
@@ -33,6 +34,10 @@ EVIDENCE_MARKER = "<!-- workflow-pilot-candidate-evidence -->"
 HTTP_STATUS_RE = re.compile(r"^HTTP/(?:1(?:\.[01])?|2(?:\.0)?) ([1-5][0-9]{2})(?: .*)?$")
 HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 LINK_PART_RE = re.compile(r'\s*<([^>]+)>\s*;\s*rel="([^"]+)"\s*(?:,\s*|$)')
+GITHUB_TIMESTAMP_RE = re.compile(
+    r"^([0-9]{4})-([0-9]{2})-([0-9]{2})T"
+    r"([0-9]{2}):([0-9]{2}):([0-9]{2})Z$"
+)
 
 FULL_JOB_NAMES = frozenset(candidate_evidence.KNOWN_JOB_IDS)
 METADATA_JOB_NAMES = (
@@ -65,6 +70,7 @@ class MetadataEditError(ValueError):
 class PullRequestState:
     repository: str
     repository_id: int
+    repository_owner_id: int
     number: int
     head_sha: str
     head_ref: str
@@ -93,7 +99,9 @@ class JobState:
     status: str
     conclusion: str | None
     runner_name: str | None
-    started_at: str | None
+    created_at: datetime.datetime
+    started_at: datetime.datetime | None
+    completed_at: datetime.datetime | None
 
 
 @dataclass(frozen=True)
@@ -110,6 +118,9 @@ class RunState:
     run_number: int
     run_attempt: int
     head_branch: str
+    created_at: datetime.datetime
+    run_started_at: datetime.datetime | None
+    updated_at: datetime.datetime
     status: str
     conclusion: str | None
     mode: str
@@ -172,6 +183,30 @@ def _sha(value: object, field: str) -> str:
     if not isinstance(value, str) or SHA_RE.fullmatch(value) is None:
         raise MetadataEditError(f"{field} must be a full lowercase SHA")
     return value
+
+
+def _github_timestamp(
+    value: object,
+    field: str,
+    *,
+    optional: bool = False,
+) -> datetime.datetime | None:
+    if value is None and optional:
+        return None
+    if not isinstance(value, str):
+        raise MetadataEditError(f"{field} must be a GitHub RFC3339 timestamp")
+    match = GITHUB_TIMESTAMP_RE.fullmatch(value)
+    if match is None:
+        raise MetadataEditError(f"{field} must be a GitHub RFC3339 timestamp")
+    try:
+        return datetime.datetime(
+            *(int(part) for part in match.groups()),
+            tzinfo=datetime.timezone.utc,
+        )
+    except ValueError as error:
+        raise MetadataEditError(
+            f"{field} must be a valid GitHub RFC3339 timestamp"
+        ) from error
 
 
 def _text(value: object, field: str, *, optional: bool = False) -> str | None:
@@ -242,13 +277,46 @@ def _parse_http_response(
 ) -> ApiResponse:
     if len(raw.encode("utf-8")) > MAX_API_BYTES:
         raise MetadataEditError(f"{label} response exceeds 4 MiB")
-    normalized = raw.replace("\r\n", "\n")
-    boundary = normalized.find("\n\n")
-    if boundary < 0:
-        raise MetadataEditError(f"{label} response lacks HTTP headers")
-    header_text = normalized[:boundary]
-    body_text = normalized[boundary + 2 :]
-    lines = header_text.split("\n")
+    crlf_boundary = raw.find("\r\n\r\n")
+    lf_boundary = raw.find("\n\n")
+    if crlf_boundary >= 0 and (lf_boundary < 0 or crlf_boundary <= lf_boundary):
+        line_break = "\r\n"
+        boundary = crlf_boundary
+        header_text = raw[:boundary]
+        for index, character in enumerate(header_text):
+            if character == "\r" and (
+                index + 1 >= len(header_text)
+                or header_text[index + 1] != "\n"
+            ):
+                raise MetadataEditError(
+                    f"{label} response contains a bare carriage return"
+                )
+            if character == "\n" and (
+                index == 0 or header_text[index - 1] != "\r"
+            ):
+                raise MetadataEditError(
+                    f"{label} response mixes HTTP line endings"
+                )
+    else:
+        line_break = "\n"
+        boundary = lf_boundary
+        if boundary < 0:
+            raise MetadataEditError(f"{label} response lacks HTTP headers")
+        header_text = raw[:boundary]
+        if "\r" in header_text:
+            raise MetadataEditError(
+                f"{label} response contains a bare carriage return"
+            )
+    boundary_marker = line_break + line_break
+    body_text = raw[boundary + len(boundary_marker) :]
+    lines = header_text.split(line_break)
+    for line in lines:
+        for character in line:
+            code = ord(character)
+            if code < 0x20 or code > 0x7E:
+                raise MetadataEditError(
+                    f"{label} response header contains a control or non-ASCII byte"
+                )
     status_match = HTTP_STATUS_RE.fullmatch(lines[0]) if lines else None
     if status_match is None:
         raise MetadataEditError(f"{label} response status line is invalid")
@@ -260,10 +328,14 @@ def _parse_http_response(
         name, value = line.split(":", 1)
         if HEADER_NAME_RE.fullmatch(name) is None:
             raise MetadataEditError(f"{label} response header name is invalid")
+        if value and not value.startswith(" "):
+            raise MetadataEditError(
+                f"{label} response header lacks SP separator"
+            )
         key = name.lower()
         if key in headers:
             raise MetadataEditError(f"{label} response repeats header {name!r}")
-        headers[key] = value.strip()
+        headers[key] = value.strip(" ")
     if 300 <= status < 400:
         raise MetadataEditError(f"{label} request rejected redirect: HTTP {status}")
     if "location" in headers:
@@ -430,7 +502,10 @@ def _parse_pull_request_payload(
         or repo_owner.get("site_admin") is not False
     ):
         raise MetadataEditError("pull request repository owner is invalid")
-    _positive_int(repo_owner.get("id"), "pull request repository owner id")
+    repository_owner_id = _positive_int(
+        repo_owner.get("id"),
+        "pull request repository owner id",
+    )
     head_ref = _text(head.get("ref"), "pull request head ref")
     _text(base.get("ref"), "pull request base ref")
     title = _text(payload.get("title"), "pull request title")
@@ -440,6 +515,7 @@ def _parse_pull_request_payload(
     return PullRequestState(
         repository=repository,
         repository_id=repository_id,
+        repository_owner_id=repository_owner_id,
         number=pr_number,
         head_sha=_sha(head.get("sha"), "pull request head"),
         head_ref=head_ref,
@@ -715,6 +791,9 @@ def _parse_job(
     head_sha: str,
     head_branch: str,
     workflow: WorkflowAuthority,
+    run_created_at: datetime.datetime,
+    run_started_at: datetime.datetime | None,
+    run_updated_at: datetime.datetime,
 ) -> JobState:
     if not isinstance(raw, dict):
         raise MetadataEditError(f"Build run {run_id} job must be an object")
@@ -769,16 +848,71 @@ def _parse_job(
     runner_name = raw.get("runner_name")
     if runner_name is not None and not isinstance(runner_name, str):
         raise MetadataEditError(f"Build run {run_id} job runner is invalid")
-    started_at = raw.get("started_at")
-    if started_at is not None and (
-        not isinstance(started_at, str) or not started_at
-    ):
-        raise MetadataEditError(f"Build run {run_id} job start time is invalid")
-    completed_at = raw.get("completed_at")
+    created_at = _github_timestamp(
+        raw.get("created_at"),
+        f"Build job {job_id} created_at",
+    )
+    started_at = _github_timestamp(
+        raw.get("started_at"),
+        f"Build job {job_id} started_at",
+        optional=True,
+    )
+    completed_at = _github_timestamp(
+        raw.get("completed_at"),
+        f"Build job {job_id} completed_at",
+        optional=True,
+    )
+    if created_at < run_created_at:
+        raise MetadataEditError(f"Build job {job_id} predates its workflow run")
+    if created_at > run_updated_at:
+        raise MetadataEditError(f"Build job {job_id} is newer than its workflow run")
     if status == "completed":
-        _text(completed_at, f"Build job {job_id} completed_at")
-    elif completed_at is not None:
-        raise MetadataEditError(f"Build job {job_id} active completion is invalid")
+        if started_at is None or completed_at is None:
+            raise MetadataEditError(
+                f"Build job {job_id} completed timing is incomplete"
+            )
+        if runner_name is None and conclusion == "skipped":
+            if (
+                created_at != started_at
+                or (
+                    completed_at < started_at
+                    and completed_at
+                    != started_at - datetime.timedelta(seconds=1)
+                )
+            ):
+                raise MetadataEditError(
+                    f"Build job {job_id} skipped timing is invalid"
+                )
+        elif not (created_at <= started_at <= completed_at):
+            raise MetadataEditError(
+                f"Build job {job_id} completion chronology is invalid"
+            )
+        if completed_at > run_updated_at:
+            raise MetadataEditError(
+                f"Build job {job_id} completes after its workflow run"
+            )
+    elif status == "in_progress":
+        if (
+            started_at is None
+            or completed_at is not None
+            or created_at > started_at
+            or started_at > run_updated_at
+        ):
+            raise MetadataEditError(
+                f"Build job {job_id} in-progress timing is invalid"
+            )
+    elif started_at is not None or completed_at is not None:
+        raise MetadataEditError(
+            f"Build job {job_id} queued timing is invalid"
+        )
+    if (
+        run_started_at is not None
+        and started_at is not None
+        and started_at < run_started_at
+    ):
+        raise MetadataEditError(
+            f"Build job {job_id} starts before its workflow run"
+        )
     runner_id = raw.get("runner_id")
     runner_group_id = raw.get("runner_group_id")
     runner_group_name = raw.get("runner_group_name")
@@ -808,7 +942,9 @@ def _parse_job(
         status,
         conclusion,
         runner_name,
+        created_at,
         started_at,
+        completed_at,
     )
 
 
@@ -821,6 +957,9 @@ def _list_jobs(
     head_sha: str,
     head_branch: str,
     workflow: WorkflowAuthority,
+    run_created_at: datetime.datetime,
+    run_started_at: datetime.datetime | None,
+    run_updated_at: datetime.datetime,
 ) -> tuple[JobState, ...]:
     raw_jobs = _list_counted_pages(
         client,
@@ -844,6 +983,9 @@ def _list_jobs(
             head_sha=head_sha,
             head_branch=head_branch,
             workflow=workflow,
+            run_created_at=run_created_at,
+            run_started_at=run_started_at,
+            run_updated_at=run_updated_at,
         )
         for raw in raw_jobs
     )
@@ -940,6 +1082,38 @@ def _parse_run(
         raise MetadataEditError(f"Build run {run_id} completed without conclusion")
     if status != "completed" and conclusion is not None:
         raise MetadataEditError(f"Build run {run_id} active with conclusion")
+    created_at = _github_timestamp(
+        raw.get("created_at"),
+        f"Build run {run_id} created_at",
+    )
+    run_started_at = _github_timestamp(
+        raw.get("run_started_at"),
+        f"Build run {run_id} run_started_at",
+        optional=True,
+    )
+    updated_at = _github_timestamp(
+        raw.get("updated_at"),
+        f"Build run {run_id} updated_at",
+    )
+    if status == "completed":
+        if (
+            run_started_at is None
+            or not (created_at <= run_started_at <= updated_at)
+        ):
+            raise MetadataEditError(
+                f"Build run {run_id} completion chronology is invalid"
+            )
+    elif status == "in_progress":
+        if (
+            run_started_at is None
+            or created_at > run_started_at
+            or run_started_at > updated_at
+        ):
+            raise MetadataEditError(
+                f"Build run {run_id} in-progress chronology is invalid"
+            )
+    elif run_started_at is not None or created_at > updated_at:
+        raise MetadataEditError(f"Build run {run_id} queued chronology is invalid")
     if matches == 0:
         return run_id, run_number, None
     jobs = _list_jobs(
@@ -950,6 +1124,9 @@ def _parse_run(
         head_sha=state.head_sha,
         head_branch=head_branch,
         workflow=workflow,
+        run_created_at=created_at,
+        run_started_at=run_started_at,
+        run_updated_at=updated_at,
     )
     return (
         run_id,
@@ -960,6 +1137,9 @@ def _parse_run(
             run_number=run_number,
             run_attempt=run_attempt,
             head_branch=head_branch,
+            created_at=created_at,
+            run_started_at=run_started_at,
+            updated_at=updated_at,
             status=status,
             conclusion=conclusion,
             mode=_run_mode(jobs, run_id=run_id),
@@ -1328,6 +1508,7 @@ def edit_metadata(
     require_identity(after, head_sha=head_sha, base_sha=base_sha)
     if (
         after.repository_id != current.repository_id
+        or after.repository_owner_id != current.repository_owner_id
         or after.head_ref != current.head_ref
     ):
         raise MetadataEditError(
@@ -1508,6 +1689,7 @@ def _list_comments(
     repository: str,
     pr_number: int,
     repository_id: int,
+    repository_owner_id: int,
 ) -> list[CommentState]:
     comments = []
     seen_ids = set()
@@ -1583,7 +1765,12 @@ def _list_comments(
                     "pull request comments terminated before the last page"
                 )
         for raw in payload:
-            comment = _parse_comment_payload(raw, repository, pr_number)
+            comment = _parse_comment_payload(
+                raw,
+                repository,
+                pr_number,
+                repository_owner_id,
+            )
             comment_id = comment.comment_id
             if comment_id in seen_ids:
                 raise MetadataEditError("pull request comments repeat an identity")
@@ -1598,6 +1785,7 @@ def _parse_comment_payload(
     raw: object,
     repository: str,
     pr_number: int,
+    repository_owner_id: int,
 ) -> CommentState:
     if not isinstance(raw, dict):
         raise MetadataEditError("pull request comment is invalid")
@@ -1664,7 +1852,8 @@ def _parse_comment_payload(
                 "canonical evidence marker is duplicated or embedded"
             )
         if (
-            author_login != owner
+            author_id != repository_owner_id
+            or author_login != owner
             or author_type != "User"
             or not isinstance(user, dict)
             or user.get("site_admin") is not False
@@ -1713,6 +1902,7 @@ def update_evidence_comment(
         repository,
         pr_number,
         initial.repository_id,
+        initial.repository_owner_id,
     )
     marked = []
     for comment in comments:
@@ -1746,6 +1936,7 @@ def update_evidence_comment(
         mutation_response.payload,
         repository,
         pr_number,
+        initial.repository_owner_id,
     )
     if (
         updated.comment_id != original.comment_id
