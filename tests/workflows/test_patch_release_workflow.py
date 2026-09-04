@@ -1900,6 +1900,22 @@ def generate_reserved_transport_output_mutations(workflow: str):
             )
             changed = workflow.replace(marker, mutation + marker, 1)
             yield f"{family}-preuse-{index}", changed
+        helper = (
+            "        inspect_transport_output() {\n"
+            f'          printf "%s\\n" "${{{name}[0]}}" > /dev/null\n'
+            "        }\n"
+            "        inspect_transport_output\n"
+        )
+        yield f"{family}-helper-preuse", workflow.replace(
+            marker,
+            helper + marker,
+            1,
+        )
+        yield f"{family}-helper-extra-use", workflow.replace(
+            marker,
+            marker + helper,
+            1,
+        )
         for index, template in enumerate(writers):
             mutation = "".join(
                 f"        {line}\n"
@@ -1933,6 +1949,19 @@ def generate_reserved_transport_output_mutations(workflow: str):
     yield "supervisor-stale-interphase", workflow.replace(
         second_supervisor,
         stale + second_supervisor,
+        1,
+    )
+    nested = (
+        "        inspect_transport_inner() {\n"
+        '          printf "%s\\n" '
+        '"${checked_supervisor_transport_output[0]}" > /dev/null\n'
+        "        }\n"
+        "        inspect_transport_outer() { inspect_transport_inner; }\n"
+        "        inspect_transport_outer\n"
+    )
+    yield "supervisor-nested-helper-preuse", workflow.replace(
+        arrays["supervisor"][1],
+        nested + arrays["supervisor"][1],
         1,
     )
 
@@ -8155,6 +8184,108 @@ exit 37
                         label=f"{name} pre-use runtime",
                     )
                 )
+        helper_cases = (
+            "inspect() {\n"
+            '  printf "%s\\n" "${checked_supervisor_transport_output[0]}"\n'
+            "}\n"
+            "inspect\n",
+            "outer() {\n"
+            "  inner() {\n"
+            '    printf "%s\\n" "${checked_runtime_transport_output[0]}"\n'
+            "  }\n"
+            "  inner\n"
+            "}\n"
+            "outer\n",
+            "inspect() {\n"
+            "  name=checked_supervisor_transport_output\n"
+            '  printf "%s\\n" "${!name}"\n'
+            "}\n"
+            "inspect\n",
+            "inspect() {\n"
+            '  printf "%s\\n" "${checked_runtime_transport_output[0]}"\n'
+            "}\n"
+            "call=inspect\n"
+            '"$call"\n',
+            "inspect() {\n"
+            '  printf "%s\\n" "${checked_supervisor_transport_output[0]}"\n'
+            "}\n"
+            "trap inspect ERR\n"
+            "false\n",
+            "inspect() {\n"
+            '  printf "%s\\n" "${checked_runtime_transport_output[0]}"\n'
+            "}\n"
+            "mapfile -C inspect -c 1 -t ordinary <<< x\n",
+            "inspect() {\n"
+            '  result="$(printf "%s" '
+            '"${checked_supervisor_transport_output[0]}")"\n'
+            "}\n"
+            "inspect\n",
+        )
+        for script in helper_cases:
+            with self.subTest(helper_preuse=script.splitlines()[0]):
+                completed = subprocess.run(
+                    ["/bin/bash", "-u", "-c", script],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        script,
+                        label="helper reserved pre-use runtime",
+                    )
+                )
+
+        active_definition = helper_cases[0].rsplit("inspect\n", 1)[0]
+        self.assertFalse(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                active_definition,
+                label="uninvoked reserved helper definition",
+            )
+        )
+        default_read = (
+            "inspect() {\n"
+            '  printf "%s\\n" '
+            '"${checked_runtime_transport_output[0]:-/missing}"\n'
+            "}\n"
+            "inspect\n"
+        )
+        completed = subprocess.run(
+            ["/bin/bash", "-u", "-c", default_read],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout, "/missing\n")
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                default_read,
+                label="helper reserved default read runtime",
+            )
+        )
+
+        inert_helper = (
+            "inspect() {\n"
+            "  printf '%s\\n' "
+            "'${checked_supervisor_transport_output[0]}'\n"
+            "}\n"
+        )
+        self.assertFalse(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                inert_helper,
+                label="inert reserved helper definition",
+            )
+        )
+        self.assertFalse(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                inert_helper + "inspect\n",
+                label="inert reserved helper call",
+            )
+        )
         self.assertFalse(
             workflow_has_raw_builder_cgroup_membership_read(self.text)
         )
@@ -12629,6 +12760,7 @@ exit 37
                 "consumer_protocol": "exact-latest-phase-sequence",
                 "supervisor_phases": 2,
                 "runtime_phases": 1,
+                "invoked_helper_consumers": "reject-unreviewed-active-reference",
                 "later_or_external_mutation": "reject",
             },
             "alias_state": {

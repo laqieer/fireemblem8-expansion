@@ -4413,6 +4413,15 @@ def _analyze_function_call(
             tokens,
             function_aliases,
         )
+        reviewed_transport_write = _is_reviewed_transport_output_write(
+            function_name,
+            resolved,
+        )
+        if (
+            _active_reserved_transport_references(tokens, resolved)
+            and not reviewed_transport_write
+        ):
+            return True, {}
         for original_token in tokens:
             token = _resolve_shell_token(
                 original_token,
@@ -4435,10 +4444,7 @@ def _analyze_function_call(
             return True, {}
         if (
             _normalized_command_mutates_reserved_transport(resolved)
-            and not _is_reviewed_transport_output_write(
-                function_name,
-                resolved,
-            )
+            and not reviewed_transport_write
         ):
             return True, {}
         normalized = _normalize_shell_builtin_wrappers(resolved)
@@ -5072,6 +5078,24 @@ def _is_reviewed_transport_output_write(
         and normalized[:5]
         == ("mapfile", "-d", "", "-t", expected_target)
         and "<" in normalized[5:]
+    )
+
+
+def _active_reserved_transport_references(
+    tokens: tuple[_ShellToken, ...],
+    resolved_tokens: tuple[str, ...],
+) -> frozenset[str]:
+    return frozenset(
+        name
+        for token, resolved in zip(tokens, resolved_tokens)
+        for name in _RESERVED_TRANSPORT_OUTPUTS
+        if (
+            name in _active_shell_token_text(token)
+            or (
+                token.has_shell_syntax
+                and name in resolved
+            )
+        )
     )
 
 
@@ -5911,14 +5935,12 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                         return True
                     transport_producer_calls[executable_name] += 1
                     transport_event = ("producer",) + token_texts
-            if transport_event is None and any(
-                name in _active_shell_token_text(token)
-                or (
-                    token.has_shell_syntax
-                    and name in resolved
+            if (
+                transport_event is None
+                and _active_reserved_transport_references(
+                    tokens,
+                    resolved_token_texts,
                 )
-                for token, resolved in zip(tokens, resolved_token_texts)
-                for name in _RESERVED_TRANSPORT_OUTPUTS
             ):
                 transport_event = ("consumer",) + token_texts
             if transport_event is not None:
