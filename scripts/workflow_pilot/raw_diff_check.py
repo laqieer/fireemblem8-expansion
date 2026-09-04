@@ -38,8 +38,15 @@ def git_command(repository_root: Path, *arguments: str) -> tuple[str, ...]:
     return (
         GIT,
         "--no-replace-objects",
+        "--no-pager",
         "-C",
         str(repository_root),
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.hooksPath=/dev/null",
+        "-c",
+        "core.pager=cat",
         "-c",
         f"core.whitespace={WHITESPACE_POLICY}",
         "-c",
@@ -173,9 +180,7 @@ def raw_diff_errors(
             continue
         if line.startswith(b"+"):
             content = line[1:]
-            if content.endswith(b"\r"):
-                content = content[:-1]
-            if content.endswith((b" ", b"\t")):
+            if content.endswith((b" ", b"\t", b"\r")):
                 errors.append(f"{path}:{line_number}: blank-at-eol")
             if leading_space_before_tab(content):
                 errors.append(f"{path}:{line_number}: space-before-tab")

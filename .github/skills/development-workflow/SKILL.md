@@ -582,7 +582,8 @@ with:
 
 ```bash
 python3 -m scripts.workflow_pilot.agent_handoff \
-  --fixture <path> --worktree <exact-worktree>
+  --fixture <path> --worktree <exact-worktree> \
+  --coordinator-installation <external-path>
 ```
 
 The assignment records the issue/PR, exact parent SHA, expected branch and
@@ -605,11 +606,12 @@ reporter's minimal environment, never the candidate worktree copy. A parent
 without that blob enters explicit bootstrap mode and requires the external
 coordinator-installed validator; bootstrap can produce check evidence but
 cannot become `trusted_push_eligible`. The checker's internal Git argv pins the
-complete
-behavior-affecting `-c` policy and disables external diff, textconv, and binary
-bypasses; the raw added-line policy ignores tracked whitespace attributes, and
-local attributes are forbidden. Local, global, system, alias, tracked
-attribute, and ambient `GIT_*` configuration cannot hide trailing whitespace.
+complete behavior-affecting `-c` policy, disables repository fsmonitor, hooks,
+pagers, external diff, textconv, credential helpers, and caller-selected
+transport commands, and preserves protected remote hooks. The raw added-line
+policy ignores tracked whitespace attributes, and local attributes are
+forbidden. Local, global, system, alias, tracked attribute, and ambient `GIT_*`
+configuration cannot execute owner code or hide trailing whitespace.
 
 Dependency edges have explicit semantics. A child issue with a
 `code_contract` dependency becomes implementation-ready when the parent

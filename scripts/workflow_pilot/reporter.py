@@ -664,12 +664,35 @@ def git_environment(*, offline: bool) -> dict[str, str]:
 
 
 def git_command(repository_root: Path, *arguments: str) -> tuple[str, ...]:
+    command = arguments[0] if arguments else ""
+    command_options = {
+        "diff": ("--no-ext-diff", "--no-textconv"),
+        "fetch": ("--upload-pack=git-upload-pack",),
+        "ls-remote": ("--upload-pack=git-upload-pack",),
+        "push": ("--no-verify", "--receive-pack=git-receive-pack"),
+    }.get(command, ())
+    sealed_config = (
+        "core.fsmonitor=false",
+        "core.pager=cat",
+        "core.attributesFile=/dev/null",
+        "diff.external=",
+        "credential.helper=",
+        "credential.interactive=false",
+        "core.askPass=/usr/bin/false",
+        "core.sshCommand=/usr/bin/ssh",
+        "ssh.variant=ssh",
+        "protocol.ext.allow=never",
+    )
+    if command != "push":
+        sealed_config += ("core.hooksPath=/dev/null",)
     return (
         trusted_git_executable(),
         "--no-replace-objects",
+        "--no-pager",
         "-C",
         str(repository_root),
-        *arguments,
+        *(item for setting in sealed_config for item in ("-c", setting)),
+        *((command, *command_options, *arguments[1:]) if arguments else ()),
     )
 
 

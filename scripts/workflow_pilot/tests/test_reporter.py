@@ -1105,16 +1105,30 @@ class RepositoryAuthorityTests(unittest.TestCase):
             },
         )
         self.assertEqual(reporter.trusted_git_executable(), "/usr/bin/git")
+        command = reporter.git_command(ROOT, "rev-parse", "HEAD")
         self.assertEqual(
-            reporter.git_command(ROOT, "rev-parse", "HEAD"),
-            (
-                "/usr/bin/git",
-                "--no-replace-objects",
-                "-C",
-                str(ROOT),
-                "rev-parse",
-                "HEAD",
-            ),
+            command[:5],
+            ("/usr/bin/git", "--no-replace-objects", "--no-pager", "-C", str(ROOT)),
+        )
+        for setting in (
+            "core.fsmonitor=false",
+            "core.hooksPath=/dev/null",
+            "core.pager=cat",
+            "credential.helper=",
+            "core.sshCommand=/usr/bin/ssh",
+            "protocol.ext.allow=never",
+        ):
+            self.assertIn(setting, command)
+        self.assertEqual(command[-2:], ("rev-parse", "HEAD"))
+        self.assertEqual(
+            reporter.git_command(ROOT, "diff", "HEAD^", "HEAD")[-5:],
+            ("diff", "--no-ext-diff", "--no-textconv", "HEAD^", "HEAD"),
+        )
+        push = reporter.git_command(ROOT, "push", "origin")
+        self.assertNotIn("core.hooksPath=/dev/null", push)
+        self.assertEqual(
+            push[-4:],
+            ("push", "--no-verify", "--receive-pack=git-receive-pack", "origin"),
         )
 
     def test_ambient_git_repository_object_and_config_redirects_are_ignored(self):

@@ -478,13 +478,6 @@ def install_stalling_transport(repository_root):
         encoding="utf-8",
     )
     stall_script.chmod(0o700)
-    git(repository_root, "config", "ssh.variant", "simple")
-    git(
-        repository_root,
-        "config",
-        "core.sshCommand",
-        str(stall_script),
-    )
     git(
         repository_root,
         "remote",
@@ -492,7 +485,7 @@ def install_stalling_transport(repository_root):
         "origin",
         "ssh://workflow-pilot.invalid/authority.git",
     )
-    return invocation_log, child_pid_path
+    return invocation_log, child_pid_path, stall_script
 def wait_for_pid_exit(pid_path, timeout=2.0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -3178,6 +3171,29 @@ class ExactHandoffTests(unittest.TestCase):
             missing_commit["handoffs"][0]["result"]["sha"] = "f" * 40
             report = agent_handoff.validate_document(missing_commit, root)
             self.assertIn("missing-commit", report["summary"]["rejection_codes"])
+    def test_executable_fsmonitor_cannot_run_or_hide_dirty_worktree(self):
+        with handoff_repository() as (root, _base, parent, result):
+            marker = root.parent / "fsmonitor-executed"
+            monitor = root.parent / "malicious-fsmonitor"
+            monitor.write_text(
+                '#!/bin/sh\nprintf executed >"$1"\nexit 0\n',
+                encoding="utf-8",
+            )
+            monitor.chmod(0o700)
+            git(root, "config", "core.fsmonitor", f"{monitor} {marker}")
+            clean = agent_handoff.validate_document(
+                handoff_document(root, parent, result),
+                root,
+            )
+            self.assertNotIn("dirty-worktree", clean["summary"]["rejection_codes"])
+            self.assertFalse(marker.exists())
+            (root / "README.md").write_text("dirty\n", encoding="utf-8")
+            dirty = agent_handoff.validate_document(
+                handoff_document(root, parent, result),
+                root,
+            )
+            self.assertIn("dirty-worktree", dirty["summary"]["rejection_codes"])
+            self.assertFalse(marker.exists())
     def test_assignment_states_are_distinct_and_not_inferred(self):
         with handoff_repository() as (root, _base, parent, result):
             for state_name in (
@@ -3564,6 +3580,23 @@ class ExactHandoffTests(unittest.TestCase):
                 candidate_sha=candidate,
             )
             self.assertEqual(receipt["exit_code"], 0)
+    def test_crlf_addition_is_blank_at_eol(self):
+        with handoff_repository() as (root, _base, _parent, result):
+            path = root / "scripts" / "workflow_pilot" / "crlf.py"
+            path.write_bytes(b"CRLF = True\r\n")
+            git(root, "add", str(path.relative_to(root)))
+            git(
+                root,
+                "commit",
+                "-q",
+                "-m",
+                "test: CRLF\n\n" + agent_handoff.COPILOT_TRAILER,
+            )
+            candidate = git(root, "rev-parse", "HEAD")
+            self.assertEqual(
+                raw_diff_check.raw_diff_errors(root, result, candidate),
+                ["scripts/workflow_pilot/crlf.py:1: blank-at-eol"],
+            )
     def test_scope_line_resource_protocol_lifetime_and_rss_budgets_reject(self):
         with handoff_repository() as (root, _base, parent, result):
             cases = {}
@@ -6470,12 +6503,26 @@ class ExactHandoffTests(unittest.TestCase):
         for name, callback, pattern in cases:
             with self.subTest(case=name):
                 with handoff_repository() as (root, _base, _parent, _result):
-                    log_path, pid_path = install_stalling_transport(root)
+                    log_path, pid_path, transport = install_stalling_transport(root)
+                    environment = reporter.git_environment(offline=False)
+                    environment.update(
+                        {
+                            "GIT_SSH_COMMAND": str(transport),
+                            "GIT_SSH_VARIANT": "simple",
+                        }
+                    )
                     started = time.monotonic()
-                    with mock.patch.object(
-                        agent_handoff,
-                        "REMOTE_GIT_TIMEOUT_SECONDS",
-                        0.2,
+                    with (
+                        mock.patch.object(
+                            reporter,
+                            "git_environment",
+                            return_value=environment,
+                        ),
+                        mock.patch.object(
+                            agent_handoff,
+                            "REMOTE_GIT_TIMEOUT_SECONDS",
+                            0.2,
+                        ),
                     ):
                         with self.assertRaisesRegex(
                             agent_handoff.HandoffDataError,

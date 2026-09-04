@@ -707,7 +707,8 @@ worktree:
 ```bash
 python3 -m scripts.workflow_pilot.agent_handoff \
   --fixture build/test-artifacts/agent-handoff.json \
-  --worktree /absolute/path/to/the/exact/worktree
+  --worktree /absolute/path/to/the/exact/worktree \
+  --coordinator-installation <external-path>
 ```
 The document is per-assignment input and evidence, not a live ledger or a
 manually synchronized Git snapshot. The coordinator may preserve it with
@@ -1060,7 +1061,9 @@ argument:
 python3 -m scripts.workflow_pilot.reporter \
   --repository-root . \
   --fixture build/test-artifacts/workflow-pilot-operational.json \
-  --decisions .github/workflow-pilot-decisions.json
+  --decisions .github/workflow-pilot-decisions.json \
+  --implementation-handoff-trust <signed-anchor-sidecar-json> \
+  --implementation-handoff-installation <external-path>
 ```
 Conversely, omitting `--expected` from a version 1 baseline run fails, so the
 new mode cannot bypass the frozen baseline comparison or executable lifecycle
