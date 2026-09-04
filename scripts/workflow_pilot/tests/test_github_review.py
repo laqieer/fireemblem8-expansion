@@ -185,9 +185,10 @@ def git(root, *arguments):
     )
 
 def git_commit_time(root, commit):
-    return (
-        git(root, "show", "-s", "--format=%cI", commit)
-        .stdout.decode().strip().replace("+00:00", "Z")
+    return iso(
+        datetime.fromisoformat(
+            git(root, "show", "-s", "--format=%cI", commit).stdout.decode().strip()
+        )
     )
 
 def optional_file_bytes(path: Path) -> bytes | None:
@@ -3162,7 +3163,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
                 captured["argv"] = list(command); captured["cwd"] = kwargs.get("cwd")
             return real_run(command, *args, **kwargs)
         trusted_review_gate.subprocess.run = wrapper
-        try: receipt = trusted_review_gate.run_base_pinned_checker(self.repo, contract=contract, candidate_sha=self.candidate_sha, review_round=1, review_context=remote_review, all_remote_reviews=[remote_review], remote_findings=[], remote_finding_ids=[], captured_github_payload=self.adapter(), original_review_report_bytes=reporter.normalized_json(report), original_review_receipt=receipt_envelope, original_receipt_sha256=hashlib.sha256(receipt_bytes).hexdigest(), assertion_requests=requests, trusted_key=KEY, clock=lambda: next(times))
+        try: receipt = trusted_review_gate.run_base_pinned_checker(self.repo, contract=contract, candidate_sha=self.candidate_sha, live_base_sha=self.base_sha, remote_head_sha=self.candidate_sha, review_round=1, review_context=remote_review, all_remote_reviews=[remote_review], remote_findings=[], remote_finding_ids=[], captured_github_payload=self.adapter(), original_review_report_bytes=reporter.normalized_json(report), original_review_receipt=receipt_envelope, original_receipt_sha256=hashlib.sha256(receipt_bytes).hexdigest(), assertion_requests=requests, trusted_key=KEY, clock=lambda: next(times))
         finally: trusted_review_gate.subprocess.run = real_run
         self.assertEqual(receipt["result"], "pass")
         self.assertEqual(receipt["base_sha"], self.base_sha)
@@ -3230,7 +3231,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
             remote_review = {"id": 1001, "node_id": "REMOTE_SYNTHETIC_1", "round": 1, "reviewer_actor_id": COPILOT_ACTOR_ID, "candidate_sha": head_b, "submitted_at": "2026-08-31T03:08:00Z", "state": "COMMENTED", "body": "### 🟢 Approval recommended", "body_classification": "clean-approval", "body_has_findings": False, "outcome": "clean", "finding_ids": []}
             requests = review_family.build_assertion_requests(contract, {"remote_reviews": [remote_review], "pre_review_findings": [{"id": "LOCAL-ACTION-1"}]}, head_b, 1)
             receipt_bytes = signed_receipt(reporter.normalized_json(report), base=base, candidate=head_a, nonce="checker-receipt-local-round1-0001")
-            receipt = trusted_review_gate.run_base_pinned_checker(repo, contract=contract, candidate_sha=head_b, review_round=1, review_context=remote_review, all_remote_reviews=[remote_review], remote_findings=[], remote_finding_ids=[], captured_github_payload={}, original_review_report_bytes=reporter.normalized_json(report), original_review_receipt=json.loads(receipt_bytes), original_receipt_sha256=hashlib.sha256(receipt_bytes).hexdigest(), assertion_requests=requests, trusted_key=KEY, clock=lambda: datetime(2026, 8, 31, 3, 9, tzinfo=timezone.utc))
+            receipt = trusted_review_gate.run_base_pinned_checker(repo, contract=contract, candidate_sha=head_b, live_base_sha=base, remote_head_sha=head_b, review_round=1, review_context=remote_review, all_remote_reviews=[remote_review], remote_findings=[], remote_finding_ids=[], captured_github_payload={}, original_review_report_bytes=reporter.normalized_json(report), original_review_receipt=json.loads(receipt_bytes), original_receipt_sha256=hashlib.sha256(receipt_bytes).hexdigest(), assertion_requests=requests, trusted_key=KEY, clock=lambda: datetime(2026, 8, 31, 3, 9, tzinfo=timezone.utc))
             origin_tree = git(repo, "rev-parse", f"{head_a}^{{tree}}").stdout.decode().strip(); member = next(item for item in receipt["assertion_results"] if item["authority_binding"]["finding_id"] == "LOCAL-ACTION-1" and item["assertion_id"] == review_family.member_assertion_id("action", "items", "affected-fixed"))
             self.assertEqual((receipt["finding_origin_sha"], receipt["finding_origin_tree"]), (head_a, origin_tree))
             self.assertEqual((member["authority_binding"]["finding_head_sha"], member["authority_binding"]["finding_origin_sha"], member["authority_binding"]["head_sha"]), (head_a, head_a, head_b))
@@ -3284,6 +3285,8 @@ class TrustedGitHubGateTests(unittest.TestCase):
             self.repo,
             contract=contract,
             candidate_sha=self.candidate_sha,
+            live_base_sha=self.base_sha,
+            remote_head_sha=self.candidate_sha,
             review_round=1,
             review_context=remote_review,
             all_remote_reviews=[remote_review],
@@ -3308,6 +3311,8 @@ class TrustedGitHubGateTests(unittest.TestCase):
                     self.repo,
                     contract=contract,
                     candidate_sha=self.candidate_sha,
+                    live_base_sha=self.base_sha,
+                    remote_head_sha=self.candidate_sha,
                     review_round=1,
                     review_context=remote_review,
                     all_remote_reviews=[remote_review],
@@ -4130,7 +4135,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
             validated_contract = review_family.validate_contract(contract)
             receipt_sha256 = hashlib.sha256(receipt).hexdigest()
             round_clock = lambda: datetime(2026, 8, 31, 3, 24, tzinfo=timezone.utc)
-            wire_receipt = trusted_review_gate.run_base_pinned_checker(repository, contract=validated_contract, candidate_sha=heads[5], review_round=6, review_context=collected["remote_reviews"][5], all_remote_reviews=collected["remote_reviews"], remote_findings=collected["findings"], remote_finding_ids=collected["remote_reviews"][5]["finding_ids"], captured_github_payload=payload, original_review_report_bytes=reporter.normalized_json(report), original_review_receipt=envelope, original_receipt_sha256=receipt_sha256, assertion_requests=review_family.build_assertion_requests(contract, collected, heads[5], 6), trusted_key=KEY, clock=round_clock)
+            wire_receipt = trusted_review_gate.run_base_pinned_checker(repository, contract=validated_contract, candidate_sha=heads[5], live_base_sha=base, remote_head_sha=heads[-1], review_round=6, review_context=collected["remote_reviews"][5], all_remote_reviews=collected["remote_reviews"], remote_findings=collected["findings"], remote_finding_ids=collected["remote_reviews"][5]["finding_ids"], captured_github_payload=payload, original_review_report_bytes=reporter.normalized_json(report), original_review_receipt=envelope, original_receipt_sha256=receipt_sha256, assertion_requests=review_family.build_assertion_requests(contract, collected, heads[5], 6), trusted_key=KEY, clock=round_clock)
             self.assertNotEqual(wire_receipt["result"], "fail")
             self.assertIn(next(item for item in wire_receipt["assertion_results"] if item["assertion_id"] == review_family.member_assertion_id("wire", "producers", "affected-fixed"))["status"], {"pass", "hold"})
             git(repository, "checkout", "-q", base)
@@ -4140,7 +4145,7 @@ class TrustedGitHubGateTests(unittest.TestCase):
             git(repository, "checkout", "-q", heads[-1])
             rewritten_reviews = copy.deepcopy(collected["remote_reviews"])
             rewritten_reviews[5]["candidate_sha"] = rewritten_head
-            rewritten_receipt = trusted_review_gate.run_base_pinned_checker(repository, contract=validated_contract, candidate_sha=rewritten_head, review_round=6, review_context=rewritten_reviews[5], all_remote_reviews=rewritten_reviews, remote_findings=collected["findings"], remote_finding_ids=rewritten_reviews[5]["finding_ids"], captured_github_payload=payload, original_review_report_bytes=reporter.normalized_json(report), original_review_receipt=envelope, original_receipt_sha256=receipt_sha256, assertion_requests=review_family.build_assertion_requests(contract, {"remote_reviews": rewritten_reviews, "pre_review_findings": collected["pre_review_findings"]}, rewritten_head, 6), trusted_key=KEY, clock=round_clock)
+            rewritten_receipt = trusted_review_gate.run_base_pinned_checker(repository, contract=validated_contract, candidate_sha=rewritten_head, live_base_sha=base, remote_head_sha=heads[-1], review_round=6, review_context=rewritten_reviews[5], all_remote_reviews=rewritten_reviews, remote_findings=collected["findings"], remote_finding_ids=rewritten_reviews[5]["finding_ids"], captured_github_payload=payload, original_review_report_bytes=reporter.normalized_json(report), original_review_receipt=envelope, original_receipt_sha256=receipt_sha256, assertion_requests=review_family.build_assertion_requests(contract, {"remote_reviews": rewritten_reviews, "pre_review_findings": collected["pre_review_findings"]}, rewritten_head, 6), trusted_key=KEY, clock=round_clock)
             self.assertEqual(rewritten_receipt["result"], "fail")
             ticks = count()
             def clock():

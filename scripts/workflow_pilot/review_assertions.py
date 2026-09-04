@@ -8,6 +8,7 @@ import ast
 import copy
 import hashlib
 import importlib
+import importlib.util
 import json
 import os
 import re
@@ -148,6 +149,8 @@ CHECKER_INPUT_FIELDS = (
     "pull_request",
     "base_sha",
     "base_tree",
+    "live_base_sha",
+    "remote_head_sha",
     "original_pre_review_head",
     "original_pre_review_head_tree",
     "original_changes",
@@ -191,6 +194,8 @@ RAW_CHECKER_INPUT_FIELDS = (
     "pull_request",
     "base_sha",
     "base_tree",
+    "live_base_sha",
+    "remote_head_sha",
     "original_pre_review_head",
     "original_changes",
     "original_receipt_sha256",
@@ -1127,8 +1132,8 @@ def _wire_payload(
     evidence_bytes = gate_module.collect_live_evidence_bytes(
         contract,
         Path(checker_input["repository_root"]),
-        checker_input["base_sha"],
-        review_head,
+        checker_input["live_base_sha"],
+        checker_input["remote_head_sha"],
         current_head,
         copy.deepcopy(checker_input["original_pre_review"]),
         copy.deepcopy(checker_input["original_review_receipt"]),
@@ -1169,14 +1174,14 @@ def _wire_payload(
             raise AssertionFailure("wire payload historical findings/threads are incomplete")
     if review_head != current_head:
         try:
-            run_git(
+            gate_module.reporter.run_git(
                 Path(checker_input["repository_root"]),
                 "merge-base",
                 "--is-ancestor",
                 review_head,
                 current_head,
             )
-        except RuntimeError as error:
+        except gate_module.reporter.PilotDataError as error:
             raise AssertionFailure("wire payload historical head is not preserved in current PR history") from error
     return payload
 

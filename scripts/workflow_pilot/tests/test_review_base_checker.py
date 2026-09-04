@@ -797,13 +797,19 @@ class ReviewBaseCheckerTests(unittest.TestCase):
                                         "id": f"COMMIT_{index}",
                                         "oid": sha,
                                         "pushedDate": None,
-                                        "committedDate": git_text(
-                                            self.repo,
-                                            "show",
-                                            "-s",
-                                            "--format=%cI",
-                                            sha,
-                                        ).replace("+00:00", "Z"),
+                                        "committedDate": utc_text(
+                                            datetime.fromisoformat(
+                                                git_text(
+                                                    self.repo,
+                                                    "show",
+                                                    "-s",
+                                                    "--format=%cI",
+                                                    sha,
+                                                )
+                                            )
+                                            .astimezone(timezone.utc)
+                                            .isoformat()
+                                        ),
                                     }
                                 }
                                 for index, sha in enumerate(commit_shas, 1)
@@ -1030,6 +1036,8 @@ class ReviewBaseCheckerTests(unittest.TestCase):
             "pull_request": PULL_REQUEST,
             "base_sha": self.base,
             "base_tree": self.base_tree,
+            "live_base_sha": self.base,
+            "remote_head_sha": head_sha,
             "original_pre_review_head": self.head1,
             "original_changes": copy.deepcopy(self.original_changes),
             "original_receipt_sha256": hashlib.sha256(
@@ -1712,6 +1720,68 @@ class ReviewBaseCheckerTests(unittest.TestCase):
         replay = self.evaluate_member_contract("wire", "replay", replay_data, healthy_head, replay_binding)
         self.assertEqual((replay["replay_sha256"], len(replay["replay_entries"]), replay["replay_entries"][0].startswith("original-")), (replay_data["original_receipt_sha256"], 1, True))
         self.assertIn("re-signed", replay["replay_rejection"])
+    def test_wire_collection_uses_live_pr_identity_and_historical_review(self):
+        live_base = subprocess.run(
+            reporter.git_command(
+                self.repo, "commit-tree", self.base_tree, "-p", self.base, "-m", "live base"
+            ),
+            env={
+                **reporter.git_environment(offline=True),
+                "GIT_AUTHOR_DATE": "2026-09-01T00:03:00Z",
+                "GIT_COMMITTER_DATE": "2026-09-01T00:03:00Z",
+            },
+            check=True,
+            capture_output=True,
+        ).stdout.decode().strip()
+        git_text(self.repo, "checkout", "-q", self.head2)
+        (self.repo / "changed.txt").write_text("later remediation head\n", encoding="utf-8")
+        remediation_head = self._commit("later-remediation-head")
+        data, _binding = self.wire_member_input(candidate_sha=remediation_head)
+        historical_review = copy.deepcopy(data["all_remote_reviews"][0])
+        data["review_round"] = 1
+        data["review_context"] = historical_review
+        data["all_remote_reviews"] = [historical_review]
+        data["remote_finding_ids"] = historical_review["finding_ids"]
+        data["captured_github_payload"] = self.captured_github_payload(
+            remediation_head, data["all_remote_reviews"], data["remote_findings"]
+        )
+        data["captured_github_payload"]["data"]["repository"]["pullRequest"][
+            "baseRefOid"
+        ] = live_base
+        for node in (
+            data["captured_github_payload"]["data"]["repository"]["pullRequest"][
+                "commits"
+            ]["nodes"]
+        ):
+            node["commit"]["committedDate"] = utc_text(
+                datetime.fromisoformat(
+                    git_text(
+                        self.repo,
+                        "show",
+                        "-s",
+                        "--format=%cI",
+                        node["commit"]["oid"],
+                    )
+                )
+                .astimezone(timezone.utc)
+                .isoformat()
+            )
+        data["live_base_sha"] = live_base
+        checker_input = review_base_checker._assertion_program_context(
+            review_base_checker.validate_input(copy.deepcopy(data))
+        )
+        payload = review_assertions._wire_payload(
+            review_assertions.load_base_gate_modules(Path(data["base_root"]))[0],
+            checker_input,
+        )
+        self.assertEqual(
+            (
+                payload["pull_request"]["base_sha"],
+                payload["pull_request"]["head_sha"],
+                payload["remote_reviews"][0]["candidate_sha"],
+            ),
+            (live_base, remediation_head, self.head1),
+        )
     def test_unrelated_initializer_outside_member_closure_does_not_hold(self):
         candidate_head, candidate_tree = self._make_namespace_init_addition_head(
             "scripts/docs_check_tests/__init__.py"

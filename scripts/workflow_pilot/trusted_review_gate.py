@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import importlib
 import importlib.abc
+import importlib.util
 import json
 import os
 import re
@@ -2012,6 +2013,8 @@ def run_base_pinned_checker(
     *,
     contract: dict[str, Any],
     candidate_sha: str,
+    live_base_sha: str,
+    remote_head_sha: str,
     review_round: int,
     review_context: dict[str, Any],
     all_remote_reviews: list[dict[str, Any]],
@@ -2028,6 +2031,10 @@ def run_base_pinned_checker(
     """Execute only the checker blob at the exact authoritative PR base."""
     root = reporter.validate_repository_root(repository_root)
     base_sha = contract["base_sha"]
+    live_base_sha = reporter.expect_sha(live_base_sha, "base checker live base")
+    remote_head_sha = reporter.expect_sha(
+        remote_head_sha, "base checker remote head"
+    )
     current_head = _git_text(root, "rev-parse", "--verify", "HEAD^{commit}")
     if current_head != contract["candidate_sha"]:
         raise reporter.PilotDataError(
@@ -2117,6 +2124,8 @@ def run_base_pinned_checker(
         "pull_request": contract["pull_request"],
         "base_sha": base_sha,
         "base_tree": base_tree,
+        "live_base_sha": live_base_sha,
+        "remote_head_sha": remote_head_sha,
         "original_pre_review_head": contract["original_pre_review_head"],
         "original_changes": original_changes,
         "original_receipt_sha256": original_receipt_sha256,
@@ -3531,6 +3540,8 @@ def _run_trusted_gate(
             repository_root,
             contract=contract,
             candidate_sha=review["candidate_sha"],
+            live_base_sha=expected_base,
+            remote_head_sha=expected_remote_head,
             review_round=review["round"],
             review_context=review,
             all_remote_reviews=first_evidence["remote_reviews"],
@@ -3567,6 +3578,8 @@ def _run_trusted_gate(
             repository_root,
             contract=contract,
             candidate_sha=expected_candidate,
+            live_base_sha=expected_base,
+            remote_head_sha=expected_remote_head,
             review_round=latest_review["round"],
             review_context=latest_review,
             all_remote_reviews=first_evidence["remote_reviews"],

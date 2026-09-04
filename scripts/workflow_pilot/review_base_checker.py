@@ -1150,6 +1150,8 @@ def _assertion_program_context(data: dict[str, Any]) -> dict[str, Any]:
         "pull_request": data["pull_request"],
         "base_sha": data["base_sha"],
         "base_tree": data["base_tree"],
+        "live_base_sha": data["live_base_sha"],
+        "remote_head_sha": data["remote_head_sha"],
         "original_pre_review_head": data["original_pre_review_head"],
         "original_pre_review_head_tree": data["original_pre_review_head_tree"],
         "original_changes": data["original_changes"],
@@ -1361,6 +1363,8 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
             "pull_request",
             "base_sha",
             "base_tree",
+            "live_base_sha",
+            "remote_head_sha",
             "original_pre_review_head",
             "original_changes",
             "original_receipt_sha256",
@@ -1406,6 +1410,8 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
     )
     if base_tree != actual_base_tree:
         raise CheckError("checker input.base_tree does not match trusted Git authority")
+    live_base_sha = expect_sha(data["live_base_sha"], "checker input.live_base_sha")
+    remote_head_sha = expect_sha(data["remote_head_sha"], "checker input.remote_head_sha")
     original_pre_review_head = expect_sha(
         data["original_pre_review_head"],
         "checker input.original_pre_review_head",
@@ -1759,6 +1765,8 @@ def validate_input(raw_input: Any) -> dict[str, Any]:
         "pull_request": pull_request,
         "base_sha": base_sha,
         "base_tree": actual_base_tree,
+        "live_base_sha": live_base_sha,
+        "remote_head_sha": remote_head_sha,
         "original_pre_review_head": original_pre_review_head,
         "original_pre_review_head_tree": original_pre_review_head_tree,
         "original_changes": original_changes,
