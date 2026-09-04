@@ -405,6 +405,8 @@ placements. Reviewed shell-option `set` forms and quoted data remain valid.
 The `set` grammar admits valid reviewed short flags, named `-o`/`+o` toggles,
 and nonmutating bare output forms; invalid long/cluster/name/dynamic forms,
 operands, and `--` reject.
+Redirections are removed without truncating later argv; only cluster-ending
+`o` consumes the next option name, matching `set -Eeuo pipefail`.
 Every `wait -p` output-variable form rejects, including clustered/attached
 options and dynamic or wrapped destinations; reviewed ordinary waits remain.
 `BASH_CMDS` and `BASH_ALIASES` reject every modeled writer. Function shadows

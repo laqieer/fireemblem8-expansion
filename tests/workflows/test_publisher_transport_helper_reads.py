@@ -709,6 +709,10 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             "command set -Z\n",
             "builtin set -o unknown\n",
             "option=$GITHUB_REF_NAME\nset \"$option\"\n",
+            "set -o >/dev/null -- fake\n",
+            "command set -e 2>/dev/null -- fake\n",
+            "set -oposix\n",
+            "set +onounset\n",
         )
         for index, script in enumerate(rejected):
             completed = subprocess.run(
@@ -730,7 +734,7 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             "set -Eeuo pipefail\n",
             "set -euo pipefail\n",
             "set -o errexit\n",
-            "set -onounset\nset +onounset\n",
+            "set -o nounset\nset +o nounset\n",
             "set -\nset +\nset -o >/dev/null\nset +o >/dev/null\n",
             "printf '%s\\n' 'coproc set -- shift getopts'\n",
         ):
@@ -740,7 +744,13 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                     label="inert shell state spelling",
                 )
             )
-        for invalid in ("set --foo", "set -Z", "set -o unknown"):
+        for invalid in (
+            "set --foo",
+            "set -Z",
+            "set -o unknown",
+            "set -oposix",
+            "set +onounset",
+        ):
             completed = subprocess.run(
                 [
                     "/bin/bash",
@@ -753,6 +763,25 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(completed.returncode, 42)
+        flags = (
+            "set +Ee +u\nset +o pipefail\nset -Eeuo pipefail\n"
+            '[[ "$-" == *E* ]]\n'
+            '[[ "$-" == *e* ]]\n'
+            '[[ "$-" == *u* ]]\n'
+            "[[ -o pipefail ]]\n"
+        )
+        completed = subprocess.run(
+            ["/bin/bash", "-c", flags],
+            cwd=ROOT,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0)
+        self.assertFalse(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                flags,
+                label="reviewed set flags",
+            )
+        )
 
     def test_wait_output_variables_are_rejected(self):
         runtime = (
@@ -907,6 +936,18 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             for name in ("trap", "exec", "ulimit", "return")
         )
         mutations = (
+            original.replace(
+                '        cgroup_path="$1"\n',
+                "        set -o >/dev/null -- /untrusted\n"
+                '        cgroup_path="$1"\n',
+                1,
+            ),
+            original.replace(
+                '        cgroup_path="$1"\n',
+                "        command set -e 2>/dev/null -- /untrusted\n"
+                '        cgroup_path="$1"\n',
+                1,
+            ),
             original.replace(
                 '        cgroup_path="$1"\n',
                 "        command set --foo\n"

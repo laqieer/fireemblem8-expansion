@@ -12670,6 +12670,8 @@ exit 37
                 "coprocess": "reject",
                 "positional_parameter_mutation": "reject",
                 "set_option_grammar": "valid-reviewed-bash-options-only",
+                "set_redirections": "remove-all-preserve-argv",
+                "set_cluster_o": "ending-o-consumes-next-name",
                 "getopts": "reject",
                 "wait_output_variable": "reject",
                 "dispatch_special_arrays": [

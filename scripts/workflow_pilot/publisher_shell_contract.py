@@ -4544,7 +4544,7 @@ def _analyze_function_call(
             return True, {}
         if _command_mutates_unreviewed_shell_state(
             resolved,
-            original_tokens=_token_texts(tokens),
+            original_shell_tokens=tokens,
         ):
             return True, {}
         reviewed_transport_write = _is_reviewed_transport_output_write(
@@ -5462,8 +5462,35 @@ def _arithmetic_writes_protected_state(
 def _command_mutates_unreviewed_shell_state(
     tokens: tuple[str, ...],
     *,
-    original_tokens: tuple[str, ...],
+    original_shell_tokens: tuple[_ShellToken, ...],
 ) -> bool:
+    original_tokens = _token_texts(original_shell_tokens)
+    filtered: list[str] = []
+    index = 0
+    while index < len(tokens):
+        original = original_shell_tokens[index]
+        active_redirection = _is_redirection_token(original.text) and (
+            not original.segments
+            or any(segment[2] for segment in original.segments)
+        )
+        if not active_redirection:
+            filtered.append(tokens[index])
+            index += 1
+            continue
+        index += 1
+        if index < len(tokens):
+            depth = (
+                original_shell_tokens[index].text.count("(")
+                - original_shell_tokens[index].text.count(")")
+                if original_shell_tokens[index].text.startswith(("<(", ">("))
+                else 0
+            )
+            index += 1
+            while depth > 0 and index < len(tokens):
+                depth += original_shell_tokens[index].text.count("(")
+                depth -= original_shell_tokens[index].text.count(")")
+                index += 1
+    tokens = tuple(filtered)
     stripped = _strip_shell_command_prefixes(tokens)
     normalized = _normalize_shell_builtin_wrappers(stripped)
     if not normalized:
@@ -5512,10 +5539,6 @@ def _command_mutates_unreviewed_shell_state(
     if executable != "set":
         return False
     arguments = normalized[1:]
-    for index, argument in enumerate(arguments):
-        if _is_redirection_token(argument):
-            arguments = arguments[:index]
-            break
     index = 0
     while index < len(arguments):
         argument = arguments[index]
@@ -5529,8 +5552,8 @@ def _command_mutates_unreviewed_shell_state(
         if not argument.startswith(("-", "+")):
             return True
         options = argument[1:]
-        if "o" in options:
-            option_index = options.index("o")
+        if options.endswith("o"):
+            option_index = len(options) - 1
             if any(
                 option not in "abefhkmnptuvxBCEHPT"
                 for option in options[:option_index]
@@ -5548,7 +5571,7 @@ def _command_mutates_unreviewed_shell_state(
             ):
                 return True
         elif any(
-            option not in "abefhkmnptuvxBCEHPT"
+            option not in "abefhkmnptuvxBCEHPTo"
             for option in options
         ):
             return True
@@ -6566,7 +6589,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 return True
             if _command_mutates_unreviewed_shell_state(
                 resolved_token_texts,
-                original_tokens=token_texts,
+                original_shell_tokens=tokens,
             ):
                 return True
             executable_tokens = _strip_shell_command_prefixes(

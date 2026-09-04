@@ -433,6 +433,9 @@ placements; reviewed option-only `set` commands and quoted data remain valid.
 `set` accepts only Bash's reviewed short-option alphabet and valid
 `-o`/`+o` option names; unknown long options, invalid clusters, dynamic
 options, positional operands, and bare `--` reject.
+All active redirections and their operands are removed before validating the
+remaining argv. Only a cluster-ending `o` consumes the following option name;
+characters after an earlier `o` remain short flags and validate individually.
 `wait -p` output-variable forms likewise reject across clustered, attached,
 wrapped, aliased, helper, control, and dynamic option/target forms; the two
 reviewed ordinary PID waits remain valid.
