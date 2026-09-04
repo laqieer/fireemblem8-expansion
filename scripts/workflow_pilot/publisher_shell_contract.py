@@ -244,7 +244,15 @@ _NAMEREF_ALIAS_MARKER = "\x00nameref-alias\x00"
 _READONLY_ALIAS_MARKER = "\x00readonly-alias\x00"
 _LITERAL_DOLLAR_MARKER = "\x00literal-dollar\x00"
 _DISPATCH_STATE_VARIABLES = frozenset(
-    {"BASHOPTS", "BASH_ENV", "ENV", "PATH", "SHELLOPTS"}
+    {
+        "BASHOPTS",
+        "BASH_ALIASES",
+        "BASH_CMDS",
+        "BASH_ENV",
+        "ENV",
+        "PATH",
+        "SHELLOPTS",
+    }
 )
 _DISPATCH_SET_OPTIONS = frozenset({"hashall", "posix"})
 _RESERVED_TRANSPORT_OUTPUTS = frozenset(
@@ -266,7 +274,23 @@ _REVIEWED_TRANSPORT_PHASE_EVENTS = (
     ("consumer", "mount_target=${checked_runtime_transport_output[index]}"),
     ("consumer", "mount_options=${checked_runtime_transport_output[index + 1]}"),
 )
-_SECURITY_SENSITIVE_FUNCTION_NAMES = frozenset(
+_REVIEWED_BUILDER_SECURITY_BUILTINS = frozenset(
+    {
+        "cd",
+        "exec",
+        "exit",
+        "local",
+        "mapfile",
+        "printf",
+        "return",
+        "set",
+        "test",
+        "trap",
+        "ulimit",
+        "wait",
+    }
+)
+_SECURITY_SENSITIVE_FUNCTION_NAMES = _REVIEWED_BUILDER_SECURITY_BUILTINS | frozenset(
     {
         "alias",
         "builtin",
@@ -4323,6 +4347,20 @@ def _apply_direct_function_alias_writes(
             "supervisor_cgroup",
         } or name in _DISPATCH_STATE_VARIABLES or (
             name in _RESERVED_TRANSPORT_OUTPUTS
+        ):
+            return True, written
+        existing = _semantic_alias_value(aliases.get(name)) or ""
+        if _NAMEREF_ALIAS_MARKER in existing and (
+            any(
+                target in existing
+                for target in (
+                    *_DISPATCH_STATE_VARIABLES,
+                    *_RESERVED_TRANSPORT_OUTPUTS,
+                    "cgroup_path",
+                    "supervisor_cgroup",
+                )
+            )
+            or _RAW_CGROUP_ROOT_MARKER in existing
         ):
             return True, written
         if _READONLY_ALIAS_MARKER in aliases.get(name, ""):

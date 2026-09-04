@@ -433,6 +433,10 @@ placements; reviewed option-only `set` commands and quoted data remain valid.
 `wait -p` output-variable forms likewise reject across clustered, attached,
 wrapped, aliased, helper, control, and dynamic option/target forms; the two
 reviewed ordinary PID waits remain valid.
+The writable `BASH_CMDS` command cache and `BASH_ALIASES` table are protected
+dispatch state across every modeled writer. The audited unqualified builtin
+shadow set includes `cd`, `exec`, `exit`, `return`, `trap`, `ulimit`, and the
+other reviewed builder builtins recorded by TC-CI-PATCH-049-002.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

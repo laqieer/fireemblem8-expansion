@@ -1347,15 +1347,35 @@
         },
         "function_shadowing": {
           "result": "reject",
+          "reviewed_builder_builtins": [
+            "cd",
+            "exec",
+            "exit",
+            "local",
+            "mapfile",
+            "printf",
+            "return",
+            "set",
+            "test",
+            "trap",
+            "ulimit",
+            "wait"
+          ],
           "sensitive_names": [
             "alias",
             "builtin",
+            "case",
+            "cd",
             "command",
+            "coproc",
             "declare",
             "enable",
             "env",
             "eval",
+            "exec",
+            "exit",
             "export",
+            "getopts",
             "hash",
             "local",
             "mapfile",
@@ -1364,15 +1384,20 @@
             "read",
             "readarray",
             "readonly",
+            "return",
             "set",
+            "shift",
             "shopt",
             "sort",
             "source",
             "stat",
             "test",
+            "trap",
             "typeset",
+            "ulimit",
             "unalias",
-            "unset"
+            "unset",
+            "wait"
           ]
         },
         "raw_membership": {
@@ -1409,6 +1434,10 @@
           "positional_parameter_mutation": "reject",
           "getopts": "reject",
           "wait_output_variable": "reject",
+          "dispatch_special_arrays": [
+            "BASH_ALIASES",
+            "BASH_CMDS"
+          ],
           "later_or_external_mutation": "reject"
         },
         "alias_state": {

@@ -779,6 +779,59 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 )
             )
 
+    def test_dispatch_caches_and_relied_builtins_cannot_be_shadowed(self):
+        completed = subprocess.run(
+            [
+                "/bin/bash",
+                "-c",
+                "BASH_CMDS[stat]=/bin/false\nstat / >/dev/null 2>&1\n",
+            ],
+            cwd=ROOT,
+            check=False,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        for script in (
+            "BASH_CMDS[stat]=/bin/false\n",
+            "BASH_CMDS=([stat]=/bin/false)\n",
+            "unset BASH_ALIASES\n",
+            "declare -A BASH_CMDS=()\n",
+            "read BASH_CMDS < /dev/null\n",
+            "target=BASH_CMDS\nprintf -v \"$target\" %s value\n",
+            "(( BASH_CMDS[0] = 1 ))\n",
+            "change() {\n local -n ref=BASH_CMDS\n ref=()\n}\nchange\n",
+        ):
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    script,
+                    label="Bash dispatch cache mutation",
+                )
+            )
+        for name in (
+            publisher_shell_contract._REVIEWED_BUILDER_SECURITY_BUILTINS
+        ):
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    f"{name}()\n{{\n :\n}}\n",
+                    label="relied builtin shadow",
+                )
+            )
+        runtime_shadows = (
+            "trap() { :; }; trap 'exit 9' EXIT",
+            "exec() { :; }; exec >/dev/null; echo visible",
+            "ulimit() { :; }; before=$(builtin ulimit -n); "
+            "ulimit -n 1; test \"$(builtin ulimit -n)\" = \"$before\"",
+            "return() { :; }; f() { return 7; echo reached; }; f",
+        )
+        for script in runtime_shadows:
+            completed = subprocess.run(
+                ["/bin/bash", "-c", script],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+
     def test_publisher_and_upstream_enforce_helper_dereferences(self):
         original = WORKFLOW.read_text(encoding="utf-8")
         producer = (
@@ -821,7 +874,25 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             "        PY\n        }\n        handoff_names=",
             1,
         )
+        shadow_mutations = tuple(
+            original.replace(
+                "        builder_main() {\n",
+                f"        {name}()\n"
+                "        {\n"
+                "          :\n"
+                "        }\n"
+                "        builder_main() {\n",
+                1,
+            )
+            for name in ("trap", "exec", "ulimit", "return")
+        )
         mutations = (
+            original.replace(
+                '        cgroup_path="$1"\n',
+                "        BASH_CMDS[stat]=/bin/false\n"
+                '        cgroup_path="$1"\n',
+                1,
+            ),
             original.replace(
                 '        cgroup_path="$1"\n',
                 "        wait -p cgroup_path 1\n"
@@ -889,7 +960,7 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 '"${inspect_table[$inspect_key]}" > /dev/null\n',
                 1,
             ),
-        ) + arithmetic_mutations
+        ) + arithmetic_mutations + shadow_mutations
         for changed in mutations:
             builder = builder_isolation_shell_source(changed)
             semantic_builder = (
