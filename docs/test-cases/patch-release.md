@@ -372,6 +372,9 @@ reviewed producer/consumer event sequence. Active length, key, index, copy,
 arithmetic, loop, redirection, indirect, and dynamic reads bind to the latest
 generation. Pre-use, stale/interphase, duplicate, reordered, and extra
 consumers reject; the two supervisor generations remain distinct.
+Helper bodies consume only when invoked. Any active helper, nested-helper,
+substitution, callback, trap, indirect, default-expression, or subscript read
+rejects as an unreviewed consumer; inert quoted helper data remains nonexecuting.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,
