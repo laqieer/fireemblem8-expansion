@@ -345,12 +345,14 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/4",
         "https://github.com/laqieer/fireemblem8-expansion/issues/28",
         "https://github.com/laqieer/fireemblem8-expansion/issues/57",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/102"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/102",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/197"
       ],
       "reference": "docs/quickstart.md",
       "status": "current",
       "required_cases": [
-        "TC-CORE-001"
+        "TC-CORE-001",
+        "TC-BUILD-GCC14-MENU-RETURN-001"
       ]
     },
     {
@@ -1816,6 +1818,39 @@
         {
           "command": "make expansion-modern-linker-check MODERN_CONFIG=release MODERN_ABI=aapcs",
           "evidence": "tools/gba-playtest/scenarios/boot.json"
+        }
+      ]
+    },
+    {
+      "id": "TC-BUILD-GCC14-MENU-RETURN-001",
+      "title": "GCC 14 menu callback return compatibility",
+      "feature_id": "modern-framework-build",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/197"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-build-gcc14-menu-return-001-gcc-14-menu-callback-return-compatibility",
+      "profiles": [
+        "Modern release AAPCS",
+        "Explicit archival control build"
+      ],
+      "purpose": "Prove integer-returning menu callbacks compile under GCC 14 without changing their archival agbcc behavior.",
+      "prerequisites": "Repository root with the modern quickstart dependencies and archival toolchain installed.",
+      "actions": "Run the modern release boot-check and the explicit archival ROM build.",
+      "expected_result": "The modern ROM compiles, links, and boots, and the archival ROM builds with its original callback source behavior.",
+      "negative_control": "Valueless modern returns fail under GCC 14, while unconditional zero returns alter archival code generation.",
+      "interactions": "Uses the existing MenuItemDef callback signatures and has no feature conflicts.",
+      "save_compatibility": "No save bytes, layout, migration, or compatibility epoch change.",
+      "cleanup": "Use make clean_fast only when generated build outputs must be removed.",
+      "limitations": "The modern ROM is not required to be byte-identical to the original game.",
+      "automation": [
+        {
+          "command": "make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/boot.json"
+        },
+        {
+          "command": "make fireemblem8.gba",
+          "evidence": "Makefile"
         }
       ]
     },
