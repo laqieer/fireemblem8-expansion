@@ -297,6 +297,7 @@ _SECURITY_SENSITIVE_FUNCTION_NAMES = frozenset(
         "typeset",
         "unalias",
         "unset",
+        "wait",
     }
 )
 _ANALYZED_BUILDER_COMMANDS = frozenset(
@@ -4497,7 +4498,10 @@ def _analyze_function_call(
             function_aliases,
         ):
             return True, {}
-        if _command_mutates_unreviewed_shell_state(resolved):
+        if _command_mutates_unreviewed_shell_state(
+            resolved,
+            original_tokens=_token_texts(tokens),
+        ):
             return True, {}
         reviewed_transport_write = _is_reviewed_transport_output_write(
             function_name,
@@ -5413,6 +5417,8 @@ def _arithmetic_writes_protected_state(
 
 def _command_mutates_unreviewed_shell_state(
     tokens: tuple[str, ...],
+    *,
+    original_tokens: tuple[str, ...],
 ) -> bool:
     stripped = _strip_shell_command_prefixes(tokens)
     normalized = _normalize_shell_builtin_wrappers(stripped)
@@ -5427,6 +5433,36 @@ def _command_mutates_unreviewed_shell_state(
             for token in stripped
         )
     executable = posixpath.basename(normalized[0])
+    if executable == "wait":
+        if original_tokens in {
+            (
+                "wait",
+                "$builder_supervisor_wait_pid",
+                ">",
+                "/dev/null",
+                "2>",
+            ),
+            ("wait", "$builder_supervisor_pid"),
+        }:
+            return False
+        for argument in normalized[1:]:
+            if _is_redirection_token(argument) or argument == "--":
+                break
+            if any(
+                marker in argument
+                for marker in (
+                    _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+                    _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+                    _AMBIGUOUS_TRACKED_PARAMETER_MARKER,
+                )
+            ) or any(character in argument for character in ("$", "`")):
+                return True
+            if argument.startswith("-"):
+                if "p" in argument[1:]:
+                    return True
+                continue
+            break
+        return False
     if executable in {"coproc", "getopts", "shift"}:
         return True
     if executable != "set":
@@ -6461,7 +6497,8 @@ def has_forbidden_raw_builder_cgroup_membership_read(
             ):
                 return True
             if _command_mutates_unreviewed_shell_state(
-                resolved_token_texts
+                resolved_token_texts,
+                original_tokens=token_texts,
             ):
                 return True
             executable_tokens = _strip_shell_command_prefixes(

@@ -12642,6 +12642,7 @@ exit 37
                 "coprocess": "reject",
                 "positional_parameter_mutation": "reject",
                 "getopts": "reject",
+                "wait_output_variable": "reject",
                 "later_or_external_mutation": "reject",
             },
             "alias_state": {

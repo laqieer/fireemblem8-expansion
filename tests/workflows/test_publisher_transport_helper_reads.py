@@ -734,6 +734,51 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 )
             )
 
+    def test_wait_output_variables_are_rejected(self):
+        runtime = (
+            "sleep 0.01 & job=$!\n"
+            "cgroup_path=authenticated\n"
+            'wait -p cgroup_path "$job"\n'
+            'printf "%s\\n" "$cgroup_path"\n'
+        )
+        completed = subprocess.run(
+            ["/bin/bash", "-c", runtime],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertRegex(completed.stdout, r"^[1-9][0-9]*\n$")
+        for script in (
+            "wait -p cgroup_path 1\n",
+            "wait -np isolated_stage 1\n",
+            "wait -pchecked_runtime_transport_output 1\n",
+            "command wait -fnp cgroup_path 1\n",
+            "target=supervisor_cgroup\n"
+            'builtin wait -p "$target" 1\n',
+            "option=$GITHUB_REF_NAME\nwait \"$option\" 1\n",
+            "show() {\n wait -p cgroup_path 1\n}\nshow\n",
+            "if true; then wait -p cgroup_path 1; fi\n",
+        ):
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    script,
+                    label="wait output variable",
+                )
+            )
+        for safe in (
+            "wait 123\n",
+            'wait -- "$pid"\n',
+            "printf '%s\\n' 'wait -p cgroup_path'\n",
+        ):
+            self.assertFalse(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    safe,
+                    label="ordinary or inert wait",
+                )
+            )
+
     def test_publisher_and_upstream_enforce_helper_dereferences(self):
         original = WORKFLOW.read_text(encoding="utf-8")
         producer = (
@@ -777,6 +822,12 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             1,
         )
         mutations = (
+            original.replace(
+                '        cgroup_path="$1"\n',
+                "        wait -p cgroup_path 1\n"
+                '        cgroup_path="$1"\n',
+                1,
+            ),
             original.replace(
                 '        cgroup_path="$1"\n',
                 "        set -- /untrusted\n"

@@ -402,6 +402,8 @@ multi-hop readonly or mutable arithmetic/subscript aliases; fixed constants pass
 Syntax-active `coproc`, `getopts`, `shift`, and positional-mutating `set`
 forms reject globally, including aliases, wrappers, helpers, and control
 placements. Reviewed shell-option `set` forms and quoted data remain valid.
+Every `wait -p` output-variable form rejects, including clustered/attached
+options and dynamic or wrapped destinations; reviewed ordinary waits remain.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,
