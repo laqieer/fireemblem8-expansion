@@ -713,6 +713,12 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             "command set -e 2>/dev/null -- fake\n",
             "set -oposix\n",
             "set +onounset\n",
+            "set -Eeuo pipefail 2>&1 -- fake\n",
+            "command set -o <&0 -- fake\n",
+            "builtin set -o >&- -- fake\n",
+            "set -o &>/dev/null -- fake\n",
+            "set -o &>>/dev/null -- fake\n",
+            'fd=1\nset -o 2>&"$fd" -- fake\n',
         )
         for index, script in enumerate(rejected):
             completed = subprocess.run(
@@ -782,6 +788,35 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 label="reviewed set flags",
             )
         )
+        for redirection in (
+            "2>&1",
+            "<&0",
+            ">&-",
+            "<&-",
+            "&>/dev/null",
+            "&>>/dev/null",
+        ):
+            completed = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-c",
+                    "set -- old\n"
+                    f"set -e {redirection} -- fake\n"
+                    'printf "%s\\n" "$1"\n',
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout, "fake\n")
+        for operator in ("&", "&&", "|", "|&"):
+            records = publisher_shell_contract.split_bash_command_records(
+                f"true {operator} true\n",
+                label="background operator control",
+            )
+            self.assertEqual(records[0].following_operator, operator)
 
     def test_wait_output_variables_are_rejected(self):
         runtime = (
@@ -936,6 +971,18 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             for name in ("trap", "exec", "ulimit", "return")
         )
         mutations = (
+            original.replace(
+                '        cgroup_path="$1"\n',
+                "        set -Eeuo pipefail 2>&1 -- /untrusted\n"
+                '        cgroup_path="$1"\n',
+                1,
+            ),
+            original.replace(
+                '        cgroup_path="$1"\n',
+                "        command set -o >&- -- /untrusted\n"
+                '        cgroup_path="$1"\n',
+                1,
+            ),
             original.replace(
                 '        cgroup_path="$1"\n',
                 "        set -o >/dev/null -- /untrusted\n"

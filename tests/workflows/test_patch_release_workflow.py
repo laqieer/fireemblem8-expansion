@@ -12671,6 +12671,7 @@ exit 37
                 "positional_parameter_mutation": "reject",
                 "set_option_grammar": "valid-reviewed-bash-options-only",
                 "set_redirections": "remove-all-preserve-argv",
+                "fd_redirections": "atomic-not-control-operators",
                 "set_cluster_o": "ending-o-consumes-next-name",
                 "getopts": "reject",
                 "wait_output_variable": "reject",

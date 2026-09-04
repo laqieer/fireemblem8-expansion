@@ -1494,6 +1494,24 @@ def split_bash_command_records(
                     ):
                         scope_stack.pop()
                     word_start = False
+                elif logical.startswith("&>>", index):
+                    begin_command()
+                    current.extend(("&", ">", ">"))
+                    index += 2
+                    word_start = False
+                elif logical.startswith("&>", index):
+                    begin_command()
+                    current.extend(("&", ">"))
+                    index += 1
+                    word_start = False
+                elif (
+                    character == "&"
+                    and index > 0
+                    and logical[index - 1] in "<>"
+                ):
+                    begin_command()
+                    current.append(character)
+                    word_start = False
                 elif character in "&|;":
                     operator = character
                     if index + 1 < len(logical):
@@ -2033,7 +2051,7 @@ def _token_texts(tokens: Iterable[_ShellToken]) -> tuple[str, ...]:
 def _is_redirection_token(text: str) -> bool:
     return bool(
         re.fullmatch(
-            r"[0-9]*(?:<<<|<<-?|>>|<>|>\||<&|>&|<|>)",
+            r"(?:&>>|&>|[0-9]*(?:<<<|<<-?|>>|<>|>\||<&|>&|<|>))",
             text,
         )
     )
@@ -2121,6 +2139,10 @@ def _split_attached_redirections(
                 continue
             if (
                 character not in "<>"
+                and not (
+                    character == "&"
+                    and lookahead.startswith(("&>", "&>>"))
+                )
                 or not redirection_active
                 or (
                     index + 1 < len(characters)
@@ -2138,6 +2160,8 @@ def _split_attached_redirections(
                     candidate
                     for candidate in (
                         "<<<",
+                        "&>>",
+                        "&>",
                         "<<-",
                         "<<",
                         ">>",
