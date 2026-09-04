@@ -2043,7 +2043,7 @@ int StealItemMenuCommand_Draw(struct MenuProc* menu, struct MenuItemProc* menuIt
 
     DrawItemMenuLine(&menuItem->text, item, isStealable, gBG0TilemapBuffer + TILEMAP_INDEX(menuItem->xTile, menuItem->yTile));
 
-    return;
+    return 0;
 }
 
 u8 StealItemMenuCommand_Effect(struct MenuProc* menu, struct MenuItemProc* menuItem) {
@@ -2582,11 +2582,11 @@ int ItemMenu_SwitchIn(struct MenuProc* menu, struct MenuItemProc* menuItem) {
         UpdateMenuItemPanel(menuItem->itemNumber - 1);
     }
 
-    // return 0; // BUG?
+    return 0;
 }
 
 int ItemMenu_SwitchOut_DoNothing(struct MenuProc* menu, struct MenuItemProc* menuItem) {
-    return;
+    return 0;
 }
 
 u8 ItemMenuHelpBox(struct MenuProc* menu, struct MenuItemProc* menuItem) {
@@ -2600,7 +2600,7 @@ u8 ItemMenuHelpBox(struct MenuProc* menu, struct MenuItemProc* menuItem) {
 
     StartItemHelpBox(menuItem->xTile << 3, menuItem->yTile << 3, item);
 
-    // return 0; // BUG?
+    return 0;
 }
 
 u8 MapMenu_IsRecordsCommandAvailable(const struct MenuItemDef* def, int number) {
