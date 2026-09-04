@@ -8159,7 +8159,31 @@ exit 37
                     publisher_boundary_errors(changed),
                 )
 
-    def test_invoked_helpers_cannot_consume_reserved_transport_outputs(self):
+    def test_checked_transport_outputs_are_reserved_after_production(self):
+        for name in (
+            "checked_supervisor_transport_output",
+            "checked_runtime_transport_output",
+        ):
+            with self.subTest(preuse=name):
+                script = (
+                    "set -u\n"
+                    f'printf "%s\\n" "${{#{name}[@]}}"\n'
+                )
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", script],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn("unbound variable", completed.stderr)
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        script,
+                        label=f"{name} pre-use runtime",
+                    )
+                )
         helper_cases = (
             "inspect() {\n"
             '  printf "%s\\n" "${checked_supervisor_transport_output[0]}"\n'
@@ -8262,32 +8286,6 @@ exit 37
                 label="inert reserved helper call",
             )
         )
-
-    def test_checked_transport_outputs_are_reserved_after_production(self):
-        for name in (
-            "checked_supervisor_transport_output",
-            "checked_runtime_transport_output",
-        ):
-            with self.subTest(preuse=name):
-                script = (
-                    "set -u\n"
-                    f'printf "%s\\n" "${{#{name}[@]}}"\n'
-                )
-                completed = subprocess.run(
-                    ["/bin/bash", "-c", script],
-                    cwd=ROOT,
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                )
-                self.assertNotEqual(completed.returncode, 0)
-                self.assertIn("unbound variable", completed.stderr)
-                self.assertTrue(
-                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
-                        script,
-                        label=f"{name} pre-use runtime",
-                    )
-                )
         self.assertFalse(
             workflow_has_raw_builder_cgroup_membership_read(self.text)
         )
