@@ -12629,7 +12629,7 @@ exit 37
                 "consumer_protocol": "exact-latest-phase-sequence",
                 "supervisor_phases": 2,
                 "runtime_phases": 1,
-                "invoked_helper_consumers": "reject-unreviewed-active-reference",
+                "invoked_helper_consumers": "reject-unreviewed-runtime-dereference",
                 "later_or_external_mutation": "reject",
             },
             "alias_state": {

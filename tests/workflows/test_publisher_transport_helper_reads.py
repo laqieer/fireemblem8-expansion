@@ -1,3 +1,4 @@
+import os
 import subprocess
 import unittest
 from pathlib import Path
@@ -53,6 +54,41 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             ),
             (
                 "inspect() {\n"
+                '  printf "%s\\n" "${!1}"\n'
+                "}\n"
+                "inspect checked_runtime_transport_output\n"
+            ),
+            (
+                "inspect() {\n"
+                '  local -n ref="$1"\n'
+                '  printf "%s\\n" "$ref"\n'
+                "}\n"
+                "inspect checked_supervisor_transport_output\n"
+            ),
+            (
+                "inspect() {\n"
+                '  printf "%s\\n" "${!1}"\n'
+                "}\n"
+                'inspect "$unknown"\n'
+            ),
+            (
+                "inspect() {\n"
+                '  local -n ref="$1"\n'
+                '  printf "%s\\n" "$ref"\n'
+                "}\n"
+                'inspect "$unknown"\n'
+            ),
+            (
+                "inspect() {\n"
+                '  printf "%s %s %s\\n" '
+                '"${#checked_runtime_transport_output[@]}" '
+                '"${!checked_runtime_transport_output[@]}" '
+                '"${checked_runtime_transport_output[@]}"\n'
+                "}\n"
+                "inspect\n"
+            ),
+            (
+                "inspect() {\n"
                 '  printf "%s\\n" '
                 '"${checked_supervisor_transport_output[0]}"\n'
                 "}\n"
@@ -84,6 +120,37 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                     )
                 )
 
+        initialized_reads = (
+            "inspect() {\n"
+            '  printf "%s\\n" "${!1}"\n'
+            "}\n"
+            "inspect checked_runtime_transport_output\n",
+            "inspect() {\n"
+            '  local -n ref="$1"\n'
+            '  printf "%s\\n" "$ref"\n'
+            "}\n"
+            "inspect checked_runtime_transport_output\n",
+        )
+        environment = dict(os.environ)
+        environment["checked_runtime_transport_output"] = "trusted-value"
+        for script in initialized_reads:
+            completed = subprocess.run(
+                ["/bin/bash", "-u", "-c", script],
+                cwd=ROOT,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout, "trusted-value\n")
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    script,
+                    label="initialized indirect transport read",
+                )
+            )
+
         active_definition = cases[0].rsplit("inspect\n", 1)[0]
         self.assertFalse(
             publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
@@ -113,45 +180,156 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 label="default transport helper read",
             )
         )
-        inert = (
+        arithmetic_read = (
             "inspect() {\n"
-            "  printf '%s\\n' "
-            "'${checked_supervisor_transport_output[0]}'\n"
+            "  name=checked_runtime_transport_output\n"
+            '  printf "%s\\n" "$((name))"\n'
             "}\n"
             "inspect\n"
         )
-        self.assertFalse(
+        completed = subprocess.run(
+            ["/bin/bash", "-u", "-c", arithmetic_read],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertTrue(
             publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
-                inert,
-                label="literal transport helper data",
+                arithmetic_read,
+                label="arithmetic transport helper read",
             )
         )
 
-    def test_publisher_and_upstream_reject_reviewed_helper_reads(self):
-        original = WORKFLOW.read_text(encoding="utf-8")
-        marker = "          local signature\n"
-        mutations = (
-            '          printf "%s\\n" '
-            '"${checked_supervisor_transport_output[0]}" > /dev/null\n',
-            "          inspect_name=checked_supervisor_transport_output\n"
-            '          printf "%s\\n" "${!inspect_name}" > /dev/null\n',
+    def test_literal_transport_names_remain_data(self):
+        cases = (
+            (
+                "inspect() {\n"
+                '  printf "%s\\n" "$1"\n'
+                "}\n"
+                "name=checked_supervisor_transport_output\n"
+                'inspect "$name"\n',
+                "checked_supervisor_transport_output\n",
+            ),
+            (
+                "inner() {\n"
+                '  printf "%s\\n" "$1"\n'
+                "}\n"
+                "outer() {\n"
+                '  inner "$1"\n'
+                "}\n"
+                "name=checked_runtime_transport_output\n"
+                'outer "$name"\n',
+                "checked_runtime_transport_output\n",
+            ),
+            (
+                "inspect() {\n"
+                "  printf '%s\\n' "
+                "'${checked_supervisor_transport_output[0]}'\n"
+                "}\n"
+                "inspect\n",
+                "${checked_supervisor_transport_output[0]}\n",
+            ),
+            (
+                "inspect() {\n"
+                '  test "$1" = checked_runtime_transport_output\n'
+                '  printf "%s\\n" "$1"\n'
+                "}\n"
+                "name=checked_runtime_transport_output\n"
+                'inspect "$name"\n',
+                "checked_runtime_transport_output\n",
+            ),
         )
-        for insertion in mutations:
-            changed = original.replace(marker, marker + insertion, 1)
+        for script, expected in cases:
+            with self.subTest(script=script.splitlines()[0]):
+                completed = subprocess.run(
+                    ["/bin/bash", "-u", "-c", script],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, expected)
+                self.assertFalse(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        script,
+                        label="literal transport helper data",
+                    )
+                )
+        self.assertFalse(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                "inspect() {\n"
+                '  printf "%s\\n" "$unknown"\n'
+                "}\n"
+                "inspect\n",
+                label="dynamic plain helper data",
+            )
+        )
+
+    def test_publisher_and_upstream_enforce_helper_dereferences(self):
+        original = WORKFLOW.read_text(encoding="utf-8")
+        producer = (
+            '        read_checked_supervisor_transport_file \\\n'
+            '          "$dev_mounts_file" "$dev_mount_targets_max_bytes"\n'
+        )
+        second_producer = (
+            '        read_checked_supervisor_transport_file \\\n'
+            '          "$remaining_dev_mounts_file" \\\n'
+            '          "$dev_mount_targets_max_bytes"\n'
+        )
+        helper = (
+            "        inspect_transport_output() {\n"
+            '          printf "%s\\n" '
+            '"${checked_supervisor_transport_output[0]}" > /dev/null\n'
+            "        }\n"
+            "        inspect_transport_output\n"
+        )
+        mutations = (
+            original.replace(producer, helper + producer, 1),
+            original.replace(producer, producer + helper, 1),
+            original.replace(second_producer, helper + second_producer, 1),
+            original.replace(
+                "          local signature\n",
+                "          local signature\n"
+                "          inspect_name=checked_supervisor_transport_output\n"
+                '          printf "%s\\n" "${!inspect_name}" > /dev/null\n',
+                1,
+            ),
+            original.replace(
+                "          local signature\n",
+                "          local signature\n"
+                "          local -n inspect_ref="
+                "checked_supervisor_transport_output\n"
+                '          printf "%s\\n" "$inspect_ref" > /dev/null\n',
+                1,
+            ),
+        )
+        for changed in mutations:
             builder = builder_isolation_shell_source(changed)
-            records = publisher_shell_contract.split_bash_command_records(
-                builder,
-                label="mutated builder",
+            semantic_builder = (
+                publisher_shell_contract._strip_patch_release_parser_heredoc_bodies(
+                    builder
+                )
+            )
+            records = publisher_shell_contract._annotate_command_control_scopes(
+                publisher_shell_contract._normalize_split_function_command_records(
+                    publisher_shell_contract.split_bash_command_records(
+                        semantic_builder,
+                        label="mutated builder",
+                    )
+                )
             )
             _, inventory = publisher_shell_contract._shell_function_definitions(
                 records
             )
             with (
-                self.subTest(insertion=insertion),
+                self.subTest(mutation=changed != original),
                 mock.patch.object(
                     publisher_shell_contract,
                     "REVIEWED_BUILDER_HELPER_INVENTORY",
-                    set(inventory.elements()),
+                    dict(inventory),
                 ),
                 mock.patch.object(
                     publisher_shell_contract,
@@ -174,6 +352,56 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                     "isolated candidate build differs",
                 ):
                     upstream_verify._parse_workflow_structure_text(changed)
+
+        literal_changed = original.replace(
+            "          local signature\n",
+            "          local signature\n"
+            "          inspect_name=checked_supervisor_transport_output\n"
+            '          printf "%s\\n" "$inspect_name" > /dev/null\n',
+            1,
+        )
+        builder = builder_isolation_shell_source(literal_changed)
+        semantic_builder = (
+            publisher_shell_contract._strip_patch_release_parser_heredoc_bodies(
+                builder
+            )
+        )
+        records = publisher_shell_contract._annotate_command_control_scopes(
+            publisher_shell_contract._normalize_split_function_command_records(
+                publisher_shell_contract.split_bash_command_records(
+                    semantic_builder,
+                    label="literal-name builder",
+                )
+            )
+        )
+        _, inventory = publisher_shell_contract._shell_function_definitions(
+            records
+        )
+        with (
+            mock.patch.object(
+                publisher_shell_contract,
+                "REVIEWED_BUILDER_HELPER_INVENTORY",
+                dict(inventory),
+            ),
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_patch_release_run_script_identity",
+            ),
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_builder_isolation_shell_identity",
+            ),
+        ):
+            self.assertFalse(
+                workflow_has_raw_builder_cgroup_membership_read(
+                    literal_changed
+                )
+            )
+            self.assertNotIn(
+                "raw builder cgroup membership read differs",
+                publisher_boundary_errors(literal_changed),
+            )
+            upstream_verify._parse_workflow_structure_text(literal_changed)
 
 
 if __name__ == "__main__":

@@ -238,6 +238,7 @@ _RAW_CGROUP_ROOT_MARKER = "\x00raw-cgroup-root\x00"
 _AMBIGUOUS_TRACKED_PARAMETER_MARKER = "\x00ambiguous-tracked-parameter\x00"
 _AMBIGUOUS_ARRAY_ALIAS_MARKER = "\x00ambiguous-array-alias\x00"
 _AMBIGUOUS_DYNAMIC_ALIAS_MARKER = "\x00ambiguous-dynamic-alias\x00"
+_NAMEREF_ALIAS_MARKER = "\x00nameref-alias\x00"
 _LITERAL_DOLLAR_MARKER = "\x00literal-dollar\x00"
 _DISPATCH_STATE_VARIABLES = frozenset(
     {"BASHOPTS", "BASH_ENV", "ENV", "PATH", "SHELLOPTS"}
@@ -4418,7 +4419,11 @@ def _analyze_function_call(
             resolved,
         )
         if (
-            _active_reserved_transport_references(tokens, resolved)
+            _active_reserved_transport_references(
+                tokens,
+                resolved,
+                function_aliases,
+            )
             and not reviewed_transport_write
         ):
             return True, {}
@@ -5084,19 +5089,104 @@ def _is_reviewed_transport_output_write(
 def _active_reserved_transport_references(
     tokens: tuple[_ShellToken, ...],
     resolved_tokens: tuple[str, ...],
+    aliases: dict[str, str],
 ) -> frozenset[str]:
-    return frozenset(
-        name
-        for token, resolved in zip(tokens, resolved_tokens)
-        for name in _RESERVED_TRANSPORT_OUTPUTS
-        if (
-            name in _active_shell_token_text(token)
-            or (
-                token.has_shell_syntax
-                and name in resolved
+    references: set[str] = set()
+    for token, resolved in zip(tokens, resolved_tokens):
+        active = _active_shell_token_text(token)
+        for name in _RESERVED_TRANSPORT_OUTPUTS:
+            escaped = re.escape(name)
+            if re.search(
+                rf"\$(?:{escaped}(?![A-Za-z0-9_])|"
+                rf"\{{[!#]?{escaped}(?=[^A-Za-z0-9_]|$))",
+                active,
+            ):
+                references.add(name)
+                continue
+            indirect_targets = re.findall(
+                r"\$\{!([A-Za-z_][A-Za-z0-9_]*|[1-9][0-9]*)"
+                r"(?:[^}]*)\}",
+                active,
             )
-        )
-    )
+            for target in indirect_targets:
+                value = aliases.get(target)
+                if value is None or any(
+                    marker in value
+                    for marker in (
+                        _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+                        _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+                        _AMBIGUOUS_TRACKED_PARAMETER_MARKER,
+                    )
+                ) or any(character in value for character in ("$", "`")):
+                    references.add(name)
+                    break
+                if re.fullmatch(
+                    rf"{escaped}(?:\[[^\]]*\])?",
+                    value,
+                ):
+                    references.add(name)
+                    break
+            if name in references:
+                continue
+            if (
+                _NAMEREF_ALIAS_MARKER in resolved
+                and (
+                    re.search(rf"\b{escaped}\b", resolved)
+                    or any(
+                        marker in resolved
+                        for marker in (
+                            _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+                            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+                            _AMBIGUOUS_TRACKED_PARAMETER_MARKER,
+                        )
+                    )
+                    or any(
+                        character in resolved
+                        for character in ("$", "`")
+                    )
+                )
+            ):
+                references.add(name)
+                continue
+            arithmetic_context = any(
+                opener in active
+                for opener in ("$((", "((", "$[")
+            )
+            subscript_context = bool(
+                re.search(r"\$\{[^{}]*\[[^\]]*\]", active)
+                or re.match(
+                    r"[A-Za-z_][A-Za-z0-9_]*\[[^\]]*\](?:\+)?=",
+                    active,
+                )
+            )
+            if (
+                (arithmetic_context or subscript_context)
+                and re.search(rf"\b{escaped}\b", resolved)
+            ):
+                references.add(name)
+                continue
+            if arithmetic_context or subscript_context:
+                dereference_text = active if arithmetic_context else " ".join(
+                    re.findall(r"\[([^\]]*)\]", active)
+                )
+                for identifier in re.findall(
+                    r"\b[A-Za-z_][A-Za-z0-9_]*\b",
+                    dereference_text,
+                ):
+                    value = aliases.get(identifier, identifier)
+                    if any(
+                        marker in value
+                        for marker in (
+                            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+                            _AMBIGUOUS_TRACKED_PARAMETER_MARKER,
+                        )
+                    ) or re.fullmatch(
+                        rf"{escaped}(?:\[[^\]]*\])?",
+                        value,
+                    ):
+                        references.add(name)
+                        break
+    return frozenset(references)
 
 
 def _normalized_command_creates_nameref(
@@ -5604,6 +5694,7 @@ def _apply_shell_builtin_alias_writes(
             "typeset",
         }:
             array = False
+            nameref = False
             after_options = False
             for argument in arguments:
                 if argument == "--":
@@ -5612,6 +5703,8 @@ def _apply_shell_builtin_alias_writes(
                 if not after_options and argument.startswith(("-", "+")):
                     if "a" in argument[1:] or "A" in argument[1:]:
                         array = True
+                    if "n" in argument[1:]:
+                        nameref = argument.startswith("-")
                     continue
                 scalar_assignment = _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(
                     argument
@@ -5624,6 +5717,8 @@ def _apply_shell_builtin_alias_writes(
                     assert assignment is not None
                     name = assignment.group("name")
                     value = assignment.group("value")
+                    if nameref:
+                        value = _NAMEREF_ALIAS_MARKER + value
                     if assignment.group("append"):
                         value = aliases.get(name, "") + value
                     target = name
@@ -5643,7 +5738,12 @@ def _apply_shell_builtin_alias_writes(
                 _set_written_shell_alias(
                     aliases,
                     argument,
-                    _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+                    (
+                        _NAMEREF_ALIAS_MARKER
+                        if nameref
+                        else ""
+                    )
+                    + _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
                     array=array,
                 )
             return False
@@ -5940,6 +6040,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 and _active_reserved_transport_references(
                     tokens,
                     resolved_token_texts,
+                    aliases,
                 )
             ):
                 transport_event = ("consumer",) + token_texts
