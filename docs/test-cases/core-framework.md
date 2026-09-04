@@ -72,13 +72,16 @@ ROM or make the archival lane a release requirement.
 - **Supported configuration or artifact:** modern release AAPCS
   `build/expansion-modern/release/aapcs/fireemblem8.gba`; explicit archival
   `fireemblem8.gba` control build.
-- **Prerequisites and clean starting state:** repository root with the modern
-  quickstart dependencies and the archival toolchain installed.
+- **Prerequisites and clean starting state:** repository root with
+  `arm-none-eabi-gcc` 14.2.1, the remaining modern quickstart dependencies,
+  and the archival toolchain installed. Record
+  `arm-none-eabi-gcc --version | head -1` with the test result.
 
 ### Actions
 
-1. Run `make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs`.
-2. Run `make fireemblem8.gba`.
+1. Run `arm-none-eabi-gcc --version | head -1` and confirm GCC 14.2.1.
+2. Run `make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs`.
+3. Run `make fireemblem8.gba`.
 
 ### Expected result
 

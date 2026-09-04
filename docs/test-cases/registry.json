@@ -1835,8 +1835,8 @@
         "Explicit archival control build"
       ],
       "purpose": "Prove integer-returning menu callbacks compile under GCC 14 without changing their archival agbcc behavior.",
-      "prerequisites": "Repository root with the modern quickstart dependencies and archival toolchain installed.",
-      "actions": "Run the modern release boot-check and the explicit archival ROM build.",
+      "prerequisites": "Repository root with arm-none-eabi-gcc 14.2.1, the remaining modern quickstart dependencies, and the archival toolchain installed.",
+      "actions": "Record arm-none-eabi-gcc --version, confirm GCC 14.2.1, then run the modern release boot-check and the explicit archival ROM build.",
       "expected_result": "The modern ROM compiles, links, and boots, and the archival ROM builds with its original callback source behavior.",
       "negative_control": "Valueless modern returns fail under GCC 14, while unconditional zero returns alter archival code generation.",
       "interactions": "Uses the existing MenuItemDef callback signatures and has no feature conflicts.",
