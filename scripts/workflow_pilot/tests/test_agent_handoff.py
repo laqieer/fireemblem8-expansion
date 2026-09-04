@@ -1386,7 +1386,7 @@ def handoff_repository(
         transaction_hook.write_text(
             "#!/bin/sh\n"
             "[ \"$1\" != prepared ] && exit 0\n"
-            f"printf ran > '{remote_root / 'hook-ran'}'\n"
+            f"printf ran > '{remote_root.parent / 'hook-ran'}'\n"
             "updates=$(cat)\n"
             "auth=$(printf '%s\\n' \"$updates\" | grep -c "
             "'refs/heads/workflow-pilot/authority/issue-' || true)\n"
@@ -3188,6 +3188,7 @@ class ExactHandoffTests(unittest.TestCase):
             self.assertFalse(marker.exists())
     def test_remote_rewrites_cannot_replace_installation_endpoint(self):
         with handoff_repository() as (root, _base, _parent, _result):
+            temporary_clients = set(Path(tempfile.gettempdir()).glob("workflow-pilot-git-*"))
             installation = installation_root_path(root)
             ref = agent_handoff.REPOSITORY_IDENTITY_REF
             oid = agent_handoff._remote_ref_oid(root, installation, ref, allow_missing=False)
@@ -3198,6 +3199,7 @@ class ExactHandoffTests(unittest.TestCase):
             remote = Path(installation_manifest(root)["authority_protection"]["remote_url"])
             substitute = root.parent / "substitute.git"
             shutil.copytree(remote, substitute)
+            git(substitute, "config", "receive.advertiseAtomic", "false")
             included = root.parent / "remote-rewrite.config"
             included.write_text(f'[url "{substitute.as_uri()}"]\n\tinsteadOf = {remote}\n\tpushInsteadOf = {remote}\n[remote "origin"]\n\turl = {substitute}\n\tpushurl = {substitute}\n[remote "backup"]\n\turl = {substitute}\n[http]\n\tproxy = http://127.0.0.1:9\n\tcurloptResolve = workflow-pilot.invalid:443:127.0.0.1\n\tsslVerify = false\n\tsslCAInfo = {included}\n[http "https://workflow-pilot.invalid"]\n\tproxy = http://127.0.0.1:9\n[credential]\n\thelper = {included}\n')
             git(root, "config", "--add", "include.path", str(included))
@@ -3205,17 +3207,30 @@ class ExactHandoffTests(unittest.TestCase):
             self.assertEqual(operations[0](), oid)
             operations[1]()
             operations[2]()
-            self.assertTrue((remote / "hook-ran").is_file())
+            self.assertTrue((remote.parent / "hook-ran").is_file())
             with self.assertRaisesRegex(agent_handoff.HandoffDataError, "external path"): agent_handoff.publish_authority_updates(root, installation_manifest(root), updates)
-            for endpoint in ("ssh://git@github.com/example/workflow.git", "git@github.com:example/workflow.git"): manifest = installation_manifest(root); manifest["authority_protection"]["remote_url"] = endpoint; (installation / "installation.json").write_text(json.dumps(manifest)); self.assertEqual(agent_handoff._transport_endpoint(root, installation), endpoint)
+            for endpoint in ("ssh://git@github.com/example/workflow.git", "git@github.com:example/workflow.git"):
+                manifest = installation_manifest(root); manifest["authority_protection"]["remote_url"] = endpoint; (installation / "installation.json").write_text(json.dumps(manifest))
+                with agent_handoff._transport_capability(root, installation) as capability: self.assertEqual(capability[0], endpoint)
             common = Path(git(root, "rev-parse", "--git-common-dir")); common = common if common.is_absolute() else root / common
-            objects = common / "objects"; held = common / "objects-held"; original = agent_handoff._run_bounded_process
+            objects = common / "objects"; held = common / "objects-held"; remote_held = root.parent / "authority-held"; original = agent_handoff._run_bounded_process
             def swap(**kwargs):
-                objects.rename(held); objects.mkdir()
+                if "push" not in kwargs["argv"]: return original(**kwargs)
+                objects.rename(held); objects.mkdir(); remote.rename(remote_held); shutil.copytree(substitute, remote)
                 try: return original(**kwargs)
-                finally: objects.rmdir(); held.rename(objects)
+                finally: shutil.rmtree(remote); remote_held.rename(remote); objects.rmdir(); held.rename(objects)
             manifest = installation_manifest(root); manifest["authority_protection"]["remote_url"] = str(remote); (installation / "installation.json").write_text(json.dumps(manifest))
-            with mock.patch.object(agent_handoff, "_run_bounded_process", side_effect=swap): agent_handoff.require_atomic_push_capability(root, installation, updates)
+            (remote.parent / "hook-ran").unlink(missing_ok=True)
+            with mock.patch.object(agent_handoff, "_run_bounded_process", side_effect=swap): agent_handoff.publish_authority_updates(root, installation, updates)
+            self.assertTrue((remote.parent / "hook-ran").is_file())
+            linked = root.parent / "linked"; git(root, "worktree", "add", "-q", "--detach", str(linked), head)
+            alternate = root.parent / "alternate.git"; alternate.mkdir(); git(alternate, "init", "-q", "--bare")
+            alternate_oid = owner_create_record_commit(alternate, {"alternate": True}, "authority.json", None)
+            info = common / "objects" / "info"; info.mkdir(exist_ok=True); (info / "alternates").write_text(str(alternate / "objects"))
+            alternate_updates = [(alternate_oid, agent_handoff.history_authority_ref(1000, None)), (alternate_oid, agent_handoff.history_anchor_ref(1000))]
+            agent_handoff.publish_authority_updates(linked, installation, alternate_updates)
+            self.assertEqual(git(remote, "rev-parse", alternate_updates[0][1]), alternate_oid)
+            (info / "alternates").unlink()
             helper = root.parent / "option-helper"; option_marker = root.parent / "option-executed"; helper.write_text(f'#!/bin/sh\nprintf ran > "{option_marker}"\n'); helper.chmod(0o700)
             manifest["authority_protection"]["remote_url"] = f"--upload-pack={helper}"; (installation / "installation.json").write_text(json.dumps(manifest))
             with self.assertRaisesRegex(agent_handoff.HandoffDataError, "not canonical"): operations[0]()
@@ -3223,11 +3238,7 @@ class ExactHandoffTests(unittest.TestCase):
             manifest = installation_manifest(root); manifest["authority_protection"]["remote_url"] = "https://github.com/example/workflow.git"; (installation / "installation.json").write_text(json.dumps(manifest))
             with self.assertRaises(agent_handoff.HandoffDataError) as failure: operations[0]()
             self.assertNotIn("127.0.0.1", str(failure.exception))
-            linked = root.parent / "linked"; git(root, "worktree", "add", "-q", "--detach", str(linked), head)
-            alternate = root.parent / "alternate.git"; alternate.mkdir(); git(alternate, "init", "-q", "--bare")
-            alternate_oid = git_with_input(alternate, ("hash-object", "-w", "--stdin"), b"alternate only")
-            info = common / "objects" / "info"; info.mkdir(exist_ok=True); (info / "alternates").write_text(str(alternate / "objects"))
-            with self.assertRaisesRegex(agent_handoff.HandoffDataError, "external object providers"): agent_handoff.publish_authority_updates(linked, installation, [(alternate_oid, updates[0][1]), (alternate_oid, updates[1][1])])
+            self.assertEqual(set(Path(tempfile.gettempdir()).glob("workflow-pilot-git-*")), temporary_clients)
     def test_assignment_states_are_distinct_and_not_inferred(self):
         with handoff_repository() as (root, _base, parent, result):
             for state_name in (

@@ -246,40 +246,62 @@ def _run_bounded_process(
         stdout=stdout,
         stderr=stderr,
     )
+def _copy_object_closure(source: Path, target: Path, roots: tuple[str, ...]) -> None:
+    if not roots: return
+    payload = "".join(f"{root}\n" for root in roots).encode("ascii")
+    pack = _run_bounded_process(
+        argv=reporter.git_command(source, "pack-objects", "--stdout", "--revs"), cwd=source,
+        env=reporter.git_environment(offline=True), stdin=payload,
+        timeout_seconds=REMOTE_GIT_TIMEOUT_SECONDS, timeout_code=REMOTE_GIT_TIMEOUT_CODE,
+        label="object snapshot export", execute_error_label="Git pack-objects")
+    if pack.returncode != 0: raise HandoffDataError("cannot export authenticated object snapshot")
+    indexed = _run_bounded_process(
+        argv=reporter.git_command(target, "index-pack", "--stdin", "--fix-thin", "--strict", "--fsck-objects"), cwd=target,
+        env=reporter.git_environment(offline=True), stdin=pack.stdout,
+        timeout_seconds=REMOTE_GIT_TIMEOUT_SECONDS, timeout_code=REMOTE_GIT_TIMEOUT_CODE,
+        label="object snapshot import", execute_error_label="Git index-pack")
+    if indexed.returncode != 0: raise HandoffDataError("cannot verify authenticated object snapshot")
+    run_git(target, "fsck", "--strict", "--no-dangling", *roots)
 def _run_bounded_git_transport(
-    repository_root: Path,
-    *arguments: str,
-    timeout_code: str,
+    repository_root: Path, installation_path: Path | None,
+    command: tuple[str, ...], endpoint_arguments: tuple[str, ...], *,
+    timeout_code: str, source_objects: tuple[str, ...] = (),
+    fetched_object: str | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
-    objects = _open_transport_object_store(repository_root)
-    try:
-        with tempfile.TemporaryDirectory(prefix="workflow-pilot-git-") as temporary:
-            sealed = Path(temporary); (sealed / "refs").mkdir()
-            (sealed / "HEAD").write_text("ref: refs/heads/sealed\n")
-            (sealed / "config").write_text("[core]\nrepositoryformatversion=0\nbare=true\n")
-            environment = {"CURL_HOME": str(sealed), "GIT_DIR": str(sealed),
-                "GIT_OBJECT_DIRECTORY": f"/proc/self/fd/{objects}", "HOME": str(sealed),
-                "GIT_SSH_COMMAND": "/usr/bin/ssh -F /dev/null -oBatchMode=yes",
-                "GIT_SSH_VARIANT": "ssh", "XDG_CONFIG_HOME": str(sealed),
-                **reporter.git_environment(offline=False)}
-            return _run_bounded_process(
+    with tempfile.TemporaryDirectory(prefix="workflow-pilot-git-") as temporary:
+        sealed = Path(temporary); (sealed / "refs").mkdir(); (sealed / "objects").mkdir()
+        (sealed / "HEAD").write_text("ref: refs/heads/sealed\n")
+        (sealed / "config").write_text("[core]\nrepositoryformatversion=0\nbare=true\n")
+        _copy_object_closure(repository_root, sealed, source_objects)
+        environment = {"CURL_HOME": str(sealed), "GIT_DIR": str(sealed), "HOME": str(sealed),
+            "GIT_SSH_COMMAND": "/usr/bin/ssh -F /dev/null -oBatchMode=yes",
+            "GIT_SSH_VARIANT": "ssh", "XDG_CONFIG_HOME": str(sealed),
+            **reporter.git_environment(offline=False)}
+        with _transport_capability(repository_root, installation_path) as (endpoint, descriptors):
+            arguments = (*command, "--", endpoint, *endpoint_arguments)
+            completed = _run_bounded_process(
                 argv=reporter.git_command(sealed, *arguments), cwd=sealed, env=environment,
                 stdin=None, timeout_seconds=REMOTE_GIT_TIMEOUT_SECONDS,
                 timeout_code=timeout_code, label=f"Git {' '.join(arguments)}",
-                execute_error_label="Git", pass_fds=(objects,))
-    finally:
-        os.close(objects)
-def _run_git_online(repository_root: Path, *arguments: str) -> bytes:
+                execute_error_label="Git", pass_fds=descriptors)
+        if completed.returncode == 0 and fetched_object is not None:
+            _copy_object_closure(sealed, repository_root, (fetched_object,))
+        return completed
+def _run_git_online(
+    repository_root: Path, installation_path: Path | None,
+    command: tuple[str, ...], endpoint_arguments: tuple[str, ...], *,
+    fetched_object: str | None = None,
+) -> bytes:
     completed = _run_bounded_git_transport(
-        repository_root,
-        *arguments,
+        repository_root, installation_path, command, endpoint_arguments,
         timeout_code=REMOTE_GIT_TIMEOUT_CODE,
+        fetched_object=fetched_object,
     )
     if completed.returncode == 0:
         return completed.stdout
     detail = completed.stderr.decode("utf-8", errors="replace").strip()
     raise HandoffDataError(
-        f"Git {' '.join(arguments)} failed"
+        f"Git {' '.join((*command, *endpoint_arguments))} failed"
         + (f": {detail}" if detail else "")
     )
 def authoritative_current_time(
@@ -815,23 +837,20 @@ def _publish_authority_updates(
     updates: list[tuple[str, str]],
     *,
     dry_run: bool,
-) -> str:
+) -> None:
     if len(updates) != 2:
         raise HandoffDataError(
             "authority publication requires exactly two atomic ref updates"
         )
-    remote = _transport_endpoint(repository_root, installation_path)
+    object_ids = tuple(expect_sha(object_id, "authority publication object") for object_id, _reference in updates)
     completed = _run_bounded_git_transport(
-        repository_root,
-        "push",
-        "--atomic",
-        *(("--dry-run",) if dry_run else ()),
-        "--",
-        remote,
-        *(f"{object_id}:{reference}" for object_id, reference in updates),
+        repository_root, installation_path,
+        ("push", "--atomic", *(("--dry-run",) if dry_run else ())),
+        tuple(f"{object_id}:{reference}" for object_id, reference in updates),
         timeout_code=(
             REMOTE_GIT_PREFLIGHT_TIMEOUT_CODE if dry_run else REMOTE_GIT_TIMEOUT_CODE
         ),
+        source_objects=object_ids,
     )
     if completed.returncode != 0:
         detail = completed.stderr.decode("utf-8", errors="replace").strip()
@@ -839,13 +858,12 @@ def _publish_authority_updates(
             "origin does not support the required atomic authority push"
             + (f": {detail}" if detail else "")
         )
-    return remote
 def require_atomic_push_capability(
     repository_root: Path,
     installation_path: Path | None,
     updates: list[tuple[str, str]],
-) -> str:
-    return _publish_authority_updates(
+) -> None:
+    _publish_authority_updates(
         repository_root, installation_path, updates, dry_run=True
     )
 def publish_authority_updates(
@@ -1403,31 +1421,6 @@ def _open_trusted_directory_path(
         os.close(descriptor)
         raise
     return absolute_path, descriptor
-def _open_transport_object_store(repository_root: Path) -> int:
-    repository_root = validate_repository_root(repository_root)
-    common = Path(run_git(repository_root, "rev-parse", "--git-common-dir").decode().strip())
-    common = common if common.is_absolute() else repository_root / common; _path, common_fd = _open_trusted_directory_path(common, label="Git common directory")
-    try:
-        objects_fd, _metadata = _open_trusted_entry("objects", dir_fd=common_fd, label="Git common object store", directory=True)
-    finally:
-        os.close(common_fd)
-    flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-    try:
-        for directory in ("info", "pack"):
-            try:
-                child = os.open(directory, flags, dir_fd=objects_fd)
-            except FileNotFoundError: continue
-            except OSError as error:
-                raise HandoffDataError(f"cannot inspect Git object {directory}: {error}") from error
-            try:
-                _require_owner_controlled(os.fstat(child), label=f"Git object {directory}"); names = os.listdir(child)
-            finally: os.close(child)
-            if (directory == "info" and {"alternates", "http-alternates"} & set(names)) or (directory == "pack" and any(name.endswith(".promisor") for name in names)):
-                raise HandoffDataError("Git common object store has external object providers")
-        return objects_fd
-    except Exception:
-        os.close(objects_fd)
-        raise
 def _read_trusted_installation_member(
     installation_root: Path,
     installation_descriptor: int,
@@ -1753,7 +1746,8 @@ def load_coordinator_installation(
         "_bootstrap_validator_source": bootstrap_source,
         "_signer": signer,
     }
-def _transport_endpoint(repository_root: Path, installation_path: Path | None) -> str:
+@contextlib.contextmanager
+def _transport_capability(repository_root: Path, installation_path: Path | None):
     if installation_path is not None and not isinstance(installation_path, Path):
         raise HandoffDataError("coordinator installation must be an external path")
     installation = load_coordinator_installation(repository_root, installation_path)
@@ -1762,14 +1756,17 @@ def _transport_endpoint(repository_root: Path, installation_path: Path | None) -
         raise HandoffDataError("coordinator installation remote_url is not canonical")
     repository = installation["repository"]
     if remote in {f"https://github.com/{repository}.git", f"ssh://git@github.com/{repository}.git", f"git@github.com:{repository}.git"}:
-        return remote
-    try:
-        resolved = Path(remote).resolve(strict=True)
-    except OSError as error:
-        raise HandoffDataError(f"coordinator installation remote_url is unavailable: {error}") from error
-    if installation["authority_protection"]["mode"] != "bare-remote-config" or not Path(remote).is_absolute() or str(resolved) != remote or not resolved.is_dir():
+        yield remote, (); return
+    if installation["authority_protection"]["mode"] != "bare-remote-config" or not Path(remote).is_absolute():
         raise HandoffDataError("coordinator installation remote_url is not canonical")
-    return remote
+    remote_path, remote_fd = _open_trusted_directory_path(Path(remote), label="local authority remote")
+    try:
+        if str(remote_path) != remote: raise HandoffDataError("coordinator installation remote_url is not canonical")
+        for name, directory in (("config", False), ("HEAD", False), ("objects", True), ("refs", True), ("hooks", True)):
+            descriptor, _metadata = _open_trusted_entry(name, dir_fd=remote_fd, label=f"local authority {name}", directory=directory); os.close(descriptor)
+        yield f"/proc/self/fd/{remote_fd}", (remote_fd,)
+    finally:
+        os.close(remote_fd)
 def _git_blob(
     repository_root: Path,
     commit_sha: str,
@@ -2103,12 +2100,7 @@ def _remote_ref_oid(
     allow_missing: bool,
 ) -> str | None:
     output = _run_git_online(
-        repository_root,
-        "ls-remote",
-        "--refs",
-        "--",
-        _transport_endpoint(repository_root, installation_path),
-        reference,
+        repository_root, installation_path, ("ls-remote", "--refs"), (reference,),
     ).decode("ascii")
     lines = [line for line in output.splitlines() if line]
     if not lines:
@@ -2150,13 +2142,9 @@ def _fetch_remote_authority(
         fetch_head_path.read_bytes() if fetch_head_path.is_file() else None
     )
     _run_git_online(
-        repository_root,
-        "fetch",
-        "--no-write-fetch-head",
-        "--no-tags",
-        "--",
-        _transport_endpoint(repository_root, installation_path),
-        object_id,
+        repository_root, installation_path,
+        ("fetch", "--no-write-fetch-head", "--no-tags"), (object_id,),
+        fetched_object=object_id,
     )
     if run_git(repository_root, "rev-parse", "HEAD") != head_before:
         raise HandoffDataError("authority fetch changed HEAD")
@@ -5894,11 +5882,10 @@ def verify_reporter_record(
 def _repository_from_origin(
     repository_root: Path, installation_path: Path | None,
 ) -> str:
-    origin = _transport_endpoint(repository_root, installation_path)
+    origin = load_coordinator_installation(repository_root, installation_path)["authority_protection"]["remote_url"]
+    with _transport_capability(repository_root, installation_path): pass
     repository = reporter._github_repository_from_remote(origin)  # noqa: SLF001
-    if repository is None and (
-        origin.startswith("file://") or Path(origin).is_absolute()
-    ):
+    if repository is None and Path(origin).is_absolute():
         repository = read_remote_repository_identity(repository_root, installation_path)
     if repository is None:
         raise HandoffDataError(
