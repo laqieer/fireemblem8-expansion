@@ -423,6 +423,9 @@ integer declarations, nested assignments, and subscript side effects reject
 writes to protected or tracked state across assignment, compound assignment,
 and pre/post increment/decrement. Pure transport reads remain phase consumers;
 provably readonly arithmetic writes leave modeled state unchanged.
+Arithmetic and indexed-subscript identifiers fail closed when any alias-chain
+value remains a runtime parameter, substitution, backtick, ambiguity marker,
+or dynamic nameref target; fixed numeric alias chains remain ordinary data.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

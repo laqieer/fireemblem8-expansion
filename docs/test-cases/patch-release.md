@@ -394,6 +394,9 @@ Arithmetic lvalues are parsed across standalone commands, `let`, expansions,
 legacy expansions, `for` clauses, integer declarations, nested expressions,
 and subscript side effects. Every protected/tracked write form rejects while
 unrelated writes and reviewed pure-read phase events remain valid.
+Unresolved environment/positional/default expansions, substitutions,
+backticks, ambiguity markers, and dynamic nameref targets fail closed through
+multi-hop readonly or mutable arithmetic/subscript aliases; fixed constants pass.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,

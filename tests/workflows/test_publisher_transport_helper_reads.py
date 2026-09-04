@@ -643,6 +643,55 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             )
         )
 
+    def test_dynamic_aliases_fail_closed_in_arithmetic_contexts(self):
+        dynamic = (
+            'ordinary="$GITHUB_REF_NAME"\n'
+            "readonly ordinary\n"
+            'name="$ordinary"\n'
+            "readonly name\n"
+            'printf "%s\\n" "$((name))"\n'
+        )
+        environment = dict(os.environ)
+        environment["GITHUB_REF_NAME"] = "checked_runtime_transport_output"
+        environment["checked_runtime_transport_output"] = "9"
+        completed = subprocess.run(
+            ["/bin/bash", "-u", "-c", dynamic],
+            cwd=ROOT,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout, "9\n")
+        for script in (
+            dynamic,
+            'ordinary="${GITHUB_REF_NAME:-7}"\n'
+            'name="$ordinary"\nprintf "%s\\n" "$((name))"\n',
+            "show() {\n"
+            '  local ordinary="$1"\n'
+            '  printf "%s\\n" "$((ordinary))"\n'
+            "}\n"
+            'show "$GITHUB_REF_NAME"\n',
+            "declare -a table=(zero one)\n"
+            'index="$GITHUB_REF_NAME"\n'
+            'printf "%s\\n" "${table[index]}"\n',
+        ):
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    script,
+                    label="runtime-dynamic arithmetic alias",
+                )
+            )
+        self.assertFalse(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                "ordinary=7\nreadonly ordinary\n"
+                "name=$ordinary\nreadonly name\n"
+                'printf "%s\\n" "$((name))"\n',
+                label="fixed arithmetic alias chain",
+            )
+        )
+
     def test_publisher_and_upstream_enforce_helper_dereferences(self):
         original = WORKFLOW.read_text(encoding="utf-8")
         producer = (
@@ -671,6 +720,8 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 "(( cgroup_path = 0 ))",
                 "let 'checked_supervisor_transport_output[0]=0'",
                 'printf "%s" "$((supervisor_cgroup++))" > /dev/null',
+                'ordinary="$GITHUB_REF_NAME"; readonly ordinary; '
+                'name="$ordinary"; printf "%s" "$((name))" > /dev/null',
             )
         )
         mutations = (
@@ -817,6 +868,15 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 '          printf "%s\\n" '
                 '"${inspect_table[checked_supervisor_transport_output]}" '
                 "> /dev/null\n",
+                1,
+            )),
+            ("fixed-arithmetic-alias", original.replace(
+                "          local signature\n",
+                "          local signature\n"
+                "          local ordinary=7\n"
+                "          readonly ordinary\n"
+                "          local name=$ordinary\n"
+                '          printf "%s\\n" "$((name))" > /dev/null\n',
                 1,
             )),
         )

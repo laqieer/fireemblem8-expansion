@@ -1404,6 +1404,7 @@
           "readonly_alias_value": "attribute-separated-semantic-resolution",
           "arithmetic_writes": "protected-and-tracked-reject",
           "readonly_arithmetic_write": "failed-state-preserved",
+          "dynamic_arithmetic_alias": "unresolved-target-fail-closed",
           "later_or_external_mutation": "reject"
         },
         "alias_state": {

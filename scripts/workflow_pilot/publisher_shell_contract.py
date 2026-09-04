@@ -3992,6 +3992,18 @@ def _semantic_alias_value(value: str | None) -> str | None:
     )
 
 
+def _alias_value_is_runtime_dynamic(value: str | None) -> bool:
+    value = _semantic_alias_value(value)
+    return value is None or any(
+        marker in value
+        for marker in (
+            _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+            _AMBIGUOUS_TRACKED_PARAMETER_MARKER,
+        )
+    ) or any(character in value for character in ("$", "`"))
+
+
 def _readonly_alias(value: str) -> str:
     return (
         value
@@ -5203,14 +5215,7 @@ def _active_reserved_transport_references(
                     ):
                         references.add(name)
                     continue
-                if value is None or any(
-                    marker in value
-                    for marker in (
-                        _AMBIGUOUS_ARRAY_ALIAS_MARKER,
-                        _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
-                        _AMBIGUOUS_TRACKED_PARAMETER_MARKER,
-                    )
-                ) or any(character in value for character in ("$", "`")):
+                if _alias_value_is_runtime_dynamic(value):
                     references.add(name)
                     break
                 if re.fullmatch(
@@ -5285,12 +5290,8 @@ def _active_reserved_transport_references(
                     )
                     if value is None:
                         value = identifier
-                    if any(
-                        marker in value
-                        for marker in (
-                            _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
-                            _AMBIGUOUS_TRACKED_PARAMETER_MARKER,
-                        )
+                    if _alias_value_is_runtime_dynamic(
+                        value
                     ) or re.fullmatch(
                         rf"{escaped}(?:\[[^\]]*\])?",
                         value,
