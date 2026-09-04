@@ -6722,8 +6722,6 @@ def has_forbidden_raw_builder_cgroup_membership_read(
             if executable_tokens:
                 executable_name = posixpath.basename(executable_tokens[0])
                 if executable_name in transport_producer_calls:
-                    if not mandatory_context_is_unconditional:
-                        return True
                     transport_producer_calls[executable_name] += 1
                     transport_event = ("producer",) + token_texts
             if (
@@ -6737,10 +6735,31 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 transport_event = ("consumer",) + token_texts
             if transport_event is not None:
                 event_index = len(transport_phase_events)
+                if event_index in {1, 8}:
+                    expected_record_scopes = ()
+                    expected_control_stack = ("for",)
+                elif event_index in {2, 9, 10}:
+                    expected_record_scopes = ("for",)
+                    expected_control_stack = ("for",)
+                else:
+                    expected_record_scopes = ()
+                    expected_control_stack = ()
                 if (
                     event_index >= len(_REVIEWED_TRANSPORT_PHASE_EVENTS)
                     or transport_event
                     != _REVIEWED_TRANSPORT_PHASE_EVENTS[event_index]
+                    or command_record.control_scopes
+                    != expected_record_scopes
+                    or tuple(control_stack) != expected_control_stack
+                    or command_record.execution_scopes
+                    or command_record.preceding_operator
+                    in {"&&", "||", "|", "|&", "&"}
+                    or command_record.following_operator
+                    in {"&&", "||", "|", "|&", "&"}
+                    or (
+                        require_production_helpers
+                        and function_stack != ["builder_main"]
+                    )
                 ):
                     return True
                 transport_phase_events.append(transport_event)

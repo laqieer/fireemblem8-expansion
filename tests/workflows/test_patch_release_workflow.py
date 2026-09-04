@@ -8387,6 +8387,64 @@ exit 37
                 )
             )
 
+    def test_transport_phase_consumers_require_unconditional_context(self):
+        skipped = subprocess.run(
+            [
+                "/bin/bash",
+                "-c",
+                "value=before\n"
+                "case no in\n"
+                "yes) time -p -- value=after\n"
+                ";;\n"
+                "esac\n"
+                'test "$value" = before\n',
+            ],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(skipped.returncode, 0, skipped.stderr)
+
+        consumers = (
+            '        dev_mount="${checked_supervisor_transport_output[index]}"\n',
+            '        test "${#checked_supervisor_transport_output[@]}" -eq 1\n',
+            '        test "${checked_supervisor_transport_output[0]}" = /dev\n',
+            '        test "$(( ${#checked_runtime_transport_output[@]} % 2 ))" -eq 0\n',
+            '          mount_target="${checked_runtime_transport_output[index]}"\n',
+            '          mount_options="${checked_runtime_transport_output[index + 1]}"\n',
+        )
+        with (
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_patch_release_run_script_identity",
+            ),
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_builder_isolation_shell_identity",
+            ),
+        ):
+            for consumer in consumers:
+                indent = consumer[: len(consumer) - len(consumer.lstrip())]
+                replacement = (
+                    f"{indent}case no in\n"
+                    f"{indent}yes) time -p -- {consumer.strip()}\n"
+                    f"{indent};;\n"
+                    f"{indent}esac\n"
+                )
+                changed = self.text.replace(consumer, replacement, 1)
+                with self.subTest(consumer=consumer.strip()):
+                    self.assertNotEqual(changed, self.text)
+                    self.assertTrue(
+                        workflow_has_raw_builder_cgroup_membership_read(
+                            changed
+                        )
+                    )
+                    self.assertIn(
+                        "raw builder cgroup membership read differs",
+                        publisher_boundary_errors(changed),
+                    )
+
     def test_production_helper_inventory_is_exact_and_order_independent(self):
         self.assertFalse(
             workflow_has_raw_builder_cgroup_membership_read(self.text)
@@ -12808,7 +12866,7 @@ exit 37
                 "supervisor_producer_calls": 2,
                 "runtime_producer_calls": 1,
                 "initial_state": "unavailable",
-                "consumer_protocol": "exact-latest-phase-sequence",
+                "consumer_protocol": "exact-required-context-latest-phase-sequence",
                 "supervisor_phases": 2,
                 "runtime_phases": 1,
                 "invoked_helper_consumers": "reject-unreviewed-runtime-dereference",

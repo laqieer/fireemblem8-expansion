@@ -373,7 +373,9 @@ The semantic phase machine starts each array unavailable and admits only the
 reviewed producer/consumer event sequence. Active length, key, index, copy,
 arithmetic, loop, redirection, indirect, and dynamic reads bind to the latest
 generation. Pre-use, stale/interphase, duplicate, reordered, and extra
-consumers reject; the two supervisor generations remain distinct.
+consumers reject; each event requires its exact top-level or canonical
+lifecycle-loop context, skipped or nested execution cannot satisfy a phase,
+and the two supervisor generations remain distinct.
 Helper bodies consume only when invoked. Any direct, indirect, nameref,
 arithmetic, default-expression, or array dereference in a helper,
 nested-helper, substitution, callback, or trap rejects as an unreviewed
