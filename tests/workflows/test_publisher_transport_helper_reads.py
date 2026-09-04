@@ -416,6 +416,87 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 )
             )
 
+    def test_readonly_array_state_survives_rejected_mutations(self):
+        prefix = (
+            "declare -A table="
+            "([checked_supervisor_transport_output]=value)\n"
+            "readonly table\n"
+        )
+        suffix = (
+            "key=checked_supervisor_transport_output\n"
+            'printf "%s\\n" "${table[$key]}"\n'
+        )
+        operations = (
+            ("unset table || true", "0:value\n"),
+            ('unset "table[other]" || true', "0:value\n"),
+            ('unset "table[@]" || true', "0:value\n"),
+            ("table=scalar", "1:value\n"),
+            ("table=([other]=replacement)", "1:value\n"),
+            ("table[other]=replacement", "1:value\n"),
+            ("table+=(tail)", "1:value\n"),
+            ("declare -a table", "1:value\n"),
+            ("declare +r table", "1:value\n"),
+        )
+        for operation, expected in operations:
+            script = prefix + operation + "\n" + suffix
+            self.assertFalse(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    script,
+                    label="rejected readonly mutation",
+                )
+            )
+            completed = subprocess.run(
+                [
+                    "/bin/bash",
+                    "-u",
+                    "-c",
+                    prefix
+                    + 'eval "$1" 2>/dev/null\n'
+                    + 'status="$?"\n'
+                    + suffix.replace(
+                        'printf "%s\\n"',
+                        'printf "%s:%s\\n" "$status"',
+                    ),
+                    "--",
+                    operation,
+                ],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(completed.stdout, expected)
+
+        local_shadow = (
+            prefix
+            + "show() {\n"
+            + "  local -a table=(zero one)\n"
+            + "  local key=checked_supervisor_transport_output\n"
+            + '  printf "%s\\n" "${table[$key]}"\n'
+            + "}\nshow\n"
+        )
+        self.assertFalse(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                local_shadow,
+                label="readonly global rejects local shadow",
+            )
+        )
+        subshell = (
+            "declare -A table=([key]=value)\n"
+            "( readonly table )\n"
+            "unset table\n"
+            "table=(zero one)\n"
+            "key=checked_supervisor_transport_output\n"
+            'printf "%s\\n" "${table[$key]}"\n'
+        )
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                subshell,
+                label="subshell readonly does not escape",
+            )
+        )
+
     def test_publisher_and_upstream_enforce_helper_dereferences(self):
         original = WORKFLOW.read_text(encoding="utf-8")
         producer = (
@@ -544,6 +625,17 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 "          local -A inspect_table=()\n"
                 "          inspect_table="
                 "([checked_supervisor_transport_output]=value)\n"
+                '          printf "%s\\n" '
+                '"${inspect_table[checked_supervisor_transport_output]}" '
+                "> /dev/null\n",
+                1,
+            )),
+            ("readonly-associative", original.replace(
+                "          local signature\n",
+                "          local signature\n"
+                "          local -Ar inspect_table="
+                "([checked_supervisor_transport_output]=value)\n"
+                "          unset inspect_table || true\n"
                 '          printf "%s\\n" '
                 '"${inspect_table[checked_supervisor_transport_output]}" '
                 "> /dev/null\n",

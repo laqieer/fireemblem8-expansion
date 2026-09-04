@@ -12634,6 +12634,8 @@ exit 37
                 "array_subscripts": "associative-string-indexed-arithmetic",
                 "array_type_lifetime": "assignment-preserve-whole-unset-reset",
                 "opposite_array_redeclaration": "error-preserve-type",
+                "readonly_state": "rejected-mutation-preserves-value-and-type",
+                "readonly_scope": "local-and-subshell",
                 "later_or_external_mutation": "reject",
             },
             "alias_state": {

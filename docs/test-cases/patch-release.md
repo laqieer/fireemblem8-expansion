@@ -384,6 +384,9 @@ reserved-array key enumeration remains a consumer. Array type persists across
 compound, scalar, append, and element assignment plus element/`[@]` unset;
 whole-variable unset erases type. Opposite-type nonlocal redeclaration errors
 without retagging, and a first local declaration creates a typed shadow.
+`readonly`, `-r`, and typed readonly declarations preserve value and type
+across rejected unset/write/retag/removal attempts, including suppressed
+failures; subshell readonly state does not escape.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,

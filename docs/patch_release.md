@@ -411,7 +411,10 @@ reserved transport result or a nameref to one. Once Bash establishes indexed
 or associative type, compound, scalar, append, and element assignments retain
 that type. Element and `[@]` unsets retain it; whole-variable unset erases it.
 An opposite-type nonlocal redeclaration fails without retagging, while a first
-local declaration creates its own typed shadow.
+local declaration creates its own typed shadow. Proven readonly attributes are
+also retained: rejected unset, assignment, append, element write, retag, and
+readonly-removal attempts cannot change the modeled value or array type.
+Readonly changes in a subshell remain scoped to that execution environment.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

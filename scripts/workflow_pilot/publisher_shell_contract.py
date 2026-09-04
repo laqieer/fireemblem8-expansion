@@ -241,6 +241,7 @@ _INDEXED_ARRAY_ALIAS_MARKER = "\x00indexed-array-alias\x00"
 _ASSOCIATIVE_ARRAY_ALIAS_MARKER = "\x00associative-array-alias\x00"
 _AMBIGUOUS_DYNAMIC_ALIAS_MARKER = "\x00ambiguous-dynamic-alias\x00"
 _NAMEREF_ALIAS_MARKER = "\x00nameref-alias\x00"
+_READONLY_ALIAS_MARKER = "\x00readonly-alias\x00"
 _LITERAL_DOLLAR_MARKER = "\x00literal-dollar\x00"
 _DISPATCH_STATE_VARIABLES = frozenset(
     {"BASHOPTS", "BASH_ENV", "ENV", "PATH", "SHELLOPTS"}
@@ -3977,6 +3978,14 @@ def _typed_array_alias(marker: str, value: str) -> str:
     return _AMBIGUOUS_ARRAY_ALIAS_MARKER + marker + value
 
 
+def _readonly_alias(value: str) -> str:
+    return (
+        value
+        if _READONLY_ALIAS_MARKER in value
+        else _READONLY_ALIAS_MARKER + value
+    )
+
+
 def _loop_iteration_target_is_forbidden(
     tokens: tuple[_ShellToken, ...],
     aliases: dict[str, str],
@@ -4286,6 +4295,8 @@ def _apply_direct_function_alias_writes(
             name in _RESERVED_TRANSPORT_OUTPUTS
         ):
             return True, written
+        if _READONLY_ALIAS_MARKER in aliases.get(name, ""):
+            continue
         value_token = _slice_shell_token(
             token,
             assignment.start("value"),
@@ -5590,6 +5601,8 @@ def _set_written_shell_alias(
         "supervisor_cgroup",
     } or name in _DISPATCH_STATE_VARIABLES:
         raise ValueError("trusted shell state write")
+    if _READONLY_ALIAS_MARKER in aliases.get(name, ""):
+        return True
     if array:
         marker = (
             _ASSOCIATIVE_ARRAY_ALIAS_MARKER
@@ -5729,6 +5742,8 @@ def _apply_shell_builtin_alias_writes(
                 if parsed is None:
                     return True
                 name, indexed = parsed
+                if _READONLY_ALIAS_MARKER in aliases.get(name, ""):
+                    continue
                 if indexed:
                     marker = _known_array_type_marker(
                         aliases.get(name, "")
@@ -5807,6 +5822,8 @@ def _apply_shell_builtin_alias_writes(
             array = False
             associative = False
             nameref = False
+            make_readonly = executable == "readonly"
+            remove_readonly = False
             global_declaration = False
             after_options = False
             for argument in arguments:
@@ -5820,6 +5837,9 @@ def _apply_shell_builtin_alias_writes(
                         associative = True
                     if "n" in argument[1:]:
                         nameref = argument.startswith("-")
+                    if "r" in argument[1:]:
+                        make_readonly = argument.startswith("-")
+                        remove_readonly = argument.startswith("+")
                     if "g" in argument[1:]:
                         global_declaration = argument.startswith("-")
                     continue
@@ -5848,6 +5868,10 @@ def _apply_shell_builtin_alias_writes(
                     existing_type = _known_array_type_marker(
                         aliases.get(name, "")
                     )
+                    existing_readonly = (
+                        _READONLY_ALIAS_MARKER
+                        in aliases.get(name, "")
+                    )
                     local_shadow = (
                         preexisting_local_names is not None
                         and name not in preexisting_local_names
@@ -5860,10 +5884,14 @@ def _apply_shell_builtin_alias_writes(
                         else _INDEXED_ARRAY_ALIAS_MARKER
                     )
                     if (
+                        existing_readonly
+                        or remove_readonly
+                        or (
                         array
                         and existing_type is not None
                         and existing_type != requested_type
                         and not local_shadow
+                        )
                     ):
                         continue
                     effective_type = (
@@ -5886,11 +5914,19 @@ def _apply_shell_builtin_alias_writes(
                             == _ASSOCIATIVE_ARRAY_ALIAS_MARKER
                         ),
                     )
+                    if make_readonly:
+                        aliases[name] = _readonly_alias(aliases[name])
                     continue
                 name = argument.split("[", 1)[0]
                 existing_type = _known_array_type_marker(
                     aliases.get(name, "")
                 )
+                existing_value = aliases.get(name)
+                if (
+                    existing_value is not None
+                    and _READONLY_ALIAS_MARKER in existing_value
+                ) or remove_readonly:
+                    continue
                 local_shadow = (
                     preexisting_local_names is not None
                     and name not in preexisting_local_names
@@ -5918,6 +5954,9 @@ def _apply_shell_builtin_alias_writes(
                         else None
                     )
                 )
+                if make_readonly and existing_value is not None:
+                    aliases[name] = _readonly_alias(existing_value)
+                    continue
                 _set_written_shell_alias(
                     aliases,
                     argument,
@@ -5933,6 +5972,8 @@ def _apply_shell_builtin_alias_writes(
                         == _ASSOCIATIVE_ARRAY_ALIAS_MARKER
                     ),
                 )
+                if make_readonly:
+                    aliases[name] = _readonly_alias(aliases[name])
             return False
     except ValueError:
         return True
@@ -5951,6 +5992,8 @@ def has_forbidden_raw_builder_cgroup_membership_read(
             "cgroup_path": _RAW_CGROUP_ROOT_MARKER,
         }
     ]
+    execution_alias_scopes: list[dict[str, str]] = []
+    active_execution_scopes: tuple[str, ...] = ()
     function_depth = 0
     function_stack: list[str] = []
     user_functions: set[str] = set()
@@ -6077,7 +6120,31 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     require_production_helpers=require_production_helpers,
                 )
             )
-            aliases = alias_scopes[-1]
+            common_execution_depth = 0
+            for previous, current in zip(
+                active_execution_scopes,
+                command_record.execution_scopes,
+            ):
+                if previous != current:
+                    break
+                common_execution_depth += 1
+            del execution_alias_scopes[common_execution_depth:]
+            for _scope in command_record.execution_scopes[
+                common_execution_depth:
+            ]:
+                execution_alias_scopes.append(
+                    dict(
+                        execution_alias_scopes[-1]
+                        if execution_alias_scopes
+                        else alias_scopes[-1]
+                    )
+                )
+            active_execution_scopes = command_record.execution_scopes
+            aliases = (
+                execution_alias_scopes[-1]
+                if execution_alias_scopes
+                else alias_scopes[-1]
+            )
             tokens = _split_attached_redirections(
                 _parse_shell_tokens(command_text, label=label)
             )
@@ -6379,6 +6446,8 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                         return True
                     if name in {"cgroup_path", "supervisor_cgroup"}:
                         return True
+                    if _READONLY_ALIAS_MARKER in aliases.get(name, ""):
+                        continue
                     value_token = _slice_shell_token(
                         token,
                         indexed_assignment.start("value"),
@@ -6445,6 +6514,8 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     return True
                 if name == "cgroup_path":
                     return True
+                if _READONLY_ALIAS_MARKER in aliases.get(name, ""):
+                    continue
                 value_token = _slice_shell_token(
                     token,
                     assignment.start("value"),
