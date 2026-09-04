@@ -65,6 +65,56 @@ Use `make clean_fast` only to remove build artifacts. This proves the modern
 release framework boundary; it does not claim byte identity with the original
 ROM or make the archival lane a release requirement.
 
+## TC-BUILD-GCC14-MENU-RETURN-001: GCC 14 menu callback return compatibility
+
+- **Feature / originating issue:** `modern-framework-build` /
+  [#197](https://github.com/laqieer/fireemblem8-expansion/issues/197).
+- **Supported configuration or artifact:** modern release AAPCS
+  `build/expansion-modern/release/aapcs/fireemblem8.gba`; explicit archival
+  `fireemblem8.gba` control build.
+- **Prerequisites and clean starting state:** repository root with
+  `arm-none-eabi-gcc` 14.2.1, the remaining modern quickstart dependencies,
+  and the archival toolchain installed. Record
+  `arm-none-eabi-gcc --version | head -1` with the test result.
+
+### Actions
+
+1. Run `arm-none-eabi-gcc --version | head -1` and confirm GCC 14.2.1.
+2. Run `make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs`.
+3. Run `make fireemblem8.gba`.
+
+### Expected result
+
+GCC compiles each integer-returning menu callback without a return-mismatch
+diagnostic, and the modern ROM links and passes boot verification. The
+archival ROM also builds without changing its callback source behavior.
+
+### Negative control
+
+Before the fix, GCC 14 rejects the modern build because
+`StealItemMenuCommand_Draw` and `ItemMenu_SwitchOut_DoNothing` use valueless
+returns in integer-returning callbacks. Applying `return 0` to the shared
+archival path is also invalid because it changes agbcc code generation.
+
+### Interactions and save compatibility
+
+The callbacks depend only on the existing `MenuItemDef` signatures. There are
+no feature conflicts, generated-data or localization effects, or save-format
+changes.
+
+### Automation
+
+- `make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs`
+  — compiles, links, and boot-verifies the supported modern release ROM.
+- `make fireemblem8.gba`
+  — proves the guarded source preserves the explicit archival build lane.
+
+### Cleanup and limitations
+
+Use `make clean_fast` only when generated outputs must be removed. This case
+proves build compatibility and the archival lane boundary; it does not claim
+that modern ROM output is byte-identical to the original game.
+
 ## TC-CORE-002: Configuration identity rejects invalid values
 
 - **Feature / originating issue:** `configuration-identity` /
