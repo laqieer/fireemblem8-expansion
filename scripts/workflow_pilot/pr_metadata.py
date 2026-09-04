@@ -30,6 +30,9 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 WORKFLOW_PATH = ".github/workflows/build.yml"
 EVIDENCE_MARKER = "<!-- workflow-pilot-candidate-evidence -->"
+HTTP_STATUS_RE = re.compile(r"^HTTP/(?:1(?:\.[01])?|2(?:\.0)?) ([1-5][0-9]{2})(?: .*)?$")
+HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+LINK_PART_RE = re.compile(r'\s*<([^>]+)>\s*;\s*rel="([^"]+)"\s*(?:,\s*|$)')
 
 FULL_JOB_NAMES = frozenset(candidate_evidence.KNOWN_JOB_IDS)
 METADATA_JOB_NAMES = (
@@ -66,6 +69,18 @@ class PullRequestState:
     base_sha: str
     title: str
     body: str | None
+
+
+@dataclass(frozen=True)
+class CommentState:
+    comment_id: int
+    repository: str
+    pr_number: int
+    body: str
+    author_id: int
+    author_login: str
+    author_type: str
+    author_association: str
 
 
 @dataclass(frozen=True)
@@ -110,6 +125,13 @@ class Decision:
             separators=(",", ":"),
             sort_keys=True,
         ) + "\n"
+
+
+@dataclass(frozen=True)
+class ApiResponse:
+    status: int
+    headers: dict[str, str]
+    payload: object
 
 
 def _positive_int(value: object, field: str) -> int:
@@ -189,6 +211,50 @@ def _parse_json(raw: str, label: str) -> object:
     return value
 
 
+def _parse_http_response(
+    raw: str,
+    *,
+    label: str,
+    allow_empty_body: bool,
+) -> ApiResponse:
+    if len(raw.encode("utf-8")) > MAX_API_BYTES:
+        raise MetadataEditError(f"{label} response exceeds 4 MiB")
+    normalized = raw.replace("\r\n", "\n")
+    boundary = normalized.find("\n\n")
+    if boundary < 0:
+        raise MetadataEditError(f"{label} response lacks HTTP headers")
+    header_text = normalized[:boundary]
+    body_text = normalized[boundary + 2 :]
+    lines = header_text.split("\n")
+    status_match = HTTP_STATUS_RE.fullmatch(lines[0]) if lines else None
+    if status_match is None:
+        raise MetadataEditError(f"{label} response status line is invalid")
+    status = int(status_match.group(1))
+    headers = {}
+    for line in lines[1:]:
+        if not line or line[0].isspace() or ":" not in line:
+            raise MetadataEditError(f"{label} response header is invalid")
+        name, value = line.split(":", 1)
+        if HEADER_NAME_RE.fullmatch(name) is None:
+            raise MetadataEditError(f"{label} response header name is invalid")
+        key = name.lower()
+        if key in headers:
+            raise MetadataEditError(f"{label} response repeats header {name!r}")
+        headers[key] = value.strip()
+    if 300 <= status < 400:
+        raise MetadataEditError(f"{label} request rejected redirect: HTTP {status}")
+    if "location" in headers:
+        raise MetadataEditError(f"{label} response unexpectedly contains Location")
+    if not body_text:
+        if allow_empty_body:
+            return ApiResponse(status, headers, None)
+        raise MetadataEditError(f"{label} response body is empty")
+    content_type = headers.get("content-type", "")
+    if not content_type.lower().startswith("application/json"):
+        raise MetadataEditError(f"{label} response Content-Type is not JSON")
+    return ApiResponse(status, headers, _parse_json(body_text, label))
+
+
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
 
@@ -209,7 +275,7 @@ class GitHubClient:
         *,
         body: dict[str, object] | None = None,
         label: str,
-    ) -> object:
+    ) -> ApiResponse:
         if method not in {"GET", "PATCH", "POST"}:
             raise MetadataEditError("unsupported GitHub API method")
         arguments = [
@@ -217,8 +283,13 @@ class GitHubClient:
             "api",
             "--hostname",
             "github.com",
+            "--include",
             "--method",
             method,
+            "--header",
+            "Accept: application/vnd.github+json",
+            "--header",
+            "X-GitHub-Api-Version: 2022-11-28",
             endpoint,
         ]
         input_text = None
@@ -255,11 +326,17 @@ class GitHubClient:
                 f"{label} request failed"
                 + (f": {detail}" if detail else "")
             )
-        if not completed.stdout:
-            if method == "POST":
-                return None
-            raise MetadataEditError(f"{label} response is empty")
-        return _parse_json(completed.stdout, label)
+        response = _parse_http_response(
+            completed.stdout,
+            label=label,
+            allow_empty_body=method == "POST",
+        )
+        expected_status = 201 if method == "POST" else 200
+        if response.status != expected_status:
+            raise MetadataEditError(
+                f"{label} returned HTTP {response.status}, expected {expected_status}"
+            )
+        return response
 
 
 def _endpoint(repository: str, suffix: str) -> str:
@@ -274,20 +351,29 @@ def _query_endpoint(repository: str, suffix: str, pairs: list[tuple[str, str]]) 
     return _endpoint(repository, suffix) + "?" + urllib.parse.urlencode(pairs)
 
 
-def fetch_pull_request(
-    client: GitHubClient,
+def _api_url(endpoint: str) -> str:
+    return "https://api.github.com/" + endpoint.lstrip("/")
+
+
+def _require_api_url(value: object, endpoint: str, *, field: str) -> None:
+    if value != _api_url(endpoint):
+        raise MetadataEditError(f"{field} identity drifted")
+
+
+def _parse_pull_request_payload(
+    payload: object,
     repository: str,
     pr_number: int,
 ) -> PullRequestState:
-    payload = client.request(
-        "GET",
-        _endpoint(repository, f"pulls/{pr_number}"),
-        label="pull request",
-    )
     if not isinstance(payload, dict):
         raise MetadataEditError("pull request response must be an object")
     if _positive_int(payload.get("number"), "pull request number") != pr_number:
         raise MetadataEditError("pull request number drifted")
+    _require_api_url(
+        payload.get("url"),
+        _endpoint(repository, f"pulls/{pr_number}"),
+        field="pull request URL",
+    )
     if payload.get("state") != "open":
         raise MetadataEditError("pull request must be open")
     head = payload.get("head")
@@ -312,6 +398,19 @@ def fetch_pull_request(
         title=title,
         body=body,
     )
+
+
+def fetch_pull_request(
+    client: GitHubClient,
+    repository: str,
+    pr_number: int,
+) -> PullRequestState:
+    response = client.request(
+        "GET",
+        _endpoint(repository, f"pulls/{pr_number}"),
+        label="pull request",
+    )
+    return _parse_pull_request_payload(response.payload, repository, pr_number)
 
 
 def require_identity(
@@ -339,6 +438,98 @@ def _expected_page_items(total_count: int, page: int) -> int:
     return total_count - PAGE_SIZE * (pages - 1)
 
 
+def _parse_link_pages(
+    link: str,
+    *,
+    endpoint_for_page: Callable[[int], str],
+    current_page: int,
+    label: str,
+) -> dict[str, int]:
+    if not link:
+        return {}
+    if len(link.encode("utf-8")) > 8192:
+        raise MetadataEditError(f"{label} Link header exceeds bounds")
+    relations = {}
+    position = 0
+    while position < len(link):
+        match = LINK_PART_RE.match(link, position)
+        if match is None:
+            raise MetadataEditError(f"{label} Link header is malformed")
+        url, relation = match.groups()
+        if relation not in {"first", "last", "next", "prev"}:
+            raise MetadataEditError(f"{label} Link header has an unknown relation")
+        if relation in relations:
+            raise MetadataEditError(f"{label} Link header repeats a relation")
+        split = urllib.parse.urlsplit(url)
+        if (
+            split.scheme != "https"
+            or split.netloc != "api.github.com"
+            or split.username is not None
+            or split.password is not None
+            or split.fragment
+        ):
+            raise MetadataEditError(f"{label} Link relation escaped api.github.com")
+        try:
+            query = urllib.parse.parse_qs(
+                split.query,
+                keep_blank_values=False,
+                strict_parsing=True,
+            )
+        except ValueError as error:
+            raise MetadataEditError(f"{label} Link query is malformed") from error
+        if "page" not in query or len(query["page"]) != 1:
+            raise MetadataEditError(f"{label} Link page is missing or repeated")
+        page_text = query["page"][0]
+        if not page_text.isascii() or not page_text.isdigit() or page_text.startswith("0"):
+            raise MetadataEditError(f"{label} Link page is invalid")
+        page = int(page_text)
+        if page < 1 or page > MAX_RUN_PAGES:
+            raise MetadataEditError(f"{label} Link page exceeds bounds")
+        expected = urllib.parse.urlsplit(_api_url(endpoint_for_page(page)))
+        if split.path != expected.path:
+            raise MetadataEditError(f"{label} Link path drifted")
+        expected_query = urllib.parse.parse_qs(
+            expected.query,
+            keep_blank_values=False,
+            strict_parsing=True,
+        )
+        if query != expected_query:
+            raise MetadataEditError(f"{label} Link query drifted")
+        relations[relation] = page
+        position = match.end()
+    if relations.get("next") == current_page:
+        raise MetadataEditError(f"{label} Link pagination loops")
+    return relations
+
+
+def _require_counted_link_contract(
+    relations: dict[str, int],
+    *,
+    page: int,
+    total_pages: int,
+    label: str,
+) -> None:
+    if total_pages == 1:
+        expected = set()
+    elif page == 1:
+        expected = {"next", "last"}
+    elif page < total_pages:
+        expected = {"first", "last", "next", "prev"}
+    else:
+        expected = {"first", "prev"}
+    if set(relations) != expected:
+        raise MetadataEditError(f"{label} Link relations are noncanonical")
+    expected_values = {
+        "first": 1,
+        "last": total_pages,
+        "next": page + 1,
+        "prev": page - 1,
+    }
+    for relation, relation_page in relations.items():
+        if relation_page != expected_values[relation]:
+            raise MetadataEditError(f"{label} Link {relation} page drifted")
+
+
 def _list_counted_pages(
     client: GitHubClient,
     *,
@@ -351,11 +542,12 @@ def _list_counted_pages(
     expected_total = None
     pages = None
     for page in range(1, MAX_RUN_PAGES + 1):
-        payload = client.request(
+        response = client.request(
             "GET",
             endpoint_for_page(page),
             label=f"{label} page {page}",
         )
+        payload = response.payload
         if (
             not isinstance(payload, dict)
             or set(payload) != {"total_count", item_key}
@@ -379,6 +571,18 @@ def _list_counted_pages(
             raise MetadataEditError(f"{label} total_count changed across pages")
         if len(page_items) != _expected_page_items(total_count, page):
             raise MetadataEditError(f"{label} page cardinality is incomplete")
+        relations = _parse_link_pages(
+            response.headers.get("link", ""),
+            endpoint_for_page=endpoint_for_page,
+            current_page=page,
+            label=label,
+        )
+        _require_counted_link_contract(
+            relations,
+            page=page,
+            total_pages=pages,
+            label=label,
+        )
         items.extend(page_items)
         if page == pages:
             break
@@ -390,11 +594,12 @@ def _list_counted_pages(
 
 
 def _workflow_id(client: GitHubClient, repository: str) -> int:
-    payload = client.request(
+    response = client.request(
         "GET",
         _endpoint(repository, "actions/workflows/build.yml"),
         label="Build workflow",
     )
+    payload = response.payload
     if not isinstance(payload, dict):
         raise MetadataEditError("Build workflow response must be an object")
     if payload.get("path") != WORKFLOW_PATH:
@@ -673,6 +878,55 @@ def require_metadata_success(run: RunState) -> None:
             )
 
 
+def require_metadata_failure(run: RunState) -> None:
+    if (
+        run.mode != "metadata-only"
+        or run.status != "completed"
+        or run.conclusion != "failure"
+    ):
+        raise MetadataEditError(
+            "only a completed failed metadata continuity run may be rerun"
+        )
+    jobs = _jobs_by_name(run)
+    for name in (
+        "event-identity",
+        "event-router",
+        "metadata-classifier",
+        "host-tests",
+        "build",
+    ):
+        job = jobs[name]
+        if (
+            job.status != "completed"
+            or job.conclusion != "success"
+            or not job.runner_name
+            or not job.started_at
+        ):
+            raise MetadataEditError(
+                f"failed metadata continuity job {name} is not canonical success"
+            )
+    for name in ("extended-host-tests", "legacy", "patch-release"):
+        job = jobs[name]
+        if (
+            job.status != "completed"
+            or job.conclusion != "skipped"
+            or job.runner_name
+        ):
+            raise MetadataEditError(
+                f"failed metadata continuity job {name} is not canonical skipped"
+            )
+    summary = jobs["summary"]
+    if (
+        summary.status != "completed"
+        or summary.conclusion != "failure"
+        or not summary.runner_name
+        or not summary.started_at
+    ):
+        raise MetadataEditError(
+            "failed metadata continuity summary is not canonical failure"
+        )
+
+
 def _latest_full(runs: tuple[RunState, ...]) -> RunState | None:
     return next((run for run in runs if run.mode == "full"), None)
 
@@ -748,9 +1002,9 @@ def edit_metadata(
             pr_number,
         )
 
-    runs = list_candidate_runs(client, initial)
-    active_full = _active_full_runs(runs)
-    latest_full = _latest_full(runs)
+    initial_runs = list_candidate_runs(client, initial)
+    active_full = _active_full_runs(initial_runs)
+    latest_full = _latest_full(initial_runs)
     if essential_reason is None:
         if active_full:
             return Decision(
@@ -789,22 +1043,87 @@ def edit_metadata(
 
     current = fetch_pull_request(client, repository, pr_number)
     require_identity(current, head_sha=head_sha, base_sha=base_sha)
+    if current != initial:
+        if essential_reason is None:
+            return Decision(
+                "deferred",
+                base_sha,
+                _comment_guidance(current),
+                head_sha,
+                False,
+                "pull request metadata changed before mutation",
+                repository,
+                pr_number,
+            )
+        raise MetadataEditError(
+            "pull request metadata changed before essential mutation"
+        )
+    current_runs = list_candidate_runs(client, current)
+    current_active_full = _active_full_runs(current_runs)
+    current_latest_full = _latest_full(current_runs)
+    if essential_reason is None:
+        if current_runs != initial_runs:
+            return Decision(
+                "deferred",
+                base_sha,
+                _comment_guidance(current),
+                head_sha,
+                False,
+                "exact Build run authority changed before mutation",
+                repository,
+                pr_number,
+                current_active_full[0].run_id if current_active_full else None,
+            )
+        if current_active_full:
+            return Decision(
+                "deferred",
+                base_sha,
+                _comment_guidance(current),
+                head_sha,
+                False,
+                "an exact-head full Build became active before mutation",
+                repository,
+                pr_number,
+                current_active_full[0].run_id,
+            )
+        if current_latest_full is None:
+            raise MetadataEditError(
+                "exact full Build authority disappeared before mutation"
+            )
+        require_full_success(current_latest_full)
+    else:
+        active_full = current_active_full
+        latest_full = current_latest_full
+        if not active_full:
+            if latest_full is None:
+                raise MetadataEditError(
+                    "essential edit has no exact-head full Build to reconcile"
+                )
+            require_full_success(latest_full)
     mutation: dict[str, object] = {}
     if title is not None:
         mutation["title"] = title
     if body is not None:
         mutation["body"] = body
-    client.request(
+    mutation_response = client.request(
         "PATCH",
         _endpoint(repository, f"pulls/{pr_number}"),
         body=mutation,
         label="pull request metadata update",
     )
-    after = fetch_pull_request(client, repository, pr_number)
-    if after.head_sha != head_sha or after.base_sha != base_sha:
+    after = _parse_pull_request_payload(
+        mutation_response.payload,
+        repository,
+        pr_number,
+    )
+    require_identity(after, head_sha=head_sha, base_sha=base_sha)
+    if title is not None and after.title != title:
         raise MetadataEditError(
-            "metadata updated, but pull request identity changed concurrently; "
-            "do not reconcile the stale candidate and rerun against the current head/base"
+            "pull request mutation response did not attest the requested title"
+        )
+    if body is not None and after.body != body:
+        raise MetadataEditError(
+            "pull request mutation response did not attest the requested body"
         )
     guidance = (_helper_command("reconcile", after),)
     reason = (
@@ -910,13 +1229,27 @@ def reconcile_metadata(
             pr_number,
             first_metadata.run_id,
         )
+    require_metadata_failure(first_metadata)
 
     current = fetch_pull_request(client, repository, pr_number)
     require_identity(current, head_sha=head_sha, base_sha=base_sha)
+    if current != initial:
+        return Decision(
+            "deferred",
+            base_sha,
+            (_helper_command("reconcile", current),),
+            head_sha,
+            False,
+            "pull request metadata changed during reconciliation",
+            repository,
+            pr_number,
+            first_metadata.run_id,
+        )
     current_runs = list_candidate_runs(client, current)
     current_full, current_metadata = _pending_metadata(current_runs)
     if (
-        current_metadata is None
+        current_runs != first_runs
+        or current_metadata is None
         or current_full.run_id != first_full.run_id
         or current_full.run_attempt != first_full.run_attempt
         or current_metadata.run_id != first_metadata.run_id
@@ -935,6 +1268,7 @@ def reconcile_metadata(
             pr_number,
             current_metadata.run_id if current_metadata else current_full.run_id,
         )
+    require_metadata_failure(current_metadata)
     client.request(
         "POST",
         _endpoint(repository, f"actions/runs/{current_metadata.run_id}/rerun"),
@@ -957,37 +1291,161 @@ def _list_comments(
     client: GitHubClient,
     repository: str,
     pr_number: int,
-) -> list[dict[str, object]]:
-    comments: list[dict[str, object]] = []
+) -> list[CommentState]:
+    comments = []
     seen_ids = set()
+    expected_last_page = None
     for page in range(1, MAX_COMMENT_PAGES + 1):
-        payload = client.request(
+        endpoint_for_page = lambda value: _query_endpoint(
+            repository,
+            f"issues/{pr_number}/comments",
+            [("per_page", str(PAGE_SIZE)), ("page", str(value))],
+        )
+        response = client.request(
             "GET",
-            _query_endpoint(
-                repository,
-                f"issues/{pr_number}/comments",
-                [("per_page", str(PAGE_SIZE)), ("page", str(page))],
-            ),
+            endpoint_for_page(page),
             label=f"pull request comments page {page}",
         )
+        payload = response.payload
         if not isinstance(payload, list) or len(payload) > PAGE_SIZE:
             raise MetadataEditError("pull request comments pagination is invalid")
+        relations = _parse_link_pages(
+            response.headers.get("link", ""),
+            endpoint_for_page=endpoint_for_page,
+            current_page=page,
+            label="pull request comments",
+        )
+        next_page = relations.get("next")
+        if len(payload) < PAGE_SIZE and next_page is not None:
+            raise MetadataEditError(
+                "pull request comments short page reported a next link"
+            )
+        if next_page is not None:
+            expected_relations = (
+                {"next", "last"}
+                if page == 1
+                else {"first", "last", "next", "prev"}
+            )
+            if set(relations) != expected_relations:
+                raise MetadataEditError(
+                    "pull request comments Link relations are noncanonical"
+                )
+            if next_page != page + 1:
+                raise MetadataEditError("pull request comments next page drifted")
+            last_page = relations["last"]
+            if last_page < next_page:
+                raise MetadataEditError("pull request comments last page drifted")
+            if expected_last_page is None:
+                expected_last_page = last_page
+            elif expected_last_page != last_page:
+                raise MetadataEditError(
+                    "pull request comments last page changed across pages"
+                )
+            if page > 1 and (
+                relations["first"] != 1 or relations["prev"] != page - 1
+            ):
+                raise MetadataEditError(
+                    "pull request comments previous page relations drifted"
+                )
+        else:
+            expected_relations = set() if page == 1 else {"first", "prev"}
+            if set(relations) != expected_relations:
+                raise MetadataEditError(
+                    "pull request comments final Link relations are noncanonical"
+                )
+            if page > 1 and (
+                relations["first"] != 1 or relations["prev"] != page - 1
+            ):
+                raise MetadataEditError(
+                    "pull request comments final page relations drifted"
+                )
+            if expected_last_page is not None and page != expected_last_page:
+                raise MetadataEditError(
+                    "pull request comments terminated before the last page"
+                )
         for raw in payload:
-            if not isinstance(raw, dict):
-                raise MetadataEditError("pull request comment is invalid")
-            comment_id = _positive_int(raw.get("id"), "pull request comment id")
+            comment = _parse_comment_payload(raw, repository, pr_number)
+            comment_id = comment.comment_id
             if comment_id in seen_ids:
                 raise MetadataEditError("pull request comments repeat an identity")
             seen_ids.add(comment_id)
-            comment_body = raw.get("body")
-            if not isinstance(comment_body, str):
-                raise MetadataEditError(
-                    f"pull request comment {comment_id} body is invalid"
-                )
-            comments.append({"id": comment_id, "body": comment_body})
-        if len(payload) < PAGE_SIZE:
+            comments.append(comment)
+        if next_page is None:
             return comments
     raise MetadataEditError("pull request comments exceed the pagination bound")
+
+
+def _parse_comment_payload(
+    raw: object,
+    repository: str,
+    pr_number: int,
+) -> CommentState:
+    if not isinstance(raw, dict):
+        raise MetadataEditError("pull request comment is invalid")
+    comment_id = _positive_int(raw.get("id"), "pull request comment id")
+    _require_api_url(
+        raw.get("url"),
+        _endpoint(repository, f"issues/comments/{comment_id}"),
+        field=f"pull request comment {comment_id} URL",
+    )
+    _require_api_url(
+        raw.get("issue_url"),
+        _endpoint(repository, f"issues/{pr_number}"),
+        field=f"pull request comment {comment_id} issue URL",
+    )
+    html_url = raw.get("html_url")
+    owner, name = repository.split("/", 1)
+    if (
+        html_url
+        != f"https://github.com/{owner}/{name}/pull/{pr_number}"
+        f"#issuecomment-{comment_id}"
+    ):
+        raise MetadataEditError(
+            f"pull request comment {comment_id} HTML URL identity drifted"
+        )
+    body = raw.get("body")
+    if not isinstance(body, str):
+        raise MetadataEditError(f"pull request comment {comment_id} body is invalid")
+    user = raw.get("user")
+    if not isinstance(user, dict):
+        raise MetadataEditError(f"pull request comment {comment_id} author is missing")
+    author_id = _positive_int(
+        user.get("id"),
+        f"pull request comment {comment_id} author id",
+    )
+    author_login = _text(
+        user.get("login"),
+        f"pull request comment {comment_id} author login",
+    )
+    author_type = _text(
+        user.get("type"),
+        f"pull request comment {comment_id} author type",
+    )
+    association = _text(
+        raw.get("author_association"),
+        f"pull request comment {comment_id} author association",
+    )
+    if (
+        author_login != owner
+        or author_type != "User"
+        or user.get("site_admin") is not False
+        or association != "OWNER"
+    ):
+        raise MetadataEditError(
+            f"pull request comment {comment_id} author is not the repository owner"
+        )
+    for field in ("created_at", "updated_at", "node_id"):
+        _text(raw.get(field), f"pull request comment {comment_id} {field}")
+    return CommentState(
+        comment_id=comment_id,
+        repository=repository,
+        pr_number=pr_number,
+        body=body,
+        author_id=author_id,
+        author_login=author_login,
+        author_type=author_type,
+        author_association=association,
+    )
 
 
 def _marker_is_standalone(body: str) -> bool:
@@ -1012,29 +1470,45 @@ def update_evidence_comment(
     initial = fetch_pull_request(client, repository, pr_number)
     require_identity(initial, head_sha=head_sha, base_sha=base_sha)
     comments = _list_comments(client, repository, pr_number)
-    marked = [
-        comment
-        for comment in comments
-        if EVIDENCE_MARKER in str(comment["body"])
-    ]
-    if len(marked) != 1 or not _marker_is_standalone(str(marked[0]["body"])):
+    marked = []
+    for comment in comments:
+        occurrences = comment.body.count(EVIDENCE_MARKER)
+        if occurrences == 0:
+            continue
+        if occurrences != 1 or not _marker_is_standalone(comment.body):
+            raise MetadataEditError(
+                "canonical evidence marker is duplicated or embedded"
+            )
+        marked.append(comment)
+    if len(marked) != 1:
         raise MetadataEditError(
             "pull request must have exactly one canonical marked evidence comment"
         )
     current = fetch_pull_request(client, repository, pr_number)
     require_identity(current, head_sha=head_sha, base_sha=base_sha)
-    comment_id = int(marked[0]["id"])
-    client.request(
+    original = marked[0]
+    comment_id = original.comment_id
+    mutation_response = client.request(
         "PATCH",
         _endpoint(repository, f"issues/comments/{comment_id}"),
         body={"body": comment_body},
         label="canonical evidence comment update",
     )
-    after = fetch_pull_request(client, repository, pr_number)
-    if after.head_sha != head_sha or after.base_sha != base_sha:
+    updated = _parse_comment_payload(
+        mutation_response.payload,
+        repository,
+        pr_number,
+    )
+    if (
+        updated.comment_id != original.comment_id
+        or updated.author_id != original.author_id
+        or updated.author_login != original.author_login
+        or updated.author_type != original.author_type
+        or updated.author_association != original.author_association
+        or updated.body != comment_body
+    ):
         raise MetadataEditError(
-            "evidence comment updated, but pull request identity changed concurrently; "
-            "rerun the canonical comment update for the current head/base"
+            "comment mutation response did not attest the requested canonical update"
         )
     return Decision(
         "comment-updated",

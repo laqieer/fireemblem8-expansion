@@ -390,8 +390,10 @@ budget, and completion update in the canonical evidence comment instead.
 Use the isolated metadata helper for title/body changes after a candidate
 exists. Every invocation binds the repository, PR number, current head SHA,
 current base SHA, active Build workflow, complete exact-head run pages, and
-complete job pages. It fails closed on stale identity, incomplete pagination,
-unknown or mixed run shapes, or a noncanonical workflow:
+complete job pages. Every response includes an exact HTTP status and canonical
+Link-header proof; redirects, duplicate/malformed/looping relations, page/body
+contradictions, stale identity, incomplete pagination, unknown or mixed run
+shapes, or a noncanonical workflow fail closed:
 
 ```bash
 repo=laqieer/fireemblem8-expansion
@@ -405,9 +407,11 @@ base_sha="$(gh api "repos/$repo/pulls/$pr" --jq .base.sha)"
   --body-file /path/to/stable-pr-body.md
 ```
 
-The default edit returns `deferred` without changing metadata when any
-same-head/same-base full Build is queued or in progress. Its structured
-guidance points to the canonical comment route:
+The default edit takes two complete exact-candidate run snapshots. It returns
+`deferred` without changing metadata when any same-head/same-base full Build is
+queued or in progress, when the second snapshot differs from the first, or
+when the second snapshot no longer proves the same successful full Build.
+Its structured guidance points to the canonical comment route:
 
 ```bash
 /usr/bin/python3 -I scripts/workflow_pilot/isolated_launcher.py \
@@ -419,12 +423,22 @@ guidance points to the canonical comment route:
 
 An urgent frozen-contract correction may use `--essential-reason` with
 non-whitespace text. The helper revalidates current head/base immediately
-before the title/body PATCH, never cancels the still-valid full Build, and
-returns the exact reconciliation command. Record the essential reason in the
-canonical evidence comment. No tracked or local pending-state ledger is
-created: GitHub's run number, attempt, event, workflow, PR, head, base, mode,
-status, conclusion, and job identities derive whether reconciliation remains
-pending.
+before the title/body PATCH, refreshes complete run authority, never cancels
+the still-valid full Build, and returns the exact reconciliation command. A
+successful edit requires the PATCH response itself to attest the exact
+repository, PR, head, base, requested title, and requested body; a stale
+read-after-write GET is not accepted as mutation evidence. Record the essential
+reason in the canonical evidence comment. No tracked or local pending-state
+ledger is created: GitHub's run number, attempt, event, workflow, PR, head,
+base, mode, status, conclusion, and job identities derive whether
+reconciliation remains pending.
+
+The canonical evidence comment must already be the repository owner's
+owner-associated `User` comment, with exact API/HTML repository, PR, issue, and
+comment identities and exactly one standalone marker. Missing/deleted authors,
+bots, non-owner associations, cross-repository IDs, duplicate or embedded
+markers, and a PATCH response that does not attest the same author/comment plus
+the requested body are rejected.
 
 After the newest exact full Build succeeds, run:
 
@@ -436,15 +450,21 @@ After the newest exact full Build succeeds, run:
 ```
 
 Reconciliation revalidates head/base and all exact run authority twice, then
-reruns only the newest failed lightweight metadata continuity run that follows
-the successful full Build. It dispatches no full Build and exposes no
-cancellation operation. An already-active metadata rerun is deferred, and an
-already-successful one is complete. Every successful title/body update returns
-this reconciliation command, including an update whose pre-edit query observed
-a successful full Build, so a same-SHA full rerun that starts inside the
-unavoidable GitHub API check/PATCH gap still has a deterministic recovery path.
-If the PR identity changes across that gap, the helper reports deterministic
-post-edit recovery and refuses to rerun evidence for the stale candidate.
+reruns only the newest `completed`/`failure` lightweight metadata continuity
+run that follows the successful full Build. Its identity/router/classifier and
+adapter jobs must be canonical successes, expensive jobs and the publisher
+must be canonical skips, and summary must be the canonical failure. Cancelled,
+timed-out, action-required, startup-failure, skipped, neutral, stale, active,
+unknown, or malformed runs are never rerun. It dispatches no full Build and
+exposes no cancellation operation. An already-active metadata rerun is
+deferred, and an already-successful one is complete.
+
+Every successful title/body update returns this reconciliation command. The
+second run snapshot closes the deterministic pre-PATCH run-state race; only an
+external same-SHA full rerun that starts after that final authority query is an
+irreducible API race. The authoritative PATCH response detects identity or
+result drift at mutation time, and the returned reconciliation command handles
+the remaining external race without weakening continuity.
 Only the existing coordinator may cancel full runs whose old head SHA was
 actually superseded; a title/body change never makes a same-SHA full run stale.
 The helper therefore never cancels or replaces a same-SHA full Build.

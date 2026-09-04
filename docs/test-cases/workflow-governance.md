@@ -1229,43 +1229,57 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    `python3 -m unittest scripts.workflow_pilot.tests.test_pr_metadata -v`.
 2. Exercise a same-head/same-base full Build whose complete exact Build job
    shape is queued. Attempt a default body edit with exact repository, PR,
-   head, and base arguments.
+   head, and base arguments. Then exercise two snapshots where the first full
+   Build succeeds and the second exposes an active rerun.
 3. Repeat with a nonempty essential-contract reason, keep the same full run
    active, then present a successful runner-backed full Build followed by its
    failed metadata-only continuity run and invoke `pr-metadata reconcile`.
-4. Update a synthetic canonical marked evidence comment while the same full
-   Build is active.
+4. Update a synthetic canonical marked evidence comment owned by the
+   repository owner while the same full Build is active.
 5. Replay stale head/base before edit and reconciliation, post-edit identity
-   drift, incomplete run pagination, unknown/mixed job sets, duplicate JSON
-   keys, malformed repository identity, and shell/API metacharacters in
-   title/body inputs.
+   drift, mutation-response mismatch, incomplete run/job/comment pagination,
+   redirects, contradictory/malformed/duplicate/looping Link relations,
+   duplicate run identities, wrong workflow/repository/PR/head/base/event/path,
+   unknown conclusions, cancelled and other non-failure metadata conclusions,
+   noncanonical failed-metadata jobs, missing/unauthorized comment authors,
+   cross-repository comment identities, duplicate/embedded markers, duplicate
+   JSON keys, malformed repository identity, and shell/API metacharacters.
 6. Parse `docs/test-cases/registry.json` and run
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
 
 ### Expected result
 
 The default edit returns a structured `deferred` decision, performs no PR
-metadata mutation, and points to the canonical evidence-comment command. A
+metadata mutation, and points to the canonical evidence-comment command. It
+queries two complete run/job snapshots and refuses mutation if the authority
+changes or the second snapshot has an active full Build. A
 nonempty essential override revalidates exact current head/base immediately
-before PATCH, updates only title/body, leaves every same-SHA full Build active,
-and returns the exact reconciliation command. After the newest exact full
-Build succeeds, reconciliation revalidates immutable head/base and complete
-run/job authority twice, then POSTs only
+before PATCH, refreshes run authority, requires the PATCH response to attest
+the requested exact metadata, leaves every same-SHA full Build active, and
+returns the exact reconciliation command. After the newest exact full Build
+succeeds, reconciliation revalidates immutable head/base and complete run/job
+authority twice, then POSTs only
 `actions/runs/<metadata-run-id>/rerun`. The rerun is the existing lightweight
-`pull_request: edited` path, so code is not rebuilt. A successful or active
-metadata run is respectively complete or deferred. Canonical comment PATCH
-uses only `issues/comments/<id>` and emits no `pull_request: edited` event.
+`pull_request: edited` path, so code is not rebuilt. Only a completed failed
+metadata run with canonical successful setup/adapters, canonical skipped
+expensive/publisher jobs, and failed summary is eligible. A successful or
+active metadata run is respectively complete or deferred. Canonical comment
+PATCH uses only the exact repository-owner comment
+`issues/comments/<id>`, requires mutation-response identity/body attestation,
+and emits no `pull_request: edited` event.
 
 ### Negative control
 
 Empty override reasons, stale/new candidate identity, incomplete or drifting
-pagination, duplicate run IDs/numbers, wrong workflow/PR/head/base/event/path
-identity, unknown status/conclusion, mixed/partial/duplicate job names,
-noncanonical successful full or metadata jobs, duplicate/non-standalone
-evidence markers, malformed or duplicate-key JSON, and repository/command
-injection all fail closed. No tested path calls a cancellation endpoint or a
-full-workflow dispatch endpoint. A post-PATCH identity race reports
-deterministic recovery and never reruns stale-candidate evidence.
+pagination, redirect or Link-header contradiction/loop, duplicate run
+IDs/numbers, wrong workflow/repository/PR/head/base/event/path identity, unknown
+status/conclusion, cancelled or other non-failure metadata runs,
+mixed/partial/duplicate or noncanonical job names/outcomes, missing/deleted or
+unauthorized comment authors, cross-repository comment IDs,
+duplicate/embedded/non-standalone evidence markers, mutation-response
+mismatch, malformed or duplicate-key JSON, and repository/command injection
+all fail closed. No tested path calls a cancellation endpoint or a
+full-workflow dispatch endpoint.
 
 ### Interactions and save compatibility
 
@@ -1293,8 +1307,9 @@ parses the contributor/workflow guidance and indexed tester contract.
 
 No cleanup is required because every GitHub response and mutation is
 synthetic. The API cannot make the identity check and PATCH atomic, so the
-helper revalidates immediately before mutation, checks again afterward, and
-returns a deterministic recovery instruction on concurrent identity change.
+helper takes two run snapshots, revalidates identity immediately before
+mutation, requires the authoritative PATCH response, and returns deterministic
+reconciliation only for a full rerun beginning after the final authority query.
 There is no manual-only criterion. No ARM runtime test is needed because this
 is host-only delivery orchestration.
 

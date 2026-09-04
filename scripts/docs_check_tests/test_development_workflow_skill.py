@@ -4601,6 +4601,9 @@ printf '%s\t%s\t%s\n' "$result" \
         for requirement in (
             "pr-metadata reconcile",
             "performs no PR metadata mutation",
+            "two complete run/job snapshots",
+            "completed failed metadata run",
+            "repository-owner comment",
             "No ARM runtime test is needed",
             "There is no manual-only criterion",
         ):

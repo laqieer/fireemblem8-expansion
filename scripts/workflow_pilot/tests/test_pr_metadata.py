@@ -26,18 +26,78 @@ def _query(suffix: str, pairs: list[tuple[str, str]]) -> str:
     return pr_metadata._query_endpoint(REPOSITORY, suffix, pairs)
 
 
-def _pr(*, head: str = HEAD, base: str = BASE) -> dict:
+def _pr(
+    *,
+    head: str = HEAD,
+    base: str = BASE,
+    title: str = "Stable title",
+    body: str | None = "Stable body",
+) -> dict:
     return {
         "number": PR_NUMBER,
         "state": "open",
-        "title": "Stable title",
-        "body": "Stable body",
+        "title": title,
+        "body": body,
+        "url": f"https://api.github.com/repos/{REPOSITORY}/pulls/{PR_NUMBER}",
         "head": {"sha": head},
         "base": {
             "sha": base,
             "repo": {"full_name": REPOSITORY},
         },
     }
+
+
+def _comment(
+    comment_id: int,
+    body: str,
+    *,
+    repository: str = REPOSITORY,
+    pr_number: int = PR_NUMBER,
+    author_login: str = "owner",
+    author_type: str = "User",
+    author_association: str = "OWNER",
+    author_id: int = 77,
+    site_admin: bool = False,
+) -> dict:
+    owner, name = repository.split("/", 1)
+    return {
+        "id": comment_id,
+        "node_id": f"IC_{comment_id}",
+        "url": (
+            f"https://api.github.com/repos/{owner}/{name}/"
+            f"issues/comments/{comment_id}"
+        ),
+        "html_url": (
+            f"https://github.com/{owner}/{name}/pull/{pr_number}"
+            f"#issuecomment-{comment_id}"
+        ),
+        "issue_url": (
+            f"https://api.github.com/repos/{owner}/{name}/issues/{pr_number}"
+        ),
+        "body": body,
+        "user": {
+            "id": author_id,
+            "login": author_login,
+            "type": author_type,
+            "site_admin": site_admin,
+        },
+        "author_association": author_association,
+        "created_at": "2026-09-04T00:00:00Z",
+        "updated_at": "2026-09-04T00:00:01Z",
+    }
+
+
+def _response(
+    payload: object,
+    *,
+    headers: dict[str, str] | None = None,
+    status: int = 200,
+) -> pr_metadata.ApiResponse:
+    return pr_metadata.ApiResponse(status, headers or {}, payload)
+
+
+def _link(*relations: tuple[str, str]) -> str:
+    return ", ".join(f'<{url}>; rel="{relation}"' for relation, url in relations)
 
 
 def _job(
@@ -166,7 +226,7 @@ class ScriptedClient:
         *,
         body: dict[str, object] | None = None,
         label: str,
-    ) -> object:
+    ) -> pr_metadata.ApiResponse:
         del label
         self.calls.append((method, endpoint, copy.deepcopy(body)))
         route = self.routes.get((method, endpoint))
@@ -175,7 +235,12 @@ class ScriptedClient:
         response = route.pop(0)
         if isinstance(response, Exception):
             raise response
-        return copy.deepcopy(response)
+        if isinstance(response, pr_metadata.ApiResponse):
+            return copy.deepcopy(response)
+        return _response(
+            copy.deepcopy(response),
+            status=201 if method == "POST" else 200,
+        )
 
 
 def _add_pr_states(client: ScriptedClient, *states: dict) -> None:
@@ -261,9 +326,13 @@ class PullRequestMetadataTests(unittest.TestCase):
     def test_essential_override_updates_metadata_and_derives_reconciliation(self):
         client = ScriptedClient()
         active_full = _run(101, 10, mode="full", active=True)
-        _add_pr_states(client, _pr(), _pr(), _pr())
-        _add_snapshot(client, [active_full])
-        client.add("PATCH", _endpoint(f"pulls/{PR_NUMBER}"), {"number": PR_NUMBER})
+        _add_pr_states(client, _pr(), _pr())
+        _add_snapshot(client, [active_full], copies=2)
+        client.add(
+            "PATCH",
+            _endpoint(f"pulls/{PR_NUMBER}"),
+            _pr(title="Essential correction"),
+        )
 
         decision = pr_metadata.edit_metadata(
             client,
@@ -351,16 +420,69 @@ class PullRequestMetadataTests(unittest.TestCase):
             )
         self.assertFalse(any(method == "PATCH" for method, _endpoint, _body in client.calls))
 
+    def test_default_edit_defers_when_second_snapshot_becomes_active(self):
+        client = ScriptedClient()
+        initial_full = _run(101, 10, mode="full")
+        active_rerun = _run(101, 10, mode="full", active=True, attempt=2)
+        _add_pr_states(client, _pr(), _pr())
+        _add_snapshot(client, [initial_full])
+        _add_snapshot(client, [active_rerun])
+
+        decision = pr_metadata.edit_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            title=None,
+            body="new body",
+            essential_reason=None,
+        )
+
+        self.assertEqual(decision.action, "deferred")
+        self.assertFalse(decision.mutated)
+        self.assertEqual(decision.run_id, 101)
+        self.assertFalse(any(method == "PATCH" for method, _endpoint, _body in client.calls))
+
+    def test_default_edit_defers_when_pr_metadata_changes_before_patch(self):
+        client = ScriptedClient()
+        successful_full = _run(101, 10, mode="full")
+        _add_pr_states(
+            client,
+            _pr(),
+            _pr(title="Concurrent title"),
+        )
+        _add_snapshot(client, [successful_full])
+        decision = pr_metadata.edit_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            title=None,
+            body="new body",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "deferred")
+        self.assertFalse(any(method == "PATCH" for method, _endpoint, _body in client.calls))
+
     def test_post_edit_identity_race_reports_deterministic_recovery(self):
         client = ScriptedClient()
         successful_full = _run(101, 10, mode="full")
-        _add_pr_states(client, _pr(), _pr(), _pr(head=NEW_HEAD))
-        _add_snapshot(client, [successful_full])
-        client.add("PATCH", _endpoint(f"pulls/{PR_NUMBER}"), {"number": PR_NUMBER})
+        _add_pr_states(client, _pr(), _pr())
+        _add_snapshot(client, [successful_full], copies=2)
+        client.add(
+            "PATCH",
+            _endpoint(f"pulls/{PR_NUMBER}"),
+            _pr(
+                head=NEW_HEAD,
+                body="essential correction",
+            ),
+        )
 
         with self.assertRaisesRegex(
             pr_metadata.MetadataEditError,
-            "metadata updated, but pull request identity changed concurrently",
+            "identity changed",
         ):
             pr_metadata.edit_metadata(
                 client,
@@ -382,6 +504,88 @@ class PullRequestMetadataTests(unittest.TestCase):
                 )
             ],
         )
+
+    def test_pull_request_mutation_response_must_attest_requested_result(self):
+        cases = (
+            (
+                "body",
+                None,
+                "new body",
+                _pr(body="Stable body"),
+                "requested body",
+            ),
+            (
+                "title",
+                "New title",
+                None,
+                _pr(title="Stable title"),
+                "requested title",
+            ),
+            (
+                "repository",
+                None,
+                "new body",
+                {
+                    **_pr(body="new body"),
+                    "url": "https://api.github.com/repos/other/repo/pulls/199",
+                },
+                "URL identity drifted",
+            ),
+        )
+        for name, title, body, response, message in cases:
+            with self.subTest(mismatch=name):
+                client = ScriptedClient()
+                successful_full = _run(101, 10, mode="full")
+                _add_pr_states(client, _pr(), _pr())
+                _add_snapshot(client, [successful_full], copies=2)
+                client.add(
+                    "PATCH",
+                    _endpoint(f"pulls/{PR_NUMBER}"),
+                    response,
+                )
+                with self.assertRaisesRegex(
+                    pr_metadata.MetadataEditError,
+                    message,
+                ):
+                    pr_metadata.edit_metadata(
+                        client,
+                        repository=REPOSITORY,
+                        pr_number=PR_NUMBER,
+                        head_sha=HEAD,
+                        base_sha=BASE,
+                        title=title,
+                        body=body,
+                        essential_reason=None,
+                    )
+
+    def test_mutation_response_is_authoritative_without_stale_post_patch_get(self):
+        client = ScriptedClient()
+        successful_full = _run(101, 10, mode="full")
+        _add_pr_states(client, _pr(), _pr())
+        _add_snapshot(client, [successful_full], copies=2)
+        client.add(
+            "PATCH",
+            _endpoint(f"pulls/{PR_NUMBER}"),
+            _pr(body="new body"),
+        )
+
+        decision = pr_metadata.edit_metadata(
+            client,
+            repository=REPOSITORY,
+            pr_number=PR_NUMBER,
+            head_sha=HEAD,
+            base_sha=BASE,
+            title=None,
+            body="new body",
+            essential_reason=None,
+        )
+        self.assertEqual(decision.action, "updated")
+        pr_gets = [
+            call
+            for call in client.calls
+            if call[:2] == ("GET", _endpoint(f"pulls/{PR_NUMBER}"))
+        ]
+        self.assertEqual(len(pr_gets), 2)
 
     def test_stale_new_candidate_is_rejected_before_run_queries(self):
         client = ScriptedClient()
@@ -440,6 +644,98 @@ class PullRequestMetadataTests(unittest.TestCase):
         )
         self.assertFalse(any("/cancel" in endpoint for _method, endpoint, _body in client.calls))
         self.assertFalse(any("/dispatches" in endpoint for _method, endpoint, _body in client.calls))
+
+    def test_reconciliation_rejects_every_nonfailure_terminal_conclusion(self):
+        for conclusion in (
+            "action_required",
+            "cancelled",
+            "neutral",
+            "skipped",
+            "stale",
+            "startup_failure",
+            "timed_out",
+        ):
+            with self.subTest(conclusion=conclusion):
+                client = ScriptedClient()
+                record, jobs = _run(
+                    202,
+                    11,
+                    mode="metadata-only",
+                    success=False,
+                )
+                record["conclusion"] = conclusion
+                _add_pr_states(client, _pr())
+                _add_snapshot(
+                    client,
+                    [(record, jobs), _run(101, 10, mode="full")],
+                )
+                with self.assertRaisesRegex(
+                    pr_metadata.MetadataEditError,
+                    "only a completed failed metadata continuity run",
+                ):
+                    pr_metadata.reconcile_metadata(
+                        client,
+                        repository=REPOSITORY,
+                        pr_number=PR_NUMBER,
+                        head_sha=HEAD,
+                        base_sha=BASE,
+                    )
+                self.assertFalse(
+                    any(method != "GET" for method, _endpoint, _body in client.calls)
+                )
+
+    def test_reconciliation_rejects_noncanonical_failed_metadata_jobs(self):
+        base_jobs = _metadata_jobs(success=False)
+        mutations = {}
+        for job_name in (
+            "event-identity",
+            "event-router",
+            "metadata-classifier",
+            "host-tests",
+            "build",
+        ):
+            jobs = copy.deepcopy(base_jobs)
+            next(job for job in jobs if job["name"] == job_name)[
+                "conclusion"
+            ] = "failure"
+            mutations[f"{job_name}-failure"] = jobs
+        for job_name in ("extended-host-tests", "legacy", "patch-release"):
+            jobs = copy.deepcopy(base_jobs)
+            target = next(job for job in jobs if job["name"] == job_name)
+            target["runner_name"] = "unexpected-runner"
+            target["started_at"] = "2026-09-04T00:00:00Z"
+            mutations[f"{job_name}-runner"] = jobs
+        summary_success = copy.deepcopy(base_jobs)
+        next(job for job in summary_success if job["name"] == "summary")[
+            "conclusion"
+        ] = "success"
+        mutations["summary-success"] = summary_success
+
+        for name, jobs in mutations.items():
+            with self.subTest(mutation=name):
+                client = ScriptedClient()
+                record, _ = _run(
+                    202,
+                    11,
+                    mode="metadata-only",
+                    success=False,
+                )
+                _add_pr_states(client, _pr())
+                _add_snapshot(
+                    client,
+                    [(record, jobs), _run(101, 10, mode="full")],
+                )
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.reconcile_metadata(
+                        client,
+                        repository=REPOSITORY,
+                        pr_number=PR_NUMBER,
+                        head_sha=HEAD,
+                        base_sha=BASE,
+                    )
+                self.assertFalse(
+                    any(method != "GET" for method, _endpoint, _body in client.calls)
+                )
 
     def test_reconciliation_defers_while_metadata_run_is_active(self):
         client = ScriptedClient()
@@ -580,12 +876,28 @@ class PullRequestMetadataTests(unittest.TestCase):
         client.add(
             "GET",
             "runs?page=1",
-            {"total_count": 101, "workflow_runs": first},
+            _response(
+                {"total_count": 101, "workflow_runs": first},
+                headers={
+                    "link": _link(
+                        ("next", pr_metadata._api_url("runs?page=2")),
+                        ("last", pr_metadata._api_url("runs?page=2")),
+                    )
+                },
+            ),
         )
         client.add(
             "GET",
             "runs?page=2",
-            {"total_count": 101, "workflow_runs": second},
+            _response(
+                {"total_count": 101, "workflow_runs": second},
+                headers={
+                    "link": _link(
+                        ("prev", pr_metadata._api_url("runs?page=1")),
+                        ("first", pr_metadata._api_url("runs?page=1")),
+                    )
+                },
+            ),
         )
         result = pr_metadata._list_counted_pages(
             client,
@@ -605,15 +917,31 @@ class PullRequestMetadataTests(unittest.TestCase):
         client.add(
             "GET",
             "runs?page=1",
-            {
-                "total_count": 101,
-                "workflow_runs": [{"id": index} for index in range(100)],
-            },
+            _response(
+                {
+                    "total_count": 101,
+                    "workflow_runs": [{"id": index} for index in range(100)],
+                },
+                headers={
+                    "link": _link(
+                        ("next", pr_metadata._api_url("runs?page=2")),
+                        ("last", pr_metadata._api_url("runs?page=2")),
+                    )
+                },
+            ),
         )
         client.add(
             "GET",
             "runs?page=2",
-            {"total_count": 100, "workflow_runs": []},
+            _response(
+                {"total_count": 100, "workflow_runs": []},
+                headers={
+                    "link": _link(
+                        ("prev", pr_metadata._api_url("runs?page=1")),
+                        ("first", pr_metadata._api_url("runs?page=1")),
+                    )
+                },
+            ),
         )
         with self.assertRaisesRegex(
             pr_metadata.MetadataEditError,
@@ -626,6 +954,150 @@ class PullRequestMetadataTests(unittest.TestCase):
                 label="test runs",
                 maximum=1000,
             )
+
+    def test_counted_pagination_rejects_link_contradictions_and_loops(self):
+        cases = {
+            "missing-last": _link(
+                ("next", pr_metadata._api_url("runs?page=2")),
+            ),
+            "looping-next": _link(
+                ("next", pr_metadata._api_url("runs?page=1")),
+                ("last", pr_metadata._api_url("runs?page=2")),
+            ),
+            "wrong-next": _link(
+                ("next", pr_metadata._api_url("runs?page=3")),
+                ("last", pr_metadata._api_url("runs?page=2")),
+            ),
+            "duplicate-next": (
+                _link(
+                    ("next", pr_metadata._api_url("runs?page=2")),
+                    ("next", pr_metadata._api_url("runs?page=2")),
+                    ("last", pr_metadata._api_url("runs?page=2")),
+                )
+            ),
+            "escaped-host": _link(
+                ("next", "https://example.test/runs?page=2"),
+                ("last", pr_metadata._api_url("runs?page=2")),
+            ),
+            "malformed": "not-a-link",
+        }
+        for name, link in cases.items():
+            with self.subTest(case=name):
+                client = ScriptedClient()
+                client.add(
+                    "GET",
+                    "runs?page=1",
+                    _response(
+                        {
+                            "total_count": 101,
+                            "workflow_runs": [
+                                {"id": index} for index in range(100)
+                            ],
+                        },
+                        headers={"link": link},
+                    ),
+                )
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata._list_counted_pages(
+                        client,
+                        endpoint_for_page=lambda page: f"runs?page={page}",
+                        item_key="workflow_runs",
+                        label="test runs",
+                        maximum=1000,
+                    )
+
+    def test_run_authority_rejects_duplicate_id_and_number(self):
+        duplicate_cases = []
+        first = _run(202, 11, mode="metadata-only", success=False)
+        duplicate_id_record, duplicate_id_jobs = _run(
+            202,
+            10,
+            mode="full",
+        )
+        duplicate_cases.append(
+            ("run-id", [first, (duplicate_id_record, duplicate_id_jobs)])
+        )
+        duplicate_number_record, duplicate_number_jobs = _run(
+            101,
+            11,
+            mode="full",
+        )
+        duplicate_cases.append(
+            ("run-number", [first, (duplicate_number_record, duplicate_number_jobs)])
+        )
+        for name, snapshot in duplicate_cases:
+            with self.subTest(identity=name):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr())
+                _add_snapshot(client, snapshot)
+                with self.assertRaisesRegex(
+                    pr_metadata.MetadataEditError,
+                    "repeat an identity",
+                ):
+                    pr_metadata.list_candidate_runs(
+                        client,
+                        pr_metadata.fetch_pull_request(
+                            client,
+                            REPOSITORY,
+                            PR_NUMBER,
+                        ),
+                    )
+
+    def test_run_authority_rejects_wrong_workflow_repo_head_event_and_path(self):
+        mutations = {
+            "workflow": ("workflow_id", WORKFLOW_ID + 1),
+            "repo-url": (
+                "url",
+                "https://api.github.com/repos/other/repo/actions/runs/101",
+            ),
+            "head": ("head_sha", NEW_HEAD),
+            "event": ("event", "push"),
+            "path": ("path", ".github/workflows/other.yml"),
+            "unknown-conclusion": ("conclusion", "mystery"),
+            "unknown-status": ("status", "mystery"),
+        }
+        for name, (field, value) in mutations.items():
+            with self.subTest(identity=name):
+                client = ScriptedClient()
+                record, jobs = _run(101, 10, mode="full")
+                record[field] = value
+                _add_pr_states(client, _pr())
+                _add_snapshot(client, [(record, jobs)])
+                state = pr_metadata.fetch_pull_request(
+                    client,
+                    REPOSITORY,
+                    PR_NUMBER,
+                )
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.list_candidate_runs(client, state)
+
+    def test_wrong_pr_or_base_binding_cannot_authorize_mutation(self):
+        mutations = {
+            "pr": ("number", PR_NUMBER + 1),
+            "base": ("base", {"sha": "4" * 40}),
+            "head": ("head", {"sha": NEW_HEAD}),
+        }
+        for name, (field, value) in mutations.items():
+            with self.subTest(identity=name):
+                client = ScriptedClient()
+                record, jobs = _run(101, 10, mode="full")
+                record["pull_requests"][0][field] = value
+                _add_pr_states(client, _pr())
+                _add_snapshot(client, [(record, jobs)])
+                decision = pr_metadata.edit_metadata(
+                    client,
+                    repository=REPOSITORY,
+                    pr_number=PR_NUMBER,
+                    head_sha=HEAD,
+                    base_sha=BASE,
+                    title=None,
+                    body="new body",
+                    essential_reason=None,
+                )
+                self.assertEqual(decision.action, "refused")
+                self.assertFalse(
+                    any(method != "GET" for method, _endpoint, _body in client.calls)
+                )
 
     def test_unknown_or_mixed_run_shape_fails_closed(self):
         client = ScriptedClient()
@@ -653,14 +1125,48 @@ class PullRequestMetadataTests(unittest.TestCase):
             )
         self.assertFalse(any(method != "GET" for method, _endpoint, _body in client.calls))
 
+    def test_noncanonical_successful_full_jobs_cannot_authorize_edit(self):
+        client = ScriptedClient()
+        record, jobs = _run(101, 10, mode="full")
+        next(job for job in jobs if job["name"] == "build")[
+            "conclusion"
+        ] = "failure"
+        _add_pr_states(client, _pr())
+        _add_snapshot(client, [(record, jobs)])
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "not runner-backed success",
+        ):
+            pr_metadata.edit_metadata(
+                client,
+                repository=REPOSITORY,
+                pr_number=PR_NUMBER,
+                head_sha=HEAD,
+                base_sha=BASE,
+                title=None,
+                body="new body",
+                essential_reason=None,
+            )
+        self.assertFalse(
+            any(method != "GET" for method, _endpoint, _body in client.calls)
+        )
+
     def test_same_head_run_for_another_base_is_validated_then_ignored(self):
         client = ScriptedClient()
         other_base_record, _other_jobs = _run(202, 11, mode="full", active=True)
         other_base_record["pull_requests"][0]["base"]["sha"] = "4" * 40
         exact_full = _run(101, 10, mode="full")
-        _add_pr_states(client, _pr(), _pr(), _pr())
-        _add_snapshot(client, [(other_base_record, []), exact_full])
-        client.add("PATCH", _endpoint(f"pulls/{PR_NUMBER}"), {"number": PR_NUMBER})
+        _add_pr_states(client, _pr(), _pr())
+        _add_snapshot(
+            client,
+            [(other_base_record, []), exact_full],
+            copies=2,
+        )
+        client.add(
+            "PATCH",
+            _endpoint(f"pulls/{PR_NUMBER}"),
+            _pr(body="new stable body"),
+        )
 
         decision = pr_metadata.edit_metadata(
             client,
@@ -689,7 +1195,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             f"Candidate SHA: {HEAD}\n"
             "No ARM runtime test is required for this host-only orchestration change.\n"
         )
-        _add_pr_states(client, _pr(), _pr(), _pr())
+        _add_pr_states(client, _pr(), _pr())
         client.add(
             "GET",
             _query(
@@ -697,17 +1203,17 @@ class PullRequestMetadataTests(unittest.TestCase):
                 [("per_page", "100"), ("page", "1")],
             ),
             [
-                {"id": 300, "body": "Architecture note"},
-                {
-                    "id": 301,
-                    "body": f"{pr_metadata.EVIDENCE_MARKER}\nOld evidence\n",
-                },
+                _comment(300, "Architecture note"),
+                _comment(
+                    301,
+                    f"{pr_metadata.EVIDENCE_MARKER}\nOld evidence\n",
+                ),
             ],
         )
         client.add(
             "PATCH",
             _endpoint("issues/comments/301"),
-            {"id": 301, "body": body},
+            _comment(301, body),
         )
 
         decision = pr_metadata.update_evidence_comment(
@@ -727,6 +1233,242 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertFalse(
             any(endpoint == _endpoint(f"pulls/{PR_NUMBER}") for _method, endpoint, _body in mutations)
         )
+        self.assertEqual(
+            len(
+                [
+                    call
+                    for call in client.calls
+                    if call[:2] == ("GET", _endpoint(f"pulls/{PR_NUMBER}"))
+                ]
+            ),
+            2,
+        )
+
+    def test_comment_mutation_response_must_attest_identity_and_body(self):
+        desired = f"{pr_metadata.EVIDENCE_MARKER}\nNew evidence\n"
+        for name, response in (
+            (
+                "body",
+                _comment(
+                    301,
+                    f"{pr_metadata.EVIDENCE_MARKER}\nOld evidence\n",
+                ),
+            ),
+            ("identity", _comment(302, desired)),
+            ("author", _comment(301, desired, author_id=88)),
+        ):
+            with self.subTest(mismatch=name):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr(), _pr())
+                client.add(
+                    "GET",
+                    _query(
+                        f"issues/{PR_NUMBER}/comments",
+                        [("per_page", "100"), ("page", "1")],
+                    ),
+                    [
+                        _comment(
+                            301,
+                            f"{pr_metadata.EVIDENCE_MARKER}\nOld evidence\n",
+                        )
+                    ],
+                )
+                client.add(
+                    "PATCH",
+                    _endpoint("issues/comments/301"),
+                    response,
+                )
+                with self.assertRaisesRegex(
+                    pr_metadata.MetadataEditError,
+                    "did not attest",
+                ):
+                    pr_metadata.update_evidence_comment(
+                        client,
+                        repository=REPOSITORY,
+                        pr_number=PR_NUMBER,
+                        head_sha=HEAD,
+                        base_sha=BASE,
+                        comment_body=desired,
+                    )
+
+    def test_comment_author_and_identity_must_be_owner_scoped(self):
+        mutations = {
+            "missing-user": {"user": None},
+            "wrong-login": {"user": {"id": 77, "login": "attacker", "type": "User", "site_admin": False}},
+            "bot": {"user": {"id": 77, "login": "owner", "type": "Bot", "site_admin": False}},
+            "association": {"author_association": "NONE"},
+            "site-admin": {"user": {"id": 77, "login": "owner", "type": "User", "site_admin": True}},
+            "cross-repo-url": {
+                "url": "https://api.github.com/repos/other/repo/issues/comments/301"
+            },
+            "wrong-issue": {
+                "issue_url": (
+                    "https://api.github.com/repos/owner/repo/issues/200"
+                )
+            },
+            "wrong-html": {
+                "html_url": (
+                    "https://github.com/owner/repo/pull/200#issuecomment-301"
+                )
+            },
+            "missing-node": {"node_id": None},
+        }
+        for name, changes in mutations.items():
+            with self.subTest(mutation=name):
+                client = ScriptedClient()
+                raw = _comment(
+                    301,
+                    f"{pr_metadata.EVIDENCE_MARKER}\nOld evidence\n",
+                )
+                raw.update(changes)
+                _add_pr_states(client, _pr())
+                client.add(
+                    "GET",
+                    _query(
+                        f"issues/{PR_NUMBER}/comments",
+                        [("per_page", "100"), ("page", "1")],
+                    ),
+                    [raw],
+                )
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.update_evidence_comment(
+                        client,
+                        repository=REPOSITORY,
+                        pr_number=PR_NUMBER,
+                        head_sha=HEAD,
+                        base_sha=BASE,
+                        comment_body=(
+                            f"{pr_metadata.EVIDENCE_MARKER}\nNew evidence\n"
+                        ),
+                    )
+
+    def test_duplicate_and_embedded_markers_are_rejected(self):
+        cases = {
+            "across-comments": [
+                _comment(301, f"{pr_metadata.EVIDENCE_MARKER}\nOne\n"),
+                _comment(302, f"{pr_metadata.EVIDENCE_MARKER}\nTwo\n"),
+            ],
+            "duplicate-one-comment": [
+                _comment(
+                    301,
+                    f"{pr_metadata.EVIDENCE_MARKER}\n"
+                    f"{pr_metadata.EVIDENCE_MARKER}\n",
+                )
+            ],
+            "embedded": [
+                _comment(
+                    301,
+                    f"prefix {pr_metadata.EVIDENCE_MARKER} suffix\n",
+                )
+            ],
+        }
+        for name, comments in cases.items():
+            with self.subTest(marker=name):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr())
+                client.add(
+                    "GET",
+                    _query(
+                        f"issues/{PR_NUMBER}/comments",
+                        [("per_page", "100"), ("page", "1")],
+                    ),
+                    comments,
+                )
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.update_evidence_comment(
+                        client,
+                        repository=REPOSITORY,
+                        pr_number=PR_NUMBER,
+                        head_sha=HEAD,
+                        base_sha=BASE,
+                        comment_body=(
+                            f"{pr_metadata.EVIDENCE_MARKER}\nNew evidence\n"
+                        ),
+                    )
+
+    def test_comment_pagination_rejects_short_page_next_and_loop(self):
+        page_one = _query(
+            f"issues/{PR_NUMBER}/comments",
+            [("per_page", "100"), ("page", "1")],
+        )
+        page_two_url = pr_metadata._api_url(
+            _query(
+                f"issues/{PR_NUMBER}/comments",
+                [("per_page", "100"), ("page", "2")],
+            )
+        )
+        cases = {
+            "short-next": _link(
+                ("next", page_two_url),
+                ("last", page_two_url),
+            ),
+            "loop": _link(
+                ("next", pr_metadata._api_url(page_one)),
+                ("last", page_two_url),
+            ),
+        }
+        for name, link in cases.items():
+            with self.subTest(pagination=name):
+                client = ScriptedClient()
+                client.add(
+                    "GET",
+                    page_one,
+                    _response(
+                        [_comment(301, "Architecture note")],
+                        headers={"link": link},
+                    ),
+                )
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata._list_comments(
+                        client,
+                        REPOSITORY,
+                        PR_NUMBER,
+                    )
+
+    def test_comment_pagination_consumes_canonical_linked_pages(self):
+        client = ScriptedClient()
+        page_one_endpoint = _query(
+            f"issues/{PR_NUMBER}/comments",
+            [("per_page", "100"), ("page", "1")],
+        )
+        page_two_endpoint = _query(
+            f"issues/{PR_NUMBER}/comments",
+            [("per_page", "100"), ("page", "2")],
+        )
+        page_one_url = pr_metadata._api_url(page_one_endpoint)
+        page_two_url = pr_metadata._api_url(page_two_endpoint)
+        client.add(
+            "GET",
+            page_one_endpoint,
+            _response(
+                [_comment(1000 + index, f"Comment {index}") for index in range(100)],
+                headers={
+                    "link": _link(
+                        ("next", page_two_url),
+                        ("last", page_two_url),
+                    )
+                },
+            ),
+        )
+        client.add(
+            "GET",
+            page_two_endpoint,
+            _response(
+                [_comment(1100, "Last comment")],
+                headers={
+                    "link": _link(
+                        ("prev", page_one_url),
+                        ("first", page_one_url),
+                    )
+                },
+            ),
+        )
+        comments = pr_metadata._list_comments(
+            client,
+            REPOSITORY,
+            PR_NUMBER,
+        )
+        self.assertEqual(len(comments), 101)
 
     def test_structured_api_argv_and_json_body_do_not_execute_input(self):
         calls = []
@@ -736,7 +1478,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             return subprocess.CompletedProcess(
                 arguments,
                 0,
-                stdout='{"ok":true}\n',
+                stdout='HTTP/2 200 OK\nContent-Type: application/json\n\n{"ok":true}\n',
                 stderr="",
             )
 
@@ -751,14 +1493,65 @@ class PullRequestMetadataTests(unittest.TestCase):
             body=payload,
             label="injection control",
         )
-        self.assertEqual(result, {"ok": True})
+        self.assertEqual(result.payload, {"ok": True})
         arguments, kwargs = calls[0]
         self.assertIsInstance(arguments, list)
         self.assertEqual(arguments[0], client.gh_path)
         self.assertEqual(arguments[-2:], ["--input", "-"])
+        self.assertIn("--include", arguments)
         self.assertEqual(json.loads(kwargs["input"]), payload)
         self.assertNotIn("shell", kwargs)
         self.assertNotIn("/cancel", " ".join(arguments))
+
+    def test_http_status_headers_and_redirects_fail_closed(self):
+        cases = {
+            "redirect": (
+                "HTTP/2 302 Found\nLocation: https://example.test/\n\n",
+                "rejected redirect",
+            ),
+            "duplicate-header": (
+                "HTTP/2 200 OK\nLink: one\nLink: two\n\n{}\n",
+                "repeats header",
+            ),
+            "missing-headers": ('{"ok":true}\n', "lacks HTTP headers"),
+            "wrong-status": (
+                "HTTP/2 202 Accepted\nContent-Type: application/json\n\n{}\n",
+                "expected 200",
+            ),
+            "wrong-content-type": (
+                "HTTP/2 200 OK\nContent-Type: text/plain\n\n{}\n",
+                "Content-Type is not JSON",
+            ),
+            "unexpected-location": (
+                "HTTP/2 200 OK\nLocation: https://example.test/\n"
+                "Content-Type: application/json\n\n{}\n",
+                "unexpectedly contains Location",
+            ),
+        }
+        for name, (stdout, message) in cases.items():
+            with self.subTest(response=name):
+                def runner(arguments, **kwargs):
+                    del kwargs
+                    return subprocess.CompletedProcess(
+                        arguments,
+                        0,
+                        stdout=stdout,
+                        stderr="",
+                    )
+
+                client = pr_metadata.GitHubClient(
+                    "/usr/bin/true",
+                    runner=runner,
+                )
+                with self.assertRaisesRegex(
+                    pr_metadata.MetadataEditError,
+                    message,
+                ):
+                    client.request(
+                        "GET",
+                        "repos/owner/repo/pulls/199",
+                        label="HTTP fixture",
+                    )
 
     def test_repository_and_json_inputs_fail_closed(self):
         with self.assertRaises(pr_metadata.MetadataEditError):
