@@ -4604,6 +4604,9 @@ printf '%s\t%s\t%s\n' "$result" \
             "two complete run/job snapshots",
             "completed failed metadata run",
             "repository-owner comment",
+            "/repositories/<numeric-id>/",
+            "Unmarked contributor, bot, and deleted-author comments",
+            "check-run URL",
             "No ARM runtime test is needed",
             "There is no manual-only criterion",
         ):

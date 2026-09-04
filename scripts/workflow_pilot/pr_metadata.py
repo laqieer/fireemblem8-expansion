@@ -64,8 +64,10 @@ class MetadataEditError(ValueError):
 @dataclass(frozen=True)
 class PullRequestState:
     repository: str
+    repository_id: int
     number: int
     head_sha: str
+    head_ref: str
     base_sha: str
     title: str
     body: str | None
@@ -77,14 +79,16 @@ class CommentState:
     repository: str
     pr_number: int
     body: str
-    author_id: int
-    author_login: str
-    author_type: str
-    author_association: str
+    author_id: int | None
+    author_login: str | None
+    author_type: str | None
+    author_association: str | None
 
 
 @dataclass(frozen=True)
 class JobState:
+    job_id: int
+    run_id: int
     name: str
     status: str
     conclusion: str | None
@@ -93,11 +97,19 @@ class JobState:
 
 
 @dataclass(frozen=True)
+class WorkflowAuthority:
+    workflow_id: int
+    name: str
+    path: str
+
+
+@dataclass(frozen=True)
 class RunState:
     run_id: int
     workflow_id: int
     run_number: int
     run_attempt: int
+    head_branch: str
     status: str
     conclusion: str | None
     mode: str
@@ -142,6 +154,17 @@ def _positive_int(value: object, field: str) -> int:
         or value > 999999999999999999
     ):
         raise MetadataEditError(f"{field} must be a positive integer")
+    return value
+
+
+def _nonnegative_int(value: object, field: str) -> int:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or value < 0
+        or value > 999999999999999999
+    ):
+        raise MetadataEditError(f"{field} must be a nonnegative integer")
     return value
 
 
@@ -386,14 +409,40 @@ def _parse_pull_request_payload(
         or base_repo.get("full_name") != repository
     ):
         raise MetadataEditError("pull request repository identity drifted")
+    repository_id = _positive_int(
+        base_repo.get("id"),
+        "pull request repository id",
+    )
+    owner, name = repository.split("/", 1)
+    if (
+        base_repo.get("name") != name
+        or base_repo.get("private") is not False
+        or base_repo.get("url") != _api_url(_endpoint(repository, ""))
+        .rstrip("/")
+        or base_repo.get("html_url") != f"https://github.com/{repository}"
+    ):
+        raise MetadataEditError("pull request repository payload is invalid")
+    repo_owner = base_repo.get("owner")
+    if (
+        not isinstance(repo_owner, dict)
+        or repo_owner.get("login") != owner
+        or repo_owner.get("type") != "User"
+        or repo_owner.get("site_admin") is not False
+    ):
+        raise MetadataEditError("pull request repository owner is invalid")
+    _positive_int(repo_owner.get("id"), "pull request repository owner id")
+    head_ref = _text(head.get("ref"), "pull request head ref")
+    _text(base.get("ref"), "pull request base ref")
     title = _text(payload.get("title"), "pull request title")
     body = payload.get("body")
     if body is not None and not isinstance(body, str):
         raise MetadataEditError("pull request body must be text or null")
     return PullRequestState(
         repository=repository,
+        repository_id=repository_id,
         number=pr_number,
         head_sha=_sha(head.get("sha"), "pull request head"),
+        head_ref=head_ref,
         base_sha=_sha(base.get("sha"), "pull request base"),
         title=title,
         body=body,
@@ -444,6 +493,8 @@ def _parse_link_pages(
     endpoint_for_page: Callable[[int], str],
     current_page: int,
     label: str,
+    repository: str,
+    repository_id: int,
 ) -> dict[str, int]:
     if not link:
         return {}
@@ -467,12 +518,13 @@ def _parse_link_pages(
             or split.username is not None
             or split.password is not None
             or split.fragment
+            or "%" in split.query
         ):
             raise MetadataEditError(f"{label} Link relation escaped api.github.com")
         try:
             query = urllib.parse.parse_qs(
                 split.query,
-                keep_blank_values=False,
+                keep_blank_values=True,
                 strict_parsing=True,
             )
         except ValueError as error:
@@ -486,11 +538,29 @@ def _parse_link_pages(
         if page < 1 or page > MAX_RUN_PAGES:
             raise MetadataEditError(f"{label} Link page exceeds bounds")
         expected = urllib.parse.urlsplit(_api_url(endpoint_for_page(page)))
-        if split.path != expected.path:
+        owner, name = repository.split("/", 1)
+        repo_prefix = (
+            f"/repos/{urllib.parse.quote(owner, safe='')}/"
+            f"{urllib.parse.quote(name, safe='')}/"
+        )
+        if not expected.path.startswith(repo_prefix):
+            raise MetadataEditError(f"{label} requested endpoint escaped repository")
+        suffix = expected.path[len(repo_prefix) :]
+        allowed_paths = {
+            expected.path,
+            f"/repositories/{repository_id}/{suffix}",
+        }
+        if (
+            split.path not in allowed_paths
+            or "%" in split.path
+            or "//" in split.path
+            or "/./" in split.path
+            or "/../" in split.path
+        ):
             raise MetadataEditError(f"{label} Link path drifted")
         expected_query = urllib.parse.parse_qs(
             expected.query,
-            keep_blank_values=False,
+            keep_blank_values=True,
             strict_parsing=True,
         )
         if query != expected_query:
@@ -537,6 +607,8 @@ def _list_counted_pages(
     item_key: str,
     label: str,
     maximum: int,
+    repository: str,
+    repository_id: int,
 ) -> list[object]:
     items: list[object] = []
     expected_total = None
@@ -576,6 +648,8 @@ def _list_counted_pages(
             endpoint_for_page=endpoint_for_page,
             current_page=page,
             label=label,
+            repository=repository,
+            repository_id=repository_id,
         )
         _require_counted_link_contract(
             relations,
@@ -593,25 +667,94 @@ def _list_counted_pages(
     return items
 
 
-def _workflow_id(client: GitHubClient, repository: str) -> int:
+def _workflow_authority(
+    client: GitHubClient,
+    state: PullRequestState,
+) -> WorkflowAuthority:
     response = client.request(
         "GET",
-        _endpoint(repository, "actions/workflows/build.yml"),
+        _endpoint(state.repository, "actions/workflows/build.yml"),
         label="Build workflow",
     )
     payload = response.payload
     if not isinstance(payload, dict):
         raise MetadataEditError("Build workflow response must be an object")
-    if payload.get("path") != WORKFLOW_PATH:
-        raise MetadataEditError("Build workflow path drifted")
-    if payload.get("state") != "active":
-        raise MetadataEditError("Build workflow is not active")
-    return _positive_int(payload.get("id"), "Build workflow id")
+    workflow_id = _positive_int(payload.get("id"), "Build workflow id")
+    name = _text(payload.get("name"), "Build workflow name")
+    path = _text(payload.get("path"), "Build workflow path")
+    if name != "Build CI" or path != WORKFLOW_PATH or payload.get("state") != "active":
+        raise MetadataEditError("Build workflow identity drifted")
+    _text(payload.get("node_id"), "Build workflow node id")
+    _text(payload.get("created_at"), "Build workflow created_at")
+    _text(payload.get("updated_at"), "Build workflow updated_at")
+    _require_api_url(
+        payload.get("url"),
+        _endpoint(state.repository, f"actions/workflows/{workflow_id}"),
+        field="Build workflow API URL",
+    )
+    if (
+        payload.get("html_url")
+        != f"https://github.com/{state.repository}/blob/master/{WORKFLOW_PATH}"
+    ):
+        raise MetadataEditError("Build workflow HTML URL identity drifted")
+    expected_badge = (
+        f"https://github.com/{state.repository}/workflows/"
+        f"{urllib.parse.quote(name, safe='')}/badge.svg"
+    )
+    if payload.get("badge_url") != expected_badge:
+        raise MetadataEditError("Build workflow badge URL identity drifted")
+    return WorkflowAuthority(workflow_id, name, path)
 
 
-def _parse_job(raw: object, *, run_id: int) -> JobState:
+def _parse_job(
+    raw: object,
+    *,
+    state: PullRequestState,
+    run_id: int,
+    run_attempt: int,
+    head_sha: str,
+    head_branch: str,
+    workflow: WorkflowAuthority,
+) -> JobState:
     if not isinstance(raw, dict):
         raise MetadataEditError(f"Build run {run_id} job must be an object")
+    job_id = _positive_int(raw.get("id"), f"Build run {run_id} job id")
+    if _positive_int(raw.get("run_id"), f"Build job {job_id} run id") != run_id:
+        raise MetadataEditError(f"Build job {job_id} run identity drifted")
+    if "run_attempt" in raw and (
+        _positive_int(raw.get("run_attempt"), f"Build job {job_id} run attempt")
+        != run_attempt
+    ):
+        raise MetadataEditError(f"Build job {job_id} attempt identity drifted")
+    if "event" in raw and raw.get("event") != "pull_request":
+        raise MetadataEditError(f"Build job {job_id} event identity drifted")
+    if _sha(raw.get("head_sha"), f"Build job {job_id} head") != head_sha:
+        raise MetadataEditError(f"Build job {job_id} head identity drifted")
+    if raw.get("head_branch") != head_branch:
+        raise MetadataEditError(f"Build job {job_id} branch identity drifted")
+    if raw.get("workflow_name") != workflow.name:
+        raise MetadataEditError(f"Build job {job_id} workflow identity drifted")
+    _text(raw.get("node_id"), f"Build job {job_id} node id")
+    _require_api_url(
+        raw.get("run_url"),
+        _endpoint(state.repository, f"actions/runs/{run_id}"),
+        field=f"Build job {job_id} run URL",
+    )
+    _require_api_url(
+        raw.get("url"),
+        _endpoint(state.repository, f"actions/jobs/{job_id}"),
+        field=f"Build job {job_id} API URL",
+    )
+    _require_api_url(
+        raw.get("check_run_url"),
+        _endpoint(state.repository, f"check-runs/{job_id}"),
+        field=f"Build job {job_id} check-run URL",
+    )
+    if (
+        raw.get("html_url")
+        != f"https://github.com/{state.repository}/actions/runs/{run_id}/job/{job_id}"
+    ):
+        raise MetadataEditError(f"Build job {job_id} HTML URL identity drifted")
     name = _text(raw.get("name"), f"Build run {run_id} job name")
     status = _text(raw.get("status"), f"Build run {run_id} job status")
     if status not in ACTIVE_RUN_STATUSES | {"completed"}:
@@ -631,27 +774,82 @@ def _parse_job(raw: object, *, run_id: int) -> JobState:
         not isinstance(started_at, str) or not started_at
     ):
         raise MetadataEditError(f"Build run {run_id} job start time is invalid")
-    return JobState(name, status, conclusion, runner_name, started_at)
+    completed_at = raw.get("completed_at")
+    if status == "completed":
+        _text(completed_at, f"Build job {job_id} completed_at")
+    elif completed_at is not None:
+        raise MetadataEditError(f"Build job {job_id} active completion is invalid")
+    runner_id = raw.get("runner_id")
+    runner_group_id = raw.get("runner_group_id")
+    runner_group_name = raw.get("runner_group_name")
+    if runner_name is None:
+        if (
+            runner_id is not None
+            or runner_group_id is not None
+            or runner_group_name is not None
+        ):
+            raise MetadataEditError(
+                f"Build job {job_id} unassigned runner identity is inconsistent"
+            )
+    else:
+        _positive_int(runner_id, f"Build job {job_id} runner id")
+        _nonnegative_int(
+            runner_group_id,
+            f"Build job {job_id} runner group id",
+        )
+        if not isinstance(runner_group_name, str) or not runner_group_name:
+            raise MetadataEditError(
+                f"Build job {job_id} runner group name is invalid"
+            )
+    return JobState(
+        job_id,
+        run_id,
+        name,
+        status,
+        conclusion,
+        runner_name,
+        started_at,
+    )
 
 
 def _list_jobs(
     client: GitHubClient,
-    repository: str,
+    state: PullRequestState,
+    *,
     run_id: int,
     run_attempt: int,
+    head_sha: str,
+    head_branch: str,
+    workflow: WorkflowAuthority,
 ) -> tuple[JobState, ...]:
     raw_jobs = _list_counted_pages(
         client,
         endpoint_for_page=lambda page: _query_endpoint(
-            repository,
+            state.repository,
             f"actions/runs/{run_id}/attempts/{run_attempt}/jobs",
             [("per_page", str(PAGE_SIZE)), ("page", str(page))],
         ),
         item_key="jobs",
         label=f"Build run {run_id} jobs",
         maximum=MAX_RUNS,
+        repository=state.repository,
+        repository_id=state.repository_id,
     )
-    jobs = tuple(_parse_job(raw, run_id=run_id) for raw in raw_jobs)
+    jobs = tuple(
+        _parse_job(
+            raw,
+            state=state,
+            run_id=run_id,
+            run_attempt=run_attempt,
+            head_sha=head_sha,
+            head_branch=head_branch,
+            workflow=workflow,
+        )
+        for raw in raw_jobs
+    )
+    job_ids = [job.job_id for job in jobs]
+    if len(job_ids) != len(set(job_ids)):
+        raise MetadataEditError(f"Build run {run_id} repeats a job id")
     names = [job.name for job in jobs]
     if len(names) != len(set(names)):
         raise MetadataEditError(f"Build run {run_id} repeats a job name")
@@ -669,30 +867,31 @@ def _run_mode(jobs: tuple[JobState, ...], *, run_id: int) -> str:
 
 def _parse_run(
     client: GitHubClient,
-    repository: str,
-    pr_number: int,
-    head_sha: str,
-    base_sha: str,
-    workflow_id: int,
+    state: PullRequestState,
+    workflow: WorkflowAuthority,
     raw: object,
 ) -> tuple[int, int, RunState | None]:
     if not isinstance(raw, dict):
         raise MetadataEditError("Build workflow run must be an object")
     run_id = _positive_int(raw.get("id"), "Build run id")
-    if _positive_int(raw.get("workflow_id"), "Build run workflow_id") != workflow_id:
+    if (
+        _positive_int(raw.get("workflow_id"), "Build run workflow_id")
+        != workflow.workflow_id
+    ):
         raise MetadataEditError(f"Build run {run_id} workflow identity drifted")
     run_number = _positive_int(raw.get("run_number"), "Build run number")
     run_attempt = _positive_int(raw.get("run_attempt"), "Build run attempt")
     if raw.get("event") != "pull_request":
         raise MetadataEditError(f"Build run {run_id} event is not pull_request")
-    if _sha(raw.get("head_sha"), f"Build run {run_id} head") != head_sha:
+    if _sha(raw.get("head_sha"), f"Build run {run_id} head") != state.head_sha:
         raise MetadataEditError(f"Build run {run_id} head identity drifted")
+    head_branch = _text(raw.get("head_branch"), f"Build run {run_id} head branch")
     path = _text(raw.get("path"), f"Build run {run_id} path")
     if path != WORKFLOW_PATH and not path.startswith(WORKFLOW_PATH + "@"):
         raise MetadataEditError(f"Build run {run_id} workflow path drifted")
     url = _text(raw.get("url"), f"Build run {run_id} URL")
     split = urllib.parse.urlsplit(url)
-    owner, name = repository.split("/", 1)
+    owner, name = state.repository.split("/", 1)
     expected_path = (
         f"/repos/{urllib.parse.quote(owner, safe='')}/"
         f"{urllib.parse.quote(name, safe='')}/actions/runs/{run_id}"
@@ -722,13 +921,15 @@ def _parse_run(
         binding_head = _sha(head.get("sha"), "Build run PR head")
         binding_base = _sha(base.get("sha"), "Build run PR base")
         if (
-            number == pr_number
-            and binding_head == head_sha
-            and binding_base == base_sha
+            number == state.number
+            and binding_head == state.head_sha
+            and binding_base == state.base_sha
         ):
             matches += 1
     if matches > 1:
         raise MetadataEditError(f"Build run {run_id} exact PR binding is ambiguous")
+    if matches == 1 and head_branch != state.head_ref:
+        raise MetadataEditError(f"Build run {run_id} branch identity drifted")
     status = _text(raw.get("status"), f"Build run {run_id} status")
     if status not in ACTIVE_RUN_STATUSES | {"completed"}:
         raise MetadataEditError(f"Build run {run_id} status is unknown")
@@ -741,15 +942,24 @@ def _parse_run(
         raise MetadataEditError(f"Build run {run_id} active with conclusion")
     if matches == 0:
         return run_id, run_number, None
-    jobs = _list_jobs(client, repository, run_id, run_attempt)
+    jobs = _list_jobs(
+        client,
+        state,
+        run_id=run_id,
+        run_attempt=run_attempt,
+        head_sha=state.head_sha,
+        head_branch=head_branch,
+        workflow=workflow,
+    )
     return (
         run_id,
         run_number,
         RunState(
             run_id=run_id,
-            workflow_id=workflow_id,
+            workflow_id=workflow.workflow_id,
             run_number=run_number,
             run_attempt=run_attempt,
+            head_branch=head_branch,
             status=status,
             conclusion=conclusion,
             mode=_run_mode(jobs, run_id=run_id),
@@ -762,7 +972,7 @@ def list_candidate_runs(
     client: GitHubClient,
     state: PullRequestState,
 ) -> tuple[RunState, ...]:
-    workflow_id = _workflow_id(client, state.repository)
+    workflow = _workflow_authority(client, state)
     raw_runs = _list_counted_pages(
         client,
         endpoint_for_page=lambda page: _query_endpoint(
@@ -778,15 +988,14 @@ def list_candidate_runs(
         item_key="workflow_runs",
         label="Build workflow runs",
         maximum=MAX_RUNS,
+        repository=state.repository,
+        repository_id=state.repository_id,
     )
     visible = tuple(
         _parse_run(
             client,
-            state.repository,
-            state.number,
-            state.head_sha,
-            state.base_sha,
-            workflow_id,
+            state,
+            workflow,
             raw,
         )
         for raw in raw_runs
@@ -1117,6 +1326,13 @@ def edit_metadata(
         pr_number,
     )
     require_identity(after, head_sha=head_sha, base_sha=base_sha)
+    if (
+        after.repository_id != current.repository_id
+        or after.head_ref != current.head_ref
+    ):
+        raise MetadataEditError(
+            "pull request mutation response repository/head-ref identity drifted"
+        )
     if title is not None and after.title != title:
         raise MetadataEditError(
             "pull request mutation response did not attest the requested title"
@@ -1291,6 +1507,7 @@ def _list_comments(
     client: GitHubClient,
     repository: str,
     pr_number: int,
+    repository_id: int,
 ) -> list[CommentState]:
     comments = []
     seen_ids = set()
@@ -1314,6 +1531,8 @@ def _list_comments(
             endpoint_for_page=endpoint_for_page,
             current_page=page,
             label="pull request comments",
+            repository=repository,
+            repository_id=repository_id,
         )
         next_page = relations.get("next")
         if len(payload) < PAGE_SIZE and next_page is not None:
@@ -1407,33 +1626,53 @@ def _parse_comment_payload(
     if not isinstance(body, str):
         raise MetadataEditError(f"pull request comment {comment_id} body is invalid")
     user = raw.get("user")
-    if not isinstance(user, dict):
-        raise MetadataEditError(f"pull request comment {comment_id} author is missing")
-    author_id = _positive_int(
-        user.get("id"),
-        f"pull request comment {comment_id} author id",
-    )
-    author_login = _text(
-        user.get("login"),
-        f"pull request comment {comment_id} author login",
-    )
-    author_type = _text(
-        user.get("type"),
-        f"pull request comment {comment_id} author type",
-    )
-    association = _text(
-        raw.get("author_association"),
-        f"pull request comment {comment_id} author association",
-    )
-    if (
-        author_login != owner
-        or author_type != "User"
-        or user.get("site_admin") is not False
-        or association != "OWNER"
-    ):
-        raise MetadataEditError(
-            f"pull request comment {comment_id} author is not the repository owner"
+    association_raw = raw.get("author_association")
+    author_id = None
+    author_login = None
+    author_type = None
+    association = None
+    if user is not None:
+        if not isinstance(user, dict):
+            raise MetadataEditError(
+                f"pull request comment {comment_id} author is invalid"
+            )
+        author_id = _positive_int(
+            user.get("id"),
+            f"pull request comment {comment_id} author id",
         )
+        author_login = _text(
+            user.get("login"),
+            f"pull request comment {comment_id} author login",
+        )
+        author_type = _text(
+            user.get("type"),
+            f"pull request comment {comment_id} author type",
+        )
+        if not isinstance(user.get("site_admin"), bool):
+            raise MetadataEditError(
+                f"pull request comment {comment_id} site_admin is invalid"
+            )
+    if association_raw is not None:
+        association = _text(
+            association_raw,
+            f"pull request comment {comment_id} author association",
+        )
+    marker_count = body.count(EVIDENCE_MARKER)
+    if marker_count:
+        if marker_count != 1 or not _marker_is_standalone(body):
+            raise MetadataEditError(
+                "canonical evidence marker is duplicated or embedded"
+            )
+        if (
+            author_login != owner
+            or author_type != "User"
+            or not isinstance(user, dict)
+            or user.get("site_admin") is not False
+            or association != "OWNER"
+        ):
+            raise MetadataEditError(
+                f"pull request comment {comment_id} author is not the repository owner"
+            )
     for field in ("created_at", "updated_at", "node_id"):
         _text(raw.get(field), f"pull request comment {comment_id} {field}")
     return CommentState(
@@ -1469,7 +1708,12 @@ def update_evidence_comment(
         )
     initial = fetch_pull_request(client, repository, pr_number)
     require_identity(initial, head_sha=head_sha, base_sha=base_sha)
-    comments = _list_comments(client, repository, pr_number)
+    comments = _list_comments(
+        client,
+        repository,
+        pr_number,
+        initial.repository_id,
+    )
     marked = []
     for comment in comments:
         occurrences = comment.body.count(EVIDENCE_MARKER)
@@ -1486,6 +1730,10 @@ def update_evidence_comment(
         )
     current = fetch_pull_request(client, repository, pr_number)
     require_identity(current, head_sha=head_sha, base_sha=base_sha)
+    if current.repository_id != initial.repository_id:
+        raise MetadataEditError(
+            "pull request repository identity changed before comment mutation"
+        )
     original = marked[0]
     comment_id = original.comment_id
     mutation_response = client.request(

@@ -1243,7 +1243,10 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    unknown conclusions, cancelled and other non-failure metadata conclusions,
    noncanonical failed-metadata jobs, missing/unauthorized comment authors,
    cross-repository comment identities, duplicate/embedded markers, duplicate
-   JSON keys, malformed repository identity, and shell/API metacharacters.
+   JSON keys, malformed repository identity, mixed run/attempt/repository/head
+   job pages, duplicate/identityless jobs, workflow URL/identity drift,
+   canonical owner/repository and numeric-repository Link forms, other numeric
+   IDs, percent/path ambiguity, and shell/API metacharacters.
 6. Parse `docs/test-cases/registry.json` and run
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
 
@@ -1266,7 +1269,14 @@ expensive/publisher jobs, and failed summary is eligible. A successful or
 active metadata run is respectively complete or deferred. Canonical comment
 PATCH uses only the exact repository-owner comment
 `issues/comments/<id>`, requires mutation-response identity/body attestation,
-and emits no `pull_request: edited` event.
+and emits no `pull_request: edited` event. Unmarked contributor, bot, and
+deleted-author comments remain valid after exact repository/PR/comment schema
+checks. Run, job, and comment pagination accepts both captured GitHub
+`/repos/<owner>/<repo>/...` and `/repositories/<numeric-id>/...` Link forms
+only when the PR-bound numeric ID, suffix, query, and page are exact. Workflow
+and job payloads bind complete API/HTML/check-run/run/repository/head/branch/
+attempt identities, including each job's exact check-run URL, before any run
+can authorize mutation or reconciliation.
 
 ### Negative control
 
@@ -1277,9 +1287,12 @@ status/conclusion, cancelled or other non-failure metadata runs,
 mixed/partial/duplicate or noncanonical job names/outcomes, missing/deleted or
 unauthorized comment authors, cross-repository comment IDs,
 duplicate/embedded/non-standalone evidence markers, mutation-response
-mismatch, malformed or duplicate-key JSON, and repository/command injection
-all fail closed. No tested path calls a cancellation endpoint or a
-full-workflow dispatch endpoint.
+mismatch, wrong numeric repository IDs, owner/repository drift,
+percent-encoded/path-ambiguous or cross-form looping Links, workflow payload
+identity drift, duplicate/identityless jobs, mixed run/attempt/repository/head
+job pages, inconsistent job URLs, malformed or duplicate-key JSON, and
+repository/command injection all fail closed. No tested path calls a
+cancellation endpoint or a full-workflow dispatch endpoint.
 
 ### Interactions and save compatibility
 

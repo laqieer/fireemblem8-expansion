@@ -11,10 +11,13 @@ from scripts.workflow_pilot import candidate_evidence, pr_metadata
 
 
 REPOSITORY = "owner/repo"
+REPOSITORY_ID = 1302699505
+OWNER_ID = 77
 PR_NUMBER = 199
 HEAD = "1" * 40
 BASE = "2" * 40
 NEW_HEAD = "3" * 40
+HEAD_REF = "feature/issue-199"
 WORKFLOW_ID = 1234
 
 
@@ -24,6 +27,23 @@ def _endpoint(suffix: str) -> str:
 
 def _query(suffix: str, pairs: list[tuple[str, str]]) -> str:
     return pr_metadata._query_endpoint(REPOSITORY, suffix, pairs)
+
+
+def _test_runs_page(page: int) -> str:
+    return _query(
+        "actions/workflows/build.yml/runs",
+        [("per_page", "100"), ("page", str(page))],
+    )
+
+
+def _numeric_api_url(endpoint: str) -> str:
+    prefix = f"repos/{REPOSITORY}/"
+    if not endpoint.startswith(prefix):
+        raise AssertionError(endpoint)
+    return (
+        f"https://api.github.com/repositories/{REPOSITORY_ID}/"
+        + endpoint[len(prefix) :]
+    )
 
 
 def _pr(
@@ -39,10 +59,24 @@ def _pr(
         "title": title,
         "body": body,
         "url": f"https://api.github.com/repos/{REPOSITORY}/pulls/{PR_NUMBER}",
-        "head": {"sha": head},
+        "head": {"sha": head, "ref": HEAD_REF},
         "base": {
             "sha": base,
-            "repo": {"full_name": REPOSITORY},
+            "ref": "master",
+            "repo": {
+                "id": REPOSITORY_ID,
+                "name": "repo",
+                "full_name": REPOSITORY,
+                "private": False,
+                "url": f"https://api.github.com/repos/{REPOSITORY}",
+                "html_url": f"https://github.com/{REPOSITORY}",
+                "owner": {
+                    "id": OWNER_ID,
+                    "login": "owner",
+                    "type": "User",
+                    "site_admin": False,
+                },
+            },
         },
     }
 
@@ -96,6 +130,31 @@ def _response(
     return pr_metadata.ApiResponse(status, headers or {}, payload)
 
 
+def _workflow(**changes: object) -> dict:
+    payload = {
+        "id": WORKFLOW_ID,
+        "node_id": "W_build",
+        "name": "Build CI",
+        "path": pr_metadata.WORKFLOW_PATH,
+        "state": "active",
+        "created_at": "2026-07-16T11:44:49Z",
+        "updated_at": "2026-07-16T11:44:49Z",
+        "url": (
+            f"https://api.github.com/repos/{REPOSITORY}/"
+            f"actions/workflows/{WORKFLOW_ID}"
+        ),
+        "html_url": (
+            f"https://github.com/{REPOSITORY}/blob/master/"
+            f"{pr_metadata.WORKFLOW_PATH}"
+        ),
+        "badge_url": (
+            f"https://github.com/{REPOSITORY}/workflows/Build%20CI/badge.svg"
+        ),
+    }
+    payload.update(changes)
+    return payload
+
+
 def _link(*relations: tuple[str, str]) -> str:
     return ", ".join(f'<{url}>; rel="{relation}"' for relation, url in relations)
 
@@ -103,36 +162,86 @@ def _link(*relations: tuple[str, str]) -> str:
 def _job(
     name: str,
     *,
+    job_id: int,
+    run_id: int,
+    run_attempt: int = 1,
+    head_sha: str = HEAD,
+    head_branch: str = HEAD_REF,
     status: str = "completed",
     conclusion: str | None = "success",
     runner_name: str | None = "GitHub Actions 1",
     started_at: str | None = "2026-09-04T00:00:00Z",
 ) -> dict:
     return {
+        "id": job_id,
+        "run_id": run_id,
+        "run_attempt": run_attempt,
+        "run_url": f"https://api.github.com/repos/{REPOSITORY}/actions/runs/{run_id}",
+        "node_id": f"CR_{job_id}",
+        "head_sha": head_sha,
+        "head_branch": head_branch,
+        "workflow_name": "Build CI",
+        "event": "pull_request",
+        "url": f"https://api.github.com/repos/{REPOSITORY}/actions/jobs/{job_id}",
+        "html_url": (
+            f"https://github.com/{REPOSITORY}/actions/runs/{run_id}/job/{job_id}"
+        ),
+        "check_run_url": (
+            f"https://api.github.com/repos/{REPOSITORY}/check-runs/{job_id}"
+        ),
         "name": name,
         "status": status,
         "conclusion": conclusion,
         "runner_name": runner_name,
         "started_at": started_at,
+        "completed_at": (
+            "2026-09-04T00:00:01Z" if status == "completed" else None
+        ),
+        "runner_id": 1 if runner_name else None,
+        "runner_group_id": 0 if runner_name else None,
+        "runner_group_name": "GitHub Actions" if runner_name else None,
     }
 
 
-def _full_jobs(*, active: bool = False) -> list[dict]:
+def _full_jobs(
+    run_id: int,
+    run_attempt: int,
+    *,
+    active: bool = False,
+) -> list[dict]:
+    names = sorted(pr_metadata.FULL_JOB_NAMES)
     if active:
         return [
             _job(
                 name,
+                job_id=run_id * 100 + index,
+                run_id=run_id,
+                run_attempt=run_attempt,
                 status="queued",
                 conclusion=None,
                 runner_name=None,
                 started_at=None,
             )
-            for name in sorted(pr_metadata.FULL_JOB_NAMES)
+            for index, name in enumerate(names, 1)
         ]
-    jobs = [_job(name) for name in sorted(pr_metadata.FULL_SUCCESS_JOB_NAMES)]
+    jobs = [
+        _job(
+            name,
+            job_id=run_id * 100 + index,
+            run_id=run_id,
+            run_attempt=run_attempt,
+        )
+        for index, name in enumerate(
+            sorted(pr_metadata.FULL_SUCCESS_JOB_NAMES),
+            1,
+        )
+    ]
     jobs.append(
         _job(
             "patch-release",
+            job_id=run_id * 100 + len(jobs) + 1,
+            run_id=run_id,
+            run_attempt=run_attempt,
             conclusion="skipped",
             runner_name=None,
             started_at=None,
@@ -141,22 +250,45 @@ def _full_jobs(*, active: bool = False) -> list[dict]:
     return jobs
 
 
-def _metadata_jobs(*, success: bool = False) -> list[dict]:
+def _metadata_jobs(
+    run_id: int,
+    run_attempt: int,
+    *,
+    success: bool = False,
+) -> list[dict]:
     jobs = []
-    for name in sorted(pr_metadata.METADATA_JOB_NAMES):
+    for index, name in enumerate(sorted(pr_metadata.METADATA_JOB_NAMES), 1):
         if name in {"extended-host-tests", "legacy", "patch-release"}:
             jobs.append(
                 _job(
                     name,
+                    job_id=run_id * 100 + index,
+                    run_id=run_id,
+                    run_attempt=run_attempt,
                     conclusion="skipped",
                     runner_name=None,
                     started_at=None,
                 )
             )
         elif name == "summary" and not success:
-            jobs.append(_job(name, conclusion="failure"))
+            jobs.append(
+                _job(
+                    name,
+                    job_id=run_id * 100 + index,
+                    run_id=run_id,
+                    run_attempt=run_attempt,
+                    conclusion="failure",
+                )
+            )
         else:
-            jobs.append(_job(name))
+            jobs.append(
+                _job(
+                    name,
+                    job_id=run_id * 100 + index,
+                    run_id=run_id,
+                    run_attempt=run_attempt,
+                )
+            )
     return jobs
 
 
@@ -176,9 +308,9 @@ def _run(
         status = "completed"
         conclusion = "success" if success else "failure"
     jobs = (
-        _full_jobs(active=active)
+        _full_jobs(run_id, attempt, active=active)
         if mode == "full"
-        else _metadata_jobs(success=success)
+        else _metadata_jobs(run_id, attempt, success=success)
     )
     return (
         {
@@ -190,6 +322,7 @@ def _run(
             "status": status,
             "conclusion": conclusion,
             "head_sha": HEAD,
+            "head_branch": HEAD_REF,
             "path": ".github/workflows/build.yml@refs/pull/199/merge",
             "url": f"https://api.github.com/repos/owner/repo/actions/runs/{run_id}",
             "pull_requests": [
@@ -256,14 +389,7 @@ def _add_snapshot(
     client.add(
         "GET",
         _endpoint("actions/workflows/build.yml"),
-        *(
-            {
-                "id": WORKFLOW_ID,
-                "path": pr_metadata.WORKFLOW_PATH,
-                "state": "active",
-            }
-            for _ in range(copies)
-        ),
+        *(_workflow() for _ in range(copies)),
     )
     runs = [record for record, _jobs in runs_and_jobs]
     runs_endpoint = _query(
@@ -506,6 +632,8 @@ class PullRequestMetadataTests(unittest.TestCase):
         )
 
     def test_pull_request_mutation_response_must_attest_requested_result(self):
+        wrong_repository_id = _pr(body="new body")
+        wrong_repository_id["base"]["repo"]["id"] = REPOSITORY_ID + 1
         cases = (
             (
                 "body",
@@ -530,6 +658,13 @@ class PullRequestMetadataTests(unittest.TestCase):
                     "url": "https://api.github.com/repos/other/repo/pulls/199",
                 },
                 "URL identity drifted",
+            ),
+            (
+                "repository-id",
+                None,
+                "new body",
+                wrong_repository_id,
+                "repository/head-ref identity drifted",
             ),
         )
         for name, title, body, response, message in cases:
@@ -685,7 +820,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 )
 
     def test_reconciliation_rejects_noncanonical_failed_metadata_jobs(self):
-        base_jobs = _metadata_jobs(success=False)
+        base_jobs = _metadata_jobs(202, 1, success=False)
         mutations = {}
         for job_name in (
             "event-identity",
@@ -835,11 +970,7 @@ class PullRequestMetadataTests(unittest.TestCase):
         client.add(
             "GET",
             _endpoint("actions/workflows/build.yml"),
-            {
-                "id": WORKFLOW_ID,
-                "path": pr_metadata.WORKFLOW_PATH,
-                "state": "active",
-            },
+            _workflow(),
         )
         client.add(
             "GET",
@@ -875,48 +1006,101 @@ class PullRequestMetadataTests(unittest.TestCase):
         second = [{"id": 100}]
         client.add(
             "GET",
-            "runs?page=1",
+            _test_runs_page(1),
             _response(
                 {"total_count": 101, "workflow_runs": first},
                 headers={
                     "link": _link(
-                        ("next", pr_metadata._api_url("runs?page=2")),
-                        ("last", pr_metadata._api_url("runs?page=2")),
+                        ("next", _numeric_api_url(_test_runs_page(2))),
+                        ("last", _numeric_api_url(_test_runs_page(2))),
                     )
                 },
             ),
         )
         client.add(
             "GET",
-            "runs?page=2",
+            _test_runs_page(2),
             _response(
                 {"total_count": 101, "workflow_runs": second},
                 headers={
                     "link": _link(
-                        ("prev", pr_metadata._api_url("runs?page=1")),
-                        ("first", pr_metadata._api_url("runs?page=1")),
+                        ("prev", _numeric_api_url(_test_runs_page(1))),
+                        ("first", _numeric_api_url(_test_runs_page(1))),
                     )
                 },
             ),
         )
         result = pr_metadata._list_counted_pages(
             client,
-            endpoint_for_page=lambda page: f"runs?page={page}",
+            endpoint_for_page=_test_runs_page,
             item_key="workflow_runs",
             label="test runs",
             maximum=1000,
+            repository=REPOSITORY,
+            repository_id=REPOSITORY_ID,
         )
         self.assertEqual(result, first + second)
         self.assertEqual(
             [(method, endpoint) for method, endpoint, _body in client.calls],
-            [("GET", "runs?page=1"), ("GET", "runs?page=2")],
+            [("GET", _test_runs_page(1)), ("GET", _test_runs_page(2))],
+        )
+
+    def test_captured_numeric_job_link_shape_is_accepted(self):
+        run_id = 33886934525
+
+        def endpoint(page: int) -> str:
+            return _query(
+                f"actions/runs/{run_id}/attempts/1/jobs",
+                [("per_page", "100"), ("page", str(page))],
+            )
+
+        client = ScriptedClient()
+        first = [{"id": index} for index in range(100)]
+        second = [{"id": 100}]
+        client.add(
+            "GET",
+            endpoint(1),
+            _response(
+                {"total_count": 101, "jobs": first},
+                headers={
+                    "link": _link(
+                        ("next", _numeric_api_url(endpoint(2))),
+                        ("last", _numeric_api_url(endpoint(2))),
+                    )
+                },
+            ),
+        )
+        client.add(
+            "GET",
+            endpoint(2),
+            _response(
+                {"total_count": 101, "jobs": second},
+                headers={
+                    "link": _link(
+                        ("prev", _numeric_api_url(endpoint(1))),
+                        ("first", _numeric_api_url(endpoint(1))),
+                    )
+                },
+            ),
+        )
+        self.assertEqual(
+            pr_metadata._list_counted_pages(
+                client,
+                endpoint_for_page=endpoint,
+                item_key="jobs",
+                label="captured jobs",
+                maximum=1000,
+                repository=REPOSITORY,
+                repository_id=REPOSITORY_ID,
+            ),
+            first + second,
         )
 
     def test_counted_pagination_rejects_total_count_drift(self):
         client = ScriptedClient()
         client.add(
             "GET",
-            "runs?page=1",
+            _test_runs_page(1),
             _response(
                 {
                     "total_count": 101,
@@ -924,21 +1108,21 @@ class PullRequestMetadataTests(unittest.TestCase):
                 },
                 headers={
                     "link": _link(
-                        ("next", pr_metadata._api_url("runs?page=2")),
-                        ("last", pr_metadata._api_url("runs?page=2")),
+                        ("next", _numeric_api_url(_test_runs_page(2))),
+                        ("last", _numeric_api_url(_test_runs_page(2))),
                     )
                 },
             ),
         )
         client.add(
             "GET",
-            "runs?page=2",
+            _test_runs_page(2),
             _response(
                 {"total_count": 100, "workflow_runs": []},
                 headers={
                     "link": _link(
-                        ("prev", pr_metadata._api_url("runs?page=1")),
-                        ("first", pr_metadata._api_url("runs?page=1")),
+                        ("prev", _numeric_api_url(_test_runs_page(1))),
+                        ("first", _numeric_api_url(_test_runs_page(1))),
                     )
                 },
             ),
@@ -949,35 +1133,77 @@ class PullRequestMetadataTests(unittest.TestCase):
         ):
             pr_metadata._list_counted_pages(
                 client,
-                endpoint_for_page=lambda page: f"runs?page={page}",
+                endpoint_for_page=_test_runs_page,
                 item_key="workflow_runs",
                 label="test runs",
                 maximum=1000,
+                repository=REPOSITORY,
+                repository_id=REPOSITORY_ID,
             )
 
     def test_counted_pagination_rejects_link_contradictions_and_loops(self):
         cases = {
             "missing-last": _link(
-                ("next", pr_metadata._api_url("runs?page=2")),
+                ("next", _numeric_api_url(_test_runs_page(2))),
             ),
             "looping-next": _link(
-                ("next", pr_metadata._api_url("runs?page=1")),
-                ("last", pr_metadata._api_url("runs?page=2")),
+                ("next", _numeric_api_url(_test_runs_page(1))),
+                ("last", _numeric_api_url(_test_runs_page(2))),
             ),
             "wrong-next": _link(
-                ("next", pr_metadata._api_url("runs?page=3")),
-                ("last", pr_metadata._api_url("runs?page=2")),
+                ("next", _numeric_api_url(_test_runs_page(3))),
+                ("last", _numeric_api_url(_test_runs_page(2))),
             ),
             "duplicate-next": (
                 _link(
-                    ("next", pr_metadata._api_url("runs?page=2")),
-                    ("next", pr_metadata._api_url("runs?page=2")),
-                    ("last", pr_metadata._api_url("runs?page=2")),
+                    ("next", _numeric_api_url(_test_runs_page(2))),
+                    ("next", _numeric_api_url(_test_runs_page(2))),
+                    ("last", _numeric_api_url(_test_runs_page(2))),
                 )
             ),
             "escaped-host": _link(
                 ("next", "https://example.test/runs?page=2"),
-                ("last", pr_metadata._api_url("runs?page=2")),
+                ("last", _numeric_api_url(_test_runs_page(2))),
+            ),
+            "wrong-numeric-repo": _link(
+                (
+                    "next",
+                    _numeric_api_url(_test_runs_page(2)).replace(
+                        str(REPOSITORY_ID),
+                        str(REPOSITORY_ID + 1),
+                    ),
+                ),
+                ("last", _numeric_api_url(_test_runs_page(2))),
+            ),
+            "owner-repo-drift": _link(
+                (
+                    "next",
+                    pr_metadata._api_url(_test_runs_page(2)).replace(
+                        f"/repos/{REPOSITORY}/",
+                        "/repos/other/repo/",
+                    ),
+                ),
+                ("last", _numeric_api_url(_test_runs_page(2))),
+            ),
+            "percent-path": _link(
+                (
+                    "next",
+                    _numeric_api_url(_test_runs_page(2)).replace(
+                        "/actions/",
+                        "/%61ctions/",
+                    ),
+                ),
+                ("last", _numeric_api_url(_test_runs_page(2))),
+            ),
+            "percent-query": _link(
+                (
+                    "next",
+                    _numeric_api_url(_test_runs_page(2)).replace(
+                        "page=2",
+                        "page=%32",
+                    ),
+                ),
+                ("last", _numeric_api_url(_test_runs_page(2))),
             ),
             "malformed": "not-a-link",
         }
@@ -986,7 +1212,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 client = ScriptedClient()
                 client.add(
                     "GET",
-                    "runs?page=1",
+                    _test_runs_page(1),
                     _response(
                         {
                             "total_count": 101,
@@ -1000,10 +1226,12 @@ class PullRequestMetadataTests(unittest.TestCase):
                 with self.assertRaises(pr_metadata.MetadataEditError):
                     pr_metadata._list_counted_pages(
                         client,
-                        endpoint_for_page=lambda page: f"runs?page={page}",
+                        endpoint_for_page=_test_runs_page,
                         item_key="workflow_runs",
                         label="test runs",
                         maximum=1000,
+                        repository=REPOSITORY,
+                        repository_id=REPOSITORY_ID,
                     )
 
     def test_run_authority_rejects_duplicate_id_and_number(self):
@@ -1051,6 +1279,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 "https://api.github.com/repos/other/repo/actions/runs/101",
             ),
             "head": ("head_sha", NEW_HEAD),
+            "branch": ("head_branch", "other"),
             "event": ("event", "push"),
             "path": ("path", ".github/workflows/other.yml"),
             "unknown-conclusion": ("conclusion", "mystery"),
@@ -1070,6 +1299,140 @@ class PullRequestMetadataTests(unittest.TestCase):
                 )
                 with self.assertRaises(pr_metadata.MetadataEditError):
                     pr_metadata.list_candidate_runs(client, state)
+
+    def test_workflow_payload_identity_is_fully_bound(self):
+        mutations = {
+            "name": {"name": "Other"},
+            "node": {"node_id": None},
+            "path": {"path": ".github/workflows/other.yml"},
+            "state": {"state": "disabled_manually"},
+            "api-url": {
+                "url": (
+                    "https://api.github.com/repos/other/repo/"
+                    f"actions/workflows/{WORKFLOW_ID}"
+                )
+            },
+            "html-url": {
+                "html_url": (
+                    f"https://github.com/{REPOSITORY}/blob/main/"
+                    f"{pr_metadata.WORKFLOW_PATH}"
+                )
+            },
+            "badge-url": {
+                "badge_url": (
+                    f"https://github.com/{REPOSITORY}/workflows/Other/badge.svg"
+                )
+            },
+        }
+        for name, changes in mutations.items():
+            with self.subTest(identity=name):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr())
+                client.add(
+                    "GET",
+                    _endpoint("actions/workflows/build.yml"),
+                    _workflow(**changes),
+                )
+                state = pr_metadata.fetch_pull_request(
+                    client,
+                    REPOSITORY,
+                    PR_NUMBER,
+                )
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata._workflow_authority(client, state)
+
+    def test_job_pages_reject_mixed_run_attempt_repo_head_and_urls(self):
+        mutation_builders = {
+            "missing-id": lambda job: job.pop("id"),
+            "duplicate-id": lambda job: job.update(
+                {
+                    "id": 101 * 100 + 1,
+                    "url": (
+                        f"https://api.github.com/repos/{REPOSITORY}/"
+                        f"actions/jobs/{101 * 100 + 1}"
+                    ),
+                    "html_url": (
+                        f"https://github.com/{REPOSITORY}/actions/runs/101/"
+                        f"job/{101 * 100 + 1}"
+                    ),
+                    "check_run_url": (
+                        f"https://api.github.com/repos/{REPOSITORY}/"
+                        f"check-runs/{101 * 100 + 1}"
+                    ),
+                }
+            ),
+            "run-id": lambda job: job.update({"run_id": 999}),
+            "run-attempt": lambda job: job.update({"run_attempt": 2}),
+            "run-url": lambda job: job.update(
+                {
+                    "run_url": (
+                        f"https://api.github.com/repos/{REPOSITORY}/"
+                        "actions/runs/999"
+                    )
+                }
+            ),
+            "repo-url": lambda job: job.update(
+                {
+                    "url": (
+                        "https://api.github.com/repos/other/repo/"
+                        f"actions/jobs/{job['id']}"
+                    )
+                }
+            ),
+            "html-url": lambda job: job.update(
+                {
+                    "html_url": (
+                        f"https://github.com/{REPOSITORY}/"
+                        f"actions/runs/999/job/{job['id']}"
+                    )
+                }
+            ),
+            "check-run-url": lambda job: job.update(
+                {
+                    "check_run_url": (
+                        f"https://api.github.com/repos/{REPOSITORY}/"
+                        "check-runs/999"
+                    )
+                }
+            ),
+            "head": lambda job: job.update({"head_sha": NEW_HEAD}),
+            "branch": lambda job: job.update({"head_branch": "other"}),
+            "workflow": lambda job: job.update({"workflow_name": "Other"}),
+            "event": lambda job: job.update({"event": "push"}),
+            "node": lambda job: job.update({"node_id": None}),
+        }
+        for name, mutate in mutation_builders.items():
+            with self.subTest(identity=name):
+                client = ScriptedClient()
+                record, jobs = _run(101, 10, mode="full")
+                jobs = copy.deepcopy(jobs)
+                mutate(jobs[-1])
+                _add_pr_states(client, _pr())
+                _add_snapshot(client, [(record, jobs)])
+                state = pr_metadata.fetch_pull_request(
+                    client,
+                    REPOSITORY,
+                    PR_NUMBER,
+                )
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata.list_candidate_runs(client, state)
+
+    def test_captured_job_shape_without_optional_attempt_or_event_is_valid(self):
+        client = ScriptedClient()
+        record, jobs = _run(101, 10, mode="full")
+        for job in jobs:
+            del job["run_attempt"]
+            del job["event"]
+        _add_pr_states(client, _pr())
+        _add_snapshot(client, [(record, jobs)])
+        state = pr_metadata.fetch_pull_request(
+            client,
+            REPOSITORY,
+            PR_NUMBER,
+        )
+        runs = pr_metadata.list_candidate_runs(client, state)
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0].run_id, 101)
 
     def test_wrong_pr_or_base_binding_cannot_authorize_mutation(self):
         mutations = {
@@ -1203,7 +1566,24 @@ class PullRequestMetadataTests(unittest.TestCase):
                 [("per_page", "100"), ("page", "1")],
             ),
             [
-                _comment(300, "Architecture note"),
+                _comment(
+                    300,
+                    "Contributor note",
+                    author_login="contributor",
+                    author_association="CONTRIBUTOR",
+                ),
+                _comment(
+                    302,
+                    "Bot note",
+                    author_login="automation[bot]",
+                    author_type="Bot",
+                    author_association="NONE",
+                ),
+                {
+                    **_comment(303, "Deleted-author note"),
+                    "user": None,
+                    "author_association": "NONE",
+                },
                 _comment(
                     301,
                     f"{pr_metadata.EVIDENCE_MARKER}\nOld evidence\n",
@@ -1423,6 +1803,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                         client,
                         REPOSITORY,
                         PR_NUMBER,
+                        REPOSITORY_ID,
                     )
 
     def test_comment_pagination_consumes_canonical_linked_pages(self):
@@ -1435,8 +1816,8 @@ class PullRequestMetadataTests(unittest.TestCase):
             f"issues/{PR_NUMBER}/comments",
             [("per_page", "100"), ("page", "2")],
         )
-        page_one_url = pr_metadata._api_url(page_one_endpoint)
-        page_two_url = pr_metadata._api_url(page_two_endpoint)
+        page_one_url = _numeric_api_url(page_one_endpoint)
+        page_two_url = _numeric_api_url(page_two_endpoint)
         client.add(
             "GET",
             page_one_endpoint,
@@ -1467,6 +1848,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             client,
             REPOSITORY,
             PR_NUMBER,
+            REPOSITORY_ID,
         )
         self.assertEqual(len(comments), 101)
 

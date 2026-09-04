@@ -395,6 +395,23 @@ Link-header proof; redirects, duplicate/malformed/looping relations, page/body
 contradictions, stale identity, incomplete pagination, unknown or mixed run
 shapes, or a noncanonical workflow fail closed:
 
+The current PR's fully validated base-repository payload binds both
+`owner/repository` and its positive numeric repository ID. Pagination accepts
+only GitHub's canonical `/repos/<owner>/<repository>/...` and
+`/repositories/<numeric-id>/...` Link path families when they resolve to that
+same repository, endpoint suffix, query, and page. Other numeric IDs,
+owner/repository drift, percent-encoded or ambiguous paths, and cross-form
+loops fail closed. The workflow payload must also bind its ID, node, name,
+path, active state, timestamps, API URL, HTML URL, and badge URL to that exact
+repository.
+
+Every job is bound to the requested run and attempt before its result can
+classify a run. Job IDs are unique, and each job's run ID/URL, optional exposed
+attempt/event, head SHA, head branch, workflow name, node, job API URL, HTML
+URL, check-run URL, runner identity, and completion state must agree with the
+parent exact-candidate run and repository. Mixed run/attempt/repository/head
+pages and identityless jobs fail closed.
+
 ```bash
 repo=laqieer/fireemblem8-expansion
 pr=123
@@ -433,12 +450,14 @@ ledger is created: GitHub's run number, attempt, event, workflow, PR, head,
 base, mode, status, conclusion, and job identities derive whether
 reconciliation remains pending.
 
-The canonical evidence comment must already be the repository owner's
-owner-associated `User` comment, with exact API/HTML repository, PR, issue, and
-comment identities and exactly one standalone marker. Missing/deleted authors,
-bots, non-owner associations, cross-repository IDs, duplicate or embedded
-markers, and a PATCH response that does not attest the same author/comment plus
-the requested body are rejected.
+Every issue comment receives exact comment ID/body and API/HTML
+repository/PR/issue validation. Ordinary unmarked contributor, bot, and
+deleted-author comments remain permitted and cannot disable the helper. The
+one marked canonical evidence comment must be the repository owner's
+owner-associated `User` comment with exactly one standalone marker.
+Marked missing/deleted authors, bots, non-owner associations, cross-repository
+IDs, duplicate or embedded markers, and a PATCH response that does not attest
+the same author/comment plus the requested body are rejected.
 
 After the newest exact full Build succeeds, run:
 
