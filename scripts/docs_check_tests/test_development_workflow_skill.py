@@ -4611,6 +4611,12 @@ printf '%s\t%s\t%s\n' "$result" \
             "exact owner numeric user ID",
             "24:00",
             "one-second unassigned-skip timestamp exception",
+            "Architecture disposition",
+            "accepted in place",
+            "Vary",
+            "Cache-Control",
+            "application/jsonp",
+            "`-1` or `0` seconds",
             "No ARM runtime test is needed",
             "There is no manual-only criterion",
         ):

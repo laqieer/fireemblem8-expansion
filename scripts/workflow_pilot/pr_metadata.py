@@ -157,6 +157,34 @@ class ApiResponse:
     payload: object
 
 
+@dataclass(frozen=True)
+class HeaderFieldPolicy:
+    repeatable: bool
+    separator: str = ", "
+
+
+@dataclass(frozen=True)
+class JobTimingPolicy:
+    started: str
+    completed: str
+
+
+COMBINABLE_HEADER_POLICIES = {
+    "cache-control": HeaderFieldPolicy(True),
+    "link": HeaderFieldPolicy(True),
+    "vary": HeaderFieldPolicy(True),
+}
+SINGLETON_HEADER_POLICY = HeaderFieldPolicy(False)
+JOB_TIMING_POLICIES = {
+    "completed": JobTimingPolicy("required", "required"),
+    "in_progress": JobTimingPolicy("required", "null"),
+    "pending": JobTimingPolicy("null", "null"),
+    "queued": JobTimingPolicy("null", "null"),
+    "requested": JobTimingPolicy("null", "null"),
+    "waiting": JobTimingPolicy("null", "null"),
+}
+
+
 def _positive_int(value: object, field: str) -> int:
     if (
         isinstance(value, bool)
@@ -269,6 +297,112 @@ def _parse_json(raw: str, label: str) -> object:
     return value
 
 
+def _split_http_parameters(value: str, *, label: str) -> list[str]:
+    parts = []
+    start = 0
+    quoted = False
+    escaped = False
+    for index, character in enumerate(value):
+        if escaped:
+            escaped = False
+            continue
+        if quoted and character == "\\":
+            escaped = True
+            continue
+        if character == '"':
+            quoted = not quoted
+            continue
+        if character == ";" and not quoted:
+            parts.append(value[start:index])
+            start = index + 1
+    if quoted or escaped:
+        raise MetadataEditError(f"{label} Content-Type quotation is invalid")
+    parts.append(value[start:])
+    return parts
+
+
+def _is_http_token(value: str) -> bool:
+    return bool(value) and HEADER_NAME_RE.fullmatch(value) is not None
+
+
+def _valid_quoted_http_value(value: str) -> bool:
+    if len(value) < 2 or value[0] != '"' or value[-1] != '"':
+        return False
+    escaped = False
+    for character in value[1:-1]:
+        if escaped:
+            escaped = False
+            continue
+        if character == "\\":
+            escaped = True
+            continue
+        if character == '"':
+            return False
+    return not escaped
+
+
+def _validate_json_media_type(value: str, *, label: str) -> None:
+    parts = _split_http_parameters(value, label=label)
+    if parts[0].strip(" ").lower() != "application/json":
+        raise MetadataEditError(f"{label} response Content-Type is not application/json")
+    parameters = set()
+    for raw_parameter in parts[1:]:
+        parameter = raw_parameter.strip(" ")
+        if not parameter or parameter.count("=") != 1:
+            raise MetadataEditError(f"{label} Content-Type parameter is invalid")
+        name, raw_value = parameter.split("=", 1)
+        name = name.strip(" ").lower()
+        raw_value = raw_value.strip(" ")
+        if (
+            not _is_http_token(name)
+            or name in parameters
+            or not (
+                _is_http_token(raw_value)
+                or _valid_quoted_http_value(raw_value)
+            )
+        ):
+            raise MetadataEditError(f"{label} Content-Type parameter is invalid")
+        parameters.add(name)
+
+
+def _normalize_http_headers(
+    lines: list[str],
+    *,
+    label: str,
+) -> dict[str, str]:
+    collected: dict[str, list[str]] = {}
+    for line in lines:
+        if not line or line[0].isspace() or ":" not in line:
+            raise MetadataEditError(f"{label} response header is invalid")
+        name, value = line.split(":", 1)
+        if HEADER_NAME_RE.fullmatch(name) is None:
+            raise MetadataEditError(f"{label} response header name is invalid")
+        if value and not value.startswith(" "):
+            raise MetadataEditError(f"{label} response header lacks SP separator")
+        key = name.lower()
+        collected.setdefault(key, []).append(value.strip(" "))
+
+    normalized = {}
+    for name, values in collected.items():
+        policy = COMBINABLE_HEADER_POLICIES.get(
+            name,
+            SINGLETON_HEADER_POLICY,
+        )
+        if len(values) > 1 and not policy.repeatable:
+            raise MetadataEditError(
+                f"{label} response repeats singleton header {name!r}"
+            )
+        if policy.repeatable:
+            if any(not value for value in values):
+                raise MetadataEditError(
+                    f"{label} response has an empty combinable header {name!r}"
+                )
+            normalized[name] = policy.separator.join(values)
+        else:
+            normalized[name] = values[0]
+    return normalized
+
+
 def _parse_http_response(
     raw: str,
     *,
@@ -321,21 +455,7 @@ def _parse_http_response(
     if status_match is None:
         raise MetadataEditError(f"{label} response status line is invalid")
     status = int(status_match.group(1))
-    headers = {}
-    for line in lines[1:]:
-        if not line or line[0].isspace() or ":" not in line:
-            raise MetadataEditError(f"{label} response header is invalid")
-        name, value = line.split(":", 1)
-        if HEADER_NAME_RE.fullmatch(name) is None:
-            raise MetadataEditError(f"{label} response header name is invalid")
-        if value and not value.startswith(" "):
-            raise MetadataEditError(
-                f"{label} response header lacks SP separator"
-            )
-        key = name.lower()
-        if key in headers:
-            raise MetadataEditError(f"{label} response repeats header {name!r}")
-        headers[key] = value.strip(" ")
+    headers = _normalize_http_headers(lines[1:], label=label)
     if 300 <= status < 400:
         raise MetadataEditError(f"{label} request rejected redirect: HTTP {status}")
     if "location" in headers:
@@ -345,8 +465,7 @@ def _parse_http_response(
             return ApiResponse(status, headers, None)
         raise MetadataEditError(f"{label} response body is empty")
     content_type = headers.get("content-type", "")
-    if not content_type.lower().startswith("application/json"):
-        raise MetadataEditError(f"{label} response Content-Type is not JSON")
+    _validate_json_media_type(content_type, label=label)
     return ApiResponse(status, headers, _parse_json(body_text, label))
 
 
@@ -782,6 +901,62 @@ def _workflow_authority(
     return WorkflowAuthority(workflow_id, name, path)
 
 
+def _validate_job_timing(
+    *,
+    job_id: int,
+    status: str,
+    conclusion: str | None,
+    assigned: bool,
+    created_at: datetime.datetime,
+    started_at: datetime.datetime | None,
+    completed_at: datetime.datetime | None,
+    run_created_at: datetime.datetime,
+    run_started_at: datetime.datetime | None,
+    run_updated_at: datetime.datetime,
+) -> None:
+    policy = JOB_TIMING_POLICIES.get(status)
+    if policy is None:
+        raise MetadataEditError(f"Build job {job_id} timing status is unknown")
+    if created_at < run_created_at:
+        raise MetadataEditError(f"Build job {job_id} predates its workflow run")
+    if created_at > run_updated_at:
+        raise MetadataEditError(f"Build job {job_id} is newer than its workflow run")
+    if policy.started == "required" and started_at is None:
+        raise MetadataEditError(f"Build job {job_id} started_at is required")
+    if policy.started == "null" and started_at is not None:
+        raise MetadataEditError(f"Build job {job_id} started_at must be null")
+    if policy.completed == "required" and completed_at is None:
+        raise MetadataEditError(f"Build job {job_id} completed_at is required")
+    if policy.completed == "null" and completed_at is not None:
+        raise MetadataEditError(f"Build job {job_id} completed_at must be null")
+    if started_at is not None:
+        if created_at > started_at:
+            raise MetadataEditError(f"Build job {job_id} starts before creation")
+        if started_at > run_updated_at:
+            raise MetadataEditError(f"Build job {job_id} starts after its workflow run")
+        if run_started_at is not None and started_at < run_started_at:
+            raise MetadataEditError(f"Build job {job_id} starts before its workflow run")
+    if completed_at is None:
+        return
+    if completed_at > run_updated_at:
+        raise MetadataEditError(f"Build job {job_id} completes after its workflow run")
+    if not assigned and conclusion == "skipped":
+        if (
+            created_at != started_at
+            or completed_at
+            not in {
+                started_at,
+                started_at - datetime.timedelta(seconds=1),
+            }
+        ):
+            raise MetadataEditError(f"Build job {job_id} skipped timing is invalid")
+        return
+    if started_at is None or completed_at < started_at:
+        raise MetadataEditError(
+            f"Build job {job_id} completion chronology is invalid"
+        )
+
+
 def _parse_job(
     raw: object,
     *,
@@ -862,57 +1037,6 @@ def _parse_job(
         f"Build job {job_id} completed_at",
         optional=True,
     )
-    if created_at < run_created_at:
-        raise MetadataEditError(f"Build job {job_id} predates its workflow run")
-    if created_at > run_updated_at:
-        raise MetadataEditError(f"Build job {job_id} is newer than its workflow run")
-    if status == "completed":
-        if started_at is None or completed_at is None:
-            raise MetadataEditError(
-                f"Build job {job_id} completed timing is incomplete"
-            )
-        if runner_name is None and conclusion == "skipped":
-            if (
-                created_at != started_at
-                or (
-                    completed_at < started_at
-                    and completed_at
-                    != started_at - datetime.timedelta(seconds=1)
-                )
-            ):
-                raise MetadataEditError(
-                    f"Build job {job_id} skipped timing is invalid"
-                )
-        elif not (created_at <= started_at <= completed_at):
-            raise MetadataEditError(
-                f"Build job {job_id} completion chronology is invalid"
-            )
-        if completed_at > run_updated_at:
-            raise MetadataEditError(
-                f"Build job {job_id} completes after its workflow run"
-            )
-    elif status == "in_progress":
-        if (
-            started_at is None
-            or completed_at is not None
-            or created_at > started_at
-            or started_at > run_updated_at
-        ):
-            raise MetadataEditError(
-                f"Build job {job_id} in-progress timing is invalid"
-            )
-    elif started_at is not None or completed_at is not None:
-        raise MetadataEditError(
-            f"Build job {job_id} queued timing is invalid"
-        )
-    if (
-        run_started_at is not None
-        and started_at is not None
-        and started_at < run_started_at
-    ):
-        raise MetadataEditError(
-            f"Build job {job_id} starts before its workflow run"
-        )
     runner_id = raw.get("runner_id")
     runner_group_id = raw.get("runner_group_id")
     runner_group_name = raw.get("runner_group_name")
@@ -935,6 +1059,18 @@ def _parse_job(
             raise MetadataEditError(
                 f"Build job {job_id} runner group name is invalid"
             )
+    _validate_job_timing(
+        job_id=job_id,
+        status=status,
+        conclusion=conclusion,
+        assigned=runner_name is not None,
+        created_at=created_at,
+        started_at=started_at,
+        completed_at=completed_at,
+        run_created_at=run_created_at,
+        run_started_at=run_started_at,
+        run_updated_at=run_updated_at,
+    )
     return JobState(
         job_id,
         run_id,

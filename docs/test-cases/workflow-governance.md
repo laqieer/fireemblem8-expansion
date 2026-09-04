@@ -1222,6 +1222,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
   with `scripts/workflow_pilot/pr_metadata.py`, its isolated-launcher mode,
   Build event classifier/continuity contracts, this procedure, and the
   canonical tester registry unchanged.
+- **Architecture disposition:** after the third consecutive finding round,
+  accepted in place as one typed HTTP header/media policy plus one exact
+  job-status/timing state model; no split or new subsystem is required.
 
 ### Actions
 
@@ -1252,6 +1255,10 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    IDs and strict job/run timestamps including malformed dates, 24:00,
    timezone offsets, missing fields, reversed chronology, queued/in-progress
    nullability, run bounds, and GitHub's captured one-second skipped-job quirk.
+   Exercise repeated `Vary`, `Cache-Control`, and `Link` fields, forbidden
+   singleton/unsupported repeats, exact JSON media type with valid parameters,
+   `application/jsonp` and malformed media parameters, multiple-Link relation
+   duplicates, and skipped timing deltas `-1`, `0`, `+1`, and `+28` seconds.
 6. Parse `docs/test-cases/registry.json` and run
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
 
@@ -1288,6 +1295,10 @@ as owner login/type/site-admin/association.
 Job/run timestamps use exact UTC-second GitHub RFC3339 syntax and enforce
 status-dependent nullability and chronology, with only the captured
 one-second unassigned-skip timestamp exception.
+The centralized header policy combines only explicitly permitted RFC fields,
+requires exact parameterized `application/json`, and rejects unsupported
+repeats. The centralized job state model admits skipped completion deltas only
+at `-1` or `0` seconds; positive duration cannot become runner-backed success.
 
 ### Negative control
 
@@ -1304,7 +1315,9 @@ identity drift, duplicate/identityless jobs, mixed run/attempt/repository/head
 job pages, inconsistent job URLs, malformed or duplicate-key JSON, and
 same-login/wrong-owner IDs, header control/DEL or obs-fold smuggling,
 malformed/24:00/offset/missing/reversed timestamps, invalid queued/in-progress
-timing, out-of-run chronology, and repository/command injection all fail
+timing, out-of-run chronology, repeated singleton/unsupported headers, JSONP,
+malformed media parameters, duplicate multiple-Link relations, skipped `+1`
+or `+28` durations, and repository/command injection all fail
 closed. No tested path calls a
 cancellation endpoint or a full-workflow dispatch endpoint.
 

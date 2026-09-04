@@ -382,6 +382,11 @@ remain authoritative for every value.
 
 ### Safe pull-request metadata ordering
 
+**Architecture disposition after the third consecutive finding round:
+accepted in place.** One standards-based typed HTTP header/media policy and
+one exact job-status/timing state model cover the findings without widening
+issue #199 or introducing another subsystem; no split is required.
+
 Finalize the stable PR title/body before pushing the candidate, push the
 candidate, then freeze the title/body while its exact-head full Build is queued
 or in progress. Put every evolving command, result, SHA, run, review, preflight,
@@ -400,6 +405,14 @@ SP separator. Bare CR/LF, NUL, tab, vertical tab, form feed, DEL, non-ASCII,
 folded/obs-fold lines, mixed line endings, and controls embedded in
 Content-Type, Link, Location, or any other value fail before interpretation.
 CRLF and LF header blocks are accepted only when internally consistent.
+Singleton headers, including Content-Type and security/identity fields, cannot
+repeat. The explicitly RFC-combinable `Vary`, `Cache-Control`, and `Link`
+fields may repeat and are SP/comma-normalized before typed interpretation;
+unsupported repeated fields fail closed. Multiple Link fields feed the same
+canonical relation parser, so duplicate relations and loops still fail.
+Content-Type requires case-insensitive exact `application/json`, followed only
+by syntactically valid, uniquely named optional parameters; prefix forms such
+as `application/jsonp` are rejected.
 
 The current PR's fully validated base-repository payload binds both
 `owner/repository` and its positive numeric repository ID. Pagination accepts
@@ -426,7 +439,9 @@ Runner-backed completed jobs require
 Queued jobs have null start/completion, and in-progress jobs have a valid start
 but null completion. Canonical unassigned skipped jobs preserve GitHub's live
 timestamp quirk: created and started must be equal, while completion may equal
-them or precede them by exactly one second. No wider chronology exception is
+them or precede them by exactly one second. Positive skipped duration,
+including one or 28 seconds, is rejected. These unassigned skipped jobs never
+satisfy a runner-backed success requirement. No wider chronology exception is
 accepted.
 
 ```bash

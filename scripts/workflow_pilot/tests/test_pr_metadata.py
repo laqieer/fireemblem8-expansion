@@ -200,6 +200,12 @@ def _job(
         "completed_at": (
             completed_at
             if completed_at is not None
+            else started_at
+            if (
+                status == "completed"
+                and conclusion == "skipped"
+                and runner_name is None
+            )
             else "2026-09-04T00:00:02Z"
             if status == "completed"
             else None
@@ -1560,7 +1566,7 @@ class PullRequestMetadataTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             pr_metadata.MetadataEditError,
-            "queued timing is invalid",
+            "started_at must be null",
         ):
             pr_metadata.list_candidate_runs(invalid_client, invalid_state)
 
@@ -1592,61 +1598,85 @@ class PullRequestMetadataTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(
             pr_metadata.MetadataEditError,
-            "in-progress timing is invalid",
+            "starts after its workflow run",
         ):
             pr_metadata.list_candidate_runs(future_client, future_state)
 
     def test_live_skipped_one_second_timing_quirk_is_bounded(self):
+        cases = {
+            -1: ("2026-09-04T00:00:02Z", True),
+            0: ("2026-09-04T00:00:03Z", True),
+            1: ("2026-09-04T00:00:04Z", False),
+            28: ("2026-09-04T00:00:31Z", False),
+        }
+        for delta, (completed_at, accepted) in cases.items():
+            with self.subTest(delta=delta):
+                client = ScriptedClient()
+                record, jobs = _run(101, 10, mode="full")
+                record["updated_at"] = "2026-09-04T00:01:00Z"
+                jobs = copy.deepcopy(jobs)
+                skipped = next(
+                    job for job in jobs if job["name"] == "patch-release"
+                )
+                skipped.update(
+                    {
+                        "created_at": "2026-09-04T00:00:03Z",
+                        "started_at": "2026-09-04T00:00:03Z",
+                        "completed_at": completed_at,
+                    }
+                )
+                _add_pr_states(client, _pr())
+                _add_snapshot(client, [(record, jobs)])
+                state = pr_metadata.fetch_pull_request(
+                    client,
+                    REPOSITORY,
+                    PR_NUMBER,
+                )
+                if accepted:
+                    self.assertEqual(
+                        pr_metadata.list_candidate_runs(client, state)[0].run_id,
+                        101,
+                    )
+                else:
+                    with self.assertRaisesRegex(
+                        pr_metadata.MetadataEditError,
+                        "skipped timing is invalid",
+                    ):
+                        pr_metadata.list_candidate_runs(client, state)
+
+    def test_unassigned_skipped_job_never_authorizes_runner_success(self):
         client = ScriptedClient()
         record, jobs = _run(101, 10, mode="full")
         jobs = copy.deepcopy(jobs)
-        skipped = next(
-            job for job in jobs if job["name"] == "patch-release"
-        )
-        skipped.update(
+        build = next(job for job in jobs if job["name"] == "build")
+        build.update(
             {
-                "created_at": "2026-09-04T00:00:02Z",
-                "started_at": "2026-09-04T00:00:02Z",
+                "conclusion": "skipped",
+                "runner_id": None,
+                "runner_name": None,
+                "runner_group_id": None,
+                "runner_group_name": None,
+                "created_at": "2026-09-04T00:00:01Z",
+                "started_at": "2026-09-04T00:00:01Z",
                 "completed_at": "2026-09-04T00:00:01Z",
             }
         )
         _add_pr_states(client, _pr())
         _add_snapshot(client, [(record, jobs)])
-        state = pr_metadata.fetch_pull_request(
-            client,
-            REPOSITORY,
-            PR_NUMBER,
-        )
-        self.assertEqual(
-            pr_metadata.list_candidate_runs(client, state)[0].run_id,
-            101,
-        )
-
-        invalid_client = ScriptedClient()
-        invalid_record, invalid_jobs = _run(102, 11, mode="full")
-        invalid_jobs = copy.deepcopy(invalid_jobs)
-        invalid_skipped = next(
-            job for job in invalid_jobs if job["name"] == "patch-release"
-        )
-        invalid_skipped.update(
-            {
-                "created_at": "2026-09-04T00:00:03Z",
-                "started_at": "2026-09-04T00:00:03Z",
-                "completed_at": "2026-09-04T00:00:01Z",
-            }
-        )
-        _add_pr_states(invalid_client, _pr())
-        _add_snapshot(invalid_client, [(invalid_record, invalid_jobs)])
-        invalid_state = pr_metadata.fetch_pull_request(
-            invalid_client,
-            REPOSITORY,
-            PR_NUMBER,
-        )
         with self.assertRaisesRegex(
             pr_metadata.MetadataEditError,
-            "skipped timing is invalid",
+            "not runner-backed success",
         ):
-            pr_metadata.list_candidate_runs(invalid_client, invalid_state)
+            pr_metadata.edit_metadata(
+                client,
+                repository=REPOSITORY,
+                pr_number=PR_NUMBER,
+                head_sha=HEAD,
+                base_sha=BASE,
+                title=None,
+                body="new body",
+                essential_reason=None,
+            )
 
     def test_wrong_pr_or_base_binding_cannot_authorize_mutation(self):
         mutations = {
@@ -2114,8 +2144,9 @@ class PullRequestMetadataTests(unittest.TestCase):
                 "rejected redirect",
             ),
             "duplicate-header": (
-                "HTTP/2 200 OK\nLink: one\nLink: two\n\n{}\n",
-                "repeats header",
+                "HTTP/2 200 OK\nContent-Type: application/json\n"
+                "Content-Type: application/json\n\n{}\n",
+                "repeats singleton header",
             ),
             "missing-headers": ('{"ok":true}\n', "lacks HTTP headers"),
             "wrong-status": (
@@ -2124,7 +2155,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             ),
             "wrong-content-type": (
                 "HTTP/2 200 OK\nContent-Type: text/plain\n\n{}\n",
-                "Content-Type is not JSON",
+                "Content-Type is not application/json",
             ),
             "unexpected-location": (
                 "HTTP/2 200 OK\nLocation: https://example.test/\n"
@@ -2193,6 +2224,110 @@ class PullRequestMetadataTests(unittest.TestCase):
             allow_empty_body=False,
         )
         self.assertEqual(response.payload, {"ok": True})
+
+    def test_combinable_repeated_headers_and_link_relations_are_typed(self):
+        next_url = _numeric_api_url(_test_runs_page(2))
+        response = pr_metadata._parse_http_response(
+            "HTTP/2 200 OK\n"
+            "Content-Type: application/json; charset=utf-8\n"
+            "Vary: Accept\n"
+            "Vary: Authorization\n"
+            "Cache-Control: private\n"
+            "Cache-Control: max-age=60\n"
+            f'Link: <{next_url}>; rel="next"\n'
+            f'Link: <{next_url}>; rel="last"\n'
+            "\n"
+            "{}\n",
+            label="repeat fixture",
+            allow_empty_body=False,
+        )
+        self.assertEqual(response.headers["vary"], "Accept, Authorization")
+        self.assertEqual(
+            response.headers["cache-control"],
+            "private, max-age=60",
+        )
+        relations = pr_metadata._parse_link_pages(
+            response.headers["link"],
+            endpoint_for_page=_test_runs_page,
+            current_page=1,
+            label="repeat fixture",
+            repository=REPOSITORY,
+            repository_id=REPOSITORY_ID,
+        )
+        self.assertEqual(relations, {"next": 2, "last": 2})
+
+        duplicate = pr_metadata._parse_http_response(
+            "HTTP/2 200 OK\n"
+            "Content-Type: application/json\n"
+            f'Link: <{next_url}>; rel="next"\n'
+            f'Link: <{next_url}>; rel="next"\n'
+            "\n"
+            "{}\n",
+            label="duplicate Link fixture",
+            allow_empty_body=False,
+        )
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "repeats a relation",
+        ):
+            pr_metadata._parse_link_pages(
+                duplicate.headers["link"],
+                endpoint_for_page=_test_runs_page,
+                current_page=1,
+                label="duplicate Link fixture",
+                repository=REPOSITORY,
+                repository_id=REPOSITORY_ID,
+            )
+
+        with self.assertRaisesRegex(
+            pr_metadata.MetadataEditError,
+            "repeats singleton header",
+        ):
+            pr_metadata._parse_http_response(
+                "HTTP/2 200 OK\n"
+                "Content-Type: application/json\n"
+                "ETag: one\n"
+                "ETag: two\n"
+                "\n"
+                "{}\n",
+                label="singleton fixture",
+                allow_empty_body=False,
+            )
+
+    def test_json_content_type_media_and_parameters_are_exact(self):
+        accepted = (
+            "application/json",
+            "Application/JSON",
+            "application/json; charset=utf-8",
+            'application/json ; charset = "utf-8"',
+            'application/json; profile="github"',
+        )
+        rejected = (
+            "application/jsonp",
+            "application/json-patch+json",
+            "text/application/json",
+            "application/json;",
+            "application/json; charset",
+            "application/json; charset=",
+            "application/json; charset=utf-8; CHARSET=utf-8",
+            'application/json; charset="unterminated',
+        )
+        for media_type in accepted:
+            with self.subTest(accepted=media_type):
+                response = pr_metadata._parse_http_response(
+                    f"HTTP/2 200 OK\nContent-Type: {media_type}\n\n{{}}\n",
+                    label="media fixture",
+                    allow_empty_body=False,
+                )
+                self.assertEqual(response.payload, {})
+        for media_type in rejected:
+            with self.subTest(rejected=media_type):
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    pr_metadata._parse_http_response(
+                        f"HTTP/2 200 OK\nContent-Type: {media_type}\n\n{{}}\n",
+                        label="media fixture",
+                        allow_empty_body=False,
+                    )
 
     def test_repository_and_json_inputs_fail_closed(self):
         with self.assertRaises(pr_metadata.MetadataEditError):
