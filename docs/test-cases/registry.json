@@ -1417,6 +1417,7 @@
           "runtime_producer_calls": 1,
           "initial_state": "unavailable",
           "consumer_protocol": "exact-frame-bound-latest-phase-sequence",
+          "lifecycle_control_transfer": "reject-while-frame-active",
           "supervisor_phases": 2,
           "runtime_phases": 1,
           "invoked_helper_consumers": "reject-unreviewed-runtime-dereference",

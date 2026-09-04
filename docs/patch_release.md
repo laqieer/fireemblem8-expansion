@@ -403,6 +403,8 @@ and reject because all reviewed consumers are exact top-level phase events.
 Each lifecycle loop header binds a stable parser control-frame identity; its
 body events must carry that exact live frame. Sibling, reopened, nested, or
 extra control execution cannot advance the mandatory transport phase sequence.
+Normalized direct, wrapped, dynamic, or helper-mediated control transfers
+cannot skip or terminate a bound frame's remaining mandatory path.
 Direct, indirect, nameref, arithmetic, and array dereferences are consumers;
 transporting or comparing the literal reserved name remains data, as does
 literal quoted text. Bash `${!prefix*}`/`${!prefix@}` parameter-name

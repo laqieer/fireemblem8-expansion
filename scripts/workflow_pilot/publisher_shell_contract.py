@@ -4618,6 +4618,7 @@ def _analyze_function_call(
     trusted_helper_inventory: bool,
     available_functions: set[str],
     call_stack: tuple[str, ...] = (),
+    control_transfer: list[bool] | None = None,
 ) -> tuple[bool, dict[str, str]]:
     if function_name in call_stack:
         return True, {}
@@ -4668,6 +4669,14 @@ def _analyze_function_call(
             tokens,
             function_aliases,
         )
+        if (
+            control_transfer is not None
+            and _normalized_command_transfers_control(
+                resolved,
+                original_shell_tokens=tokens,
+            )
+        ):
+            control_transfer[0] = True
         if _arithmetic_writes_protected_state(
             tokens,
             resolved,
@@ -4737,6 +4746,7 @@ def _analyze_function_call(
                 trusted_helper_inventory=trusted_helper_inventory,
                 available_functions=available_functions,
                 call_stack=call_stack + (function_name,),
+                control_transfer=control_transfer,
             )
             if failed:
                 return True, {}
@@ -4789,6 +4799,7 @@ def _helper_call_has_sensitive_arguments(
     aliases: dict[str, str],
     trusted_helper_inventory: bool,
     helper_only: bool = False,
+    reject_control_transfer: bool = False,
 ) -> bool:
     tokens = _strip_shell_command_prefixes(tokens)
     if not tokens:
@@ -4845,6 +4856,7 @@ def _helper_call_has_sensitive_arguments(
     if is_production_call and basename == "builder_main":
         return False
     if basename in user_functions:
+        control_transfer = [False] if reject_control_transfer else None
         failed, updates = _analyze_function_call(
             basename,
             function_bodies=function_bodies,
@@ -4852,8 +4864,18 @@ def _helper_call_has_sensitive_arguments(
             arguments=tokens[1:],
             trusted_helper_inventory=trusted_helper_inventory,
             available_functions=user_functions,
+            control_transfer=control_transfer,
         )
         if failed:
+            return True
+        if (
+            control_transfer is not None
+            and control_transfer[0]
+            and not (
+                trusted_helper_inventory
+                and tokens == ("isolated_stage_failure",)
+            )
+        ):
             return True
         aliases.update(updates)
         return False
@@ -5174,6 +5196,39 @@ def _normalize_shell_builtin_wrappers(
             return ()
         normalized = normalized[index:]
     return None
+
+
+def _normalized_command_transfers_control(
+    tokens: tuple[str, ...],
+    *,
+    original_shell_tokens: tuple[_ShellToken, ...] | None = None,
+) -> bool:
+    if original_shell_tokens is not None and any(
+        re.search(r"\$\((?!\()", _active_shell_token_text(token))
+        or "`" in _active_shell_token_text(token)
+        for token in original_shell_tokens
+    ):
+        return True
+    normalized = _normalize_shell_builtin_wrappers(tokens)
+    if normalized is None:
+        return True
+    if not normalized:
+        return False
+    if normalized[0] == "(" and normalized[-1] == ")":
+        return _normalized_command_transfers_control(normalized[1:-1])
+    executable = normalized[0]
+    return (
+        any(
+            marker in executable
+            for marker in (
+                _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+                _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
+                _AMBIGUOUS_TRACKED_PARAMETER_MARKER,
+            )
+        )
+        or posixpath.basename(executable)
+        in {"break", "continue", "return", "exit", "exec"}
+    )
 
 
 def _normalized_command_mutates_supervisor(
@@ -6699,6 +6754,18 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 tokens,
                 aliases,
             )
+            lifecycle_frame_active = any(
+                frame in transport_loop_frames.values()
+                for frame in command_record.control_frames
+            )
+            if (
+                lifecycle_frame_active
+                and _normalized_command_transfers_control(
+                    resolved_token_texts,
+                    original_shell_tokens=tokens,
+                )
+            ):
+                return True
             if _arithmetic_writes_protected_state(
                 tokens,
                 resolved_token_texts,
@@ -6837,6 +6904,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 aliases=aliases,
                 trusted_helper_inventory=helper_inventory_is_reviewed,
                 helper_only="case" in command_record.control_scopes,
+                reject_control_transfer=lifecycle_frame_active,
             ):
                 return True
             assignment_only = bool(tokens) and all(

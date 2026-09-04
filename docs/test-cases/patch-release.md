@@ -377,6 +377,8 @@ consumers reject; lifecycle headers bind stable parser frame identities, and
 body events must carry that exact live frame. Skipped, sibling, reopened, or
 nested loops cannot satisfy a phase, and the supervisor generations stay
 distinct.
+Break, continue, return, exit, exec, and dynamic or helper-mediated transfers
+reject while a lifecycle frame remains active.
 Helper bodies consume only when invoked. Any direct, indirect, nameref,
 arithmetic, default-expression, or array dereference in a helper,
 nested-helper, substitution, callback, or trap rejects as an unreviewed

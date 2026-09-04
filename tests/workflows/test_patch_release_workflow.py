@@ -8495,6 +8495,71 @@ exit 37
                                 changed
                             )
                         )
+                operation = body.index("          case ")
+                transfers = (
+                    ("break-before", "          break\n", 0),
+                    ("continue-before", "          continue\n", 0),
+                    ("wrapped-numeric", "          command break 1\n", 0),
+                    (
+                        "dynamic",
+                        "          transfer=continue\n"
+                        '          "$transfer" 1\n',
+                        0,
+                    ),
+                    (
+                        "nested-case",
+                        "          case x in\n"
+                        "          x) builtin continue 1 ;;\n"
+                        "          esac\n",
+                        0,
+                    ),
+                    ("subshell", "          ( break )\n", 0),
+                    ("substitution", "          ignored=$(break)\n", 0),
+                    ("if", "          if true; then continue; fi\n", 0),
+                    ("list", "          break || true\n", 0),
+                    ("pipeline", "          break | true\n", 0),
+                    ("malformed", "          break invalid\n", 0),
+                    ("break-after", "          break\n", operation),
+                    ("continue-after", "          continue 1\n", operation),
+                    ("return-after", "          return 0\n", operation),
+                    ("exit-after", "          exit 0\n", operation),
+                    ("exec-after", "          exec /bin/true\n", operation),
+                )
+                for transfer, source, offset in transfers:
+                    replacement = (
+                        header + body[:offset] + source + body[offset:] + done
+                    )
+                    changed = self.text[:start] + replacement + self.text[end:]
+                    with self.subTest(loop=label, transfer=transfer):
+                        self.assertTrue(
+                            workflow_has_raw_builder_cgroup_membership_read(
+                                changed
+                            )
+                        )
+
+            helper_script = (
+                "terminate() {\n"
+                "  exit 0\n"
+                "}\n"
+                "terminate_outer() {\n"
+                "  terminate\n"
+                "}\n"
+                "read_checked_supervisor_transport_file "
+                '"$dev_mounts_file" "$dev_mount_targets_max_bytes"\n'
+                "for ((index=${#checked_supervisor_transport_output[@]} - 1; "
+                "index >= 0; index--)); do\n"
+                "  HELPER\n"
+                '  dev_mount="${checked_supervisor_transport_output[index]}"\n'
+                "done\n"
+            )
+            for helper in ("terminate", "terminate_outer"):
+                with self.subTest(helper_transfer=helper):
+                    self.assertTrue(
+                        publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                            helper_script.replace("HELPER", helper),
+                            label="lifecycle helper transfer",
+                        )
+                    )
 
     def test_production_helper_inventory_is_exact_and_order_independent(self):
         self.assertFalse(
@@ -12918,6 +12983,7 @@ exit 37
                 "runtime_producer_calls": 1,
                 "initial_state": "unavailable",
                 "consumer_protocol": "exact-frame-bound-latest-phase-sequence",
+                "lifecycle_control_transfer": "reject-while-frame-active",
                 "supervisor_phases": 2,
                 "runtime_phases": 1,
                 "invoked_helper_consumers": "reject-unreviewed-runtime-dereference",
