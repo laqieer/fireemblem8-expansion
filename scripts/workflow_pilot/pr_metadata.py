@@ -301,21 +301,18 @@ def _split_http_parameters(value: str, *, label: str) -> list[str]:
     parts = []
     start = 0
     quoted = False
-    escaped = False
     for index, character in enumerate(value):
-        if escaped:
-            escaped = False
-            continue
-        if quoted and character == "\\":
-            escaped = True
-            continue
+        if character == "\\":
+            raise MetadataEditError(
+                f"{label} Content-Type backslashes are forbidden"
+            )
         if character == '"':
             quoted = not quoted
             continue
         if character == ";" and not quoted:
             parts.append(value[start:index])
             start = index + 1
-    if quoted or escaped:
+    if quoted:
         raise MetadataEditError(f"{label} Content-Type quotation is invalid")
     parts.append(value[start:])
     return parts
@@ -326,33 +323,69 @@ def _is_http_token(value: str) -> bool:
 
 
 def _valid_quoted_http_value(value: str) -> bool:
-    if len(value) < 2 or value[0] != '"' or value[-1] != '"':
+    if len(value) < 3 or value[0] != '"' or value[-1] != '"':
         return False
-    escaped = False
     for character in value[1:-1]:
-        if escaped:
-            escaped = False
-            continue
-        if character == "\\":
-            escaped = True
-            continue
-        if character == '"':
+        if character in {'"', "\\"}:
             return False
-    return not escaped
+    return True
+
+
+def _split_http_parameter(
+    raw_parameter: str,
+    *,
+    label: str,
+) -> tuple[str, str]:
+    if not raw_parameter:
+        raise MetadataEditError(f"{label} Content-Type parameter is empty")
+    if raw_parameter.startswith(" "):
+        raw_parameter = raw_parameter[1:]
+        if not raw_parameter or raw_parameter.startswith(" "):
+            raise MetadataEditError(
+                f"{label} Content-Type parameter spacing is ambiguous"
+            )
+    quoted = False
+    equals_index = None
+    for index, character in enumerate(raw_parameter):
+        if character == "\\":
+            raise MetadataEditError(
+                f"{label} Content-Type backslashes are forbidden"
+            )
+        if character == '"':
+            quoted = not quoted
+            continue
+        if character == " " and not quoted:
+            raise MetadataEditError(
+                f"{label} Content-Type parameter spacing is ambiguous"
+            )
+        if character == "=" and not quoted:
+            if equals_index is not None:
+                raise MetadataEditError(
+                    f"{label} Content-Type parameter has extra equals"
+                )
+            equals_index = index
+    if quoted:
+        raise MetadataEditError(f"{label} Content-Type quotation is invalid")
+    if equals_index is None:
+        raise MetadataEditError(f"{label} Content-Type parameter lacks equals")
+    name = raw_parameter[:equals_index]
+    value = raw_parameter[equals_index + 1 :]
+    if not name or not value:
+        raise MetadataEditError(f"{label} Content-Type parameter is empty")
+    return name, value
 
 
 def _validate_json_media_type(value: str, *, label: str) -> None:
     parts = _split_http_parameters(value, label=label)
-    if parts[0].strip(" ").lower() != "application/json":
+    if parts[0].lower() != "application/json":
         raise MetadataEditError(f"{label} response Content-Type is not application/json")
     parameters = set()
     for raw_parameter in parts[1:]:
-        parameter = raw_parameter.strip(" ")
-        if not parameter or parameter.count("=") != 1:
-            raise MetadataEditError(f"{label} Content-Type parameter is invalid")
-        name, raw_value = parameter.split("=", 1)
-        name = name.strip(" ").lower()
-        raw_value = raw_value.strip(" ")
+        name, raw_value = _split_http_parameter(
+            raw_parameter,
+            label=label,
+        )
+        name = name.lower()
         if (
             not _is_http_token(name)
             or name in parameters

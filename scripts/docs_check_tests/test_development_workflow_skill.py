@@ -4616,6 +4616,8 @@ printf '%s\t%s\t%s\n' "$result" \
             "Vary",
             "Cache-Control",
             "application/jsonp",
+            "literal `=` and `;`",
+            "every backslash",
             "`-1` or `0` seconds",
             "No ARM runtime test is needed",
             "There is no manual-only criterion",

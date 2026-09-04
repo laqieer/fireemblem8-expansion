@@ -1259,6 +1259,9 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    singleton/unsupported repeats, exact JSON media type with valid parameters,
    `application/jsonp` and malformed media parameters, multiple-Link relation
    duplicates, and skipped timing deltas `-1`, `0`, `+1`, and `+28` seconds.
+   Accept quoted parameter values containing literal `=` and `;`; reject
+   escaped quotes, every backslash, extra unquoted equals, empty names/values,
+   trailing junk, duplicate names, unterminated quotes, and ambiguous spacing.
 6. Parse `docs/test-cases/registry.json` and run
    `python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill -v`.
 

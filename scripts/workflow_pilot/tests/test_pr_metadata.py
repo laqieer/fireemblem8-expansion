@@ -2299,8 +2299,9 @@ class PullRequestMetadataTests(unittest.TestCase):
             "application/json",
             "Application/JSON",
             "application/json; charset=utf-8",
-            'application/json ; charset = "utf-8"',
             'application/json; profile="github"',
+            'application/json; profile="a=b"',
+            'application/json; profile="a;b"',
         )
         rejected = (
             "application/jsonp",
@@ -2311,6 +2312,17 @@ class PullRequestMetadataTests(unittest.TestCase):
             "application/json; charset=",
             "application/json; charset=utf-8; CHARSET=utf-8",
             'application/json; charset="unterminated',
+            'application/json; profile="a\\"b"',
+            'application/json; profile="a\\\\b"',
+            'application/json; profile="a"junk',
+            "application/json; profile=a=b",
+            'application/json; profile=""',
+            "application/json; =value",
+            "application/json ; charset=utf-8",
+            "application/json;  charset=utf-8",
+            "application/json; charset =utf-8",
+            "application/json; charset= utf-8",
+            "application/json; charset=utf-8 ; profile=x",
         )
         for media_type in accepted:
             with self.subTest(accepted=media_type):

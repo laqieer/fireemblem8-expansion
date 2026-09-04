@@ -412,7 +412,12 @@ unsupported repeated fields fail closed. Multiple Link fields feed the same
 canonical relation parser, so duplicate relations and loops still fail.
 Content-Type requires case-insensitive exact `application/json`, followed only
 by syntactically valid, uniquely named optional parameters; prefix forms such
-as `application/jsonp` are rejected.
+as `application/jsonp` are rejected. Parameter names are tokens and split from
+their values at the first unquoted equals. Token values are accepted; the
+closed quoted subset may contain literal equals and semicolons but no
+backslash/escape or embedded quote. Extra unquoted equals, empty names/values,
+duplicate names, trailing junk, unterminated quotes, and noncanonical
+whitespace are rejected.
 
 The current PR's fully validated base-repository payload binds both
 `owner/repository` and its positive numeric repository ID. Pagination accepts
