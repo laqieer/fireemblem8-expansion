@@ -237,6 +237,8 @@ _SHELL_ARRAY_EXPANSION_RE = re.compile(
 _RAW_CGROUP_ROOT_MARKER = "\x00raw-cgroup-root\x00"
 _AMBIGUOUS_TRACKED_PARAMETER_MARKER = "\x00ambiguous-tracked-parameter\x00"
 _AMBIGUOUS_ARRAY_ALIAS_MARKER = "\x00ambiguous-array-alias\x00"
+_INDEXED_ARRAY_ALIAS_MARKER = "\x00indexed-array-alias\x00"
+_ASSOCIATIVE_ARRAY_ALIAS_MARKER = "\x00associative-array-alias\x00"
 _AMBIGUOUS_DYNAMIC_ALIAS_MARKER = "\x00ambiguous-dynamic-alias\x00"
 _NAMEREF_ALIAS_MARKER = "\x00nameref-alias\x00"
 _LITERAL_DOLLAR_MARKER = "\x00literal-dollar\x00"
@@ -3829,11 +3831,16 @@ def _resolve_shell_aliases(text: str, aliases: dict[str, str]) -> str:
             if name_match is None:
                 return match.group(0)
             name = name_match.group(0)
+            operator = subject[len(name) :]
+            if indirect and (
+                operator in {"*", "@"}
+                or operator.startswith("[")
+            ):
+                return match.group(0)
             value = aliases.get(name)
             if value is None:
                 return match.group(0)
             changed = True
-            operator = subject[len(name) :]
             if indirect:
                 indirect_value = aliases.get(value)
                 if (
@@ -4277,8 +4284,25 @@ def _apply_direct_function_alias_writes(
             value = _AMBIGUOUS_DYNAMIC_ALIAS_MARKER + value
         if assignment.group("append"):
             value = aliases.get(name, "") + value
-        if indexed is not None or assignment.group("value").startswith("("):
-            value = _AMBIGUOUS_ARRAY_ALIAS_MARKER + value
+        if indexed is not None:
+            previous = aliases.get(name, "")
+            value = _AMBIGUOUS_ARRAY_ALIAS_MARKER + next(
+                (
+                    marker
+                    for marker in (
+                        _ASSOCIATIVE_ARRAY_ALIAS_MARKER,
+                        _INDEXED_ARRAY_ALIAS_MARKER,
+                    )
+                    if marker in previous
+                ),
+                _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+            ) + value
+        elif assignment.group("value").startswith("("):
+            value = (
+                _AMBIGUOUS_ARRAY_ALIAS_MARKER
+                + _INDEXED_ARRAY_ALIAS_MARKER
+                + value
+            )
         aliases[name] = value
         written.add(name)
     return False, written
@@ -5094,22 +5118,45 @@ def _active_reserved_transport_references(
     references: set[str] = set()
     for token, resolved in zip(tokens, resolved_tokens):
         active = _active_shell_token_text(token)
+        braced_parameters = tuple(
+            re.findall(
+                r"\$\{(?P<prefix>[!#]?)(?P<name>"
+                r"[A-Za-z_][A-Za-z0-9_]*|[1-9][0-9]*)"
+                r"(?P<suffix>[^}]*)\}",
+                active,
+            )
+        )
         for name in _RESERVED_TRANSPORT_OUTPUTS:
             escaped = re.escape(name)
             if re.search(
-                rf"\$(?:{escaped}(?![A-Za-z0-9_])|"
-                rf"\{{[!#]?{escaped}(?=[^A-Za-z0-9_]|$))",
+                rf"\${escaped}(?![A-Za-z0-9_])",
                 active,
+            ) or any(
+                subject == name
+                and not (
+                    prefix == "!"
+                    and suffix in {"*", "@"}
+                )
+                for prefix, subject, suffix in braced_parameters
             ):
                 references.add(name)
                 continue
-            indirect_targets = re.findall(
-                r"\$\{!([A-Za-z_][A-Za-z0-9_]*|[1-9][0-9]*)"
-                r"(?:[^}]*)\}",
-                active,
-            )
-            for target in indirect_targets:
+            for prefix, target, suffix in braced_parameters:
+                if prefix != "!" or suffix in {"*", "@"}:
+                    continue
                 value = aliases.get(target)
+                if suffix.startswith("["):
+                    if (
+                        value is not None
+                        and _NAMEREF_ALIAS_MARKER in value
+                        and (
+                            re.search(rf"\b{escaped}\b", value)
+                            or _AMBIGUOUS_DYNAMIC_ALIAS_MARKER in value
+                            or _AMBIGUOUS_TRACKED_PARAMETER_MARKER in value
+                        )
+                    ):
+                        references.add(name)
+                    continue
                 if value is None or any(
                     marker in value
                     for marker in (
@@ -5152,22 +5199,36 @@ def _active_reserved_transport_references(
                 opener in active
                 for opener in ("$((", "((", "$[")
             )
-            subscript_context = bool(
-                re.search(r"\$\{[^{}]*\[[^\]]*\]", active)
-                or re.match(
-                    r"[A-Za-z_][A-Za-z0-9_]*\[[^\]]*\](?:\+)?=",
-                    active,
-                )
+            subscript_owners = re.findall(
+                r"\$\{[!#]?([A-Za-z_][A-Za-z0-9_]*)\[",
+                active,
             )
-            if (
-                (arithmetic_context or subscript_context)
-                and re.search(rf"\b{escaped}\b", resolved)
+            assignment_owner = re.match(
+                r"([A-Za-z_][A-Za-z0-9_]*)\[[^\]]*\](?:\+)?=",
+                active,
+            )
+            if assignment_owner is not None:
+                subscript_owners.append(assignment_owner.group(1))
+            arithmetic_subscript = bool(subscript_owners) and not all(
+                _ASSOCIATIVE_ARRAY_ALIAS_MARKER
+                in aliases.get(owner, "")
+                for owner in subscript_owners
+            )
+            if arithmetic_context and re.search(
+                rf"\b{escaped}\b",
+                resolved,
             ):
                 references.add(name)
                 continue
-            if arithmetic_context or subscript_context:
-                dereference_text = active if arithmetic_context else " ".join(
-                    re.findall(r"\[([^\]]*)\]", active)
+            if arithmetic_subscript and re.search(
+                rf"\b{escaped}\b",
+                resolved,
+            ):
+                references.add(name)
+                continue
+            if arithmetic_context or arithmetic_subscript:
+                dereference_text = active if arithmetic_context else (
+                    " ".join(re.findall(r"\[([^\]]*)\]", active))
                 )
                 for identifier in re.findall(
                     r"\b[A-Za-z_][A-Za-z0-9_]*\b",
@@ -5503,6 +5564,7 @@ def _set_written_shell_alias(
     value: str,
     *,
     array: bool = False,
+    associative: bool = False,
 ) -> bool:
     parsed = _shell_alias_write_target(target)
     if parsed is None:
@@ -5513,8 +5575,27 @@ def _set_written_shell_alias(
         "supervisor_cgroup",
     } or name in _DISPATCH_STATE_VARIABLES:
         raise ValueError("trusted shell state write")
-    if array or indexed:
-        aliases[name] = _AMBIGUOUS_ARRAY_ALIAS_MARKER + value
+    if array:
+        marker = (
+            _ASSOCIATIVE_ARRAY_ALIAS_MARKER
+            if associative
+            else _INDEXED_ARRAY_ALIAS_MARKER
+        )
+        aliases[name] = _AMBIGUOUS_ARRAY_ALIAS_MARKER + marker + value
+    elif indexed:
+        previous = aliases.get(name, "")
+        marker = next(
+            (
+                candidate
+                for candidate in (
+                    _ASSOCIATIVE_ARRAY_ALIAS_MARKER,
+                    _INDEXED_ARRAY_ALIAS_MARKER,
+                )
+                if candidate in previous
+            ),
+            _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+        )
+        aliases[name] = _AMBIGUOUS_ARRAY_ALIAS_MARKER + marker + value
     else:
         aliases[name] = value
     return True
@@ -5694,6 +5775,7 @@ def _apply_shell_builtin_alias_writes(
             "typeset",
         }:
             array = False
+            associative = False
             nameref = False
             after_options = False
             for argument in arguments:
@@ -5703,6 +5785,8 @@ def _apply_shell_builtin_alias_writes(
                 if not after_options and argument.startswith(("-", "+")):
                     if "a" in argument[1:] or "A" in argument[1:]:
                         array = True
+                    if "A" in argument[1:]:
+                        associative = True
                     if "n" in argument[1:]:
                         nameref = argument.startswith("-")
                     continue
@@ -5733,6 +5817,7 @@ def _apply_shell_builtin_alias_writes(
                         target,
                         value,
                         array=array,
+                        associative=associative,
                     )
                     continue
                 _set_written_shell_alias(
@@ -5745,6 +5830,7 @@ def _apply_shell_builtin_alias_writes(
                     )
                     + _AMBIGUOUS_DYNAMIC_ALIAS_MARKER,
                     array=array,
+                    associative=associative,
                 )
             return False
     except ValueError:
@@ -6142,6 +6228,13 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     for token in token_texts[1:]
                 )
             )
+            associative_declaration = (
+                array_declaration
+                and any(
+                    token.startswith("-") and "A" in token[1:]
+                    for token in token_texts[1:]
+                )
+            )
             leading_assignments = _leading_assignment_indices(tokens)
             for token_index, token in enumerate(tokens):
                 resolved = _resolve_shell_token(token, aliases)
@@ -6210,15 +6303,29 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                         name,
                         _AMBIGUOUS_ARRAY_ALIAS_MARKER,
                     )
+                    array_marker = next(
+                        (
+                            marker
+                            for marker in (
+                                _ASSOCIATIVE_ARRAY_ALIAS_MARKER,
+                                _INDEXED_ARRAY_ALIAS_MARKER,
+                            )
+                            if marker in previous
+                        ),
+                        _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+                    )
                     if indexed_assignment.group("append"):
                         aliases[name] = (
                             _AMBIGUOUS_ARRAY_ALIAS_MARKER
+                            + array_marker
                             + previous
                             + value
                         )
                     else:
                         aliases[name] = (
-                            _AMBIGUOUS_ARRAY_ALIAS_MARKER + value
+                            _AMBIGUOUS_ARRAY_ALIAS_MARKER
+                            + array_marker
+                            + value
                         )
                     continue
                 assignment = _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(
@@ -6278,7 +6385,15 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     aliases[name] = aliases.get(name, "") + value
                 elif array_declaration or is_array_literal:
                     aliases[name] = (
-                        _AMBIGUOUS_ARRAY_ALIAS_MARKER + value
+                        (
+                            _AMBIGUOUS_ARRAY_ALIAS_MARKER
+                            + (
+                                _ASSOCIATIVE_ARRAY_ALIAS_MARKER
+                                if associative_declaration
+                                else _INDEXED_ARRAY_ALIAS_MARKER
+                            )
+                        )
+                        + value
                     )
                 else:
                     aliases[name] = value
@@ -6292,7 +6407,14 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                             return True
                         aliases.setdefault(
                             token.text,
-                            _AMBIGUOUS_ARRAY_ALIAS_MARKER,
+                            (
+                                _AMBIGUOUS_ARRAY_ALIAS_MARKER
+                                + (
+                                    _ASSOCIATIVE_ARRAY_ALIAS_MARKER
+                                    if associative_declaration
+                                    else _INDEXED_ARRAY_ALIAS_MARKER
+                                )
+                            ),
                         )
             if _apply_shell_builtin_alias_writes(
                 resolved_token_texts,

@@ -12630,6 +12630,8 @@ exit 37
                 "supervisor_phases": 2,
                 "runtime_phases": 1,
                 "invoked_helper_consumers": "reject-unreviewed-runtime-dereference",
+                "parameter_name_enumeration": "literal-prefix-not-indirect",
+                "array_subscripts": "associative-string-indexed-arithmetic",
                 "later_or_external_mutation": "reject",
             },
             "alias_state": {

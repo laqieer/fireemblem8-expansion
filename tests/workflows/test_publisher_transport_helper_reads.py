@@ -268,6 +268,74 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             )
         )
 
+    def test_prefix_enumeration_and_associative_keys_remain_data(self):
+        environment = dict(os.environ)
+        environment["checked_supervisor_transport_output"] = "1"
+        cases = (
+            (
+                "prefix=checked_supervisor_transport_output\n"
+                'printf "%s %s\\n" "${!prefix*}" "${!prefix@}"\n',
+                "prefix prefix\n",
+            ),
+            (
+                'printf "%s\\n" "${!checked_supervisor_transport_output*}"\n',
+                "checked_supervisor_transport_output\n",
+            ),
+            (
+                "show() {\n"
+                "  local -A table=()\n"
+                "  local key=checked_supervisor_transport_output\n"
+                '  table["$key"]=value\n'
+                '  printf "%s %s\\n" "${table[$key]}" "${!table[@]}"\n'
+                "}\n"
+                "show\n",
+                "value checked_supervisor_transport_output\n",
+            ),
+        )
+        for script, expected in cases:
+            with self.subTest(script=script.splitlines()[0]):
+                completed = subprocess.run(
+                    ["/bin/bash", "-u", "-c", script],
+                    cwd=ROOT,
+                    env=environment,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(completed.stdout, expected)
+                self.assertFalse(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        script,
+                        label="non-dereferencing Bash array syntax",
+                    )
+                )
+
+        indexed = (
+            "show() {\n"
+            "  local -a table=(zero one)\n"
+            "  local key=checked_supervisor_transport_output\n"
+            '  printf "%s\\n" "${table[$key]}"\n'
+            "}\n"
+            "show\n"
+        )
+        completed = subprocess.run(
+            ["/bin/bash", "-u", "-c", indexed],
+            cwd=ROOT,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout, "one\n")
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                indexed,
+                label="indexed arithmetic recursive dereference",
+            )
+        )
+
     def test_publisher_and_upstream_enforce_helper_dereferences(self):
         original = WORKFLOW.read_text(encoding="utf-8")
         producer = (
@@ -303,6 +371,16 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 "          local -n inspect_ref="
                 "checked_supervisor_transport_output\n"
                 '          printf "%s\\n" "$inspect_ref" > /dev/null\n',
+                1,
+            ),
+            original.replace(
+                "          local signature\n",
+                "          local signature\n"
+                "          local -a inspect_table=(zero one)\n"
+                "          local inspect_key="
+                "checked_supervisor_transport_output\n"
+                '          printf "%s\\n" '
+                '"${inspect_table[$inspect_key]}" > /dev/null\n',
                 1,
             ),
         )
@@ -353,55 +431,78 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 ):
                     upstream_verify._parse_workflow_structure_text(changed)
 
-        literal_changed = original.replace(
-            "          local signature\n",
-            "          local signature\n"
-            "          inspect_name=checked_supervisor_transport_output\n"
-            '          printf "%s\\n" "$inspect_name" > /dev/null\n',
-            1,
+        safe_changes = (
+            ("literal", original.replace(
+                "          local signature\n",
+                "          local signature\n"
+                "          inspect_name=checked_supervisor_transport_output\n"
+                '          printf "%s\\n" "$inspect_name" > /dev/null\n',
+                1,
+            )),
+            ("prefix", original.replace(
+                "          local signature\n",
+                "          local signature\n"
+                "          local inspect_prefix="
+                "checked_supervisor_transport_output\n"
+                '          printf "%s\\n" '
+                '"${!inspect_prefix*}" > /dev/null\n',
+                1,
+            )),
+            ("associative", original.replace(
+                "          local signature\n",
+                "          local signature\n"
+                "          local -A inspect_table="
+                "([checked_supervisor_transport_output]=value)\n"
+                '          printf "%s\\n" '
+                '"${inspect_table[checked_supervisor_transport_output]}" '
+                "> /dev/null\n",
+                1,
+            )),
         )
-        builder = builder_isolation_shell_source(literal_changed)
-        semantic_builder = (
-            publisher_shell_contract._strip_patch_release_parser_heredoc_bodies(
-                builder
-            )
-        )
-        records = publisher_shell_contract._annotate_command_control_scopes(
-            publisher_shell_contract._normalize_split_function_command_records(
-                publisher_shell_contract.split_bash_command_records(
-                    semantic_builder,
-                    label="literal-name builder",
+        for safe_label, safe_changed in safe_changes:
+            builder = builder_isolation_shell_source(safe_changed)
+            semantic_builder = (
+                publisher_shell_contract._strip_patch_release_parser_heredoc_bodies(
+                    builder
                 )
             )
-        )
-        _, inventory = publisher_shell_contract._shell_function_definitions(
-            records
-        )
-        with (
-            mock.patch.object(
-                publisher_shell_contract,
-                "REVIEWED_BUILDER_HELPER_INVENTORY",
-                dict(inventory),
-            ),
-            mock.patch.object(
-                publisher_shell_contract,
-                "assert_reviewed_patch_release_run_script_identity",
-            ),
-            mock.patch.object(
-                publisher_shell_contract,
-                "assert_reviewed_builder_isolation_shell_identity",
-            ),
-        ):
-            self.assertFalse(
-                workflow_has_raw_builder_cgroup_membership_read(
-                    literal_changed
+            records = publisher_shell_contract._annotate_command_control_scopes(
+                publisher_shell_contract._normalize_split_function_command_records(
+                    publisher_shell_contract.split_bash_command_records(
+                        semantic_builder,
+                        label="literal-name builder",
+                    )
                 )
             )
-            self.assertNotIn(
-                "raw builder cgroup membership read differs",
-                publisher_boundary_errors(literal_changed),
+            _, inventory = publisher_shell_contract._shell_function_definitions(
+                records
             )
-            upstream_verify._parse_workflow_structure_text(literal_changed)
+            with (
+                self.subTest(safe_change=safe_label),
+                mock.patch.object(
+                    publisher_shell_contract,
+                    "REVIEWED_BUILDER_HELPER_INVENTORY",
+                    dict(inventory),
+                ),
+                mock.patch.object(
+                    publisher_shell_contract,
+                    "assert_reviewed_patch_release_run_script_identity",
+                ),
+                mock.patch.object(
+                    publisher_shell_contract,
+                    "assert_reviewed_builder_isolation_shell_identity",
+                ),
+            ):
+                self.assertFalse(
+                    workflow_has_raw_builder_cgroup_membership_read(
+                        safe_changed
+                    )
+                )
+                self.assertNotIn(
+                    "raw builder cgroup membership read differs",
+                    publisher_boundary_errors(safe_changed),
+                )
+                upstream_verify._parse_workflow_structure_text(safe_changed)
 
 
 if __name__ == "__main__":

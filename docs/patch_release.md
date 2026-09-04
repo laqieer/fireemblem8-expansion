@@ -402,7 +402,12 @@ nested helpers, substitutions, callbacks, and traps are evaluated when invoked
 and reject because all reviewed consumers are exact top-level phase events.
 Direct, indirect, nameref, arithmetic, and array dereferences are consumers;
 transporting or comparing the literal reserved name remains data, as does
-literal quoted text.
+literal quoted text. Bash `${!prefix*}`/`${!prefix@}` parameter-name
+enumeration uses the literal prefix rather than its value, and unrelated
+associative-array subscripts use string keys; neither is a transport read.
+Indexed and unknown array subscripts retain arithmetic recursive resolution,
+while `${!array[@]}`/`${!array[*]}` consumes keys only when `array` is a
+reserved transport result or a nameref to one.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.
