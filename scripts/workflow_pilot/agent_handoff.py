@@ -11,11 +11,11 @@ import contextlib
 import hashlib
 import os
 import re
-import shlex
 import signal
 import stat
 import subprocess
 import sys
+import tempfile
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -249,16 +249,24 @@ def _run_bounded_git_transport(
     *arguments: str,
     timeout_code: str,
 ) -> subprocess.CompletedProcess[bytes]:
-    return _run_bounded_process(
-        argv=reporter.git_command(repository_root, *arguments),
-        cwd=repository_root,
-        env=reporter.git_environment(offline=False),
-        stdin=None,
-        timeout_seconds=REMOTE_GIT_TIMEOUT_SECONDS,
-        timeout_code=timeout_code,
-        label=f"Git {' '.join(arguments)}",
-        execute_error_label="Git",
-    )
+    common = Path(run_git(repository_root, "rev-parse", "--git-common-dir").decode().strip()); common = (repository_root / common).resolve() if not common.is_absolute() else common.resolve()
+    with tempfile.TemporaryDirectory(prefix="workflow-pilot-git-") as temporary:
+        sealed = Path(temporary)
+        (sealed / "refs").mkdir(); (sealed / "HEAD").write_text("ref: refs/heads/sealed\n")
+        (sealed / "config").write_text("[core]\nrepositoryformatversion=0\nbare=true\n")
+        environment = {
+            "CURL_HOME": str(sealed), "GIT_DIR": str(sealed),
+            "GIT_OBJECT_DIRECTORY": str(common / "objects"), "HOME": str(sealed),
+            "GIT_SSH_COMMAND": "/usr/bin/ssh -F /dev/null -oBatchMode=yes", "GIT_SSH_VARIANT": "ssh",
+            "XDG_CONFIG_HOME": str(sealed),
+            **reporter.git_environment(offline=False),
+        }
+        return _run_bounded_process(
+            argv=reporter.git_command(sealed, *arguments), cwd=sealed, env=environment,
+            stdin=None, timeout_seconds=REMOTE_GIT_TIMEOUT_SECONDS,
+            timeout_code=timeout_code, label=f"Git {' '.join(arguments)}",
+            execute_error_label="Git",
+        )
 def run_git_online(repository_root: Path, *arguments: str) -> bytes:
     completed = _run_bounded_git_transport(
         repository_root,
@@ -799,10 +807,12 @@ def load_history_authority_transition_summary(
     )
     expect_enum(event["kind"], {"genesis", "handoff", "pr_binding"}, f"{label}.event.kind")
     return authority
-def require_atomic_push_capability(
+def _publish_authority_updates(
     repository_root: Path,
     installation: dict[str, Any],
     updates: list[tuple[str, str]],
+    *,
+    dry_run: bool,
 ) -> str:
     if len(updates) != 2:
         raise HandoffDataError(
@@ -813,10 +823,12 @@ def require_atomic_push_capability(
         repository_root,
         "push",
         "--atomic",
-        "--dry-run",
+        *(("--dry-run",) if dry_run else ()),
         remote,
         *(f"{object_id}:{reference}" for object_id, reference in updates),
-        timeout_code=REMOTE_GIT_PREFLIGHT_TIMEOUT_CODE,
+        timeout_code=(
+            REMOTE_GIT_PREFLIGHT_TIMEOUT_CODE if dry_run else REMOTE_GIT_TIMEOUT_CODE
+        ),
     )
     if completed.returncode != 0:
         detail = completed.stderr.decode("utf-8", errors="replace").strip()
@@ -825,6 +837,20 @@ def require_atomic_push_capability(
             + (f": {detail}" if detail else "")
         )
     return remote
+def require_atomic_push_capability(
+    repository_root: Path,
+    installation: dict[str, Any],
+    updates: list[tuple[str, str]],
+) -> str:
+    return _publish_authority_updates(
+        repository_root, installation, updates, dry_run=True
+    )
+def publish_authority_updates(
+    repository_root: Path,
+    installation: dict[str, Any],
+    updates: list[tuple[str, str]],
+) -> None:
+    _publish_authority_updates(repository_root, installation, updates, dry_run=False)
 def validate_repository_root(repository_root: Path) -> Path:
     return _raise_pilot_error(reporter.validate_repository_root, repository_root)
 def _parse_actor(
@@ -1699,27 +1725,7 @@ def load_coordinator_installation(
         "_bootstrap_validator_source": bootstrap_source,
         "_signer": signer,
     }
-def _trusted_remote_url(repository_root: Path, installation: dict[str, Any]) -> str:
-    remote = installation["authority_protection"]["remote_url"]
-    entries = [
-        entry.decode("utf-8", errors="surrogateescape").split("\n", 1)
-        for entry in run_git(
-            repository_root, "config", "--local", "--no-includes", "--null", "--list"
-        ).split(b"\0") if entry
-    ]
-    urls = [value for key, value in entries if key == "remote.origin.url"]
-    unsafe = [
-        key for key, _value in entries
-        if key.startswith(("include.", "includeif.", "url."))
-        or (
-            key.startswith("remote.")
-            and key.endswith((".url", ".pushurl"))
-            and key != "remote.origin.url"
-        )
-    ]
-    if urls != [remote] or unsafe:
-        raise HandoffDataError("repository-local remote URL configuration is not permitted")
-    return remote
+def _trusted_remote_url(repository_root: Path, installation: dict[str, Any]) -> str: return installation["authority_protection"]["remote_url"]
 def _git_blob(
     repository_root: Path,
     commit_sha: str,
@@ -3320,7 +3326,7 @@ def plan_history_authority(
         .decode("ascii")
         .strip()
     )
-    trusted_remote = require_atomic_push_capability(
+    require_atomic_push_capability(
         repository_root,
         installation,
         [
@@ -3671,9 +3677,10 @@ def plan_history_authority(
         ),
         "operation_nonce": parsed_publication["operation_nonce"],
         "atomic_push": (
-            f"git push --atomic --no-verify --receive-pack=git-receive-pack {shlex.quote(trusted_remote)} "
+            "scripts.workflow_pilot.agent_handoff.publish_authority_updates("
+            "<external-owner-repository>, <trusted-installation>, "
             f"<new-authority-commit>:{reference} "
-            f"<new-anchor-commit>:{anchor_reference}"
+            f"<new-anchor-commit>:{anchor_reference})"
         ),
     }
 def seal_git_authority(authority: dict[str, Any]) -> str:
