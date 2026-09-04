@@ -31,7 +31,7 @@ Issue #181 is parallel and does not consume or authorize this graph.
   enumerates tracked paths through trusted Git, resolves live authorities,
   emits canonical JSON, and verifies that execution did not change Git state.
 - [`scripts/validation_ownership/isolated_launcher.py`](../scripts/validation_ownership/isolated_launcher.py)
-  admits only `check`, `resolve`, `tests`, and the closed lifecycle-check mode
+  admits only `check`, `resolve`, `tests`, and the closed `authority-check` mode
   after isolated Python startup and removes ambient `GIT_*` controls.
 
 Validate whole-repository coverage without selecting or running any owner:

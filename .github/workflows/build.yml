@@ -766,7 +766,7 @@ jobs:
 
     - name: Install host-only dependencies (no arm-none-eabi toolchain)
       if: ${{ needs.event-classifier.result == 'failure' || needs.event-classifier.outputs.classification == 'full' }}
-      run: sudo apt-get update && sudo apt-get install -y build-essential libmgba-dev
+      run: sudo apt-get update && sudo apt-get install -y build-essential libmgba-dev libpng-dev pkg-config
 
     # GBA_PLAYTEST_HOST_ONLY=1 is the single public switch that makes this a
     # genuinely host-only lane (tools/gba-playtest/tests/host_mode.py): every

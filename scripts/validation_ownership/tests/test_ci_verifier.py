@@ -607,7 +607,7 @@ class BasePinnedVerifierTests(unittest.TestCase):
                 "HOME": "/nonexistent",
                 "PATH": "/usr/bin:/bin",
             }
-            trusted = {
+            base_authority_files = {
                 "scripts/validation_ownership/reporter.py": (
                     "def public_report_fixture():\n    return 'base'\n"
                 ),
@@ -615,7 +615,7 @@ class BasePinnedVerifierTests(unittest.TestCase):
                     "/* Public base fixture. */\n"
                 ),
             }
-            for path, content in trusted.items():
+            for path, content in base_authority_files.items():
                 target = root / path
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(content, encoding="ascii")
@@ -635,7 +635,7 @@ class BasePinnedVerifierTests(unittest.TestCase):
                 text=True,
             ).stdout.strip()
 
-            for path in trusted:
+            for path in base_authority_files:
                 (root / path).write_text(
                     "/* Public candidate mutation fixture. */\n",
                     encoding="ascii",
@@ -666,10 +666,10 @@ class BasePinnedVerifierTests(unittest.TestCase):
                 root,
                 candidate_sha,
                 base_loader,
-                set(trusted),
+                set(base_authority_files),
             )
-            self.assertEqual(changes, sorted(trusted))
-            for path, content in trusted.items():
+            self.assertEqual(changes, sorted(base_authority_files))
+            for path, content in base_authority_files.items():
                 self.assertEqual(
                     loader.read_blob(path, "trusted test"),
                     content.encode("ascii"),

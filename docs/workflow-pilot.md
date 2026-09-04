@@ -496,8 +496,8 @@ consumer and/or focused consistency check and requires failure, restores the
 copy, and requires both checks to pass. The command identifiers and file paths
 come from a closed allowlist in the reporter; fixture text cannot supply
 executable commands. Every proof child is exactly `/usr/bin/python3 -I` plus
-the copied reviewed launcher's `lifecycle-check` mode, explicit sandbox and
-authority roots, and one allowlisted check ID. Only after isolated startup does
+the copied reviewed launcher's non-recursive `authority-check` mode, explicit
+sandbox and authority roots, and one allowlisted check ID. Only after isolated startup does
 the launcher insert the sandbox root. There is no `-c`, `-m`, `-E`, arbitrary
 mode, or user/repository `sitecustomize.py` path before control. An empty or
 fabricated `git init` cannot validate the

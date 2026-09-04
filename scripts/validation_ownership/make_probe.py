@@ -7,6 +7,8 @@ import hashlib
 import json
 import os
 import re
+import selectors
+import signal
 import shutil
 import stat
 import struct
@@ -41,6 +43,8 @@ MAX_CONTEXT_DEPTH = 8
 MAX_DISCOVERED_SOURCES = 4096
 MAX_DISCOVERED_DOMAINS = 512
 MAX_PROBE_SECONDS = 3600
+MAX_SANDBOX_OUTPUT_BYTES = 1024 * 1024
+MAX_MAKE_OUTPUT_BYTES = 16 * 1024 * 1024
 REGISTERED_COMMAND_CACHE_LIMIT = 8192
 MAX_PARALLEL_REGISTERED_COMMANDS = 32
 TRACE_RE = re.compile(
@@ -408,7 +412,29 @@ def _sandbox_run(
     read_only: list[tuple[Path, str]],
     writable: list[tuple[Path, str]] | None = None,
     timeout: int = 120,
+    max_output_bytes: int | None = None,
 ) -> subprocess.CompletedProcess[str]:
+    writable_mounts = (
+        [(work, "/work")]
+        + ([] if writable is None else writable)
+    )
+    mounted_sources = [
+        source.resolve(strict=True)
+        for source, _ in [*read_only, *writable_mounts]
+    ]
+    for control_path in (event_path, mapping_path):
+        if control_path is None:
+            continue
+        control = control_path.resolve(strict=True)
+        if any(
+            control == source
+            or source in control.parents
+            or control in source.parents
+            for source in mounted_sources
+        ):
+            raise MakeProbeError(
+                "sandbox control state overlaps a candidate-visible mount"
+            )
     config = {
         "argv": argv,
         "cwd": "/repo",
@@ -433,10 +459,7 @@ def _sandbox_run(
         "runner_uid": _select_namespace_launcher()["runner_uid"],
         "writable": [
             [str(source.resolve(strict=True)), target]
-            for source, target in (
-                [(work, "/work")]
-                + ([] if writable is None else writable)
-            )
+            for source, target in writable_mounts
         ],
     }
     config_path = work.parent / (
@@ -453,12 +476,14 @@ def _sandbox_run(
         str((read_only[0][0] / SANDBOX_EXEC).resolve(strict=True)),
         str(config_path),
     ]
-    return subprocess.run(
+    return _run_bounded_process(
         command,
-        check=False,
-        capture_output=True,
-        text=True,
         timeout=timeout,
+        max_output_bytes=(
+            MAX_SANDBOX_OUTPUT_BYTES
+            if max_output_bytes is None
+            else max_output_bytes
+        ),
         env={
             "HOME": "/nonexistent",
             "LANG": "C",
@@ -467,6 +492,107 @@ def _sandbox_run(
             "PYTHONDONTWRITEBYTECODE": "1",
             "TZ": "UTC",
         },
+    )
+
+
+def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    else:
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline:
+            try:
+                os.killpg(process.pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.02)
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+    if process.poll() is None:
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+
+
+def _run_bounded_process(
+    command: list[str],
+    *,
+    timeout: int,
+    max_output_bytes: int,
+    env: dict[str, str],
+) -> subprocess.CompletedProcess[str]:
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+        env=env,
+    )
+    if process.stdout is None or process.stderr is None:
+        _terminate_process_group(process)
+        raise MakeProbeError("sandbox output pipes are unavailable")
+    streams = {
+        process.stdout: bytearray(),
+        process.stderr: bytearray(),
+    }
+    selector = selectors.DefaultSelector()
+    for stream in streams:
+        os.set_blocking(stream.fileno(), False)
+        selector.register(stream, selectors.EVENT_READ)
+    deadline = time.monotonic() + timeout
+    try:
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(
+                    command,
+                    timeout,
+                    output=bytes(streams[process.stdout]),
+                    stderr=bytes(streams[process.stderr]),
+                )
+            events = selector.select(min(remaining, 0.1))
+            for key, _ in events:
+                stream = key.fileobj
+                chunk = os.read(stream.fileno(), 64 * 1024)
+                if not chunk:
+                    selector.unregister(stream)
+                    continue
+                total = sum(len(buffer) for buffer in streams.values())
+                if total + len(chunk) > max_output_bytes:
+                    raise MakeProbeError(
+                        "sandbox command output exceeds "
+                        f"{max_output_bytes}-byte bound"
+                    )
+                streams[stream].extend(chunk)
+        remaining = deadline - time.monotonic()
+        if process.poll() is None:
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(
+                    command,
+                    timeout,
+                    output=bytes(streams[process.stdout]),
+                    stderr=bytes(streams[process.stderr]),
+                )
+            process.wait(timeout=remaining)
+    except (MakeProbeError, subprocess.TimeoutExpired):
+        _terminate_process_group(process)
+        raise
+    finally:
+        selector.close()
+        process.stdout.close()
+        process.stderr.close()
+    return subprocess.CompletedProcess(
+        args=command,
+        returncode=process.returncode,
+        stdout=bytes(streams[process.stdout]).decode("utf-8", errors="replace"),
+        stderr=bytes(streams[process.stderr]).decode("utf-8", errors="replace"),
     )
 
 
@@ -1317,10 +1443,6 @@ def probe_generated_registry(
                 + _normalize(completed.stderr)
             )
         output = completed.stdout.encode("utf-8")
-        if len(output) > 1024 * 1024:
-            raise MakeProbeError(
-                "candidate generated-data registry output exceeds bound"
-            )
         return output, {
             "launcher": tools["namespace_launcher"],
             "probe_path": GENERATED_REGISTRY_PROBE.as_posix(),
@@ -1902,10 +2024,11 @@ def run_probe(
         dir=scratch_root,
     ) as directory:
         base = Path(directory)
+        content_state = getattr(loader, "content_state", None)
         cache_namespace = (
             str(Path(loader.root).resolve(strict=True)),
             loader.revision,
-            tuple(
+            content_state() if callable(content_state) else tuple(
                 (
                     path,
                     entry.mode,
@@ -2109,6 +2232,7 @@ def run_probe(
                         extra_environment,
                     ),
                     mapping_path=mapping_path,
+                    max_output_bytes=MAX_MAKE_OUTPUT_BYTES,
                     read_only=read_only,
                     writable=[(build_output, "/repo/build")],
                 )

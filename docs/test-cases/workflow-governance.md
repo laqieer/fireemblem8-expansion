@@ -1469,7 +1469,8 @@ game behavior needs a compensating change.
   Makefiles, `/usr/bin/make`, `/usr/bin/unshare` with mount/network/PID
   namespaces plus either user namespaces or passwordless exact
   `/usr/bin/sudo`, a static-capable `/usr/bin/cc`, and the manual-handoff
-  contract unchanged. No token, ROM, emulator, or remote workflow is required.
+  contract unchanged. The registered `gbagfx` authority also requires libpng
+  development files. No token, ROM, emulator, or remote workflow is required.
 
 ### Actions
 
@@ -1514,11 +1515,12 @@ configuration, manual A/V, workflow, governance, repository configuration,
 issue-template, and pull-request-template paths resolve with no missing or
 unexpected edge/evidence owners. `.github/PULL_REQUEST_TEMPLATE.md` selects
 documentation governance; `.github/CODEOWNERS` selects the named fail-closed
-external-enforcement exclusion only. Generated paths derive from
-the typed generated-data registry; gate commands derive from existing Make
-targets, workflow jobs/steps, and tester cases rather than a duplicate command
-list. Both ownership commands are required, scrubbed `host-tests` gates and
-members of the complete 30-gate upstream mirror.
+external-enforcement exclusion only. Generated paths, including concrete
+directory/glob matches, derive from the typed generated-data registry; gate
+commands derive from existing Make targets, workflow jobs/steps, and tester
+cases rather than a duplicate command list. Both ownership commands are
+required, scrubbed `host-tests` gates and members of the complete 30-gate
+upstream mirror.
 
 The canonical JSON report explains each selected gate, reports zero false
 positive and false negative exact `(edge_type, evidence_id)` owner-pair

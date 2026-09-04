@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-MODES = frozenset({"check", "resolve", "tests", "lifecycle-check"})
+MODES = frozenset({"authority-check", "check", "resolve", "tests"})
 
 
 def _clear_ambient_git_environment() -> None:
@@ -71,15 +71,15 @@ def main(argv: list[str] | None = None) -> int:
             return 0 if result.wasSuccessful() else 1
         from scripts.validation_ownership import reporter
 
-        if mode == "lifecycle-check":
+        if mode == "authority-check":
             if len(arguments) != 6 or arguments[::2] != [
                 "--artifact-root",
                 "--authority-root",
                 "--check",
             ]:
-                raise ValueError("lifecycle-check requires exact closed arguments")
+                raise ValueError("authority-check requires exact closed arguments")
             try:
-                return reporter.run_lifecycle_check(
+                return reporter.run_authority_check(
                     Path(arguments[1]),
                     Path(arguments[3]),
                     arguments[5],

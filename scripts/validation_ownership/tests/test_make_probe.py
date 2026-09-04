@@ -4,7 +4,9 @@ import os
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -76,6 +78,123 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             )
             self.assertEqual(paths, {"src/data/new_table.json"})
             self.assertFalse((root / "forged").exists())
+
+    def test_candidate_generated_registry_concretizes_directory_sources(self):
+        registry = (
+            "from pathlib import Path\n"
+            "class Schema:\n"
+            "    version = 1\n"
+            "    default_source = 'src/data'\n"
+            "    default_hand_source = None\n"
+            "    default_output_name = None\n"
+            "    default_inventory_path = None\n"
+            "    def dependencies(self): return ()\n"
+            "    def dependency_tables(self): return ()\n"
+            "    def load_records(self, source):\n"
+            "        return {'source_paths': (str(Path(source) / 'ch2_bundle.json'),)}\n"
+            "class Registry:\n"
+            "    def all_names(self): return ('chapterbundle',)\n"
+            "    def resolve(self, name): return Schema()\n"
+            "REGISTRY = Registry()\n"
+        )
+        directory, root, entries = self.fixture(
+            "all:\n\t@true\n",
+            {
+                "scripts/__init__.py": "",
+                "scripts/generated_data/__init__.py": "",
+                "scripts/generated_data/registry.py": registry,
+                "src/data/ch2_bundle.json": "{}\n",
+                "src/data/runtime_only.json": "{}\n",
+            },
+        )
+        with directory:
+            records, paths = reporter._generated_registry_records(
+                reporter.AuthorityLoader(root, entries)
+            )
+        self.assertEqual(
+            records[0]["resolved_sources"],
+            ["src/data/ch2_bundle.json"],
+        )
+        self.assertEqual(paths, {"src/data/ch2_bundle.json"})
+
+    def test_candidate_generated_registry_output_is_bounded_while_running(self):
+        registry = (
+            "import sys\n"
+            "sys.stdout.write('x' * 2048)\n"
+            "class Registry:\n"
+            "    def all_names(self): return ()\n"
+            "REGISTRY = Registry()\n"
+        )
+        directory, root, entries = self.fixture(
+            "all:\n\t@true\n",
+            {
+                "scripts/__init__.py": "",
+                "scripts/generated_data/__init__.py": "",
+                "scripts/generated_data/registry.py": registry,
+            },
+        )
+        with directory, mock.patch.object(
+            make_probe,
+            "MAX_SANDBOX_OUTPUT_BYTES",
+            1024,
+        ), self.assertRaisesRegex(
+            reporter.OwnershipError,
+            "output exceeds 1024-byte bound",
+        ):
+            reporter._generated_registry_records(
+                reporter.AuthorityLoader(root, entries)
+            )
+
+    def test_bounded_process_terminates_overflowing_process_group(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            sentinel = Path(directory) / "survived"
+            command = [
+                sys.executable,
+                "-c",
+                (
+                    "import pathlib,sys,time;"
+                    "sys.stdout.write('x'*2048);sys.stdout.flush();"
+                    "time.sleep(5);"
+                    f"pathlib.Path({str(sentinel)!r}).write_text('survived')"
+                ),
+            ]
+            with self.assertRaisesRegex(
+                make_probe.MakeProbeError,
+                "output exceeds 1024-byte bound",
+            ):
+                make_probe._run_bounded_process(
+                    command,
+                    timeout=10,
+                    max_output_bytes=1024,
+                    env={"PATH": "/usr/bin:/bin"},
+                )
+            time.sleep(0.1)
+            self.assertFalse(sentinel.exists())
+
+    def test_sandbox_rejects_candidate_visible_control_state(self):
+        with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:
+            base = Path(directory)
+            root = base / "root"
+            work = base / "work"
+            root.mkdir()
+            work.mkdir()
+            event = work / "events.bin"
+            mapping = work / "mapping"
+            event.write_bytes(b"")
+            mapping.mkdir()
+            with self.assertRaisesRegex(
+                make_probe.MakeProbeError,
+                "control state overlaps",
+            ):
+                make_probe._sandbox_run(
+                    root,
+                    work,
+                    argv=["/usr/bin/true"],
+                    event_path=event,
+                    environment={},
+                    mapping_path=mapping,
+                    read_only=[],
+                )
 
     def fixture(self, makefile: str, files: dict[str, str] | None = None):
         directory = tempfile.TemporaryDirectory(dir=SCRATCH_ROOT)
@@ -796,7 +915,8 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             "import os\n"
             "from pathlib import Path\n"
             "Path('/work/events.bin').write_text('candidate', encoding='ascii')\n"
-            "Path('/work/map').write_text('candidate', encoding='ascii')\n"
+            "Path('/work/map').mkdir()\n"
+            "Path('/work/map/forged.cmd').write_text('candidate', encoding='ascii')\n"
             "for descriptor in (3, 4):\n"
             "    try:\n"
             "        os.write(descriptor, b'candidate')\n"
@@ -995,6 +1115,41 @@ class AuthoritativeMakeProbeTests(unittest.TestCase):
             self.assertEqual(first, b"sealed\n")
             self.assertEqual(second, b"sealed\n")
             self.assertEqual(sandbox.call_count, 1)
+
+    def test_registered_command_cache_tracks_live_worktree_bytes(self):
+        directory, root, entries = self.fixture(
+            "VALUE != python3 read_value.py\n"
+            "all:\n\t@true\n",
+            {
+                "read_value.py": (
+                    "from pathlib import Path\n"
+                    "print(Path('value.txt').read_text(encoding='ascii').strip())\n"
+                ),
+                "value.txt": "first\n",
+            },
+        )
+        contract = {
+            "id": "fixture-live-input",
+            "command_regex": "^python3 read_value\\.py$",
+            "resolved_value": None,
+        }
+        make_probe._REGISTERED_COMMAND_CACHE.clear()
+        with directory:
+            first = self.probe(
+                root,
+                entries,
+                dynamic={"$(shell live-input)": contract},
+            )
+            (root / "value.txt").write_text("second\n", encoding="ascii")
+            second = self.probe(
+                root,
+                entries,
+                dynamic={"$(shell live-input)": contract},
+            )
+        self.assertNotEqual(
+            first["record"]["dynamic_commands"][0]["output_sha256"],
+            second["record"]["dynamic_commands"][0]["output_sha256"],
+        )
 
     def test_build_touching_registered_command_skips_process_cache(self):
         with tempfile.TemporaryDirectory(dir=SCRATCH_ROOT) as directory:

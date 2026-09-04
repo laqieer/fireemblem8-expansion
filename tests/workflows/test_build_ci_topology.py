@@ -1585,7 +1585,7 @@ def _protected_host_prefix_errors(host: str) -> list[str]:
             "Install host-only dependencies (no arm-none-eabi toolchain)",
             (
                 "sudo apt-get update && sudo apt-get install -y "
-                "build-essential libmgba-dev",
+                "build-essential libmgba-dev libpng-dev pkg-config",
             ),
             if_expression=FULL_WORKER_STEP_CONDITION,
         ),
@@ -2658,9 +2658,9 @@ class ConsolidatedBuildTopologyTests(unittest.TestCase):
             ),
             self.text.replace(
                 "sudo apt-get update && sudo apt-get install -y "
-                "build-essential libmgba-dev",
+                "build-essential libmgba-dev libpng-dev pkg-config",
                 "sudo apt-get update && sudo apt-get install -y "
-                "build-essential libmgba-dev && "
+                "build-essential libmgba-dev libpng-dev pkg-config && "
                 'echo build/bin >> "$GITHUB_PATH"',
                 1,
             ),

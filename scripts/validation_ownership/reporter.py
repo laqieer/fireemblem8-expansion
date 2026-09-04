@@ -494,6 +494,9 @@ class AuthorityLoader:
             raise OwnershipError(f"{label} is not valid UTF-8") from error
         return parse_json(text, label)
 
+    def content_state(self) -> tuple[tuple[str, ...], ...]:
+        return _make_authority_state(self)
+
 
 def repository_status(root: Path) -> bytes:
     return _git(
@@ -558,6 +561,7 @@ def _generated_registry_records(
         "default_inventory_path",
         "dependencies",
         "dependency_tables",
+        "resolved_sources",
     }
     for index, record in enumerate(records):
         label = f"candidate generated-data registry record {index}"
@@ -594,6 +598,16 @@ def _generated_registry_records(
                 )
             ):
                 raise OwnershipError(f"{label}.{list_field} is invalid")
+        resolved_sources = record["resolved_sources"]
+        if (
+            not isinstance(resolved_sources, list)
+            or resolved_sources != sorted(set(resolved_sources))
+            or not all(
+                isinstance(value, str) and value
+                for value in resolved_sources
+            )
+        ):
+            raise OwnershipError(f"{label}.resolved_sources is invalid")
         for field in (
             "default_source",
             "default_hand_source",
@@ -609,14 +623,36 @@ def _generated_registry_records(
             if candidate in loader.entries:
                 loader.entry(candidate, f"generated-data schema {name!r} {field}")
                 paths.add(candidate)
-            elif not any(
+                if field == "default_source" and resolved_sources != [candidate]:
+                    raise OwnershipError(
+                        f"generated-data schema {name!r} resolved source does "
+                        f"not match {candidate!r}"
+                    )
+            elif any(
                 path.startswith(candidate.rstrip("/") + "/")
                 for path in loader.entries
             ):
+                if field == "default_source":
+                    prefix = candidate.rstrip("/") + "/"
+                    if (
+                        not resolved_sources
+                        or any(
+                            not source.startswith(prefix)
+                            for source in resolved_sources
+                        )
+                    ):
+                        raise OwnershipError(
+                            f"generated-data schema {name!r} has invalid "
+                            "concrete directory sources"
+                        )
+            else:
                 raise OwnershipError(
                     f"generated-data schema {name!r} references stale {field} "
                     f"{candidate!r}"
                 )
+        for source in resolved_sources:
+            loader.entry(source, f"generated-data schema {name!r} resolved source")
+            paths.add(source)
     if ordered_names != sorted(ordered_names):
         raise OwnershipError(
             "candidate generated-data registry names are not sorted"
@@ -3077,7 +3113,7 @@ def build_report(
     }
 
 
-def run_lifecycle_check(
+def run_authority_check(
     artifact_root: Path,
     authority_root: Path,
     check_id: str,
@@ -3128,6 +3164,14 @@ def run_lifecycle_check(
         cleanup_validation_scratch(scratch)
 
 
+def run_lifecycle_check(
+    artifact_root: Path,
+    authority_root: Path,
+    check_id: str,
+) -> int:
+    return run_authority_check(artifact_root, authority_root, check_id)
+
+
 def _run_lifecycle_subprocess(
     authority_root: Path,
     artifact_root: Path,
@@ -3137,7 +3181,7 @@ def _run_lifecycle_subprocess(
         "/usr/bin/python3",
         "-I",
         str(authority_root / "scripts/validation_ownership/isolated_launcher.py"),
-        "lifecycle-check",
+        "authority-check",
         "--artifact-root",
         str(artifact_root),
         "--authority-root",
@@ -3164,7 +3208,7 @@ def _run_lifecycle_direct(
     check_id: str,
 ) -> subprocess.CompletedProcess[bytes]:
     try:
-        returncode = run_lifecycle_check(
+        returncode = run_authority_check(
             artifact_root,
             authority_root,
             check_id,
