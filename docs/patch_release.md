@@ -439,6 +439,8 @@ characters after an earlier `o` remain short flags and validate individually.
 FD duplication/close (`<&`/`>&`) and combined output (`&>`/`&>>`) remain
 atomic redirections rather than background operators, while real `&`, `&&`,
 pipelines, and `|&` retain control topology.
+One longest-match operator table also keeps noclobber override `>|` atomic,
+with optional fd prefixes and attached, separate, quoted, or dynamic targets.
 `wait -p` output-variable forms likewise reject across clustered, attached,
 wrapped, aliased, helper, control, and dynamic option/target forms; the two
 reviewed ordinary PID waits remain valid.

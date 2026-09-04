@@ -12672,6 +12672,7 @@ exit 37
                 "set_option_grammar": "valid-reviewed-bash-options-only",
                 "set_redirections": "remove-all-preserve-argv",
                 "fd_redirections": "atomic-not-control-operators",
+                "redirection_matching": "canonical-longest-operator",
                 "set_cluster_o": "ending-o-consumes-next-name",
                 "getopts": "reject",
                 "wait_output_variable": "reject",

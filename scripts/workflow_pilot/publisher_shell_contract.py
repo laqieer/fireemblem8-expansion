@@ -189,6 +189,9 @@ _SIMPLE_COMMAND_PREFIXES = frozenset(
     {"if", "then", "do", "elif", "while", "until", "!", "else", "{"}
 )
 _CONTROL_OPERATORS = frozenset({";", "&&", "||", "|", "|&", "&"})
+_BASH_REDIRECTION_OPERATORS = (
+    "<<<", "<<-", "&>>", "<<", ">>", "<>", ">|", "<&", ">&", "&>", "<", ">"
+)
 _DISALLOWED_MOUNT_WRAPPERS = frozenset({"env", "command", "eval"})
 _ASSIGNMENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
 _BUSYBOX_BASENAME = "busybox"
@@ -1462,6 +1465,27 @@ def split_bash_command_records(
                     )
                     index += 1
                     word_start = False
+                elif (
+                    redirection := next(
+                        (
+                            operator
+                            for operator in _BASH_REDIRECTION_OPERATORS
+                            if logical.startswith(operator, index)
+                            and not (
+                                operator in {"<", ">"}
+                                and logical.startswith(
+                                    operator + "(",
+                                    index,
+                                )
+                            )
+                        ),
+                        None,
+                    )
+                ) is not None:
+                    begin_command()
+                    current.extend(redirection)
+                    index += len(redirection) - 1
+                    word_start = False
                 elif character == "(":
                     begin_command()
                     current.append(character)
@@ -1493,24 +1517,6 @@ def split_bash_command_records(
                         and scope_stack[-1][1] is None
                     ):
                         scope_stack.pop()
-                    word_start = False
-                elif logical.startswith("&>>", index):
-                    begin_command()
-                    current.extend(("&", ">", ">"))
-                    index += 2
-                    word_start = False
-                elif logical.startswith("&>", index):
-                    begin_command()
-                    current.extend(("&", ">"))
-                    index += 1
-                    word_start = False
-                elif (
-                    character == "&"
-                    and index > 0
-                    and logical[index - 1] in "<>"
-                ):
-                    begin_command()
-                    current.append(character)
                     word_start = False
                 elif character in "&|;":
                     operator = character
@@ -2049,11 +2055,14 @@ def _token_texts(tokens: Iterable[_ShellToken]) -> tuple[str, ...]:
 
 
 def _is_redirection_token(text: str) -> bool:
-    return bool(
-        re.fullmatch(
-            r"(?:&>>|&>|[0-9]*(?:<<<|<<-?|>>|<>|>\||<&|>&|<|>))",
-            text,
+    return any(
+        text == operator
+        or (
+            not operator.startswith("&")
+            and text.endswith(operator)
+            and text[: -len(operator)].isdigit()
         )
+        for operator in _BASH_REDIRECTION_OPERATORS
     )
 
 
@@ -2158,20 +2167,7 @@ def _split_attached_redirections(
             operator = next(
                 (
                     candidate
-                    for candidate in (
-                        "<<<",
-                        "&>>",
-                        "&>",
-                        "<<-",
-                        "<<",
-                        ">>",
-                        "<>",
-                        ">|",
-                        "<&",
-                        ">&",
-                        "<",
-                        ">",
-                    )
+                    for candidate in _BASH_REDIRECTION_OPERATORS
                     if remaining.startswith(candidate)
                 ),
                 None,

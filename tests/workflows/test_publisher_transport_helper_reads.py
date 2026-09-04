@@ -719,6 +719,9 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             "set -o &>/dev/null -- fake\n",
             "set -o &>>/dev/null -- fake\n",
             'fd=1\nset -o 2>&"$fd" -- fake\n',
+            "set -Eeuo pipefail >|/dev/null -- fake\n",
+            "command set -o 2>| /dev/null -- fake\n",
+            'target=/dev/null\nbuiltin set -e >|"$target" -- fake\n',
         )
         for index, script in enumerate(rejected):
             completed = subprocess.run(
@@ -795,6 +798,7 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             "<&-",
             "&>/dev/null",
             "&>>/dev/null",
+            ">|/dev/null",
         ):
             completed = subprocess.run(
                 [
@@ -971,6 +975,18 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             for name in ("trap", "exec", "ulimit", "return")
         )
         mutations = (
+            original.replace(
+                '        cgroup_path="$1"\n',
+                "        set -Eeuo pipefail >|/dev/null -- /untrusted\n"
+                '        cgroup_path="$1"\n',
+                1,
+            ),
+            original.replace(
+                '        cgroup_path="$1"\n',
+                "        command set -o 2>| /dev/null -- /untrusted\n"
+                '        cgroup_path="$1"\n',
+                1,
+            ),
             original.replace(
                 '        cgroup_path="$1"\n',
                 "        set -Eeuo pipefail 2>&1 -- /untrusted\n"
