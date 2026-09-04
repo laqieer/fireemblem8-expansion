@@ -384,6 +384,14 @@ closing an expansion resumes its containing word. Nested parentheses and
 command substitutions suspend and restore the outer arithmetic frame.
 Adjacent comments, suffixes, redirects, and operators therefore follow Bash
 semantics, and malformed frames fail closed.
+The fixed `checked_supervisor_transport_output` and
+`checked_runtime_transport_output` arrays are reserved transport results.
+Only their matching reviewed reader helper may populate them, with the
+supervisor producer called twice and runtime producer once on unconditional
+main paths. Scalar/indexed/compound assignments, declarations, unset,
+nameref, printf/read/mapfile writers, loop targets, callbacks, traps,
+functions, dynamic targets, duplicate producers, and conditional producers
+reject; consumers cannot observe stale or replaced results.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

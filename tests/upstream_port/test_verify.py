@@ -1371,6 +1371,19 @@ class VerifyCliCwdTests(unittest.TestCase):
             for (
                 label,
                 changed,
+            ) in patch_workflow_tests.generate_reserved_transport_output_mutations(
+                original
+            ):
+                with self.subTest(
+                    reserved_transport_output=label
+                ), self.assertRaisesRegex(
+                    ValueError,
+                    "isolated candidate build differs",
+                ):
+                    verify_mod._parse_workflow_structure_text(changed)
+            for (
+                label,
+                changed,
             ) in patch_workflow_tests.generate_safe_declaration_alias_controls(
                 original
             ):

@@ -1382,6 +1382,16 @@
           ],
           "additional_access": "reject"
         },
+        "transport_outputs": {
+          "reserved": [
+            "checked_supervisor_transport_output",
+            "checked_runtime_transport_output"
+          ],
+          "writers": "matching-reviewed-reader-only",
+          "supervisor_producer_calls": 2,
+          "runtime_producer_calls": 1,
+          "later_or_external_mutation": "reject"
+        },
         "alias_state": {
           "writers": [
             "assignment",

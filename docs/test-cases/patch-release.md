@@ -360,6 +360,13 @@ standalone, `if`, `while`, and `for` positions; expansion close resumes the
 same word. Nested parentheses and command substitutions restore the outer
 arithmetic frame, while adjacent comments/suffixes/redirections/operators
 retain Bash behavior and malformed frames reject.
+`checked_supervisor_transport_output` and
+`checked_runtime_transport_output` are reserved after their exact reviewed
+reader writes. The supervisor reader runs twice and runtime reader once on
+unconditional main paths. Every other assignment, declaration, unset,
+nameref, writer builtin, loop target, callback, trap, helper, dynamic target,
+duplicate producer, or conditional producer rejects, preventing skipped
+unmounts and empty writable-mount validation.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,
@@ -567,6 +574,8 @@ archival-lane behavior changes.
   initializer heredoc bodies,
   standalone/if/while/for/nested arithmetic-command comment boundaries versus
   `$((…))`/`$[…]` word continuation and adjacent redirection controls,
+  parameterized supervisor/runtime transport-result mutations plus executable
+  descendant-unmount and writable-mount replacement bypasses,
   parsed registry-contract mutations,
   recursive
   command/process-substitution inspection for

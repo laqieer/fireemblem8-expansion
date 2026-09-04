@@ -243,6 +243,12 @@ _DISPATCH_STATE_VARIABLES = frozenset(
     {"BASHOPTS", "BASH_ENV", "ENV", "PATH", "SHELLOPTS"}
 )
 _DISPATCH_SET_OPTIONS = frozenset({"hashall", "posix"})
+_RESERVED_TRANSPORT_OUTPUTS = frozenset(
+    {
+        "checked_runtime_transport_output",
+        "checked_supervisor_transport_output",
+    }
+)
 _SECURITY_SENSITIVE_FUNCTION_NAMES = frozenset(
     {
         "alias",
@@ -3966,7 +3972,9 @@ def _loop_iteration_target_is_forbidden(
         "cgroup_path",
         "supervisor_cgroup",
         "cgroup_members",
-    } or target.text in _DISPATCH_STATE_VARIABLES:
+    } or target.text in _DISPATCH_STATE_VARIABLES or (
+        target.text in _RESERVED_TRANSPORT_OUTPUTS
+    ):
         return True
     value = aliases.get(target.text, "")
     return any(
@@ -4239,7 +4247,9 @@ def _apply_direct_function_alias_writes(
         if name in {
             "cgroup_path",
             "supervisor_cgroup",
-        } or name in _DISPATCH_STATE_VARIABLES:
+        } or name in _DISPATCH_STATE_VARIABLES or (
+            name in _RESERVED_TRANSPORT_OUTPUTS
+        ):
             return True, written
         value_token = _slice_shell_token(
             token,
@@ -4408,6 +4418,14 @@ def _analyze_function_call(
             _normalized_command_mutates_supervisor(resolved)
             or _normalized_command_mutates_dispatch_state(resolved)
             or _normalized_command_changes_dispatch(resolved)
+        ):
+            return True, {}
+        if (
+            _normalized_command_mutates_reserved_transport(resolved)
+            and not _is_reviewed_transport_output_write(
+                function_name,
+                resolved,
+            )
         ):
             return True, {}
         normalized = _normalize_shell_builtin_wrappers(resolved)
@@ -4976,6 +4994,72 @@ def _normalized_command_mutates_cgroup_path(
             if not argument.startswith(("-", "+"))
         )
     return False
+
+
+def _normalized_command_mutates_reserved_transport(
+    tokens: tuple[str, ...],
+) -> bool:
+    normalized = _normalize_shell_builtin_wrappers(tokens)
+    if not normalized:
+        return normalized is None
+    executable = posixpath.basename(normalized[0])
+    arguments = normalized[1:]
+
+    def reserved(target: str) -> bool:
+        name = target.split("+=", 1)[0]
+        name = name.split("=", 1)[0]
+        name = name.split("[", 1)[0]
+        return (
+            name in _RESERVED_TRANSPORT_OUTPUTS
+            or _AMBIGUOUS_ARRAY_ALIAS_MARKER in name
+            or _AMBIGUOUS_DYNAMIC_ALIAS_MARKER in name
+            or _AMBIGUOUS_TRACKED_PARAMETER_MARKER in name
+        )
+
+    if executable == "unset":
+        return any(reserved(arg) for arg in arguments if not arg.startswith("-"))
+    if executable in {"read", "mapfile", "readarray"}:
+        targets = arguments
+        for index, argument in enumerate(targets):
+            if _is_redirection_token(argument):
+                targets = targets[:index]
+                break
+        return any(reserved(arg) for arg in targets if not arg.startswith("-"))
+    if executable == "printf":
+        return any(
+            arg == "-v" and reserved(arguments[index + 1])
+            for index, arg in enumerate(arguments[:-1])
+        )
+    if executable in {"declare", "export", "local", "readonly", "typeset"}:
+        return any(
+            reserved(arg)
+            for arg in arguments
+            if not arg.startswith(("-", "+"))
+        )
+    return False
+
+
+def _is_reviewed_transport_output_write(
+    function_name: str,
+    tokens: tuple[str, ...],
+) -> bool:
+    expected_target = {
+        "read_checked_runtime_transport_file": (
+            "checked_runtime_transport_output"
+        ),
+        "read_checked_supervisor_transport_file": (
+            "checked_supervisor_transport_output"
+        ),
+    }.get(function_name)
+    normalized = _normalize_shell_builtin_wrappers(tokens)
+    return bool(
+        expected_target
+        and normalized
+        and len(normalized) >= 5
+        and normalized[:5]
+        == ("mapfile", "-d", "", "-t", expected_target)
+        and "<" in normalized[5:]
+    )
 
 
 def _normalized_command_creates_nameref(
@@ -5559,6 +5643,10 @@ def has_forbidden_raw_builder_cgroup_membership_read(
     supervisor_bind_count = 0
     supervisor_remount_count = 0
     supervisor_inode_check_count = 0
+    transport_producer_calls = {
+        "read_checked_runtime_transport_file": 0,
+        "read_checked_supervisor_transport_file": 0,
+    }
     control_stack: list[str] = []
     try:
         semantic_script = _strip_patch_release_parser_heredoc_bodies(
@@ -5798,6 +5886,15 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 tokens,
                 aliases,
             )
+            executable_tokens = _strip_shell_command_prefixes(
+                resolved_token_texts
+            )
+            if executable_tokens:
+                executable_name = posixpath.basename(executable_tokens[0])
+                if executable_name in transport_producer_calls:
+                    if not mandatory_context_is_unconditional:
+                        return True
+                    transport_producer_calls[executable_name] += 1
             if (
                 require_production_helpers
                 and not cgroup_path_initialized
@@ -5873,6 +5970,10 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 resolved_token_texts
             ):
                 return True
+            if _normalized_command_mutates_reserved_transport(
+                resolved_token_texts
+            ):
+                return True
             array_declaration = (
                 bool(token_texts)
                 and posixpath.basename(token_texts[0])
@@ -5919,7 +6020,10 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                     indexed_assignment = None
                 if indexed_assignment is not None:
                     name = indexed_assignment.group("name")
-                    if name in _DISPATCH_STATE_VARIABLES:
+                    if (
+                        name in _DISPATCH_STATE_VARIABLES
+                        or name in _RESERVED_TRANSPORT_OUTPUTS
+                    ):
                         return True
                     if name in {"cgroup_path", "supervisor_cgroup"}:
                         return True
@@ -5968,7 +6072,10 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 ):
                     continue
                 name = assignment.group("name")
-                if name in _DISPATCH_STATE_VARIABLES:
+                if (
+                    name in _DISPATCH_STATE_VARIABLES
+                    or name in _RESERVED_TRANSPORT_OUTPUTS
+                ):
                     return True
                 if name == "cgroup_path":
                     return True
@@ -6052,6 +6159,11 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 or supervisor_remount_count != 1
                 or supervisor_inode_check_count != 1
             ):
+                return True
+            if transport_producer_calls != {
+                "read_checked_runtime_transport_file": 1,
+                "read_checked_supervisor_transport_file": 2,
+            }:
                 return True
         return False
     except ValueError:

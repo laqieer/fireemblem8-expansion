@@ -1849,6 +1849,60 @@ def generate_arithmetic_command_comment_hide_mutations(workflow: str):
         yield label, changed
 
 
+def generate_reserved_transport_output_mutations(workflow: str):
+    arrays = {
+        "supervisor": (
+            "checked_supervisor_transport_output",
+            '        read_checked_supervisor_transport_file \\\n'
+            '          "$dev_mounts_file" "$dev_mount_targets_max_bytes"\n',
+        ),
+        "runtime": (
+            "checked_runtime_transport_output",
+            '        read_checked_runtime_transport_file \\\n'
+            '          "$writable_mount_records_file" \\\n'
+            '          "$writable_mount_records_max_bytes"\n',
+        ),
+    }
+    writers = (
+        "{name}=()\n",
+        "{name}=(/dev)\n",
+        "{name}[0]=/dev\n",
+        "unset {name}\n",
+        "declare -a {name}=()\n",
+        "printf -v {name} %s /dev\n",
+        "read {name} < /dev/null\n",
+        "mapfile -t {name} < /dev/null\n",
+        "for {name} in /dev; do true; done\n",
+        "target={name}\nread \"$target\" < /dev/null\n",
+        "mutate() {{ {name}=(); }}\nmutate\n",
+        "trap '{name}=()' DEBUG\n",
+        "callback() {{ {name}=(); }}\n"
+        "mapfile -C callback -c 1 -t ordinary < /dev/null\n",
+    )
+    for family, (name, marker) in arrays.items():
+        for index, template in enumerate(writers):
+            mutation = "".join(
+                f"        {line}\n"
+                for line in template.format(name=name).splitlines()
+            )
+            changed = workflow.replace(marker, marker + mutation, 1)
+            if changed == workflow:
+                raise AssertionError(
+                    f"{family} reserved mutation marker differs"
+                )
+            yield f"{family}-writer-{index}", changed
+        conditional = workflow.replace(
+            marker,
+            "        if true; then\n"
+            + marker
+            + "        fi\n",
+            1,
+        )
+        yield f"{family}-conditional-producer", conditional
+        duplicate = workflow.replace(marker, marker + marker, 1)
+        yield f"{family}-duplicate-producer", duplicate
+
+
 def render_supervisor_parent_remount_mutation(
     workflow: str,
     *,
@@ -8042,6 +8096,82 @@ exit 37
                     publisher_boundary_errors(changed),
                 )
 
+    def test_checked_transport_outputs_are_reserved_after_production(self):
+        supervisor = (
+            "checked_supervisor_transport_output=(/dev/shm /dev)\n"
+            "checked_supervisor_transport_output=(/dev)\n"
+            "for ((index=${#checked_supervisor_transport_output[@]} - 1; "
+            "index >= 0; index--)); do\n"
+            '  printf "%s\\n" "${checked_supervisor_transport_output[index]}"\n'
+            "done\n"
+            'test "${#checked_supervisor_transport_output[@]}" -eq 1\n'
+            'test "${checked_supervisor_transport_output[0]}" = /dev\n'
+        )
+        completed = subprocess.run(
+            ["/bin/bash", "-c", supervisor],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout, "/dev\n")
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                supervisor,
+                label="supervisor transport replacement runtime",
+            )
+        )
+
+        runtime = (
+            "checked_runtime_transport_output=(/unexpected rw)\n"
+            "checked_runtime_transport_output=()\n"
+            'test "$(( ${#checked_runtime_transport_output[@]} % 2 ))" -eq 0\n'
+            "for ((index=0; "
+            "index < ${#checked_runtime_transport_output[@]}; "
+            "index+=2)); do\n"
+            "  false\n"
+            "done\n"
+        )
+        completed = subprocess.run(
+            ["/bin/bash", "-c", runtime],
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertTrue(
+            publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                runtime,
+                label="runtime transport replacement runtime",
+            )
+        )
+
+        with (
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_patch_release_run_script_identity",
+            ),
+            mock.patch.object(
+                publisher_shell_contract,
+                "assert_reviewed_builder_isolation_shell_identity",
+            ),
+        ):
+            for label, changed in generate_reserved_transport_output_mutations(
+                self.text
+            ):
+                with self.subTest(reserved_transport=label):
+                    self.assertTrue(
+                        workflow_has_raw_builder_cgroup_membership_read(
+                            changed
+                        )
+                    )
+                    self.assertIn(
+                        "raw builder cgroup membership read differs",
+                        publisher_boundary_errors(changed),
+                    )
+
     def test_production_helper_inventory_is_exact_and_order_independent(self):
         self.assertFalse(
             workflow_has_raw_builder_cgroup_membership_read(self.text)
@@ -12426,6 +12556,16 @@ exit 37
                 ],
                 "additional_access": "reject",
             },
+            "transport_outputs": {
+                "reserved": [
+                    "checked_supervisor_transport_output",
+                    "checked_runtime_transport_output",
+                ],
+                "writers": "matching-reviewed-reader-only",
+                "supervisor_producer_calls": 2,
+                "runtime_producer_calls": 1,
+                "later_or_external_mutation": "reject",
+            },
             "alias_state": {
                 "writers": [
                     "assignment",
@@ -12458,6 +12598,7 @@ exit 37
             ("function_shadowing", "sensitive_names"),
             ("membership_checker", "members"),
             ("raw_membership", "allowed_accesses"),
+            ("transport_outputs", "reserved"),
             ("alias_state", "writers"),
         )
 
@@ -12599,6 +12740,10 @@ exit 37
             (("helper_inventory", "definition_order"), "unordered"),
             (("function_shadowing", "result"), "allow"),
             (("raw_membership", "additional_access"), "allow"),
+            (
+                ("transport_outputs", "later_or_external_mutation"),
+                "allow",
+            ),
             (("alias_state", "dynamic_target"), "allow"),
         ):
             changed = json.loads(json.dumps(entry))
