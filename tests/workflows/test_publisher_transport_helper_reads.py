@@ -692,6 +692,48 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
             )
         )
 
+    def test_unreviewed_shell_state_commands_are_rejected(self):
+        rejected = (
+            "coproc CHECK { sleep 0.01; printf done; }\n"
+            'printf before\nwait "$CHECK_PID"\n',
+            "set -- authenticated\nset -- fake\n"
+            'cgroup_path="$1"\nprintf "%s\\n" "$cgroup_path"\n',
+            "set -- authenticated fake\nshift\n"
+            'cgroup_path="$1"\nprintf "%s\\n" "$cgroup_path"\n',
+            "set -- -a value\ngetopts a: option\n"
+            'printf "%s:%s:%s\\n" "$option" "$OPTARG" "$OPTIND"\n',
+            "runner=coproc\n$runner printf done\n",
+            "show() {\n builtin getopts a: option\n}\nshow\n",
+            "if true; then command set -- fake; fi\n",
+        )
+        for index, script in enumerate(rejected):
+            completed = subprocess.run(
+                ["/bin/bash", "-c", script],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if index < 4:
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertTrue(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    script,
+                    label="unreviewed shell state command",
+                )
+            )
+        for safe in (
+            "set -euo pipefail\n",
+            "set -o errexit\n",
+            "printf '%s\\n' 'coproc set -- shift getopts'\n",
+        ):
+            self.assertFalse(
+                publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                    safe,
+                    label="inert shell state spelling",
+                )
+            )
+
     def test_publisher_and_upstream_enforce_helper_dereferences(self):
         original = WORKFLOW.read_text(encoding="utf-8")
         producer = (
@@ -724,7 +766,30 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 'name="$ordinary"; printf "%s" "$((name))" > /dev/null',
             )
         )
+        coproc_checker = original.replace(
+            '        /usr/bin/python3 -I -S - "$$" <<\'PY\'\n',
+            '        coproc CHECK { /usr/bin/python3 -I -S - "$$" '
+            "<<'PY'\n",
+            1,
+        ).replace(
+            "        PY\n        handoff_names=",
+            "        PY\n        }\n        handoff_names=",
+            1,
+        )
         mutations = (
+            original.replace(
+                '        cgroup_path="$1"\n',
+                "        set -- /untrusted\n"
+                '        cgroup_path="$1"\n',
+                1,
+            ),
+            original.replace(
+                '        cgroup_path="$1"\n',
+                "        getopts a: option\n"
+                '        cgroup_path="$1"\n',
+                1,
+            ),
+            coproc_checker,
             original.replace(producer, helper + producer, 1),
             original.replace(producer, producer + helper, 1),
             original.replace(second_producer, helper + second_producer, 1),

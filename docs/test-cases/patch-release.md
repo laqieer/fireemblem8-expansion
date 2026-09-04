@@ -149,6 +149,8 @@ output file or substitutes for the explicit BPS apply command.
 
    ```bash
    python3 -m unittest tests.workflows.test_patch_release_workflow -v
+   python3 -m unittest tests.workflows.test_publisher_transport_helper_reads -v
+   python3 -m unittest tests.upstream_port.test_verify -v
    ```
 
 3. If a legal base is available locally, make a disposable one-byte-modified
@@ -397,6 +399,9 @@ unrelated writes and reviewed pure-read phase events remain valid.
 Unresolved environment/positional/default expansions, substitutions,
 backticks, ambiguity markers, and dynamic nameref targets fail closed through
 multi-hop readonly or mutable arithmetic/subscript aliases; fixed constants pass.
+Syntax-active `coproc`, `getopts`, `shift`, and positional-mutating `set`
+forms reject globally, including aliases, wrappers, helpers, and control
+placements. Reviewed shell-option `set` forms and quoted data remain valid.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,

@@ -272,12 +272,14 @@ _SECURITY_SENSITIVE_FUNCTION_NAMES = frozenset(
         "builtin",
         "case",
         "command",
+        "coproc",
         "declare",
         "enable",
         "env",
         "eval",
         "export",
         "hash",
+        "getopts",
         "local",
         "mapfile",
         "mount",
@@ -286,6 +288,7 @@ _SECURITY_SENSITIVE_FUNCTION_NAMES = frozenset(
         "readarray",
         "readonly",
         "set",
+        "shift",
         "shopt",
         "sort",
         "source",
@@ -4494,6 +4497,8 @@ def _analyze_function_call(
             function_aliases,
         ):
             return True, {}
+        if _command_mutates_unreviewed_shell_state(resolved):
+            return True, {}
         reviewed_transport_write = _is_reviewed_transport_output_write(
             function_name,
             resolved,
@@ -5403,6 +5408,47 @@ def _arithmetic_writes_protected_state(
                     or value in _RESERVED_TRANSPORT_OUTPUTS
                 ):
                     return True
+    return False
+
+
+def _command_mutates_unreviewed_shell_state(
+    tokens: tuple[str, ...],
+) -> bool:
+    stripped = _strip_shell_command_prefixes(tokens)
+    normalized = _normalize_shell_builtin_wrappers(stripped)
+    if not normalized:
+        return normalized is None and any(
+            posixpath.basename(token) in {
+                "coproc",
+                "getopts",
+                "set",
+                "shift",
+            }
+            for token in stripped
+        )
+    executable = posixpath.basename(normalized[0])
+    if executable in {"coproc", "getopts", "shift"}:
+        return True
+    if executable != "set":
+        return False
+    expect_option_name = False
+    arguments = normalized[1:]
+    for index, argument in enumerate(arguments):
+        if _is_redirection_token(argument):
+            arguments = arguments[:index]
+            break
+    for argument in arguments:
+        if expect_option_name:
+            expect_option_name = False
+            continue
+        if argument == "--":
+            return True
+        if argument in {"-", "+"}:
+            continue
+        if argument.startswith(("-", "+")) and argument not in {"-", "+"}:
+            expect_option_name = argument[1:].endswith("o")
+            continue
+        return True
     return False
 
 
@@ -6412,6 +6458,10 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 tokens,
                 resolved_token_texts,
                 aliases,
+            ):
+                return True
+            if _command_mutates_unreviewed_shell_state(
+                resolved_token_texts
             ):
                 return True
             executable_tokens = _strip_shell_command_prefixes(

@@ -1405,6 +1405,9 @@
           "arithmetic_writes": "protected-and-tracked-reject",
           "readonly_arithmetic_write": "failed-state-preserved",
           "dynamic_arithmetic_alias": "unresolved-target-fail-closed",
+          "coprocess": "reject",
+          "positional_parameter_mutation": "reject",
+          "getopts": "reject",
           "later_or_external_mutation": "reject"
         },
         "alias_state": {
@@ -1436,6 +1439,14 @@
         {
           "command": "python3 -m unittest tests.workflows.test_patch_release_workflow -v",
           "evidence": "tests/workflows/test_patch_release_workflow.py"
+        },
+        {
+          "command": "python3 -m unittest tests.workflows.test_publisher_transport_helper_reads -v",
+          "evidence": "tests/workflows/test_publisher_transport_helper_reads.py"
+        },
+        {
+          "command": "python3 -m unittest tests.upstream_port.test_verify -v",
+          "evidence": "tests/upstream_port/test_verify.py"
         }
       ]
     },

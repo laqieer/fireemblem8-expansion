@@ -8088,7 +8088,6 @@ exit 37
             'set -o "$option"\n',
             "option=nounset\n"
             'set +o "$option"\n',
-            "set -- posix hashall\n",
         ):
             with self.subTest(
                 unrelated_dispatch_target=(
@@ -12640,6 +12639,9 @@ exit 37
                 "arithmetic_writes": "protected-and-tracked-reject",
                 "readonly_arithmetic_write": "failed-state-preserved",
                 "dynamic_arithmetic_alias": "unresolved-target-fail-closed",
+                "coprocess": "reject",
+                "positional_parameter_mutation": "reject",
+                "getopts": "reject",
                 "later_or_external_mutation": "reject",
             },
             "alias_state": {

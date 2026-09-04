@@ -426,6 +426,10 @@ provably readonly arithmetic writes leave modeled state unchanged.
 Arithmetic and indexed-subscript identifiers fail closed when any alias-chain
 value remains a runtime parameter, substitution, backtick, ambiguity marker,
 or dynamic nameref target; fixed numeric alias chains remain ordinary data.
+The production builder uses no coprocess, option parser, shift, or positional
+reset. Syntax-active `coproc`, `getopts`, `shift`, and positional-mutating
+`set` commands therefore reject across aliases, wrappers, helpers, and control
+placements; reviewed option-only `set` commands and quoted data remain valid.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.
