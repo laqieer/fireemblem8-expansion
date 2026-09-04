@@ -1,5 +1,6 @@
 import os
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -840,6 +841,58 @@ class PublisherTransportHelperReadTests(unittest.TestCase):
                 capture_output=True,
             )
             self.assertNotEqual(completed.returncode, 0)
+
+    def test_quoted_and_escaped_closers_are_redirection_target_words(self):
+        cases = (
+            ("single-quoted-paren", "printf payload > ')'", ")"),
+            ("escaped-paren", r"printf payload > \)", ")"),
+            ("double-quoted-brace", 'printf payload > "}"', "}"),
+            ("escaped-brace", r"printf payload > \}", "}"),
+        )
+        artifact_root = ROOT / "build" / "test-artifacts"
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix="publisher-redirection-closers-",
+            dir=artifact_root,
+        ) as temporary:
+            for label, script, target in cases:
+                with self.subTest(case=label):
+                    records = publisher_shell_contract.split_bash_command_records(
+                        script,
+                        label=label,
+                    )
+                    tokens = publisher_shell_contract._split_attached_redirections(
+                        publisher_shell_contract._parse_shell_tokens(
+                            records[0].text,
+                            label=label,
+                        )
+                    )
+                    self.assertEqual(tokens[-1].text, target)
+                    self.assertFalse(
+                        any(
+                            segment[2]
+                            for segment in tokens[-1].segments
+                        )
+                    )
+                    self.assertFalse(
+                        publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                            script,
+                            label=label,
+                        )
+                    )
+                    completed = subprocess.run(
+                        [
+                            "/bin/bash",
+                            "-c",
+                            script + f"\nprintf '%s' \"$(cat -- '{target}')\"\n",
+                        ],
+                        cwd=temporary,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertEqual(completed.returncode, 0, completed.stderr)
+                    self.assertEqual(completed.stdout, "payload")
 
     def test_wait_output_variables_are_rejected(self):
         runtime = (

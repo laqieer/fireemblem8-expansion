@@ -1615,7 +1615,8 @@ def split_bash_command_records(
             if (
                 index + 1 >= len(tokens)
                 or _token_is_active_redirection(tokens[index + 1])
-                or tokens[index + 1].text in {")", "}"}
+                or _token_is_active_literal(tokens[index + 1], ")")
+                or _token_is_active_literal(tokens[index + 1], "}")
             ):
                 raise ValueError(f"{label} has missing redirection target")
     return tuple(records)
@@ -2083,6 +2084,13 @@ def _token_is_active_redirection(token: _ShellToken) -> bool:
     return _is_redirection_token(token.text) and (
         not token.segments
         or any(segment[2] for segment in token.segments)
+    )
+
+
+def _token_is_active_literal(token: _ShellToken, value: str) -> bool:
+    return token.text == value and (
+        not token.segments
+        or all(segment[2] for segment in token.segments)
     )
 
 
@@ -2649,6 +2657,61 @@ def _case_pattern_payload_tokens(
     if payload.startswith(")"):
         raise ValueError(f"{label} case-pattern token differs")
     return (_shell_token_from_text(payload, label=label),)
+
+
+def _normalize_alias_state_command_tokens(
+    command: tuple[_ShellToken, ...],
+    *,
+    label: str,
+    allow_case_pattern: bool = False,
+) -> tuple[_ShellToken, ...]:
+    tokens = command
+    for _depth in range(8):
+        prefix_count = 0
+        while (
+            prefix_count < len(tokens)
+            and tokens[prefix_count].text in _SIMPLE_COMMAND_PREFIXES
+        ):
+            prefix_count += 1
+        if prefix_count >= len(tokens):
+            return tokens
+
+        candidate = tokens[prefix_count]
+        if allow_case_pattern and _token_could_be_case_pattern(candidate):
+            payload = _case_pattern_payload_tokens(candidate, label=label)
+            if payload is not None:
+                tokens = (
+                    tokens[:prefix_count]
+                    + payload
+                    + tokens[prefix_count + 1 :]
+                )
+                continue
+
+        if not _token_is_active_literal(candidate, "time"):
+            return tokens
+
+        suffix = list(tokens[prefix_count + 1 :])
+        if suffix and _token_is_active_literal(suffix[0], "-p"):
+            suffix.pop(0)
+        if suffix and _token_is_active_literal(suffix[0], "--"):
+            suffix.pop(0)
+        tokens = tokens[:prefix_count] + tuple(suffix)
+
+        executable_index = prefix_count
+        while (
+            executable_index < len(tokens)
+            and _ASSIGNMENT_RE.fullmatch(tokens[executable_index].text)
+        ):
+            executable_index += 1
+        if executable_index >= len(tokens):
+            return tokens
+        executable = tokens[executable_index]
+        if executable.has_shell_syntax or (
+            executable.text.startswith("-")
+            and _token_is_active_literal(executable, executable.text)
+        ):
+            raise ValueError(f"{label} time prefix differs")
+    raise ValueError(f"{label} executable prefix depth differs")
 
 
 def _semantic_surface_tokens(
@@ -4498,6 +4561,11 @@ def _function_body_has_controlled_alias_writes(
             command,
             label="function control-flow write",
         )
+        tokens = _normalize_alias_state_command_tokens(
+            tokens,
+            label="function control-flow write",
+            allow_case_pattern="case" in record.control_scopes,
+        )
         if tokens and all(
             _SHELL_ALIAS_ASSIGNMENT_RE.fullmatch(token.text)
             or _SHELL_INDEXED_ASSIGNMENT_RE.fullmatch(token.text)
@@ -4569,6 +4637,11 @@ def _analyze_function_call(
                 command,
                 label=f"{function_name} call-time body",
             )
+        )
+        tokens = _normalize_alias_state_command_tokens(
+            tokens,
+            label=f"{function_name} call-time body",
+            allow_case_pattern="case" in record.control_scopes,
         )
         if any(_token_has_nested_braced_parameter(token) for token in tokens):
             return True, {}
@@ -6051,6 +6124,10 @@ def _apply_shell_builtin_alias_writes(
 ) -> bool:
     if original_shell_tokens is not None:
         lexed = _split_attached_redirections(original_shell_tokens)
+        lexed = _normalize_alias_state_command_tokens(
+            lexed,
+            label="shell builtin alias write",
+        )
         tokens = _resolve_tokens_for_alias_state(lexed, aliases)
     normalized = _normalize_shell_builtin_wrappers(tokens)
     if normalized is None:
@@ -6614,6 +6691,13 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 and "supervisor_cgroup" in token_texts[1:]
             ):
                 return True
+            raw_tokens = tokens
+            tokens = _normalize_alias_state_command_tokens(
+                tokens,
+                label=label,
+                allow_case_pattern="case" in command_record.control_scopes,
+            )
+            token_texts = _token_texts(tokens)
             resolved_token_texts = _resolve_tokens_for_alias_state(
                 tokens,
                 aliases,
@@ -6693,7 +6777,12 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 if reviewed_trap_count != 1:
                     return True
             if _helper_call_has_sensitive_arguments(
-                resolved_token_texts,
+                (
+                    _resolve_tokens_for_alias_state(raw_tokens, aliases)
+                    if raw_tokens
+                    and _token_could_be_case_pattern(raw_tokens[0])
+                    else resolved_token_texts
+                ),
                 user_functions=encountered_functions,
                 function_bodies=function_bodies,
                 aliases=aliases,

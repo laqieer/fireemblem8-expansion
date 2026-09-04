@@ -442,7 +442,11 @@ pipelines, and `|&` retain control topology.
 One longest-match operator table also keeps noclobber override `>|` atomic,
 with optional fd prefixes and attached, separate, quoted, or dynamic targets.
 Every active redirection must have a following non-redirection word target;
-command/control boundaries, closing tokens, and adjacent redirects fail closed.
+command/control boundaries, syntax-active closing tokens, and adjacent
+redirects fail closed, while quoted or escaped closing characters remain words.
+Syntax-active `time` prefixes (`-p` and optional `--`) and inline case-arm
+payloads are normalized before writer/phase analysis; dynamic or unsupported
+prefix grammar fails closed.
 `wait -p` output-variable forms likewise reject across clustered, attached,
 wrapped, aliased, helper, control, and dynamic option/target forms; the two
 reviewed ordinary PID waits remain valid.

@@ -412,8 +412,10 @@ background, AND-list, and pipeline operators retain their topology.
 The shared longest-match table includes `>|`, so its pipe character never
 becomes pipeline topology and later `set` argv remains visible.
 Missing targets and targets replaced by control/closing/adjacent-redirection
-tokens reject, while atomic fd, dynamic, process, heredoc, and here-string
-targets remain valid.
+tokens reject, while quoted/escaped closer names and atomic fd, dynamic,
+process, heredoc, and here-string targets remain valid.
+`time`, its `-p`/`--` forms, and inline case-pattern payloads expose their
+executed command to phase and writer checks; ambiguous prefix grammar rejects.
 Every `wait -p` output-variable form rejects, including clustered/attached
 options and dynamic or wrapped destinations; reviewed ordinary waits remain.
 `BASH_CMDS` and `BASH_ALIASES` reject every modeled writer. Function shadows

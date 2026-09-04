@@ -1878,6 +1878,12 @@ def generate_reserved_transport_output_mutations(workflow: str):
         "trap '{name}=()' DEBUG\n",
         "callback() {{ {name}=(); }}\n"
         "mapfile -C callback -c 1 -t ordinary < /dev/null\n",
+        "time read -a {name} <<< /dev\n",
+        "time -p read -a {name} <<< /dev\n",
+        "time -- read -a {name} <<< /dev\n",
+        "time -p -- read -a {name} <<< /dev\n",
+        "case x in\nx) read -a {name} <<< /dev\n;;\nesac\n",
+        "case x in\nx)read -a {name} <<< /dev\n;;\nesac\n",
     )
     consumers = (
         'printf "%s\\n" "${#ARRAY_NAME[@]}" > /dev/null\n',
@@ -8232,6 +8238,98 @@ exit 37
                         publisher_boundary_errors(changed),
                     )
 
+    def test_executable_prefixes_cannot_hide_transport_writers(self):
+        writer = (
+            "read -a checked_supervisor_transport_output <<< /dev"
+        )
+        cases = (
+            ("time", f"time {writer}"),
+            ("time-posix", f"time -p {writer}"),
+            ("time-end-options", f"time -- {writer}"),
+            ("time-posix-end-options", f"time -p -- {writer}"),
+            ("negated-time", f"! time {writer}"),
+            ("case-spaced", f"case x in\nx) {writer}\n;;\nesac"),
+            ("case-attached", f"case x in\nx){writer}\n;;\nesac"),
+            (
+                "case-time",
+                f"case x in\nx) time -p -- {writer}\n;;\nesac",
+            ),
+        )
+        for label, mutation in cases:
+            with self.subTest(prefix=label):
+                script = (
+                    "checked_supervisor_transport_output=(/dev/shm /dev)\n"
+                    + mutation
+                    + "\n"
+                    'test "${#checked_supervisor_transport_output[@]}" -eq 1\n'
+                    'test "${checked_supervisor_transport_output[0]}" = /dev\n'
+                )
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", script],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        script,
+                        label=label,
+                    )
+                )
+
+        for command in (
+            "time true",
+            "time -p true",
+            "time -- true",
+            "time -p -- true",
+        ):
+            with self.subTest(reviewed_time=command):
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", command],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertFalse(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        command,
+                        label=command,
+                    )
+                )
+
+        for label, script in (
+            (
+                "dynamic-time-option",
+                "option=\n"
+                "time $option read -a "
+                "checked_supervisor_transport_output <<< /dev\n",
+            ),
+            (
+                "unsupported-time-option",
+                "time -x read -a "
+                "checked_supervisor_transport_output <<< /dev\n",
+            ),
+            (
+                "ambiguous-case-pattern",
+                "case x in\n"
+                "x)) read -a checked_supervisor_transport_output "
+                "<<< /dev\n"
+                ";;\n"
+                "esac\n",
+            ),
+        ):
+            with self.subTest(closed_prefix=label):
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        script,
+                        label=label,
+                    )
+                )
+
     def test_production_helper_inventory_is_exact_and_order_independent(self):
         self.assertFalse(
             workflow_has_raw_builder_cgroup_membership_read(self.text)
@@ -12684,6 +12782,7 @@ exit 37
                 "later_or_external_mutation": "reject",
             },
             "alias_state": {
+                "executable_prefixes": "time-and-case-normalized-fail-closed",
                 "writers": [
                     "assignment",
                     "declaration",
