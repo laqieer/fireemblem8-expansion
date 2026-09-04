@@ -249,6 +249,19 @@ _RESERVED_TRANSPORT_OUTPUTS = frozenset(
         "checked_supervisor_transport_output",
     }
 )
+_REVIEWED_TRANSPORT_PHASE_EVENTS = (
+    ("producer", "read_checked_supervisor_transport_file", "$dev_mounts_file", "$dev_mount_targets_max_bytes"),
+    ("consumer", "for", "((index=${#checked_supervisor_transport_output[@]} - 1; index >= 0; index--))"),
+    ("consumer", "dev_mount=${checked_supervisor_transport_output[index]}"),
+    ("producer", "read_checked_supervisor_transport_file", "$remaining_dev_mounts_file", "$dev_mount_targets_max_bytes"),
+    ("consumer", "test", "${#checked_supervisor_transport_output[@]}", "-eq", "1"),
+    ("consumer", "test", "${checked_supervisor_transport_output[0]}", "=", "/dev"),
+    ("producer", "read_checked_runtime_transport_file", "$writable_mount_records_file", "$writable_mount_records_max_bytes"),
+    ("consumer", "test", "$(( ${#checked_runtime_transport_output[@]} % 2 ))", "-eq", "0"),
+    ("consumer", "for", "((index=0; index < ${#checked_runtime_transport_output[@]}; index+=2))"),
+    ("consumer", "mount_target=${checked_runtime_transport_output[index]}"),
+    ("consumer", "mount_options=${checked_runtime_transport_output[index + 1]}"),
+)
 _SECURITY_SENSITIVE_FUNCTION_NAMES = frozenset(
     {
         "alias",
@@ -5647,6 +5660,7 @@ def has_forbidden_raw_builder_cgroup_membership_read(
         "read_checked_runtime_transport_file": 0,
         "read_checked_supervisor_transport_file": 0,
     }
+    transport_phase_events: list[tuple[str, ...]] = []
     control_stack: list[str] = []
     try:
         semantic_script = _strip_patch_release_parser_heredoc_bodies(
@@ -5889,12 +5903,33 @@ def has_forbidden_raw_builder_cgroup_membership_read(
             executable_tokens = _strip_shell_command_prefixes(
                 resolved_token_texts
             )
+            transport_event: tuple[str, ...] | None = None
             if executable_tokens:
                 executable_name = posixpath.basename(executable_tokens[0])
                 if executable_name in transport_producer_calls:
                     if not mandatory_context_is_unconditional:
                         return True
                     transport_producer_calls[executable_name] += 1
+                    transport_event = ("producer",) + token_texts
+            if transport_event is None and any(
+                name in _active_shell_token_text(token)
+                or (
+                    token.has_shell_syntax
+                    and name in resolved
+                )
+                for token, resolved in zip(tokens, resolved_token_texts)
+                for name in _RESERVED_TRANSPORT_OUTPUTS
+            ):
+                transport_event = ("consumer",) + token_texts
+            if transport_event is not None:
+                event_index = len(transport_phase_events)
+                if (
+                    event_index >= len(_REVIEWED_TRANSPORT_PHASE_EVENTS)
+                    or transport_event
+                    != _REVIEWED_TRANSPORT_PHASE_EVENTS[event_index]
+                ):
+                    return True
+                transport_phase_events.append(transport_event)
             if (
                 require_production_helpers
                 and not cgroup_path_initialized
@@ -6164,6 +6199,8 @@ def has_forbidden_raw_builder_cgroup_membership_read(
                 "read_checked_runtime_transport_file": 1,
                 "read_checked_supervisor_transport_file": 2,
             }:
+                return True
+            if tuple(transport_phase_events) != _REVIEWED_TRANSPORT_PHASE_EVENTS:
                 return True
         return False
     except ValueError:

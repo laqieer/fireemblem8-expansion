@@ -392,6 +392,12 @@ main paths. Scalar/indexed/compound assignments, declarations, unset,
 nameref, printf/read/mapfile writers, loop targets, callbacks, traps,
 functions, dynamic targets, duplicate producers, and conditional producers
 reject; consumers cannot observe stale or replaced results.
+An exact phase event sequence makes each array unavailable before production
+and binds every active length/key/index/copy/arithmetic/loop/redirection/
+indirect consumer to the latest intended generation. Supervisor phases cover
+the initial descendant-unmount list and later `/dev` singleton check; the
+runtime phase covers writable-mount pairs. Pre-use, duplicate, reordered,
+interphase, stale, or extra consumers reject.
 
 Only after that teardown does the curl-only secret step create an
 unpredictable `0700` directory and `0400` regular 16 MiB file.

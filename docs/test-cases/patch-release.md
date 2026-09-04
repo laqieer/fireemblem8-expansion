@@ -367,6 +367,11 @@ unconditional main paths. Every other assignment, declaration, unset,
 nameref, writer builtin, loop target, callback, trap, helper, dynamic target,
 duplicate producer, or conditional producer rejects, preventing skipped
 unmounts and empty writable-mount validation.
+The semantic phase machine starts each array unavailable and admits only the
+reviewed producer/consumer event sequence. Active length, key, index, copy,
+arithmetic, loop, redirection, indirect, and dynamic reads bind to the latest
+generation. Pre-use, stale/interphase, duplicate, reordered, and extra
+consumers reject; the two supervisor generations remain distinct.
 `command` (`-p`/`--`) and `builtin` prefixes are normalized after resolving
 wrapper, builtin, and target aliases. Wrapped unset and mutating declare/
 typeset/local/export/readonly/read/mapfile/readarray/`printf -v`, eval, source,
@@ -576,6 +581,8 @@ archival-lane behavior changes.
   `$((…))`/`$[…]` word continuation and adjacent redirection controls,
   parameterized supervisor/runtime transport-result mutations plus executable
   descendant-unmount and writable-mount replacement bypasses,
+  set-u pre-use failures, active consumer families, stale/interphase/order
+  mutations, and the reviewed two-supervisor/one-runtime phase sequence,
   parsed registry-contract mutations,
   recursive
   command/process-substitution inspection for

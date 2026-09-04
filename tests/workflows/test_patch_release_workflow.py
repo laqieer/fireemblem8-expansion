@@ -1879,7 +1879,27 @@ def generate_reserved_transport_output_mutations(workflow: str):
         "callback() {{ {name}=(); }}\n"
         "mapfile -C callback -c 1 -t ordinary < /dev/null\n",
     )
+    consumers = (
+        'printf "%s\\n" "${#ARRAY_NAME[@]}" > /dev/null\n',
+        'printf "%s\\n" "${!ARRAY_NAME[@]}" > /dev/null\n',
+        'copy=("${ARRAY_NAME[@]}")\n',
+        'printf "%s\\n" "${ARRAY_NAME[0]}" > /dev/null\n',
+        'test "$(( ${#ARRAY_NAME[@]} % 2 ))" -eq 0\n',
+        'for value in "${ARRAY_NAME[@]}"; do true; done\n',
+        'read ordinary <<< "${ARRAY_NAME[0]}"\n',
+        'name=ARRAY_NAME\nprintf "%s\\n" "${!name}" > /dev/null\n',
+    )
     for family, (name, marker) in arrays.items():
+        for index, template in enumerate(consumers):
+            mutation = "".join(
+                f"        {line}\n"
+                for line in template.replace(
+                    "ARRAY_NAME",
+                    name,
+                ).splitlines()
+            )
+            changed = workflow.replace(marker, mutation + marker, 1)
+            yield f"{family}-preuse-{index}", changed
         for index, template in enumerate(writers):
             mutation = "".join(
                 f"        {line}\n"
@@ -1901,6 +1921,20 @@ def generate_reserved_transport_output_mutations(workflow: str):
         yield f"{family}-conditional-producer", conditional
         duplicate = workflow.replace(marker, marker + marker, 1)
         yield f"{family}-duplicate-producer", duplicate
+    second_supervisor = (
+        '        read_checked_supervisor_transport_file \\\n'
+        '          "$remaining_dev_mounts_file" \\\n'
+        '          "$dev_mount_targets_max_bytes"\n'
+    )
+    stale = (
+        '        printf "%s\\n" '
+        '"${checked_supervisor_transport_output[0]}" > /dev/null\n'
+    )
+    yield "supervisor-stale-interphase", workflow.replace(
+        second_supervisor,
+        stale + second_supervisor,
+        1,
+    )
 
 
 def render_supervisor_parent_remount_mutation(
@@ -8097,6 +8131,33 @@ exit 37
                 )
 
     def test_checked_transport_outputs_are_reserved_after_production(self):
+        for name in (
+            "checked_supervisor_transport_output",
+            "checked_runtime_transport_output",
+        ):
+            with self.subTest(preuse=name):
+                script = (
+                    "set -u\n"
+                    f'printf "%s\\n" "${{#{name}[@]}}"\n'
+                )
+                completed = subprocess.run(
+                    ["/bin/bash", "-c", script],
+                    cwd=ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn("unbound variable", completed.stderr)
+                self.assertTrue(
+                    publisher_shell_contract.has_forbidden_raw_builder_cgroup_membership_read(
+                        script,
+                        label=f"{name} pre-use runtime",
+                    )
+                )
+        self.assertFalse(
+            workflow_has_raw_builder_cgroup_membership_read(self.text)
+        )
         supervisor = (
             "checked_supervisor_transport_output=(/dev/shm /dev)\n"
             "checked_supervisor_transport_output=(/dev)\n"
@@ -12564,6 +12625,10 @@ exit 37
                 "writers": "matching-reviewed-reader-only",
                 "supervisor_producer_calls": 2,
                 "runtime_producer_calls": 1,
+                "initial_state": "unavailable",
+                "consumer_protocol": "exact-latest-phase-sequence",
+                "supervisor_phases": 2,
+                "runtime_phases": 1,
                 "later_or_external_mutation": "reject",
             },
             "alias_state": {
@@ -12743,6 +12808,10 @@ exit 37
             (
                 ("transport_outputs", "later_or_external_mutation"),
                 "allow",
+            ),
+            (
+                ("transport_outputs", "consumer_protocol"),
+                "unordered",
             ),
             (("alias_state", "dynamic_target"), "allow"),
         ):

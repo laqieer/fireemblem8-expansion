@@ -1390,6 +1390,10 @@
           "writers": "matching-reviewed-reader-only",
           "supervisor_producer_calls": 2,
           "runtime_producer_calls": 1,
+          "initial_state": "unavailable",
+          "consumer_protocol": "exact-latest-phase-sequence",
+          "supervisor_phases": 2,
+          "runtime_phases": 1,
           "later_or_external_mutation": "reject"
         },
         "alias_state": {
