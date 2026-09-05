@@ -69,9 +69,15 @@ behavior. Publisher runtime cases use disposable Linux namespaces.
    at 125 if closure alone is removed; ambient GitHub/Bash command-file
    variables never reach the candidate.
 
-### Expected result and negative controls
+### Expected result
 
-All commands pass in the supported configuration. The inventory alone accepts
+All commands pass in the supported configuration. Both production consumers
+and the exact-tree CLI enforce the complete success path, including the final
+post-check, with one fixed checker and no legacy membership observation.
+
+### Negative control
+
+The inventory alone accepts
 the phase-only early/late/wrong-frame variants; removing **only** the phase
 authority reproduces that acceptance in both real consumers. Restoring the
 phase machine rejects them. This negative control proves more than a command
@@ -89,7 +95,7 @@ symlinks/hardlinks/directories, changed ownership/modes, short targets and
 empty/oversized metadata. Real namespace mount-state failure is tested
 separately from these direct function inputs.
 
-### Dependencies, compatibility, and limits
+### Interactions and save compatibility
 
 This is a true child of #200's registry/event API, not an independent root or a
 second parser. #177 recovery depends on it; #195 overlaps the workflow and
@@ -98,6 +104,22 @@ require normal synchronization and bottom-up delivery. No other feature
 conflicts, optional modes, artifact-format/Build-topology changes, ROM/RAM,
 save/config identity, generated game-data, localization, modern debug/release,
 or archival changes apply.
+
+### Automation
+
+The focused commands above exercise the real phase validator, both semantic
+consumers, the exact-tree CLI, candidate FD closure and authenticated supervisor
+lifecycle. The prerequisite command-inventory case additionally executes both
+fresh-step Git staging commands under the complete workflow environment and
+checks launcher source/import binding without eager execution or cache loading.
+All deterministic assertions are automated; no visual, audio, subjective, or
+manual-only criterion exists.
+
+### Cleanup and limitations
+
+The tests remove only their unique `build/test-artifacts` directories and bound
+each namespace with `--kill-child=KILL`; never alter a live publisher cgroup or
+signal unrelated processes.
 
 The rootless runtime fixture has two explicit adapters: `--keep-groups` in a
 single-ID user namespace, and a same-PID exec adapter that mirrors **live**
@@ -109,8 +131,7 @@ the supported privileged runner and exact-master Build. Do not equate a local
 pass with #177 recovery. Hosts without namespace support cannot run the live
 case; no success-shaped fallback is provided.
 
-All deterministic assertions map to the commands above; no visual, audio,
-subjective, or manual-only criterion exists. Roll back this child on a
+Roll back this child on a
 regression while retaining the recovery hold rather than disabling its phase
 authority.
 
@@ -168,8 +189,26 @@ authority.
    mode drift. Added package imports must also belong to the selected tree;
    unknown/dynamic imports and Git-environment redirection fail. A hostile
    target program is inspected as data and never executes.
+7. Confirm the fresh staging regression uses the complete parsed workflow
+   environment and the actual Bash/Git prologue. Removing only its Git-variable
+   unset produces exit 128; the real prologue succeeds and stages exactly the
+   selected commit's publisher and candidate-launcher bytes under
+   `PATCH_RUNTIME_ROOT`. The launcher transport still installs the canonical
+   `/mnt/control` identity. Source/ref/redirect and conditional
+   staging mutations fail both semantic consumers even with refreshed outer
+   shell identities.
+8. Confirm inert unchecked-hash caches for the entire authority closure do
+   not alter the real isolated CLI, with or without `-B`. The control loader
+   executes the inert cache and raises its deliberate error while all tracked
+   sources still match Git. The corrected CLI succeeds; changed package
+   or launcher source rejects before import; added launcher imports join the
+   captured closure without executing the launcher. A second fixture changes source files after
+   verification and proves both consumers still execute only the captured
+   verified bytes, without reopening paths or importing outside the closure.
+   Each program's declared inputs/outputs also survive into its signature and
+   event accesses; deleting a required access rejects the inventory.
 
-### Expected result and negative control
+### Expected result
 
 All commands above succeed in the supported configuration; every adversarial
 fixture fails before publication. Both semantic suites consume the same
@@ -177,13 +216,18 @@ authority and agree. The exact membership-checker command is mandatory with
 one production occurrence after #201 integration; removing or adding one
 fails the closed inventory.
 
+### Negative control
+
 The pre-fix PR #195 substring analyzer accepts the composed Python reader.
 The new executable regression also removes only the shared authority call:
 with legitimately refreshed outer shell identities both consumers then accept
 that same reader, while the real authority rejects it. This demonstrates the
 behavioral negative control independently of raw hashes or source wording.
+The fresh-shell exit-128 control and inert-cache exception independently
+reproduce PR #209's staging and source-loading regressions. No hostile shell
+command is executed; the controlled cache only raises an exception.
 
-### Interactions, cleanup and limitations
+### Interactions and save compatibility
 
 #201 owns candidate-completion/checker/export ordering and activates the fixed
 producer, removing legacy observations. #195's remaining purpose is reconciled
@@ -195,12 +239,15 @@ silently analyzed as safe.
 
 The case has no save, configuration, generated-data, localization, target
 ROM/RAM, modern profile or archival impact. No manual criterion applies.
+
+### Cleanup and limitations
+
 Fixtures clean up their own ignored directories; do not change a live
 publisher cgroup or run the adversarial strings. Revert the dedicated
 foundation if needed, and keep #201/#195 blocked instead of weakening
 authorization.
 
-### Automation mapping
+### Automation
 
 The commands in step 1 are the complete focused mapping. The first suite
 executes the production inventory, parser, program, mutation and exact-tree

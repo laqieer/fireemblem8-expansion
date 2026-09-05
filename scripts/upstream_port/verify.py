@@ -2212,6 +2212,12 @@ def _parse_job_steps(job_name, body):
 
 
 def _parse_workflow_structure_text(text):
+    publisher_shell_contract.publisher_inventory.reviewed_inventory().validate_producer(
+        publisher_shell_contract.publisher_run_script(
+            text, "Verify exact candidate and stage trusted producer"
+        ),
+        publisher_shell_contract.publisher_run_script(text),
+    )
     workflow_context = _parse_workflow_context(text)
     jobs = _workflow_job_entries(text)
     names = tuple(name for name, _ in jobs)

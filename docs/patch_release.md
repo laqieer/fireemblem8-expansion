@@ -52,7 +52,8 @@ not a gameplay option or a blacklist of sensitive filenames.
 - `publisher_programs.py` is the single production source of the reviewed
   Python programs. The two mount readers retain their decoded JSON/NUL-record
   protocol. The workflow stages this file directly from the validated commit,
-  installs it into `/mnt/control`, and makes that mount read-only before use.
+  into the trusted runtime directory, installs it into `/mnt/control`, and
+  makes that mount read-only before use.
   No arbitrary Python code string or heredoc is an approved substitute.
 
 Before staging candidate inputs, the producer runs the isolated authority CLI
@@ -60,10 +61,32 @@ immediately after enabling strict shell options. Its exact-tree check derives
 the complete parser/registry/program/consumer import closure, package
 initializers, file modes and blob identities from Git. Missing, dirty,
 symlinked, hardlinked, executable-mode-changed, or redirected inputs reject.
-It also compares the loaded trusted source checkout to the selected tree;
-target Python is never imported. No committed content-hash ledger or source
-snapshot is maintained. Git tracks source/review/history; raw Git text is not
-behavioral evidence.
+It compares both the trusted source checkout and the selected checkout to that
+tree **before importing local authority modules**. The isolated CLI then
+compiles the same captured, verified bytes through a source-only loader for
+the complete closure, including package initializers. It neither consults
+bytecode/extension caches nor reopens source paths after verification;
+previously imported repository modules cannot substitute for the captured
+ones. `-I -S` alone does not exclude adjacent unchecked-hash Python caches,
+and `-B` only disables cache writes, not reads. `bind_exact_tree` is a data
+check; execution uses `validate_exact_tree` to keep verification and loading
+on the same bytes. No committed content-hash ledger or source snapshot is
+maintained. Git tracks source/review/history; raw Git text is not behavioral
+evidence.
+
+Each workflow step starts a fresh shell. `Inventory.validate_producer`
+therefore checks both the verification prologue and the fresh build step's
+staging prologue. Both explicitly unset the established Git repository-path
+variables; empty `GIT_DIR`/`GIT_WORK_TREE` values are not equivalent to absent
+variables. The two staging signatures bind the Git executable, exact commit
+and source paths, and output redirects to
+`$PATCH_RUNTIME_ROOT/publisher-programs.py` and
+`$PATCH_RUNTIME_ROOT/candidate-launcher.py`. The launcher transport and the
+builder's registered installs read those same trusted runtime files before
+masking the host tree; their `/mnt/control` destinations are unchanged. Changing
+the source/ref/output or making sanitization/staging conditional fails both
+semantic consumers independently of the outer raw-shell identity. An adjacent
+duplicate producer command also exceeds the prologue's reviewed multiplicity.
 
 From a clean source checkout at the exact candidate:
 
@@ -96,7 +119,8 @@ signature has exactly **one** occurrence; a missing or additional checker
 fails. The separate canonical `publisher_candidate.py` retains the reviewed
 no-fork exec and inherited-FD closure. Its installed
 `/mnt/control/candidate-launcher.py` identity is unchanged; its source is now
-included in the same Git-derived exact-tree program closure.
+included with its transitive imports in the same Git-derived exact-tree
+program closure, without executing the launcher or registry during discovery.
 
 `validate_builder_script(source)` returns immutable `Analysis` records.
 `Analysis.commands` covers every authorized statement and nested producer;
@@ -115,6 +139,9 @@ completion bypass. Authorization ignores harmless source spelling; the phase
 policy permits independent initializer/file-install reorderings but rejects
 changes to runtime prerequisites. The pre-existing raw host-shell boundary checks
 remain separate; their hashes are not the behavioral oracle for this case.
+Every Python program's declared inputs and outputs must be represented in its
+signature's accesses; consequently the candidate-launch event includes both
+the launcher's control-file read and candidate execution.
 
 Dependencies are the existing workflow parser, Git exact-tree verification,
 and Linux/Python standard-library tools. #201 depends on this API; #195 must be

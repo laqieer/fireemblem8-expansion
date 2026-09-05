@@ -5,29 +5,19 @@ from __future__ import annotations
 import argparse
 import ast
 from collections import Counter
-from dataclasses import dataclass
+from contextlib import contextmanager
+from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
 from functools import lru_cache
+import importlib.abc
+import importlib.util
+import os
 from pathlib import Path
 import re
 import stat
 import subprocess
 import sys
-from types import ModuleType
-
-if __package__ in {None, ""}:
-    _root = Path(__file__).resolve().parents[2]
-    for _name, _path in (
-        ("scripts", _root / "scripts"),
-        ("scripts.workflow_pilot", _root / "scripts/workflow_pilot"),
-    ):
-        _package = ModuleType(_name)
-        _package.__path__ = [str(_path)]
-        sys.modules[_name] = _package
-    __package__ = "scripts.workflow_pilot"
-    sys.modules[__package__ + ".publisher_inventory"] = sys.modules[__name__]
-
-from . import publisher_shell as shell
+from types import MappingProxyType
 
 
 CASE_ID = "TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001"
@@ -309,6 +299,7 @@ class Inventory:
                     or signature.form.environment
                     or signature.form.redirects
                     or (program.mode is not None and (len(argv) <= 4 or argv[4].literal != program.mode))
+                    or not set(program.inputs + program.outputs) <= set(signature.accesses)
                 ):
                     raise InventoryError("Python signature must select an exact isolated program")
             elif signature.program is not None:
@@ -330,24 +321,49 @@ class Inventory:
             raise InventoryError(f"unregistered publisher command in {scope}: {executable!r}")
         return matches[0]
 
-    def validate_preflight(self, source: str) -> Signature:
+    def _producer_prefix(self, source: str, count: int) -> tuple[Signature, ...]:
         from .publisher_shell_contract import bash_logical_lines
         lines = bash_logical_lines(source, label="publisher authority preflight")
         commands = [line for line in lines if line.strip() and not line.lstrip().startswith("#")]
-        if len(commands) < 2:
-            raise InventoryError("missing publisher authority preflight")
-        setup, signature = (
-            self.authorize(shell.command(line), "producer") for line in commands[:2]
+        if len(commands) < count:
+            raise InventoryError("missing publisher producer command")
+        prefix = tuple(
+            self.authorize(shell.command(line), "producer") for line in commands[:count]
         )
-        expected = Counter({s.name: s.occurrences for s in self.signatures if s.scope == "producer"})
+        if len(commands) > count:
+            try:
+                self.authorize(shell.command(commands[count]), "producer")
+            except ValueError:
+                pass
+            else:
+                raise InventoryError("publisher producer prologue exceeds reviewed multiplicity")
+        return prefix
+
+    def validate_preflight(self, source: str) -> Signature:
+        setup, signature, environment = self._producer_prefix(source, 3)
         if (
-            Counter((setup.name, signature.name)) != expected
+            setup.form.argv[0].literal != "set"
             or setup.events != (EventKind.STATE_WRITE,)
             or signature.program is None
             or signature.program.name != "authority-preflight"
+            or signature.occurrences != 1
+            or setup.occurrences != 1
+            or environment.form.argv[0].literal != "unset"
+            or environment.occurrences != 2
         ):
             raise InventoryError("publisher authority preflight multiplicity differs")
         return signature
+
+    def validate_producer(self, preflight: str, staging: str) -> None:
+        """Bind both fresh-step prologues to the same typed producer inventory."""
+        self.validate_preflight(preflight)
+        first = self._producer_prefix(preflight, 3)
+        second = self._producer_prefix(staging, 3)
+        expected = Counter({
+            s.name: s.occurrences for s in self.signatures if s.scope == "producer"
+        })
+        if second[0] != first[2] or Counter(s.name for s in first + second) != expected:
+            raise InventoryError("publisher program staging inventory differs")
 
     def validate(self, source: str) -> Analysis:
         tree = shell.parse(source)
@@ -505,13 +521,14 @@ def validate_builder_script(source: str) -> Analysis:
 
 def validate_workflow(workflow: str) -> Analysis:
     from . import publisher_shell_contract
-    reviewed_inventory().validate_preflight(
+    staging = publisher_shell_contract.publisher_run_script(workflow)
+    reviewed_inventory().validate_producer(
         publisher_shell_contract.publisher_run_script(
             workflow, "Verify exact candidate and stage trusted producer"
-        )
+        ), staging,
     )
     return validate_builder_script(publisher_shell_contract.builder_isolation_shell_source(
-        publisher_shell_contract.publisher_run_script(workflow), label="publisher inventory"
+        staging, label="publisher inventory"
     ))
 
 
@@ -531,22 +548,46 @@ def _git(root: Path, *arguments: str) -> bytes:
         raise InventoryError("cannot bind publisher authority to the exact Git tree") from error
 
 
-def authority_paths() -> tuple[str, ...]:
-    """Compute the local static import closure, never import a target checkout."""
+def _read_authority_file(base: Path, path: str) -> tuple[bytes, bool]:
+    actual = base / path
+    try:
+        if any((base / parent).is_symlink() for parent in Path(path).parents):
+            raise InventoryError(f"publisher module parent redirected: {path}")
+        descriptor = os.open(actual, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, "rb") as handle:
+            status = os.fstat(handle.fileno())
+            if not stat.S_ISREG(status.st_mode) or status.st_nlink != 1:
+                raise InventoryError(f"publisher module is not a regular file: {path}")
+            source = handle.read(1024 * 1024 + 1)
+            if len(source) > 1024 * 1024:
+                raise InventoryError(f"publisher authority source exceeds bounds: {path}")
+            return source, bool(status.st_mode & 0o111)
+    except OSError as error:
+        raise InventoryError(f"cannot read publisher module: {path}") from error
+
+
+def authority_source_bytes(path: str) -> bytes:
+    """Use the captured source in an exact-tree execution, never reopen its path."""
+    sources = globals().get("_VERIFIED_AUTHORITY_SOURCES")
+    if sources is not None:
+        try:
+            return sources[path]
+        except KeyError as error:
+            raise InventoryError(f"source outside publisher authority: {path}") from error
+    return _read_authority_file(SOURCE_ROOT, path)[0]
+
+
+def _authority_sources(read_source) -> dict[str, bytes]:
+    """Derive the static import closure from captured source, without importing it."""
     pending = [
         "scripts.workflow_pilot.publisher_inventory",
         "scripts.workflow_pilot.publisher_signatures",
         "scripts.workflow_pilot.publisher_programs",
+        "scripts.workflow_pilot.publisher_candidate",
         "scripts.workflow_pilot.publisher_shell_contract",
         "scripts.upstream_port.verify",
     ]
-    pending.extend(
-        signature.program.source_path[:-3].replace("/", ".")
-        for signature in reviewed_inventory().signatures
-        if signature.program is not None
-        and signature.program.source_path.endswith(".py")
-    )
-    paths: set[str] = {WORKFLOW_PATH}
+    sources = {WORKFLOW_PATH: read_source(WORKFLOW_PATH)}
     modules: set[str] = set()
     while pending:
         if len(modules) > 128 or len(pending) > 256:
@@ -558,22 +599,13 @@ def authority_paths() -> tuple[str, ...]:
         path = name.replace(".", "/") + ".py"
         if not (SOURCE_ROOT / path).is_file():
             path = name.replace(".", "/") + "/__init__.py"
-        source = SOURCE_ROOT / path
-        if (
-            not source.is_file()
-            or source.is_symlink()
-            or any((SOURCE_ROOT / parent).is_symlink() for parent in Path(path).parents)
-            or source.stat().st_nlink != 1
-            or source.stat().st_size > 1024 * 1024
-        ):
-            raise InventoryError("publisher authority module is missing or redirected")
-        paths.add(path)
+        sources[path] = read_source(path)
         components = name.split(".")
         for index in range(1, len(components)):
             package_path = "/".join(components[:index]) + "/__init__.py"
             if (SOURCE_ROOT / package_path).exists():
                 pending.append(".".join(components[:index]))
-        tree = ast.parse(source.read_text(encoding="utf-8"))
+        tree = ast.parse(sources[path], filename=path)
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 targets = [alias.name for alias in node.names]
@@ -607,11 +639,16 @@ def authority_paths() -> tuple[str, ...]:
                 and node.func.attr in {"import_module", "spec_from_file_location", "exec_module"}
             ):
                 raise InventoryError("dynamic publisher authority import")
-    return tuple(sorted(paths))
+    return dict(sorted(sources.items()))
 
 
-def bind_exact_tree(repository_root: Path | str, commit: str) -> tuple[str, ...]:
-    """Bind loaded authority and target worktree to Git, without stored hashes."""
+def authority_paths() -> tuple[str, ...]:
+    """Compute the local static import closure, never import a target checkout."""
+    return tuple(_authority_sources(authority_source_bytes))
+
+
+def _bind_exact_sources(repository_root: Path | str, commit: str):
+    """Capture and verify every source before any local authority import."""
     root = Path(repository_root).resolve()
     if re.fullmatch(r"[0-9a-f]{40}", commit) is None or set(commit) == {"0"}:
         raise InventoryError("publisher authority requires a full immutable commit")
@@ -619,8 +656,8 @@ def bind_exact_tree(repository_root: Path | str, commit: str) -> tuple[str, ...]
         raise InventoryError("publisher commit does not resolve exactly")
     if Path(_git(root, "rev-parse", "--show-toplevel").decode().strip()).resolve() != root:
         raise InventoryError("publisher repository is not the exact Git root")
-    paths = authority_paths()
-    for path in paths:
+
+    def read_source(path: str) -> bytes:
         entry = _git(root, "ls-tree", "-z", commit, "--", path).split(b"\0")
         if len(entry) != 2 or not entry[0]:
             raise InventoryError(f"publisher exact-tree module missing: {path}")
@@ -630,26 +667,111 @@ def bind_exact_tree(repository_root: Path | str, commit: str) -> tuple[str, ...]
             raise InventoryError(f"publisher exact-tree module redirected: {path}")
         expected = _git(root, "cat-file", "blob", oid.decode())
         for base in {root, SOURCE_ROOT}:
-            actual = base / path
-            try:
-                for parent in actual.relative_to(base).parents:
-                    if (base / parent).is_symlink():
-                        raise InventoryError(f"publisher module parent redirected: {path}")
-                status = actual.lstat()
-                if not stat.S_ISREG(status.st_mode) or status.st_nlink != 1:
-                    raise InventoryError(f"publisher module is not a regular file: {path}")
-                executable = bool(status.st_mode & 0o111)
-                if executable != (mode == b"100755") or actual.read_bytes() != expected:
-                    raise InventoryError(f"publisher authority differs from exact tree: {path}")
-            except OSError as error:
-                raise InventoryError(f"cannot read publisher module: {path}") from error
-    return paths
+            actual, executable = _read_authority_file(base, path)
+            if executable != (mode == b"100755") or actual != expected:
+                raise InventoryError(f"publisher authority differs from exact tree: {path}")
+        return expected
+
+    return MappingProxyType(_authority_sources(read_source))
+
+
+def bind_exact_tree(repository_root: Path | str, commit: str) -> tuple[str, ...]:
+    """Bind trusted source and target worktree to Git, without stored hashes."""
+    return tuple(_bind_exact_sources(repository_root, commit))
+
+
+class _SourceOnlyAuthority(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+    """The sealed-capsule source-only loader pattern, without a capsule dependency."""
+
+    def __init__(self, sources):
+        self.sources = sources
+        self.modules = {}
+        for path in sources:
+            if not path.endswith(".py"):
+                continue
+            package = path.endswith("/__init__.py")
+            name = path.removesuffix("/__init__.py") if package else path[:-3]
+            name = name.replace("/", ".")
+            self.modules[name] = (path, package)
+            components = name.split(".")
+            for index in range(1, len(components)):
+                self.modules.setdefault(".".join(components[:index]), (None, True))
+
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname != "scripts" and not fullname.startswith("scripts."):
+            return None
+        if fullname not in self.modules:
+            raise InventoryError(f"import outside publisher authority: {fullname}")
+        source_path, package = self.modules[fullname]
+        return importlib.util.spec_from_loader(
+            fullname, self, origin="publisher-exact:" + (source_path or fullname),
+            is_package=package,
+        )
+
+    def create_module(self, spec):
+        return None
+
+    def exec_module(self, module):
+        path, package = self.modules[module.__spec__.name]
+        if package:
+            module.__path__ = []
+        if path is not None:
+            module.__file__ = str(SOURCE_ROOT / path)
+            module.__dict__["_VERIFIED_AUTHORITY_SOURCES"] = self.sources
+            exec(compile(self.sources[path], module.__file__, "exec", dont_inherit=True), module.__dict__)
+
+
+@contextmanager
+def _source_only_authority(sources):
+    """Exclude both on-disk caches and previously imported repository modules."""
+    loader = _SourceOnlyAuthority(sources)
+    previous = {
+        name: module for name, module in sys.modules.copy().items()
+        if name == "scripts" or name.startswith("scripts.")
+    }
+    for name in previous:
+        del sys.modules[name]
+    sys.meta_path.insert(0, loader)
+    try:
+        yield
+    finally:
+        sys.meta_path.remove(loader)
+        for name in tuple(sys.modules):
+            if name == "scripts" or name.startswith("scripts."):
+                del sys.modules[name]
+        sys.modules.update(previous)
 
 
 def validate_exact_tree(repository_root: Path | str, commit: str) -> Analysis:
-    bind_exact_tree(repository_root, commit)
-    workflow = _git(Path(repository_root), "show", commit + ":" + WORKFLOW_PATH).decode("utf-8")
-    return validate_workflow(workflow)
+    sources = _bind_exact_sources(repository_root, commit)
+    with _source_only_authority(sources):
+        from scripts.workflow_pilot import publisher_inventory as verified
+        analysis = verified.validate_workflow(sources[WORKFLOW_PATH].decode("utf-8"))
+    if __name__ == "__main__":
+        return analysis
+    return _public_analysis(analysis)
+
+
+def _public_analysis(analysis) -> Analysis:
+    """Preserve public record types and shared AST references across import isolation."""
+    copied = {}
+
+    def copy(value):
+        if not isinstance(value, (tuple, Enum)) and not is_dataclass(value):
+            return value
+        if id(value) not in copied:
+            if isinstance(value, tuple):
+                result = tuple(copy(item) for item in value)
+            elif isinstance(value, Enum):
+                result = globals()[type(value).__name__](value.value)
+            else:
+                namespace = vars(shell) if type(value).__module__.endswith(".publisher_shell") else globals()
+                record = namespace[type(value).__name__]
+                result = record(**{field.name: copy(getattr(value, field.name)) for field in fields(value)})
+            copied[id(value)] = result
+        return copied[id(value)]
+
+    return copy(analysis)
 
 
 def main(arguments: list[str] | None = None) -> int:
@@ -659,7 +781,7 @@ def main(arguments: list[str] | None = None) -> int:
     args = parser.parse_args(arguments)
     try:
         analysis = validate_exact_tree(args.repository_root, args.commit)
-    except (InventoryError, shell.ShellSyntaxError, OSError, ValueError) as error:
+    except (OSError, ValueError) as error:
         print(f"publisher command authority: {error}", file=sys.stderr)
         return 1
     print(f"publisher command authority: {len(analysis.signatures)} reviewed commands")
@@ -668,3 +790,5 @@ def main(arguments: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+else:
+    from . import publisher_shell as shell
