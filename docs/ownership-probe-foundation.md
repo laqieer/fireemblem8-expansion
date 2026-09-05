@@ -30,9 +30,12 @@ No ARM toolchain, ROM, credentials, GitHub request, or manual judgment is needed
 The host must provide Linux x86-64, GNU Make **4.3**, Python 3, a static-capable
 GNU host C compiler, a glibc runtime, and working user/mount/network/PID namespaces. Where user
 namespaces are unavailable, the existing noninteractive sudo namespace route
-must work; the child drops to the original non-root runner identity before
-execution. Other Make native ABIs/platforms reject, rather than falling back to
-unconfined evaluation. The native observer uses GNU Make's exported 4.3 data
+must work **through the trusted lifecycle watchdog**; the candidate child drops
+to the original non-root runner identity before execution. An unsupported
+watchdog/lifetime pipe or kernel lifecycle primitive rejects before namespace
+launch, never by falling back to an unguarded privileged command. Other Make
+native ABIs/platforms reject, rather than falling back to unconfined evaluation.
+The native observer uses GNU Make's exported 4.3 data
 layout and the Linux syscall-entry/exit information API (kernel 5.3 or later).
 Native C++ tool consumers additionally need the existing host C++ compiler.
 The existing Build `tests/workflows` discovery imports this same process suite;
@@ -83,6 +86,18 @@ semantics. Absolute links never resolve against the supervisor's host root.
 Open, cwd and directory-FD records retain that authorized destination, so a
 runtime alias cannot disguise an undeclared `/repo` access as a library read.
 
+Output directories must remain removable by the original runner. Pathname
+`chmod`/`fchmodat` may retain owner read/write/search permissions, but may not
+remove any of them, even when the path currently denotes a regular file: a
+sibling could replace that file with a directory before kernel dispatch.
+`fchmod` is permitted only on a kernel-confirmed regular-file FD, never a
+directory or a copied directory descriptor. Restrictive `mkdir`/`mkdirat`
+modes and umasks that remove owner permissions reject too; the trusted child
+bootstrap starts with umask `022`. Regular-file `fchmod`, compiler executable
+permissions and owner-accessible output directories remain supported. Thus
+`chmod('/work', 0)` rejects before changing the host-backed directory instead
+of making cleanup fail and masking the original rejection.
+
 ### Mapping, protection and fork contract
 
 Anonymous memory must be private. Shared anonymous mappings reject even when
@@ -114,6 +129,16 @@ Make capsule. A native guard rejects **every** Make `load` before a module entry
 point, including attempts to load an already-mapped host object. Candidate
 executables, alternate loaders/interpreters, nested native Make through
 `SHELL`, and noncontract `.SHELLFLAGS` are not execution authority.
+
+Make's runtime is captured once per session from its actual ELF interpreter
+and that trusted interpreter's bounded `--list` dependency closure. Canonical
+system tool/library paths, resolved aliases and their ancestors must be
+root-owned and not group/other writable. The captured regular-file bytes are
+copied into each read-only Make capsule; neither a Debian multiarch libc path
+nor a live `/usr` mount is assumed. Non-multiarch `/usr/lib` layouts retain the
+same GNU Make 4.3/glibc ABI requirement. No candidate ELF, `ldd` script, ambient
+preload/library path or repository cwd participates in runtime discovery.
+Later capsules reuse the immutable capture, not mutable aliases or host reads.
 
 There is no candidate-readable generated probe program or writable domain
 file. The trusted observer reads GNU Make's actual target/dependency/recipe
@@ -243,6 +268,28 @@ SIGINT/SIGTERM kill/reap the recorded process groups and traced descendants,
 clear caches, close channels and remove only the owned scratch tree. Scratch
 components and input leaves reject symlinks/FIFOs. No cleanup uses process
 names, other worktrees, global caches or system temporary directories.
+
+In the sudo route, both the namespace availability probe and every capsule
+launch use the same privileged watchdog. The outer caller owns the sole write
+end of a lifetime pipe; its closure (including process death), the original
+aggregate deadline, or a watchdog termination signal triggers privileged
+cleanup. The namespace process starts a separate session and never inherits
+the lifetime pipe. The watchdog pins the unreaped session leader until it has
+signaled its group, then reaps that leader and any adopted orphan descendants.
+It uses a kernel subreaper and parent-death signal, followed by unshare's
+`--kill-child` and the private PID namespace, so watchdog death also tears down
+the namespace. Set-ID, file-capability, non-root-owned or writable namespace
+executables fail closed before sudo: an exec privilege transition could clear
+the parent-death signal. The unprivileged caller closes the pipe and waits for that
+cleanup; it never attempts to kill a root-owned group or ignores a
+`PermissionError`.
+
+The process suite tests this lifecycle with same-UID owned process trees and
+a user-namespace substitution for sudo. These deterministic controls do not
+claim a real sudo credential-transition positive. That route requires separate
+exact-candidate evidence on a host where the documented noninteractive sudo
+permission is available; never use a shared development host's credentials or
+change its namespace policy to manufacture the result.
 
 ## Dependency and downstream integration boundary
 

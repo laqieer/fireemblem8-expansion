@@ -17,6 +17,7 @@ import posixpath
 import re
 import resource
 import signal
+import stat
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -319,6 +320,9 @@ class Policy:
         runtime = (
             path.startswith(("/usr/lib/python3.", "/usr/lib/x86_64-linux-gnu/",
                              "/lib/x86_64-linux-gnu/", "/lib64/"))
+            # Unlike command capsules, Make has only captured trusted ELF
+            # runtime files here, never a live /usr mount or candidate input.
+            or self.mode == "make" and path.startswith(("/usr/lib/", "/usr/lib64/", "/lib/"))
             or path in self.executable
             or path == "/lib/vo-observer.so"
         )
@@ -540,14 +544,31 @@ class Policy:
             state.pending = ("cwd", path)
         elif n == 81:
             state.pending = ("cwd", self.check_fd(state, a, "metadata", r))
-        elif n in {76, 83, 84, 87, 90, 92, 94}:
-            path = self.path(pid, state, a, follow_final=n in {76, 90, 92})
+        elif n in {90, 268}:
+            # Pathname chmod can race a regular file's replacement by a
+            # directory. Keep owner traversal even for a claimed regular file.
+            path = self.path(pid, state, b if n == 268 else a, signed(a) if n == 268 else -100)
+            self.check(state, path, "write")
+            mode = c if n == 268 else b
+            if mode & 0o700 != 0o700:
+                raise Violation("candidate pathname permission loss is forbidden")
+        elif n == 91:
+            self.check_fd(state, a, "write", r)
+            if not stat.S_ISREG(os.stat(f"/proc/{pid}/fd/{a}").st_mode):
+                raise Violation("candidate directory permission changes are forbidden")
+        elif n == 95:
+            if a & 0o700:
+                raise Violation("candidate owner permission masking is forbidden")
+        elif n in {76, 83, 84, 87, 92, 94}:
+            path = self.path(pid, state, a, follow_final=n in {76, 92})
             self.check(state, path, "write")
             if n == 76:
                 self.written += b
             if n == 83:
+                if b & 0o700 != 0o700:
+                    raise Violation("candidate untraversable directory creation is forbidden")
                 self.reserve_creation()
-        elif n in {77, 91, 93}:
+        elif n in {77, 93}:
             self.check_fd(state, a, "write", r)
             if n == 77:
                 self.written += b
@@ -561,10 +582,12 @@ class Policy:
             for pointer in (a, b):
                 self.check(state, self.path(pid, state, pointer, follow_final=False), "write")
             self.reserve_creation()
-        elif n in {258, 260, 263, 268, 280}:
-            follow = n == 268 or n == 260 and not e & 0x100 or n == 280 and not d & 0x100
+        elif n in {258, 260, 263, 280}:
+            follow = n == 260 and not e & 0x100 or n == 280 and not d & 0x100
             self.check(state, self.path(pid, state, b, signed(a), follow_final=follow), "write")
             if n == 258:
+                if c & 0o700 != 0o700:
+                    raise Violation("candidate untraversable directory creation is forbidden")
                 self.reserve_creation()
         elif n == 265:
             self.check(state, self.path(pid, state, b, signed(a), follow_final=bool(e & 0x400)), "write")
@@ -603,7 +626,7 @@ class Policy:
                 raise Violation("unknown arch_prctl")
         elif n not in {
             7, 11, 13, 14, 15, 23, 24, 26, 27, 28, 35, 36, 37, 38,
-            39, 60, 61, 63, 79, 95, 96, 97, 98, 99, 100, 102, 104, 107, 108,
+            39, 60, 61, 63, 79, 96, 97, 98, 99, 100, 102, 104, 107, 108,
             110, 111, 115, 118, 120, 121, 124, 127, 128, 129, 130, 131, 186, 202, 204,
             218, 219, 228, 229, 230, 231, 232, 233, 247, 270, 271,
             273, 281, 291, 292, 309, 318, 324, 334,
@@ -655,6 +678,7 @@ def supervise(config, drop_privileges):
         try:
             os.chroot(config["root"])
             os.chdir("/repo")
+            os.umask(0o022)
             os.closerange(3, 65536)
             resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
             resource.setrlimit(resource.RLIMIT_NOFILE, (128, 128))

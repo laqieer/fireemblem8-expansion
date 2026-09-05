@@ -6,19 +6,25 @@ import hashlib
 import json
 import os
 import secrets
+import selectors
 import shutil
 import signal
+import stat
 import subprocess
 import threading
 import time
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from scripts.validation_ownership.authority import AuthorityLoader, ENVIRONMENT, GitTreeEntry, git_tree_entries
-from scripts.validation_ownership.budget import Limits, MakeProbeError, ProbeBudget
-from scripts.validation_ownership.make_probe import Command, ProbeSession, _read_events, _read_observation
+from scripts.validation_ownership.budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget
+from scripts.validation_ownership.make_probe import (
+    Command, ProbeSession, TRUSTED_ROOT, _make_interpreter, _make_runtime,
+    _read_events, _read_observation, _trusted_runtime_bytes,
+)
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -52,10 +58,374 @@ class FoundationTests(unittest.TestCase):
     def assert_clean(self, session):
         self.assertFalse(session.cache)
         self.assertFalse(session.mappings)
+        self.assertFalse(session.make_runtime)
         self.assertFalse(session.budget.children)
         self.assertIsNone(session.snapshot)
         self.assertIsNone(session.base)
         self.assertFalse(self.scratch.exists())
+
+    def test_privileged_cleanup_delegates_before_wait_and_never_hides_permission_errors(self):
+        child = SimpleNamespace(pid=999999999, stdin=Mock(), wait=Mock())
+        with patch("os.killpg", side_effect=PermissionError("modeled root-owned group")) as kill:
+            with self.assertRaises(PermissionError):
+                ProbeBudget._terminate(child)
+            child.wait.assert_not_called()
+            kill.reset_mock()
+            ProbeBudget._terminate(child, privileged=True)
+            kill.assert_not_called()
+            child.stdin.close.assert_called_once_with()
+            child.wait.assert_called_once_with()
+        for argv, supplied in ((["/usr/bin/true"], None), ([*NAMESPACE_LAUNCHER, "/usr/bin/true"], b"input")):
+            with patch("subprocess.Popen") as launch:
+                with self.assertRaisesRegex(MakeProbeError, "guarded PID-namespace lifecycle"):
+                    ProbeBudget().run(argv, env=ENVIRONMENT, privileged=True, input_data=supplied)
+                launch.assert_not_called()
+        from scripts.validation_ownership import lifecycle
+        mode = os.stat("/usr/bin/unshare")
+        elevated = list(mode)
+        elevated[0] |= stat.S_ISUID
+        with patch.object(lifecycle.os, "stat", return_value=os.stat_result(elevated)), patch(
+            "subprocess.Popen",
+        ) as launch:
+            with self.assertRaisesRegex(MakeProbeError, "unsupported privileged namespace lifecycle"):
+                ProbeBudget().run([*NAMESPACE_LAUNCHER, "/usr/bin/true"], env=ENVIRONMENT, privileged=True)
+            launch.assert_not_called()
+        with patch.object(lifecycle.os, "getxattr", return_value=b"modeled file capabilities"), patch(
+            "subprocess.Popen",
+        ) as launch:
+            with self.assertRaisesRegex(MakeProbeError, "file capabilities"):
+                ProbeBudget().run([*NAMESPACE_LAUNCHER, "/usr/bin/true"], env=ENVIRONMENT, privileged=True)
+            launch.assert_not_called()
+
+    def test_privileged_budget_uses_real_watchdog_without_running_sudo(self):
+        budget = ProbeBudget()
+        original = subprocess.Popen
+        invocations = []
+        def same_uid_fixture(argv, **kwargs):
+            self.assertEqual(argv[:7], [
+                "/usr/bin/sudo", "-n", "--", "/usr/bin/python3", "-I", "-S", "-B",
+            ])
+            self.assertEqual(Path(argv[7]), TRUSTED_ROOT / "lifecycle.py")
+            self.assertEqual(float(argv[8]), budget.deadline)
+            self.assertEqual(argv[9], "--")
+            self.assertEqual(tuple(argv[10:10 + len(NAMESPACE_LAUNCHER)]), NAMESPACE_LAUNCHER)
+            self.assertEqual(kwargs["stdin"], subprocess.PIPE)
+            self.assertTrue(kwargs["close_fds"])
+            invocations.append(argv)
+            # Exercise the identical watchdog and PID lifecycle at our own
+            # credentials. This is not evidence of a real sudo transition.
+            owned = [
+                *argv[3:11], "--user", "--map-root-user", *argv[11:],
+            ]
+            return original(owned, **kwargs)
+        with patch("subprocess.Popen", same_uid_fixture), patch(
+            "scripts.validation_ownership.budget.os.killpg",
+            side_effect=PermissionError("outer caller cannot signal privileged groups"),
+        ) as kill:
+            result = budget.run(
+                [*NAMESPACE_LAUNCHER, "/usr/bin/printf", "%s", "guarded namespace"],
+                env=ENVIRONMENT, privileged=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, b"guarded namespace")
+            kill.assert_not_called()
+        self.assertEqual(len(invocations), 1)
+        self.assertFalse(budget.children)
+
+    def test_sudo_preflight_and_capsules_share_the_privileged_lifecycle_contract(self):
+        self.add("Makefile", "all: ;\n")
+        session = self.session()
+        original_run = session.budget.run
+        original_file = Path.is_file
+        guarded = []
+        def fake_namespace(argv, **kwargs):
+            if argv[0] == "/usr/bin/unshare" and "--user" in argv:
+                return subprocess.CompletedProcess(argv, 1, b"", b"modeled user namespace denial")
+            if kwargs.get("privileged"):
+                self.assertEqual(tuple(argv[:len(NAMESPACE_LAUNCHER)]), NAMESPACE_LAUNCHER)
+                guarded.append(argv)
+                if argv[-1] != "/usr/bin/true":
+                    config = json.loads(Path(argv[-1]).read_bytes())
+                    self.assertTrue(config["sudo_drop"])
+                    Path(config["report"]).write_text(json.dumps({
+                        "ok": True, "returncode": 0, "error": None,
+                        "consumed": [], "code_consumed": [], "accessed": [],
+                        "processes": 1, "syscalls": 1, "written_bytes": 0,
+                        "created_files": 0, "memory_peak": 1, "observation_bytes": 0,
+                    }))
+                return subprocess.CompletedProcess(argv, 0, b"", b"")
+            return original_run(argv, **kwargs)
+        with patch.object(session.budget, "run", fake_namespace), patch.object(
+            Path, "is_file", lambda path: str(path) == "/usr/bin/sudo" or original_file(path),
+        ), patch("os.getuid", return_value=1000), patch("os.getgid", return_value=1000):
+            with session:
+                self.assertTrue(session.sudo_drop)
+                session._sandbox_run(
+                    session._new_root("lifecycle-contract"), mode="command",
+                    argv=["/usr/bin/true"], environment=ENVIRONMENT, mounts=[],
+                )
+        self.assertEqual(len(guarded), 2)
+        self.assertEqual(guarded[0][-1], "/usr/bin/true")
+        self.assertEqual(Path(guarded[1][-2]).name, "sandbox_exec.py")
+        self.assert_clean(session)
+
+    def test_privileged_lifetime_closes_on_budget_rejection_and_interruption(self):
+        original = subprocess.Popen
+        def same_uid_fixture(argv, **kwargs):
+            self.assertEqual(argv[:3], ["/usr/bin/sudo", "-n", "--"])
+            return original([*argv[3:11], "--user", "--map-root-user", *argv[11:]], **kwargs)
+        for action in ("deadline", "output", "interrupt"):
+            with self.subTest(action=action):
+                budget = ProbeBudget(Limits(
+                    seconds=0.5 if action == "deadline" else 10,
+                    process_output_bytes=32 if action == "output" else 1024,
+                ))
+                charge = budget.charge
+                def interrupt_output(category, size):
+                    if action == "interrupt" and category == "output":
+                        raise KeyboardInterrupt("modeled caller interruption")
+                    charge(category, size)
+                program = "import os,time\nos.fork()\n"
+                if action != "deadline":
+                    program += "os.write(1, b'x'*100)\n"
+                program += "time.sleep(20)\n"
+                with patch("subprocess.Popen", same_uid_fixture), patch.object(
+                    budget, "charge", interrupt_output,
+                ), patch("os.killpg", side_effect=PermissionError("outer caller lacks permission")) as kill:
+                    with self.assertRaises(KeyboardInterrupt if action == "interrupt" else MakeProbeError):
+                        budget.run(
+                            [*NAMESPACE_LAUNCHER, "/usr/bin/python3", "-I", "-c", program],
+                            env=ENVIRONMENT, privileged=True,
+                        )
+                    kill.assert_not_called()
+                self.assertFalse(budget.children)
+                self.assertLess(time.monotonic() - budget.started, 5)
+
+    def test_watchdog_rejects_missing_lifetime_and_kernel_support_before_launch(self):
+        from scripts.validation_ownership import lifecycle
+        read, write = os.pipe()
+        try:
+            with patch.object(lifecycle, "prctl", side_effect=OSError("unsupported kernel")), patch(
+                "subprocess.Popen",
+            ) as launch:
+                with self.assertRaisesRegex(OSError, "unsupported kernel"):
+                    lifecycle.run(["/usr/bin/true"], time.monotonic() + 5, lifetime=read)
+                launch.assert_not_called()
+            os.close(write)
+            write = None
+            with patch.object(lifecycle, "prctl"), patch("subprocess.Popen") as launch:
+                with self.assertRaisesRegex(BrokenPipeError, "before namespace launch"):
+                    lifecycle.run(["/usr/bin/true"], time.monotonic() + 5, lifetime=read)
+                launch.assert_not_called()
+            with open("/dev/null", "rb") as nonpipe, patch("subprocess.Popen") as launch:
+                with self.assertRaisesRegex(ValueError, "lifetime pipe"):
+                    lifecycle.run(["/usr/bin/true"], time.monotonic() + 5, lifetime=nonpipe.fileno())
+                launch.assert_not_called()
+        finally:
+            os.close(read)
+            if write is not None:
+                os.close(write)
+
+    def test_watchdog_reaps_owned_orphans_on_completion_eof_deadline_and_signal(self):
+        program = (
+            "import ctypes,json,os,signal,sys,time\n"
+            "death = ctypes.c_int()\n"
+            "assert ctypes.CDLL(None).prctl(2, ctypes.byref(death), 0, 0, 0) == 0\n"
+            "assert death.value == signal.SIGKILL\n"
+            "child = os.fork()\n"
+            "if child == 0:\n"
+            " signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+            " time.sleep(20)\n os._exit(0)\n"
+            "print(json.dumps([os.getpid(), child]), flush=True)\n"
+            "if sys.argv[1] != 'complete': time.sleep(20)\n"
+        )
+        for action in ("complete", "eof", "deadline", "signal"):
+            with self.subTest(action=action):
+                started = time.monotonic()
+                watchdog = subprocess.Popen(
+                    ["/usr/bin/python3", "-I", "-S", "-B", str(TRUSTED_ROOT / "lifecycle.py"),
+                     str(started + (1 if action == "deadline" else 10)), "--",
+                     "/usr/bin/python3", "-I", "-c", program, action],
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    close_fds=True, start_new_session=True, env=ENVIRONMENT,
+                )
+                pids = []
+                try:
+                    with selectors.DefaultSelector() as ready:
+                        ready.register(watchdog.stdout, selectors.EVENT_READ)
+                        self.assertTrue(ready.select(3), "owned payload did not start")
+                    line = watchdog.stdout.readline()
+                    if not line:
+                        self.fail(watchdog.stderr.read())
+                    pids = json.loads(line)
+                    if action == "eof":
+                        watchdog.stdin.close()
+                    elif action == "signal":
+                        os.kill(watchdog.pid, signal.SIGTERM)
+                    watchdog.wait(timeout=5)
+                    self.assertEqual(watchdog.returncode, 0 if action == "complete" else 125)
+                    self.assertLess(time.monotonic() - started, 5)
+                    for pid in pids:
+                        self.assertFalse(Path(f"/proc/{pid}").exists(), f"owned PID {pid} was not reaped")
+                finally:
+                    if watchdog.poll() is None:
+                        watchdog.stdin.close()
+                        watchdog.wait(timeout=5)
+                    watchdog.stdin.close()
+                    watchdog.stdout.close()
+                    watchdog.stderr.close()
+
+    def test_make_runtime_uses_captured_non_multiarch_closure_and_real_make(self):
+        trusted = dict(_make_runtime(ProbeBudget()))
+        interpreter = _make_interpreter(trusted["/usr/bin/make"])
+        relocated = {
+            name if name in {"/usr/bin/make", interpreter} else "/usr/lib/" + Path(name).name: data
+            for name, data in trusted.items()
+        }
+        listing = "\tlinux-vdso.so.1 (0x1)\n" + "".join(
+            f"\t{Path(name).name} => {name} (0x2)\n"
+            for name in relocated if name not in {"/usr/bin/make", interpreter}
+        ) + f"\t{interpreter} (0x3)\n"
+        self.add("Makefile", "VALUE := captured-runtime\nall: dependency\ndependency: ;\n")
+        session = self.session()
+        original_run = session.budget.run
+        def runtime_listing(argv, **kwargs):
+            if argv == [interpreter, "--list", "/usr/bin/make"]:
+                self.assertEqual(kwargs["env"], ENVIRONMENT)
+                self.assertEqual(kwargs["cwd"], Path("/"))
+                return subprocess.CompletedProcess(argv, 0, listing.encode("ascii"), b"")
+            return original_run(argv, **kwargs)
+        def captured_runtime(name, budget):
+            budget.charge("control", len(relocated[name]))
+            return relocated[name]
+        with patch(
+            "scripts.validation_ownership.make_probe._trusted_runtime_bytes", captured_runtime,
+        ), patch.object(session.budget, "run", runtime_listing):
+            with session:
+                captured = dict(session.make_runtime)
+                self.assertEqual(captured, relocated)
+                relocated.clear()
+                with patch(
+                    "scripts.validation_ownership.make_probe._trusted_runtime_bytes",
+                    side_effect=AssertionError("captured runtime was read again"),
+                ):
+                    root = session._new_root("inspect-runtime", make=True)
+                    for name, data in captured.items():
+                        target = root / name.lstrip("/")
+                        self.assertEqual(target.read_bytes(), data)
+                        self.assertFalse(target.stat().st_mode & 0o222)
+                    self.assertFalse((root / "lib/x86_64-linux-gnu/libc.so.6").exists())
+                    self.assertTrue((root / "usr/lib/libc.so.6").is_file())
+                    observation = session.make("all", variables=("VALUE",))
+                    self.assertEqual(observation.semantics["domains"]["VALUE"]["value"], "captured-runtime")
+                    self.assertEqual(observation.semantics["files"][0]["prerequisites"], [
+                        {"name": "dependency", "order_only": False},
+                    ])
+        self.assert_clean(session)
+
+    def test_runtime_capture_rejects_mutable_aliases_and_malformed_elf_or_listing(self):
+        alias = self.directory / "make"
+        alias.symlink_to("/usr/bin/make")
+        with self.assertRaisesRegex(MakeProbeError, "trusted system"):
+            _trusted_runtime_bytes(str(alias), ProbeBudget())
+        original = Path.lstat
+        resolved = Path("/usr/bin/make").resolve()
+        def mutable(path):
+            value = original(path)
+            if path == resolved:
+                fields = list(value)
+                fields[0] |= stat.S_IWGRP
+                return os.stat_result(fields)
+            return value
+        with patch.object(Path, "lstat", mutable):
+            with self.assertRaisesRegex(MakeProbeError, "mutable/untrusted"):
+                _trusted_runtime_bytes("/usr/bin/make", ProbeBudget())
+        binary = Path("/usr/bin/make").read_bytes()
+        invalid_headers = bytearray(binary)
+        invalid_headers[56:58] = b"\0\0"
+        for data in (b"", b"\x7fELF", bytes(invalid_headers)):
+            with self.assertRaises(MakeProbeError):
+                _make_interpreter(data)
+        for output in (
+            b"", b"\tlibc.so.6 => not found\n",
+            b"\tlibc.so.6 => /work/libc.so.6 (0x1)\n",
+            b"\tlibc.so.6 => /usr/lib/../bin/make (0x1)\n",
+        ):
+            with self.subTest(output=output):
+                budget = ProbeBudget()
+                with patch.object(budget, "run", return_value=subprocess.CompletedProcess([], 0, output, b"")):
+                    with self.assertRaises(MakeProbeError):
+                        _make_runtime(budget)
+
+    def test_directory_permission_attacks_reject_without_masked_errors_or_residue(self):
+        controls = [
+            ("os.chmod('/work', 0)", "pathname permission loss"),
+            ("os.chmod('/work/nested', 0)", "pathname permission loss"),
+            ("os.chmod('nested', 0, dir_fd=directory)", "pathname permission loss"),
+            ("os.fchmod(directory, 0)", "directory permission changes"),
+            ("os.fchmod(os.dup(directory), 0)", "directory permission changes"),
+            ("ctypes.CDLL(None).syscall(452, directory, b'nested', 0, 0)", "unadmitted syscall"),
+            ("os.mkdir('/work/locked', 0)", "untraversable directory creation"),
+            ("os.mkdir('locked', 0, dir_fd=directory)", "untraversable directory creation"),
+            ("os.umask(0o700)\nos.mkdir('/work/locked')", "owner permission masking"),
+        ]
+        for operation, expected in controls:
+            with self.subTest(operation=operation):
+                self.add("reader.py", (
+                    "import ctypes,os\nos.mkdir('/work/nested', 0o700)\n"
+                    "directory = os.open('/work', os.O_RDONLY | os.O_DIRECTORY)\n"
+                    "try:\n " + operation.replace("\n", "\n ") + "\n"
+                    "except OSError:\n pass\nos._exit(7)\n"
+                ))
+                session = self.session()
+                descriptors = []
+                with session:
+                    original = session._sandbox_run
+                    def retain_owned_directory(root, **kwargs):
+                        for mount in kwargs["mounts"]:
+                            if mount["target"] == "/work":
+                                descriptors.append(os.open(
+                                    mount["source"], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                                ))
+                        return original(root, **kwargs)
+                    try:
+                        with patch.object(session, "_sandbox_run", retain_owned_directory):
+                            with self.assertRaisesRegex(MakeProbeError, expected):
+                                session.command(Command(
+                                    ("/usr/bin/python3", "-I", "-B", "/repo/reader.py"), code=("reader.py",),
+                                ))
+                        for descriptor in descriptors:
+                            self.assertEqual(os.fstat(descriptor).st_mode & 0o700, 0o700)
+                    finally:
+                        # Regression controls remain safe even against the old
+                        # guard: restore only retained, explicitly owned fixtures.
+                        for descriptor in descriptors:
+                            os.fchmod(descriptor, 0o700)
+                            for name in ("nested", "locked"):
+                                try:
+                                    os.chmod(name, 0o700, dir_fd=descriptor, follow_symlinks=False)
+                                except FileNotFoundError:
+                                    pass
+                            os.close(descriptor)
+                self.assert_clean(session)
+
+    def test_safe_output_permissions_and_regular_file_fchmod_remain_supported(self):
+        self.add("reader.py", (
+            "import os,stat\nos.umask(0o077)\nos.mkdir('/work/owned', 0o700)\n"
+            "descriptor = os.open('/work/owned/file', os.O_CREAT | os.O_WRONLY, 0o600)\n"
+            "os.fchmod(descriptor, 0)\nos.fchmod(descriptor, 0o644)\nos.close(descriptor)\n"
+            "os.chmod('/work/owned/file', 0o755)\nos.chmod('/work/owned', 0o700)\n"
+            "directory = os.open('/work', os.O_RDONLY | os.O_DIRECTORY)\n"
+            "os.chmod('owned', 0o700, dir_fd=directory)\nos.close(directory)\n"
+            "assert stat.S_IMODE(os.stat('/work/owned/file').st_mode) == 0o755\n"
+            "print('safe permissions')\n"
+        ))
+        with self.session() as session:
+            output = session.command(Command(
+                ("/usr/bin/python3", "-I", "-B", "/repo/reader.py"), code=("reader.py",),
+            ))
+            self.assertEqual(output.stdout, b"safe permissions\n")
+        self.assert_clean(session)
 
     @contextmanager
     def stopped_tracee(self, setup):

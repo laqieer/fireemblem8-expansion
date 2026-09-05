@@ -1522,6 +1522,27 @@ Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
    Post-drop observation must work without restoring credentials/capabilities,
    and NUL-terminated boundary strings must read correctly while malformed
    UTF-8 and overlong paths still reject. Every control reaps its own child.
+9. Exercise the same suite's lifecycle controls: complete a worker that leaves
+   an owned child, close its caller lifetime pipe, exhaust the shared deadline,
+   overflow output, and interrupt it. The watchdog must reap its entire owned
+   tree before returning. Modeled outer `PermissionError` cannot bypass that
+   cleanup. Missing kernel support or a missing/closed lifetime pipe must reject
+   before launch. These fixtures use same-UID processes, never real sudo; hold
+   any claim of full sudo-route validation until separate exact-candidate
+   evidence actually exercises that credential transition.
+10. Capture Make's parsed ELF interpreter and runtime closure, then run the real
+    Make observation with only an Arch-shaped, non-multiarch `/usr/lib` library
+    layout. Require the authentic prerequisite/value and read-only captured
+    files, even after the fixture's runtime source map is cleared. Mutable or
+    non-system aliases, malformed ELF headers and unresolved dependencies
+    reject. This controlled layout is not a native Arch host validation claim.
+11. Attempt `chmod('/work', 0)`, nested and directory-FD permission removal,
+    restrictive directory creation and owner-masking umasks, even while catching
+    errors in the candidate. Require the original policy rejection and complete
+    owned scratch removal, not a cleanup `PermissionError`. Confirm that safe
+    directory permissions, regular-file `fchmod`, and real C/C++ compiler output
+    remain supported. Fixtures retain only their own directory FDs to safely
+    restore permissions if a regression re-admits the old behavior.
 
 ### Expected result
 
@@ -1548,6 +1569,14 @@ backing files; it reported zero creations for `O_TMPFILE` and omitted hardlink
 entries. The frozen process regressions fail against that guard. Their benign
 unconfined mapping controls use only owned buffers, fixture paths and reaped
 child PIDs; no timed race against unrelated host data or process is required.
+
+The prior sudo caller's unprivileged `killpg` raised `PermissionError` before
+reaping; the lifecycle contract reproduces that failure without acquiring
+privileges. The prior Make root attempted a nonexistent Debian multiarch libc
+on a non-multiarch layout. A real confined `chmod('/work', 0)` followed by a
+failing command formerly masked the original error with cleanup
+`PermissionError` and left an inaccessible owned directory. The new regressions
+preserve these negative controls while limiting all effects to owned fixtures.
 
 ### Interactions and save compatibility
 

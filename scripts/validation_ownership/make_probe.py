@@ -21,7 +21,7 @@ from pathlib import Path, PurePosixPath
 from threading import get_ident, main_thread
 
 from .authority import AuthorityLoader, ENVIRONMENT, Snapshot, encoded, parse_json, relative_path
-from .budget import Limits, MakeProbeError, ProbeBudget, text
+from .budget import Limits, MakeProbeError, NAMESPACE_LAUNCHER, ProbeBudget, text
 
 
 TRUSTED_ROOT = Path(__file__).resolve().parent
@@ -226,6 +226,78 @@ def _mkdir_target(root: Path, target: str, directory=False):
     return destination
 
 
+def _trusted_runtime_bytes(path: str, budget: ProbeBudget):
+    requested = PurePosixPath(path)
+    if not requested.is_absolute() or str(requested) != path or ".." in requested.parts:
+        raise MakeProbeError("noncanonical trusted runtime path")
+    roots = ("/usr/bin/", "/usr/lib/", "/usr/lib64/", "/lib/", "/lib64/")
+    if not path.startswith(roots):
+        raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")
+    resolved = Path(path).resolve(strict=True)
+    if not resolved.as_posix().startswith(roots):
+        raise MakeProbeError(f"runtime is outside the trusted system tool/library roots: {path}")
+    for entry in {Path(path), *Path(path).parents, resolved, *resolved.parents}:
+        mode = entry.lstat()
+        if mode.st_uid != 0 or (
+            not stat.S_ISLNK(mode.st_mode) and mode.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+        ):
+            raise MakeProbeError(f"mutable/untrusted runtime input: {path}")
+    return budget.read_bytes(resolved, "control")
+
+
+def _make_interpreter(binary: bytes):
+    if len(binary) < 64 or binary[:6] != b"\x7fELF\x02\x01" or binary[18:20] != b"\x3e\0":
+        raise MakeProbeError("trusted Make is not a Linux x86-64 ELF")
+    start = int.from_bytes(binary[32:40], "little")
+    size = int.from_bytes(binary[54:56], "little")
+    count = int.from_bytes(binary[56:58], "little")
+    if size != 56 or not 1 <= count <= 64 or start + size * count > len(binary):
+        raise MakeProbeError("trusted Make ELF program headers are invalid")
+    interpreter = None
+    for index in range(count):
+        header = binary[start + index * size:start + (index + 1) * size]
+        if int.from_bytes(header[:4], "little") != 3:
+            continue
+        offset = int.from_bytes(header[8:16], "little")
+        length = int.from_bytes(header[32:40], "little")
+        if interpreter is not None or not 2 <= length <= 4096 or offset + length > len(binary):
+            raise MakeProbeError("trusted Make ELF interpreter is invalid")
+        value = binary[offset:offset + length]
+        if not value.endswith(b"\0") or b"\0" in value[:-1]:
+            raise MakeProbeError("trusted Make ELF interpreter is not one pathname")
+        interpreter = text(value[:-1], "trusted Make ELF interpreter", "ascii")
+    if interpreter is None:
+        raise MakeProbeError("trusted Make requires an ELF interpreter")
+    return interpreter
+
+
+def _make_runtime(budget: ProbeBudget):
+    binary = _trusted_runtime_bytes("/usr/bin/make", budget)
+    interpreter = _make_interpreter(binary)
+    runtime = {
+        "/usr/bin/make": binary,
+        interpreter: _trusted_runtime_bytes(interpreter, budget),
+    }
+    # Only the trusted interpreter sees the trusted system Make, never a
+    # candidate ELF, preload, library path, ldd script or repository cwd.
+    result = budget.run([interpreter, "--list", "/usr/bin/make"], env=ENVIRONMENT, cwd=Path("/"))
+    if result.returncode:
+        raise MakeProbeError(f"cannot resolve trusted Make runtime: {result.stderr!r}")
+    for row in text(result.stdout, "trusted Make runtime listing", "ascii").splitlines():
+        row = row.strip()
+        if re.fullmatch(r"linux-vdso\.so\.1 \(0x[0-9a-f]+\)", row):
+            continue
+        match = re.fullmatch(r"(?:[A-Za-z0-9_.+-]+ => )?(/[^ \t]+) \(0x[0-9a-f]+\)", row)
+        if match is None or len(runtime) >= 64:
+            raise MakeProbeError("unresolved/malformed trusted Make runtime closure")
+        path = match[1]
+        if path not in runtime:
+            runtime[path] = _trusted_runtime_bytes(path, budget)
+    if len(runtime) < 3:
+        raise MakeProbeError("trusted Make runtime closure is incomplete")
+    return tuple(sorted(runtime.items()))
+
+
 def _scratch_directory(loader, requested):
     root = Path(os.path.abspath(requested))
     configured = loader.scratch_root
@@ -286,6 +358,7 @@ class ProbeSession:
         self.native_tools = {}
         self.handlers = {}
         self.snapshot = None
+        self.make_runtime = ()
         self.serial = 0
         self.processes_used = 0
         self.syscalls_used = 0
@@ -323,6 +396,7 @@ class ProbeSession:
         self.cache.clear()
         self.mappings.clear()
         self.native_tools.clear()
+        self.make_runtime = ()
         self.snapshot = None
         self.loader.budget = None
         self.loader.live_modes.clear()
@@ -346,6 +420,7 @@ class ProbeSession:
         version = self.budget.run(["/usr/bin/make", "--version"], env=ENVIRONMENT)
         if version.returncode or version.stdout.splitlines()[0] != b"GNU Make 4.3":
             raise MakeProbeError("native observation ABI requires GNU Make 4.3")
+        self.make_runtime = _make_runtime(self.budget)
         python = self.budget.run(
             ["/usr/bin/python3", "-I", "-S", "-c",
              "import sys; print('%d.%d' % sys.version_info[:2])"],
@@ -355,19 +430,17 @@ class ProbeSession:
         if python.returncode or not re.fullmatch(r"3\.[0-9]+", self.python_version):
             raise MakeProbeError("cannot identify trusted Python runtime")
         self.launcher = [
-            "/usr/bin/unshare", "--user", "--map-root-user", "--mount",
-            "--net", "--pid", "--fork", "--kill-child", "--propagation", "private",
+            NAMESPACE_LAUNCHER[0], "--user", "--map-root-user", *NAMESPACE_LAUNCHER[1:],
         ]
         probe = self.budget.run([*self.launcher, "/usr/bin/true"], env=ENVIRONMENT)
         self.sudo_drop = False
         if probe.returncode:
             if not Path("/usr/bin/sudo").is_file() or os.getuid() == 0 or os.getgid() == 0:
                 raise MakeProbeError(f"required namespaces unavailable: {probe.stderr!r}")
-            self.launcher = [
-                "/usr/bin/sudo", "-n", "/usr/bin/unshare", "--mount", "--net",
-                "--pid", "--fork", "--kill-child", "--propagation", "private",
-            ]
-            privileged = self.budget.run([*self.launcher, "/usr/bin/true"], env=ENVIRONMENT)
+            self.launcher = list(NAMESPACE_LAUNCHER)
+            privileged = self.budget.run(
+                [*self.launcher, "/usr/bin/true"], env=ENVIRONMENT, privileged=True,
+            )
             if privileged.returncode:
                 raise MakeProbeError(f"required namespaces unavailable: {privileged.stderr!r}")
             self.sudo_drop = True
@@ -417,14 +490,11 @@ class ProbeSession:
             (root / directory).mkdir()
         (root / "dev/null").touch()
         if make:
-            for source, target in (
-                ("/usr/bin/make", "/usr/bin/make"),
-                ("/lib/x86_64-linux-gnu/libc.so.6", "/lib/x86_64-linux-gnu/libc.so.6"),
-                ("/lib64/ld-linux-x86-64.so.2", "/lib64/ld-linux-x86-64.so.2"),
-                (self.base / "observer.so", "/lib/vo-observer.so"),
-            ):
-                shutil.copyfile(source, _mkdir_target(root, target))
+            for target, data in self.make_runtime:
+                _mkdir_target(root, target).write_bytes(data)
                 (root / target.lstrip("/")).chmod(0o555)
+            shutil.copyfile(self.base / "observer.so", _mkdir_target(root, "/lib/vo-observer.so"))
+            (root / "lib/vo-observer.so").chmod(0o555)
             for target in ALIASES:
                 shutil.copyfile(self.base / "interceptor", _mkdir_target(root, target))
                 (root / target.lstrip("/")).chmod(0o555)
@@ -487,7 +557,7 @@ class ProbeSession:
             result = self.budget.run(
                 [*self.launcher, "/usr/bin/python3", "-I", "-B",
                  str(TRUSTED_ROOT / "sandbox_exec.py"), str(config_path)],
-                env=ENVIRONMENT,
+                env=ENVIRONMENT, privileged=self.sudo_drop,
             )
             if not report.is_file():
                 raise MakeProbeError(f"sandbox supervisor produced no result: {result.stderr!r}")

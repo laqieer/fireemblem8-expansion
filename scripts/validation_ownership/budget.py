@@ -12,12 +12,18 @@ import time
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
+from .lifecycle import ordinary_executable
+
 
 class MakeProbeError(RuntimeError):
     """Authority could not be measured safely and exactly."""
 
 
 MAX_PROBE_SECONDS = 3600
+NAMESPACE_LAUNCHER = (
+    "/usr/bin/unshare", "--mount", "--net", "--pid", "--fork",
+    "--kill-child", "--propagation", "private",
+)
 
 
 @dataclass(frozen=True)
@@ -62,7 +68,7 @@ class ProbeBudget:
     bytes: dict[str, int] = field(default_factory=dict, init=False)
     runs: int = field(default=0, init=False)
     states: int = field(default=0, init=False)
-    children: set[subprocess.Popen] = field(default_factory=set, init=False)
+    children: dict[subprocess.Popen, bool] = field(default_factory=dict, init=False)
     failed: bool = field(default=False, init=False)
 
     @property
@@ -120,18 +126,23 @@ class ProbeBudget:
             return data
 
     @staticmethod
-    def _terminate(child: subprocess.Popen):
-        # Every child is launched in its own session; never address another group.
-        try:
-            os.killpg(child.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+    def _terminate(child: subprocess.Popen, privileged=False):
+        if privileged:
+            # EOF asks the same-credential watchdog to kill/reap its own group.
+            # An unprivileged killpg cannot clean up sudo's root descendants.
+            child.stdin.close()
+        else:
+            # Every child has its own session; never address another group.
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         child.wait()
 
     def close(self):
-        for child in tuple(self.children):
-            self._terminate(child)
-            self.children.discard(child)
+        for child, privileged in tuple(self.children.items()):
+            self._terminate(child, privileged)
+            del self.children[child]
 
     def run(
         self,
@@ -142,11 +153,28 @@ class ProbeBudget:
         output_limit: int | None = None,
         input_data: bytes | None = None,
         category: str = "output",
+        privileged: bool = False,
     ) -> subprocess.CompletedProcess[bytes]:
         self.remaining()
         self.runs += 1
         if self.runs > self.limits.runs:
             self.reject("aggregate process-launch budget exhausted")
+        if privileged:
+            if (
+                input_data is not None or len(argv) <= len(NAMESPACE_LAUNCHER)
+                or tuple(argv[:len(NAMESPACE_LAUNCHER)]) != NAMESPACE_LAUNCHER
+            ):
+                self.reject("privileged probe requires the guarded PID-namespace lifecycle")
+            try:
+                ordinary_executable(argv[0])
+                ordinary_executable(argv[len(NAMESPACE_LAUNCHER)])
+            except (OSError, ValueError) as error:
+                self.reject(f"unsupported privileged namespace lifecycle: {error}")
+            argv = [
+                "/usr/bin/sudo", "-n", "--", "/usr/bin/python3", "-I", "-S", "-B",
+                str(Path(__file__).resolve().with_name("lifecycle.py")),
+                str(self.deadline), "--", *argv,
+            ]
         self.charge("pending", sum(len(os.fsencode(arg)) + 1 for arg in argv))
         limit = self.limits.process_output_bytes if output_limit is None else output_limit
         if limit <= 0 or limit > getattr(self.limits, f"{category}_bytes", 0):
@@ -155,11 +183,11 @@ class ProbeBudget:
             self.charge("pending", len(input_data))
         child = subprocess.Popen(
             argv, cwd=cwd, env=env,
-            stdin=subprocess.DEVNULL if input_data is None else subprocess.PIPE,
+            stdin=subprocess.PIPE if privileged or input_data is not None else subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             close_fds=True, start_new_session=True,
         )
-        self.children.add(child)
+        self.children[child] = privileged
         output = [bytearray(), bytearray()]
         try:
             with selectors.DefaultSelector() as selector:
@@ -198,8 +226,8 @@ class ProbeBudget:
             self.failed = True
             raise
         finally:
-            self._terminate(child)
-            self.children.discard(child)
+            self._terminate(child, privileged)
+            del self.children[child]
             child.stdout.close()
             child.stderr.close()
             if child.stdin is not None:
