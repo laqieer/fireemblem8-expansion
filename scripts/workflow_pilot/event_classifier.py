@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import re
 import stat
 import sys
@@ -346,17 +347,27 @@ def _ensure_finite_numbers(value: object) -> None:
 
 def load_event(path: Path) -> object:
     try:
-        metadata = path.lstat()
-    except OSError as error:
-        raise EventClassificationError(f"cannot inspect event payload: {error}") from error
-    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
-        raise EventClassificationError("event payload must be a regular file")
-    if metadata.st_size > MAX_EVENT_BYTES:
-        raise EventClassificationError("event payload exceeds 1 MiB")
-    try:
-        raw = path.read_bytes()
-        if len(raw) != metadata.st_size:
-            raise EventClassificationError("event payload changed while being read")
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+        try:
+            metadata = os.fstat(descriptor)
+            if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid():
+                raise EventClassificationError("event payload must be a same-owner regular file")
+            if metadata.st_size > MAX_EVENT_BYTES:
+                raise EventClassificationError("event payload exceeds 1 MiB")
+            chunks = bytearray()
+            while len(chunks) <= metadata.st_size:
+                chunk = os.read(descriptor, min(65536, metadata.st_size + 1 - len(chunks)))
+                if not chunk:
+                    break
+                chunks.extend(chunk)
+            after = os.fstat(descriptor)
+            if (len(chunks) != metadata.st_size
+                    or (metadata.st_size, metadata.st_mtime_ns, metadata.st_ctime_ns)
+                    != (after.st_size, after.st_mtime_ns, after.st_ctime_ns)):
+                raise EventClassificationError("event payload changed while being read")
+            raw = bytes(chunks)
+        finally:
+            os.close(descriptor)
         value = json.loads(
             raw.decode("utf-8"),
             object_pairs_hook=_reject_duplicate_keys,
@@ -401,12 +412,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
+def capsule_main(request: dict, context) -> dict:
+    """Descriptor-only entrypoint; file transport remains in the trusted caller."""
+    return asdict(classify_event(**request))
+
+
+def main(argv: list[str] | None = None, *, classifier=classify_event) -> int:
     args = parse_args(argv)
     try:
-        decision = classify_event(
-            args.event_name,
-            load_event(args.event_path),
+        decision = classifier(
+            event_name=args.event_name,
+            payload=load_event(args.event_path),
             github_ref=args.github_ref,
             github_sha=args.github_sha,
             pr_base_sha=args.pr_base_sha,

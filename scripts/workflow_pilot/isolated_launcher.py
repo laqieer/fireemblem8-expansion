@@ -23,6 +23,128 @@ MODES = frozenset(
 LIFECYCLE_CHECKS = frozenset({"workflow-pilot-reporter", "workflow-pilot-tests"})
 
 
+def run_sealed_classifier(arguments: list[str]) -> int:
+    """Bootstrap the capsule runtime from Git bytes, not a validated pathname."""
+    import hashlib
+    import selectors
+    import signal
+    import subprocess
+    import time
+    import types
+
+    environment = {
+        "GIT_CONFIG_COUNT": "0",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_CONFIG_SYSTEM": "/dev/null",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_NO_LAZY_FETCH": "1",
+        "GIT_TERMINAL_PROMPT": "0",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+    }
+
+    def git(*args, bound=2 * 1024 * 1024):
+        process = subprocess.Popen(
+            ["/usr/bin/git", "--no-replace-objects", "-c", "core.fsmonitor=false",
+             "-C", str(ROOT), *args],
+            env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, close_fds=True, start_new_session=True,
+        )
+        result = {process.stdout.fileno(): bytearray(), process.stderr.fileno(): bytearray()}
+        deadline = time.monotonic() + 15
+        try:
+            with selectors.DefaultSelector() as selector:
+                for fd in result:
+                    selector.register(fd, selectors.EVENT_READ)
+                while selector.get_map():
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise ValueError("sealed classifier Git bootstrap timed out")
+                    for ready, _ in selector.select(remaining):
+                        raw = os.read(ready.fd, 65536)
+                        if not raw:
+                            selector.unregister(ready.fd)
+                        result[ready.fd].extend(raw)
+                        if len(result[ready.fd]) > bound:
+                            raise ValueError("sealed classifier Git bootstrap exceeds bound")
+            if process.wait(timeout=max(0.001, deadline - time.monotonic())):
+                raise ValueError("sealed classifier requires locally available exact Git authority")
+            return bytes(result[process.stdout.fileno()])
+        except BaseException:
+            if process.returncode is None:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+            raise
+        finally:
+            process.stdout.close()
+            process.stderr.close()
+
+    def object_bytes(kind, oid):
+        if len(oid) != 40 or any(c not in "0123456789abcdef" for c in oid):
+            raise ValueError("invalid bootstrap Git identity")
+        source = git("cat-file", kind, oid)
+        header = kind.encode() + b" " + str(len(source)).encode() + b"\0"
+        if hashlib.sha1(header + source).hexdigest() != oid:
+            raise ValueError("bootstrap bytes differ from Git object identity")
+        return source
+
+    if git("rev-parse", "--show-object-format") != b"sha1\n":
+        raise ValueError("sealed classifier requires Git SHA-1 object format")
+    revision = git("rev-parse", "--verify", "HEAD^{commit}").decode("ascii").strip()
+    if len(revision) != 40 or any(c not in "0123456789abcdef" for c in revision):
+        raise ValueError("sealed classifier requires an exact commit")
+    path = "scripts/workflow_pilot/sealed_capsule.py"
+    commit = object_bytes("commit", revision)
+    header = commit.split(b"\n", 1)[0]
+    if not header.startswith(b"tree "):
+        raise ValueError("bootstrap commit has no exact tree")
+    oid = header[5:].decode("ascii")
+    components = path.split("/")
+    for index, component in enumerate(components):
+        raw, offset, entries = object_bytes("tree", oid), 0, {}
+        while offset < len(raw):
+            space, end = raw.find(b" ", offset), raw.find(b"\0", offset)
+            if space < offset or end <= space or end + 21 > len(raw):
+                raise ValueError("malformed bootstrap tree")
+            name = raw[space + 1:end]
+            if name in entries:
+                raise ValueError("duplicate bootstrap tree entry")
+            entries[name] = (raw[offset:space], raw[end + 1:end + 21].hex())
+            offset = end + 21
+        if component.encode() not in entries:
+            raise ValueError("sealed capsule runtime is missing from exact tree")
+        mode, oid = entries[component.encode()]
+        modes = {b"100644", b"100755"} if index == len(components) - 1 else {b"40000"}
+        if mode not in modes:
+            raise ValueError("sealed capsule runtime has an unsafe tree entry")
+    source = object_bytes("blob", oid)
+    runtime = types.ModuleType("_workflow_capsule_transport")
+    sys.modules[runtime.__name__] = runtime
+    exec(compile(source, "sealed:runtime-transport", "exec", dont_inherit=True), runtime.__dict__)
+    spec = runtime.CapsuleSpec(
+        trees={"base": revision},
+        programs={"classify-event": "scripts/workflow_pilot/event_classifier.py"},
+    )
+    with runtime.prepare(ROOT, spec) as prepared:
+        bundle = runtime._Bundle(prepared.bundle_fd.read())
+        # CLI parsing and runner-owned I/O are transport, not assertion execution.
+        # Even this transport module is loaded from the sealed artifact bytes.
+        classifier = types.ModuleType("_workflow_classifier_transport")
+        sys.modules[classifier.__name__] = classifier
+        exec(compile(bundle.program("classify-event"), "sealed:classifier-transport",
+                     "exec", dont_inherit=True), classifier.__dict__)
+
+        def classify(**request):
+            try:
+                result = prepared.execute("classify-event", request)
+            except runtime.CapsuleError as error:
+                raise classifier.EventClassificationError(str(error)) from error
+            return classifier.EventDecision(**result.value)
+
+        return classifier.main(arguments, classifier=classify)
+
+
 def clear_ambient_git_environment() -> None:
     for name in tuple(os.environ):
         if name.startswith("GIT_"):
@@ -109,9 +231,7 @@ def dispatch(mode: str, arguments: list[str]) -> int:
     if mode == "lifecycle-check":
         return run_lifecycle_check(arguments)
     if mode == "classify-event":
-        from scripts.workflow_pilot import event_classifier
-
-        return event_classifier.main(arguments)
+        return run_sealed_classifier(arguments)
 
     controlled_repository_root(arguments)
     if mode == "anchor-refs":
@@ -140,7 +260,8 @@ def main(argv: list[str] | None = None) -> int:
         print("workflow-pilot-launcher: mode is required", file=sys.stderr)
         return 2
     clear_ambient_git_environment()
-    sys.path.insert(0, str(ROOT))
+    if arguments[0] != "classify-event":
+        sys.path.insert(0, str(ROOT))
     try:
         return dispatch(arguments[0], arguments[1:])
     except (OSError, ValueError) as error:

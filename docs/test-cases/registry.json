@@ -481,7 +481,8 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/169",
         "https://github.com/laqieer/fireemblem8-expansion/issues/171",
         "https://github.com/laqieer/fireemblem8-expansion/issues/176",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/177"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/177",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/204"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
@@ -490,7 +491,8 @@
         "TC-WORKFLOW-MANUAL-HANDOFF-001",
         "TC-WORKFLOW-STACKED-CI-001",
         "TC-WORKFLOW-BODY-EDIT-001",
-        "TC-WORKFLOW-PILOT-BASELINE-001"
+        "TC-WORKFLOW-PILOT-BASELINE-001",
+        "TC-WORKFLOW-SEALED-ASSERTION-CAPSULE-001"
       ]
     },
     {
@@ -2162,6 +2164,34 @@
         {
           "command": "python3 -m unittest scripts.generated_data.tests.test_classes_schema scripts.generated_data.tests.test_units_schema scripts.generated_data.tests.test_eventlists_schema scripts.generated_data.tests.test_eventlists_roundtrip -v",
           "evidence": "scripts/generated_data/tests/test_eventlists_roundtrip.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-SEALED-ASSERTION-CAPSULE-001",
+      "title": "Execute exact-tree sealed capsules",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/204"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-sealed-assertion-capsule-001-execute-exact-tree-sealed-capsules",
+      "profiles": [
+        "Committed source checkout on Linux with Python 3, Git SHA-1, sealed memfd, process groups and prctl"
+      ],
+      "purpose": "Bind trusted execution, complete module/data loading and receipts to identical immutable descriptor bytes.",
+      "prerequisites": "Start at the exact candidate commit with the supported Linux facilities; no ROM, emulator, token, remote mutation or additional package is required.",
+      "actions": "Run the focused capsule and event-classifier suites; execute the real isolated classifier and nested checker/assertion; swap every former pathname, mutate descriptor/closure/import/receipt authority, then force crash, partial/oversized output, timeout, interruption and parent death.",
+      "expected_result": "Only exact sealed program/request/artifact bytes produce an admitted result; actual argv and consumed byte digests bind each receipt; every denial or process failure leaves no admitted partial receipt or owned process/descriptor leak.",
+      "negative_control": "The abandoned validate-then-reopen protocol runs a substituted assertion, restores the pathname and HMAC-signs a forged pass; the sealed counterpart rejects substitution. Missing seals, closure entries, identity bindings, closed imports or guardian controls fail behavioral checks.",
+      "interactions": "Depends on the existing isolated launcher, exact Git objects and Linux descriptor/process facilities. PR189 must separately adopt the API in every checker/behavior/member/remote/local path and rerun all five #179 families/dispositions; its old pathname interfaces conflict. No gameplay or profile interactions.",
+      "save_compatibility": "Host-only execution boundary; save/config identity, generated game data, localization, ROM/RAM, modern debug/release, archival behavior and Build topology are unchanged.",
+      "cleanup": "Owned disposable Git fixtures under build/test-artifacts and all owned descriptors/processes are cleaned automatically; preserve unrelated worktrees and artifacts.",
+      "limitations": "Trusted system Python/Git/kernel and initial caller are the bootstrap authority; this is not an arbitrary-Python sandbox. Unsupported hosts/object formats fail closed. PR189 all-path integration and remote delivery evidence are dependent acceptance, not foundation test claims.",
+      "automation": [
+        {
+          "command": "/usr/bin/python3 -m unittest scripts.workflow_pilot.tests.test_sealed_capsule scripts.workflow_pilot.tests.test_event_classifier -v",
+          "evidence": "scripts/workflow_pilot/tests/test_sealed_capsule.py"
         }
       ]
     },

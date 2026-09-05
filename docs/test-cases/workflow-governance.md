@@ -1456,3 +1456,105 @@ criterion applies.
 
 Rollback is a normal revert of issue #176's dedicated commit; no workflow or
 game behavior needs a compensating change.
+
+## TC-WORKFLOW-SEALED-ASSERTION-CAPSULE-001: Execute exact-tree sealed capsules
+
+**Issue:** [#204](https://github.com/laqieer/fireemblem8-expansion/issues/204).
+**Contract:** [sealed execution API](../workflow-pilot.md#sealed-exact-tree-execution-capsules).
+**Profile:** committed source checkout on Linux with Python 3, Git SHA-1,
+sealed memfd, `/proc`, process groups and prctl; no ROM, emulator, token or
+remote mutation. The existing source build is sufficient; there is no
+downloadable game artifact for this host-only case.
+
+The worker also requires unprivileged seccomp-BPF on x86-64 or AArch64 to
+prevent native process-group/session escape. Unsupported ABIs fail closed.
+
+### Actions
+
+1. Start at the repository root on the exact candidate commit. Preserve any
+   unrelated worktrees. Commit the candidate before exercising its exact-HEAD
+   production launcher; uncommitted code is deliberately not execution
+   authority.
+2. Run the existing stdlib runner:
+
+   ```bash
+   /usr/bin/python3 -m unittest \
+     scripts.workflow_pilot.tests.test_sealed_capsule \
+     scripts.workflow_pilot.tests.test_event_classifier -v
+   ```
+
+3. Observe the real isolated `classify-event` entrypoint and actual production
+   classifier over the existing event fixture. Their decisions and GitHub
+   output keys remain unchanged. A nested checker invokes its assertion over
+   exact base/origin/head JSON and an imported helper, with distinct
+   invocation receipts bound to the same artifact bundle.
+4. Inspect/run the pathname substitution controls. After preparation, replace
+   and restore checker, assertion, helper, namespace initializer, runtime,
+   data and old request paths; mutate the caller's request object at launch;
+   move the checkout directory. Only the sealed original bytes are consumed.
+   The production launcher also ignores substituted runtime/classifier
+   worktree files because its bootstrap reads exact Git objects.
+5. Exercise write, grow, shrink, writable-map and seal-change attempts; an
+   unsealed descriptor; reused/aliased descriptors; unexpected inherited FDs;
+   omitted/extra/duplicate/wrong-mode/wrong-blob/wrong-role artifacts and
+   module/proof closure attacks. Each is denied before an admitted result.
+6. Attempt undeclared imports, `sys.path` injection, file specs, pathname data,
+   subprocess/fork, signals and network access. Catching a denied operation
+   and returning `{"status":"pass"}` must still fail.
+7. Exercise exact argv/digest receipt verification, HMAC mutation, replay
+   against another invocation, forged result construction and credential
+   environment injection. Children receive no key/token; stale/forged receipts
+   reject.
+8. Force a crash, empty/partial/malformed or oversized output, timeout,
+   interruption and abrupt parent death during nested execution. The tests
+   observe real processes/descriptors and require bounded teardown with no
+   admitted partial result. Remove platform support and require an explicit
+   unavailable disposition rather than fallback execution.
+
+### Expected result
+
+All tests pass. Success means that execution, loading and receipt identity
+consume the same immutable descriptor bytes; it does not mean arbitrary
+candidate code is trustworthy.
+
+### Negative control
+
+The deterministic **pre-fix negative** preserves the abandoned PR189 launch
+protocol: validate a source pathname, substitute a forged assertion, execute
+the pathname with `--stdin`, restore it, and HMAC-sign its forged pass. The
+control demonstrates that restored source bytes and a valid HMAC do not
+prove execution identity. It reproduces that protocol without importing or
+running PR189's entire unmerged implementation. The sealed counterpart
+rejects the substituted program, while legitimate exact bytes still pass.
+Removing the seals, closure binding, descriptor loader, denial latch or
+guardian fails the corresponding behavioral controls.
+
+### Automation
+
+The named unittest modules automate every assertion using real memfd,
+subprocesses, raw Git objects, JSON, module imports, receipts, and PID/FD
+observations. No raw tracked-source text assertion is the behavioral oracle.
+Git supplies immutable source authority and review/history; changed strings
+alone are not proof. No subjective/manual criterion applies.
+
+### Interactions and save compatibility
+
+Dependencies are the platform facilities and existing isolated launcher/test
+runner. No game/profile/save/config/generated-data/localization/ROM/RAM
+interaction exists, including modern debug/release and archival builds.
+Unsupported platforms/object formats fail closed.
+
+### Cleanup and limitations
+
+Tests create disposable Git fixtures only under `build/test-artifacts` and
+clean their owned files/processes/descriptors on exit. They do not touch
+other worktrees or GitHub. After an interrupted test invocation, inspect only
+the owned `sealed-capsule-*` fixture directory before removing it; never
+delete unrelated artifacts by a broad path or process-name match.
+
+**Dependent acceptance, not claimed here:** PR189 must adopt the public API
+in its outer checker, behavior/member loop, remote-round validation, local
+remediation and trusted loaders, and rerun all five #179 families and every
+disposition. These consumers do not exist on this foundation's master base;
+their all-path integration and exact-head delivery gates remain PR189 work.
+Rollback reverts #204 while leaving PR189 blocked.

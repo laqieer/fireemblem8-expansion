@@ -715,3 +715,173 @@ Rollback is a normal revert of the dedicated issue #176 commit. Because no
 delivery behavior or final gate changes here, existing CI, review, merge,
 runtime, save, localization, generated-data, and archival behavior remains in
 place throughout rollback.
+
+## Sealed exact-tree execution capsules
+
+Issue [#204](https://github.com/laqieer/fireemblem8-expansion/issues/204) adds an
+accepted **framework capability: immutable Python execution capsules** in
+[`sealed_capsule.py`](../scripts/workflow_pilot/sealed_capsule.py). This is the
+independent foundation for issue #179 / PR #189, not a new sibling-family
+policy. Its production consumer is the existing isolated launcher's
+`classify-event` mode. The event decisions, output keys, Build graph, required
+contexts, and baseline metrics are unchanged.
+
+### Authority and threat boundary
+
+The trusted initial launcher, system `/usr/bin/python3`, `/usr/bin/git`,
+platform standard library, and Linux kernel are the bootstrap authority.
+Start that launcher in the trusted checkout selected by the existing workflow;
+do not execute a candidate-owned launcher or obtain signing credentials in
+candidate code. The capsule is not a sandbox for arbitrary candidate Python,
+nor does it defend against root or a compromised interpreter/kernel.
+
+`prepare()` takes **independently trusted exact commit IDs**, program paths
+and data/module declarations. It verifies raw Git commit, tree and blob
+objects by their Git identities, traverses exact tree entries, and derives
+the complete static trusted import closure, including package initializers
+and proven absent namespace initializers. Dynamic trusted imports must be
+declared in `CapsuleSpec.modules`; undeclared imports cannot fall back.
+Programs/modules come only from the `base` tree. Other declared trees are
+inert data, not executable candidate imports. Missing data and symlink data
+are represented explicitly: `read()` returns `None` for absence and literal
+link bytes for a symlink; it never follows a link.
+
+The canonical, bounded in-memory bundle includes the exact spec, complete
+proof-object closure, and each artifact's tree slot, canonical relative path,
+mode, blob ID, byte size, SHA-256 and role. Missing, extra, duplicated,
+wrong-mode, wrong-blob and wrong-role entries reject. These are ephemeral
+execution artifacts, not committed source snapshots or a source/ROM identity
+ledger. Git remains the source/history authority.
+
+Runtime, selected program, canonical request and artifact bundle are separate
+anonymous `memfd` descriptors. Write, grow, shrink and seal seals are applied
+before execution; each owned descriptor retains its inode/size identity.
+Mutable, aliased, replaced, reused and unexpected inherited descriptors
+reject. The actual command is `/usr/bin/python3 -I -S -c <closed bootstrap>
+<descriptor identities>`; the bootstrap uses `pread`, never a pathname or
+`/proc/self/fd/N` script. Program execution uses the program descriptor bytes,
+and module/data loading uses the artifact descriptor bytes. Changing or
+restoring any former pathname cannot change those bytes.
+
+After platform-stdlib preload, the child has an empty `sys.path`, a closed
+descriptor-backed importer and no bytecode/file-loader fallback. Filesystem
+reads/writes, filesystem module specs, undeclared imports, subprocess/fork,
+signals, native-library loading and network attempts reject. A caught denial
+is latched and cannot be converted into a successful receipt. This is an
+execution-authority boundary for trusted programs, not a claim that Python
+audit hooks can confine arbitrary malicious Python or native code. A
+worker-only seccomp-BPF filter additionally kills forbidden pathname/network
+acquisition, process creation/exec, group/session changes, signaling,
+ptrace/prctl and alternate-ABI attempts. This closes native operations such
+as `setpgid` which do not emit a Python audit event and could otherwise escape
+guardian cleanup. The guardian itself retains the capabilities to supervise
+and launch declared nested capsules.
+
+### Public API and production integration
+
+```python
+from scripts.workflow_pilot.sealed_capsule import CapsuleSpec, prepare, sign_receipt
+
+spec = CapsuleSpec(
+    trees={"base": trusted_base_sha, "origin": finding_origin_sha, "head": candidate_sha},
+    programs={"checker": "checks/checker.py", "assertion": "checks/assertion.py"},
+    modules=("checks.dynamic_helper",),
+    data={slot: ("inputs/state.json",) for slot in ("base", "origin", "head")},
+)
+with prepare(repository_root, spec) as prepared:
+    result = prepared.execute("checker", request, timeout=30)
+    # Obtain/use the parent-only key after preparation; never pass it to a child.
+    signed = sign_receipt(result, trusted_key)
+```
+
+Paths in this example are downstream-owned declarations, not additional
+files required by this repository. Each trusted program defines
+`capsule_main(request, context)` and returns a JSON value. `context.read(tree,
+path)` supplies immutable bytes; `context.entry(tree, path)` supplies verified
+metadata; `context.load_module(name)` imports only the declared base closure.
+`context.invoke(program_id, request)` asks the guardian to execute another
+declared program with the same sealed mechanism and returns
+`{"value": ..., "receipt": ...}`. No program receives a repository root or
+materialized-root fallback. Programs needing filesystem-based probes must
+separate that non-authoritative production/probe work from the trusted
+assertion and provide explicitly declared inert inputs; do not disable the
+loader boundary to retain old pathname helpers.
+
+`ExecutionResult.value` and `.receipt` return fresh parsed values.
+`sign_receipt()` accepts only an admitted execution result, and never shares
+the key with a child. `verify_receipt(signed, key, expected_result)` requires
+that exact invocation, not just matching semantic output. The receipt binds
+the actual argv, fresh invocation nonce, program/runtime/artifact/request/
+payload/output digests, exact loaded artifact metadata, stdout digest, empty
+diagnostics and zero exit status. Caller-owned #179 finding/round/disposition
+bindings remain in the request and semantic result; callers still validate
+them. Durable cross-invocation replay scope/publication remains the existing
+receipt consumer's responsibility, not a second persistence subsystem.
+
+The existing production `classify-event` mode bootstraps the runtime directly
+from hash-verified exact-HEAD Git object bytes, with no repository entry in
+`sys.path`. Its CLI transport also comes from the sealed classifier artifact.
+It captures the runner event once through a bounded no-follow same-owner
+regular-file descriptor, seals the canonical request, executes the actual
+classifier, and writes the existing GitHub output protocol only on success.
+The direct Python predicate remains usable for diagnostic/host tests; it is
+not an authenticated capsule receipt.
+
+### Resource, failure and portability contract
+
+Bundles are at most 16 MiB (aggregate decoded Git bytes are bounded while
+collecting); programs/modules at most 2 MiB; requests at most 4 MiB; output at
+most 1 MiB; each diagnostic stream at most 64 KiB. There are at most 1,024
+artifacts, eight tree slots, 32 programs and four nested invocation levels.
+Each invocation accepts a positive timeout up to 120 seconds. A worker also
+has a 512 MiB address-space ceiling and a CPU ceiling.
+
+A separate guardian owns the worker group, retains the leader until group
+cleanup to avoid PID reuse, and reaps descendants. A private liveness pipe
+detects parent exit, signals and interruption, including during nested
+execution/reply handling. The worker has a parent-death kill signal as an
+additional guardian-crash control. Timeout, crash, partial/oversized output,
+malformed messages, nonempty diagnostics and interrupted execution produce
+no admitted result or signature. Owned descriptors close on every path,
+without closing an unrelated FD reused at the same integer.
+
+Supported execution requires Linux sealed memfd, `/proc/self/fd`, fork,
+process groups, `waitid(WNOWAIT)`, and the non-dumpable/subreaper/parent-death
+prctl facilities plus unprivileged seccomp-BPF on the x86-64 or AArch64 syscall
+ABI. Other ABIs fail closed. Git SHA-1 repositories are supported; SHA-256
+repositories are explicitly unsupported. Missing facilities raise `CapsuleUnavailable`
+with disposition `sealed-capsule-unavailable`; the production launcher exits
+nonzero and does **not** retry through a pathname, ordinary importer,
+temporary directory or post-execution rehash.
+
+### PR #189 adoption and completion boundary
+
+PR [#189](https://github.com/laqieer/fireemblem8-expansion/pull/189) remains a
+dependent integration, not part of this master-root foundation:
+
+| Existing #189 seam | Required adoption |
+| --- | --- |
+| `trusted_review_gate.run_base_pinned_checker` | Prepare independently trusted base/origin/head closure, execute the declared checker, validate its result and sign only the admitted receipt |
+| `review_base_checker.execute_registry` | Replace both behavior and member subprocess launches with `context.invoke`; remove old basename/absolute-path argv receipts |
+| `review_assertions.read_text`, JSON/blob/syntax helpers | Read bytes/metadata by tree slot through `context`, never materialized roots |
+| Trusted module loaders and `checker_cli_runtime` | Use the closed module loader / nested capsule invocation, not `sys.path`, file specs or normal imports of repository paths |
+| Remote-round and local-remediation loops | Reuse this mechanism with independently validated per-round/finding/head request bindings |
+
+All five #179 families, all dispositions, remote/current versus historical
+identity, and the third-round hold remain #179's unchanged policy. Their
+end-to-end integration tests and adoption in **all** listed paths must pass
+on the later PR189 candidate before #179/PR189 can complete. Foundation tests
+do not claim those absent-on-master consumers already passed. There must be
+no compatibility branch that reinstates validate-then-reopen execution.
+
+Dependencies: the existing isolated launcher, exact Git object store and
+standard-library host test runner. Dependents: #179/PR189. Conflicts: PR189's
+old launch/loader interfaces; none with gameplay or feature profiles.
+Modern debug/release, archival, save/config identity, generated game data,
+localization, ROM/RAM and Build topology are unchanged. No new package,
+feature flag or human approval gate is introduced.
+
+The indexed procedure is
+[`TC-WORKFLOW-SEALED-ASSERTION-CAPSULE-001`](test-cases/workflow-governance.md#tc-workflow-sealed-assertion-capsule-001-execute-exact-tree-sealed-capsules).
+Rollback is a normal revert of the dedicated #204 change. Keep PR189 blocked;
+do not roll it back to pathname authority.

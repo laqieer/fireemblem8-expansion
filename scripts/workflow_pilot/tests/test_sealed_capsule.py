@@ -1,0 +1,696 @@
+"""TC-WORKFLOW-SEALED-ASSERTION-CAPSULE-001: real descriptor/process controls."""
+
+from __future__ import annotations
+
+import copy
+import errno
+import hashlib
+import hmac
+import json
+import mmap
+import os
+import selectors
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from scripts.workflow_pilot import event_classifier, sealed_capsule as capsule
+
+
+ROOT = Path(__file__).resolve().parents[3]
+ARTIFACTS = ROOT / "build" / "test-artifacts"
+CHECKER = """from checks import helper
+def capsule_main(request, context):
+    nested = context.invoke('assertion', request)
+    return {'checker': helper.value(), 'assertion': nested}
+"""
+ASSERTION = """import json
+from checks import helper
+def capsule_main(request, context):
+    values = {slot: json.loads(context.read(slot, 'inputs/state.json'))['value']
+              for slot in ('base', 'origin', 'head')}
+    return {'module': helper.value(), 'values': values, 'request': request,
+            'status': 'pass' if values['origin'] == 'broken' and values['head'] == 'fixed' else 'fail'}
+"""
+
+
+@unittest.skipUnless(sys.platform == "linux", "Linux sealed descriptor contract")
+class SealedCapsuleTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        ARTIFACTS.mkdir(parents=True, exist_ok=True)
+        cls.temporary = tempfile.TemporaryDirectory(prefix="sealed-capsule-", dir=ARTIFACTS)
+        cls.root = Path(cls.temporary.name)
+        cls.runtime = (ROOT / capsule.RUNTIME_PATH).read_bytes()
+        cls.write(capsule.RUNTIME_PATH, cls.runtime)
+        cls.write("scripts/workflow_pilot/__init__.py", b"")
+        cls.write("scripts/workflow_pilot/event_classifier.py",
+                  (ROOT / "scripts/workflow_pilot/event_classifier.py").read_bytes())
+        cls.write("scripts/workflow_pilot/isolated_launcher.py",
+                  (ROOT / "scripts/workflow_pilot/isolated_launcher.py").read_bytes())
+        cls.write("checks/checker.py", CHECKER.encode())
+        cls.write("checks/assertion.py", ASSERTION.encode())
+        cls.write("checks/helper.py", b"def value():\n    return 'trusted-module'\n")
+        cls.write("inputs/state.json", capsule.canonical({"value": "base"}))
+        cls.git("init", "-q", "-b", "master")
+        cls.git("config", "user.name", "Capsule fixture")
+        cls.git("config", "user.email", "capsule@example.invalid")
+        cls.base = cls.commit()
+        cls.write("inputs/state.json", capsule.canonical({"value": "broken"}))
+        cls.origin = cls.commit()
+        cls.write("inputs/state.json", capsule.canonical({"value": "fixed"}))
+        cls.head = cls.commit()
+        cls.spec = capsule.CapsuleSpec(
+            trees={"base": cls.base, "origin": cls.origin, "head": cls.head},
+            programs={"checker": "checks/checker.py", "assertion": "checks/assertion.py"},
+            data={slot: ("inputs/state.json",) for slot in ("base", "origin", "head")},
+        )
+        cls.bundle = capsule._make_bundle(cls.root, cls.spec.record())
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temporary.cleanup()
+
+    @classmethod
+    def write(cls, path, raw):
+        target = cls.root / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(raw)
+
+    @classmethod
+    def git(cls, *args):
+        completed = subprocess.run(
+            ["/usr/bin/git", "--no-replace-objects", "-C", str(cls.root), *args],
+            env=capsule.GIT_ENVIRONMENT, capture_output=True, check=True,
+        )
+        return completed.stdout.decode("ascii").strip()
+
+    @classmethod
+    def commit(cls):
+        cls.git("add", ".")
+        cls.git("commit", "-qm", "Ephemeral capsule test tree")
+        return cls.git("rev-parse", "HEAD")
+
+    def attack(self, source):
+        self.write("checks/attack.py", source.encode("utf-8"))
+        revision = self.commit()
+        spec = capsule.CapsuleSpec(trees={"base": revision},
+                                   programs={"attack": "checks/attack.py"})
+        return capsule.prepare(self.root, spec)
+
+    def descriptors(self):
+        return {fd: capsule._descriptor_identity(fd) for fd in capsule._inherited_fds()}
+
+    def test_exact_checker_assertion_module_and_three_tree_data_execute(self):
+        with capsule.Capsule(self.bundle, self.spec) as prepared:
+            result = prepared.execute("checker", {"round": 2})
+        self.assertEqual(result.value["checker"], "trusted-module")
+        assertion = result.value["assertion"]
+        self.assertEqual(assertion["value"], {
+            "module": "trusted-module", "values": {"base": "base", "origin": "broken", "head": "fixed"},
+            "request": {"round": 2}, "status": "pass",
+        })
+        self.assertEqual(assertion["receipt"]["program"], "assertion")
+        self.assertEqual(result.receipt["program"], "checker")
+        self.assertEqual(assertion["receipt"]["artifact_sha256"], result.receipt["artifact_sha256"])
+
+    def test_receipt_names_exact_executed_descriptor_bytes_and_argv(self):
+        seen = {}
+        real_popen = subprocess.Popen
+
+        def capture(command, **kwargs):
+            seen["argv"] = command
+            runtime, program, request, artifacts, _ = kwargs["pass_fds"]
+            seen["digests"] = {
+                "runtime_sha256": capsule.digest(os.pread(runtime, capsule.MAX_PROGRAM_BYTES, 0)),
+                "program_sha256": capsule.digest(os.pread(program, capsule.MAX_PROGRAM_BYTES, 0)),
+                "request_sha256": capsule.digest(os.pread(request, capsule.MAX_REQUEST_BYTES, 0)),
+                "artifact_sha256": capsule.digest(os.pread(artifacts, capsule.MAX_BUNDLE_BYTES, 0)),
+            }
+            return real_popen(command, **kwargs)
+
+        with capsule.Capsule(self.bundle, self.spec) as prepared:
+            with mock.patch.object(subprocess, "Popen", side_effect=capture):
+                result = prepared.execute("assertion", {"round": 3})
+        receipt = result.receipt
+        self.assertEqual(receipt["argv"], seen["argv"])
+        self.assertEqual({key: receipt[key] for key in seen["digests"]}, seen["digests"])
+        self.assertEqual(receipt["output_sha256"], capsule.digest(result.output_bytes))
+        self.assertEqual(receipt["payload_sha256"], capsule.digest(capsule.canonical({"round": 3})))
+        paths = {(entry["tree"], entry["path"]) for entry in receipt["loaded"]}
+        for slot in ("base", "origin", "head"):
+            self.assertIn((slot, "inputs/state.json"), paths)
+        self.assertIn(("base", "checks/helper.py"), paths)
+
+    def test_swap_restore_every_former_path_cannot_change_sealed_execution(self):
+        paths = ("checks/checker.py", "checks/assertion.py", "checks/helper.py",
+                 "inputs/state.json", capsule.RUNTIME_PATH)
+        saved = {path: (self.root / path).read_bytes() for path in paths}
+        with capsule.Capsule(self.bundle, self.spec) as prepared:
+            try:
+                for path in paths:
+                    self.write(path, b"raise RuntimeError('pathname substitution executed')\n")
+                self.write("checks/__init__.py", b"raise RuntimeError('package hijack')\n")
+                result = prepared.execute("checker", {"input": "original"})
+            finally:
+                for path, raw in saved.items():
+                    self.write(path, raw)
+                (self.root / "checks/__init__.py").unlink()
+        self.assertEqual(result.value["assertion"]["value"]["status"], "pass")
+        self.assertEqual(saved, {path: (self.root / path).read_bytes() for path in paths})
+
+    def test_checkout_directory_move_and_git_disappearance_do_not_change_execution(self):
+        moved = self.root.with_name(self.root.name + "-moved")
+        with capsule.Capsule(self.bundle, self.spec) as prepared:
+            before = prepared.execute("assertion", {"path": "not-authority"})
+            self.root.rename(moved)
+            try:
+                after = prepared.execute("assertion", {"path": "not-authority"})
+            finally:
+                moved.rename(self.root)
+        self.assertEqual(before.value, after.value)
+        for field in ("program_sha256", "runtime_sha256", "artifact_sha256", "payload_sha256"):
+            self.assertEqual(before.receipt[field], after.receipt[field])
+
+    def test_request_object_and_old_request_path_swap_after_sealing_are_inert(self):
+        request = {"authority": "original"}
+        old_path = self.root / "former-request.json"
+        old_path.write_bytes(capsule.canonical(request))
+        real_popen = subprocess.Popen
+
+        def swap(command, **kwargs):
+            request["authority"] = "forged"
+            old_path.write_bytes(capsule.canonical(request))
+            return real_popen(command, **kwargs)
+
+        try:
+            with capsule.Capsule(self.bundle, self.spec) as prepared:
+                with mock.patch.object(subprocess, "Popen", side_effect=swap):
+                    result = prepared.execute("assertion", request)
+            self.assertEqual(result.value["request"], {"authority": "original"})
+        finally:
+            old_path.unlink()
+
+    def test_pre_fix_validate_then_reopen_control_signs_forged_restored_program(self):
+        # The abandoned #189 launch protocol: validate source, run its pathname
+        # with --stdin, then inspect restored bytes before signing child output.
+        path = self.root / "former-assertion.py"
+        original = (b"import json,sys\nx=json.load(sys.stdin)\n"
+                    b"status = 'pass' if x['head_state'] == 'fixed' else 'fail'\n"
+                    b"print(json.dumps({'status':status,'binding':x}))\n")
+        forged = original.replace(b"x['head_state'] == 'fixed'", b"True")
+        request = {"origin": self.origin, "head": self.head, "head_state": "broken",
+                   "program_sha256": capsule.digest(original)}
+        path.write_bytes(original)
+        checked = capsule.digest(path.read_bytes())
+        try:
+            for state, expected in (("broken", "fail"), ("fixed", "pass")):
+                baseline = subprocess.run(
+                    [capsule.PYTHON, "-I", path.name, "--stdin"], cwd=self.root,
+                    input=capsule.canonical({**request, "head_state": state}),
+                    capture_output=True, check=True,
+                )
+                self.assertEqual(json.loads(baseline.stdout)["status"], expected)
+            path.write_bytes(forged)
+            try:
+                completed = subprocess.run(
+                    [capsule.PYTHON, "-I", path.name, "--stdin"], cwd=self.root,
+                    input=capsule.canonical(request), capture_output=True, check=True,
+                )
+            finally:
+                path.write_bytes(original)
+            self.assertEqual(capsule.digest(path.read_bytes()), checked)
+            result = json.loads(completed.stdout)
+            self.assertEqual(result, {"status": "pass", "binding": request})
+            key = b"test-only-pre-fix-negative-key!!!"
+            signature = hmac.new(key, completed.stdout, hashlib.sha256).digest()
+            self.assertTrue(hmac.compare_digest(signature, hmac.new(key, completed.stdout, hashlib.sha256).digest()))
+        finally:
+            path.unlink()
+        with capsule.Capsule(self.bundle, self.spec) as prepared:
+            with capsule.SealedBytes(forged, "forged-program", capsule.MAX_PROGRAM_BYTES) as substituted:
+                with mock.patch.object(capsule._Bundle, "program", return_value=substituted.read()):
+                    with self.assertRaises(capsule.CapsuleError):
+                        prepared.execute("assertion", request)
+
+    def test_real_production_classifier_uses_unchanged_semantic_predicate(self):
+        cases = json.loads((ROOT / "scripts/workflow_pilot/tests/fixtures/event_classification.json").read_bytes())
+        spec = capsule.CapsuleSpec(trees={"base": self.base},
+                                   programs={"classifier": "scripts/workflow_pilot/event_classifier.py"})
+        with capsule.prepare(self.root, spec) as prepared:
+            for case in cases["cases"]:
+                with self.subTest(case=case["id"]):
+                    request = {"event_name": case["event_name"], "payload": case["payload"], **case["runner"]}
+                    actual = prepared.execute("classifier", request)
+                    expected = json.loads(event_classifier.classify_event(**request).canonical_json())
+                    self.assertEqual(actual.value, expected)
+
+    def test_real_isolated_launcher_ignores_swapped_runtime_and_classifier_paths(self):
+        from scripts.workflow_pilot.tests.test_event_classifier import _launcher_command
+
+        case = json.loads((ROOT / "scripts/workflow_pilot/tests/fixtures/event_classification.json").read_bytes())["cases"][0]
+        event_path, output_path = self.root / "event.json", self.root / "event.out"
+        event_path.write_bytes(capsule.canonical(case["payload"]))
+        paths = (capsule.RUNTIME_PATH, "scripts/workflow_pilot/event_classifier.py")
+        saved = {path: (self.root / path).read_bytes() for path in paths}
+        command = _launcher_command(case, event_path, output_path)
+        command[2] = str(self.root / "scripts/workflow_pilot/isolated_launcher.py")
+        try:
+            for path in paths:
+                self.write(path, b"raise RuntimeError('substituted source executed')\n")
+            completed = subprocess.run(
+                command, cwd=self.root, capture_output=True,
+                env={**capsule.ENVIRONMENT, "PYTHONPATH": str(self.root), "GIT_DIR": "/invalid"},
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            expected = event_classifier.classify_event(
+                case["event_name"], case["payload"], **case["runner"])
+            self.assertEqual(completed.stdout.decode(), expected.canonical_json())
+            self.assertIn("classification=" + expected.classification, output_path.read_text())
+        finally:
+            for path, raw in saved.items():
+                self.write(path, raw)
+            event_path.unlink()
+            output_path.unlink(missing_ok=True)
+
+    def test_event_snapshot_cannot_follow_a_path_swap_after_descriptor_open(self):
+        path, backup = self.root / "event-snapshot.json", self.root / "event-snapshot.saved"
+        original, forged = {"state": "trusted"}, {"state": "forged"}
+        path.write_bytes(capsule.canonical(original))
+        real_read = os.read
+        swapped = False
+
+        def read(fd, count):
+            nonlocal swapped
+            if not swapped:
+                swapped = True
+                path.rename(backup)
+                path.write_bytes(capsule.canonical(forged))
+            return real_read(fd, count)
+
+        try:
+            with mock.patch.object(os, "read", side_effect=read):
+                try:
+                    result = event_classifier.load_event(path)
+                except event_classifier.EventClassificationError as error:
+                    self.assertIn("changed while being read", str(error))
+                else:
+                    self.assertEqual(result, original)
+            self.assertTrue(swapped)
+        finally:
+            path.unlink()
+            backup.unlink(missing_ok=True)
+
+    def test_immutable_seals_reject_writes_resize_mapping_and_seal_changes(self):
+        with capsule.SealedBytes(b"immutable", "test", 100) as owned:
+            self.assertEqual(capsule.fcntl.fcntl(owned.fd, capsule.fcntl.F_GET_SEALS) & capsule.SEALS,
+                             capsule.SEALS)
+            for operation in (
+                lambda: os.write(owned.fd, b"forged"),
+                lambda: os.ftruncate(owned.fd, 0),
+                lambda: os.ftruncate(owned.fd, 1024),
+                lambda: mmap.mmap(owned.fd, 0, access=mmap.ACCESS_WRITE),
+                lambda: capsule.fcntl.fcntl(owned.fd, capsule.fcntl.F_ADD_SEALS, capsule.SEALS),
+            ):
+                with self.subTest(operation=operation):
+                    with self.assertRaises(OSError):
+                        operation()
+            duplicate = os.dup(owned.fd)
+            try:
+                with self.assertRaises(OSError):
+                    os.pwrite(duplicate, b"x", 0)
+            finally:
+                os.close(duplicate)
+            self.assertEqual(owned.read(), b"immutable")
+
+    def test_mutable_and_regular_descriptors_are_not_accepted(self):
+        fd = os.memfd_create("unsealed-test", os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
+        try:
+            os.write(fd, b"same bytes")
+            with self.assertRaisesRegex(capsule.CapsuleError, "fully sealed"):
+                capsule._read_descriptor(fd, 100)
+        finally:
+            os.close(fd)
+        with (self.root / "inputs/state.json").open("rb") as file:
+            with self.assertRaises(capsule.CapsuleError):
+                capsule._read_descriptor(file.fileno(), 100)
+
+    def test_reused_descriptor_rejects_without_closing_unowned_replacement(self):
+        owned = capsule.SealedBytes(b"original", "test", 100)
+        replacement = capsule.SealedBytes(b"replaced", "test", 100)
+        number = owned.fd
+        try:
+            os.dup2(replacement.fd, number)
+            with self.assertRaisesRegex(capsule.CapsuleError, "reused"):
+                owned.read()
+            owned.close()
+            self.assertEqual(os.pread(number, 100, 0), b"replaced")
+        finally:
+            os.close(number)
+            replacement.close()
+
+    def test_replaced_runtime_and_unexpected_inherited_fd_fail_before_worker(self):
+        with capsule.Capsule(self.bundle, self.spec) as prepared:
+            old = prepared.runtime_fd.fd
+            os.dup2(prepared.bundle_fd.fd, old)
+            try:
+                with self.assertRaises(capsule.CapsuleError):
+                    prepared.execute("assertion", {})
+            finally:
+                prepared.runtime_fd.close()
+                os.close(old)
+        real_popen = subprocess.Popen
+        with capsule.SealedBytes(b"unrelated", "extra", 100) as extra:
+            def inherit(command, **kwargs):
+                kwargs["pass_fds"] = (*kwargs["pass_fds"], extra.fd)
+                return real_popen(command, **kwargs)
+            with capsule.Capsule(self.bundle, self.spec) as prepared:
+                with mock.patch.object(subprocess, "Popen", side_effect=inherit):
+                    with self.assertRaisesRegex(capsule.CapsuleError, "unexpected inherited"):
+                        prepared.execute("assertion", {})
+
+    def test_artifact_identity_and_complete_closure_mutations_fail(self):
+        original = capsule.parse(self.bundle, capsule.MAX_BUNDLE_BYTES)
+        changes = {
+            "missing": lambda value: value["artifacts"].pop(),
+            "extra": lambda value: value["artifacts"].append({**value["artifacts"][0], "path": "extra"}),
+            "duplicate": lambda value: value["artifacts"].append(value["artifacts"][0]),
+            "wrong-mode": lambda value: value["artifacts"][0].update(mode="100755"),
+            "wrong-blob": lambda value: value["artifacts"][0].update(blob="a" * 40),
+            "wrong-digest": lambda value: value["artifacts"][0].update(sha256="a" * 64),
+            "wrong-role": lambda value: value["artifacts"][0].update(role="program"),
+            "wrong-tree": lambda value: value["artifacts"][0].update(tree="other"),
+            "wrong-version-type": lambda value: value.update(version=True),
+            "wrong-package-type": lambda value: value["modules"]["checks"].update(package=1),
+            "missing-module": lambda value: value["modules"].pop("checks.helper"),
+            "extra-module": lambda value: value["modules"].update(ambient={"path": "ambient.py", "package": False}),
+            "missing-proof": lambda value: value["objects"].pop(),
+            "duplicate-proof": lambda value: value["objects"].append(value["objects"][0]),
+            "wrong-proof": lambda value: value["objects"][0].update(bytes="Zm9yZ2Vk"),
+            "forged-spec": lambda value: value["spec"]["trees"].update(base=self.head),
+        }
+        for label, change in changes.items():
+            with self.subTest(label=label):
+                value = copy.deepcopy(original)
+                change(value)
+                with self.assertRaises(capsule.CapsuleError):
+                    with capsule.Capsule(capsule.canonical(value), self.spec):
+                        self.fail("malformed capsule was accepted")
+
+    def test_undeclared_program_and_data_do_not_fall_back(self):
+        with capsule.Capsule(self.bundle, self.spec) as prepared:
+            with self.assertRaises(capsule.CapsuleError):
+                prepared.execute("not-declared", {})
+        with self.attack("def capsule_main(request, context):\n    return context.read('base', 'unlisted.json')\n") as prepared:
+            with self.assertRaises(capsule.CapsuleError):
+                prepared.execute("attack", {})
+
+    def test_missing_static_trusted_import_is_rejected_during_preparation(self):
+        with self.assertRaisesRegex(capsule.CapsuleError, "outside complete trusted closure"):
+            self.attack("import nonexistent_capsule_module\n"
+                        "def capsule_main(request, context):\n    return True\n")
+
+    def test_transitive_relative_packages_and_explicit_dynamic_closure(self):
+        self.write("checks/deep/__init__.py", b"from .leaf import answer\n")
+        self.write("checks/deep/leaf.py", b"answer = 41\n")
+        self.write("checks/second.py", b"from .deep import answer\ndef value():\n    return answer + 1\n")
+        self.write("checks/dynamic.py", b"answer = 'declared-dynamic'\n")
+        self.write("checks/transitive.py",
+                   b"def capsule_main(request, context):\n"
+                   b"    from checks import second\n"
+                   b"    return [second.value(), context.load_module('checks.dynamic').answer]\n")
+        revision = self.commit()
+        spec = capsule.CapsuleSpec(
+            trees={"base": revision}, programs={"transitive": "checks/transitive.py"},
+            modules=("checks.dynamic",),
+        )
+        with capsule.prepare(self.root, spec) as prepared:
+            result = prepared.execute("transitive", {})
+        self.assertEqual(result.value, [42, "declared-dynamic"])
+        paths = {entry["path"] for entry in result.receipt["loaded"]}
+        self.assertTrue({"checks/deep/__init__.py", "checks/deep/leaf.py",
+                         "checks/second.py", "checks/dynamic.py"}.issubset(paths))
+        undeclared = capsule.CapsuleSpec(trees=spec.trees, programs=spec.programs)
+        with capsule.prepare(self.root, undeclared) as prepared:
+            with self.assertRaises(capsule.CapsuleError):
+                prepared.execute("transitive", {})
+
+    def test_absence_and_symlink_data_are_exact_inert_artifacts(self):
+        link = self.root / "inputs/link.json"
+        link.symlink_to("never-follow.json")
+        self.write("checks/inert.py",
+                   b"def capsule_main(request, context):\n"
+                   b"    return {'missing': context.read('head', 'inputs/not-present.json'),\n"
+                   b"            'link': context.read('head', 'inputs/link.json').decode(),\n"
+                   b"            'mode': context.entry('head', 'inputs/link.json')['mode']}\n")
+        try:
+            revision = self.commit()
+            spec = capsule.CapsuleSpec(
+                trees={"base": revision, "head": revision},
+                programs={"inert": "checks/inert.py"},
+                data={"head": ("inputs/not-present.json", "inputs/link.json")},
+            )
+            with capsule.prepare(self.root, spec) as prepared:
+                result = prepared.execute("inert", {})
+            self.assertEqual(result.value, {"missing": None, "link": "never-follow.json", "mode": "120000"})
+        finally:
+            link.unlink()
+
+    def test_caught_path_import_process_and_network_fallbacks_cannot_return_pass(self):
+        attempts = {
+            "open": "open('/etc/hostname').read()",
+            "path": "__import__('pathlib').Path('/etc/hostname').read_bytes()",
+            "import": "__import__('unlisted_module')",
+            "file-loader": "__import__('importlib.util', fromlist=['util']).spec_from_file_location('x', '/etc/hostname').loader.get_data('/etc/hostname')",
+            "fork": "__import__('os').fork()",
+            "signal": "__import__('os').kill(__import__('os').getpid(), 0)",
+            "process-group": "__import__('os').setpgid(0, __import__('os').getppid())",
+            "session": "__import__('os').setsid()",
+            "process": "__import__('subprocess').run(['/bin/true'])",
+            "ctypes": "__import__('ctypes').CDLL(None)",
+            "network": "__import__('socket').socket()",
+            "data": "context.read('head', 'unlisted.json')",
+        }
+        for label, attempt in attempts.items():
+            with self.subTest(label=label):
+                source = ("import pathlib, importlib.util, os, subprocess, ctypes, socket\n"
+                          "def capsule_main(request, context):\n"
+                          "    try:\n        " + attempt + "\n"
+                          "    except Exception:\n        pass\n"
+                          "    return {'status': 'pass'}\n")
+                with self.attack(source) as prepared:
+                    with self.assertRaises(capsule.CapsuleError):
+                        prepared.execute("attack", {})
+
+    def test_worker_cannot_escape_group_then_stall_cleanup(self):
+        before = self.descriptors()
+        with self.attack(
+            "import os,time\n"
+            "def capsule_main(request, context):\n"
+            "    os.setpgid(0, os.getppid())\n"
+            "    time.sleep(20)\n"
+        ) as prepared:
+            started = time.monotonic()
+            with self.assertRaises(capsule.CapsuleError):
+                prepared.execute("attack", {}, timeout=0.3)
+            self.assertLess(time.monotonic() - started, 3)
+        self.assertEqual(before, self.descriptors())
+
+    def test_mutating_sys_path_cannot_load_an_ambient_module(self):
+        ambient = self.root / "unlisted_module.py"
+        ambient.write_bytes(b"status = 'pass'\n")
+        try:
+            with self.attack(
+                "import sys\n"
+                "def capsule_main(request, context):\n"
+                f"    sys.path.insert(0, {str(self.root)!r})\n"
+                "    return __import__('unlisted_module').status\n"
+            ) as prepared:
+                with self.assertRaises(capsule.CapsuleError):
+                    prepared.execute("attack", {})
+        finally:
+            ambient.unlink()
+
+    def test_parent_credentials_are_not_in_child_environment(self):
+        with self.attack("import os\ndef capsule_main(request, context):\n    return dict(os.environ)\n") as prepared:
+            with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "test-secret", "WORKFLOW_HMAC_KEY": "test-key"}):
+                result = prepared.execute("attack", {})
+        self.assertNotIn("GITHUB_TOKEN", result.value)
+        self.assertNotIn("WORKFLOW_HMAC_KEY", result.value)
+        self.assertNotIn("PYTHONPATH", result.value)
+
+    def test_signing_verification_rejects_forgery_transplant_and_replay(self):
+        with capsule.Capsule(self.bundle, self.spec) as prepared:
+            first = prepared.execute("assertion", {"round": 1})
+            second = prepared.execute("assertion", {"round": 1})
+        key = b"test-only-capsule-signing-key-1234"
+        signed = capsule.sign_receipt(first, key)
+        self.assertEqual(capsule.verify_receipt(signed, key, first), first.receipt)
+        with self.assertRaises(capsule.CapsuleError):
+            capsule.verify_receipt(signed, key, second)
+        value = capsule.parse(signed)
+        value["receipt"]["program_sha256"] = "f" * 64
+        with self.assertRaises(capsule.CapsuleError):
+            capsule.verify_receipt(capsule.canonical(value), key, first)
+        with self.assertRaises(capsule.CapsuleError):
+            capsule.sign_receipt(capsule.ExecutionResult(first.receipt_bytes, first.output_bytes), key)
+        with self.assertRaises(capsule.CapsuleError):
+            capsule.sign_receipt(first, b"short")
+
+    def test_success_failure_and_timeout_leave_no_owned_descriptor(self):
+        before = self.descriptors()
+        with capsule.Capsule(self.bundle, self.spec) as prepared:
+            prepared.execute("assertion", {})
+        self.assertEqual(before, self.descriptors())
+        programs = {
+            "exception": "raise RuntimeError('intentional crash')",
+            "crash": "__import__('os')._exit(3)",
+            "empty": "__import__('os')._exit(0)",
+            "partial": "__import__('os').write(1, b'{')\n    return {'status': 'pass'}",
+            "stdout": "print('forged pass')\n    return {'status': 'pass'}",
+            "oversized": f"return 'x' * {capsule.MAX_OUTPUT_BYTES + 1}",
+            "timeout": "while True:\n        pass",
+        }
+        for name, body in programs.items():
+            with self.subTest(name=name):
+                with self.attack("def capsule_main(request, context):\n    " + body + "\n") as prepared:
+                    with self.assertRaises(capsule.CapsuleError):
+                        prepared.execute("attack", {}, timeout=0.3 if name == "timeout" else 3)
+                self.assertEqual(before, self.descriptors())
+
+    def test_interruption_closes_liveness_and_reaps_guardian(self):
+        with capsule.Capsule(self.bundle, self.spec) as prepared:
+            before = self.descriptors()
+            real_selector = selectors.DefaultSelector
+
+            class InterruptingSelector:
+                def __enter__(self):
+                    self.delegate = real_selector()
+                    return self
+                def __exit__(self, *exc):
+                    self.delegate.close()
+                def register(self, *args):
+                    return self.delegate.register(*args)
+                def get_map(self):
+                    return self.delegate.get_map()
+                def select(self, *args):
+                    raise KeyboardInterrupt()
+
+            with mock.patch.object(selectors, "DefaultSelector", InterruptingSelector):
+                with self.assertRaises(KeyboardInterrupt):
+                    prepared.execute("checker", {})
+            self.assertEqual(before, self.descriptors())
+
+    def test_missing_platform_fails_closed_without_process_creation(self):
+        with mock.patch.object(capsule.sys, "platform", "unsupported"):
+            with mock.patch.object(subprocess, "Popen") as launch:
+                with self.assertRaises(capsule.CapsuleUnavailable) as error:
+                    capsule.prepare(self.root, self.spec)
+                self.assertEqual(error.exception.disposition, "sealed-capsule-unavailable")
+                launch.assert_not_called()
+        with mock.patch.object(os, "memfd_create", side_effect=OSError(errno.ENOSYS, "unavailable")):
+            with self.assertRaises(capsule.CapsuleUnavailable):
+                capsule.SealedBytes(b"must-not-fall-back", "test", 100)
+
+    def test_parent_death_reaps_outer_and_nested_execution_groups(self):
+        capsule._prctl(36, 1)
+        self.write("checks/hang.py", b"import time\ndef capsule_main(request, context):\n    time.sleep(20)\n")
+        self.write("checks/hang_checker.py",
+                   b"def capsule_main(request, context):\n    return context.invoke('hang', request)\n")
+        revision = self.commit()
+        spec = capsule.CapsuleSpec(
+            trees={"base": revision},
+            programs={"hang": "checks/hang.py", "hang-checker": "checks/hang_checker.py"},
+        )
+        bundle_path = self.root / "parent-death-bundle.json"
+        bundle_path.write_bytes(capsule._make_bundle(self.root, spec.record()))
+        helper = """
+import pathlib,sys
+sys.path.insert(0,sys.argv[1])
+from scripts.workflow_pilot import sealed_capsule as c
+raw=pathlib.Path(sys.argv[2]).read_bytes()
+spec=c.CapsuleSpec(**c.parse(raw,c.MAX_BUNDLE_BYTES)['spec'])
+launch=c.subprocess.Popen
+def traced(*args,**kwargs):
+    child=launch(*args,**kwargs)
+    print(child.pid,flush=True)
+    return child
+c.subprocess.Popen=traced
+with c.Capsule(raw,spec) as prepared:
+    prepared.execute('hang-checker',{},timeout=10)
+"""
+        process = subprocess.Popen(
+            [capsule.PYTHON, "-I", "-S", "-c", helper, str(ROOT), str(bundle_path)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
+        )
+        observed, handles = set(), {}
+        try:
+            with selectors.DefaultSelector() as selector:
+                selector.register(process.stdout, selectors.EVENT_READ)
+                self.assertTrue(selector.select(5), "parent helper did not launch")
+                line = process.stdout.readline()
+                self.assertTrue(line.strip().isdigit(), f"helper failed: {line!r}")
+                guardian = int(line)
+            observed.add(guardian)
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                for pid in tuple(observed):
+                    path = Path(f"/proc/{pid}/task/{pid}/children")
+                    try:
+                        observed.update(map(int, path.read_text().split()))
+                    except FileNotFoundError:
+                        pass
+                if len(observed) >= 4:
+                    break
+                time.sleep(0.02)
+            self.assertGreaterEqual(len(observed), 4, "nested guardian and worker were not live")
+            for pid in observed:
+                handles[pid] = os.pidfd_open(pid)
+            process.kill()
+            process.wait(timeout=3)
+            deadline = time.monotonic() + 3
+            pending = set(handles)
+            while pending and time.monotonic() < deadline:
+                for pid in tuple(pending):
+                    try:
+                        os.waitpid(pid, os.WNOHANG)
+                    except ChildProcessError:
+                        pass
+                    if not Path(f"/proc/{pid}").exists():
+                        pending.remove(pid)
+                if pending:
+                    time.sleep(0.02)
+            self.assertFalse(pending, f"parent death left live processes: {pending}")
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=3)
+            for pid, handle in handles.items():
+                try:
+                    signal.pidfd_send_signal(handle, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                os.close(handle)
+                try:
+                    os.waitpid(pid, os.WNOHANG)
+                except ChildProcessError:
+                    pass
+            process.stdout.close()
+            process.stderr.close()
+            bundle_path.unlink()
+
+    def test_noncanonical_and_duplicate_wire_json_rejected(self):
+        for raw in (b'{"x":1,"x":1}\n', b'{"x":NaN}\n', b'{"x":1e999}\n',
+                    b'{"x": 1}\n', b'{"x":1}', b'{}\n{}\n'):
+            with self.subTest(raw=raw):
+                with self.assertRaises(capsule.CapsuleError):
+                    capsule.parse(raw)
+
+
+if __name__ == "__main__":
+    unittest.main()
