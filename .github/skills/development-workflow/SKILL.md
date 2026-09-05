@@ -779,6 +779,37 @@ Frozen reporter baseline schema v1 remains unchanged; the protocol is specified 
 The indexed source-only regression is
 [`TC-WORKFLOW-AGENT-HANDOFF-001`](../../../docs/test-cases/workflow-governance.md#tc-workflow-agent-handoff-001-validate-bounded-exact-sha-agent-handoffs).
 
+### Immediate publication and visible work
+
+Every new task commit, including a WIP or checkpoint commit, is a durability
+boundary: the coordinator immediately pushes that exact commit under the
+repository owner's context. Do not retain commits locally for independent or
+hosted review, additional validation, CI results, or a later batch.
+Implementation owners return a new commit immediately; they still do not push.
+Prefer focused validation before committing. If work or validation remains
+after a commit exists, publish first and describe the pending or failed state.
+
+Open or update the dedicated PR promptly, using a draft for incomplete work.
+Keep its issue, branch, exact head, assigned owner, active scope, remaining work,
+and precise blockers visible in the single canonical evidence comment so other
+contributors and agents do not duplicate the work. Keep the PR body as the
+stable contract. Required independent review runs before commit when possible
+or concurrently after immediate publication; it cannot become a post-commit
+persistence hold. Publishing WIP is not semantic handoff acceptance, terminal
+authority publication, merge eligibility, or task completion.
+
+The labeled fields below are the canonical CLI commit-publication and
+WIP-visibility protocol. Field and list order are immaterial; the symbolic
+values are fixed. Surrounding prose explains this protocol, not an override.
+
+- **Trigger:** new-task-commit
+- **Publisher:** repository-owner-coordinator
+- **Implementation owner:** immediate-handoff-no-push
+- **Pre-push waits:** none
+- **WIP visibility:** issue, pull-request, branch, commit, owner, scope, state, remaining-work, blockers
+- **Authority:** persistence-not-acceptance
+- **Final gates:** unchanged
+- **Push failure:** explicit-blocker-no-success-claim
 ### Trusted push ownership
 
 Implementation subagents validate and commit locally but do not push. The

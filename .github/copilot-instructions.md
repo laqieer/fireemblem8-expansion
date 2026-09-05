@@ -186,6 +186,17 @@ closed build/map/resource receipt.
 Sent/received/progressing prefixes remain non-eligible replacement progress,
 and the replacement assignment must be strictly later than interruption.
 
+Every new task commit, including WIP/checkpoints, must be owner-pushed
+immediately. Do not wait for reviews, extra validation, CI, or batching after
+the commit exists. Implementation owners immediately return the exact commit
+for the coordinator's push; they do not push themselves. Publish or update the
+dedicated PR (draft if incomplete) and canonical evidence comment with issue,
+branch/head, owner, scope, state, remaining work, and blockers so other
+contributors/agents do not duplicate it. Persistence does not authorize
+handoff acceptance, terminal publication, merge, or closure. A failed push is
+an explicit blocker, never a success claim. The canonical
+[publication protocol](skills/development-workflow/SKILL.md#immediate-publication-and-visible-work)
+retains every existing final gate.
 Implementation subagents validate and commit locally but do not push. The
 orchestrator pushes the exact commit under repository-owner context so Build
 does not become `action_required`. If an already-pushed run for that same SHA
