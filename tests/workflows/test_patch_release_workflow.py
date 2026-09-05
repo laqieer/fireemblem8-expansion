@@ -2185,15 +2185,37 @@ def run_extracted_supervisor_writable_mount_probe(
 ) -> subprocess.CompletedProcess[str]:
     root.mkdir(parents=True, exist_ok=True)
     section = writable_mount_transport_section_source(workflow)
-    findmnt_scope = '"TARGET,OPTIONS", "-R", "/"],'
-    replacement_count = section.count(findmnt_scope)
-    section = section.replace(
-        findmnt_scope,
-        '"TARGET,OPTIONS", "-R", "/mnt/supervisor"],',
-        1,
-    )
-    if replacement_count != 1:
+    shell = publisher_shell_contract.publisher_shell
+    parsed = shell.parse(section)
+    helpers = [
+        node for chain in parsed.items for node in chain.nodes
+        if isinstance(node, shell.Function) and node.name == "list_writable_mount_records"
+    ]
+    if len(helpers) != 1 or len(helpers[0].body.items) != 1:
+        raise AssertionError("exact workflow probe must contain one mount reader")
+    command = helpers[0].body.items[0].nodes[0]
+    if not isinstance(command, shell.Command):
+        raise AssertionError("exact workflow probe must invoke its mount reader")
+    payloads = [redirect.body for redirect in command.redirects if redirect.operator == "<<"]
+    program = payloads[0] if len(payloads) == 1 else raw_writable_mount_record_parser_source(workflow)
+    tree = ast.parse(program)
+    scopes = [
+        node for node in ast.walk(tree)
+        if isinstance(node, (ast.List, ast.Tuple))
+        and all(isinstance(item, ast.Constant) and isinstance(item.value, str) for item in node.elts)
+        and [item.value for item in node.elts[:1]] == ["/usr/bin/findmnt"]
+        and [item.value for item in node.elts[-3:]] == ["TARGET,OPTIONS", "-R", "/"]
+    ]
+    if len(scopes) != 1:
         raise AssertionError("exact workflow probe must contain one writable mount scope")
+    scopes[0].elts[-1] = ast.Constant("/mnt/supervisor")
+    program_path = root / "scope-probe.py"
+    program_path.write_text(ast.unparse(tree) + "\n", encoding="utf-8")
+    section = (
+        section[:command.offset]
+        + "/usr/bin/python3 -I -S " + shlex.quote(str(program_path)) + "\n"
+        + section[command.end:]
+    )
     section_path = root / "section.sh"
     section_path.write_text(section, encoding="utf-8")
     return run_rootless_mount_namespace(

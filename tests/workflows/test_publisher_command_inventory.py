@@ -1,6 +1,8 @@
 """TC-WORKFLOW-PUBLISHER-COMMAND-INVENTORY-001, real production consumers."""
 
 from dataclasses import replace
+import builtins
+import importlib
 import importlib.util
 import io
 import json
@@ -12,6 +14,7 @@ import shutil
 import stat
 import subprocess
 import sys
+from types import ModuleType
 import unittest
 from unittest import mock
 import uuid
@@ -35,6 +38,11 @@ class PublisherCommandInventoryTests(unittest.TestCase):
         cls.workflow = WORKFLOW.read_text()
         cls.source = fixtures.builder(cls.workflow)
         cls.inventory = authority.reviewed_inventory()
+        cls.sources = {
+            "entry": cls.source,
+            "producer": contract.publisher_run_script(cls.workflow, "Verify exact candidate and stage trusted producer"),
+            "staging": contract.publisher_run_script(cls.workflow),
+        }
 
     def test_actual_production_inventory_is_complete_and_typed(self):
         result = authority.validate_workflow(self.workflow)
@@ -46,7 +54,7 @@ class PublisherCommandInventoryTests(unittest.TestCase):
         actual = {item.signature.name for item in result.commands}
         expected = {
             signature.name for signature in self.inventory.signatures
-            if signature.occurrences and signature.scope != "producer"
+            if signature.occurrences and self.inventory.entry_scope(signature.scope) == "entry"
         }
         self.assertEqual(actual, expected)
         self.assertEqual(
@@ -71,7 +79,11 @@ class PublisherCommandInventoryTests(unittest.TestCase):
         self.assertTrue(any(context.kind == "loop" for event in result.events for context in event.context))
         for signature in self.inventory.signatures:
             with self.subTest(signature=signature.name):
-                self.assertEqual(self.inventory.authorize(signature.form, signature.scope), signature)
+                for placement in signature.placements:
+                    self.assertEqual(
+                        self.inventory.authorize(signature.form, signature.scope, placement.context),
+                        signature,
+                    )
                 self.assertTrue(all(isinstance(a.resource, authority.Resource) and isinstance(a.access, authority.Access) for a in signature.accesses))
                 self.assertEqual(signature.evidence, authority.CASE_ID)
                 if signature.program is not None:
@@ -116,31 +128,24 @@ class PublisherCommandInventoryTests(unittest.TestCase):
             for name, changed in mutations.items():
                 with self.subTest(signature=signature.name, mutation=name):
                     with self.assertRaises(ValueError):
-                        self.inventory.authorize(changed, signature.scope)
+                        self.inventory.authorize(changed, signature.scope, signature.placements[0].context)
 
     def test_each_registry_deletion_and_form_drift_fails_closed(self):
-        preflight = contract.publisher_run_script(self.workflow, "Verify exact candidate and stage trusted producer")
-        staging = contract.publisher_run_script(self.workflow)
         for index, signature in enumerate(self.inventory.signatures):
             without = replace(self.inventory, signatures=self.inventory.signatures[:index] + self.inventory.signatures[index + 1:])
+            root = self.inventory.entry_scope(signature.scope)
             with self.subTest(signature=signature.name, mutation="delete"):
-                if signature.scope == "producer":
+                if signature.occurrences == 0:
                     with self.assertRaises(ValueError):
-                        without.validate_producer(preflight, staging)
-                elif signature.occurrences == 0:
-                    with self.assertRaises(ValueError):
-                        without.authorize(signature.form, signature.scope)
+                        without.authorize(signature.form, signature.scope, signature.placements[0].context)
                 else:
                     with self.assertRaises(ValueError):
-                        without.validate(self.source)
+                        without.validate(self.sources[root], entry_scope=root)
             changed = replace(signature, occurrences=signature.occurrences + 1)
             mutated = replace(self.inventory, signatures=self.inventory.signatures[:index] + (changed,) + self.inventory.signatures[index + 1:])
             with self.subTest(signature=signature.name, mutation="cardinality"):
                 with self.assertRaises(ValueError):
-                    if signature.scope == "producer":
-                        mutated.validate_producer(preflight, staging)
-                    else:
-                        mutated.validate(self.source)
+                    mutated.validate(self.sources[root], entry_scope=root)
         with self.assertRaises(ValueError):
             replace(self.inventory, signatures=self.inventory.signatures + (self.inventory.signatures[0],))
 
@@ -156,6 +161,14 @@ class PublisherCommandInventoryTests(unittest.TestCase):
                 replace(self.inventory, signatures=tuple(
                     changed if signature == original else signature for signature in self.inventory.signatures
                 ))
+        with self.assertRaises(ValueError):
+            self.inventory.validate("", entry_scope="unregistered")
+        for control in (
+            replace(self.inventory.controls[0], context=("untyped",)),
+            replace(self.inventory.controls[0], occurrences=True),
+        ):
+            with self.assertRaises(ValueError):
+                replace(self.inventory, controls=(control,) + self.inventory.controls[1:])
 
     def test_program_signatures_and_events_include_every_declared_access(self):
         for signature in self.inventory.signatures:
@@ -213,11 +226,14 @@ class PublisherCommandInventoryTests(unittest.TestCase):
             with self.subTest(control=control.name):
                 changed = replace(self.inventory, controls=self.inventory.controls[:index] + self.inventory.controls[index + 1:])
                 with self.assertRaises(ValueError):
-                    changed.validate(self.source)
+                    root = self.inventory.entry_scope(control.scope)
+                    changed.validate(self.sources[root], entry_scope=root)
         for index, scope in enumerate(self.inventory.scopes):
             with self.subTest(scope=scope.name):
                 with self.assertRaises(ValueError):
-                    replace(self.inventory, scopes=self.inventory.scopes[:index] + self.inventory.scopes[index + 1:])
+                    changed = replace(self.inventory, scopes=self.inventory.scopes[:index] + self.inventory.scopes[index + 1:])
+                    root = self.inventory.entry_scope(scope.name)
+                    changed.validate(self.sources[root], entry_scope=root)
         old = "unmount_if_mounted /home/runner\n"
         changed = self.source.replace(old, "", 1).replace("unmount_if_mounted() {", old + "unmount_if_mounted() {", 1)
         with self.assertRaisesRegex(ValueError, "before its definition"):
@@ -248,6 +264,23 @@ class PublisherCommandInventoryTests(unittest.TestCase):
             with self.subTest(command=command):
                 with self.assertRaises(ValueError):
                     self.inventory.authorize(shell.command(command), "builder_main")
+
+    def test_regex_and_conditional_keyword_provenance_matches_bash_behavior(self):
+        original = '[[ "$PATCH_COMMIT" =~ ^[0-9a-f]{40}$ ]]'
+        changed = '[[ "$PATCH_COMMIT" =~ "^"[0-9a-f]{40}$ ]]'
+        for source, status in ((original, 0), (changed, 1)):
+            completed = subprocess.run(
+                ["/bin/bash", "--noprofile", "--norc", "-c", source],
+                env={"PATH": "/usr/bin:/bin", "PATCH_COMMIT": "a" * 40},
+                capture_output=True, check=False,
+            )
+            self.assertEqual(completed.returncode, status, completed.stderr)
+        self.assertNotEqual(shell.command(original), shell.command(changed))
+        self.assertNotEqual(shell.command('[[ "$state" = T* ]]'), shell.command('\'[[\' "$state" = T* ]]'))
+        self.assertEqual(shell.command('[[ "$state" =~ ^a+$ ]]'), shell.command('[[ "$state" =~ ^"a"+$ ]]'))
+        self.inventory.authorize(shell.command(original), "producer")
+        with self.assertRaises(ValueError):
+            self.inventory.authorize(shell.command(changed), "producer")
 
     def test_even_registered_recursive_helper_graphs_are_rejected(self):
         access = (authority.ResourceAccess(authority.Resource.CONTROL, authority.Access.EXECUTE),)
@@ -351,6 +384,74 @@ class PublisherCommandInventoryTests(unittest.TestCase):
                     self.assertTrue(publisher.publisher_boundary_errors(changed_workflow))
                     with self.assertRaises(ValueError):
                         verify._parse_workflow_structure_text(changed_workflow)
+
+    def test_context_and_complete_producer_mutations_reject_both_consumers(self):
+        for name, changed in fixtures.context_and_producer_workflows(self.workflow):
+            with self.subTest(mutation=name), fixtures.refreshed_boundary_identities(changed):
+                with self.assertRaises(ValueError):
+                    authority.validate_workflow(changed)
+                self.assertTrue(publisher.publisher_boundary_errors(changed))
+                with self.assertRaises(ValueError):
+                    verify._parse_workflow_structure_text(changed)
+
+    def test_registered_placements_are_required_before_counting_commands(self):
+        for root, source in self.sources.items():
+            original = self.inventory.validate(source, entry_scope=root)
+            for item in original.commands:
+                if item.nested:
+                    continue
+                with self.subTest(root=root, signature=item.signature.name):
+                    with self.assertRaises(ValueError):
+                        self.inventory.authorize(
+                            item.command, item.scope,
+                            item.context + (authority.Context("background", "&"),),
+                        )
+        changed = fixtures.replace_builder(
+            self.workflow, self.source.replace("cd /\n", "cd / &\n", 1),
+        )
+        signature = next(s for s in self.inventory.signatures if s.name == "builder_main.root-directory")
+        enabled = replace(signature, placements=(
+            authority.Placement((authority.Context("background", "&"),)),
+        ))
+        mutation = replace(self.inventory, signatures=tuple(
+            enabled if s == signature else s for s in self.inventory.signatures
+        ))
+        with fixtures.refreshed_boundary_identities(changed):
+            self.assertTrue(publisher.publisher_boundary_errors(changed))
+            with mock.patch.object(authority, "reviewed_inventory", return_value=mutation):
+                self.assertEqual(publisher.publisher_boundary_errors(changed), [])
+                verify._parse_workflow_structure_text(changed)
+
+    def test_complete_steps_preserve_semantics_preserving_spelling_and_order(self):
+        changed = self.workflow.replace(
+            '        ACTUAL_SHA="$(/usr/bin/git rev-parse HEAD)"',
+            '        # inert producer comment\n        ACTUAL_SHA="$(/usr/bin/git rev-parse HEAD)"',
+        ).replace(
+            '        builder_uid=""\n        builder_gid=""',
+            '        builder_gid=\'\'\n        builder_uid=\'\'',
+        )
+        with fixtures.refreshed_boundary_identities(changed):
+            self.assertEqual(publisher.publisher_boundary_errors(changed), [])
+            verify._parse_workflow_structure_text(changed)
+            self.assertEqual(
+                authority.validate_workflow(changed).signatures,
+                authority.validate_workflow(self.workflow).signatures,
+            )
+
+    def test_step_discovery_diagnostics_name_the_requested_step_and_count(self):
+        name = "Verify exact candidate and stage trusted producer"
+        for changed, count in (
+            (self.workflow.replace("- name: " + name, "- name: Renamed producer", 1), 0),
+            (self.workflow.replace(
+                "    - name: Install trusted isolated-build dependencies",
+                "    - name: " + name + "\n      run: |\n        true\n\n"
+                "    - name: Install trusted isolated-build dependencies", 1,
+            ), 2),
+        ):
+            with self.subTest(count=count), self.assertRaises(ValueError) as raised:
+                contract.publisher_run_script(changed, name)
+            self.assertIn(repr(name), str(raised.exception))
+            self.assertIn(f"found {count}", str(raised.exception))
 
     def test_parser_bounds_and_unknown_grammar_are_fail_closed(self):
         for source in (
@@ -499,6 +600,115 @@ class PublisherExactTreeTests(unittest.TestCase):
             cwd=self.directory, capture_output=True, check=False,
         )
 
+    def snapshot(self):
+        self.git("add", "--", *self.paths)
+        self.git("-c", "user.name=Publisher test", "-c", "user.email=publisher-test@example.invalid", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "commit", "-qm", "Authority regression fixture")
+        self.commit = self.git("rev-parse", "HEAD").decode().strip()
+
+    def test_real_cli_rejects_context_and_complete_producer_mutations(self):
+        path = self.directory / authority.WORKFLOW_PATH
+        original = path.read_text()
+        for name, changed in fixtures.context_and_producer_workflows(original):
+            with self.subTest(mutation=name):
+                path.write_text(changed)
+                self.snapshot()
+                completed = self.cli()
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn(b"publisher command authority:", completed.stderr)
+                self.assertNotIn(b"authority differs from exact tree", completed.stderr)
+                self.assertNotIn(b"raw identity", completed.stderr)
+
+    def test_real_cli_enforces_dynamic_import_set_not_call_spelling(self):
+        package = self.directory / "scripts/workflow_pilot/__init__.py"
+        original = package.read_text()
+        ambient = self.directory / "unregistered_package.py"
+        ambient.write_text("raise RuntimeError('ambient package executed')\n")
+        for call in (
+            "builtins.__import__('unregistered_package')",
+            "getattr(builtins, '__import__')('unregistered_package')",
+            "getattr(importlib, 'import_module')('unregistered_package')",
+            "load('unregistered_package')",
+        ):
+            with self.subTest(call=call):
+                package.write_text(
+                    original + "\nimport builtins, importlib, sys\n"
+                    "from builtins import __import__ as load\n"
+                    f"sys.path.insert(0, {str(self.directory)!r})\n" + call + "\n"
+                )
+                self.snapshot()
+                completed = self.cli()
+                self.assertEqual(completed.returncode, 1, completed.stderr)
+                self.assertIn(b"import outside publisher authority: unregistered_package", completed.stderr)
+                self.assertNotIn(b"ambient package executed", completed.stderr)
+                self.assertNotIn(b"dynamic publisher authority import", completed.stderr)
+        control = subprocess.run(
+            ["/usr/bin/python3", "-I", "-S", "-c",
+             "import sys; sys.path.insert(0, sys.argv[1]); import scripts.workflow_pilot",
+             str(self.directory)], capture_output=True, check=False,
+        )
+        self.assertNotEqual(control.returncode, 0)
+        self.assertIn(b"ambient package executed", control.stderr)
+
+    def test_import_boundary_rejects_cached_external_and_stdlib_shadow_modules(self):
+        sources = authority._bind_exact_sources(self.directory, self.commit)
+        original_import = builtins.__import__
+        original_import_module = importlib.import_module
+        for name in ("unregistered_package", "fractions"):
+            fake = ModuleType(name)
+            fake.__spec__ = importlib.util.spec_from_file_location(name, self.directory / (name + ".py"))
+            with self.subTest(module=name), mock.patch.dict(sys.modules, {name: fake}):
+                for importer in (lambda: builtins.__import__(name), lambda: importlib.import_module(name)):
+                    with authority._source_only_authority(sources), self.assertRaises(ValueError):
+                        importer()
+        self.assertIs(builtins.__import__, original_import)
+        self.assertIs(importlib.import_module, original_import_module)
+
+    def test_real_cli_loads_system_stdlib_not_ambient_finders_or_package_shadows(self):
+        package = self.directory / "scripts/workflow_pilot/__init__.py"
+        package.write_text(
+            package.read_text() + "\nimport builtins, sys\n"
+            f"sys.path.insert(0, {str(self.directory)!r})\n"
+            "class AmbientFinder:\n"
+            "    def find_spec(self, fullname, path=None, target=None):\n"
+            "        raise RuntimeError('ambient finder executed')\n"
+            "sys.meta_path.insert(1, AmbientFinder())\n"
+            "fractions = builtins.__import__('fractions')\n"
+            "assert fractions.Fraction(1, 2) + fractions.Fraction(1, 3) == fractions.Fraction(5, 6)\n"
+        )
+        (self.directory / "fractions.py").write_text("raise RuntimeError('ambient stdlib shadow executed')\n")
+        self.snapshot()
+        completed = self.cli()
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stderr, b"")
+
+    def test_authority_blob_limit_precedes_content_read(self):
+        path = "scripts/workflow_pilot/__init__.py"
+        source = self.directory / path
+        original = source.read_bytes()
+        for size in (authority.MAX_AUTHORITY_BYTES, authority.MAX_AUTHORITY_BYTES + 1):
+            source.write_bytes(original + b"\n#" + b"x" * (size - len(original) - 3) + b"\n")
+            self.snapshot()
+            oid = self.git("rev-parse", self.commit + ":" + path).decode().strip()
+            with self.subTest(size=size), mock.patch.object(authority, "SOURCE_ROOT", self.directory):
+                with mock.patch.object(authority, "_git", wraps=authority._git) as git:
+                    if size <= authority.MAX_AUTHORITY_BYTES:
+                        self.assertEqual(authority.bind_exact_tree(self.directory, self.commit), self.paths)
+                    else:
+                        with self.assertRaisesRegex(ValueError, "blob exceeds bounds"):
+                            authority.bind_exact_tree(self.directory, self.commit)
+                reads = [
+                    call for call in git.call_args_list
+                    if call.args[1:] == ("cat-file", "blob", oid)
+                ]
+                self.assertEqual(len(reads), int(size <= authority.MAX_AUTHORITY_BYTES))
+                if reads:
+                    self.assertEqual(reads[0].kwargs, {"max_bytes": size})
+                    with self.assertRaisesRegex(ValueError, "blob exceeds bounds"):
+                        authority._git(self.directory, "cat-file", "blob", oid, max_bytes=16)
+                    with self.assertRaisesRegex(ValueError, "complete publisher authority blob"):
+                        authority._git(self.directory, "cat-file", "blob", oid, max_bytes=size + 1)
+            completed = self.cli()
+            self.assertEqual(completed.returncode, int(size > authority.MAX_AUTHORITY_BYTES), completed.stderr)
     def inert_cache(self, path):
         alternative = self.directory / "inert-cache.py"
         alternative.write_text("raise RuntimeError('inert unchecked-hash cache executed')\n")

@@ -63,8 +63,15 @@ class VerifyGatesMirrorWorkflowTests(unittest.TestCase):
             wraps=contract.validate_builder_command_inventory,
         ) as validate:
             verify_mod._parse_workflow_structure_text(original)
-            validate.assert_called_once()
+            self.assertEqual(
+                {call.args[0] for call in validate.call_args_list},
+                {publisher_inventory_fixtures.builder(original)},
+            )
         for name, changed in publisher_inventory_fixtures.adversarial_workflows(original):
+            with self.subTest(case=name), publisher_inventory_fixtures.refreshed_boundary_identities(changed):
+                with self.assertRaises(ValueError):
+                    verify_mod._parse_workflow_structure_text(changed)
+        for name, changed in publisher_inventory_fixtures.context_and_producer_workflows(original):
             with self.subTest(case=name), publisher_inventory_fixtures.refreshed_boundary_identities(changed):
                 with self.assertRaises(ValueError):
                     verify_mod._parse_workflow_structure_text(changed)
