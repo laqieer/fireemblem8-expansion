@@ -143,14 +143,31 @@ repositories/submodules (including bare or separated Git metadata without a
 `.git` child), mounts, special files, and unknown ignored local data remain
 held, not guessed disposable.
 
-Every private reflog's old **and** new object identities and every private
-pseudoref are inspected, including all `FETCH_HEAD` entries, not only its
-first mergeable line. They must be durably reachable from shared refs that
-worktree removal leaves intact. Current HEAD ancestry and the main checkout's
-reflog do not substitute for that evidence. Detached recovery commits,
-non-commit objects, and missing, malformed, symlinked, or over-bound recovery
-metadata retain the workspace. Do not erase recovery records to qualify a
-tree for removal.
+Every private reflog's old **and** new object identities, every private
+pseudoref, and **every index resolve-undo object** are inspected, including
+all `FETCH_HEAD` entries, not only its first mergeable line. A clean index
+can still contain `REUC` records for all three stages of an earlier conflict.
+The helper compares those binary records with `git ls-files --resolve-undo`
+and proves that every object is durably reachable from shared refs which
+worktree removal leaves intact. Shared commit ancestry can preserve a blob
+or tree, not just a commit; the current HEAD's ancestry and the main
+checkout's reflog do not substitute for this evidence. Changes to resolve-undo
+paths, modes, stages, or objects also invalidate an earlier plan.
+
+Private metadata is classified as a family, not by a blacklist of a few
+filenames. `config.worktree` is retained even when empty or the extension is
+disabled. Index backups, split-index bases, lock files, private hooks/excludes,
+rerere records, other edit buffers and unrecognized private files/directories
+remain held. A `COMMIT_EDITMSG` is disposable only when its bytes exactly
+match the committed HEAD message. The ordinary registration files, inspected
+refs/reflogs, and a validated index are the only other accepted metadata.
+The index audit supports DIRC versions 2–4, verifies the format checksum and
+bounds, and accepts only resolve-undo plus reconstructible tree, untracked,
+fsmonitor and entry-offset caches. Sparse/split indexes and unfamiliar
+extensions are retained, including optional extensions that Git itself
+silently ignores. Missing, malformed, symlinked, or over-bound metadata and
+private-only recovery objects retain the workspace. Do not erase configuration
+or recovery records, rewrite the index, or weaken a hold to qualify a tree.
 
 Only known generated ignored output is disposable: `build/`, `.dep/`,
 `.deps/`, bytecode caches, standard root build products, the eight existing
@@ -221,6 +238,14 @@ Record this output in the coordinator's existing completion evidence, outside
 the removal targets; do not commit a mutable worktree list.
 Command failures include their exit code even when the command emits no
 stderr, so a silent ancestry-test failure remains diagnosable.
+Linux mount records and Git metadata backlinks are read as bytes; paths use
+the filesystem codec with surrogate escapes rather than requiring UTF-8.
+Mount escapes are decoded before path comparisons for both the workspace
+and its private Git directory. Unrelated non-UTF-8 mount names cannot crash
+planning or conceal a related mount. Malformed records produce an explicit
+hold, not an empty inventory fallback. JSON uses ASCII escapes, so
+`os.fsencode(json.loads(report)["results"][i]["path"])` restores the original
+path bytes even on a strict text-output stream.
 
 Supported live use is Linux with visible same-owner process CWDs and a
 coordinator-maintained complete preserved-path list. Other users' assignments
@@ -229,8 +254,12 @@ atomic GitHub/filesystem transaction. An uninspectable same-owner process
 blocks removal. Do not reassign targets while cleanup is running. API limits,
 unavailable history, ambiguous identities, and retained user data are precise
 operational holds, never reasons to broaden deletion.
-The real-worktree tests explicitly skip hosts without Linux `/proc`; the live
-helper fails closed there rather than bypassing process or mount checks.
+The real-worktree tests explicitly skip hosts without Linux `/proc`; they
+scope process inventory to test-owned PIDs, including a real child with its
+CWD in the fixture, and exercise unreadable-CWD retention. Simulated mount
+records are ordinary fixture files, not privileged mounts. The live helper
+still checks all visible processes and fails closed when required visibility
+is unavailable.
 
 There are no game-feature dependencies or conflicts, feature flags, CI
 topology changes, ROM/RAM/save/config/generated-data/localization changes, or

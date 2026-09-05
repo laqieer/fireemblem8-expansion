@@ -764,9 +764,12 @@ merge remains useful even if unrelated newer work has failing CI.
 
 Retain active, current/master, locked, dirty/untracked, unpushed/unique, foreign,
 ambiguous, and missing/failed/pending-evidence paths. Retain nested/bare Git
-repositories, private reflog/pseudoref objects not durably reachable from
-shared refs, and partial/promisor repositories whose object lookups could
-fetch during a dry-run. Do not erase recovery records or bypass these holds.
+repositories, private reflog/pseudoref/index resolve-undo objects not durably
+reachable from shared refs, private configuration and unclassified
+recovery/index metadata, and partial/promisor repositories whose object
+lookups could fetch during a dry-run. Preserve filesystem byte paths in
+mount/backlink checks and reports. Do not erase configuration/recovery records
+or rewrite indexes to bypass these holds.
 Never force removal,
 unlock user worktrees, delete branches, globally prune registrations, or
 recursively remove repository/home/session roots. Normal `git worktree remove`

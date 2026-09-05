@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import stat
+import struct
 import subprocess
 import sys
 from urllib.parse import urlencode
@@ -194,13 +196,18 @@ def process_cwds():
 def mount_paths():
     # stat/is_mount cannot distinguish a same-device bind mount from an ordinary directory.
     require_procfs()
-    data = Path("/proc/self/mountinfo").read_text()
+    data = Path("/proc/self/mountinfo").read_bytes()
     require(len(data) <= MAX_OUTPUT, "mount inventory exceeds safety bound")
     result = []
     for line in data.splitlines():
         fields = line.split()
-        require(len(fields) > 6 and "-" in fields, "incomplete Linux mount inventory")
-        result.append(Path(re.sub(r"\\([0-7]{3})", lambda match: chr(int(match[1], 8)), fields[4])))
+        require(len(fields) >= 10 and b"-" in fields[6:], "incomplete Linux mount inventory")
+        require(re.search(rb"\\(?!040|011|012|134)", fields[4]) is None,
+                "invalid Linux mount inventory escape")
+        raw = re.sub(rb"\\(040|011|012|134)",
+                     lambda match: bytes([int(match[1], 8)]), fields[4])
+        require(raw.startswith(b"/") and b"\0" not in raw, "invalid Linux mount inventory path")
+        result.append(Path(os.fsdecode(raw)))
     return result
 
 
@@ -272,49 +279,143 @@ def generated_ignored(name, tracked):
     return False
 
 
+def index_extensions(data):
+    """Bound and classify the private DIRC format; unknown extensions can hold recovery data."""
+    require(len(data) >= 32, "incomplete private Git index")
+    signature, version, count = struct.unpack_from(">4sII", data)
+    require(signature == b"DIRC" and version in {2, 3, 4}, "unsupported private Git index format")
+    limit = len(data) - 20
+    require(hashlib.sha1(data[:limit], usedforsecurity=False).digest() == data[limit:],
+            "invalid private Git index checksum")
+    require(count <= limit // 62, "invalid private Git index entry count")
+    offset, previous_length = 12, 0
+    for _ in range(count):
+        start = offset
+        require(offset + 62 <= limit, "truncated private Git index entry")
+        flags = int.from_bytes(data[offset + 60:offset + 62], "big")
+        offset += 62
+        if flags & 0x4000:
+            require(version >= 3 and offset + 2 <= limit, "invalid private Git index flags")
+            offset += 2
+        remove = 0
+        if version == 4:
+            for size in range(5):
+                require(offset < limit, "truncated private Git index path prefix")
+                value = data[offset]
+                offset += 1
+                remove = ((remove + 1) << 7 if size else 0) + (value & 0x7f)
+                if not value & 0x80:
+                    break
+            else:
+                raise Retain("over-bound private Git index path prefix")
+            require(remove <= previous_length, "invalid private Git index path prefix")
+        end = data.find(b"\0", offset, limit)
+        require(end != -1, "unterminated private Git index path")
+        previous_length = previous_length - remove + end - offset if version == 4 else end - offset
+        offset = end + 1 if version == 4 else start + ((end + 1 - start + 7) // 8) * 8
+        require(offset <= limit, "truncated private Git index padding")
+    extensions = {}
+    while offset < limit:
+        require(offset + 8 <= limit, "truncated private Git index extension")
+        name, size = struct.unpack_from(">4sI", data, offset)
+        offset += 8
+        require(offset + size <= limit, "truncated private Git index extension data")
+        # TREE/UNTR/FSMN and entry-offset tables are reconstructible caches.
+        # Split/sparse indexes and unfamiliar optional extensions are not assumed disposable.
+        require(name in {b"TREE", b"REUC", b"UNTR", b"FSMN", b"EOIE", b"IEOT"},
+                f"private Git index extension {name!r} requires preservation")
+        require(name not in extensions, "duplicate private Git index extension")
+        extensions[name] = data[offset:offset + size]
+        offset += size
+    return extensions
+
+
+def resolve_undo_entries(path, data):
+    """Cross-check binary REUC records with Git so no silently ignored record is lost."""
+    expected, offset = [], 0
+
+    def field():
+        nonlocal offset
+        end = data.find(b"\0", offset)
+        require(end != -1, "truncated private Git resolve-undo field")
+        value, offset = data[offset:end], end + 1
+        return value
+
+    while offset < len(data):
+        name = field()
+        require(name, "empty private Git resolve-undo path")
+        modes = [field() for _ in range(3)]
+        for stage, mode in enumerate(modes, 1):
+            require(re.fullmatch(rb"[0-7]{1,6}", mode), "invalid private Git resolve-undo mode")
+            value = int(mode, 8)
+            if not value:
+                continue
+            require(value in {0o100644, 0o100755, 0o120000, 0o160000},
+                    "unsupported private Git resolve-undo mode")
+            require(offset + 20 <= len(data), "truncated private Git resolve-undo object")
+            oid = data[offset:offset + 20].hex()
+            offset += 20
+            expected.append((os.fsdecode(name), f"{value:06o}", oid, stage))
+    observed = []
+    raw = git(path, "ls-files", "--resolve-undo", "-z")
+    require(not raw or raw.endswith("\0"), "incomplete Git resolve-undo inventory")
+    for record in raw.split("\0")[:-1]:
+        fields, separator, name = record.partition("\t")
+        fields = fields.split(" ")
+        require(separator and name and len(fields) == 3
+                and re.fullmatch(r"[0-7]{6}", fields[0]) and fields[2] in {"1", "2", "3"},
+                "malformed Git resolve-undo inventory")
+        observed.append((name, fields[0], commit(fields[1]), int(fields[2])))
+    require(len({(row[0], row[3]) for row in expected}) == len(expected)
+            and sorted(expected) == sorted(observed),
+            "private Git resolve-undo records differ from Git inventory")
+    return sorted(observed)
+
+
 def private_recovery(path, gitdir):
     """Account for every object whose last recovery record removal could erase."""
     objects, budget = set(), MAX_OUTPUT
 
     def read_record(file):
         nonlocal budget
-        require(stat.S_ISREG(file.lstat().st_mode), "private Git recovery metadata is not a regular file")
+        require(stat.S_ISREG(file.lstat().st_mode),
+                f"private Git recovery metadata is not a regular file: {file.name}")
         with os.fdopen(os.open(file, os.O_RDONLY | os.O_NOFOLLOW), "rb") as source:
             data = source.read(budget + 1)
         budget -= len(data)
         require(budget >= 0, "private Git recovery metadata exceeds safety bound")
-        return os.fsdecode(data)
+        return data
 
     def add(value, *, null=False):
         value = commit(value)
         if not null or value != "0" * 40:
             objects.add(value)
 
-    logs = gitdir / "logs"
-    pending = [logs] if os.path.lexists(logs) else []
-    visited = 0
-    while pending:
-        file = pending.pop()
-        visited += 1
-        require(visited <= MAX_RECORDS, "private Git recovery log inventory exceeds safety bound")
-        mode = file.lstat().st_mode
-        require(not stat.S_ISLNK(mode), "private Git recovery logs are symlinked")
-        if stat.S_ISDIR(mode):
-            pending.extend(file.iterdir())
+    files = list(gitdir.iterdir())
+    require(len(files) <= MAX_RECORDS, "private Git metadata inventory exceeds safety bound")
+    names = {file.name for file in files}
+    require({"HEAD", "index", "gitdir", "commondir"} <= names, "incomplete private Git metadata")
+    structural = {"index", "gitdir", "commondir"}
+    messages = {"MERGE_MSG", "SQUASH_MSG", "TAG_EDITMSG", "NOTES_EDITMSG"}
+    extensions = {}
+    for file in files:
+        require(file.name not in messages
+                and (file.name in structural | {"logs", "COMMIT_EDITMSG"}
+                     or re.fullmatch(r"[A-Z_]+", file.name)),
+                f"private Git metadata {file.name!r} requires preservation")
+        if file.name == "logs":
             continue
-        for line in read_record(file).splitlines():
-            fields = line.split(" ", 2)
-            require(len(fields) == 3, "malformed private Git recovery reflog")
-            # Both sides matter, including an old object absent from every
-            # other entry after a reflog expiration or rewrite.
-            add(fields[0], null=True)
-            add(fields[1], null=True)
-
-    messages = {"COMMIT_EDITMSG", "MERGE_MSG", "SQUASH_MSG", "TAG_EDITMSG", "NOTES_EDITMSG"}
-    for file in gitdir.iterdir():
-        if file.name in messages or not re.fullmatch(r"[A-Z_]+", file.name):
+        data = read_record(file)
+        if file.name in structural:
+            if file.name == "index":
+                extensions = index_extensions(data)
             continue
-        lines = read_record(file).splitlines()
+        if file.name == "COMMIT_EDITMSG":
+            head = git(path, "cat-file", "commit", "HEAD")
+            require(os.fsdecode(data) == head.partition("\n\n")[2],
+                    "private Git recovery COMMIT_EDITMSG contains an unpreserved edit buffer")
+            continue
+        lines = os.fsdecode(data).splitlines()
         if file.name == "FETCH_HEAD":
             for line in lines:
                 fields = line.split("\t", 2)
@@ -328,6 +429,28 @@ def private_recovery(path, gitdir):
             else:
                 add(lines[0])
 
+    undo = resolve_undo_entries(path, extensions.get(b"REUC", b""))
+    objects.update(row[2] for row in undo)
+    logs = gitdir / "logs"
+    pending = [logs] if os.path.lexists(logs) else []
+    visited = 0
+    while pending:
+        file = pending.pop()
+        visited += 1
+        require(visited <= MAX_RECORDS, "private Git recovery log inventory exceeds safety bound")
+        mode = file.lstat().st_mode
+        require(not stat.S_ISLNK(mode), "private Git recovery logs are symlinked")
+        if stat.S_ISDIR(mode):
+            pending.extend(file.iterdir())
+            continue
+        for line in os.fsdecode(read_record(file)).splitlines():
+            fields = line.split(" ", 2)
+            require(len(fields) == 3, "malformed private Git recovery reflog")
+            # Both sides matter, including an old object absent from every
+            # other entry after a reflog expiration or rewrite.
+            add(fields[0], null=True)
+            add(fields[1], null=True)
+
     shared = set()
     for row in git(path, "for-each-ref", "--format=%(refname) %(objectname)").splitlines():
         name, value = row.split(" ", 1)
@@ -338,19 +461,32 @@ def private_recovery(path, gitdir):
     try:
         unretained = git(path, "rev-list", "--objects", "--no-object-names", "--stdin",
                          input=revisions.encode("ascii"))
+        if unretained:
+            kinds = git(path, "cat-file", "--batch-check=%(objecttype)",
+                        input=unretained.encode("ascii")).splitlines()
+            require(len(kinds) == len(unretained.splitlines())
+                    and set(kinds) <= {"blob", "tree", "tag"},
+                    "private Git recovery objects are not durably reachable from shared refs")
+            # Explicit non-commit roots can be emitted even when a negative
+            # commit reaches them. Prove their membership in the shared graph.
+            reachable = git(path, "rev-list", "--objects", "--no-object-names", "--stdin",
+                            input=("\n".join(sorted(shared)) + "\n").encode("ascii"))
+            unretained = set(map(commit, unretained.splitlines())) - set(
+                map(commit, reachable.splitlines())
+            )
     except Retain as error:
         raise Retain(f"private Git recovery history is incomplete: {error}") from error
     require(not unretained, "private Git recovery objects are not durably reachable from shared refs")
-    return sorted(objects)
+    return {"private_objects": sorted(objects), "index_resolve_undo": undo}
 
 
 class Repository:
     def __init__(self, root, preserve=()):
         self.root = Path(root).resolve(strict=True)
-        require(Path(git(self.root, "rev-parse", "--show-toplevel").strip()) == self.root,
+        require(Path(git(self.root, "rev-parse", "--show-toplevel").removesuffix("\n")) == self.root,
                 "repository-root must be an exact Git worktree root")
         self.common = Path(git(self.root, "rev-parse", "--path-format=absolute",
-                               "--git-common-dir").strip()).resolve(strict=True)
+                               "--git-common-dir").removesuffix("\n")).resolve(strict=True)
         info = self.common.stat()
         self.common_identity = (info.st_dev, info.st_ino)
         self.preserve = tuple(Path(value).absolute().resolve() for value in preserve)
@@ -369,7 +505,7 @@ class Repository:
         path = Path(target)
         require(path.is_absolute() and path == path.resolve(), "noncanonical or symlink target")
         current_common = Path(git(self.root, "rev-parse", "--path-format=absolute",
-                                  "--git-common-dir").strip()).resolve(strict=True)
+                                  "--git-common-dir").removesuffix("\n")).resolve(strict=True)
         info = current_common.stat()
         require(current_common == self.common and (info.st_dev, info.st_ino) == self.common_identity,
                 "coordinator Git common directory changed")
@@ -400,15 +536,15 @@ class Repository:
                 "main or ambiguous worktree is protected")
         require(path.stat().st_uid == os.getuid(), "foreign-owner workspace")
         common = Path(git(path, "rev-parse", "--path-format=absolute",
-                          "--git-common-dir").strip()).resolve(strict=True)
+                          "--git-common-dir").removesuffix("\n")).resolve(strict=True)
         require(common == self.common, "foreign Git common directory")
-        gitdir = Path(git(path, "rev-parse", "--absolute-git-dir").strip()).resolve(strict=True)
+        gitdir = Path(git(path, "rev-parse", "--absolute-git-dir").removesuffix("\n")).resolve(strict=True)
         require(gitdir.parent == self.common / "worktrees", "foreign Git worktree metadata")
         require(not any(inside(mount, gitdir) for mount in mounts),
                 "mounted private Git metadata requires preservation")
-        backlink = Path((gitdir / "gitdir").read_text().strip())
+        backlink = Path(os.fsdecode((gitdir / "gitdir").read_bytes()).removesuffix("\n"))
         require(backlink == path / ".git", "Git metadata backlink does not identify target")
-        require(Path(git(path, "rev-parse", "--show-toplevel").strip()) == path,
+        require(Path(git(path, "rev-parse", "--show-toplevel").removesuffix("\n")) == path,
                 "Git top-level differs from registered path")
         require(self.remote_name() == self.name, "origin changed during cleanup")
         head = commit(git(path, "rev-parse", "HEAD").strip())
@@ -445,7 +581,7 @@ class Repository:
         recovery = private_recovery(path, gitdir)
         info = path.stat()
         return {"head": head, "branch": branch, "device": info.st_dev, "inode": info.st_ino,
-                "private_objects": recovery}
+                **recovery}
 
     def ancestor(self, older, newer):
         # The live GitHub master ref anchors the proof; stale remote-tracking refs do not.
@@ -675,7 +811,7 @@ def main(argv=None):
         repo = Repository(args.repository_root, args.preserve)
         proof = args.proof_sha.lower() if args.proof_sha is not None else None
         report = cleanup(repo, GitHub(repo.root), args.target, apply=args.apply, proof_sha=proof)
-        print(json.dumps(report, indent=2, sort_keys=True))
+        print(json.dumps(report, indent=2, sort_keys=True, ensure_ascii=True))
         return int(args.apply and any(row["decision"] != "removed" for row in report["results"]))
     except (Retain, OSError) as error:
         parser.exit(2, f"worktree cleanup retained all unprocessed paths: {error}\n")

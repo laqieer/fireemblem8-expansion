@@ -2,6 +2,7 @@
 
 from contextlib import redirect_stdout
 import copy
+import hashlib
 import io
 import json
 import os
@@ -119,6 +120,17 @@ class CleanupTests(unittest.TestCase):
         self.command(self.root, "remote", "add", "origin", "https://github.com/" + REPOSITORY + ".git")
         self.repo = cleanup.Repository(self.root, [self.root])
         self.api = Responses(self.root, self.head, self.merge)
+        self.process_ids = {os.getpid()}
+        iterdir = Path.iterdir
+
+        def owned_processes(path):
+            if path == Path("/proc"):
+                return iter(path / str(pid) for pid in sorted(self.process_ids))
+            return iterdir(path)
+
+        self.proc_inventory = patch.object(Path, "iterdir", owned_processes)
+        self.proc_inventory.start()
+        self.addCleanup(self.proc_inventory.stop)
 
     def remove_fixture(self):
         if self.sandbox.parent == ROOT / "build" and self.sandbox.name.startswith("worktree-cleanup-"):
@@ -142,6 +154,66 @@ class CleanupTests(unittest.TestCase):
         tree = self.command(self.root, "rev-parse", "HEAD^{tree}").strip()
         return self.command(self.root, "commit-tree", tree, "-p", self.base,
                             "-m", "recoverable " + uuid.uuid4().hex).strip()
+
+    def resolve_undo(self, blobs=None, mode="100644"):
+        if blobs is None:
+            blobs = [self.command(self.root, "hash-object", "-w", "--stdin",
+                                  input=uuid.uuid4().bytes).strip() for _ in range(3)]
+        self.command(self.target, "update-index", "--clear-resolve-undo")
+        entries = ["0 " + "0" * 40 + "\ttracked\0"]
+        entries += [f"{mode} {oid} {stage}\ttracked\0"
+                    for stage, oid in enumerate(blobs, 1)]
+        self.command(self.target, "update-index", "-z", "--index-info",
+                     input="".join(entries).encode("ascii"))
+        self.command(self.target, "add", "tracked")
+        self.assertEqual(self.command(self.target, "status", "--porcelain"), "")
+        records = self.command(self.target, "ls-files", "--resolve-undo", "-z")
+        self.assertTrue(all(oid in records for oid in blobs), records)
+        return blobs
+
+    def append_index_extension(self, signature=b"ZRCV", content=b"unique recovery state"):
+        index = self.private_gitdir() / "index"
+        data = index.read_bytes()[:-20] + signature + len(content).to_bytes(4, "big") + content
+        index.write_bytes(data + hashlib.sha1(data, usedforsecurity=False).digest())
+
+    def cli_report(self, *, apply=False):
+        arguments = ["--repository-root", str(self.root), "--target", str(self.target),
+                     "--preserve", str(self.root)]
+        if apply:
+            arguments.append("--apply")
+        output = io.BytesIO()
+        with io.TextIOWrapper(output, encoding="ascii", errors="strict") as text:
+            with redirect_stdout(text), patch.object(cleanup, "GitHub", return_value=self.api):
+                try:
+                    code = cleanup.main(arguments)
+                except UnicodeError as error:
+                    self.fail(f"filesystem bytes must not crash JSON reporting: {error}")
+            text.flush()
+            report = json.loads(output.getvalue())
+        self.assertEqual(os.fsencode(report["results"][0]["path"]), os.fsencode(self.target))
+        return code, report["results"][0]
+
+    def write_mount_records(self, *paths):
+        data = []
+        for number, path in enumerate(paths, 100):
+            field = os.fsencode(path)
+            for raw, escaped in ((b"\\", b"\\134"), (b" ", b"\\040"),
+                                 (b"\t", b"\\011"), (b"\n", b"\\012")):
+                field = field.replace(raw, escaped)
+            data.append(f"{number} 1 0:1 / ".encode() + field + b" rw - tmpfs tmpfs rw\n")
+        fixture = self.sandbox / "mountinfo"
+        fixture.write_bytes(b"".join(data))
+        return fixture
+
+    def mount_records(self, *paths):
+        fixture = self.write_mount_records(*paths)
+        original = Path.open
+
+        def read_mounts(path, *args, **kwargs):
+            return original(fixture if path == Path("/proc/self/mountinfo") else path,
+                            *args, **kwargs)
+
+        return patch.object(Path, "open", read_mounts)
 
     @staticmethod
     def snapshot(path):
@@ -281,11 +353,23 @@ class CleanupTests(unittest.TestCase):
             [sys.executable, "-c", "import time; time.sleep(60)"], cwd=self.target
         )
         try:
+            self.process_ids.add(process.pid)
             self.assertIsNone(process.poll())
             self.held("active process")
         finally:
             process.terminate()
             process.wait(timeout=10)
+
+    def test_uninspectable_owned_process_cwd_is_retained(self):
+        readlink = Path.readlink
+
+        def inaccessible(path):
+            if path == Path("/proc") / str(os.getpid()) / "cwd":
+                raise PermissionError("test-owned process is uninspectable")
+            return readlink(path)
+
+        with patch.object(Path, "readlink", inaccessible):
+            self.held("cannot inspect same-owner process")
 
     def test_nested_ignored_git_repository_is_not_generated_trash(self):
         nested = self.target / "build" / "user-repo"
@@ -389,6 +473,243 @@ class CleanupTests(unittest.TestCase):
         self.command(self.root, "update-ref", "refs/tags/saved-object", blob)
         self.assertEqual(self.result(apply=True)["decision"], "removed")
         self.assertEqual(self.command(self.root, "cat-file", "blob", blob), "recovery data")
+
+    def test_every_resolve_undo_stage_needs_durable_shared_reachability(self):
+        for missing in range(3):
+            blobs = self.resolve_undo()
+            reachable = self.command(self.root, "rev-list", "--objects", "--all")
+            self.assertTrue(all(oid not in reachable for oid in blobs))
+            for stage, oid in enumerate(blobs):
+                if stage != missing:
+                    self.command(self.root, "update-ref", f"refs/tags/saved-{missing}-{stage}", oid)
+            before = self.snapshot(self.private_gitdir())
+            row = self.result()
+            self.assertEqual(row["decision"], "retained", (missing + 1, row))
+            self.held("private Git recovery")
+            self.assertEqual(self.snapshot(self.private_gitdir()), before)
+
+    def test_shared_commit_ancestry_preserves_resolve_undo_blobs_after_removal(self):
+        blobs = self.resolve_undo()
+        entries = "".join(f"100644 blob {oid}\tstage-{stage}\n"
+                          for stage, oid in enumerate(blobs, 1))
+        tree = self.command(self.root, "mktree", input=entries.encode("ascii")).strip()
+        saved = self.command(self.root, "commit-tree", tree, "-p", self.base,
+                             "-m", "durable conflict recovery").strip()
+        descendant = self.command(self.root, "commit-tree", tree, "-p", saved,
+                                  "-m", "recovery descendant").strip()
+        self.command(self.root, "update-ref", "refs/heads/saved-recovery", descendant)
+        self.assertEqual(self.result()["decision"], "eligible")
+        self.assertEqual(self.result(apply=True)["decision"], "removed")
+        self.assertFalse(self.target.exists())
+        reachable = self.command(self.root, "rev-list", "--objects", "saved-recovery")
+        self.assertTrue(all(oid in reachable for oid in blobs))
+        self.assertEqual(self.command(self.root, "rev-parse", "topic").strip(), self.head)
+
+    def test_resolve_undo_drift_after_plan_and_before_removal_is_preserved(self):
+        for stage in (2, 3):
+            original = self.repo.local_state
+            calls, observed = 0, {}
+
+            def change(path):
+                nonlocal calls
+                calls += 1
+                if calls == stage:
+                    self.resolve_undo()
+                    observed.update(self.snapshot(self.private_gitdir()))
+                return original(path)
+
+            with patch.object(self.repo, "local_state", side_effect=change):
+                self.held("private Git recovery")
+            self.assertEqual(calls, stage)
+            self.assertEqual(self.snapshot(self.private_gitdir()), observed)
+            self.command(self.target, "update-index", "--clear-resolve-undo")
+
+    def test_resolve_undo_mode_drift_is_not_hidden_by_unchanged_object_set(self):
+        blobs = [self.command(self.root, "rev-parse", f"{ref}:tracked").strip()
+                 for ref in (self.base, self.head, self.merge)]
+        for stage in (2, 3):
+            self.resolve_undo(blobs)
+            original = self.repo.local_state
+            calls = 0
+
+            def change(path):
+                nonlocal calls
+                calls += 1
+                if calls == stage:
+                    self.resolve_undo(blobs, mode="100755")
+                return original(path)
+
+            with patch.object(self.repo, "local_state", side_effect=change):
+                self.held("drift" if stage == 3 else "evidence changed")
+            self.assertEqual(calls, stage)
+            self.assertIn("100755", self.command(self.target, "ls-files", "--resolve-undo"))
+
+    def test_private_configuration_is_preserved_enabled_disabled_and_empty(self):
+        self.command(self.root, "config", "extensions.worktreeConfig", "true")
+        self.command(self.target, "config", "--worktree", "fixture.unique", "only-local")
+        config = self.private_gitdir() / "config.worktree"
+        self.assertEqual(self.command(self.target, "config", "--worktree",
+                                     "--get", "fixture.unique").strip(), "only-local")
+        for state in ("enabled", "disabled", "empty"):
+            if state == "disabled":
+                self.command(self.root, "config", "--unset", "extensions.worktreeConfig")
+            elif state == "empty":
+                config.write_bytes(b"")
+            before = self.snapshot(self.private_gitdir())
+            row = self.result()
+            self.assertEqual(row["decision"], "retained", (state, row))
+            self.held("config.worktree")
+            self.assertEqual(self.snapshot(self.private_gitdir()), before)
+
+    def test_private_metadata_family_and_edit_buffers_are_not_disposable(self):
+        gitdir = self.private_gitdir()
+        original_message = (gitdir / "COMMIT_EDITMSG").read_bytes()
+        for name in ("index.backup", "index.lock", "config.worktree.lock", "description",
+                     "info/exclude", "hooks/pre-commit", "rr-cache/conflict/preimage",
+                     "COMMIT_EDITMSG", "MERGE_MSG", "SQUASH_MSG", "TAG_EDITMSG", "NOTES_EDITMSG"):
+            file = gitdir / name
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_bytes((gitdir / "index").read_bytes() if name == "index.backup"
+                             else b"unique private configuration or recovery data\n")
+            before = self.snapshot(gitdir)
+            row = self.result()
+            self.assertEqual(row["decision"], "retained", (name, row))
+            self.held(name.split("/")[0])
+            self.assertEqual(self.snapshot(gitdir), before)
+            if name == "COMMIT_EDITMSG":
+                file.write_bytes(original_message)
+            elif "/" in name:
+                shutil.rmtree(gitdir / name.split("/")[0])
+            else:
+                file.unlink()
+
+    def test_symlinked_private_configuration_and_index_keep_external_data(self):
+        gitdir = self.private_gitdir()
+        outside = self.sandbox / "private-data"
+        outside.write_bytes((gitdir / "index").read_bytes())
+        for name in ("config.worktree", "index"):
+            file = gitdir / name
+            original = file.read_bytes() if file.exists() else None
+            if original is not None:
+                file.unlink()
+            file.symlink_to(outside)
+            before = outside.read_bytes()
+            row = self.result()
+            self.assertEqual(row["decision"], "retained", (name, row))
+            self.held()
+            self.assertTrue(file.is_symlink())
+            self.assertEqual(outside.read_bytes(), before)
+            file.unlink()
+            if original is not None:
+                file.write_bytes(original)
+
+    def test_split_index_base_is_preserved(self):
+        self.command(self.target, "update-index", "--split-index")
+        gitdir = self.private_gitdir()
+        self.assertTrue(list(gitdir.glob("sharedindex.*")))
+        before = self.snapshot(gitdir)
+        row = self.result()
+        self.assertEqual(row["decision"], "retained", row)
+        self.held()
+        self.assertEqual(self.snapshot(gitdir), before)
+
+    def test_unknown_optional_index_extension_is_not_silently_discarded(self):
+        self.append_index_extension()
+        self.assertEqual(self.command(self.target, "--no-optional-locks", "status", "--porcelain"), "")
+        before = self.snapshot(self.private_gitdir())
+        row = self.result()
+        self.assertEqual(row["decision"], "retained", row)
+        self.held("index extension")
+        self.assertEqual(self.snapshot(self.private_gitdir()), before)
+
+    def test_malformed_resolve_undo_metadata_is_not_silently_discarded(self):
+        index = self.private_gitdir() / "index"
+        original = index.read_bytes()
+        for content in (b"tracked\0" + b"100644\0" * 3 + b"\x01" * 59,
+                        b"tracked\0" + b"invalid\0" * 3 + b"\x01" * 60,
+                        b"unterminated-path"):
+            self.append_index_extension(b"REUC", content)
+            before = self.snapshot(self.private_gitdir())
+            row = self.result()
+            self.assertEqual(row["decision"], "retained", row)
+            self.held()
+            self.assertEqual(self.snapshot(self.private_gitdir()), before)
+            index.write_bytes(original)
+
+    def test_index_checksum_and_extension_bounds_are_validated_before_eligibility(self):
+        index = self.private_gitdir() / "index"
+        original = index.read_bytes()
+        malformed = (
+            original[:-1] + bytes([original[-1] ^ 0xff]),
+            b"DIRC" + (5).to_bytes(4, "big") + original[8:],
+            original[:-20] + b"REUC" + (1000).to_bytes(4, "big") + b"x",
+            original[:-20] + b"REU",
+        )
+        for data in malformed:
+            if data not in malformed[:2]:
+                data += hashlib.sha1(data, usedforsecurity=False).digest()
+            index.write_bytes(data)
+            before = self.snapshot(self.private_gitdir())
+            row = self.result()
+            self.assertEqual(row["decision"], "retained", row)
+            self.held()
+            self.assertEqual(self.snapshot(self.private_gitdir()), before)
+        index.write_bytes(original)
+
+    def test_private_metadata_family_drift_after_plan_and_before_removal(self):
+        gitdir = self.private_gitdir()
+        for name in ("config.worktree", "index.backup", "COMMIT_EDITMSG", "index"):
+            for stage in (2, 3):
+                file = gitdir / name
+                before = file.read_bytes() if file.exists() else None
+                original = self.repo.local_state
+                calls, observed = 0, {}
+
+                def change(path):
+                    nonlocal calls
+                    calls += 1
+                    if calls == stage:
+                        if name == "index":
+                            self.append_index_extension()
+                        else:
+                            file.write_bytes(b"last-moment private data\n")
+                        observed.update(self.snapshot(gitdir))
+                    return original(path)
+
+                with patch.object(self.repo, "local_state", side_effect=change):
+                    self.held()
+                self.assertEqual(calls, stage)
+                self.assertEqual(self.snapshot(gitdir), observed)
+                if before is None:
+                    file.unlink()
+                else:
+                    file.write_bytes(before)
+
+    def test_supported_index_versions_and_reconstructible_caches_remain_eligible(self):
+        for name in ("a" * 180, "b" * 180, "prefix-" + "c" * 130 + "-1",
+                     "prefix-" + "c" * 130 + "-2", os.fsdecode(b"path-\xff")):
+            (self.target / name).write_bytes(b"committed index-path fixture")
+        self.command(self.target, "add", ".")
+        self.command(self.target, "commit", "-qm", "index paths")
+        self.head = self.command(self.target, "rev-parse", "HEAD").strip()
+        self.command(self.root, "merge", "-q", "--no-ff", "topic", "-m", "merge index paths")
+        self.merge = self.command(self.root, "rev-parse", "HEAD").strip()
+        self.api = Responses(self.root, self.head, self.merge)
+        for version in (2, 3, 4):
+            self.command(self.target, "update-index", "--index-version", str(version))
+            self.command(self.target, "update-index", "--untracked-cache")
+            if version == 3:
+                self.command(self.target, "update-index", "--skip-worktree", "tracked")
+                index = (self.private_gitdir() / "index").read_bytes()
+                self.assertEqual(int.from_bytes(index[4:8], "big"), 3)
+                cleanup.index_extensions(index)
+                self.held("skip-worktree")
+                self.command(self.target, "update-index", "--no-skip-worktree", "tracked")
+            before = self.snapshot(self.private_gitdir())
+            row = self.result()
+            self.assertEqual(row["decision"], "eligible", (version, row))
+            self.assertEqual(self.snapshot(self.private_gitdir()), before)
+        self.assertEqual(self.result(apply=True)["decision"], "removed")
 
     def test_malformed_symlinked_or_missing_recovery_evidence_is_retained(self):
         marker = self.private_gitdir() / "ORIG_HEAD"
@@ -563,6 +884,103 @@ class CleanupTests(unittest.TestCase):
             self.held("process visibility")
         with patch.object(cleanup, "mount_paths", return_value=[self.private_gitdir() / "logs"]):
             self.held("mounted private Git metadata")
+
+    def test_non_utf8_target_and_git_backlink_round_trip_through_ascii_json(self):
+        target = self.sandbox / os.fsdecode(b"completed-\xff-\xc2\xa0")
+        self.command(self.root, "worktree", "move", str(self.target), str(target))
+        self.target = target
+        backlink = self.private_gitdir() / "gitdir"
+        self.assertEqual(backlink.read_bytes(), os.fsencode(target / ".git") + b"\n")
+        code, row = self.cli_report()
+        self.assertEqual((code, row["decision"]), (0, "eligible"), row)
+        code, row = self.cli_report(apply=True)
+        self.assertEqual((code, row["decision"]), (0, "removed"), row)
+        self.assertFalse(target.exists())
+
+    def test_non_utf8_ignored_filename_is_reported_losslessly_and_preserved(self):
+        file = self.target / os.fsdecode(b"notes-\xfe.sav")
+        file.write_bytes(b"irreplaceable save")
+        code, row = self.cli_report(apply=True)
+        self.assertEqual((code, row["decision"]), (1, "retained"), row)
+        self.assertIn(os.fsencode(file.name), os.fsencode(row["reasons"][0]))
+        self.assertEqual(file.read_bytes(), b"irreplaceable save")
+
+    def test_binary_mount_records_cover_workspace_and_private_metadata_consumers(self):
+        unrelated = self.sandbox / os.fsdecode(b"other-\xff-\xc2\xa0")
+        with self.mount_records(unrelated):
+            code, row = self.cli_report()
+            self.assertEqual((code, row["decision"]), (0, "eligible"), row)
+            self.assertEqual(cleanup.mount_paths(), [unrelated])
+        for mount in (self.target,
+                      self.target / os.fsdecode(b"build/mount-\xfe \t\n\\-\xc2\xa0"),
+                      self.private_gitdir(),
+                      self.private_gitdir() / os.fsdecode(b"logs/mount-\xfd")):
+            with self.mount_records(unrelated, mount):
+                code, row = self.cli_report(apply=True)
+                self.assertEqual((code, row["decision"]), (1, "retained"), row)
+                self.assertIn("mount", row["reasons"][0])
+                self.assertEqual(cleanup.mount_paths(), [unrelated, mount])
+                self.assertTrue(self.target.is_dir())
+
+    def test_binary_mount_inventory_drift_is_checked_on_both_apply_passes(self):
+        unrelated = self.sandbox / os.fsdecode(b"other-\xff")
+        for mount in (self.target / os.fsdecode(b"build/mount-\xfe"),
+                      self.private_gitdir() / os.fsdecode(b"logs/mount-\xfd")):
+            for stage in (2, 3):
+                original = self.repo.local_state
+                calls = 0
+
+                def change(path):
+                    nonlocal calls
+                    calls += 1
+                    if calls == stage:
+                        self.write_mount_records(unrelated, mount)
+                    return original(path)
+
+                with self.mount_records(unrelated), \
+                     patch.object(cleanup.Repository, "local_state", side_effect=change):
+                    code, row = self.cli_report(apply=True)
+                self.assertEqual((code, row["decision"]), (1, "retained"), row)
+                self.assertEqual(calls, stage)
+                self.assertIn("mount", row["reasons"][0])
+                self.assertTrue(self.target.is_dir())
+
+    def test_non_utf8_backlink_drift_is_preserved_without_crashing(self):
+        gitdir = self.private_gitdir()
+        backlink = gitdir / "gitdir"
+        original_backlink = backlink.read_bytes()
+        outside = self.sandbox / os.fsdecode(b"other-\xfe")
+        outside.mkdir()
+        (outside / ".git").write_bytes(b"gitdir: " + os.fsencode(gitdir) + b"\n")
+        for stage in (2, 3):
+            original = self.repo.local_state
+            calls = 0
+
+            def change(path):
+                nonlocal calls
+                calls += 1
+                if calls == stage:
+                    backlink.write_bytes(os.fsencode(outside / ".git") + b"\n")
+                return original(path)
+
+            with patch.object(cleanup.Repository, "local_state", side_effect=change):
+                code, row = self.cli_report(apply=True)
+            self.assertEqual((code, row["decision"]), (1, "retained"), row)
+            self.assertEqual(calls, stage)
+            self.assertTrue(self.target.is_dir())
+            self.assertEqual(backlink.read_bytes(), os.fsencode(outside / ".git") + b"\n")
+            backlink.write_bytes(original_backlink)
+
+    def test_malformed_binary_mount_inventory_has_an_explicit_hold_not_fallback(self):
+        with self.mount_records(self.target):
+            for data in (b"invalid-\xff\n",
+                         b"100 1 0:1 / relative-\xff rw - tmpfs tmpfs rw\n",
+                         b"100 1 0:1 / /invalid-\\777 rw - tmpfs tmpfs rw\n"):
+                (self.sandbox / "mountinfo").write_bytes(data)
+                code, row = self.cli_report(apply=True)
+                self.assertEqual((code, row["decision"]), (1, "retained"), row)
+                self.assertIn("mount inventory", row["reasons"][0])
+                self.assertTrue(self.target.is_dir())
 
     def test_uninitialized_submodule_index_is_retained_without_running_its_git(self):
         self.command(self.target, "update-index", "--add", "--cacheinfo",

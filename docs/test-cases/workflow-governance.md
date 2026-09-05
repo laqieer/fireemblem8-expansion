@@ -57,7 +57,31 @@ workflow, using credentials, or changing ROM behavior.
    A command failing without stderr reports its exit code. Simulated
    unsupported platforms fail closed; real-worktree tests explicitly skip a
    non-Linux or missing-`/proc` host rather than pretending removal succeeded.
-9. For actual delivery, the coordinator first merges the task's PR, verifies
+9. Create real three-stage index conflicts from unreachable blobs, resolve
+   back to the committed content, and verify clean status with nonempty
+   `git ls-files --resolve-undo -z`. Preserve all three stages: saving only two
+   via shared refs must still retain the tree. Saving all blobs through shared
+   commit ancestry permits normal removal without losing the blobs. Introduce
+   REUC objects or change only recorded modes after planning and immediately
+   before removal; both invalidate eligibility.
+10. Create worktree-local configuration (enabled, disabled and empty), index
+    backups/locks, split-index bases, private excludes/hooks/rerere data, and
+    uncommitted edit buffers. All remain byte-identical and retained. A valid
+    index with an unfamiliar optional extension is retained even though Git
+    can report clean status; malformed/checksum-invalid/truncated index and
+    REUC data are held too. Ordinary DIRC v2–v4 indexes, including compressed
+    long/non-UTF-8 paths and reconstructible caches, remain eligible.
+    Repeat metadata/configuration/extension changes on both apply passes.
+11. Move an owned Git worktree to a non-UTF-8 path; its real backlink and JSON
+    path must round-trip to the original filesystem bytes, and eligible
+    removal still works. Use fixture mount records with non-UTF-8 names and
+    escaped spaces, tabs, newlines and backslashes. Unrelated mounts do not
+    block; mounts at or inside the workspace or private Git directory do.
+    Repeat mount/backlink drift on both apply passes. Malformed mount records
+    retain with a reason rather than crashing or silently ignoring mounts.
+    Report a retained non-UTF-8 ignored filename through strict ASCII JSON
+    without losing either its name or file content.
+12. For actual delivery, the coordinator first merges the task's PR, verifies
    all relevant exact-master CI and `make remote-completion-check`, then runs
    the [documented planner/apply commands](../workflow-pilot.md#completed-worktree-cleanup).
    Preserve all assigned workspaces throughout apply. Record removed paths,
@@ -75,6 +99,11 @@ Private recovery checks run during planning, fresh assessment, and the final
 local check. A shared ref may protect recovery ancestry or a non-commit
 object; a shared reflog alone may not. Every configured promisor/partial-clone
 repository is retained before object access, including on Git 2.43.
+Every REUC object participates in the same durable-object proof, regardless
+of clean current status. Unique private configuration, recovery/index
+snapshots, edit buffers and unfamiliar index extensions are not build output.
+Filesystem byte paths remain lossless through Git, mount/backlink checks and
+JSON. Fresh checks still cover non-UTF-8 path and private-metadata drift.
 
 ### Negative control
 
@@ -87,6 +116,10 @@ The initial helper incorrectly accepted bare repositories and private-only
 recovery objects, and a missing proof object could trigger a promisor fetch
 during dry-run. These real-Git regressions must fail with those safeguards
 removed; keeping the current branch's ancestry is not equivalent evidence.
+Its first recovery fix still accepted REUC-only unreachable blobs, private
+configuration/backups and unrecognized index extensions, and text decoding
+crashed on valid non-UTF-8 target/backlink/mount names. The extended controls
+fail against that parent helper, including after-plan/final-check drift.
 
 ### Interactions and save compatibility
 
@@ -110,11 +143,14 @@ The registry entry binds this source-only procedure to its behavioral suite.
 The suite removes only its own UUID-named fixture roots. Live historical
 cleanup is coordinator-owned, never a test side effect. Allocated sizes are
 not exact physical freed bytes. Unknown ignored local data, squash/rebase
-ancestry, private-only recovery objects, promisor configuration, missing
-history/API evidence, or incomplete process visibility are
+ancestry, private-only recovery/REUC objects, private configuration or unknown
+metadata/index formats, promisor configuration, missing history/API evidence,
+or incomplete process visibility are
 retention blockers, not permission to force deletion. No visual/audio/manual
 judgment is required; actual service availability and active ownership remain
-live operational checks.
+live operational checks. Fixture process inventory includes only owned PIDs;
+the live helper retains its full same-owner visibility requirement. Mount
+records are simulated with byte files, never actual or privileged mounts.
 
 ## TC-WORKFLOW-IMMEDIATE-PUSH-001: Publish new commits immediately and expose WIP ownership
 
