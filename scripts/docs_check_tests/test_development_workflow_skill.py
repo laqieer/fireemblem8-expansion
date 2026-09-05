@@ -4531,6 +4531,7 @@ printf '%s\t%s\t%s\n' "$result" \
             "TC-WORKFLOW-STACKED-CI-001",
             "TC-WORKFLOW-BODY-EDIT-001",
             "TC-WORKFLOW-PILOT-BASELINE-001",
+            "TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001",
         ]
         self.assertEqual(
             [],

@@ -137,6 +137,7 @@ and
 | [`release-migration-template.md`](release-migration-template.md) | Template | Fill in for a real future version migration |
 | [`archival-decomp.md`](archival-decomp.md) | Current, archival scope | Unsupported-for-releases decomp-matching workflow |
 | [`workflow-pilot.md`](workflow-pilot.md) | Current | Frozen workflow-efficiency baseline, event classifier/evidence protocol, formulas, decision schema, and artifact lifecycle (issues #176/#177) |
+| [`ownership-probe-foundation.md`](ownership-probe-foundation.md) | Current | Confined native Make/registry execution, aggregate budgets, source admission and downstream graph seam (issue #206) |
 | [`config_identity.md`](config_identity.md) | Current | Config surface + ROM identity fingerprint (issue #8) |
 | [`save_format.md`](save_format.md) | Current | Save format + compatibility gate (issue #2) |
 | [`id_space.md`](id_space.md) | Current | Typed-ID DEFAULT vs ACTIVE contract, cap switching (issue #10) |

@@ -1456,3 +1456,76 @@ criterion applies.
 
 Rollback is a normal revert of issue #176's dedicated commit; no workflow or
 game behavior needs a compensating change.
+
+## TC-WORKFLOW-OWNERSHIP-PROBE-SANDBOX-001: Confine and bound authentic probe execution
+
+### Feature and configuration
+
+Issue [#206](https://github.com/laqieer/fireemblem8-expansion/issues/206);
+supported Linux x86-64 source checkout, GNU Make 4.3, Python 3, a static-capable
+host C compiler, C++ compiler for native-tool controls, and working private
+namespaces. See the [foundation contract](../ownership-probe-foundation.md).
+No ROM, emulator, credentials, remote workflow or feature flag is required.
+Start from a clean checkout; fixtures use only ignored `build/test-artifacts`.
+
+### Actions and expected result
+
+1. Run `make -f scripts/validation_ownership/foundation.mk ownership-probe-check`.
+   Inspect the returned native `localization-check` dependency on
+   `localization-generate`, the actual output-directory value and the real
+   chapterbundle registry result containing `src/data/ch2_bundle.json`.
+2. Run `make -f scripts/validation_ownership/foundation.mk ownership-probe-test`.
+   Positive fixtures use GNU Make include/define/eval, finite domain values,
+   patterns, target variables and order-only prerequisites. Their typed
+   observations must describe actual targets, not candidate stdout.
+3. The same suite compiles benign pre-fix `load`/native-SHELL payloads and
+   demonstrates actual writes to an explicitly inherited test FD. The confined
+   payloads must reject without a forged byte. File/include/eval, supervisor
+   paths, device/proc FD paths, alternate SHELL/loaders, shell flags and
+   stdout-shaped observations cannot forge channels. Canonical argv preserves
+   argument boundaries and equivalent quote spellings.
+4. Observe actual admitted open/mmap/stat/glob/directory inputs. Repeat with
+   undeclared and dynamically constructed paths, caught exceptions, unused or
+   falsely reported source declarations, and symlink/FIFO controls. Every
+   mismatch must fail closed. Real C/C++ candidate tools compile and run only
+   in channel-free capsules; changed ELF handles and channel/FD access reject.
+5. Change unrelated docs/source/modes/symlink targets in the disposable fixture:
+   execution identity changes while the unrelated owner's semantic digest
+   remains stable. Change a real owner input and require changed semantics and
+   command bytes; old Git entry IDs must not cause stale output reuse.
+6. Exhaust variant, process, pending-request, event, mapping, output, cache,
+   scratch-write and file-creation limits. Two individually short real
+   processes cannot reset the aggregate deadline. Malformed binary/text
+   protocols, worker failure and SIGTERM interruption must reject and leave
+   no live owned child, descriptor, mapping, cache or owned scratch tree.
+
+### Negative controls
+
+The pre-fix native Make processes really forge the inherited test channel;
+unconfined source functions really read/stat/enumerate undeclared fixture
+paths; a per-process timeout really admits work beyond a single total budget.
+These controls are restricted to disposable test inputs and are not a
+production bypass switch. Normal positive behavior is tested alongside every
+boundary; no failure is converted to successful evidence.
+
+### Automation
+
+`python3 -m unittest scripts.validation_ownership.tests.test_foundation -v`
+executes the real process scenarios, native compile/link checks, parsed ELF and
+binary/JSON protocols, exact source sets, semantic identity and cleanup.
+The standalone Make check is a separate real consumer, not a test-name alias.
+No subjective/manual-only criterion applies.
+
+### Cleanup and limitations
+
+Fixtures and session channels are removed automatically. Remove the empty
+`build/test-artifacts/ownership-foundation-tests` parent if desired. No remote
+state is read or changed. This host-only contract changes no save, migration,
+config identity, generated game content, localization, modern/archival
+behavior or ROM/RAM. Other feature interactions: none.
+
+The introducing root does not claim PR186's full graph, domain matrix, oracle,
+lifecycle or absent-on-master `validation-ownership-check` target. Those remain
+explicit downstream integration gates under #180. Unsupported native Make
+ABIs/platforms fail rather than running a weaker probe. Roll back by reverting
+this dedicated foundation; broader validation remains required.
