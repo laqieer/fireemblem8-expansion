@@ -360,19 +360,34 @@ class PublicationStore:
         pack_id = result[5:-1].decode("ascii")
         index = repository / "objects" / "pack" / f"pack-{pack_id}.idx"
         description = self._git(repository, "verify-pack", "-v", str(index), deadline=deadline)
-        objects, expanded = [], 0
+        objects = []
         for line in description.splitlines():
             parts = line.split()
             if parts and re.fullmatch(rb"[0-9a-f]{40}", parts[0]):
                 if len(parts) < 5 or parts[1] not in {b"commit", b"tree", b"blob"}:
                     raise RecordError("unsupported pack object")
-                size = int(parts[2])
-                if not 0 <= size <= MAX_OBJECT:
-                    raise RecordError("individual expanded object bound")
-                expanded += size
                 objects.append(parts[0].decode("ascii"))
-        if expanded > MAX_EXPANDED or sorted(objects) != plan["pack"]["objects"]:
-            raise RecordError("expanded size or exact pack object set mismatch")
+        if sorted(objects) != plan["pack"]["objects"]:
+            raise RecordError("exact pack object set mismatch")
+        # verify-pack reports instruction bytes for deltas, not reconstructed
+        # sizes. Query every verified OID in this isolated object database.
+        resolved = self._git(
+            repository, "cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)",
+            deadline=deadline, input_bytes=("\n".join(objects) + "\n").encode("ascii"),
+        ).splitlines()
+        if len(resolved) != len(objects):
+            raise RecordError("resolved object count mismatch")
+        expanded = 0
+        for object_id, line in zip(objects, resolved):
+            match = re.fullmatch(rb"([0-9a-f]{40}) (commit|tree|blob) ([0-9]{1,20})", line)
+            if match is None or match[1].decode("ascii") != object_id:
+                raise RecordError("invalid resolved object metadata")
+            size = int(match[3])
+            if size > MAX_OBJECT:
+                raise RecordError("individual expanded object bound")
+            expanded += size
+            if expanded > MAX_EXPANDED:
+                raise RecordError("total expanded object bound")
         closure = self._git(
             repository, "rev-list", "--objects", "--no-object-names",
             *(update["new"] for update in plan["updates"]), deadline=deadline,

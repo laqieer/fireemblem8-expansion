@@ -10,6 +10,7 @@ import struct
 import threading
 import time
 import unittest
+import zlib
 from datetime import timedelta
 from pathlib import Path
 from unittest import mock
@@ -74,6 +75,28 @@ class BrokerTests(BrokerFixtureTests):
             self.fixture.git(self.fixture.remote, "for-each-ref", "--format=%(refname)").decode().splitlines(),
             sorted(self.fixture.policy.refs),
         )
+
+    def test_real_deltified_atomic_publication(self):
+        self.fixture.bootstrap()
+        plan, _pack, _current = self.fixture.make_plan()
+        pack = self.fixture.git(
+            self.fixture.source, "pack-objects", "--stdout", "--delta-base-offset",
+            "--no-reuse-delta", "--no-reuse-object", "--window=10", "--depth=10",
+            data=("\n".join(plan["pack"]["objects"]) + "\n").encode("ascii"),
+        )
+        result = self.fixture.git(self.fixture.source, "index-pack", "--stdin", "--strict", data=pack)
+        index = self.fixture.source / "objects" / "pack" / f"pack-{result[5:-1].decode('ascii')}.idx"
+        description = self.fixture.git(self.fixture.source, "verify-pack", "-v", str(index))
+        self.assertTrue(any(len(line.split()) == 7 for line in description.splitlines()))
+        plan["pack"].update(size=len(pack), sha256=hashlib.sha256(pack).hexdigest())
+        self.keys.sign(protocol.PLAN_DOMAIN, plan)
+        result = self.fixture.publish(plan, pack)
+        self.assertEqual(result[0], "published")
+        self.assertEqual(result[1], protocol.expected_refs(plan, "new"))
+        self.assertEqual(
+            self.fixture.store.remote_refs(utc_now() + timedelta(seconds=3)), result[1],
+        )
+        self.assertEqual(list(self.fixture.store.work.iterdir()), [])
 
     def test_plan_schema_accepts_real_signed_publication(self):
         plan, _pack, _current = self.fixture.make_plan()
@@ -446,6 +469,125 @@ class BrokerTests(BrokerFixtureTests):
                 path.symlink_to(self.directory / "client.json")
             with self.subTest(path=path.name), self.assertRaises((RecordError, OSError)):
                 broker.read_regular(path, protocol.MAX_JSON)
+
+
+class PackBoundsTests(BrokerFixtureTests):
+    """Real full Git packs at the store's object-loading boundary."""
+
+    def delta_pack(self):
+        def variable_size(size):
+            encoded = bytearray()
+            while size >= 128:
+                encoded.append((size & 127) | 128)
+                size >>= 7
+            encoded.append(size)
+            return bytes(encoded)
+
+        def entry(kind, data, base=b""):
+            size = len(data)
+            header = bytearray([(kind << 4) | (size & 15)])
+            size >>= 4
+            while size:
+                header[-1] |= 128
+                header.append(size & 127)
+                size >>= 7
+            return bytes(header) + base + zlib.compress(data)
+
+        base = bytes(range(256)) * 256
+        base_oid = self.fixture.git(
+            self.fixture.source, "hash-object", "-w", "--stdin", data=base,
+        ).decode("ascii").strip()
+        sizes = {base_oid: len(base)}
+        entries = [entry(3, base)]
+        for suffix in (b"a", b"b", b"c"):
+            contents = base * 2 + suffix
+            object_id = self.fixture.git(
+                self.fixture.source, "hash-object", "-w", "--stdin", data=contents,
+            ).decode("ascii").strip()
+            sizes[object_id] = len(contents)
+            # Each 0x80 copies 64 KiB at offset zero; the final instruction
+            # inserts one byte. These REF_DELTA objects exceed their base size.
+            delta = variable_size(len(base)) + variable_size(len(contents)) + b"\x80\x80\x01" + suffix
+            entries.append(entry(7, delta, bytes.fromhex(base_oid)))
+        tree_oid = self.fixture.git(
+            self.fixture.source, "mktree",
+            data=b"".join(
+                f"100644 blob {object_id}\t{index}.bin\n".encode("ascii")
+                for index, object_id in enumerate(sizes)
+            ),
+        ).decode("ascii").strip()
+        commit_oid = self.fixture.git(
+            self.fixture.source, "commit-tree", tree_oid, data=b"Resolved delta bounds fixture\n",
+        ).decode("ascii").strip()
+        for object_id, kind, code in ((tree_oid, "tree", 2), (commit_oid, "commit", 1)):
+            contents = self.fixture.git(self.fixture.source, "cat-file", kind, object_id)
+            sizes[object_id] = len(contents)
+            entries.append(entry(code, contents))
+        pack = b"PACK" + struct.pack(">II", 2, len(entries)) + b"".join(entries)
+        pack += hashlib.sha1(pack).digest()
+        result = self.fixture.git(self.fixture.source, "index-pack", "--stdin", "--strict", data=pack)
+        index = self.fixture.source / "objects" / "pack" / f"pack-{result[5:-1].decode('ascii')}.idx"
+        description = self.fixture.git(self.fixture.source, "verify-pack", "-v", str(index))
+        reported, deltas = {}, []
+        for line in description.decode("ascii").splitlines():
+            parts = line.split()
+            if parts and parts[0] in sizes:
+                reported[parts[0]] = int(parts[2])
+                if len(parts) == 7:
+                    deltas.append(parts[0])
+        self.assertEqual(set(reported), set(sizes))
+        self.assertEqual(len(deltas), 3)
+        self.assertTrue(all(reported[object_id] < sizes[object_id] for object_id in deltas))
+        plan = {
+            "pack": {
+                "size": len(pack), "sha256": hashlib.sha256(pack).hexdigest(),
+                "objects": sorted(sizes),
+            },
+            "updates": [{"new": commit_oid}],
+        }
+        return plan, pack, sizes, reported
+
+    def test_delta_pack_accepts_resolved_size_boundaries(self):
+        plan, pack, sizes, _reported = self.delta_pack()
+        repository = self.fixture.store.work / "accepted.git"
+        with mock.patch.object(store_module, "MAX_OBJECT", max(sizes.values())), mock.patch.object(
+            store_module, "MAX_EXPANDED", sum(sizes.values()),
+        ):
+            self.fixture.store._load_pack(repository, pack, plan, utc_now() + timedelta(seconds=5))
+        for object_id, size in sizes.items():
+            self.assertEqual(
+                int(self.fixture.git(repository, "cat-file", "-s", object_id)), size,
+            )
+        self.assert_absent()
+
+    def test_delta_pack_rejects_individual_resolved_size_overflow(self):
+        plan, pack, sizes, reported = self.delta_pack()
+        limit = 96 * 1024
+        self.assertLess(max(reported.values()), limit)
+        self.assertGreater(max(sizes.values()), limit)
+        with mock.patch.object(store_module, "MAX_OBJECT", limit), self.assertRaisesRegex(
+            RecordError, "individual expanded object bound",
+            msg=f"reported maximum {max(reported.values())}; resolved maximum {max(sizes.values())}",
+        ):
+            self.fixture.store._load_pack(
+                self.fixture.store.work / "individual.git", pack, plan, utc_now() + timedelta(seconds=5),
+            )
+        self.assert_absent()
+
+    def test_delta_pack_rejects_aggregate_resolved_size_overflow(self):
+        plan, pack, sizes, reported = self.delta_pack()
+        limit = 256 * 1024
+        self.assertLess(sum(reported.values()), limit)
+        self.assertGreater(sum(sizes.values()), limit)
+        self.assertLess(max(sizes.values()), store_module.MAX_OBJECT)
+        with mock.patch.object(store_module, "MAX_EXPANDED", limit), self.assertRaisesRegex(
+            RecordError, "expanded",
+            msg=f"reported total {sum(reported.values())}; resolved total {sum(sizes.values())}",
+        ):
+            self.fixture.store._load_pack(
+                self.fixture.store.work / "aggregate.git", pack, plan, utc_now() + timedelta(seconds=5),
+            )
+        self.assert_absent()
 
 
 class AuthenticatedChannelTests(BrokerFixtureTests):

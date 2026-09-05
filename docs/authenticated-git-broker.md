@@ -283,9 +283,14 @@ persistent journal or send UID/name-wide signals.
 
 Packs are indexed with strict fsck in a new private bare object database;
 decompression has CPU/address-space/file limits before object sizes can be
-trusted. No candidate config, attributes, replacements, alternates, hooks,
-template or worktree executes. Pack SHA-256 and object IDs identify the signed
-external input/closure; they are not a committed source or ROM identity ledger.
+trusted. A bounded `git cat-file --batch-check` obtains the reconstructed size
+of **every verified object**, including delta objects, before closure checks
+or remote access. Both the individual and total budgets count those resolved
+sizes: `git verify-pack -v` reports delta instruction sizes for deltified
+entries, which can be much smaller and cannot enforce these budgets.
+No candidate config, attributes, replacements, alternates, hooks, template or
+worktree executes. Pack SHA-256 and object IDs identify the signed external
+input/closure; they are not a committed source or ROM identity ledger.
 
 All child environments are rebuilt from an allowlist. Raw Git/SSH/HTTPS/helper
 output is discarded, not interpolated into errors. Failed/oversized requests
@@ -320,6 +325,16 @@ acceptance additionally needs a credentialed disposable repository with
 actual authority/anchor protections, a provisioned broker, current trusted
 signer and fresh exact plans. Do not fabricate that result from local mocks
 or uncredentialed ls-remote.
+
+Possible synthetic CI follow-up: the existing Build `host-tests` owner already
+discovers broker tests through `isolated_launcher.py reporter-tests`. Its
+disposable Linux runner could additionally own an explicit
+`protected_broker_fixture.py` invocation after establishing a reviewed,
+root-owned installation and three reserved nonroot UIDs. That fixture is not
+currently invoked by unittest discovery. This would use synthetic keys and a
+local remote only, not real credentials, and would not discharge credentialed
+HTTPS/SSH or deployed-service cgroup acceptance. No such deployment or workflow
+change is part of this size-accounting fix; all external holds remain.
 
 Dependencies: existing signed-record, exact-repository and trusted external
 installation contracts. Dependent: PR191/#178. Conflict: its provisional

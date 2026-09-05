@@ -1508,6 +1508,15 @@ The complete deployment and public API contract is
    and JSON Schema must agree on all clock/date inputs, including hour 24,
    invalid leap days, offsets, malformed dates and excessive precision.
 
+   The same command includes real deltified-pack controls. A Git-generated
+   offset-delta pack must publish both exact refs. A full reference-delta
+   pack must load at its exact resolved individual/total limits. Its three
+   131,073-byte blobs share a 65,536-byte base; strict Git indexing and pack
+   verification must succeed. With only the test budgets lowered, a 96 KiB
+   per-object cap and, separately, a 256 KiB aggregate cap must reject this
+   pack without remote access. All fixture artifacts are isolated and removed
+   by the tests; installed production limits remain unchanged.
+
 2. Run the protected acceptance command in the **already provisioned
    disposable root-owned installation**, under its authorized root test
    controller:
@@ -1582,6 +1591,13 @@ capability. Such an endpoint can never satisfy production preflight. The
 historical PR191 head contains only the planning seam, not a deployable
 credential broker; do not describe a synthetic control as a credentialed run
 of that historical source.
+
+The delta-size regression's pre-fix control accepts both oversized packs
+because `verify-pack` reports at most 65,536 bytes per entry and 65,906 bytes
+in total, while the reconstructed maximum is 131,073 bytes and total is
+459,095 bytes. Both budget rejection tests must fail if resolved-object
+accounting is removed; the exact-boundary load and ordinary deltified
+publication must continue to pass.
 
 ### Interactions, compatibility and automation
 
