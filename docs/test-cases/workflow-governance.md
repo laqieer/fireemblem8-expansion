@@ -1535,8 +1535,23 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    After a definite rejection, mutate run authority, either stable comment
    walk, every selected intent field/author identity, candidate, metadata
    values/version, or final GraphQL authority; require no cached-data abort.
+   Keep the watermark intact while adding a full or metadata run, changing
+   attempts, PR binding, status/conclusion, run/job timestamps, job identity or
+   runner, or removing an older run. Repeat normal active-run/job progress
+   under an essential override. Require the fourth complete snapshot to equal
+   the immediately pre-PATCH snapshot: these valid but changed responses must
+   produce status 2 without decision JSON, another PATCH, or any terminal.
+   A later retry with unchanged pre-state remains a read-only intent hold.
+   Introduce a newer active intent or two same-second active intents after
+   rejection; require the same hold. Unchanged authority, ordinary comments,
+   and well-formed superseded-candidate intents still permit a definite
+   rejection abort and corrected successor, including an unchanged active
+   Build with an essential override.
    An already observed confirmation or abort takes precedence, including with a
-   successor present. Fail abort delivery with and without actually creating
+   successor and changed run snapshot present. Contrast run drift before the
+   first PATCH: a new intent may abort with the actual final GraphQL
+   head/body/version, but malformed final authority must never create an abort
+   from cached pre-state. Fail abort delivery with and without actually creating
    the comment: retry consumes a real terminal, never fabricates one.
    Replay these positive/adversarial cases through the isolated fake `gh`
    launcher, including nonzero subprocess status and canonical JSON/exit codes.
@@ -1782,7 +1797,12 @@ success/no-op/complete, status `3` for deferred/refused, and status `2` with no
 decision JSON for invalid arguments, files, or API authority.
 For a definite, freshly revalidated PATCH rejection, status `3` carries the
 intent and `patch-rejected` abort IDs. Corrected values can then create a
-successor. A read-only ambiguous pre-state hold carries only its intent ID/URL,
+successor. Fresh run/job authority must equal the complete pre-PATCH snapshot
+and the selected intent must remain uniquely latest and active; watermark
+survival alone does not authorize an abort. Valid authority drift or active
+selection ambiguity returns status `2` without a new terminal, while an
+already observed terminal still defers before those comparisons.
+A read-only ambiguous pre-state hold carries only its intent ID/URL,
 no terminal, and `mutated: false`; it is not a confirmed pair. Updated/recovered
 and authoritative no-op results still require their original pair contracts.
 Job/run timestamps use exact UTC-second GitHub RFC3339 syntax and enforce
@@ -1806,6 +1826,13 @@ pre-state retry also issued a potentially duplicate PATCH. The actual-function
 and isolated CLI regressions must fail if either behavior returns. Treating
 stderr as rejection proof, aborting after an ambiguous response, skipping fresh
 authority or complete rebind, or accepting an intent-only no-op also fails.
+The post-rejection drift regression keeps the watermark unchanged while
+introducing valid new runs, attempts, bindings, conclusions, timestamps, or job
+changes. Before this correction, both the real helper and isolated launcher
+created a `patch-rejected` abort anyway; newer or same-second ambiguous active
+intents also incorrectly permitted an abort. Those controls must now fail
+closed, without disabling unchanged definite-rejection recovery, observed
+terminal precedence, or actual-observation aborts before the first PATCH.
 
 Empty override reasons, stale/new candidate identity, incomplete or drifting
 pagination, redirect or Link-header contradiction/loop, duplicate run

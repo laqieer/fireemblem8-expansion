@@ -987,6 +987,18 @@ decision. Correct the requested values and retry: the retained abort allows
 a strictly newer, independently validated successor intent and its normal
 PATCH/confirmation. No immutable record is edited or deleted.
 
+The fourth snapshot must equal the complete parsed run/job snapshot immediately
+before PATCH, not merely retain the intent's run watermark. Added or removed
+runs, changed attempts, bindings, status, conclusions, timestamps, or job
+authority leave the intent held, even when each individual response is valid.
+This also applies to normal progress of an essential edit's active Build.
+After terminal precedence, the selected intent must remain the unique latest
+active intent for its exact candidate/workflow; a newer active intent or
+equal-second ambiguity cannot authorize an abort. Ordinary comments and
+well-formed superseded-candidate intents do not change that selection.
+Unlike drift detected before a newly created intent's first PATCH, changed
+authority after a rejected PATCH is not a reason to append a drift abort.
+
 Missing, malformed, or changed fresh authority leaves the intent held without
 a fabricated abort. If rejection recovery crashes or abort delivery fails, a
 later invocation may consume an actually created terminal, or recover an

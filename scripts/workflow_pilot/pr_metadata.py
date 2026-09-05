@@ -3739,7 +3739,7 @@ def edit_metadata(
         except GitHubHTTPError as error:
             return _abort_rejected_patch(
                 client, current, latest_intent_comment,
-                error=error, mutated=intent_created,
+                pre_patch_runs=fresh_runs, error=error, mutated=intent_created,
             )
         after = _parse_pull_request_payload(
             mutation_response.payload,
@@ -4738,6 +4738,7 @@ def _abort_rejected_patch(
     state: PullRequestState,
     intent_comment: CommentState,
     *,
+    pre_patch_runs: tuple[RunState, ...],
     error: GitHubHTTPError,
     mutated: bool,
 ) -> Decision:
@@ -4755,8 +4756,25 @@ def _abort_rejected_patch(
     )
     if terminal is not None:
         return terminal
+    if runs != pre_patch_runs:
+        raise MetadataEditError(
+            f"HTTP {error.response.status} rejected metadata PATCH, but complete "
+            "Build run authority changed; unmatched intent remains held"
+        ) from error
     intent = intent_comment.intent
     _validate_receipt_watermark(intent, runs)
+    latest = _latest_intent(
+        _active_intents(
+            _candidate_intents(intents, state, intent.workflow_id),
+            confirmations,
+            aborts,
+        )
+    )
+    if latest != intent_comment:
+        raise MetadataEditError(
+            f"HTTP {error.response.status} rejected metadata PATCH, but active "
+            "intent selection changed; unmatched intent remains held"
+        ) from error
     observed, version = _fetch_metadata_observation(client, state)
     if (
         not _same_pr_contract(observed, state)

@@ -686,6 +686,49 @@ def _run(
     )
 
 
+def _rejection_run_drift_cases() -> dict[str, tuple[list, list]]:
+    full = _run(101, 10, mode="full")
+    active = _run(101, 10, mode="full", active=True)
+    other_binding = copy.deepcopy(full)
+    other_binding[0]["pull_requests"][0]["base"]["sha"] = NEW_HEAD
+    unbound = copy.deepcopy(full)
+    unbound[0]["pull_requests"] = []
+    updated = copy.deepcopy(full)
+    updated[0]["updated_at"] = "2026-09-04T00:00:04Z"
+    failed = _run(101, 10, mode="full", success=False)
+    next(job for job in failed[1] if job["name"] == "summary")["conclusion"] = "failure"
+    job_identity = copy.deepcopy(full)
+    job_identity[1][0] = _job(
+        job_identity[1][0]["name"], job_id=10199, run_id=101
+    )
+    job_runner = copy.deepcopy(full)
+    job_runner[1][0]["runner_name"] = "Changed runner"
+    job_timing = copy.deepcopy(full)
+    job_timing[1][0]["completed_at"] = "2026-09-04T00:00:03Z"
+    job_progress = copy.deepcopy(active)
+    job_progress[1][0] = _job(
+        job_progress[1][0]["name"],
+        job_id=job_progress[1][0]["id"],
+        run_id=101, status="in_progress", conclusion=None,
+    )
+    return {
+        "new-full": ([full], [_run(202, 11, mode="full", active=True), full]),
+        "new-metadata": ([full], [_run(202, 11, mode="metadata-only"), full]),
+        "new-attempt": ([full], [_run(101, 10, mode="full", attempt=2)]),
+        "other-binding": ([full], [other_binding]),
+        "unbound": ([full], [unbound]),
+        "run-updated": ([full], [updated]),
+        "run-conclusion": ([full], [failed]),
+        "job-identity": ([full], [job_identity]),
+        "job-runner": ([full], [job_runner]),
+        "job-timing": ([full], [job_timing]),
+        "older-run-disappeared": ([full, _run(100, 9, mode="full")], [full]),
+        "watermark-disappeared": ([full], []),
+        "active-run-completed": ([active], [full]),
+        "active-job-progress": ([active], [job_progress]),
+    }
+
+
 class ScriptedClient:
     def __init__(self) -> None:
         self.routes: dict[tuple[str, str], list[object]] = {}
@@ -786,11 +829,14 @@ def _mutation_client(
     body: str = "new body",
     pre_state: dict | None = None,
     pre_version: pr_metadata.MetadataVersion | None = None,
+    runs: list[tuple[dict, list[dict]]] | None = None,
+    rejection_runs: list[tuple[dict, list[dict]]] | None = None,
 ) -> tuple[ScriptedClient, list[dict]]:
     state = _pr() if pre_state is None else pre_state
+    runs = [_run(101, 10, mode="full")] if runs is None else runs
     client = ScriptedClient()
     _add_pr_states(client, state, state)
-    _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
+    _add_snapshot(client, runs, copies=2)
     _add_edit_transaction(
         client, title=title, body=body, pre_state=state, pre_version=pre_version
     )
@@ -828,7 +874,7 @@ def _mutation_client(
     )
     client.add("PATCH", _endpoint(f"pulls/{PR_NUMBER}"), failure or target)
     if failure is not None:
-        _add_snapshot(client, [_run(101, 10, mode="full")])
+        _add_snapshot(client, runs if rejection_runs is None else rejection_runs)
         client.routes[("POST", "graphql")][2] = _response(
             _graphql_payload(state, pre_version or _metadata_version())
         )
@@ -1124,9 +1170,12 @@ def _cli_rejection_calls(
     recovery: bool = False,
     pre_state: dict | None = None,
     pre_version: pr_metadata.MetadataVersion | None = None,
+    runs: list[tuple[dict, list[dict]]] | None = None,
+    rejection_runs: list[tuple[dict, list[dict]]] | None = None,
 ) -> list[dict]:
     pre_state = pre_state if pre_state is not None else _pr()
     pre_version = pre_version if pre_version is not None else _metadata_version()
+    runs = [_run(101, 10, mode="full")] if runs is None else runs
     first_edit = pre_version.body_edit_total_count == 0
     original_body = (pre_state["body"] or "") if first_edit else "prior body"
     target = _pr(body=body, updated_at="2026-09-04T00:00:05Z")
@@ -1142,7 +1191,7 @@ def _cli_rejection_calls(
     for _ in range(2):
         calls.extend([
             _cli_api_call("GET", _endpoint(f"pulls/{PR_NUMBER}"), payload=state),
-            *_cli_snapshot_calls([_run(101, 10, mode="full")]),
+            *_cli_snapshot_calls(runs),
         ])
     calls.extend([
         _cli_metadata_version_call(state, version, original_body=original_body),
@@ -1164,7 +1213,7 @@ def _cli_rejection_calls(
     ))
     if not recovery:
         calls.extend([
-            *_cli_snapshot_calls([_run(101, 10, mode="full")]),
+            *_cli_snapshot_calls(runs),
             *copy.deepcopy(walk),
             _cli_metadata_version_call(state, version, original_body=original_body),
         ])
@@ -1181,7 +1230,7 @@ def _cli_rejection_calls(
         if not failure.get("definite"):
             return calls
         calls.extend([
-            *_cli_snapshot_calls([_run(101, 10, mode="full")]),
+            *_cli_snapshot_calls(runs if rejection_runs is None else rejection_runs),
             *copy.deepcopy(walk),
             _cli_metadata_version_call(state, version, original_body=original_body),
         ])
@@ -8022,22 +8071,28 @@ class PullRequestMetadataTests(unittest.TestCase):
 
 
 class PullRequestRejectedMutationTests(unittest.TestCase):
-    def edit(self, client, *, title=None, body="new body"):
+    def edit(self, client, *, title=None, body="new body", essential_reason=None):
         return pr_metadata.edit_metadata(
             client, repository=REPOSITORY, pr_number=PR_NUMBER,
             head_sha=HEAD, base_sha=BASE, title=title, body=body,
-            essential_reason=None,
+            essential_reason=essential_reason,
         )
 
     def test_definite_rejection_aborts_and_corrected_values_succeed(self):
-        cases = [(status, _pr(), None) for status in (400, 401, 403, 404, 409, 422, 429)]
-        cases.extend([(422, _pr(body=None), None), (422, _pr(), "new title")])
-        for status, state, title in cases:
-            with self.subTest(status=status, empty=state["body"] is None, title=title):
+        cases = [(status, _pr(), None, False) for status in (400, 401, 403, 404, 409, 422, 429)]
+        cases.extend([
+            (422, _pr(body=None), None, False),
+            (422, _pr(), "new title", False),
+            (422, _pr(), None, True),
+        ])
+        for status, state, title, active in cases:
+            with self.subTest(status=status, empty=state["body"] is None, title=title, active=active):
+                runs = [_run(101, 10, mode="full", active=active)]
+                reason = "essential contract correction" if active else None
                 client, posts = _mutation_client(
-                    failure=_api_failure(status), pre_state=state, title=title
+                    failure=_api_failure(status), pre_state=state, title=title, runs=runs
                 )
-                decision = self.edit(client, title=title)
+                decision = self.edit(client, title=title, essential_reason=reason)
                 self.assertEqual(decision.action, "deferred")
                 self.assertTrue(decision.mutated)
                 self.assertEqual(decision.abort_comment_id, 402)
@@ -8065,9 +8120,12 @@ class PullRequestRejectedMutationTests(unittest.TestCase):
                 corrected_title = "corrected title" if title is not None else None
                 retry, successor_posts = _mutation_client(
                     history=tuple(posts), pre_state=state,
-                    body="corrected body", title=corrected_title,
+                    body="corrected body", title=corrected_title, runs=runs,
                 )
-                corrected = self.edit(retry, body="corrected body", title=corrected_title)
+                corrected = self.edit(
+                    retry, body="corrected body", title=corrected_title,
+                    essential_reason=reason,
+                )
                 self.assertEqual(corrected.action, "updated")
                 self.assertEqual(corrected.intent_comment_id, 403)
                 self.assertEqual(corrected.confirmation_comment_id, 404)
@@ -8081,6 +8139,140 @@ class PullRequestRejectedMutationTests(unittest.TestCase):
                 if corrected_title is not None:
                     expected["title"] = corrected_title
                 self.assertEqual([call[2] for call in retry.calls if call[0] == "PATCH"], [expected])
+
+    def test_rejection_requires_unchanged_complete_pre_patch_runs(self):
+        for drift, (before, after) in _rejection_run_drift_cases().items():
+            with self.subTest(drift=drift):
+                probe = ScriptedClient()
+                _add_snapshot(probe, before)
+                _add_snapshot(probe, after)
+                state = pr_metadata._parse_pull_request_payload(_pr(), REPOSITORY, PR_NUMBER)
+                self.assertNotEqual(
+                    pr_metadata.list_candidate_runs(probe, state),
+                    pr_metadata.list_candidate_runs(probe, state),
+                )
+                client, posts = _mutation_client(
+                    failure=_api_failure(), runs=before, rejection_runs=after
+                )
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    self.edit(
+                        client,
+                        essential_reason=(
+                            "essential contract correction"
+                            if before[0][0]["status"] != "completed" else None
+                        ),
+                    )
+                self.assertEqual(len(posts), 1)
+                self.assertEqual(sum(call[0] == "PATCH" for call in client.calls), 1)
+                self.assertEqual(
+                    sum(call[:2] == ("GET", _endpoint("actions/workflows/build.yml"))
+                        for call in client.calls),
+                    4,
+                )
+                self.assertEqual(
+                    sum(call[0] == "GET" and "/comments?" in call[1] for call in client.calls),
+                    6,
+                )
+                self.assertEqual(client.calls[-1][0], "GET")
+
+                retry, retry_posts = _mutation_client(history=tuple(posts))
+                held = self.edit(retry)
+                self.assertEqual(held.action, "deferred")
+                self.assertFalse(held.mutated)
+                self.assertEqual(held.intent_comment_id, 401)
+                self.assertIsNone(held.abort_comment_id)
+                self.assertIsNone(held.confirmation_comment_id)
+                self.assertEqual(retry_posts, [])
+                self.assertFalse(any(call[0] == "PATCH" for call in retry.calls))
+
+    def test_rejection_requires_selected_latest_unambiguous_active_intent(self):
+        comments_route = (
+            "GET",
+            _query(f"issues/{PR_NUMBER}/comments", [("per_page", "100"), ("page", "1")]),
+        )
+        for created_at in ("2026-09-04T00:00:01Z", "2026-09-04T00:00:02Z"):
+            with self.subTest(successor_created_at=created_at):
+                client, posts = _mutation_client(failure=_api_failure())
+
+                def changed(**_kwargs):
+                    intent = pr_metadata._parse_intent_comment_body(posts[0]["body"])
+                    successor = _intent_comment(
+                        replace(intent, nonce="d" * 64 if intent.nonce != "d" * 64 else "e" * 64),
+                        comment_id=402, created_at=created_at,
+                    )
+                    return [posts[0], successor]
+
+                def abort_response(*, body, **_kwargs):
+                    comment = _comment(
+                        403, body["body"],
+                        created_at="2026-09-04T00:00:03Z",
+                        updated_at="2026-09-04T00:00:03Z",
+                    )
+                    posts.append(comment)
+                    return comment
+
+                client.routes[comments_route][4:6] = [changed, changed]
+                client.routes[("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))][1] = abort_response
+                with self.assertRaises(pr_metadata.MetadataEditError):
+                    self.edit(client)
+                self.assertEqual(len(posts), 1)
+                self.assertEqual(sum(call[0] == "PATCH" for call in client.calls), 1)
+                self.assertEqual(client.calls[-1][:2], comments_route)
+
+    def test_rejection_selection_ignores_unrelated_and_superseded_comments(self):
+        history = (
+            _comment(399, "ordinary progress"),
+            _intent_comment(
+                _receipt(head_sha=NEW_HEAD), comment_id=400,
+                created_at="2026-09-04T00:00:01Z",
+            ),
+        )
+        client, posts = _mutation_client(failure=_api_failure(), history=history)
+        result = self.edit(client)
+        self.assertEqual(result.action, "deferred")
+        self.assertEqual((result.intent_comment_id, result.abort_comment_id), (401, 402))
+        self.assertEqual(len(posts), 2)
+        abort = pr_metadata._parse_abort_comment_body(posts[1]["body"])
+        self.assertEqual(abort.reason, "patch-rejected")
+        self.assertEqual(abort.intent_comment_id, 401)
+
+    def test_pre_patch_drift_requires_actual_final_observation_for_abort(self):
+        for malformed in (False, True):
+            with self.subTest(malformed_final_observation=malformed):
+                client, posts = _mutation_client()
+                for (method, endpoint), responses in client.routes.items():
+                    if method == "GET" and "actions/" in endpoint:
+                        responses.pop()
+                _add_snapshot(client, [
+                    _run(202, 11, mode="full", active=True),
+                    _run(101, 10, mode="full"),
+                ])
+                state = _pr(
+                    head=NEW_HEAD, body="observed drift",
+                    updated_at="2026-09-04T00:00:05Z",
+                )
+                version = _metadata_version(body_last_edited_at="2026-09-04T00:00:05Z")
+                payload = _graphql_payload(state, version)
+                if malformed:
+                    payload["data"]["repository"]["pullRequest"]["body"] = "not the edit node"
+                client.routes[("POST", "graphql")][1] = _response(payload)
+                if malformed:
+                    with self.assertRaises(pr_metadata.MetadataEditError):
+                        self.edit(client)
+                    self.assertEqual(len(posts), 1)
+                    self.assertEqual(client.calls[-1][:2], ("POST", "graphql"))
+                else:
+                    result = self.edit(client)
+                    self.assertEqual(result.action, "deferred")
+                    self.assertEqual(len(posts), 2)
+                    abort = pr_metadata._parse_abort_comment_body(posts[1]["body"])
+                    self.assertEqual(abort.reason, "run-authority-drift")
+                    self.assertEqual(abort.observed_head_sha, NEW_HEAD)
+                    self.assertEqual(abort.observed_metadata_sha256,
+                                     _metadata_sha256(state["title"], state["body"]))
+                    self.assertEqual(abort.observed_version, version)
+                    self.assertEqual(client.calls[-2][:2], ("POST", "graphql"))
+                self.assertFalse(any(call[0] == "PATCH" for call in client.calls))
 
     def test_ambiguous_failures_never_abort_or_duplicate_patch_on_retry(self):
         cases = {
@@ -8145,7 +8337,11 @@ class PullRequestRejectedMutationTests(unittest.TestCase):
             "GET",
             _query(f"issues/{PR_NUMBER}/comments", [("per_page", "100"), ("page", "1")]),
         )
-        for drift in (*INTENT_DRIFTS, "run", "unstable-pages", "candidate", "state", "target", "version", "unavailable", "owner"):
+        for drift in (
+            *INTENT_DRIFTS, "run", "unstable-pages", "candidate", "base",
+            "head-ref", "base-ref", "state", "target", "version", "unavailable",
+            "owner", "repository", "pr-id", "updated-at", "body-observation",
+        ):
             with self.subTest(drift=drift):
                 client, posts = _mutation_client(failure=_api_failure())
                 if drift in INTENT_DRIFTS:
@@ -8165,6 +8361,10 @@ class PullRequestRejectedMutationTests(unittest.TestCase):
                 else:
                     state = _pr(head=NEW_HEAD) if drift == "candidate" else _pr()
                     version = _metadata_version()
+                    if drift == "base":
+                        state["base"]["sha"] = NEW_HEAD
+                    elif drift in ("head-ref", "base-ref"):
+                        state[drift.split("-")[0]]["ref"] = "changed-ref"
                     if drift in ("state", "target", "version"):
                         state = _pr(
                             body={
@@ -8176,8 +8376,18 @@ class PullRequestRejectedMutationTests(unittest.TestCase):
                         )
                         version = _metadata_version(body_last_edited_at="2026-09-04T00:00:05Z")
                     payload = _graphql_payload(state, version)
+                    repository = payload["data"]["repository"]
+                    pull = repository["pullRequest"]
                     if drift == "owner":
-                        payload["data"]["repository"]["owner"]["databaseId"] += 1
+                        repository["owner"]["databaseId"] += 1
+                    elif drift == "repository":
+                        repository["databaseId"] += 1
+                    elif drift == "pr-id":
+                        pull["databaseId"] += 1
+                    elif drift == "updated-at":
+                        pull.pop("updatedAt")
+                    elif drift == "body-observation":
+                        pull["body"] = "not the observed body revision"
                     client.routes[("POST", "graphql")][2] = _response(payload)
                 with self.assertRaises(pr_metadata.MetadataEditError):
                     self.edit(client)
@@ -8190,9 +8400,18 @@ class PullRequestRejectedMutationTests(unittest.TestCase):
             "GET",
             _query(f"issues/{PR_NUMBER}/comments", [("per_page", "100"), ("page", "1")]),
         )
-        for terminal in ("confirmation", "abort"):
-            with self.subTest(terminal=terminal):
-                client, posts = _mutation_client(failure=_api_failure())
+        for terminal, run_drift in (
+            ("confirmation", False), ("confirmation", True),
+            ("abort", False), ("abort", True),
+        ):
+            with self.subTest(terminal=terminal, run_drift=run_drift):
+                client, posts = _mutation_client(
+                    failure=_api_failure(),
+                    rejection_runs=(
+                        [_run(202, 11, mode="full", active=True), _run(101, 10, mode="full")]
+                        if run_drift else None
+                    ),
+                )
 
                 def terminated(**_kwargs):
                     intent = pr_metadata._parse_intent_comment_body(posts[0]["body"])
@@ -8584,6 +8803,30 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                 self.assert_isolated_calls(records, expected_count)
                 self.assertEqual(sum(record["method"] == "PATCH" for record in records), 1)
                 self.assertEqual(len(self.recorded_comments(calls, records)), 1)
+
+    def test_rejected_patch_cli_holds_changed_complete_run_authority(self):
+        body_path = self.sandbox.root / "body.txt"
+        body_path.write_text("new body", encoding="utf-8")
+        for drift, (before, after) in _rejection_run_drift_cases().items():
+            with self.subTest(drift=drift):
+                arguments = [*self.common_arguments(), "--body-file", str(body_path)]
+                if before[0][0]["status"] != "completed":
+                    arguments.extend(["--essential-reason", "essential contract correction"])
+                calls = _cli_rejection_calls(
+                    "new body", runs=before, rejection_runs=after,
+                    failure={
+                        "status": 422, "payload": {"message": "Validation Failed"},
+                        "returncode": 1, "definite": True,
+                    },
+                )
+                completed, records = self.sandbox.run("edit", arguments, calls)
+                self.assertEqual(completed.returncode, 2, completed.stderr)
+                self.assertEqual(completed.stdout, "")
+                self.assertNotIn("Traceback", completed.stderr)
+                self.assert_isolated_calls(records, len(calls) - 2)
+                self.assertEqual(sum(record["method"] == "PATCH" for record in records), 1)
+                self.assertEqual(len(self.recorded_comments(calls, records)), 1)
+                self.assertEqual(records[-1]["method"], "GET")
 
     def test_unhashable_run_conclusion_is_a_fail_closed_cli_error(self):
         body_path = self.sandbox.root / "body.md"
