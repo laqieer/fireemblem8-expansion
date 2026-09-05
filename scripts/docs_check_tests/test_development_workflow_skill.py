@@ -215,6 +215,20 @@ TRUSTED_PUSH_GUIDANCE_PATHS = (
     SKILL_PATH,
     ROOT / ".github" / "copilot-instructions.md",
 )
+PUBLICATION_PROTOCOL_HEADING = "Immediate publication and visible work"
+PUBLICATION_PROTOCOL_FIELDS = {
+    "Trigger": {"new-task-commit"},
+    "Publisher": {"repository-owner-coordinator"},
+    "Implementation owner": {"immediate-handoff-no-push"},
+    "Pre-push waits": {"none"},
+    "WIP visibility": {
+        "issue", "pull-request", "branch", "commit", "owner", "scope", "state",
+        "remaining-work", "blockers",
+    },
+    "Authority": {"persistence-not-acceptance"},
+    "Final gates": {"unchanged"},
+    "Push failure": {"explicit-blocker-no-success-claim"},
+}
 FLEET_COORDINATOR_GUIDANCE_PATHS = TRUSTED_PUSH_GUIDANCE_PATHS
 FOCUSED_LOCAL_VALIDATION_PATHS = TRUSTED_PUSH_GUIDANCE_PATHS
 BACKGROUND_AGENT_GUIDANCE_PATHS = TRUSTED_PUSH_GUIDANCE_PATHS
@@ -1322,6 +1336,19 @@ def parse_labeled_summary(text, heading):
             raise AssertionError(f"duplicate lifecycle field {name!r}")
         fields[name] = " ".join(match.group("value").split())
     return fields
+
+
+def publication_protocol_violations(text):
+    """Validate the named external CLI instruction format, not runtime source."""
+    fields = parse_labeled_summary(text, PUBLICATION_PROTOCOL_HEADING)
+    violations = []
+    if set(fields) != set(PUBLICATION_PROTOCOL_FIELDS):
+        violations.append("publication fields are incomplete or unknown")
+    for name, expected in PUBLICATION_PROTOCOL_FIELDS.items():
+        values = [value.strip() for value in fields.get(name, "").split(",")]
+        if len(values) != len(set(values)) or set(values) != expected:
+            violations.append(f"publication field {name!r} is invalid")
+    return violations
 
 
 def human_handoff_summary(text, governance=False):
@@ -2697,6 +2724,73 @@ class DevelopmentWorkflowSkillTests(unittest.TestCase):
                     ),
                 ),
             ),
+        )
+
+    def test_immediate_publication_protocol(self):
+        _, text = read_skill()
+        self.assertEqual(publication_protocol_violations(text), [])
+        fields = parse_labeled_summary(text, PUBLICATION_PROTOCOL_HEADING)
+
+        def document(values):
+            return (
+                "# Unrelated explanatory heading\n\nNon-normative wording may change.\n\n"
+                + "### " + PUBLICATION_PROTOCOL_HEADING
+                + "\n\n"
+                + "\n".join(f"- **{name}:** {value}" for name, value in values.items())
+                + "\n"
+            )
+
+        equivalent = {
+            name: ", ".join(reversed(value.split(", ")))
+            for name, value in reversed(list(fields.items()))
+        }
+        self.assertEqual(publication_protocol_violations(document(equivalent)), [])
+        for name in fields:
+            with self.subTest(missing=name):
+                missing = dict(fields)
+                del missing[name]
+                self.assertTrue(publication_protocol_violations(document(missing)))
+            with self.subTest(changed=name):
+                changed = dict(fields, **{name: "after-review-or-CI"})
+                self.assertTrue(publication_protocol_violations(document(changed)))
+        for name, value in (
+            ("Publisher", "implementation-agent"),
+            ("Pre-push waits", "review, validation, CI, batching"),
+            ("Authority", "publication-is-acceptance"),
+            ("Final gates", "optional"),
+            ("Push failure", "assume-published"),
+            ("WIP visibility", fields["WIP visibility"].replace("owner, ", "")),
+            ("WIP visibility", fields["WIP visibility"] + ", owner"),
+        ):
+            with self.subTest(field=name, value=value):
+                changed = dict(fields, **{name: value})
+                self.assertTrue(publication_protocol_violations(document(changed)))
+        self.assertTrue(
+            publication_protocol_violations(document(dict(fields, Unknown="ignored")))
+        )
+        with self.assertRaisesRegex(AssertionError, "duplicate"):
+            publication_protocol_violations(
+                document(fields) + "- **Publisher:** repository-owner-coordinator\n"
+            )
+
+        registry = json.loads(TEST_CASE_REGISTRY_PATH.read_text(encoding="utf-8"))
+        case = next(
+            item for item in registry["cases"]
+            if item["id"] == "TC-WORKFLOW-IMMEDIATE-PUSH-001"
+        )
+        self.assertEqual(case["feature_id"], "workflow-governance")
+        self.assertEqual(
+            case["issue_urls"],
+            ["https://github.com/laqieer/fireemblem8-expansion/issues/207"],
+        )
+        self.assertEqual(case["document"], "docs/test-cases/workflow-governance.md")
+        governance = WORKFLOW_GOVERNANCE_PATH.read_text(encoding="utf-8")
+        self.assertTrue(
+            read_markdown_section(
+                governance,
+                "TC-WORKFLOW-IMMEDIATE-PUSH-001: Publish new commits immediately "
+                "and expose WIP ownership",
+            )
         )
 
     def test_trusted_push_ownership_is_mirrored_and_rejects_stale_roles(self):
@@ -4527,6 +4621,7 @@ printf '%s\t%s\t%s\n' "$result" \
         )
         expected_cases = [
             "TC-WORKFLOW-AUTHENTICATED-GIT-BROKER-001",
+            "TC-WORKFLOW-IMMEDIATE-PUSH-001",
             "TC-WORKFLOW-CI-WAIT-001",
             "TC-WORKFLOW-MANUAL-HANDOFF-001",
             "TC-WORKFLOW-STACKED-CI-001",
