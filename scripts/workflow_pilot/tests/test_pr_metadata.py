@@ -26,6 +26,11 @@ BASE = "2" * 40
 NEW_HEAD = "3" * 40
 HEAD_REF = "feature/issue-199"
 WORKFLOW_ID = 1234
+INTENT_DRIFTS = (
+    "deleted", "unmarked", "nonce", "pre-version", "timestamp",
+    "author-id", "author-login", "author-type", "site-admin", "association",
+    "deleted-author",
+)
 
 
 def _sha256(value: str) -> str:
@@ -702,6 +707,7 @@ def _add_edit_transaction(
         ),
         [],
         lambda **_kwargs: [copy.deepcopy(intent_payload)],
+        lambda **_kwargs: [copy.deepcopy(intent_payload)],
     )
 
     def response(
@@ -1057,6 +1063,40 @@ def _intent_comment(
     )
     payload.update(changes)
     return payload
+
+
+def _drifted_intent_page(comment: dict, drift: str) -> list[dict]:
+    if drift == "deleted":
+        return []
+    comment = copy.deepcopy(comment)
+    if drift == "unmarked":
+        comment["body"] = "No longer an intent"
+    elif drift in ("nonce", "pre-version"):
+        intent = pr_metadata._parse_intent_comment_body(comment["body"])
+        intent = (
+            replace(intent, nonce="b" * 64 if intent.nonce != "b" * 64 else "c" * 64)
+            if drift == "nonce"
+            else replace(
+                intent,
+                pre_version=replace(intent.pre_version, title_event_id="RTE_changed"),
+            )
+        )
+        comment["body"] = pr_metadata._intent_comment_body(intent)
+    elif drift == "timestamp":
+        comment["created_at"] = comment["updated_at"] = "2026-09-04T00:00:02Z"
+    elif drift == "association":
+        comment["author_association"] = "CONTRIBUTOR"
+    elif drift == "deleted-author":
+        comment["user"] = None
+    else:
+        field, value = {
+            "author-id": ("id", OWNER_ID + 1),
+            "author-login": ("login", "not-owner"),
+            "author-type": ("type", "Bot"),
+            "site-admin": ("site_admin", True),
+        }[drift]
+        comment["user"][field] = value
+    return [comment]
 
 
 def _confirmation_comment(
@@ -2485,6 +2525,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 [("per_page", "100"), ("page", "1")],
             ),
             [_intent_comment(intent)],
+            [_intent_comment(intent)],
         )
 
         def confirmation_response(
@@ -2564,6 +2605,7 @@ class PullRequestMetadataTests(unittest.TestCase):
             ),
             [_intent_comment(intent)],
             [_intent_comment(intent)],
+            [_intent_comment(intent)],
         )
         client.add(
             "PATCH",
@@ -2614,6 +2656,243 @@ class PullRequestMetadataTests(unittest.TestCase):
             pr_metadata.CONFIRMATION_MARKER,
             transaction_posts[0][2]["body"],
         )
+
+    def test_post_intent_refresh_requires_complete_unchanged_selected_intent(self):
+        comments_route = (
+            "GET",
+            _query(
+                f"issues/{PR_NUMBER}/comments",
+                [("per_page", "100"), ("page", "1")],
+            ),
+        )
+        posts_route = ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
+        target = _pr(body="new body", updated_at="2026-09-04T00:00:05Z")
+        for retry in (False, True):
+            for abort in (False, True):
+                for drift in INTENT_DRIFTS:
+                    with self.subTest(retry=retry, abort=abort, drift=drift):
+                        client = ScriptedClient()
+                        _add_pr_states(client, _pr(), _pr())
+                        _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
+                        _add_edit_transaction(client, body="new body")
+                        client.add("PATCH", _endpoint(f"pulls/{PR_NUMBER}"), target)
+                        if retry:
+                            intent = _receipt(
+                                pre_body="Stable body",
+                                pre_version=_metadata_version(),
+                                provided_fields={"body": _sha256("new body")},
+                                target_metadata_sha256=_metadata_sha256(
+                                    "Stable title", "new body"
+                                ),
+                            )
+                            client.routes[comments_route] = [
+                                [_intent_comment(intent)] for _ in range(6)
+                            ]
+                            client.routes[posts_route].pop(0)
+                        fresh_page = client.routes[comments_route][2]
+
+                        def changed_page(**kwargs):
+                            page = (
+                                fresh_page(**kwargs) if callable(fresh_page) else fresh_page
+                            )
+                            return _drifted_intent_page(page[0], drift)
+
+                        client.routes[comments_route][2:4] = [changed_page, changed_page]
+                        if abort:
+                            observed = _pr(head=NEW_HEAD)
+                            client.routes[("POST", "graphql")][1] = _response(
+                                _graphql_payload(observed, _metadata_version())
+                            )
+                        with self.assertRaises(pr_metadata.MetadataEditError):
+                            pr_metadata.edit_metadata(
+                                client,
+                                repository=REPOSITORY,
+                                pr_number=PR_NUMBER,
+                                head_sha=HEAD,
+                                base_sha=BASE,
+                                title=None,
+                                body="new body",
+                                essential_reason=None,
+                            )
+                        self.assertFalse(any(call[0] == "PATCH" for call in client.calls))
+                        posts = [
+                            call[2]["body"] for call in client.calls
+                            if call[:2] == posts_route
+                        ]
+                        self.assertEqual(len(posts), 0 if retry else 1)
+                        self.assertTrue(
+                            all(body.startswith(pr_metadata.INTENT_MARKER) for body in posts)
+                        )
+
+    def test_confirmation_refresh_rejects_intent_drift_after_patch_or_on_recovery(self):
+        comments_route = (
+            "GET",
+            _query(
+                f"issues/{PR_NUMBER}/comments",
+                [("per_page", "100"), ("page", "1")],
+            ),
+        )
+        posts_route = ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
+        target = _pr(body="new body", updated_at="2026-09-04T00:00:05Z")
+        target_version = _metadata_version(body_last_edited_at="2026-09-04T00:00:05Z")
+        for recovery in (False, True):
+            for drift in INTENT_DRIFTS:
+                with self.subTest(recovery=recovery, drift=drift):
+                    client = ScriptedClient()
+                    state = target if recovery else _pr()
+                    _add_pr_states(client, state, state)
+                    _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
+                    _add_edit_transaction(client, body="new body")
+                    client.add("PATCH", _endpoint(f"pulls/{PR_NUMBER}"), target)
+                    if recovery:
+                        intent = _receipt(
+                            pre_body="Stable body",
+                            pre_version=_metadata_version(),
+                            provided_fields={"body": _sha256("new body")},
+                            target_metadata_sha256=_metadata_sha256(
+                                "Stable title", "new body"
+                            ),
+                        )
+                        client.routes[comments_route] = [
+                            [_intent_comment(intent)] for _ in range(4)
+                        ]
+                        client.routes[posts_route].pop(0)
+                        client.routes[("POST", "graphql")] = [
+                            _response(_graphql_payload(target, target_version))
+                            for _ in range(2)
+                        ]
+                    index = 2 if recovery else 4
+                    fresh_page = client.routes[comments_route][index]
+
+                    def changed_page(**kwargs):
+                        page = (
+                            fresh_page(**kwargs) if callable(fresh_page) else fresh_page
+                        )
+                        return _drifted_intent_page(page[0], drift)
+
+                    client.routes[comments_route][index:index + 2] = [
+                        changed_page, changed_page
+                    ]
+                    with self.assertRaises(pr_metadata.MetadataEditError):
+                        pr_metadata.edit_metadata(
+                            client,
+                            repository=REPOSITORY,
+                            pr_number=PR_NUMBER,
+                            head_sha=HEAD,
+                            base_sha=BASE,
+                            title=None,
+                            body="new body",
+                            essential_reason=None,
+                        )
+                    patches = [call for call in client.calls if call[0] == "PATCH"]
+                    self.assertEqual(len(patches), 0 if recovery else 1)
+                    posts = [
+                        call[2]["body"] for call in client.calls
+                        if call[:2] == posts_route
+                    ]
+                    self.assertEqual(len(posts), 0 if recovery else 1)
+                    self.assertTrue(
+                        all(body.startswith(pr_metadata.INTENT_MARKER) for body in posts)
+                    )
+
+    def test_confirmation_refresh_preserves_observed_terminal_precedence(self):
+        comments_route = (
+            "GET",
+            _query(
+                f"issues/{PR_NUMBER}/comments",
+                [("per_page", "100"), ("page", "1")],
+            ),
+        )
+        posts_route = ("POST", _endpoint(f"issues/{PR_NUMBER}/comments"))
+        target = _pr(body="new body", updated_at="2026-09-04T00:00:05Z")
+        target_version = _metadata_version(body_last_edited_at="2026-09-04T00:00:05Z")
+        for recovery in (False, True):
+            for terminal in ("confirmation", "abort"):
+                with self.subTest(recovery=recovery, terminal=terminal):
+                    client = ScriptedClient()
+                    state = target if recovery else _pr()
+                    _add_pr_states(client, state, state)
+                    _add_snapshot(client, [_run(101, 10, mode="full")], copies=2)
+                    _add_edit_transaction(client, body="new body")
+                    client.add("PATCH", _endpoint(f"pulls/{PR_NUMBER}"), target)
+                    if recovery:
+                        intent = _receipt(
+                            pre_body="Stable body",
+                            pre_version=_metadata_version(),
+                            provided_fields={"body": _sha256("new body")},
+                            target_metadata_sha256=_metadata_sha256(
+                                "Stable title", "new body"
+                            ),
+                        )
+                        client.routes[comments_route] = [
+                            [_intent_comment(intent)] for _ in range(4)
+                        ]
+                        client.routes[posts_route].pop(0)
+                        client.routes[("POST", "graphql")] = [
+                            _response(_graphql_payload(target, target_version))
+                        ]
+                    index = 2 if recovery else 4
+                    fresh_page = client.routes[comments_route][index]
+
+                    def terminated_page(**kwargs):
+                        page = (
+                            fresh_page(**kwargs) if callable(fresh_page) else fresh_page
+                        )
+                        selected = pr_metadata._parse_intent_comment_body(page[0]["body"])
+                        terminal_comment = (
+                            _confirmation_comment(
+                                _confirmation(selected, version=target_version),
+                                created_at="2026-09-04T00:00:06Z",
+                            )
+                            if terminal == "confirmation"
+                            else _abort_comment(
+                                _abort(
+                                    selected,
+                                    observed_state=target,
+                                    observed_version=target_version,
+                                ),
+                                created_at="2026-09-04T00:00:06Z",
+                            )
+                        )
+                        successor = _intent_comment(
+                            replace(
+                                selected,
+                                nonce="d" * 64 if selected.nonce != "d" * 64 else "e" * 64,
+                            ),
+                            comment_id=404,
+                            created_at="2026-09-04T00:00:06Z",
+                        )
+                        return [page[0], terminal_comment, successor]
+
+                    client.routes[comments_route][index:index + 2] = [
+                        terminated_page, terminated_page
+                    ]
+                    decision = pr_metadata.edit_metadata(
+                        client,
+                        repository=REPOSITORY,
+                        pr_number=PR_NUMBER,
+                        head_sha=HEAD,
+                        base_sha=BASE,
+                        title=None,
+                        body="new body",
+                        essential_reason=None,
+                    )
+                    self.assertEqual(decision.action, "deferred")
+                    self.assertEqual(decision.mutated, not recovery)
+                    self.assertEqual(
+                        (decision.confirmation_comment_id, decision.abort_comment_id),
+                        (402, None) if terminal == "confirmation" else (None, 403),
+                    )
+                    patches = [call for call in client.calls if call[0] == "PATCH"]
+                    self.assertEqual(len(patches), 0 if recovery else 1)
+                    posts = [
+                        call[2]["body"] for call in client.calls
+                        if call[:2] == posts_route
+                    ]
+                    self.assertEqual(len(posts), 0 if recovery else 1)
+                    self.assertTrue(
+                        all(body.startswith(pr_metadata.INTENT_MARKER) for body in posts)
+                    )
 
     def test_post_intent_confirmation_defers_without_conflicting_abort(self):
         pre_state = _pr()
@@ -2941,6 +3220,7 @@ class PullRequestMetadataTests(unittest.TestCase):
                 f"issues/{PR_NUMBER}/comments",
                 [("per_page", "100"), ("page", "1")],
             ),
+            [_intent_comment(intent)],
             [_intent_comment(intent)],
         )
 
@@ -3451,13 +3731,10 @@ class PullRequestMetadataTests(unittest.TestCase):
             (target_state, target_version),
             (target_state, target_version),
         )
-        client.add_stable_comment_pages(
-            "GET",
-            _query(
-                f"issues/{PR_NUMBER}/comments",
-                [("per_page", "100"), ("page", "1")],
-            ),
-            [
+        _add_transaction_comments(
+            client,
+            current_intent,
+            comments=[
                 _intent_comment(old_intent),
                 _confirmation_comment(old_confirmation),
                 _intent_comment(
@@ -3636,6 +3913,76 @@ class PullRequestMetadataTests(unittest.TestCase):
         self.assertEqual(reruns, [("POST", _endpoint("actions/runs/202/rerun"), None)])
         self.assertFalse(any("/cancel" in endpoint for _method, endpoint, _body in client.calls))
         self.assertFalse(any("/dispatches" in endpoint for _method, endpoint, _body in client.calls))
+
+    def test_reconciliation_refresh_requires_complete_unchanged_selected_pair(self):
+        receipt = _receipt()
+        confirmation = _confirmation(receipt)
+        original = [_intent_comment(receipt), _confirmation_comment(confirmation)]
+        for drift in ("unchanged", *INTENT_DRIFTS, "confirmation-timestamp"):
+            with self.subTest(drift=drift):
+                client = ScriptedClient()
+                _add_pr_states(client, _pr(), _pr())
+                _add_snapshot(
+                    client,
+                    [
+                        _run(202, 11, mode="metadata-only", success=False),
+                        _run(101, 10, mode="full"),
+                    ],
+                    copies=2,
+                )
+                _add_metadata_versions(
+                    client,
+                    (_pr(), confirmation.metadata_version),
+                    (_pr(), confirmation.metadata_version),
+                )
+                if drift in ("unchanged", "confirmation-timestamp"):
+                    refreshed = copy.deepcopy(original)
+                    if drift == "confirmation-timestamp":
+                        refreshed[1]["created_at"] = "2026-09-04T00:00:03Z"
+                        refreshed[1]["updated_at"] = "2026-09-04T00:00:03Z"
+                else:
+                    refreshed = [
+                        *_drifted_intent_page(original[0], drift),
+                        copy.deepcopy(original[1]),
+                    ]
+                    if drift == "nonce":
+                        refreshed[1] = _confirmation_comment(
+                            replace(confirmation, intent_nonce="b" * 64)
+                        )
+                client.add_stable_comment_pages(
+                    "GET",
+                    _query(
+                        f"issues/{PR_NUMBER}/comments",
+                        [("per_page", "100"), ("page", "1")],
+                    ),
+                    original,
+                    refreshed,
+                )
+                client.add("POST", _endpoint("actions/runs/202/rerun"), {})
+                try:
+                    decision = pr_metadata.reconcile_metadata(
+                        client,
+                        repository=REPOSITORY,
+                        pr_number=PR_NUMBER,
+                        head_sha=HEAD,
+                        base_sha=BASE,
+                        confirmation_comment_id=402,
+                    )
+                except pr_metadata.MetadataEditError:
+                    self.assertNotEqual(drift, "unchanged")
+                else:
+                    self.assertEqual(
+                        decision.action, "rerun" if drift == "unchanged" else "deferred"
+                    )
+                mutations = [
+                    call for call in client.calls
+                    if call[0] != "GET" and call[1] != "graphql"
+                ]
+                self.assertEqual(
+                    mutations,
+                    [("POST", _endpoint("actions/runs/202/rerun"), None)]
+                    if drift == "unchanged" else [],
+                )
 
     def test_reconciliation_rejects_every_nonfailure_terminal_conclusion(self):
         for conclusion in (
@@ -7519,6 +7866,22 @@ class PullRequestMetadataLauncherTests(unittest.TestCase):
                     sort_keys=True,
                 ),
             ),
+            *_cli_stable_comment_walk(_cli_api_call(
+                "GET",
+                _query(
+                    f"issues/{PR_NUMBER}/comments",
+                    [("per_page", "100"), ("page", "1")],
+                ),
+                payload=[
+                    _comment(
+                        401,
+                        "",
+                        created_at="2026-09-04T00:00:01Z",
+                        updated_at="2026-09-04T00:00:01Z",
+                    )
+                ],
+                echo_last_comment=True,
+            )),
             _cli_metadata_version_call(post_state, post_version),
             _cli_api_call(
                 "POST",

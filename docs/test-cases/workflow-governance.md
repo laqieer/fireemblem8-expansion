@@ -1306,9 +1306,24 @@ the exact branch and head; timeout or ambiguity fails before `gh run watch`.
    confirmation predating intent as invalid.
    After intent creation, inject candidate/head/base, pre-state, supplied
    unchanged-field, title/body version, run-snapshot, and transaction-comment
-   drift before PATCH while the selected intent remains active. Require zero
-   PATCH and one immutable owner-authored abort comment. If a confirmation or
+   drift before PATCH while the selected intent remains present, unchanged,
+   and active. Require zero PATCH and one immutable owner-authored abort
+   comment. If a confirmation or
    abort is already observed, require deferral without a second terminal.
+   Separately delete or unmark the selected intent, change its canonical nonce,
+   pre-version, or creation/update timestamps while both timestamps remain
+   equal, or change each owner ID/login/type/site-admin/association field or
+   remove its author. Return the same changed set in both complete comment
+   walks after creation and on pre-state retries, including when candidate
+   drift would otherwise require an abort. Require an error, no PATCH, and no
+   cached-data confirmation or abort. Repeat after an already validated PATCH
+   and on target-state recovery: no further PATCH or terminal may be written.
+   At that confirmation refresh, an unchanged intent with a newly observed
+   confirmation or abort must instead defer, even with a successor present.
+   On reconciliation's second snapshot, repeat intent deletion, canonical
+   receipt/ownership drift, and equal creation/update timestamp changes on
+   either selected comment; require no rerun. An unchanged complete pair still
+   reruns only its failed metadata run.
    Assert that the abort's observed head/base, metadata digest, and version
    equal the validated final GraphQL observation, not the cached pre-state.
    For malformed repository identity, missing/invalid observation fields, or
@@ -1463,10 +1478,15 @@ An authoritative-pair no-op additionally requires the exact
 confirmation-bound metadata run to pass canonical completed-success
 validation; visible active/failure states defer with reconciliation guidance.
 The final pre-PATCH revalidation completes run and transaction-comment
-authority first, then performs one complete GraphQL
+authority first, rebinding the complete unchanged owner-authenticated selected
+intent, then performs one complete GraphQL
 repository/owner/PR/ref/metadata/version request as the final network operation
-before PATCH. Drift emits an immutable abort/supersession comment and zero
-PATCH. The final GraphQL/PATCH window is explicitly non-atomic; strict
+before PATCH. Other authority drift emits an immutable abort/supersession
+comment and zero PATCH only while that selected intent remains valid.
+A missing, changed, or no-longer-owner intent cannot authorize a cached-data
+abort or confirmation. Confirmation refreshes and rebinds the intent again
+after PATCH or on target-state recovery, preserving observed terminal
+precedence. The final GraphQL/PATCH window is explicitly non-atomic; strict
 PATCH-response candidate and complete-state attestation detects any resulting
 drift rather than claiming atomicity. Abort closes only its intent; a remaining
 change creates a newer successor intent, while target-match follows normal
@@ -1528,7 +1548,7 @@ refresh, accepting an active unbound run, using terminal unbound evidence,
 accepting multiple/contradictory bindings, selecting old successful metadata
 at or below the receipt watermark, accepting a rerun attempt at the watermark,
 comparing Actions and comment timestamps causally, accepting an old pair after
-a newer intent, or accepting deleted/edited/non-owner/bot/wrong-ID/
+a newer metadata edit, or accepting deleted/edited/non-owner/bot/wrong-ID/
 cross-repository/duplicate/ambiguous intent or confirmation comments, later
 direct metadata edit, title/body edit-and-revert, same-second body edit/revert,
 malformed transaction schema/identity/field/digest/version/
@@ -1536,6 +1556,12 @@ workflow/watermark, or unreconciled unmatched intent, and
 repository/command injection all fail
 closed. No tested path calls a
 cancellation endpoint or a full-workflow dispatch endpoint.
+The pre-fix negative control uses two equal post-selection comment walks that
+omit intent 401 or change its canonical nonce in the same second: the old
+helper appended an abort for the missing intent, or PATCHed and confirmed the
+cached nonce. Neither stable pagination nor equal timestamps alone proves the
+selected record survived unchanged. The deterministic refresh tests exercise
+that original failure and the coupled confirmation/recovery paths directly.
 
 ### Interactions and save compatibility
 

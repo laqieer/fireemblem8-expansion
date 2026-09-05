@@ -622,6 +622,17 @@ invalid or differing pass raises before its result is used. There is no retry
 loop or fallback to the first incomplete observation. Transaction selection
 and canonical evidence updates share this stabilized reader. This does not
 make a later GitHub mutation atomic or replace the single-writer contract.
+At each subsequent transaction refresh, the selected intent must still be
+present as the same complete owner-authenticated parsed comment, including
+its canonical receipt and timestamps. Matching only its comment ID or
+equal-second creation/update timestamps is insufficient. Missing, changed,
+unmarked, or no-longer-owner intents raise before any further PATCH or terminal
+comment; cached receipt data cannot authorize an abort. The helper rebinds to
+the fresh record before using it. After a validated PATCH, and on target-state
+recovery without PATCH, it refreshes the transaction graph again before the
+final metadata-version read and confirmation. An existing confirmation or
+abort instead defers without writing another terminal. Reconciliation likewise
+compares the complete selected intent and confirmation across its refreshes.
 The one marked canonical evidence comment must be the repository owner's
 owner-associated `User` comment with the exact owner numeric user ID from the
 validated PR repository payload and exactly one standalone marker.
@@ -668,7 +679,8 @@ abort or a second PATCH. An observed abort returns `deferred` without another
 terminal comment. A concurrently observed terminal is not continuity success:
 reconciliation must still validate the current metadata version and exact
 Build evidence. The `mutated` result records any intent created by this
-invocation, even when another invocation subsequently terminates it.
+invocation or PATCH already applied, even when another invocation subsequently
+terminates the intent.
 Every confirmation/abort edge independently requires both
 `terminal.createdAt >= intent.createdAt` and
 `terminal.comment_id > intent.comment_id`; a later timestamp never excuses an
@@ -762,10 +774,10 @@ Immediately before PATCH, the helper refetches complete PR, run, metadata
 and transaction-comment authority, then makes one final complete
 repository/owner/PR/ref/title/body/updatedAt/editor/title-event/UserContentEdit GraphQL
 request as the last network operation before PATCH. For a selected intent that
-is still active, candidate, pre-state, provided-field, version, run-snapshot,
-or active-intent drift creates an immutable owner-authored abort comment and
-performs zero PATCH. An already observed confirmation or abort instead defers
-without appending another terminal. Abort comments
+is still present, unchanged, and active, candidate, pre-state, provided-field,
+version, run-snapshot, or active-intent drift creates an immutable owner-authored
+abort comment and performs zero PATCH. An already observed confirmation or
+abort instead defers without appending another terminal. Abort comments
 reference the exact intent ID/nonce and observed state/version, are never
 edited/deleted, and close that intent. Retry recognizes a maybe-created abort
 or safely attempts the same abort again; malformed, duplicate, forged, or

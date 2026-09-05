@@ -3496,43 +3496,19 @@ def edit_metadata(
             client,
             current,
         )
-        existing_confirmation = fresh_confirmations.get(
-            latest_intent_comment.comment_id
+        latest_intent_comment = _rebind_intent_comment(
+            latest_intent_comment, fresh_intents
         )
-        if existing_confirmation is not None:
-            return Decision(
-                action="deferred",
-                base_sha=base_sha,
-                guidance=_reconcile_guidance(
-                    current,
-                    existing_confirmation.comment_id,
-                ),
-                head_sha=head_sha,
-                mutated=intent_created,
-                reason="metadata edit intent is already confirmed; reconcile its pair",
-                repository=repository,
-                pr_number=pr_number,
-                intent_comment_id=latest_intent_comment.comment_id,
-                intent_comment_url=latest_intent_comment.html_url,
-                confirmation_comment_id=existing_confirmation.comment_id,
-                confirmation_comment_url=existing_confirmation.html_url,
-            )
-        existing_abort = fresh_aborts.get(latest_intent_comment.comment_id)
-        if existing_abort is not None:
-            return Decision(
-                action="deferred",
-                base_sha=base_sha,
-                guidance=(),
-                head_sha=head_sha,
-                mutated=intent_created,
-                reason="metadata edit intent is already aborted",
-                repository=repository,
-                pr_number=pr_number,
-                intent_comment_id=latest_intent_comment.comment_id,
-                intent_comment_url=latest_intent_comment.html_url,
-                abort_comment_id=existing_abort.comment_id,
-                abort_comment_url=existing_abort.html_url,
-            )
+        intent = latest_intent_comment.intent
+        terminal = _terminal_intent_decision(
+            current,
+            latest_intent_comment,
+            fresh_confirmations,
+            fresh_aborts,
+            mutated=intent_created,
+        )
+        if terminal is not None:
+            return terminal
         fresh_latest = _latest_intent(
             _active_intents(
                 _candidate_intents(
@@ -3570,7 +3546,6 @@ def edit_metadata(
                 client,
                 observed,
                 latest_intent_comment,
-                intent,
                 observed_version=final_version,
                 reason=reason,
             )
@@ -3626,6 +3601,22 @@ def edit_metadata(
             )
     else:
         after = current
+    fresh_intents, fresh_confirmations, fresh_aborts = _transaction_comments(
+        client, after
+    )
+    latest_intent_comment = _rebind_intent_comment(
+        latest_intent_comment, fresh_intents
+    )
+    intent = latest_intent_comment.intent
+    terminal = _terminal_intent_decision(
+        after,
+        latest_intent_comment,
+        fresh_confirmations,
+        fresh_aborts,
+        mutated=intent_created or patch_required,
+    )
+    if terminal is not None:
+        return terminal
     after_version = fetch_metadata_version(client, after)
     confirmation = _confirmation_for_target(
         intent,
@@ -3831,11 +3822,8 @@ def reconcile_metadata(
     )
     if (
         current != initial
-        or current_receipt != receipt
-        or current_intent_comment.comment_id != intent_comment.comment_id
-        or current_confirmation != confirmation
-        or current_confirmation_comment.comment_id
-        != confirmation_comment.comment_id
+        or current_intent_comment != intent_comment
+        or current_confirmation_comment != confirmation_comment
         or not _metadata_versions_equivalent(
             initial_version,
             current_version,
@@ -3853,6 +3841,7 @@ def reconcile_metadata(
             pr_number=pr_number,
             run_id=first_metadata.run_id,
         )
+    receipt = current_receipt
     current_runs = list_candidate_runs(client, current)
     _validate_receipt_watermark(receipt, current_runs)
     current_full, current_authorized = _current_full_authorization(current_runs)
@@ -4445,6 +4434,66 @@ def _active_intents(
     ]
 
 
+def _rebind_intent_comment(
+    selected: CommentState,
+    intents: list[CommentState],
+) -> CommentState:
+    fresh = next(
+        (comment for comment in intents if comment.comment_id == selected.comment_id),
+        None,
+    )
+    if fresh is None or fresh.intent is None:
+        raise MetadataEditError(
+            "selected metadata edit intent is missing or no longer owner-authenticated"
+        )
+    if fresh != selected:
+        raise MetadataEditError("selected metadata edit intent changed during refresh")
+    return fresh
+
+
+def _terminal_intent_decision(
+    state: PullRequestState,
+    intent_comment: CommentState,
+    confirmations: dict[int, CommentState],
+    aborts: dict[int, CommentState],
+    *,
+    mutated: bool,
+) -> Decision | None:
+    confirmation = confirmations.get(intent_comment.comment_id)
+    if confirmation is not None:
+        return Decision(
+            action="deferred",
+            base_sha=state.base_sha,
+            guidance=_reconcile_guidance(state, confirmation.comment_id),
+            head_sha=state.head_sha,
+            mutated=mutated,
+            reason="metadata edit intent is already confirmed; reconcile its pair",
+            repository=state.repository,
+            pr_number=state.number,
+            intent_comment_id=intent_comment.comment_id,
+            intent_comment_url=intent_comment.html_url,
+            confirmation_comment_id=confirmation.comment_id,
+            confirmation_comment_url=confirmation.html_url,
+        )
+    abort = aborts.get(intent_comment.comment_id)
+    if abort is not None:
+        return Decision(
+            action="deferred",
+            base_sha=state.base_sha,
+            guidance=(),
+            head_sha=state.head_sha,
+            mutated=mutated,
+            reason="metadata edit intent is already aborted",
+            repository=state.repository,
+            pr_number=state.number,
+            intent_comment_id=intent_comment.comment_id,
+            intent_comment_url=intent_comment.html_url,
+            abort_comment_id=abort.comment_id,
+            abort_comment_url=abort.html_url,
+        )
+    return None
+
+
 def _create_intent_comment(
     client: GitHubClient,
     state: PullRequestState,
@@ -4485,11 +4534,13 @@ def _create_abort_comment(
     client: GitHubClient,
     state: PullRequestState,
     intent_comment: CommentState,
-    intent: EditReceipt,
     *,
     observed_version: MetadataVersion,
     reason: str,
 ) -> CommentState:
+    intent = intent_comment.intent
+    if intent is None:
+        raise MetadataEditError("abort requires an authenticated metadata edit intent")
     abort = EditAbort(
         schema_version=1,
         repository=intent.repository,
