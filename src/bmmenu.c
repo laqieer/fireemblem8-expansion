@@ -2043,7 +2043,11 @@ int StealItemMenuCommand_Draw(struct MenuProc* menu, struct MenuItemProc* menuIt
 
     DrawItemMenuLine(&menuItem->text, item, isStealable, gBG0TilemapBuffer + TILEMAP_INDEX(menuItem->xTile, menuItem->yTile));
 
+#ifdef FE8_ARCHIVAL_BUILD
     return;
+#else
+    return 0;
+#endif
 }
 
 u8 StealItemMenuCommand_Effect(struct MenuProc* menu, struct MenuItemProc* menuItem) {
@@ -2582,11 +2586,17 @@ int ItemMenu_SwitchIn(struct MenuProc* menu, struct MenuItemProc* menuItem) {
         UpdateMenuItemPanel(menuItem->itemNumber - 1);
     }
 
-    // return 0; // BUG?
+#ifndef FE8_ARCHIVAL_BUILD
+    return 0;
+#endif
 }
 
 int ItemMenu_SwitchOut_DoNothing(struct MenuProc* menu, struct MenuItemProc* menuItem) {
+#ifdef FE8_ARCHIVAL_BUILD
     return;
+#else
+    return 0;
+#endif
 }
 
 u8 ItemMenuHelpBox(struct MenuProc* menu, struct MenuItemProc* menuItem) {
@@ -2600,7 +2610,9 @@ u8 ItemMenuHelpBox(struct MenuProc* menu, struct MenuItemProc* menuItem) {
 
     StartItemHelpBox(menuItem->xTile << 3, menuItem->yTile << 3, item);
 
-    // return 0; // BUG?
+#ifndef FE8_ARCHIVAL_BUILD
+    return 0;
+#endif
 }
 
 u8 MapMenu_IsRecordsCommandAvailable(const struct MenuItemDef* def, int number) {

@@ -345,12 +345,14 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/4",
         "https://github.com/laqieer/fireemblem8-expansion/issues/28",
         "https://github.com/laqieer/fireemblem8-expansion/issues/57",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/102"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/102",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/197"
       ],
       "reference": "docs/quickstart.md",
       "status": "current",
       "required_cases": [
-        "TC-CORE-001"
+        "TC-CORE-001",
+        "TC-BUILD-GCC14-MENU-RETURN-001"
       ]
     },
     {
@@ -480,11 +482,13 @@
         "https://github.com/laqieer/fireemblem8-expansion/issues/171",
         "https://github.com/laqieer/fireemblem8-expansion/issues/176",
         "https://github.com/laqieer/fireemblem8-expansion/issues/177",
-        "https://github.com/laqieer/fireemblem8-expansion/issues/179"
+        "https://github.com/laqieer/fireemblem8-expansion/issues/179",
+        "https://github.com/laqieer/fireemblem8-expansion/issues/207"
       ],
       "reference": ".github/skills/development-workflow/SKILL.md",
       "status": "current",
       "required_cases": [
+        "TC-WORKFLOW-IMMEDIATE-PUSH-001",
         "TC-WORKFLOW-CI-WAIT-001",
         "TC-WORKFLOW-MANUAL-HANDOFF-001",
         "TC-WORKFLOW-STACKED-CI-001",
@@ -1822,6 +1826,39 @@
       ]
     },
     {
+      "id": "TC-BUILD-GCC14-MENU-RETURN-001",
+      "title": "GCC 14 menu callback return compatibility",
+      "feature_id": "modern-framework-build",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/197"
+      ],
+      "document": "docs/test-cases/core-framework.md",
+      "anchor": "tc-build-gcc14-menu-return-001-gcc-14-menu-callback-return-compatibility",
+      "profiles": [
+        "Modern release AAPCS",
+        "Explicit archival control build"
+      ],
+      "purpose": "Prove integer-returning menu callbacks compile under GCC 14 without changing their archival agbcc behavior.",
+      "prerequisites": "Repository root with arm-none-eabi-gcc 14.2.1, the remaining modern quickstart dependencies, and the archival toolchain installed.",
+      "actions": "Record arm-none-eabi-gcc --version, confirm GCC 14.2.1, then run the modern release boot-check and the explicit archival ROM build.",
+      "expected_result": "The modern ROM compiles, links, and boots, and the archival ROM builds with its original callback source behavior.",
+      "negative_control": "Valueless modern returns fail under GCC 14, while unconditional zero returns alter archival code generation.",
+      "interactions": "Uses the existing MenuItemDef callback signatures and has no feature conflicts.",
+      "save_compatibility": "No save bytes, layout, migration, or compatibility epoch change.",
+      "cleanup": "Use make clean_fast only when generated build outputs must be removed.",
+      "limitations": "The modern ROM is not required to be byte-identical to the original game.",
+      "automation": [
+        {
+          "command": "make expansion-modern-boot-check MODERN_CONFIG=release MODERN_ABI=aapcs",
+          "evidence": "tools/gba-playtest/scenarios/boot.json"
+        },
+        {
+          "command": "make fireemblem8.gba",
+          "evidence": "Makefile"
+        }
+      ]
+    },
+    {
       "id": "TC-CORE-002",
       "title": "Configuration identity rejects invalid values",
       "feature_id": "configuration-identity",
@@ -2129,6 +2166,32 @@
         {
           "command": "python3 -m unittest scripts.generated_data.tests.test_classes_schema scripts.generated_data.tests.test_units_schema scripts.generated_data.tests.test_eventlists_schema scripts.generated_data.tests.test_eventlists_roundtrip -v",
           "evidence": "scripts/generated_data/tests/test_eventlists_roundtrip.py"
+        }
+      ]
+    },
+    {
+      "id": "TC-WORKFLOW-IMMEDIATE-PUSH-001",
+      "title": "Publish new commits immediately and expose WIP ownership",
+      "feature_id": "workflow-governance",
+      "issue_urls": [
+        "https://github.com/laqieer/fireemblem8-expansion/issues/207"
+      ],
+      "document": "docs/test-cases/workflow-governance.md",
+      "anchor": "tc-workflow-immediate-push-001-publish-new-commits-immediately-and-expose-wip-ownership",
+      "profiles": ["Clean source checkout with Python 3; real delivery uses existing owner-context GitHub access"],
+      "purpose": "Preserve every new task commit remotely without post-commit waits and expose WIP scope and ownership to prevent duplicate work.",
+      "prerequisites": "Start at the repository root with the canonical CLI publication protocol, mirrored guidance and case registry; no credentials are required for source-only checks.",
+      "actions": "Parse the labeled publication protocol; exercise missing/duplicate/unknown/delayed/softened fields and reordered equivalent records. During real delivery immediately owner-push each task commit and publish branch/head, owner, scope, state, remaining work and blockers in the dedicated PR/evidence comment.",
+      "expected_result": "Every task commit triggers immediate repository-owner-coordinator publication, implementation owners hand off without pushing, WIP remains visible, and persistence never substitutes for semantic acceptance or final quality gates.",
+      "negative_control": "Retaining commits for review/validation/CI/batching, delegating pushes to implementers, omitting visibility or accepting publication as completion fails.",
+      "interactions": "Depends on trusted owner pushes, one coordinator and canonical comments; conflicts with post-commit review holds; pending handoff/review-first contracts must preserve persistence-versus-acceptance; cleanup is independently owned by issue208.",
+      "save_compatibility": "Instruction-only governance; no game, save/config, generated data, localization, ROM/RAM, modern/archival or feature flag impact.",
+      "cleanup": "Source-only checks create no remote state. Real worktrees remain governed by post-merge completion and issue208 cleanup.",
+      "limitations": "Parses an externally consumed CLI instruction protocol, not runtime code. Does not grant credentials, dispatch CI or make GitHub operations atomic; failed pushes remain explicit blockers.",
+      "automation": [
+        {
+          "command": "python3 -m unittest scripts.docs_check_tests.test_development_workflow_skill.DevelopmentWorkflowSkillTests.test_immediate_publication_protocol -v",
+          "evidence": "scripts/docs_check_tests/test_development_workflow_skill.py"
         }
       ]
     },
